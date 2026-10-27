@@ -230,14 +230,14 @@ impl<'arena> Reader<'arena>
     /// indexed and the chain `operations` is one the indexed reading covers.
     ///
     /// # Specification
-    /// - ensures: [`Some`] when a `Sort`, `Representable` or `Atom` of `sorts`
-    ///   has an index port, and every `Oper`, `Obs`, `Const` and `Nested` of
-    ///   `operations` has a distinct name, only `Port` inputs and one `Port`
-    ///   output, each index term a `Var`, or an `App` or `Con` over its `Arg`
-    ///   chain applying no operation with implicit indices; each operation's
-    ///   implicit indices the names its ports' index terms' `Var`s name that no
-    ///   input port does, in pre-order, inputs then the output, each once.
-    ///   [`None`] otherwise.
+    /// - ensures: [`Some`] when a `Sort`, `Representable`, `Atom` or
+    ///   `Computation` of `sorts` has an index port, and every `Oper`, `Obs`,
+    ///   `Const` and `Nested` of `operations` has a distinct name, only `Port`
+    ///   inputs and one `Port` output, each index term a `Var`, or an `App` or
+    ///   `Con` over its `Arg` chain applying no operation with implicit
+    ///   indices; each operation's implicit indices the names its ports' index
+    ///   terms' `Var`s name that no input port does, in pre-order, inputs then
+    ///   the output, each once. [`None`] otherwise.
     /// - panics: none.
     /// - executable: none — the answer is the walk of the two chains.
     /// - intension: one walk of each chain, each index term read from a
@@ -262,7 +262,10 @@ impl<'arena> Reader<'arena>
         loop {
             at = match tagged(self.constructor(at))? {
                 (tag::END, &[]) => break,
-                (tag::SORT | tag::REPRESENTABLE | tag::ATOM, &[_, ports, rest]) => {
+                (
+                    tag::SORT | tag::REPRESENTABLE | tag::ATOM | tag::COMPUTATION,
+                    &[_, ports, rest],
+                ) => {
                     if !matches!(tagged(self.constructor(ports)), Some((tag::END, &[]))) {
                         indexed = Verdict::Holds;
                     }

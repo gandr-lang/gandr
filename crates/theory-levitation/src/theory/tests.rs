@@ -278,6 +278,7 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Bvar", vec!["String"]),
         ("Under", vec!["String", "Theory"]),
         ("Open", vec!["Theory"]),
+        ("Computation", vec!["String", "Theory", "Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -1226,6 +1227,48 @@ fn an_atom_sort_takes_its_own_tag()
     assert!(
         check_desc(&description).is_empty(),
         "an operation taking an atom is well formed"
+    );
+}
+
+#[test]
+fn a_computation_sort_takes_its_own_tag()
+{
+    let carrier = |place: Representability| TheoryParts {
+        sorts: vec![TheorySort {
+            name: Name::from("T"),
+            indices: vec![port("A", "Type", [])],
+            representability: place,
+        }],
+        ..TheoryParts::default()
+    };
+    let parts = carrier(Representability::Computation);
+    let value = TheoryValue::encode(&parts);
+    assert_eq!(value.decode(), Ok(parts), "a computation sort reads back");
+    assert_eq!(
+        Tag::Computation.constructor(),
+        ConstructorTag::from(31_usize),
+        "appended, so a presentation declaring no computation sort keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&carrier(Representability::Ordinary)),
+        value,
+        "a computation sort is not an ordinary one"
+    );
+    let description = value
+        .description::<Grade>(named("Carrier"), &[])
+        .expect("a presentation with a computation sort reads as its table");
+    assert_eq!(
+        description
+            .sorts
+            .iter()
+            .map(|sort| sort.representability)
+            .collect::<Vec<_>>(),
+        [Representability::Computation],
+        "the table keeps the computation sort"
+    );
+    assert!(
+        check_desc(&description).is_empty(),
+        "a computation sort over the host's types is well formed"
     );
 }
 

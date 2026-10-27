@@ -292,6 +292,23 @@ pub struct FamilyCheck
     pub stated: FamilyForm,
 }
 
+/// What a sort component a model derives checks of the member answering it:
+/// that the member's type, or its family, lands in the ground sort the sort
+/// states.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SortCheck
+{
+    /// The module whose model signature derives the component.
+    pub structure: StructureIndex,
+    /// The component's place among its signature's components.
+    pub component: ComponentPlace,
+    /// The type, or the family, the member defines.
+    pub defined: Placed,
+}
+
 impl<'source> Collected<'source>
 {
     /// The `theory` block `name` names where a form starting at `at` stands:
@@ -770,7 +787,7 @@ impl<'source> Collector<'_, 'source>
                 && found.0.iter().zip(&found.1.components).all(|(component, derived)| {
                     component.name == self.name_of(derived.named)
                         && match derived.form {
-                            | Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                            | Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty() => {
                                 component.form == ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Derived))
                                     || matches!(component.form, ComponentForm::Manifest(_))
                             },
@@ -873,7 +890,7 @@ impl<'source> Collector<'_, 'source>
                 });
             }
             match derived.get(&named) {
-                Some(&&Ok(ModelForm::Sort { ref indices })) if indices.is_empty() => {},
+                Some(&&Ok(ModelForm::Sort { ref indices, .. })) if indices.is_empty() => {},
                 Some(&&Ok(ModelForm::Sort { .. })) => {
                     return Err(LoweringRefusal::UnreadAscription {
                         span: sort.span,
@@ -900,7 +917,7 @@ impl<'source> Collector<'_, 'source>
                     name: named,
                     named: theory,
                     form: match derived.form {
-                        Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                        Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty() => {
                             fixed.get(&named).map_or(
                                 ComponentForm::Abstract(Maybe::Absent(
                                     component_kind::Absent::Derived,
@@ -1119,20 +1136,25 @@ impl<'source> Collector<'_, 'source>
     ///   states indices is pushed onto `types` as the component's meaning, and
     ///   a check slot is filed comparing each parameter's type with its index's
     ///   — the witness owning a written kind, which sees the components before
-    ///   it, or a held slot for a derived one. A sealed module, a member that
-    ///   is no family or of another count, and a component no member supplies
-    ///   each refuse a held slot under the component's name instead, introduced
-    ///   by the module's form, whose attributes state its expectation.
+    ///   it, or a held slot for a derived one, whose member is filed besides
+    ///   for the ground sort its family lands in. A sealed module, a member
+    ///   that is no family or of another count, and a component no member
+    ///   supplies each refuse a held slot under the component's name instead,
+    ///   introduced by the module's form, whose attributes state its
+    ///   expectation.
     /// - provides: the family half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a written and a derived family each read their
-    ///   member, and a member of the wrong count is refused naming both.
+    ///   member, a member of the wrong count is refused naming both, and a
+    ///   family into the other ground sort than its derived sort's is refused
+    ///   at the member.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -1248,6 +1270,13 @@ impl<'source> Collector<'_, 'source>
                 witness
             },
             FamilyForm::Derived => {
+                if let Some(found) = self.collected.families.get(family.0) {
+                    let _fresh = self.collected.sort_checks.insert(member.held, SortCheck {
+                        structure,
+                        component: place,
+                        defined: found.defined,
+                    });
+                }
                 self.held(container, component.name, component.named, component.named)
             },
         };
@@ -1288,7 +1317,7 @@ impl<'source> Collector<'_, 'source>
                 .get(index.0)
                 .and_then(|signature| signature.components.get(place.0))
                 .map_or(0_usize, |component| match component.form {
-                    Ok(ModelForm::Sort { ref indices }) => indices.len(),
+                    Ok(ModelForm::Sort { ref indices, .. }) => indices.len(),
                     Ok(
                         ModelForm::Operation { .. }
                         | ModelForm::Constant(_)

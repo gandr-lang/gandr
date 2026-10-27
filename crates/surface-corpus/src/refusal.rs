@@ -79,6 +79,9 @@
 //! - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the parts of a
 //!   block's realizability predicate a [`BoundaryClause`] names, the witness
 //!   record's size, alignment, niche and destroy, and a function's arity.
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a port at a `Type[-]` sort
+//!   is the component `UnstatedComponent.Computation` names.
 
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -2047,7 +2050,7 @@ const FORMERS: [UnadmittedFormer; 24_usize] = [
 ];
 
 /// Every fault a model component the derivation cannot state carries.
-const MODEL_FAULTS: [ModelFault; 11_usize] = [
+const MODEL_FAULTS: [ModelFault; 12_usize] = [
     ModelFault::UnknownHead,
     ModelFault::Arity,
     ModelFault::IllSorted,
@@ -2059,6 +2062,7 @@ const MODEL_FAULTS: [ModelFault; 11_usize] = [
     ModelFault::Binding,
     ModelFault::Abstraction,
     ModelFault::Unbound,
+    ModelFault::Computation,
 ];
 
 /// Every fault an import's signature match carries.
@@ -2286,6 +2290,7 @@ const fn model_tag(fault: ModelFault) -> Tag
         ModelFault::Binding => "Binding",
         ModelFault::Abstraction => "Abstraction",
         ModelFault::Unbound => "Unbound",
+        ModelFault::Computation => "Computation",
     })
 }
 

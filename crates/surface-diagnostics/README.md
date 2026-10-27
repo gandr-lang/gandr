@@ -130,6 +130,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the `FootprintsOverlap` label, authority both halves of a fork hold and one may change.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a member answering a `Type[-]` sort lands in the computation types.
 
 ## License
 

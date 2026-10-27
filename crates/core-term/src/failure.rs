@@ -103,6 +103,9 @@ impl TrackingIssue
     pub const UNHELD_INDEX: Self = Self(2670);
     /// A model signature's operation abstracting an atom over a port.
     pub const MODEL_ABSTRACTION: Self = Self(1561);
+    /// A model signature's sort indexed by, or operation with a port at, a
+    /// computation sort.
+    pub const MODEL_COMPUTATION: Self = Self(2899);
     /// A freshness condition whose rule matches one variable both under an
     /// abstraction and beside it, in a signature where a term can name an
     /// atom.

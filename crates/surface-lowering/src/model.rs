@@ -86,7 +86,8 @@
 //!   <https://doi.org/10.1145/321250.321253> — first-order unification.
 //! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
 //!   effect-modalities design (§ The declaration) — a sort indexed by the
-//!   host's types derives its family over `Type`.
+//!   host's types derives its family over `Type`, and a `Type[-]` sort's family
+//!   lands in the computation types.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -99,6 +100,7 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::OperationKind;
+use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::TheoryBinder;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TheoryFault;
@@ -230,16 +232,20 @@ pub struct Port
     pub abstractions: Vec<Binder>,
 }
 
-/// A sort a theory declares, with its index telescope.
+/// A sort a theory declares, with its index telescope and the ground sort its
+/// model lands in.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the sort's name, name tile and written indices.
+/// - ensures: the sort's name, name tile, written indices, and the computation
+///   types for a `Type[-]` sort and the value types for any other.
 /// - executable: none — a presented sort is data the derivation reads.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the `CatShape` sorts derive their components.
+/// - hypothesis: L3 — the `CatShape` sorts derive their components, and a
+///   `Type[-]` sort derives a family into computation types.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
+/// - witness: `model::tests::a_computation_sort_derives_a_family_into_computation_types`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedSort
 {
@@ -249,6 +255,8 @@ pub struct PresentedSort
     pub named: Placed,
     /// Its written index telescope.
     pub indices: Vec<Port>,
+    /// The ground sort its model lands in.
+    pub ground: GroundSort,
 }
 
 /// An operation a theory declares, with its boundary.
@@ -553,10 +561,17 @@ impl Presentation
         let mut members = Members::default();
         for (sort, &named) in parts.sorts.into_iter().zip(&self.placement.sorts) {
             let names = presented_names(&sort.indices, &[]);
+            let ground = match sort.representability {
+                Representability::Computation => GroundSort::Computation,
+                Representability::Ordinary
+                | Representability::Representable
+                | Representability::Atom => GroundSort::Value,
+            };
             members.sorts.push(PresentedSort {
                 name: sort.name,
                 named,
                 indices: ports(sort.indices, names),
+                ground,
             });
         }
         for (operation, &named) in parts.operations.into_iter().zip(&self.placement.operations) {
@@ -695,11 +710,15 @@ pub struct Variable
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelForm
 {
-    /// A sort: a type, or a type family over its indices.
+    /// A sort: a type, or a type family over its indices, landing in its
+    /// ground sort.
     Sort
     {
         /// The index telescope; empty for an unindexed sort.
         indices: Vec<Binder>,
+        /// The ground sort its model lands in: the computation types for a
+        /// `Type[-]` sort, the value types for any other.
+        ground: GroundSort,
     },
     /// An operation: a function over its telescope returning its results.
     Operation
@@ -774,6 +793,9 @@ pub enum ModelFault
     Abstraction,
     /// A stated law naming a variable it does not bind, or binding one twice.
     Unbound,
+    /// A sort indexed by, or an operation with a port at, a computation sort:
+    /// a computation type, which a model's binders do not range over yet.
+    Computation,
 }
 
 impl core::fmt::Display for ModelFault
@@ -807,6 +829,9 @@ impl core::fmt::Display for ModelFault
             },
             Self::Abstraction => "abstracts an atom over a port, whose models are nominal sets'",
             Self::Unbound => "names a variable its statement does not bind once",
+            Self::Computation => {
+                "has a port at a computation sort, which a model does not read yet"
+            },
         })
     }
 }
@@ -970,8 +995,10 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   port at a builtin type the theory does not declare reads it as a closed
 ///   sort; a constant whose type leaves no variable free derives that type
 ///   alone, and one whose type does derives as an operation of no inputs; a
-///   binding port's binder takes its `pi+` variables; a component that cannot
-///   be stated keeps its fault, a law relating a term at a binding port keeps
+///   binding port's binder takes its `pi+` variables; a sort lands in the
+///   ground sort it is presented at; a component that cannot be stated keeps
+///   its fault, a sort or an operation with a port at a computation sort keeps
+///   [`ModelFault::Computation`], a law relating a term at a binding port keeps
 ///   [`ModelFault::Binding`], and one naming such a component is
 ///   [`ModelFault::Inherited`].
 /// - fails: never; a fault is kept on its component.
@@ -982,13 +1009,15 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 /// # Adequacy
 /// - hypothesis: L3 — the `CatShape` presentation and an ill-sorted, an
 ///   unsorted, a circuit and a binding member, each asserted as the exact
-///   components.
+///   components; a `Type[-]` sort's family and an operation at it, each
+///   asserted as its form or fault.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 /// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 /// - witness: `model::tests::a_constant_derives_its_type_alone`
+/// - witness: `model::tests::a_computation_sort_derives_a_family_into_computation_types`
 #[must_use]
 pub(crate) fn derive_members(
     members: &Members,
@@ -1078,6 +1107,13 @@ fn derive_heads(
 {
     let mut heads: BTreeMap<Name, Result<infer::Head, ModelFault>> = BTreeMap::new();
     let mut components = Vec::new();
+    let computations: BTreeSet<&Name> = members
+        .sorts
+        .iter()
+        .filter(|sort| sort.ground == GroundSort::Computation)
+        .map(|sort| &sort.name)
+        .collect();
+    let computational = |port: &Port| computations.contains(&port.sort.sort);
     for sort in &members.sorts {
         for index in &sort.indices {
             if let Maybe::Present(_) = index.sort.host_universe()
@@ -1087,9 +1123,15 @@ fn derive_heads(
                 let _first = heads.insert(index.sort.sort.clone(), closed);
             }
         }
-        let head = infer::derive_head(&heads, infer::HeadKind::Sort, &sort.indices, &[]);
+        let head = if sort.indices.iter().any(computational) {
+            Err(ModelFault::Computation)
+        }
+        else {
+            infer::derive_head(&heads, infer::HeadKind::Sort, &sort.indices, &[])
+        };
         let form = head.clone().map(|derived| ModelForm::Sort {
             indices: derived.binders,
+            ground: sort.ground,
         });
         let _first = heads.insert(sort.name.clone(), head);
         components.push(ModelComponent {
@@ -1123,6 +1165,14 @@ fn derive_heads(
             .any(|port| !port.abstractions.is_empty())
         {
             Err(ModelFault::Abstraction)
+        }
+        else if operation
+            .inputs
+            .iter()
+            .chain(&operation.outputs)
+            .any(computational)
+        {
+            Err(ModelFault::Computation)
         }
         else {
             infer::derive_head(

@@ -1296,7 +1296,7 @@ fn a_theory_block_defines_its_presentation()
             .collect::<alloc::vec::Vec<_>>(),
         [
             3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3, 1, 2, 1,
-            2, 1
+            2, 1, 3
         ],
         "each constructor's names, then its recursions"
     );

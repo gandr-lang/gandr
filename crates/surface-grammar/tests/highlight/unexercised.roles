@@ -1639,8 +1639,6 @@
 2700 Keyword theory_declaration data L[(] R[identifier]
 2701 VariableParam theory_declaration identifier L[data] R[:]
 2702 Other theory_declaration : L[identifier] R[<type>]
-2703 Type theory_declaration type_identifier L[(] R[:]
-2704 Other theory_declaration : L[type_identifier] R[<type>]
 2707 VariableParam theory_declaration _ L[,] R[:]
 2709 Keyword theory_declaration pi+ L[:] R[(]
 2710 Other theory_declaration ( L[pi+] R[identifier]

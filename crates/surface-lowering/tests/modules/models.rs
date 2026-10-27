@@ -8,6 +8,7 @@ use alloc::collections::BTreeSet;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::Value;
 use gandr_core_term::equal_type_syntax;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_lowering::AscriptionForm;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
@@ -1188,6 +1189,101 @@ fn a_family_sort_is_a_function_into_the_universe()
          --> E(v, v);\n}\ndef derived : Model(Graph) ;\ndef written : #{v : Type, e : (s : v, t : \
          v) => Type, loop : (x : v) => e(x, x)} ;\n",
         &[("derived", "written")],
+    );
+}
+
+/// The data a computation carrier wraps.
+const MAYBE: &str = "data Maybe(a : Type) : Type {\n  None : Maybe(a);\n  Some : (x : a) --> \
+                     Maybe(a);\n}\n";
+
+/// A `Type[-]` sort is a family, or a type, into the computation types: a
+/// module answering it with computation types checks and its model type is the
+/// record written at `Type[-]`, apart from the record a `Type` sort's model is;
+/// a member landing in the other ground sort is refused at its name, at either
+/// classifier and whether it is a family or a type.
+#[test]
+fn a_computation_sort_is_a_family_into_computation_types_3050()
+{
+    let carrier = "theory Carrier {\n  sort Lift(A : Type) : Type[-];\n  sort Cell : Type[-];\n}\n";
+    let plain = "theory Plain {\n  sort Lift(A : Type) : Type;\n  sort Cell : Type;\n}\n";
+    let carried = format!(
+        "{MAYBE}{carrier}{plain}module Option : Model(Carrier) {{\n  type Lift(a : Type) = -F \
+         Maybe(a);\n  type Cell = -F Integer;\n}}\ndef derived : Model(Carrier) ;\ndef written : \
+         #{{Lift : (a : Type) => Type[-], Cell : Type[-]}} ;\ndef valued : Model(Plain) ;\n"
+    );
+    let mut lowered = lower(carried.as_str());
+    let found = rows(&lowered);
+    assert!(
+        found
+            .iter()
+            .all(|&(_, _, amounts)| !matches!(amounts, Amounts::Refused(_))),
+        "a module answering each computation sort with a computation type is refused nowhere: \
+         {found:?}"
+    );
+    let judged = verdicts(&mut lowered);
+    assert!(
+        judged.iter().all(|&(_, judgement)| matches!(
+            judgement,
+            Judgement::Checked | Judgement::Declared | Judgement::Owed
+        )),
+        "and the checker admits it, the bare signatures owing their bodies: {judged:?}"
+    );
+    states_the_written_types(carried.as_str(), &[("derived", "written")]);
+    assert_ne!(
+        equal_type_syntax(
+            &lowered.arena,
+            declared_type_of(&lowered, "derived", Role::Declared),
+            declared_type_of(&lowered, "valued", Role::Declared),
+        ),
+        CertificateEquality::Equal,
+        "a model of the computation sorts is not a model of the value sorts"
+    );
+
+    let ground = |source: &str,
+                  member: &'static str,
+                  stated: GroundSort,
+                  written: GroundSort|
+     -> Amounts<'static> {
+        Amounts::Refused(LoweringRefusal::FamilyTelescope {
+            span: span_of(source, member, 1_usize),
+            name: name(member),
+            fault: TelescopeFault::Ground { stated, written },
+        })
+    };
+    let valued = format!(
+        "{MAYBE}{carrier}module Valued : Model(Carrier) {{\n  type Lift(a : Type) = Maybe(a);\n  \
+         type Cell = Integer;\n}}\n"
+    );
+    let found = rows(&lower(valued.as_str()));
+    let (stated, written) = (GroundSort::Computation, GroundSort::Value);
+    assert!(
+        found.contains(&row(
+            "Valued.Lift",
+            Role::Held,
+            ground(&valued, "Lift", stated, written)
+        )) && found.contains(&row(
+            "Valued.Cell",
+            Role::Held,
+            ground(&valued, "Cell", stated, written)
+        )),
+        "a value type at a `Type[-]` sort is refused at the member: {found:?}"
+    );
+    let computed = format!(
+        "{MAYBE}{plain}module Computed : Model(Plain) {{\n  type Lift(a : Type) = -F Maybe(a);\n  \
+         type Cell = -F Integer;\n}}\n"
+    );
+    let found = rows(&lower(computed.as_str()));
+    assert!(
+        found.contains(&row(
+            "Computed.Lift",
+            Role::Held,
+            ground(&computed, "Lift", written, stated)
+        )) && found.contains(&row(
+            "Computed.Cell",
+            Role::Held,
+            ground(&computed, "Cell", written, stated)
+        )),
+        "and a computation type at a `Type` sort: {found:?}"
     );
 }
 

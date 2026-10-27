@@ -183,6 +183,9 @@
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in the module that owns it.
 //!
+//! The headline sources' hover goldens belong to `gandr-surface-lsp`: its
+//! `tests/editor/shapes.rs` lists the sources and specifies a golden's lines.
+//!
 //! # Specification and adequacy
 //!
 //! Executable predicates cover root admission, schema and refusal mappings,

@@ -580,7 +580,7 @@ fn lowered(
         },
         LoweringRefusal::UndescribedMember { fault, .. } => write!(f, "this member {fault}"),
         LoweringRefusal::FamilyTelescope { name, fault, .. } => {
-            write!(f, "the type family `{name}` {fault}")
+            write!(f, "the type member `{name}` {fault}")
         },
         LoweringRefusal::UninterfacedMember { name, fault, .. } => write!(
             f,

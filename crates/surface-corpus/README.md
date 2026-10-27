@@ -43,8 +43,6 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests.
 
-The headline sources' hover goldens belong to `gandr-surface-lsp`: its `tests/editor/shapes.rs` lists the sources and specifies a golden's lines.
-
 The control subjects take a case that is hard in other languages and write it as gandr does, the accepting programs under `fixture/model/<subject>/` and each misuse refused by name under `fixture/pathological/<subject>/`:
 
 | Case | Subject | Compared with |
@@ -96,6 +94,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, classed a malformed source.
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design (§ layouts-semantic-abi) — the clauses `BoundaryClause` names.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a port at a `Type[-]` sort.
 
 ## License
 

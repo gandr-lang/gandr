@@ -105,6 +105,7 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GrammarFingerprint;
@@ -712,23 +713,27 @@ impl fmt::Display for CrossedExit
 }
 
 /// Where a type family's parameters part from the index telescope its
-/// component states.
+/// component states, or its types from the ground sort the component lands in.
 ///
 /// # Specification
 /// - requires: a producer compares a family member's parameters with the
-///   indices its component states.
+///   indices its component states, and the types it lands in with the
+///   component's ground sort.
 /// - ensures: a count mismatch names both counts; a type mismatch names the
-///   first parameter, counted from one, whose type is not its index's.
+///   first parameter, counted from one, whose type is not its index's; a ground
+///   mismatch names both ground sorts.
 /// - provides: which part of the telescope a refusal is about.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
 /// - executable: none — the fault holds neither telescope.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a family binding too few parameters and one binding a
-///   parameter at another sort are refused with their faults.
+/// - hypothesis: L3 — a family binding too few parameters, one binding a
+///   parameter at another sort, and one into value types at a `Type[-]` sort
+///   are refused with their faults.
 /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
 /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+/// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TelescopeFault
 {
@@ -744,6 +749,16 @@ pub enum TelescopeFault
     /// The parameter at this place, counted from one, has a type its index
     /// does not state.
     Index(OperandCount),
+    /// The member's family lands in another ground sort than its component:
+    /// a value type at a `Type[-]` sort, or a computation type at a `Type`
+    /// sort.
+    Ground
+    {
+        /// The ground sort the component states.
+        stated: GroundSort,
+        /// The ground sort the member's family lands in.
+        written: GroundSort,
+    },
 }
 
 impl fmt::Display for TelescopeFault
@@ -770,6 +785,18 @@ impl fmt::Display for TelescopeFault
                 "binds parameter {} at a type its component's index does not state",
                 usize::from(place)
             ),
+            Self::Ground { stated, written } => {
+                let types = |ground| match ground {
+                    GroundSort::Value => "value",
+                    GroundSort::Computation => "computation",
+                };
+                write!(
+                    f,
+                    "lands in {} types where its component states {} types",
+                    types(written),
+                    types(stated)
+                )
+            },
         }
     }
 }
@@ -1243,15 +1270,16 @@ pub enum LoweringRefusal<'source>
         fault: crate::description::MemberFault,
     },
 
-    /// A type family member whose parameters disagree with the index
-    /// telescope its component states.
+    /// A type member whose parameters disagree with the index telescope its
+    /// component states, or whose types land in another ground sort than the
+    /// component's.
     FamilyTelescope
     {
-        /// The bytes of the family member's name.
+        /// The bytes of the member's name.
         span: ByteSpan,
-        /// The family's name.
+        /// The member's name.
         name: SurfaceName<'source>,
-        /// Where the parameters and the indices part.
+        /// Where the member and its component part.
         fault: TelescopeFault,
     },
 
@@ -2071,7 +2099,7 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::UndescribedMember { fault, .. } => write!(f, "this member {fault}"),
             Self::FamilyTelescope { name, fault, .. } => {
-                write!(f, "the type family `{name}` {fault}")
+                write!(f, "the type member `{name}` {fault}")
             },
             Self::LowercaseModuleName { name, .. } => write!(
                 f,
@@ -3254,6 +3282,14 @@ mod tests
                 written: OperandCount::from(2_usize),
             },
             &TelescopeFault::Index(OperandCount::from(1_usize)),
+            &TelescopeFault::Ground {
+                stated: gandr_kernel_term::GroundSort::Computation,
+                written: gandr_kernel_term::GroundSort::Value,
+            },
+            &TelescopeFault::Ground {
+                stated: gandr_kernel_term::GroundSort::Value,
+                written: gandr_kernel_term::GroundSort::Computation,
+            },
         ]));
         let ambiguous = |more: usize| {
             LoweringRefusal::AmbiguousMethod {

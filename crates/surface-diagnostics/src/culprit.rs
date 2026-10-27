@@ -50,6 +50,10 @@
 //! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the label of
 //!   `FootprintsOverlap`, authority both halves of a fork hold and one may
 //!   change.
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a member answering a
+//!   `Type[-]` sort lands in the computation types, the ground sort a
+//!   `FamilyTelescope` label names.
 
 use core::fmt;
 
@@ -74,6 +78,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::TelescopeFault;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
@@ -91,9 +96,9 @@ impl Culprit
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a nonempty, single-line label naming what the refused bytes
-    ///   are, chosen by the refusal's variant and, for a malformed form or a
-    ///   form outside the fragment, by the fault or boundary it carries; never
-    ///   the refusal's failure class.
+    ///   are, chosen by the refusal's variant and, for a malformed form, a form
+    ///   outside the fragment or a family of the wrong telescope, by the fault
+    ///   or boundary it carries; never the refusal's failure class.
     /// - provides: the primary label of every refusal report.
     /// - fails: never.
     /// - panics: none.
@@ -251,6 +256,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
         LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
         LoweringRefusal::UndescribedMember { .. } => "a member the description does not read",
+        LoweringRefusal::FamilyTelescope {
+            fault: TelescopeFault::Ground { .. },
+            ..
+        } => "types its sort does not land in",
         LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
         LoweringRefusal::UninterfacedMember { .. } => {
             "a member the handler cannot read as an operation"
@@ -707,6 +716,10 @@ mod tests
             LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
             LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
             LoweringRefusal::UndescribedMember { .. } => "a member the description does not read",
+            LoweringRefusal::FamilyTelescope {
+                fault: TelescopeFault::Ground { .. },
+                ..
+            } => "types its sort does not land in",
             LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
             LoweringRefusal::UninterfacedMember { .. } => {
                 "a member the handler cannot read as an operation"

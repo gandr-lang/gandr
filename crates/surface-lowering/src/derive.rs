@@ -724,7 +724,7 @@ impl<'cells> Theory<'cells>
         let mut constants = BTreeMap::new();
         for component in &signature.components {
             match component.form {
-                Ok(ModelForm::Sort { ref indices }) => {
+                Ok(ModelForm::Sort { ref indices, .. }) => {
                     if !indices.is_empty() {
                         return Err(DeriveFault::Indexed);
                     }

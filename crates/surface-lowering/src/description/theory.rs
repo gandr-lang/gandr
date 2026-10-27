@@ -1162,6 +1162,7 @@ impl Reader<'_, '_>
             "Type" => Representability::Ordinary,
             "Type+" => Representability::Representable,
             "Atom" => Representability::Atom,
+            "Type[-]" => Representability::Computation,
             _ => return Err(run.fault(DescriptionFault::TypeShape)),
         };
         run.end()?;

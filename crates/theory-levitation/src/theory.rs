@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of thirty-one constructors, in tag
+//! `Theory` is one self-recursive sort of thirty-two constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -100,6 +100,7 @@
 //! | 28 | `Bvar` | a bound variable's name, named inside a `Bind` of it |
 //! | 29 | `Under` | a theory's name, the rest of the rules |
 //! | 30 | `Open` | the rest of the rules |
+//! | 31 | `Computation` | as `Sort`, for a computation sort |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -184,6 +185,20 @@
 //! atom is the same rule; [`crate::check_desc`] refuses an abstraction where
 //! no port abstracts as many atoms, and an occurrence at a port of another
 //! sort than the one its abstraction binds it at.
+//!
+//! # Computation sorts
+//!
+//! A sort declared `Type[-]` is a computation sort: a model answers it with a
+//! computation type, a relative monad's carrier `T(A : Type) : Type[-]` among
+//! them, where every other sort's model is a value type. It is a
+//! `Computation` member of the sort chain, appended to the table like `Atom`,
+//! so a presentation that declares none keeps the bytes it had.
+//!
+//! - **Choice.** The computation universe is a fourth place a sort lives, as
+//!   the atoms are a third, rather than a polarity field of every sort: one tag
+//!   codes it and no presentation re-keys.
+//! - **Reversal.** The typed split above carries the place as a field of its
+//!   sort family.
 //!
 //! # The shape parameter
 //!
@@ -341,7 +356,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 31] = [
+pub const THEORY_CONSTRUCTORS: [&str; 32] = [
     "Presents",
     "End",
     "Sort",
@@ -373,11 +388,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 31] = [
     "Bvar",
     "Under",
     "Open",
+    "Computation",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 31] = [
+const CONSTRUCTORS: [(&str, usize, usize); 32] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -409,6 +425,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 31] = [
     (THEORY_CONSTRUCTORS[28], 1, 0),
     (THEORY_CONSTRUCTORS[29], 1, 1),
     (THEORY_CONSTRUCTORS[30], 0, 1),
+    (THEORY_CONSTRUCTORS[31], 1, 2),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -481,6 +498,8 @@ enum Tag
     /// The row the rule before it fires under may hold theories it does not
     /// name, and the rest of the rules.
     Open,
+    /// A computation sort and the rest of the sorts.
+    Computation,
 }
 
 impl Tag
@@ -496,6 +515,7 @@ impl Tag
     ///   members, and the newest tag is read off its position.
     /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
     /// - witness: `theory::tests::an_abstracting_port_takes_its_own_tag`
+    /// - witness: `theory::tests::a_computation_sort_takes_its_own_tag`
     fn constructor(self) -> ConstructorTag
     {
         ConstructorTag::from(match self {
@@ -530,11 +550,12 @@ impl Tag
             Self::Bvar => 28,
             Self::Under => 29,
             Self::Open => 30,
+            Self::Computation => 31,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of thirty-one constructors.
+/// The description of `Theory`, one data sort of thirty-two constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -544,12 +565,12 @@ impl Tag
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
 ///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst`, `Atom`,
-///   `Abstracted`, `Abs`, `Fresh`, `Occ`, `Bind`, `Bvar`, `Under` and `Open` in
-///   that order, each at the result sort `Theory`; a constructor's `String`
-///   fields carry `grade` and come first, three for `Derived`, two for `Port`,
-///   `Bound`, `Shape`, `Face`, `Rank`, `Abstracted` and `Fresh` and one for
-///   every other constructor that names something, and its remaining fields are
-///   `Theory`.
+///   `Abstracted`, `Abs`, `Fresh`, `Occ`, `Bind`, `Bvar`, `Under`, `Open` and
+///   `Computation` in that order, each at the result sort `Theory`; a
+///   constructor's `String` fields carry `grade` and come first, three for
+///   `Derived`, two for `Port`, `Bound`, `Shape`, `Face`, `Rank`, `Abstracted`
+///   and `Fresh` and one for every other constructor that names something, and
+///   its remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1290,14 +1311,14 @@ impl TheoryValue
     /// - ensures: the root is `Presents` over the sort, operation and rule
     ///   chains, each member in order, a shape as a `Shape` at the head of the
     ///   sort chain over its `Face` chain, a representable sort as
-    ///   `Representable`, an atom sort as `Atom` and a port with binders as
-    ///   `Bound`; the rule chain holds each written rule as a `Turned` where
-    ///   `certificate` turns it and a `Rule` otherwise, followed by a `Fresh`
-    ///   per freshness condition it states, then an `Under` per theory of the
-    ///   row it fires under and an `Open` when that row is open, then each
-    ///   derived rule as a `Derived`, then each rank as a `Rank`.
-    ///   [`Self::decode`] reads `parts` back and [`Self::certificate`] the
-    ///   certificate, its turns one per written rule.
+    ///   `Representable`, an atom sort as `Atom`, a computation sort as
+    ///   `Computation` and a port with binders as `Bound`; the rule chain holds
+    ///   each written rule as a `Turned` where `certificate` turns it and a
+    ///   `Rule` otherwise, followed by a `Fresh` per freshness condition it
+    ///   states, then an `Under` per theory of the row it fires under and an
+    ///   `Open` when that row is open, then each derived rule as a `Derived`,
+    ///   then each rank as a `Rank`. [`Self::decode`] reads `parts` back and
+    ///   [`Self::certificate`] the certificate, its turns one per written rule.
     /// - panics: none.
     /// - intension: every chain is folded from its end and every term built
     ///   from a post-order worklist, so no step recurses.
@@ -1317,6 +1338,7 @@ impl TheoryValue
     /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
     /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
     /// - witness: `theory::tests::an_atom_sort_takes_its_own_tag`
+    /// - witness: `theory::tests::a_computation_sort_takes_its_own_tag`
     #[inline]
     #[must_use]
     #[spec(
@@ -1335,6 +1357,7 @@ impl TheoryValue
                 Representability::Ordinary => Tag::Sort,
                 Representability::Representable => Tag::Representable,
                 Representability::Atom => Tag::Atom,
+                Representability::Computation => Tag::Computation,
             };
             sorts = value(tag, vec![leaf(&sort.name), rec(indices), rec(sorts)]);
         }
@@ -1479,6 +1502,7 @@ impl TheoryValue
     /// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
     /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
     /// - witness: `theory::tests::an_atom_sort_takes_its_own_tag`
+    /// - witness: `theory::tests::a_computation_sort_takes_its_own_tag`
     #[inline]
     #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
     pub fn decode(&self) -> Result<TheoryParts, TheoryFault>
@@ -1501,6 +1525,9 @@ impl TheoryValue
             }
             else if at.ctor == Tag::Atom.constructor() {
                 (Representability::Atom, Tag::Atom)
+            }
+            else if at.ctor == Tag::Computation.constructor() {
+                (Representability::Computation, Tag::Computation)
             }
             else {
                 (Representability::Ordinary, Tag::Sort)

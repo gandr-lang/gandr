@@ -1,5 +1,5 @@
 /// `relative-monads`: Monads relative to the shift.
-/// Implemented: a monad relative to `-F` declared as a theory, its unit and extension over a family of computation types, the option monad's operations and code polymorphic in the carrier, and the left and right unit laws as rules.
+/// Implemented: a monad relative to `-F` declared as a theory, its unit and extension over a family of computation types, the carrier declared as a theory's sort into the computation types and modelled by the option monad's, the option monad's operations and code polymorphic in the carrier, and the left and right unit laws as rules.
 /// Not implemented: associativity, which waits on critical pairs between second-order rules, and the monadic block elaborated away; #1951 owes it.
 // A monad relative to the shift `-F`: a unit returning a value and an
 // extension running a computation into a continuation, over a family of
@@ -87,3 +87,14 @@ def two() -> Integer {
 /// computation types, run again.
 @[ checks ]
 def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }
+
+/// The carrier as a theory's sort: a family from the host's types into the
+/// computation types, the shape `T` above takes.
+theory Carrier {
+  sort T(A : Type) : Type[-];
+}
+
+/// The option monad's carrier: a computation returning a `Maybe`.
+module OptionCarrier : Model(Carrier) {
+  type T(a : Type) = -F Maybe(a);
+}
