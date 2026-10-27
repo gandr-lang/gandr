@@ -59,6 +59,7 @@ members = [
   "crates/workflow-coverage-guard",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
+  "crates/workflow-prose",
   "crates/workflow-spec-cost",
   "crates/workflow-sweep",
   "crates/workflow-test-timing",
@@ -181,7 +182,8 @@ default-features = false
 features = ["anodized"]
 
 # BLAKE3 hashing for content and node identities, the engine hub's socket
-# names, and the rank a sweep's sample orders sources by.
+# names, the rank a sweep's sample orders sources by, and the digest a prose
+# finding's sentence is keyed by.
 # consumers:
 # - core-incremental
 # - storage-artifact
@@ -192,6 +194,7 @@ features = ["anodized"]
 # - surface-lsp
 # - surface-parser (dev)
 # - surface-syntax
+# - workflow-prose
 # - workflow-sweep
 [workspace.dependencies.blake3]
 version = "1.8.7"
@@ -213,6 +216,7 @@ default-features = false
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-prose
 # - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.clap]
@@ -1167,6 +1171,7 @@ default-features = false
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-prose
 # - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
@@ -1277,8 +1282,8 @@ default-features = false
 # server's protocol messages, the diagnostics' JSON image, the
 # specification-cost ranking's reading of nextest's test list, the build
 # state's reading of Cargo's messages, the lane budget's reading of `gh`'s
-# issue listing and the coverage guard's reading of Codecov's answers derive
-# through.
+# issue listing, the coverage guard's reading of Codecov's answers and the
+# prose check's reading of its parse and glossary derive through.
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
@@ -1291,6 +1296,7 @@ default-features = false
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-prose
 # - workflow-spec-cost
 [workspace.dependencies.serde]
 version = "1.0.229"
@@ -1301,7 +1307,7 @@ features = ["alloc", "derive"]
 # format, the diagnostics' JSON verbosity level, the render bus's line format
 # and the format its codec witnesses round-trip through, the syntax ledger's
 # machine form, nextest's machine-readable test list, Cargo's build messages,
-# `gh`'s issue listing and Codecov's answers.
+# `gh`'s issue listing, Codecov's answers and the prose check's parse.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
@@ -1318,6 +1324,7 @@ features = ["alloc", "derive"]
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-prose
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]
 version = "1.0.151"
@@ -1353,8 +1360,9 @@ default-features = false
 
 # TOML, read into a table: the test-timing report reads the priority
 # overrides of `.config/nextest.toml`, the driver the user's configuration
-# file, and the hotpath judge a benchmark's regression policy. `display` and
-# `std` stay off: none writes TOML through the crate.
+# file, the hotpath judge a benchmark's regression policy, and the prose
+# check its glossary. `display` and `std` stay off: none writes TOML through
+# the crate.
 # features:
 # - parse: the parser
 # - serde: `from_str` into a `Table`, the one entry point that reads a whole
@@ -1362,6 +1370,7 @@ default-features = false
 # consumers:
 # - surface-driver
 # - workflow-hotpath-guard
+# - workflow-prose
 # - workflow-test-timing
 [workspace.dependencies.toml]
 version = "1.1.8"

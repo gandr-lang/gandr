@@ -1790,6 +1790,30 @@ replay 1581 .config/mise/tasks/mise-tasks-check.toml eb6f7620 3465e3d6a
 description = "A comment on every fixture item, ratcheted against the ledger"
 run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
 
+# The sentence rules that need a parse (#2919): a passive outside the stated
+# list, a past tense, a stack of four nouns, an `-ing` main verb and a
+# glossary word in another part of speech, over the corpus comments and the
+# crate READMEs; and the procedural form over the rendered diagnostics
+# (crates/workflow-prose/README.md). spaCy parses under the venv these
+# tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
+# finding refuses, a fixed one leaves a stale line, and `--write` rewrites
+# it. The local gate alone runs it: the interpreter is this task's tool, so
+# no CI image carries Python.
+["check:prose"]
+description = "The parsed sentence rules, against the prose ledger"
+tools.python = "3.14.9"
+tools."github:astral-sh/uv" = "0.13.5"
+tools."pipx:spacy" = { version = "3.8.18", uvx_args = "--python 3.14.9 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
+usage = 'flag "--write" help="rewrite corpus/prose.ledger from the findings instead of comparing"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python="$(mise where pipx:spacy)/spacy/bin/python"
+extra=()
+if [[ ${usage_write:-false} == true ]]; then extra+=(--write); fi
+.config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" "${extra[@]}"
+'''
+
 # Workflow tools are build-time policy, never package dependencies. Check
 # Cargo's resolved metadata, including renamed and transitive dependencies,
 # so a future publishable package cannot acquire an unpublished tool edge.

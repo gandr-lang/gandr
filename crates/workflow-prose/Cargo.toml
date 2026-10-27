@@ -1,0 +1,37 @@
+[package]
+name = "gandr-workflow-prose"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The sentence rules over the corpus comments, the diagnostics goldens and the crate READMEs, read from spaCy's parse"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "prose", "spacy", "style"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "prose"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# blake3 names a finding's sentence in the ledger; clap reads the invocation;
+# serde reads the parse script's JSON and the glossary's TOML; the shape crate
+# supplies the `Maybe` a sentence without a root has.
+[dependencies]
+blake3.workspace = true
+clap.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

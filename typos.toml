@@ -4,8 +4,9 @@
 [files]
 # treefmt.toml: formatter names and glob fragments read as typos to the checker.
 # Runtime/build output, resolver-owned lockfiles, the parser's recovery
-# records and the corpus comment ledger (hex digests) are not authored prose.
-extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "crates/surface-parser/tests/recovery/", "corpus/uncommented.ledger"]
+# records and the corpus comment and prose ledgers (hex digests) are not
+# authored prose.
+extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "crates/surface-parser/tests/recovery/", "corpus/uncommented.ledger", "corpus/prose.ledger"]
 
 [default]
 # The attribute registry's near-miss witness misspells `identity` on purpose,
