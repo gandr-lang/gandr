@@ -1,0 +1,19 @@
+/// `interop-boundary` is the boundary with Rust: a gandr definition called from Rust, and a Rust function called from gandr.
+///
+/// Implemented: a Rust caller holding a composed program calls a definition by name on values it builds and reads the answer back into its own arena; the arguments are applied in order, an answered function is left unforced, and a refused definition is unrunnable before a run.
+/// Not implemented: values crossing by Rust's default layout, `Option<&u32>` by its niche and a list in two layouts agreeing after transport; an `extern` declaration admitted against its function row when it is declared (#2901).
+///
+/// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call below is one it makes.
+///
+/// - see: corpus/model/interop/boundary/round-trip.gandr
+
+// `double` and `less`.
+import "../../model/interop/boundary/round-trip.gandr";
+
+/// `double` at 21, the call the Rust caller makes first.
+@[ runs("42") ]
+def answer() -> Integer { double(21) }
+
+/// `less` at 7 and 19: the order the Rust caller passes decides the sign.
+@[ runs("-12") ]
+def reversed() -> Integer { less(7, 19) }

@@ -4,6 +4,8 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod boundary;
+#[cfg(test)]
 mod builtins;
 #[cfg(test)]
 mod census;

@@ -1566,15 +1566,92 @@ impl<'source> Program<'source>
                 Choice::Tier(engine.tier()),
                 (&mut store, None),
             )? {
-                Ok(terminal) => match read_back_terminal(&self.arena, &store, terminal, into) {
-                    Ok(read) => Terminal::Read(read),
-                    Err(refusal) => {
-                        Terminal::Ended(Evaluation::Unfinished(Unfinished::Readback(refusal)))
-                    },
-                },
+                Ok(terminal) => self.read_back(&store, terminal, into),
                 Err(evaluation) => Terminal::Ended(evaluation),
             },
         )
+    }
+
+    /// Call the definition at `constant` on `arguments`, values its caller
+    /// built in `into`, and read the answer back into `into`.
+    ///
+    /// # Specification
+    /// - requires: each of `arguments` is a closed value of `into`.
+    /// - ensures: the [`Evaluation::Unrunnable`] [`Self::evaluate`] gives, as
+    ///   [`Terminal::Ended`], before any command is added. Otherwise the
+    ///   definition is forced and applied to `arguments`, the first applied
+    ///   first as a surface call applies its own, and run under the process's
+    ///   policy. The terminal value is read back as the computation returning
+    ///   it into `into`, a suspension answered as itself. A run that blames or
+    ///   sticks, and a terminal that does not read back, end as
+    ///   [`Self::read_on`] ends them.
+    /// - provides: the boundary's call into gandr: a Rust caller holding a
+    ///   composed program runs one of its definitions on values of its own.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition of one parameter answers the double of a
+    ///   positive, a negative and a zero integer; one of two parameters answers
+    ///   each order of its arguments apart, the first applied first; one
+    ///   answering a function answers it unforced; a refused definition ends
+    ///   unrunnable before a run.
+    /// - witness: `tests::boundary::a_definition_answers_the_integer_rust_passes`
+    /// - witness: `tests::boundary::the_arguments_apply_in_the_order_passed`
+    /// - witness: `tests::boundary::a_function_answered_is_not_forced`
+    /// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
+    #[spec(
+        captures: [watermark = self.arena.watermark(), blocked = match self.declarations.get(&constant) {
+            None => Some(Unrunnable::Undeclared(constant)),
+            Some(&Declared { name, slot: Slot::Opaque(Opacity::Data) }) => Some(Unrunnable::Data(name)),
+            Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_) }) => Some(Unrunnable::Refused(name)),
+            Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
+                Some(Unrunnable::Unfocused { declaration: name, refusal }),
+            Some(&Declared { slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed), .. }) => None,
+        }],
+        ensures: |ref ret| blocked.is_none_or(|reason| self.arena.watermark() == watermark
+            && matches!(*ret, Terminal::Ended(Evaluation::Unrunnable(actual)) if actual == reason)),
+    )]
+    #[inline]
+    pub fn call(
+        &mut self,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+    ) -> Terminal<'source>
+    {
+        if let Maybe::Present(unrunnable) = self.unrunnable(constant, Start::Accepted) {
+            return Terminal::Ended(Evaluation::Unrunnable(unrunnable));
+        }
+        let value = into.value_constant(constant);
+        let forced = into.computation_force(value);
+        let root = arguments.iter().fold(forced, |applied, &argument| {
+            into.computation_application(applied, argument)
+        });
+        let mut provenance = Provenance::new();
+        let command = match focus_computation(into, root, &mut self.arena, &mut provenance) {
+            Ok(command) => command,
+            Err(refusal) => {
+                return Terminal::Ended(Evaluation::Unrunnable(self.unfocused(constant, refusal)));
+            },
+        };
+        let mut store = Store::new();
+        let outcome = match gandr_runtime_emitter::evaluate(
+            &self.arena,
+            &self.definitions,
+            command,
+            Fuel::from(RUN_BUDGET),
+            &mut store,
+        ) {
+            Ok(outcome) => outcome,
+            Err(declined) => {
+                return Terminal::Ended(Evaluation::Unfinished(Unfinished::Declined(declined)));
+            },
+        };
+        match self.halted(&store, outcome) {
+            Ok(terminal) => self.read_back(&store, terminal, into),
+            Err(evaluation) => Terminal::Ended(evaluation),
+        }
     }
 
     /// The two commands that run the declaration at `constant` to `reach`,
@@ -1596,17 +1673,47 @@ impl<'source> Program<'source>
         if let Maybe::Present(unrunnable) = self.unrunnable(constant, start) {
             return Err(Evaluation::Unrunnable(unrunnable));
         }
-        self.entries(constant, reach).map_err(|refusal| {
-            Evaluation::Unrunnable(match self.name(constant) {
-                Maybe::Present(declaration) => Unrunnable::Unfocused {
-                    declaration,
-                    refusal,
-                },
-                Maybe::Absent(declaration_name::Absent::Undeclared) => {
-                    Unrunnable::Undeclared(constant)
-                },
-            })
-        })
+        self.entries(constant, reach)
+            .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
+    }
+
+    /// What the declaration at `constant` is when a root running it did not
+    /// focus: unfocused under its name, or undeclared when no name stands at
+    /// the position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unfocused(
+        &self,
+        constant: ConstantIndex,
+        refusal: FocusRefusal,
+    ) -> Unrunnable<'source>
+    {
+        match self.name(constant) {
+            Maybe::Present(declaration) => Unrunnable::Unfocused {
+                declaration,
+                refusal,
+            },
+            Maybe::Absent(declaration_name::Absent::Undeclared) => Unrunnable::Undeclared(constant),
+        }
+    }
+
+    /// The terminal `terminal` of `store` read back into `into`, or the
+    /// refusal of its read-back as the evaluation that ends the run.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_back(
+        &self,
+        store: &Store,
+        terminal: HeapValueId,
+        into: &mut CoreArena,
+    ) -> Terminal<'source>
+    {
+        match read_back_terminal(&self.arena, store, terminal, into) {
+            Ok(read) => Terminal::Read(read),
+            Err(refusal) => Terminal::Ended(Evaluation::Unfinished(Unfinished::Readback(refusal))),
+        }
     }
 
     /// Run the commands on a tier the choice names, forcing a suspended

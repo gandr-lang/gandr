@@ -50,9 +50,7 @@ use super::Program;
 use super::RUN_BUDGET;
 use super::Start;
 use super::Unfinished;
-use super::Unrunnable;
 use super::console;
-use super::declaration_name;
 
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
@@ -254,15 +252,7 @@ impl<'source> Program<'source>
         let command = match focus_computation(&core, root, &mut self.arena, &mut provenance) {
             Ok(command) => command,
             Err(refusal) => {
-                return Entered::Ended(Evaluation::Unrunnable(match self.name(constant) {
-                    Maybe::Present(declaration) => Unrunnable::Unfocused {
-                        declaration,
-                        refusal,
-                    },
-                    Maybe::Absent(declaration_name::Absent::Undeclared) => {
-                        Unrunnable::Undeclared(constant)
-                    },
-                }));
+                return Entered::Ended(Evaluation::Unrunnable(self.unfocused(constant, refusal)));
             },
         };
         let mut store = Store::new();
