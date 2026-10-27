@@ -10,9 +10,26 @@
 # recorded cases runs them through `.config/cases/run.bash` (#3039), never a
 # loop of its own.
 
+# The gate graph holds one of the host's gate slots for its whole run, so at
+# most `GANDR_GATE_SLOTS` (default 2) gates share a host, and its test runner
+# takes the cores divided by the slots (`.config/mise/gate.bash`, #3057). A
+# third gate waits, naming the holders, or with `--no-wait` refuses at once.
 [check]
-description = "Every gate"
-depends = ["check:*"]
+description = "Every gate, in one of the host's gate slots"
+usage = '''
+flag "--no-wait" help="refuse at once, naming the holders, when every gate slot on the host is held"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/mise/gate.bash
+if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
+hold_gate_slot "mise run check"
+NEXTEST_TEST_THREADS=$(gate_threads)
+export NEXTEST_TEST_THREADS
+echo "check: gate slot $gate_slot of $gate_slots, $NEXTEST_TEST_THREADS test threads" >&2
+mise run 'check:*'
+'''
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
 # process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, and the standard library under `library/std`, beside
