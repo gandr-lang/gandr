@@ -305,6 +305,9 @@ use crate::boundary::DeclinedFaceIndex;
 use crate::boundary::DeclinedOpIndex;
 use crate::boundary::InverseFacePresence;
 use crate::boundary::OperationInputCount;
+use crate::indexing::Indexing;
+use crate::indexing::Unsorted;
+use crate::indexing::indexed_reading;
 use crate::term::TermAlphabet;
 use crate::term::conditioned_cell;
 use crate::term::face_cell;
@@ -818,6 +821,13 @@ pub struct PresentedRules
     /// no atom it may not, so it rewrites in no store a critical pair joins
     /// in, and only in [`Self::firing`].
     pub conditioned: Vec<(AdmittedFaceIndex, Cell<TermAlphabet>)>,
+    /// The indices each operation application carries, over a description
+    /// with an indexed sort: every cell's terms carry them, so a call is read
+    /// with them ([`Self::call`]) and a normal form without
+    /// ([`Self::written`]). A presentation's own reading carries none yet,
+    /// its laws over an indexed sort declined; a reading of its oriented
+    /// rules may (#1510).
+    pub indexing: Maybe<Indexing, indexed_reading::Absent>,
 }
 
 impl PresentedRules
@@ -850,6 +860,66 @@ impl PresentedRules
             let _cell = store.insert(cell.clone());
         }
         Cow::Owned(store)
+    }
+
+    /// `call` as the term cells read it: carrying its operations' indices
+    /// over an indexed description, as written otherwise.
+    ///
+    /// # Specification
+    /// - ensures: [`Indexing::call`] of the call under the indexing; the call
+    ///   itself without one.
+    /// - fails: as [`Indexing::call`] does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's sorting refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite of two identities reads with its three
+    ///   objects and back without them, and two identities at two objects are
+    ///   ill sorted.
+    /// - witness: `elaborate::tests::a_presented_reading_carries_its_indices_1510`
+    #[inline]
+    #[spec(ensures: |ret| match self.indexing {
+        Maybe::Present(ref indexing) => ret == indexing.call(call),
+        Maybe::Absent(_) => ret.as_ref() == Ok(call),
+    })]
+    pub fn call(
+        &self,
+        call: &FreeTerm,
+    ) -> Result<FreeTerm, Unsorted>
+    {
+        match self.indexing {
+            Maybe::Present(ref indexing) => indexing.call(call),
+            Maybe::Absent(_) => Ok(call.clone()),
+        }
+    }
+
+    /// `term`, read off a term cell, as written: its indices left off.
+    ///
+    /// # Specification
+    /// - ensures: [`Indexing::strip`] of the term under the indexing; the term
+    ///   itself without one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::call`].
+    /// - witness: `elaborate::tests::a_presented_reading_carries_its_indices_1510`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match self.indexing {
+        Maybe::Present(ref indexing) => ret == indexing.strip(term),
+        Maybe::Absent(_) => ret == *term,
+    })]
+    pub fn written(
+        &self,
+        term: &FreeTerm,
+    ) -> FreeTerm
+    {
+        match self.indexing {
+            Maybe::Present(ref indexing) => indexing.strip(term),
+            Maybe::Absent(_) => term.clone(),
+        }
     }
 }
 
@@ -1066,8 +1136,8 @@ fn elaborate_desc<G>(
     let mut declined_faces = Vec::new();
     // Every face either reading holds, in rule order, and whether one of them
     // calls for the term reading. A law over an indexed sort stays declined:
-    // its indices are bound by the types its variables stand at, which terms
-    // do not carry.
+    // its indices are bound by the sorts its variables stand at, which the
+    // kernel's reading of a presentation does not re-derive yet (#1510).
     let laws_over_terms =
         reading == DescReading::Shape && desc.sorts.iter().all(|sort| sort.indices.is_empty());
     let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
@@ -1118,6 +1188,7 @@ fn elaborate_desc<G>(
             store: terms,
             faces,
             conditioned,
+            indexing: Maybe::Absent(indexed_reading::Absent::Unindexed),
         })
     }
     else {
@@ -3950,6 +4021,89 @@ mod tests
             )],
             elaborate_theory_desc(&indexed).declined_faces,
             "an indexed presentation declines it"
+        );
+    }
+
+    #[test]
+    fn a_presented_reading_carries_its_indices_1510()
+    {
+        // A category's laws over `Hom(dom, cod)` nest an identity where a
+        // composite's argument stands: the presentation declines them until
+        // the kernel re-derives their indices, and a reading carrying them
+        // reads each composite with the objects its sorting fixes.
+        let var = |name: &str| FreeTerm::var(name);
+        let hom = |name: &str, dom: &str, cod: &str| {
+            SortRef::new(name, "Hom").applied([var(dom), var(cod)])
+        };
+        let id = |object: &str| FreeTerm::op("id", [var(object)]);
+        let comp = |f: FreeTerm, g: FreeTerm| FreeTerm::op("comp", [f, g]);
+        let mut category: TheoryDesc<Ungraded> = TheoryDesc::new(
+            NominalId::new(NominalSerial::from(0_u64), "Cat"),
+            Vec::new(),
+            [],
+            [
+                OperDesc::new(
+                    "id",
+                    BridgeArity::single_output([SortRef::new("a", "Ob")], hom("out", "a", "a")),
+                    Attrs::empty(),
+                ),
+                OperDesc::new(
+                    "comp",
+                    BridgeArity::single_output(
+                        [hom("f", "a", "b"), hom("g", "b", "c")],
+                        hom("out", "a", "c"),
+                    ),
+                    Attrs::empty(),
+                ),
+            ],
+            [
+                face(comp(id("a"), var("f")), var("f")),
+                face(comp(var("f"), id("b")), var("f")),
+                face(
+                    comp(comp(var("f"), var("g")), var("h")),
+                    comp(var("f"), comp(var("g"), var("h"))),
+                ),
+            ],
+            DeclPolarity::Data,
+            Attrs::empty(),
+        );
+        category.sorts = [
+            SortDesc::new("Ob", DeclPolarity::Data),
+            SortDesc::family("Hom", DeclPolarity::Data, [
+                SortIndex::new("dom", "Ob"),
+                SortIndex::new("cod", "Ob"),
+            ]),
+        ]
+        .into();
+        assert_eq!(
+            elaborate_theory_desc(&category).presented,
+            Maybe::Absent(presented_reading::Absent::NoTermFace),
+            "a presentation declines the nested laws over the indexed sort"
+        );
+        let presented = PresentedRules {
+            store: CellStore::new(),
+            faces: Vec::new(),
+            conditioned: Vec::new(),
+            indexing: Indexing::of(&category),
+        };
+        let Ok(indexed) = presented.call(&comp(id("x"), id("x")))
+        else {
+            panic!("two identities at one object compose");
+        };
+        assert_eq!(
+            indexed,
+            FreeTerm::op("comp", [var("x"), var("x"), var("x"), id("x"), id("x")]),
+            "the composite carries its three objects"
+        );
+        assert_eq!(
+            presented.written(&indexed),
+            comp(id("x"), id("x")),
+            "and is written without them"
+        );
+        assert_eq!(
+            presented.call(&comp(id("x"), id("y"))),
+            Err(Unsorted::Clash),
+            "identities at two objects do not compose"
         );
     }
 

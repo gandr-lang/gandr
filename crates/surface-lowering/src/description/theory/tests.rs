@@ -1392,11 +1392,10 @@ fn the_description_is_read_off_the_value()
     };
     assert_eq!(
         (id.arity.inputs.to_vec(), id.arity.outputs.to_vec()),
-        (vec![SortRef::new("a", "Ob")], vec![SortRef::new(
-            "_1",
-            "Hom(a, a)"
-        )]),
-        "an unnamed port at its placeholder, its sort spelled from the value"
+        (vec![SortRef::new("a", "Ob")], vec![
+            SortRef::new("_1", "Hom").applied([FreeTerm::var("a"), FreeTerm::var("a")])
+        ]),
+        "an unnamed port at its placeholder, its sort applied to its index terms"
     );
     let [ref face] = *description.rules.as_ref()
     else {

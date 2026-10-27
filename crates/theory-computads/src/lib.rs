@@ -132,6 +132,7 @@ extern crate alloc;
 
 mod boundary;
 mod elaborate;
+mod indexing;
 mod instantiate;
 mod term;
 
@@ -159,6 +160,9 @@ pub use crate::elaborate::elaborate_rule;
 pub use crate::elaborate::elaborate_theory_desc;
 pub use crate::elaborate::presented_reading;
 pub use crate::elaborate::read_command;
+pub use crate::indexing::Indexing;
+pub use crate::indexing::Unsorted;
+pub use crate::indexing::indexed_reading;
 pub use crate::instantiate::CellInstantiationError;
 pub use crate::instantiate::CircuitShift;
 pub use crate::instantiate::CircuitShiftObstruction;

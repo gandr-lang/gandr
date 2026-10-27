@@ -1,0 +1,23 @@
+/// `nested-operation-laws`: Operations nested in a law or a call.
+/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused.
+/// Not implemented: a law nesting an operation over an indexed sort, and a family's rule nesting one, are refused `UndescribedMember.NestedOperation` until the kernel re-derives the indices they carry; #1510 owes it.
+// A choice that commits to its left branch once a cut stands there, over a
+// sort graded by how a computation may end (#2792): `orBot(cut, fail)` nests
+// two operations where the cell layer reads values, so it normalizes over
+// terms, `fail` carrying the grade `top` its sorting fixes.
+
+/// Choice with cut over a grade-indexed sort: `cutLeft` commits to the left
+/// branch whatever grade the right one stands at.
+@[ normalizes("orBot(cut, fail) ~> cut") ]
+theory GradedCut {
+  sort Grade : Type;
+  sort M(g : Grade) : Type;
+
+  oper bot : () --> Grade;
+  oper top : () --> Grade;
+  oper cut : () --> M(bot());
+  oper fail : () --> M(top());
+  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
+
+  rule cutLeft : orBot(x, y) ==> x;
+}

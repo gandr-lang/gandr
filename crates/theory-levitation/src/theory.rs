@@ -2783,9 +2783,10 @@ impl TheoryOperation
     }
 }
 
-/// The port `port` codes, under `name`: its sort spelled, and each binder as
-/// its name over its domain, the domain's sort name applied to its index
-/// terms, which is how `check_desc` resolves a binder's representability.
+/// The port `port` codes, under `name`: its sort's name applied to its index
+/// terms, and each binder as its name over its domain, the domain's sort name
+/// applied to its index terms, which is how `check_desc` resolves a binder's
+/// representability.
 ///
 /// # Specification
 /// trivial.
@@ -2808,13 +2809,14 @@ fn port_ref(
             })
             .collect::<Vec<_>>()
     };
-    SortRef::new(name, spelled(port))
+    SortRef::new(name, port.sort.clone())
+        .applied(port.indices.clone())
         .pi_plus(binders(&port.bindings))
         .abstracting(binders(&port.abstractions))
 }
 
-/// A port's sort as the description spells it: its name, applied to its
-/// index terms when it has any.
+/// A sort index's sort as the description spells it: its name, applied to
+/// its index terms when it has any.
 ///
 /// # Specification
 /// trivial.
