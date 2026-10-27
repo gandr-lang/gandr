@@ -49,6 +49,7 @@ use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
+use gandr_surface_corpus::BoundaryClause;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -109,6 +110,34 @@ impl fmt::Display for Plain<'_>
                     "`{schema}` is an expectation only a fixture may state; outside the fixture \
                      root a declaration states `checks` or `runs`"
                 )
+            },
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised { clause, .. }) => {
+                f.write_str(match clause {
+                    BoundaryClause::Arity => {
+                        "a member of the block takes a different number of arguments than its row"
+                    },
+                    BoundaryClause::Members => {
+                        "the block declares a different number of members than its `boundary` \
+                         attribute names rows"
+                    },
+                    BoundaryClause::Size => {
+                        "a type a member of the block declares differs in size from its row's"
+                    },
+                    BoundaryClause::Align => {
+                        "a type a member of the block declares differs in alignment from its row's"
+                    },
+                    BoundaryClause::Niche => {
+                        "a type a member of the block declares keeps its discriminant in a niche \
+                         where its row's does not, or the reverse"
+                    },
+                    BoundaryClause::Destroy => {
+                        "a type a member of the block declares needs drop where its row's value is \
+                         handled bitwise"
+                    },
+                    BoundaryClause::Unanswered => {
+                        "the block's boundary check answered no admission"
+                    },
+                })
             },
         }
     }

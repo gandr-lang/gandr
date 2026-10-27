@@ -1,23 +1,41 @@
-// An `extern "rust"` block beyond the form, and a call its block does not
-// declare, each refused where it stands.
+// An `extern "rust"` block outside the form or its row, and an undeclared
+// call, each refused where it stands.
 //
 // A member's types are the four fixed-width atoms, which cross as the values
 // the runtime holds. A wider type needs a layout to cross by, and the lowering
-// reads none yet.
+// reads none yet. A block naming its members' rows is admitted only when each
+// declared type has its row's layout under Rust's default.
 //
 // The first block's member takes an `Integer` and is refused at that type. The
-// second block declares only `add`, so `less` performs an operation it does
-// not declare.
+// second declares its count `u64` against a row of two `u32`, so its check
+// fails on size. The third declares only `add`, so `less` performs an
+// operation it does not declare.
 //
 // - see: #327 — not implemented: a member's type beyond the fixed-width atoms
 // - see: `model/interop/boundary/round-trip.gandr` — the form, called from
-//   Rust
+//   Rust, and admitted against its row
+
+// `Row`, `Codes`, `Code` and `admitBlock`.
+import "../../../../library/std/src/boundary.gandr";
+
+// `U32`, the scalar a `u32` is coded as.
+import "../../../../library/std/src/layout.gandr";
 
 /// A member that takes an arbitrary-precision integer, which no fixed width
 /// carries.
 @[ refuses("OutOfFragment.extern_block") ]
 extern "rust" from "wide" as Wide {
   def widen(x : Integer) -> u64;
+}
+
+/// `add`'s row: two `u32` to a `u32`.
+def addRow : Row = Row(Arg(Plain(U32), Arg(Plain(U32), NoCode)), Plain(U32));
+
+/// The adder declared with a count twice its row's width: rustc lays a `u64`
+/// out in eight bytes, the row's `u32` in four.
+@[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
+extern "rust" from "counted" as Counted {
+  def add(x : u32, n : u64) -> u32;
 }
 
 /// The Rust caller's adder.

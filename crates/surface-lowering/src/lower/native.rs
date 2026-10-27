@@ -10540,7 +10540,7 @@ fn arm_read(
 ///
 /// # Specification
 /// trivial.
-fn constructed(
+pub(super) fn constructed(
     arena: &mut CoreArena,
     family: ConstantIndex,
     tag: ConstructorTag,

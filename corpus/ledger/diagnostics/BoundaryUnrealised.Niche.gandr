@@ -1,0 +1,16 @@
+/// `BoundaryUnrealised.Niche`: an `extern "rust"` block whose member declares a type laid out as its row's but for the niche its row's keeps its discriminant in.
+// `Row`, `Codes`, `Code` and `admitBlock`.
+import "../../../library/std/src/boundary.gandr";
+// `U32`, `Ref`, `Field`, `Done`, `Variant`, `NoVariant`.
+import "../../../library/std/src/layout.gandr";
+
+/// `Option<&u32>`: one word, its discriminant in the reference's null.
+def optRef : Code = Sum(Variant("Some", Field("0", Ref, Done), Variant("None", Done, NoVariant)));
+
+/// A `u32` and an `Option<&u32>` to a `u32`.
+def borrowedRow : Row = Row(Arg(Plain(U32), Arg(optRef, NoCode)), Plain(U32));
+
+@[ boundary(borrowedRow), refuses("BoundaryUnrealised.Niche") ]
+extern "rust" from "niched" as Niched {
+  def add(x : u32, n : u64) -> u32;
+}

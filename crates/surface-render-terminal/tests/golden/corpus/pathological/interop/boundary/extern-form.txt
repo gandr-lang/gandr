@@ -1,16 +1,24 @@
 error[OutOfFragment.extern_block]: the extern block is not supported yet
-   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:20:17
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:28:17
    │
-20 │   def widen(x : Integer) -> u64;
+28 │   def widen(x : Integer) -> u64;
    │                 ━━━━━━━ a form the fragment does not admit
    │
    ├ note: `extern` is refused with OutOfFragment.extern_block, as its expectation states
    ╰ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
 
-error[UnresolvedName]: `sub` is not defined
-   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:30:48
+error[BoundaryUnrealised.Size]: a type a member of the block declares differs in size from its row's
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:36:4
    │
-30 │ def less(x : u32) -> [Boundary] u32 { Boundary.sub(x, x) }
+36 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
+   │    ━━━━━━━━━━━━━━━━ a row the block's members do not realise
+   │
+   ╰ note: `Counted` is refused with BoundaryUnrealised.Size, as its expectation states
+
+error[UnresolvedName]: `sub` is not defined
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:48:48
+   │
+48 │ def less(x : u32) -> [Boundary] u32 { Boundary.sub(x, x) }
    │                                                ━━━ not found in this scope
    │
    ╰ note: `less` is refused with UnresolvedName, as its expectation states

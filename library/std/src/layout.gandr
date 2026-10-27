@@ -27,6 +27,10 @@ pub data Scalar : Type {
   U32 : Scalar;
   /// `u64`.
   U64 : Scalar;
+  /// `i32`.
+  I32 : Scalar;
+  /// `i64`.
+  I64 : Scalar;
   /// `bool`, whose 254 values past `true` are invalid.
   Flag : Scalar;
   /// `&T`, whose null is invalid.
@@ -151,6 +155,8 @@ def bytes(s : Scalar) -> Integer {
     U16 => 2,
     U32 => 4,
     U64 => 8,
+    I32 => 4,
+    I64 => 8,
     Flag => 1,
     Ref => 8
   }
@@ -163,6 +169,8 @@ def niche(s : Scalar) -> Integer {
     U16 => 0,
     U32 => 0,
     U64 => 0,
+    I32 => 0,
+    I64 => 0,
     Flag => 254,
     Ref => 1
   }

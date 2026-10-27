@@ -77,8 +77,8 @@ corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.gandr Passive b7c483b226
 corpus/ledger/diagnostics/UsedAfterClose.gandr Passive 48fdba9b30261fbb
 corpus/ledger/diagnostics/ViewOfNoPlace.gandr Tense 4b9b72f4be9b6034
 corpus/ledger/features/abi-realizability.gandr Tense 0a8c7d0f162c0ae7
-corpus/ledger/features/abi-realizability.gandr Tense 94a3851896326746
-corpus/ledger/features/abi-realizability.gandr Tense 9dcad33b5794ba46
+corpus/ledger/features/abi-realizability.gandr Tense 25663d926c37a2e0
+corpus/ledger/features/abi-realizability.gandr Tense 5b100e5027d0efeb
 corpus/ledger/features/atom-identity.gandr Passive 6652465232bf2746
 corpus/ledger/features/atom-identity.gandr Passive 780eaa821f24c981
 corpus/ledger/features/atom-identity.gandr Tense 50c3deb814ab0f20
@@ -1109,7 +1109,6 @@ crates/storage-values/README.md IngMain f27842cdfa743a93
 crates/surface-corpus/README.md Passive 1020525fdac9af18
 crates/surface-corpus/README.md Passive 3783997c18446b55
 crates/surface-corpus/README.md Passive aba927a6da737d5e
-crates/surface-corpus/README.md Glossary 3875f6f6ad65dee4
 crates/surface-corpus/README.md Glossary f1c7afe8ba05d191
 crates/surface-diagnostics/README.md Tense 0a3e2fde4ece19f9
 crates/surface-dispatcher/README.md Tense 30f62e5d9d0d6fe2
@@ -1137,6 +1136,11 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ArmsDisagr
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AtomTransport.txt Procedure 02a6dd8aa9cfc435
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BareFeedback.txt Procedure e784308710873fd7
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Boundary.txt Procedure 9126c3a296ea1610
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Align.txt Procedure f3c9181fdda6032c
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Arity.txt Procedure ef18c94a8f00253c
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Members.txt Procedure e040c5caff4cb97f
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Niche.txt Procedure 2f82c38bff5d28c5
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Size.txt Procedure a9f90cd2878c4391
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BufferRead.txt Procedure 0a2e133342c95951
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BufferReturnedTwice.txt Procedure fb3721e82ab44bc8
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BufferUnreturned.txt Procedure 3ca985386a84894e
@@ -1617,6 +1621,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/include/reduct.t
 crates/surface-render-terminal/tests/golden/corpus/pathological/include/rules-join.txt Procedure 619bf53038cb702c
 crates/surface-render-terminal/tests/golden/corpus/pathological/include/rules-join.txt Procedure 96467b02f6114680
 crates/surface-render-terminal/tests/golden/corpus/pathological/include/two-joins.txt Procedure 96467b02f6114680
+crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary/extern-form.txt Procedure a9f90cd2878c4391
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary/extern-form.txt Procedure debbb6e4a988e561
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary/function-row.txt Procedure d8336f02b0ac3488
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/thir/example.txt Procedure a216726a9afbb013

@@ -112,6 +112,9 @@ pub data Position : Type {
 pub data Clause : Type {
   /// The extern takes a different number of arguments.
   Arity : Clause;
+  /// The block declares a different number of members than the attribute
+  /// names rows.
+  Members : Clause;
   /// A size differs.
   Size : (place : Position) --> Clause;
   /// An alignment differs.
@@ -188,6 +191,81 @@ pub def admit(d : Declared, r : Row) -> Admission {
     Declared(ps, res) => case r {
       Row(cs, rc) => case admitArgs(ps, cs, 0) {
         Admitted => check(res, rc, Result),
+        Unrealised(cl) => Unrealised(cl)
+      }
+    }
+  }
+}
+
+/// An extern's parameters in order, each named and coded as its declared type
+/// is.
+pub data Coded : Type {
+  /// No more parameters.
+  NoCoded : Coded;
+  /// A parameter's name and its type's code, then the rest.
+  Coded : (name : String, c : Code, rest : Coded) --> Coded;
+}
+
+/// An extern's signature as its declared types' codes: what an `extern "rust"`
+/// block declares, before Rust's layout prints it.
+pub data Signature : Type {
+  /// The signature.
+  Signature : (params : Coded, result : Code) --> Signature;
+}
+
+/// A code's layout as rustc prints it, read off Rust's default layout. Every
+/// code here is handled bitwise, so none needs drop.
+pub def printed(c : Code) -> Printed {
+  case summary(c) {
+    Witness(size, _stride, align, _h) => Printed(size, align, niched(c), false)
+  }
+}
+
+/// Each parameter's code printed, in order.
+def rec printedParams(cs : Coded) -> Params {
+  case cs {
+    NoCoded => NoParam,
+    Coded(n, c, rest) => Param(n, printed(c), printedParams[<](rest))
+  }
+}
+
+/// A signature against a row: each declared type printed by Rust's default
+/// layout, then admitted.
+pub def admitSignature(s : Signature, r : Row) -> Admission {
+  case s {
+    Signature(ps, res) => admit(Declared(printedParams(ps), printed(res)), r)
+  }
+}
+
+/// An `extern "rust"` block's members' signatures, in written order.
+pub data Signatures : Type {
+  /// No more members.
+  NoSignature : Signatures;
+  /// A member's signature, then the rest.
+  Member : (s : Signature, rest : Signatures) --> Signatures;
+}
+
+/// The rows a `boundary` attribute names, one per member in written order.
+pub data Rows : Type {
+  /// No more rows.
+  NoRow : Rows;
+  /// A row, then the rest.
+  Named : (r : Row, rest : Rows) --> Rows;
+}
+
+/// Each member against its row, in order, answered by the first member left
+/// unrealised. A block of more members than rows, or fewer, is unrealised by
+/// `Members`. The check of a block carrying `@[ boundary(…) ]` runs it.
+pub def rec admitBlock(ss : Signatures, rs : Rows) -> Admission {
+  case ss {
+    NoSignature => case rs {
+      NoRow => Admitted,
+      Named(_r, _rest) => Unrealised(Members)
+    },
+    Member(s, more) => case rs {
+      NoRow => Unrealised(Members),
+      Named(r, rest) => case admitSignature(s, r) {
+        Admitted => admitBlock[<](more, rest),
         Unrealised(cl) => Unrealised(cl)
       }
     }

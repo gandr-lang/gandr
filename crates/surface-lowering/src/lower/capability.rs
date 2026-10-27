@@ -690,8 +690,8 @@ impl Sink<'_>
         let mut parameters: Vec<ValueTypeId> = Vec::new();
         for operation in &foreign.operations {
             parameters.clear();
-            for &written in &operation.parameters {
-                parameters.push(self.foreign_type(written));
+            for parameter in &operation.parameters {
+                parameters.push(self.foreign_type(parameter.ty));
             }
             let payload = if let [only] = *parameters.as_slice() {
                 only

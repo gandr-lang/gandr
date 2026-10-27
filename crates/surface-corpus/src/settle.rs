@@ -83,6 +83,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::RegisteredAttribute;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::coincide::CallText;
@@ -238,8 +239,9 @@ pub enum Produced<'source>
     Judged(Verdict),
     /// The lowering refused the declaration, so the checker never saw it.
     Unlowered(LoweringRefusal<'source>),
-    /// The root refused an expectation the declaration carries; this stands
-    /// in place of whatever the declaration produced.
+    /// This crate refused the declaration, and the refusal stands in place of
+    /// whatever it produced: the root, an expectation it carries; or a
+    /// boundary check's run, the clause the block's members break.
     Guarded(CorpusRefusal),
 }
 
@@ -1004,12 +1006,14 @@ impl Error for SettleFault
 ///   its name, span and admission position. A lowering refusal consumes no
 ///   checker verdict; other declarations pair with the checker by admission
 ///   position. Root guards override produced verdicts without dropping their
-///   owed obligations. Only accepted declarations stating a run outcome or a
-///   web call `runner`'s run or its decomposition, and only checker-refused
-///   declarations stating a run beside their refusal call its refused run, once
-///   each in order; only accepted declarations stating a normal form read one,
-///   through [`LoweredModule::normal_form`], under the rules of the block that
-///   holds them; an admitted law the checker owes is owed nothing; the report
+///   owed obligations. An accepted declaration carrying `boundary` calls
+///   `runner`'s run, and a clause the run names stands in place of its verdict.
+///   Only accepted declarations stating a run outcome or a web call `runner`'s
+///   run or its decomposition, and only checker-refused declarations stating a
+///   run beside their refusal call its refused run, once each in order; only
+///   accepted declarations stating a normal form read one, through
+///   [`LoweredModule::normal_form`], under the rules of the block that holds
+///   them; an admitted law the checker owes is owed nothing; the report
 ///   preserves the checker ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
@@ -1038,6 +1042,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
 /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
 /// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
+/// - witness: `settle::tests::a_boundary_check_stands_as_its_run_answers_2901`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -1060,6 +1065,10 @@ impl Error for SettleFault
                                         schema, expectation::ExpectationSchema::Owes |
                                         expectation::ExpectationSchema::Refuses
                                     ) && declaration.stated == expectation::owing_nothing()
+                            }
+                            Produced::Guarded(CorpusRefusal::BoundaryUnrealised { .. }) => {
+                                !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                                    && boundary_at(module.attributes(), lowered).is_some()
                             }
                             Produced::Unlowered(refusal) => {
                                 matches!(
@@ -1306,6 +1315,18 @@ pub fn settle_after<'source>(
         let produced = match expectations.guard {
             Maybe::Present(refusal) => Produced::Guarded(refusal),
             Maybe::Absent(expectation::guard::Absent::Admitted) => produced,
+        };
+        // A boundary check stands as its run answers: a clause its members
+        // break refuses the block in place of the checker's verdict.
+        let produced = match (boundary_at(module.attributes(), lowered), produced) {
+            (
+                Some(span),
+                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+            ) => match CorpusRefusal::unrealised(&runner.run(lowered.constant()), span) {
+                Maybe::Present(refusal) => Produced::Guarded(refusal),
+                Maybe::Absent(_) => produced,
+            },
+            (Some(_) | None, _) => produced,
         };
         let ran = match (&expectations.stated, produced) {
             (
@@ -1638,6 +1659,34 @@ fn attributes<'table>(
         }
     };
     first.iter().chain(second.iter())
+}
+
+/// The bytes of the `boundary` attribute `lowered` carries, when it carries
+/// one: the block it introduces is checked by its run.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the span of the first `boundary` entry among `lowered`'s
+///   attributes; none when it carries none.
+/// - provides: what settlement reads a boundary check by.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a checked block and a plain declaration separate the
+///   answers.
+/// - witness: `settle::tests::a_boundary_check_stands_as_its_run_answers_2901`
+#[spec(ensures: |ret| ret == attributes(table, lowered)
+    .find(|entry| entry.name() == RegisteredAttribute::BOUNDARY)
+    .map(AttributeEntry::span))]
+fn boundary_at(
+    table: &AttributeTable,
+    lowered: &LoweredDeclaration<'_>,
+) -> Option<ByteSpan>
+{
+    attributes(table, lowered)
+        .find(|entry| entry.name() == RegisteredAttribute::BOUNDARY)
+        .map(AttributeEntry::span)
 }
 
 /// The entries filed under the form that introduced `lowered` when it writes
@@ -2329,6 +2378,109 @@ mod tests
             5_usize,
             "every name is reported, run or not"
         );
+    }
+
+    /// #2901: a block carrying `boundary` stands as its check's run answers.
+    /// An admission keeps the checker's verdict, so the block checks; a
+    /// clause refuses the block at its attribute in place of that verdict,
+    /// and settles only the block that states it. The check alone is run.
+    #[test]
+    fn a_boundary_check_stands_as_its_run_answers_2901()
+    {
+        let declared = concat!(
+            "data Scalar : Type { U32 : Scalar; }\n",
+            "data Code : Type { Plain : (s : Scalar) --> Code; }\n",
+            "data Coded : Type { NoCoded : Coded; Coded : (name : String, c : Code, rest : Coded) --> Coded; }\n",
+            "data Signature : Type { Signature : (params : Coded, result : Code) --> Signature; }\n",
+            "data Signatures : Type { NoSignature : Signatures; Member : (s : Signature, rest : Signatures) --> Signatures; }\n",
+            "data Row : Type { Row : (result : Code) --> Row; }\n",
+            "data Rows : Type { NoRow : Rows; Named : (r : Row, rest : Rows) --> Rows; }\n",
+            "data Admission : Type { Admitted : Admission; }\n",
+            "def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n",
+            "def addRow : Row = Row(Plain(U32));\n",
+        );
+        let size = RefusalName::BoundaryUnrealised(crate::refusal::BoundaryClause::Size.tag());
+        let rows = [
+            (
+                "",
+                "Admitted",
+                Outcome::Checks(ObligationCount::from(0_usize)),
+                Settlement::Settled,
+            ),
+            (
+                "",
+                "Unrealised(Size(Argument(1)))",
+                Outcome::Refuses(size),
+                Settlement::Unsettled,
+            ),
+            (
+                r#", refuses("BoundaryUnrealised.Size")"#,
+                "Unrealised(Size(Argument(1)))",
+                Outcome::Refuses(size),
+                Settlement::Settled,
+            ),
+            (
+                r#", refuses("BoundaryUnrealised.Size")"#,
+                "Unrealised(Members)",
+                Outcome::Refuses(RefusalName::BoundaryUnrealised(
+                    crate::refusal::BoundaryClause::Members.tag(),
+                )),
+                Settlement::Unsettled,
+            ),
+            (
+                "",
+                "stopped short",
+                Outcome::Refuses(RefusalName::BoundaryUnrealised(
+                    crate::refusal::BoundaryClause::Unanswered.tag(),
+                )),
+                Settlement::Unsettled,
+            ),
+        ];
+        for (stated, ran, outcome, settlement) in rows {
+            let text = format!(
+                "{declared}@[ boundary(addRow){stated} ]\nextern \"rust\" from \"b\" as B {{ def add(x : u32) -> u32; }}\n"
+            );
+            let module = checked(SourceText::from(text.as_str()));
+            let mut asked = Vec::new();
+            let mut runner = |constant: ConstantIndex| {
+                asked.push(usize::from(constant));
+                RunSpelling::from(String::from(ran))
+            };
+            let report = settle(
+                CorpusRoot::Fixture,
+                &module.arena,
+                &module.module,
+                &module.verdicts,
+                &mut runner,
+            )
+            .expect("the verdicts are the module's own");
+            let Some(check) = report
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name == SurfaceName::from("B"))
+            else {
+                panic!("the block takes its check's slot");
+            };
+            assert_eq!(
+                (check.outcome(), check.settlement()),
+                (outcome, settlement),
+                "`{ran}` against `{stated}` produces and settles as pinned"
+            );
+            assert_eq!(
+                asked,
+                [usize::from(check.constant)],
+                "`{ran}`: the check alone is run"
+            );
+            if let Produced::Guarded(CorpusRefusal::BoundaryUnrealised { span, .. }) =
+                check.produced
+            {
+                assert_eq!(
+                    text.get(usize::from(span.start()) .. usize::from(span.end())),
+                    Some("boundary(addRow)"),
+                    "`{ran}` is refused at the attribute"
+                );
+            }
+        }
     }
 
     /// A runner recording which of its runs each position asked for.

@@ -41,7 +41,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 ## Examples
 
-The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
+The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests.
 
 The headline sources' hover goldens belong to `gandr-surface-lsp`: its `tests/editor/shapes.rs` lists the sources and specifies a golden's lines.
 
@@ -95,6 +95,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, classed a malformed source.
+- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design (§ layouts-semantic-abi) — the clauses `BoundaryClause` names.
 
 ## License
 

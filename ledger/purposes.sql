@@ -1845,6 +1845,7 @@ INSERT INTO purpose VALUES('surface-corpus','expectation::Outcome','enum','A ver
 INSERT INTO purpose VALUES('surface-corpus','expectation::Stated','enum','What a declaration states.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::guard::Absent','enum','Why a declaration''s expectations raise no corpus refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::normalized_call','function','The call a `normalizes` line reads: the text before its first `~>`, trimmed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','refusal::BoundaryClause','enum','The clause a boundary check''s run names when its block''s members do not realise their rows, the qualifier of RefusalName::BoundaryUnrealised.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::CorpusRefusal','enum','The refusal this crate raises.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::GenericCoverage','enum','What a derivation `Eq.generic` writes does not cover, the qualifier of RefusalName::GenericUncovered.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::LawProof','enum','Why a law of a module''s model stands unproven, the qualifier of RefusalName::UnprovenLaw.',NULL,'fits','sound',NULL);

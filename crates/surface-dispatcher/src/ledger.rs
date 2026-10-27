@@ -2004,6 +2004,7 @@ mod tests
     use gandr_surface_grammar::TileLabel;
     use gandr_surface_grammar::built_in;
     use gandr_surface_grammar::built_in_prec_table;
+    use gandr_surface_lowering::AttributeRegistry;
 
     use super::Code;
     use super::Counted;
@@ -2088,24 +2089,10 @@ mod tests
             .iter()
             .map(|row| row.name.as_str())
             .collect();
+        let registered = AttributeRegistry::names();
+        let expected: Vec<&str> = registered.iter().map(AsRef::as_ref).collect();
         assert_eq!(
-            attributes,
-            [
-                "checks",
-                "owes",
-                "refuses",
-                "runs",
-                "normalizes",
-                "decomposes",
-                "doc",
-                "explicit_exits",
-                "explicit_runs",
-                "respects",
-                "entry",
-                "form",
-                "identity",
-                "deprecated"
-            ],
+            attributes, expected,
             "one row per registered attribute, in registry order"
         );
     }

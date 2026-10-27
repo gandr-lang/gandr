@@ -46,7 +46,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredStructure`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names; [`module`](src/module.rs) names the types they are read through.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
-- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from the `Theory` value `theory S` defines, a module ascribed `: Model(S)` checked against it, packed by `pack M at Model(S)`, and a theory's description and presentation handed to later passes; type members with parameters (`module::model`).
+- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from a theory, checked and packed, and type members with parameters.
 - Binary sessions: a session type read whole into one protocol; `send`, `select`, `offer` and `close`, and the statements `recv(c) as x ;` and `fork (c : S) t as d ;`, lowered to core session actions; `fork !`, `dup`, `acquire` and `release` reserved by name.
 - Worlds: `world w ;` as `DeclarationOutcome::World`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
 
@@ -120,6 +120,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design — what `with sort x = A` fixes.
 - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax bikeshed — the row entry's spelling.
 - `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
+- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
 
 ## License
 
