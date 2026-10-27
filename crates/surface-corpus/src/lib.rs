@@ -232,11 +232,14 @@
 //! # A comment on every fixture item
 //!
 //! Every `.gandr` source under `fixture/` opens with a comment, and every
-//! top-level item carries a doc comment or a line comment immediately before
-//! its attribute block. A body on the line after its commented signature
-//! of the same name inherits that comment: one comment per run of a name.
-//! The `comments` test refuses a source that does not, naming the file and
-//! the item, and ratchets against `fixture/uncommented.ledger`.
+//! item carries a doc comment or a line comment immediately before its
+//! attribute block, the members of a block included: a `module` or `rec`
+//! block's members are items, and a `data`, `codata` or `theory` block's
+//! members are commented immediately before them. A body on the line after
+//! its commented signature of the same name inherits that comment: one
+//! comment per run of a name. The `comments` test refuses a source that does
+//! not, naming the file and the item, and ratchets against
+//! `fixture/uncommented.ledger`.
 //!
 //! **A ledger ratchet, not a one-shot comment pass.** The fixture already
 //! holds sources whose items have no comment. Writing every comment in the
@@ -248,10 +251,11 @@
 //! down and never added. The alternative was that one-shot pass with no
 //! ledger: every source green on the day, and no gate afterwards.
 //!
-//! **Content keys, not positions.** A ledger line is `path:name:digest`,
-//! the digest the first sixteen hex digits of BLAKE3 over the item's text
-//! with whitespace collapsed and comments and the attribute block left out;
-//! the ledger's first line states that shape. A key survives edits elsewhere
+//! **Content keys, not positions.** A ledger line is `path:name:digest`, or
+//! `path:block.member:digest` for a block's member, the digest the first
+//! sixteen hex digits of BLAKE3 over the item's text with whitespace
+//! collapsed and comments and the attribute block left out; the ledger's
+//! first line states that shape. A key survives edits elsewhere
 //! in the file and a reordering of its items, and two items of one name are
 //! told apart by their text. Editing an item moves its key, so its line goes
 //! stale and the edit owes the item its comment. The alternative was a byte

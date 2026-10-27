@@ -7,9 +7,10 @@ use anodized::spec;
 use crate::comments::judge::Finding;
 
 /// The ledger's first line: the shape of every line after it.
-const HEADER: &str = "# path:name:digest, the digest the first sixteen hex digits of BLAKE3 over \
-                      the item's text with whitespace collapsed and comments and the attribute \
-                      block left out; path:<file> for a source with no leading comment";
+const HEADER: &str = "# path:name:digest, or path:block.member:digest for a block's member, the \
+                      digest the first sixteen hex digits of BLAKE3 over the item's text with \
+                      whitespace collapsed and comments and the attribute block left out; \
+                      path:<file> for a source with no leading comment";
 
 /// One way the findings and the ledger disagree.
 ///

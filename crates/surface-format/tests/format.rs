@@ -111,6 +111,12 @@ fn attributes_and_documentation_keep_their_lines()
 }
 
 #[test]
+fn a_block_members_documentation_stays_before_its_member()
+{
+    golden(Path::new("members"));
+}
+
+#[test]
 fn the_arity_shaped_formers_keep_their_written_spelling()
 {
     golden(Path::new("arity"));
