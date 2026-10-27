@@ -120,6 +120,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems` — exemplar: § 8.2's Lemma 9, the stretch of one step bounded by how often the contractum writes a hole — the count the census reports per cell.
 - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed manifests — metadata is gandr, so `gandr.toml` is output, never read.
+- `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: one store.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — the census reports each cell's counts.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts.
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures try-first.

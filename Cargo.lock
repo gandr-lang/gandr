@@ -758,6 +758,7 @@ name = "gandr-lang"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-storage-store",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
  "gandr-surface-format",
@@ -851,6 +852,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-storage-store"
+version = "0.0.0"
+dependencies = [
+ "gandr-storage-chunker",
+ "gandr-storage-records",
+ "gandr-storage-values",
+ "quenchant-anodized",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-storage-values"
 version = "0.0.0"
 dependencies = [
@@ -918,6 +930,8 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-emitter",
+ "gandr-storage-store",
+ "gandr-storage-values",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-format",

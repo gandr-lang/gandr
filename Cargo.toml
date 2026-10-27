@@ -19,6 +19,7 @@ members = [
   "crates/storage-chunker",
   "crates/storage-records",
   "crates/storage-schema",
+  "crates/storage-store",
   "crates/storage-values",
   "crates/surface-corpus",
   "crates/surface-diagnostics",
@@ -131,6 +132,7 @@ default-features = false
 # - storage-chunker
 # - storage-records
 # - storage-schema
+# - storage-store
 # - storage-values
 # - surface-corpus
 # - surface-diagnostics
@@ -475,6 +477,7 @@ path = "crates/storage-artifact"
 # committed parameters that decide it.
 # consumers:
 # - storage-records
+# - storage-store
 # - storage-values
 [workspace.dependencies.gandr-storage-chunker]
 path = "crates/storage-chunker"
@@ -483,6 +486,7 @@ path = "crates/storage-chunker"
 # consumers:
 # - storage-artifact
 # - storage-schema
+# - storage-store
 # - storage-values (dev)
 # - surface-corpus (dev)
 # - surface-lsp
@@ -490,6 +494,22 @@ path = "crates/storage-chunker"
 # - surface-session
 [workspace.dependencies.gandr-storage-records]
 path = "crates/storage-records"
+
+# One store over the value plane, the record plane and named roots, under one
+# directory.
+# consumers:
+# - surface-dispatcher
+# - surface-driver
+[workspace.dependencies.gandr-storage-store]
+path = "crates/storage-store"
+
+# The content-addressed value plane: one value as a typed chunk DAG under
+# content pointers.
+# consumers:
+# - storage-store
+# - surface-dispatcher
+[workspace.dependencies.gandr-storage-values]
+path = "crates/storage-values"
 
 # The expectation language: the expectation schemas, the strict and fixture
 # roots, the settle comparison and the report shape.
@@ -1143,6 +1163,7 @@ default-features = false
 # - kernel-term
 # - runtime-stencils (dev)
 # - storage-artifact
+# - storage-store
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher

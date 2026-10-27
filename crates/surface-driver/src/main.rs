@@ -287,6 +287,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_storage_store::Store;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
@@ -319,6 +320,7 @@ use gandr_surface_dispatcher::ManifestFault;
 use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Package;
+use gandr_surface_dispatcher::PackageAddress;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
@@ -944,24 +946,66 @@ struct Packaged
 #[derive(Debug)]
 enum Locking
 {
-    /// The lock they resolve to, and what reconciling the file did.
-    Held(Reconciled, Lock),
+    /// The lock they resolve to, what reconciling the file did, and the
+    /// package's address over the lock.
+    Held(Reconciled, Lock, Result<PackageAddress, Unaddressed>),
     /// They resolve to no lock.
     Unresolved(Unresolved),
     /// The lock standing was not reconciled.
     Refused(LockFault),
 }
 
-/// Resolve `package`'s dependencies and hold its lock to them, as `gandr
-/// check` does before it walks, so every import through an alias reads the
-/// lock from the walk's first source.
+/// The store [`config::store`] names, opened, or the exit code a fault on
+/// standard error leaves the run at.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`Package::resolve`] under the built-in grammar, then
-///   [`reconcile_lock`]: [`Locking::Held`] with what it did and the lock,
-///   [`Locking::Refused`] with its fault, and [`Locking::Unresolved`] for
-///   dependencies that do not resolve or a grammar that does not build.
+/// - ensures: the store [`Store::open`] opens at the directory
+///   [`config::store`] names; when no directory is named, or the store does not
+///   open, `gandr: <why>` on standard error and the faulted exit.
+/// - provides: the one store a `check` or a `lock` run opens.
+/// - fails: the faulted exit, as above.
+/// - panics: none.
+/// - executable: none — the outcome is the environment's and the file system's.
+///
+/// # Errors
+/// The faulted [`ExitCode`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lock written through the store holds the pointers the
+///   store answers, and a homeless run with nowhere to put the store faults.
+/// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+/// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
+fn opened() -> Result<Store, ExitCode>
+{
+    let fault = |why: &dyn core::fmt::Display| {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        let _written = writeln!(std::io::stderr(), "gandr: {why}");
+        ExitCode::from(FAULTED)
+    };
+    let Some(root) = config::store()
+    else {
+        return Err(fault(
+            &"no directory names the store: set `XDG_DATA_HOME` or `HOME`",
+        ));
+    };
+    Store::open(&root).map_err(|error| fault(&error))
+}
+
+/// Resolve `package`'s dependencies into `store` and hold its lock to them,
+/// as `gandr check` does before it walks, so every import through an alias
+/// reads the lock from the walk's first source, and address the package over
+/// the lock.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Package::resolve`] under the built-in grammar into `store`,
+///   then [`reconcile_lock`]: [`Locking::Held`] with what it did, the lock and
+///   the package's address over it, read through `store`, as
+///   [`Package::identity`] gives it; [`Locking::Refused`] with its fault, and
+///   [`Locking::Unresolved`] for dependencies that do not resolve or a grammar
+///   that does not build.
 /// - provides: the lock step of `gandr check`.
 /// - fails: never; each outcome is a variant.
 /// - panics: none.
@@ -969,20 +1013,32 @@ enum Locking
 ///   witness observes.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a lock written, unchanged, drifted and relocked.
+/// - hypothesis: L3 — a lock written, unchanged, drifted and relocked, and its
+///   pointers answered by the store the run opened.
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
-fn locking(package: &Package) -> Locking
+/// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
+fn locking(
+    package: &Package,
+    store: &mut Store,
+) -> Locking
 {
-    let resolved = match built_in() {
-        Ok(grammar) => package.resolve(&grammar),
-        Err(error) => Err(Unresolved::Undeclared {
-            package: package.root().to_path_buf(),
-            why: error.to_string(),
-        }),
+    let grammar = match built_in() {
+        Ok(grammar) => grammar,
+        Err(error) => {
+            return Locking::Unresolved(Unresolved::Undeclared {
+                package: package.root().to_path_buf(),
+                why: error.to_string(),
+            });
+        },
     };
-    match resolved {
+    match package.resolve(&grammar, store) {
         Ok(lock) => match reconcile_lock(package, &lock) {
-            Ok(reconciled) => Locking::Held(reconciled, lock),
+            Ok(reconciled) => {
+                let address = package
+                    .identity(&grammar, &Unshadowed, &lock, store)
+                    .map(|identity| identity.address);
+                Locking::Held(reconciled, lock, address)
+            },
             Err(fault) => Locking::Refused(fault),
         },
         Err(unresolved) => Locking::Unresolved(unresolved),
@@ -995,12 +1051,13 @@ fn locking(package: &Package) -> Locking
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the packages [`packaged`] reaches from `paths`, each in order
-///   resolved by [`Package::resolve`] under the built-in grammar and written by
-///   [`relock`]: `lock: <path>: <what>` on standard output for each lock
-///   written, rewritten or unchanged, `gandr: <root>: <why>` on standard error
-///   for dependencies that do not resolve, which exits `1`, and `gandr: <path>:
-///   <why>` for a lock that cannot be written, which exits `2`; paths reaching
-///   no package exit as [`unpathed`] does.
+///   resolved by [`Package::resolve`] under the built-in grammar into the store
+///   [`opened`] opens, and written by [`relock`]: `lock: <path>: <what>` on
+///   standard output for each lock written, rewritten or unchanged, `gandr:
+///   <root>: <why>` on standard error for dependencies that do not resolve,
+///   which exits `1`, and `gandr: <path>: <why>` for a lock that cannot be
+///   written, which exits `2`; paths reaching no package exit as [`unpathed`]
+///   does.
 /// - provides: `gandr lock`.
 /// - fails: never; every failure is an exit code.
 /// - panics: none.
@@ -1026,10 +1083,14 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
             return ExitCode::from(FAULTED);
         },
     };
+    let mut store = match opened() {
+        Ok(store) => store,
+        Err(exit) => return exit,
+    };
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
         let path = package.root().join(LOCK);
-        let (written, reached) = match package.resolve(&grammar) {
+        let (written, reached) = match package.resolve(&grammar, &mut store) {
             Ok(lock) => match relock(package, &lock) {
                 Ok(reconciled) => (
                     writeln!(stdout, "lock: {}: {reconciled}", path.display()),
@@ -1146,15 +1207,17 @@ enum Screen
 ///   `packaged`). `check` and `test` walk their paths, print what [`render`]
 ///   prints, and exit `0`, `1` or `2` as the run settled, was unsettled or
 ///   faulted, `check` reconciling each package's lock and manifest as [`run`]
-///   states; `lock` rewrites each package's lock as [`lock`] states; `run` runs
-///   its script as [`script`] states, and `fmt` lays out its paths as [`fmt`]
-///   states. `lsp` serves and `lsp --capabilities` prints as [`lsp`] and
-///   [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
-///   [`tui`] states. Every face writes its types and values in the spelling
-///   [`spelling`] resolves; a configuration file that cannot be read is `gandr:
-///   <path>: <fault>` on standard error and exits `2` before any verb runs.
-///   Output the driver cannot write is noted on standard error, when that is
-///   writable, and exits `2`.
+///   states; `check` reaching a package, and `lock`, first open the store as
+///   [`opened`] states, exiting `2` when no directory names it; `lock` rewrites
+///   each package's lock as [`lock`] states; `run` runs its script as
+///   [`script`] states, and `fmt` lays out its paths as [`fmt`] states. `lsp`
+///   serves and `lsp --capabilities` prints as [`lsp`] and [`capabilities`]
+///   state, `repl` runs as [`repl`] states, and `tui` as [`tui`] states. Every
+///   face writes its types and values in the spelling [`spelling`] resolves; a
+///   configuration file that cannot be read is `gandr: <path>: <fault>` on
+///   standard error and exits `2` before any verb runs. Output the driver
+///   cannot write is noted on standard error, when that is writable, and exits
+///   `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -1239,13 +1302,19 @@ fn main() -> ExitCode
             let grant = grant.entering(entry);
             let paths = match packaged(paths, Path::new(".")) {
                 Ok((paths, reached)) => {
-                    packages = reached
-                        .into_iter()
-                        .map(|package| {
-                            let locking = locking(&package);
-                            Packaged { package, locking }
-                        })
-                        .collect();
+                    if !reached.is_empty() {
+                        let mut store = match opened() {
+                            Ok(store) => store,
+                            Err(exit) => return exit,
+                        };
+                        packages = reached
+                            .into_iter()
+                            .map(|package| {
+                                let locking = locking(&package, &mut store);
+                                Packaged { package, locking }
+                            })
+                            .collect();
+                    }
                     paths
                 },
                 Err(unpackaged) => return unpathed(&unpackaged),
@@ -2565,10 +2634,17 @@ fn run(
     };
     let mut verdict = report.verdict(verb);
     for (packaged, manifest) in packages.iter().zip(manifests) {
-        let (reached, lock) = locked(packaged, verbosity, stdout, stderr)?;
+        let (reached, address) = locked(packaged, verbosity, stdout, stderr)?;
         verdict = worse(verdict, reached);
         if let Some(manifest) = manifest {
-            let reached = manifested(&packaged.package, manifest, lock, verbosity, stdout, stderr)?;
+            let reached = manifested(
+                &packaged.package,
+                manifest,
+                address,
+                verbosity,
+                stdout,
+                stderr,
+            )?;
             verdict = worse(verdict, reached);
         }
     }
@@ -2620,11 +2696,14 @@ fn locked<'packaged>(
     verbosity: Verbosity,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
-) -> std::io::Result<(RunVerdict, Option<&'packaged Lock>)>
+) -> std::io::Result<(
+    RunVerdict,
+    Option<&'packaged Result<PackageAddress, Unaddressed>>,
+)>
 {
     let path = packaged.package.root().join(LOCK);
     match packaged.locking {
-        Locking::Held(reconciled, ref lock) => {
+        Locking::Held(reconciled, ref lock, ref address) => {
             if lock.aliases().next().is_some() || reconciled != Reconciled::Unchanged {
                 if verbosity == Verbosity::Json {
                     let line = serde_json::json!({
@@ -2638,7 +2717,7 @@ fn locked<'packaged>(
                     writeln!(stdout, "lock: {}: {reconciled}", path.display())?;
                 }
             }
-            Ok((RunVerdict::Settled, Some(lock)))
+            Ok((RunVerdict::Settled, Some(address)))
         },
         Locking::Unresolved(ref unresolved) => {
             writeln!(
@@ -2662,13 +2741,14 @@ fn locked<'packaged>(
 }
 
 /// Check that the running toolchain meets what `package`'s library asks of
-/// it, then reconcile the manifest with what the library states, and address
-/// the package over `lock`, printing what came of each, and the verdict it
+/// it, then reconcile the manifest with what the library states, and print
+/// the package's address, printing what came of each, and the verdict it
 /// leaves the run at.
 ///
 /// # Specification
-/// - requires: `manifest` is what `package`'s library states, and `lock`, when
-///   given, the lock its dependencies resolve to.
+/// - requires: `manifest` is what `package`'s library states, and `address`,
+///   when given, the package's address over the lock its dependencies resolve
+///   to, as [`locking`] computed it.
 /// - ensures: a library that states no manifest is `gandr: <library>: <why>` on
 ///   standard error and unsettles the run. A manifest whose toolchain the
 ///   running one leaves unmet ([`gandr_surface_dispatcher::Toolchain::unmet`]
@@ -2676,14 +2756,13 @@ fn locked<'packaged>(
 ///   on standard error, one line per constraint unmet, writes nothing and
 ///   unsettles. Otherwise the manifest is reconciled at `package`'s root:
 ///   written, rewritten or unchanged is `manifest: <path>: <what> (address
-///   <hex>)` on standard output, the address of the package's
-///   [`Package::identity`] over `lock` under the built-in grammar, at the JSON
-///   level an object whose `level` is `manifest` carrying `address`, and
-///   settles. A package with no address prints the line without it, then
-///   `gandr: <library>: <why>` on standard error, and unsettles; one given no
-///   lock prints the line without it and settles, its lock having unsettled the
-///   run already; drift is `gandr: <path>: <why>` on standard error and
-///   unsettles; a file that cannot be read or written likewise, and faults.
+///   <hex>)` on standard output, the address `address` holds, at the JSON level
+///   an object whose `level` is `manifest` carrying `address`, and settles. A
+///   package with no address prints the line without it, then `gandr:
+///   <library>: <why>` on standard error, and unsettles; one given no address
+///   prints the line without it and settles, its lock having unsettled the run
+///   already; drift is `gandr: <path>: <why>` on standard error and unsettles;
+///   a file that cannot be read or written likewise, and faults.
 /// - provides: the manifest step `run` takes for each package.
 /// - fails: the first write error on either stream.
 /// - panics: none.
@@ -2703,7 +2782,7 @@ fn locked<'packaged>(
 fn manifested(
     package: &Package,
     manifest: Result<Manifest, Unmanifested>,
-    lock: Option<&Lock>,
+    address: Option<&Result<PackageAddress, Unaddressed>>,
     verbosity: Verbosity,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
@@ -2737,17 +2816,7 @@ fn manifested(
     let path = package.manifest();
     match reconcile(&path, &manifest) {
         Ok(reconciled) => {
-            let address = lock.map(|lock| match built_in() {
-                Ok(grammar) => package
-                    .identity(&grammar, &Unshadowed, lock)
-                    .map(|identity| identity.address),
-                Err(error) => Err(Unaddressed::Unlowered {
-                    source: package.library().to_path_buf(),
-                    why: error.to_string(),
-                }),
-            });
             let shown = address
-                .as_ref()
                 .and_then(|address| address.as_ref().ok())
                 .map(ToString::to_string);
             if verbosity == Verbosity::Json {
@@ -2770,8 +2839,8 @@ fn manifested(
                 writeln!(stdout, "manifest: {}: {reconciled}", path.display())?;
             }
             match address {
-                None | Some(Ok(_)) => Ok(RunVerdict::Settled),
-                Some(Err(unaddressed)) => {
+                None | Some(&Ok(_)) => Ok(RunVerdict::Settled),
+                Some(&Err(ref unaddressed)) => {
                     writeln!(
                         stderr,
                         "gandr: {}: {unaddressed}",

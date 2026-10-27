@@ -8,8 +8,9 @@
 // out (#3030): a package's name, version, authors and licence, and where it is
 // documented and fetched from, say what it is called, not what it is. What a
 // package depends on is not inert: a library's `dependencies` lists each
-// `Dependency`, `gandr check` locks each one's address in `gandr.lock`, and
-// the package's address digests those addresses (#3072). Nor is what a
+// `Dependency`, `gandr check` commits each one's address to the store and
+// locks the pointer to it in `gandr.lock`, and the package's address digests
+// those addresses (#3072). Nor is what a
 // package asks of the toolchain that checks it: `gandr check` refuses a
 // package whose `Toolchain` the running toolchain does not meet, and the
 // package's address digests it.
@@ -100,8 +101,9 @@ pub theory Gandr.Module {
   oper path : String;
 }
 
-/// Where a dependency is found: never part of what it is, which its address
-/// in the dependent's `gandr.lock` says.
+/// Where a dependency is found: never part of what it is, which its address,
+/// read back from the store at the pointer the dependent's `gandr.lock`
+/// records, says.
 pub data Coordinate : Type {
   /// A directory rooting the dependency, read from the dependent's root.
   Path : (path : String) --> Coordinate;

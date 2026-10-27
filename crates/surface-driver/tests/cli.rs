@@ -157,7 +157,9 @@ impl Drop for Scratch
 /// - requires: arguments have stable operating-system string views.
 /// - ensures: selects the built driver and preserves arguments in order; the
 ///   user's configuration directory is one no test writes, so a configuration
-///   file on the host never reaches a case that does not write its own.
+///   file on the host never reaches a case that does not write its own, and the
+///   user's data directory is one only the tests' stores use, so no case writes
+///   the host's store.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -181,6 +183,10 @@ where
     command.env(
         "XDG_CONFIG_HOME",
         std::env::temp_dir().join("gandr-driver-unconfigured"),
+    );
+    command.env(
+        "XDG_DATA_HOME",
+        std::env::temp_dir().join("gandr-driver-data"),
     );
     command
 }
@@ -1589,6 +1595,83 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
     assert_eq!(
         line(&settled),
         Some(format!("{}: unchanged", named.display()))
+    );
+}
+
+/// #3157: `check` of a package depending on a sibling opens the store under
+/// the XDG data home and locks the sibling by a pointer into it, whose chunk
+/// the store holds; removing the store leaves the lock as it stands on the
+/// next run, which commits the chunk again; and a run with nowhere to put the
+/// store faults before it checks anything.
+#[test]
+fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
+{
+    let scratch = Scratch::new(Path::new("store"));
+    let _hello = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
+    );
+    let _sibling = scratch.file(
+        Path::new("sibling/src/lib.gandr"),
+        Text::from(
+            format!(
+                "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
+                 alias = \"hello\", coordinate = Path(\"../hello\") }}];\npub def greeting = \
+                 hello.welcome;\n",
+                LIBRARY.replace("\"hello\"", "\"sibling\"")
+            )
+            .as_str(),
+        ),
+    );
+    let data = scratch.0.join("data");
+    let chunks = data.join("gandr/store/chunks");
+    let check = || {
+        let mut command = gandr(&[Path::new("check"), Path::new("sibling")]);
+        command.current_dir(&scratch.0).env("XDG_DATA_HOME", &data);
+        ran(command)
+    };
+    let first = check();
+    assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
+    let lock =
+        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).expect("the lock reads");
+    let pointer = lock
+        .lines()
+        .find_map(|line| line.strip_prefix("hello = { path = \"../hello\", pointer = \""))
+        .and_then(|rest| rest.strip_suffix("\" }"))
+        .expect("the lock locks hello by a pointer");
+    let (digest, offset) = pointer
+        .split_once(':')
+        .expect("a pointer is a digest and an offset");
+    assert_eq!(offset, "0", "an identity is its chunk's root");
+    assert!(
+        chunks.join(digest).is_file(),
+        "the store under the XDG data home holds the pointer's chunk: {}",
+        chunks.display()
+    );
+    std::fs::remove_dir_all(&data).expect("the store is removed");
+    let again = check();
+    assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
+    assert_eq!(
+        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock"))
+            .ok()
+            .as_ref(),
+        Some(&lock),
+        "removing the store leaves the lock as it stands"
+    );
+    assert!(
+        chunks.join(digest).is_file(),
+        "the run commits the chunk again"
+    );
+    let mut homeless = gandr(&[Path::new("check"), Path::new("sibling")]);
+    let _unset = homeless
+        .current_dir(&scratch.0)
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("HOME");
+    let faulted = ran(homeless);
+    assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
+    assert_eq!(
+        stderr(&faulted),
+        "gandr: no directory names the store: set `XDG_DATA_HOME` or `HOME`\n"
     );
 }
 
