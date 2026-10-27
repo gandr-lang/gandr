@@ -1096,6 +1096,46 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
     );
 }
 
+/// #2995: before the fix, `back` and `then` over a named path read no type
+/// off the name, so a value declared as either was refused as unannotated
+/// though its type and its operand's were stated.
+#[test]
+fn a_derived_operation_reads_a_named_paths_stated_type_2995()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "def named : Path(Circle, Base, Base) = loop;\n",
+            "def flipped : Path(Circle, Base, Base) = back(named);\n",
+            "def round : Path(Circle, Base, Base) = named then back(named);\n",
+            "def unstated = loop;\n",
+            "def overUnstated : Path(Circle, Base, Base) = back(unstated);\n",
+        )),
+        &mut arena,
+    );
+    for name in ["flipped", "round"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` reads the path type `named` states: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "overUnstated".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            })
+        ),
+        "a name stating no type gives no path to read"
+    );
+}
+
 /// #812: before the fix, a call read its callee's dependent result through
 /// the alias `(a : A) => B` but not through the thunk it stands for, `+U ((a
 /// : A) -> -F B)`, so the explicit spelling refused the call as unannotated.

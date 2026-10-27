@@ -1929,7 +1929,6 @@ model/layouts/ribbit-list.gandr:<file> unshaped:ReferenceOutsideReferences
 model/layouts/ribbit-list.gandr:<file> unshaped:Semicolon
 model/layouts/ribbit-list.gandr:<file> unshaped:SentenceLength
 model/layouts/ribbit-list.gandr:<file> unshaped:WhatLength
-model/layouts/ribbit-list.gandr:comment:75a2fd561450e0ad unshaped:ItemShape
 model/layouts/rust-default.gandr:<file> unshaped:HeadParagraphs
 model/layouts/rust-default.gandr:<file> unshaped:ReferenceOutsideReferences
 model/layouts/rust-default.gandr:<file> unshaped:Semicolon

@@ -36,3 +36,15 @@ def loopsRound(
 /// A loop carried to the integers and back again is the loop, by a run.
 @[ runs("loop ∷ here(Base)") ]
 def roundRun : () => Path(Circle, Base, Base) = loopsRound(loopsAreIntegers, loop);
+
+/// The round trip named, its type stated. `then` and `back` read the type
+/// `loopsAreIntegers` states.
+def loopsAndBack : Path(
+  Type,
+  Path(Circle, Base, Base),
+  Path(Circle, Base, Base)
+) = loopsAreIntegers then back(loopsAreIntegers);
+
+/// A loop carried along the named round trip is the loop, by a run.
+@[ runs("loop ∷ here(Base)") ]
+def namedRoundRun() -> Path(Circle, Base, Base) { transport(\X. X, loopsAndBack, loop) }

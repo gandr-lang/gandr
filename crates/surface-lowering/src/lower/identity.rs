@@ -2792,15 +2792,16 @@ impl<'source> Lowerer<'_, 'source>
 
     /// What the path operand `path` is read at when its own form does not
     /// spell its type: a parameter by its binder's written type, a call by
-    /// its function's written result.
+    /// its function's written result, a named declaration by its signature.
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified every node.
     /// - ensures: through transparent plans, a variable, or a binder named in a
     ///   type, whose binder's written type is a path type under any
     ///   parentheses, as [`Typed::Parameter`]; a call whose head is a
-    ///   declaration whose tail or signature writes a path result, or a
-    ///   recursive call's descent claim, as [`Typed::Called`].
+    ///   declaration whose tail or signature writes a path result, a recursive
+    ///   call's descent claim, or a bare name of a declaration whose signature
+    ///   states a path type ([`Self::stated_path`]), as [`Typed::Called`].
     /// - fails: [`synthesised::Absent::Unread`] for any other path.
     /// - panics: none.
     ///
@@ -2811,8 +2812,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a path parameter in a body and in a type, a call of a
     ///   definition, of a signature and a recursive call each read, a parameter
-    ///   of no path type not.
+    ///   of no path type not; a named value declaration stating its path read.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_named_paths_stated_type_2995`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(typed) => self.path_written(typed.node()).is_some(),
         | Maybe::Absent(_) => true,
@@ -2841,6 +2843,9 @@ impl<'source> Lowerer<'_, 'source>
             {
                 parameter(binder, Some(from))
             },
+            Some(&Plan::Constant(constant)) => self
+                .stated_path(constant)
+                .map_or(unread, |callee| Maybe::Present(Typed::Called(callee))),
             Some(&Plan::Application(head, arguments)) => {
                 let mut head = head;
                 while let Some(&Plan::Transparent(inner)) = self.plans.get(head) {
@@ -2994,6 +2999,61 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// What a bare name of the declaration at `constant` reads its type off:
+    /// the path type its signature states, as a call of no arguments.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified the declaration.
+    /// - ensures: the signature's written type, a value type, with no
+    ///   parameters, arguments or staging, when it is a path type under any
+    ///   parentheses.
+    /// - fails: none for a declaration whose signature states no path type, or
+    ///   that has no written signature.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `back` and `then` over value declarations stating a
+    ///   path between types and one between elements each read the stated path.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_named_paths_stated_type_2995`
+    #[spec(ensures: |ret| ret.is_none_or(|callee| callee.arity == 0 && !callee.returned
+        && matches!(self.plans.get(callee.result), Some(&Plan::Path(..)))))]
+    fn stated_path(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<Callee>
+    {
+        let Maybe::Present(Half {
+            operand: Operand::Written(written),
+            ..
+        }) = self.collected.slots.get(usize::from(constant))?.signature
+        else {
+            return None;
+        };
+        let mut at = written.node;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        let Some(&Plan::Path(..)) = self.plans.get(at)
+        else {
+            return None;
+        };
+        let none = Stretch { start: 0, end: 0 };
+
+        Some(Callee {
+            parameters: none,
+            arity: 0,
+            recursive: None,
+            result: at,
+            returned: false,
+            arguments: none,
+            descends: false,
+        })
+    }
+
     /// What a call of the function tail `function` reads its result off.
     ///
     /// # Specification
@@ -3081,8 +3141,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   the synthesised operations whose own type is read.
     /// - ensures: through parentheses, the node itself when it is a loop, a
     ///   word of a loop's words, an answered derived operation, one in `read`,
-    ///   or a parameter or a call [`Self::typed`] reads in a declaration that
-    ///   lowers.
+    ///   or a parameter, a call or a named declaration [`Self::typed`] reads in
+    ///   a declaration that lowers.
     /// - fails: [`synthesised::Absent::Unread`] for any other path;
     ///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -3099,6 +3159,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::refuse_unsynthesised`].
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_named_paths_stated_type_2995`
     #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
     fn reads_path(
         &mut self,
@@ -3116,6 +3177,9 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Some(&Plan::Constant(constant)) => {
                     matches!(self.words_at(constant), Maybe::Present(_))
+                        || self
+                            .stated_path(constant)
+                            .is_some_and(|callee| !self.collected.refused(callee.result).0)
                 },
                 Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
