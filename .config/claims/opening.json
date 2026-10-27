@@ -1152,5 +1152,59 @@
       "vault": null
     },
     "output": ""
+  },
+  {
+    "name": "a closing keyword in prose is refused, naming the line: #2974's `closed #628` closed the std epic on merge (#2980)",
+    "input": {
+      "branch": "std-2971-string-model-owner",
+      "body": "Advances #2971\n\nThe epics workflow closed #628 when #2767 closed, so the ledger row names #2971.\n",
+      "issues": [
+        {
+          "number": 2971,
+          "body": ""
+        }
+      ]
+    },
+    "output": "the body's line `The epics workflow closed #628 when #2767 closed, so the ledger row names #2971.` carries `closed #628`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again"
+  },
+  {
+    "name": "keyword lines at the head, with a full stop or several issues, open; a keyword quoted in a code span or a fenced block is refused, since `pr:open` and the claim lifecycle read it as a closing target (#2980)",
+    "input": {
+      "branch": "workflow-2980-keywords",
+      "body": "Closes #2980.\nCloses #2972, #2977\nAdvances #2973\n\nThe prose names `closed #628` only in code.\n\n```text\nthis fixes #1\n```\n",
+      "issues": [
+        {
+          "number": 2980,
+          "body": ""
+        },
+        {
+          "number": 2972,
+          "body": ""
+        },
+        {
+          "number": 2977,
+          "body": ""
+        },
+        {
+          "number": 2973,
+          "body": ""
+        }
+      ]
+    },
+    "output": "the body's line `The prose names `closed #628` only in code.` carries `closed #628`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again\nthe body's line `this fixes #1` carries `fixes #1`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again"
+  },
+  {
+    "name": "a keyword line with prose after it, one below a heading, and an `owner/name#n` keyword are each refused (#2980)",
+    "input": {
+      "branch": "workflow-2980-keywords",
+      "body": "Closes #2980. Advances #2504: the sweep ticks it.\n\n## Ledger\n\nCloses #2981\n\nThis fixes gandr-lang/quenchant#5 as well.\n",
+      "issues": [
+        {
+          "number": 2980,
+          "body": ""
+        }
+      ]
+    },
+    "output": "the body's line `Closes #2980. Advances #2504: the sweep ticks it.` carries `Closes #2980`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again\nthe body's line `Closes #2981` carries `Closes #2981`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again\nthe body's line `This fixes gandr-lang/quenchant#5 as well.` carries `fixes gandr-lang/quenchant#5`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again"
   }
 ]

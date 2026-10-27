@@ -1,6 +1,6 @@
 Closes #n
 
-<!-- What lands and why. `mise run pr:open '<title>' <body>` refuses a body short of the sections below (units.md § units-pr). -->
+<!-- What lands and why. `mise run pr:open '<title>' <body>` refuses a body short of the sections below (units.md § units-pr). Only the head's `Closes #n` lines close an issue: a closing verb before an issue number anywhere else is refused, since GitHub would close that issue on merge. -->
 
 ## Sources read
 
