@@ -7,7 +7,8 @@
 # A unit issue carries, each with content (`units.md` § units-issue):
 #
 # - `## Sources`: items `` - `<key>` — <what it decides> ``, each marked
-#   primary or secondary;
+#   primary or secondary, or `` - `<key>` — not read: <why> `` for an owner
+#   the term map routes to and the unit declines (#3158);
 # - `## Readings`: a table answering each of the six axes `yes — <what it
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question;
@@ -40,7 +41,7 @@ def findings:
   | need("Sources"),
     ((section("Sources") // []) as $lines
       | ($lines | items | select(keyed == null) | "`## Sources` line `\(.)` is not `- `<key>` — <what it decides>`"),
-        ($lines | items | keyed | select(. != null) | select(.text | test("\\b(primary|secondary)\\b"; "i") | not)
+        ($lines | items | keyed | select(. != null) | select(.text | test("\\b(primary|secondary)\\b|^\\s*not read:\\s*\\S"; "i") | not)
           | "`## Sources` line `\(.line)` marks its source neither primary nor secondary")),
     (if section("Readings") == null then "`## Readings` is missing"
      else [marks] as $marks

@@ -58,5 +58,15 @@
     "name": "a dependency stated in prose, an `after:` line, is refused even beside `## After` (#2902)",
     "input": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\nAfter: #2884 lands first.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
     "output": "the line `After: #2884 lands first.` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"
+  },
+  {
+    "name": "#3158: a `## Sources` line `- `<key>` — not read: <why>` declines a source the term map routes to, and passes unmarked",
+    "input": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n- `storage-metatheory-programme.md` — not read: the unit's store is the emitter's heap\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+    "output": ""
+  },
+  {
+    "name": "#3158: a `not read:` line with no reason is not a decline, and is refused as unmarked",
+    "input": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n- `storage-metatheory-programme.md` — not read:\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+    "output": "`## Sources` line `- `storage-metatheory-programme.md` — not read:` marks its source neither primary nor secondary"
   }
 ]

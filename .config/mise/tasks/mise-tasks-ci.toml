@@ -1483,6 +1483,13 @@ wt step copy-ignored
 # carries is the tree's. Without a vault checkout, as in CI, the lines are
 # read for their shape alone.
 #
+# The term map (#3158): a unit whose title or prose meets a row of
+# `.config/references/terms.toml` is refused while its `## Sources` names
+# none of the vault pages, tree paths or issues that row says own the term
+# (`.config/claims/terms.jq`). A line `- <owner> — not read: <why>` names
+# it. The two listings find what a seat searches for; the map finds what it
+# did not know to search for. An epic or a `collector` is not read.
+#
 # The dependencies (#2902): an issue is GitHub-`blocked by` each issue its
 # `## After` lists, and an epic by each open sub-issue too; the plan is
 # `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
@@ -1496,6 +1503,7 @@ arg "<issue>" help="the issue number"
 flag "--fix" help="set each GitHub dependency the issue owes before checking"
 '''
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1507,9 +1515,14 @@ source "$root/.config/references/vault.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 source "$claims/deps.bash"
 repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
-issued=$(gh api "repos/$repo/issues/$issue" --jq '{number, labels: [.labels[].name], body: (.body // "")}')
+issued=$(gh api "repos/$repo/issues/$issue" --jq '{number, title, labels: [.labels[].name], body: (.body // "")}')
 body=$(jq -r .body <<< "$issued")
 findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq" <<< "$body")
+if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
+  terms=$(jq -n --argjson issued "$issued" --argjson terms "$(yq -o json '.term' "$root/.config/references/terms.toml")" \
+    '{title: $issued.title, body: $issued.body, terms: $terms}' | jq -r -L "$claims" -f "$claims/terms.jq")
+  findings=$(printf '%s\n%s\n' "$findings" "$terms" | awk 'NF')
+fi
 subs='[]'
 if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
   subs=$(deps_sub_issues "$repo" "$issue")
