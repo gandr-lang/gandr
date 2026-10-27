@@ -1760,7 +1760,8 @@ echo "body check OK: nothing on the private-names list in ${usage_title:+the tit
 # before it is filed when it lacks a section (`findings.jq`, as `unit:check`
 # reads it), and once filed has the dependencies its `## After` names set by
 # `unit:check --fix`, so no filed unit lacks them. `--epic <n>` links the
-# issue under the epic and sets the epic `blocked by` it
+# issue under the epic, sets the epic `blocked by` it and takes the epic's
+# `needs:close-ruling` off, the ruling answered by the new unit (#2973)
 # (`.config/claims/deps.bash`). A closing keyword in the body outside its
 # head's keyword lines (`targets.jq`'s `strays`, #2980) is noted on stderr:
 # it does nothing in an issue, but the same words in a pull request's body
@@ -1980,7 +1981,9 @@ echo "epic:deps: ${#epics[@]} epic(s) blocked by their open sub-issues"
 # (prose naming an open issue as `after #n`, `blocked on #n`, `waits on #n`,
 # `once #n lands` or `needs #n`; an `## After` item; an epic's open
 # sub-issue) and for a label set short of one `kind:`, `area:`, `priority:`
-# and `effort:` (`.config/issues/labels.jq`), and writes them on one
+# and `effort:` (`.config/issues/labels.jq`), and for a features ledger row
+# owing on no open issue, or only on epics awaiting their close ruling
+# (`.config/ledger/owing.bash`, #2973), and writes them on one
 # `collector` issue, `report: dependencies`, opened by the first finding,
 # updated each night, and closed by a night with none. The rule is
 # `.config/claims/report.jq`, its cases held by `check:claims`. Only issues
@@ -1998,6 +2001,7 @@ root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 source "$claims/deps.bash"
 source "$root/.config/issues/labels.bash"
+source "$root/.config/ledger/owing.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 write=${REPORT_FILE:-}
 title='report: dependencies'
@@ -2019,9 +2023,12 @@ done < <(jq -c '.[] | select((.labels | index("kind:epic")) or (.body | test("(?
 gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,title,state,body \
   | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
 labels_defaults > "$scratch/defaults.json"
+sqlite3 -bail "$scratch/features.db" < "$root/ledger/features.sql"
+(cd "$root" && ledger_owing "$scratch/features.db") \
+  | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t") | {row: .[0], issues: (.[1] | split(" ") | map(select(. != "") | tonumber))})' > "$scratch/owing.json"
 jq -n --slurpfile open "$scratch/open.json" --slurpfile issues "$scratch/issues.jsonl" --slurpfile filed "$scratch/filed.json" \
-  --slurpfile defaults "$scratch/defaults.json" \
-  '{issues: $issues, open: [$open[0][] | {number, labels}], defaults: $defaults[0], previous: ($filed[0].body // "")}' \
+  --slurpfile defaults "$scratch/defaults.json" --slurpfile owing "$scratch/owing.json" \
+  '{issues: $issues, open: [$open[0][] | {number, labels}], owing: $owing[0], defaults: $defaults[0], previous: ($filed[0].body // "")}' \
   | jq -c -L "$claims" -L "$root/.config/issues" -f "$claims/report.jq" > "$scratch/report.json"
 jq -r .body "$scratch/report.json" > "$scratch/body.md"
 count=$(jq .count "$scratch/report.json")
@@ -2991,7 +2998,9 @@ exit 2
 # is paged by its name, never a block id: the page script resolves it at
 # page time (#2977). Each reading also asks the `check` command whether each
 # seat has a live block, and pages the coordinator once when one has had
-# none for two readings in a row. The thresholds, the page script, the check
+# none for two readings in a row, and once for each epic the epics workflow
+# labelled `needs:close-ruling` (#2973), until the label comes off. The
+# thresholds, the page script, the check
 # and each target's arguments (the triage seat's, the coordinator's, and each
 # lane's seat's under `seats`, a lane without one paging the triage seat) are
 # configuration,
@@ -3064,11 +3073,26 @@ sweep() {
     fi
     gone=$(jq -c --arg s "${args[*]}" '.[$s] += 1' <<< "$gone")
     if [[ $(jq --arg s "${args[*]}" '.[$s]' <<< "$gone") == 2 ]]; then
-      "${command[@]}" "${coordinator[@]}" "STALL seat-gone ${args[*]}: no live block for two readings; it must register" \
+      "${command[@]}" "${coordinator[@]}" "STALL seat-gone ${args[*]}: no live block for two readings; it must register" >&2 \
         || gone=$(jq -c --arg s "${args[*]}" '.[$s] = 1' <<< "$gone")
     fi
   done < <(jq -c '[.triage, (.seats // {})[]] | unique[]' <<< "$page")
   echo "$gone"
+}
+# Each epic awaiting its close ruling (#2973): an open issue labelled
+# `needs:close-ruling` by the epics workflow is paged to the coordinator
+# once, until the label comes off. Reads and answers the epics paged, `[n]`;
+# a failed read pages nothing and keeps them.
+rulings() {
+  local paged=$1 open n
+  open=$(gh issue list -R "$repo" --state open --label needs:close-ruling --limit 100 --json number --jq '[.[].number]') \
+    || { echo "$paged"; return; }
+  for n in $(jq -r --argjson paged "$paged" '.[] | select(. as $n | $paged | index($n) | not)' <<< "$open"); do
+    if "${command[@]}" "${coordinator[@]}" "EPIC #$n awaits its close ruling: every filed sub-issue is closed; close it with the ruling, or file its next unit under it (issue:file --epic $n)" >&2; then
+      paged=$(jq -c --argjson n "$n" '. + [$n]' <<< "$paged")
+    fi
+  done
+  jq -c --argjson open "$open" 'map(select(. as $n | $open | index($n)))' <<< "$paged"
 }
 # Take pull request `$1`'s `<!-- stall -->` comments and its label off.
 release() {
@@ -3126,8 +3150,9 @@ while :; do
     release "$number" || stalled=$(jq -c --arg n "$number" --argjson now "$(date +%s)" '.[$n] = $now' <<< "$stalled")
   done
   gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
-  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" \
-    '{seen, paged: $paged, stalled: $stalled, gone: $gone}' <<< "$reading" > "$stall_state.tmp"
+  ruled=$(rulings "$(stall_memory | jq -c '.rulings // []')")
+  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson rulings "$ruled" \
+    '{seen, paged: $paged, stalled: $stalled, gone: $gone, rulings: $rulings}' <<< "$reading" > "$stall_state.tmp"
   mv "$stall_state.tmp" "$stall_state"
   sleep "$interval"
 done

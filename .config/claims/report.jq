@@ -8,10 +8,13 @@
 #             sub_issues: [{number, state}]}], blocked_by every issue GitHub
 #             has it blocked by, sub_issues an epic's (others: [])
 #   open      every open issue: [{number, labels: [name]}]
+#   owing     the features ledger's rows resting on issues as owing work
+#             (`.config/ledger/owing.bash`): [{row, issues: [number]}]
 #   defaults  `.config/issues/defaults.toml` as JSON
 #   previous  the report issue's body as the last night left it, or ""
 #
-# Four findings, each keyed `<kind>:<issue>:<blocker>` (`labels:<issue>`):
+# Five findings, each keyed `<kind>:<issue>:<blocker>` (`labels:<issue>`,
+# `ledger:<row>`):
 #
 # - prose: a line outside `## After` naming an open issue as `after #n`,
 #   `blocked on #n`, `waits on #n`, `once #n lands` or `needs #n`, with no
@@ -21,7 +24,11 @@
 # - labels: an issue short of its label set, one `kind:`, `priority:` and
 #   `effort:` and one or more `area:` (`labelled` in
 #   `.config/issues/labels.jq`), what `issue:labels --sweep` repairs
-#   included: a kind's default, a `kind:` beside `kind:epic`.
+#   included: a kind's default, a `kind:` beside `kind:epic`;
+# - ledger: a ledger row none of whose owing issues is open, which
+#   `check:ledger` refuses, or whose open ones all await their close ruling
+#   (`needs:close-ruling`, #2973), so that closing them would turn
+#   `check:ledger` red.
 #
 # The body keeps each finding's count of nights running in a trailing
 # comment; one at three nights or more is named a refusal candidate, the
@@ -77,12 +84,23 @@ def nights_cell: "\(.nights)\(if .nights >= 3 then " — a refusal candidate" el
     | {key: "labels:\($self)", issue: $self, found: join("; ")}]
 | sort_by(.issue)
 | map(. + {nights: (($nights[.key] // 0) + 1)}) as $labels
-| ($deps + $labels) as $all
+| ($root.open | map({(.number | tostring): .labels}) | add // {}) as $labelled
+| [($root.owing // [])[]
+    | .row as $row
+    | [.issues[] | select($labelled[tostring])] as $live
+    | if ($live | length) == 0 then
+        {key: "ledger:\($row)", row: $row, found: "owes on \(.issues | map("#\(.)") | join(", ") | if . == "" then "no issue" else "\(.), no open issue" end): `check:ledger` refuses it; name the open issue that owes the rest"}
+      elif ($live | all($labelled[tostring] | index("needs:close-ruling"))) then
+        {key: "ledger:\($row)", row: $row, found: "owes on \($live | map("#\(.)") | join(", ")), awaiting the close ruling: closing it turns `check:ledger` red unless the row names another open issue first"}
+      else empty end]
+| sort_by(.row)
+| map(. + {nights: (($nights[.key] // 0) + 1)}) as $ledger
+| ($deps + $labels + $ledger) as $all
 | {count: ($all | length),
    body: (if ($all | length) == 0 then
-      "The nightly tracker report (`mise run report:deps`, #2902) found every open issue's stated dependencies set on GitHub and its label set full.\n"
+      "The nightly tracker report (`mise run report:deps`, #2902) found every open issue's stated dependencies set on GitHub, its label set full, and every ledger row owing on an open issue.\n"
     else
-      "The nightly tracker report (`mise run report:deps`, #2902): what an open issue says it waits on that GitHub does not record, and each open issue short of its label set. A finding three nights running is a candidate for a refusal (#2902).\n"
+      "The nightly tracker report (`mise run report:deps`, #2902): what an open issue says it waits on that GitHub does not record, each open issue short of its label set, and each ledger row owing on a closed or closing issue. A finding three nights running is a candidate for a refusal (#2902).\n"
       + (if ($deps | length) > 0 then
           "\n## Dependencies\n\nRepair a `## After` or a line of prose by listing the issue in `## After` and running `mise run unit:check --fix <n>`, an epic's by `mise run epic:deps <n>`.\n\n| Issue | Waits on | Found | Nights |\n| --- | --- | --- | --- |\n"
           + ($deps | map("| #\(.issue) | #\(.blocker) | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
@@ -90,6 +108,10 @@ def nights_cell: "\(.nights)\(if .nights >= 3 then " — a refusal candidate" el
       + (if ($labels | length) > 0 then
           "\n## Labels\n\nAn issue carries one `kind:`, `priority:` and `effort:` and one or more `area:`, an epic `kind:epic` alone. Repair a default or an epic's extra kind by `mise run issue:labels --sweep`, the rest by hand.\n\n| Issue | Found | Nights |\n| --- | --- | --- |\n"
           + ($labels | map("| #\(.issue) | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
+        else "" end)
+      + (if ($ledger | length) > 0 then
+          "\n## Ledger\n\nA features row without a witness owes on an open issue (`check:ledger`, #2526, #2635). Repair it by naming the issue that owes the rest in the row's `issue` or its exemplar's `/// Not implemented:` line, before the issue closes (#2973).\n\n| Row | Found | Nights |\n| --- | --- | --- |\n"
+          + ($ledger | map("| `\(.row)` | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
         else "" end)
       + "\n<!-- deps-report: \($all | map({(.key): .nights}) | add | tojson) -->\n"
     end)}

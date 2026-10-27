@@ -1,6 +1,6 @@
-# An epic closes when its last sub-issue closes (#2536, `tracker.md`
+# An epic's closing is a ruling, not an event (#2973, `tracker.md`
 # § tracker-issues): what to do with a closed issue's parent, as one
-# `action<TAB>reason` line.
+# `action<TAB>reason` line. The workflow closes no epic.
 #
 # Input:
 #   repo         the repository the run is in, `owner/name`
@@ -8,10 +8,10 @@
 #   parent       the closed issue's parent: {number, repository, state, labels: [name]}
 #   sub_issues   the parent's sub-issues: [{number, repository, state}]
 #
-# `close` when the parent is an open `kind:epic` in this repository with no
-# open sub-issue left; `list` when it would close but lives in another
-# repository, whose epics this repository's token cannot close; `keep`
-# otherwise, naming why.
+# `ask` when the parent is an open `kind:epic` in this repository with no
+# open sub-issue left, the reason the comment asking for the ruling; `list`
+# when it would ask but lives in another repository, whose epics this
+# repository's token cannot label; `keep` otherwise, naming why.
 
 .repo as $repo
 | .parent as $parent
@@ -20,5 +20,5 @@
   elif ($parent.labels | index("kind:epic")) == null then "keep\tthe parent is not an epic"
   elif ($open | length) > 0 then "keep\t\($open | join(", ")) still open"
   elif $parent.repository != $repo then "list\t\($parent.repository)#\($parent.number) is in another repository"
-  else "close\tClosed by its last sub-issue #\(.closed)."
+  else "ask\tEvery filed sub-issue is closed, the last #\(.closed). Close this epic with its ruling, or file its next unit under it (`mise run issue:file <title> <body> --epic \($parent.number)`, which takes `needs:close-ruling` off)."
   end

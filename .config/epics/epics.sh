@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# An epic closes when its last sub-issue closes (#2536), run by
+# An epic's closing is a ruling, not an event (#2973), asked for by
 # `.github/workflows/epics.yml` on every closed issue, or by hand:
 #
 #   epics.sh <issue> [--dry-run]
 #
 # It reads the closed issue's parent and the parent's sub-issues through the
-# API and lets `close.jq` decide. On `close` it appends the line naming the
-# closing sub-issue to the epic's body and closes it as completed; on `list`
-# (an epic in another repository) and `keep` it prints the reason and changes
-# nothing. `--dry-run` prints the decision without acting on it.
+# API and lets `close.jq` decide. On `ask` it labels the epic
+# `needs:close-ruling` and comments the reason under `<!-- epic-complete -->`,
+# closing nothing: the coordinator closes the epic or files its next unit,
+# and `stall:watch` pages the coordinator while the label stands. On `list`
+# (an epic in another repository) and `keep` it prints the reason and
+# changes nothing. `--dry-run` prints the decision without acting on it.
 set -euo pipefail
 issue=${1:?usage: epics.sh <issue> [--dry-run]}
 dry=${2:-}
@@ -31,20 +33,21 @@ IFS=$'\t' read -r action reason <<< "$decision"
 epic=$(jq -r .number <<< "$parent")
 
 case "$action" in
-  close)
+  ask)
     if [[ "$dry" == --dry-run ]]; then
-      printf 'would close #%s: %s\n' "$epic" "$reason"
+      printf 'would ask for a ruling on #%s: %s\n' "$epic" "$reason"
       exit 0
     fi
-    body=$(gh issue view "$epic" --repo "$repo" --json body --jq .body)
-    # A sibling closing in the same seconds may have written it already.
-    if [[ "$body" != *"Closed by its last sub-issue #"* ]]; then
-      printf '%s\n\n%s\n' "$body" "$reason" | gh issue edit "$epic" --repo "$repo" --body-file - > /dev/null
+    # A sibling closing in the same seconds may have asked already.
+    if jq -e '.labels | index("needs:close-ruling")' <<< "$parent" > /dev/null; then
+      printf 'left #%s: it already awaits its close ruling\n' "$epic"
+      exit 0
     fi
-    gh issue close "$epic" --repo "$repo" --reason completed > /dev/null
-    printf 'closed #%s: %s\n' "$epic" "$reason"
+    gh issue edit "$epic" --repo "$repo" --add-label needs:close-ruling > /dev/null
+    printf '<!-- epic-complete -->\n%s\n' "$reason" | gh issue comment "$epic" --repo "$repo" --body-file - > /dev/null
+    printf 'asked for a ruling on #%s: %s\n' "$epic" "$reason"
     ;;
-  list) printf 'not closed: %s; its last sub-issue #%s closed\n' "$reason" "$issue" ;;
+  list) printf 'not asked: %s; its last sub-issue #%s closed\n' "$reason" "$issue" ;;
   keep) printf 'left #%s: %s\n' "$epic" "$reason" ;;
   *) echo "close.jq gave no decision for #$issue" >&2; exit 1 ;;
 esac

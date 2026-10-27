@@ -8,12 +8,14 @@
 # summary of what, how many and the verdict.
 name: epics
 
-# An epic closes when its last sub-issue closes (#2536, `tracker.md`
-# § tracker-issues). On every closed issue, `.config/epics/epics.sh` reads
-# its parent and the parent's sub-issues, and `close.jq` decides: an open
-# `kind:epic` here with no open sub-issue left gets the line naming the
-# closing sub-issue appended to its body and closes as completed. An epic in
-# another repository is listed in the run log, not closed.
+# An epic's closing is a ruling, not an event (#2973, `tracker.md`
+# § tracker-issues): the workflow closes no epic. On every closed issue,
+# `.config/epics/epics.sh` reads its parent and the parent's sub-issues, and
+# `close.jq` decides: an open `kind:epic` here with no open sub-issue left is
+# labelled `needs:close-ruling` and commented `<!-- epic-complete -->`, and
+# the coordinator, paged by `stall:watch` while the label stands, closes it
+# or files its next unit. An epic in another repository is listed in the run
+# log, not labelled.
 on:
   issues:
     types: [closed]
@@ -22,12 +24,12 @@ permissions:
   contents: read
 # No concurrency group: one shared group would let any later closing replace
 # a pending run, the last sub-issue's among them. Sub-issues closing in the
-# same seconds may both see every sibling closed; the script appends its line
-# only to an epic whose body does not carry it yet.
+# same seconds may both see every sibling closed; the script asks only on an
+# epic not yet labelled.
 
 jobs:
   epics:
-    name: close an epic whose last sub-issue closed
+    name: ask for the close ruling on an epic whose last sub-issue closed
     # ci.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
@@ -42,7 +44,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
           ref: ${{ github.event.repository.default_branch }}
-      - name: close the parent epic
+      - name: ask for the parent epic's close ruling
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
