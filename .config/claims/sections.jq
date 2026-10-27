@@ -68,8 +68,8 @@ def questions:
   {univalent: "what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence",
    oracle: "which part is decided by certificate replay and which is computed; which modality or dominance classifies it",
    descent: "the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left",
-   located: "at which world a judgement or value is meaningful; what crosses worlds, and by what",
-   resident: "representation, sharing, persistence; where integrity stops and replay decides",
+   located: "at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)",
+   resident: "representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides",
    rewriting: "rules and normal forms; rewrites between rewrites; which coherence tier settles them"};
 
 # The marks of an issue's `## Readings` table, read before its subsections:

@@ -1217,7 +1217,7 @@
         }
       ]
     },
-    "output": "restate: `univalent`: what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence\nrestate: `resident`: representation, sharing, persistence; where integrity stops and replay decides\n5\tdefect\tan unstated defect"
+    "output": "restate: `univalent`: what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence\nrestate: `resident`: representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n5\tdefect\tan unstated defect"
   },
   {
     "name": "a refactor in the area is claimed before a performance issue, a gap and a planned unit (#2884)",
@@ -1434,5 +1434,23 @@
       ]
     },
     "output": "sections due: #5 — `## Sources` is missing\nsections due: #5 — `## Readings` is missing\nsections due: #5 — `## Concerns` is missing\nsections due: #5 — `## Ledger` is missing\nsections due: #5 — `## Not in this slice` is missing\nsections due: #5 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n5\tdefect\ta filed defect"
+  },
+  {
+    "name": "#3169: a pick whose `## Readings` lacks `located` and `resident` prints them due with the questions that ask which memory and which crossing",
+    "input": {
+      "area": "area:surface",
+      "order": {},
+      "issues": [
+        {
+          "number": 41,
+          "title": "surface: a value crossing worlds",
+          "labels": ["kind:defect", "area:surface", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "sections due: #41 — `## Readings` has no row for `located`; the axis asks at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)\nsections due: #41 — `## Readings` has no row for `resident`; the axis asks representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n41\tdefect\tsurface: a value crossing worlds"
   }
 ]
