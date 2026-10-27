@@ -4034,6 +4034,26 @@ fn an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A leaf reads every level a dependent switch above it matched at that
+/// switch's constructor: an arm variable at a field an earlier arm's nested
+/// pattern switches, the scrutinee named below the nested switch, and a
+/// variable for the whole scrutinee each read as the arm's answer does, and
+/// a match in an arm whose nested pattern switches its field takes the
+/// answer read at the nested constructor (#3008).
+#[test]
+fn an_arm_variable_at_a_switched_field_reads_its_constructor_3008()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def two(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(Zero), Succ(Zero) => return here(Succ(Zero)), Succ(m) => return here(Succ(m)) }} }}\n\
+         def named(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(n), Succ(Zero) => return here(n), Succ(_) => return here(n) }} }}\n\
+         def whole(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(Zero), m => return here(m) }} }}\n\
+         def unnamed(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(Zero), Succ(Zero) => return here(Succ(Zero)), Succ(Succ(k)) => case k {{ Zero => return here(Succ(Succ(Zero))), Succ(j) => return here(Succ(Succ(Succ(j)))) }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn the_presentation_code_names_its_family_where_a_type_is_read()
 {

@@ -88,13 +88,18 @@
 //! recursive call at a field, `f[<](x)`, then answers the motive at `x`, and
 //! the `Loop(x)` arm the motive at `Loop(x)`; a leaf under such a root reads
 //! the scrutinee's variable as the constructor its branch matched, over the
-//! root's fields. A parameterless family is refined so, and so are the words
-//! over a looped point: a case over `p : Path(Circle, Base, Base)` answers
-//! its motive at `here(Base)`, `loop ∷ q` and `back(loop) ∷ q`, each the
-//! words' own constructor, which both checkers read at the path type. A
-//! family with parameters and the presentation's own keep the answer as
-//! written under the fields, and an answer that does not read the scrutinee
-//! is unchanged, its motive ignoring its binder.
+//! root's fields. A nested switch on a field abstracts that field from the
+//! branch's answer in turn, so a leaf reads every level a dependent switch
+//! above it matched as that switch's constructor over its own fields, read
+//! so in turn: an arm variable at such a level, and the scrutinee's variable
+//! through its fields, read as the answer does. A parameterless family is
+//! refined so, and so are the words over a looped point: a case over
+//! `p : Path(Circle, Base, Base)` answers its motive at `here(Base)`,
+//! `loop ∷ q` and `back(loop) ∷ q`, each the words' own constructor, which
+//! both checkers read at the path type. A family with parameters and the
+//! presentation's own keep the answer as written under the fields, and an
+//! answer that does not read the scrutinee is unchanged, its motive ignoring
+//! its binder.
 //!
 //! - Alternatives: a motive clause written on the case, a second spelling of
 //!   what the result type already states.
@@ -103,21 +108,22 @@
 //!
 //! A match in an arm of another, with no answer of its own, takes the
 //! answer the arm passes its body, read as the arm's leaf reads that body:
-//! where the arm names every field of the root constructor it matched, the
-//! outer scrutinee's variable reads as that constructor over the arm's
-//! variables, through every such arm from the outermost in. Its motive
-//! abstracts its own scrutinee from that answer, and its leaves read their
-//! bodies' variables the same way before their own refinement, so a branch
-//! naming the outer scrutinee reads it at both constructors. An arm that
-//! leaves a field unnamed passes the answer as written, and its own leaf
-//! alone reads the scrutinee at the constructor.
+//! where the arm names every field of the root constructor it matched, by a
+//! variable or by a nested pattern whose own fields it names so, the outer
+//! scrutinee's variable reads as that constructor over what the arm names,
+//! through every such arm from the outermost in. Its motive abstracts its own
+//! scrutinee from that answer, and its leaves read their bodies' variables
+//! the same way before their own refinement, so a branch naming the outer
+//! scrutinee reads it at both constructors. An arm that leaves a field
+//! unnamed passes the answer as written, and its own leaf alone reads the
+//! scrutinee at the constructor.
 //!
 //! - Alternatives: refusing a match in an arm that leaves a field unnamed as
 //!   unannotated, which rejects one whose branches read only the whole
 //!   scrutinee and check against the answer as written.
-//! - Reversal: a leaf that reads each field a nested pattern matched at that
-//!   pattern's constructor (#3008) lets such an arm name what it matched, and
-//!   its answer then reads so too.
+//! - Reversal: an arm body read under a binder for each field its arm leaves to
+//!   a wildcard lets such an arm name that field, and its answer then reads so
+//!   too.
 //!
 //! # The patterns are kept beside the tree
 //!
@@ -1578,30 +1584,59 @@ pub(super) struct ArmReading
     outer: Maybe<ArmIndex, passed::Absent>,
 }
 
-/// The constructor an arm reads its match's scrutinee at, over the binders
-/// of the arm's variables that name its fields.
+/// The constructor an arm reads its match's scrutinee at, over what it
+/// reads each field at.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: `scrutinee` is the binder the case's frame reads the scrutinee
-///   by, intuitionistic; `fields` holds one binder per field of `tag`, in field
-///   order, each an arm variable's.
+///   by, intuitionistic; `read` spells one term in prefix order, a constructor
+///   first.
 /// - executable: none — the binders are coordinates of the lowering's scope.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`ArmReading`].
 /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Settled
 {
     /// The scrutinee's binder.
     scrutinee: ScopeId,
-    /// The bare family the root switch eliminates.
-    family: ConstantIndex,
-    /// The root branch's constructor.
-    tag: ConstructorTag,
-    /// The binder naming each field of the constructor, in field order.
-    fields: Vec<ScopeId>,
+    /// What the arm reads the scrutinee at, in prefix order.
+    read: Vec<Built>,
+}
+
+/// One node of what an arm reads a level of its match's tree at, in prefix
+/// order: the binder of the arm variable settled there, or the constructor a
+/// switch above the arm's leaf matched there, whose fields' readings follow
+/// it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a constructor's `arity` is its field count, and `family` the bare
+///   family that classifies it.
+/// - executable: none — the binders are coordinates of the lowering's scope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ArmReading`].
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Built
+{
+    /// The arm variable's binder.
+    Bound(ScopeId),
+    /// A constructor, its fields' readings after it.
+    Constructed
+    {
+        /// The bare family the switch eliminates.
+        family: ConstantIndex,
+        /// The branch's constructor.
+        tag: ConstructorTag,
+        /// The constructor's field count.
+        arity: usize,
+    },
 }
 
 /// A field read off a data value by its name, `e.l`: the case over `e` whose
@@ -4239,19 +4274,17 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(_),
                 Some(&Test::Data {
                     level,
-                    family: Maybe::Present(family),
+                    family: Maybe::Present(_),
                     ..
                 }),
-            ) if level == TreeLevel::default() => self
-                .scrutinee_binder(frame, scrutinee)?
-                .map(|binder| (family, binder)),
+            ) if level == TreeLevel::default() => self.scrutinee_binder(frame, scrutinee)?,
             (Maybe::Present(_) | Maybe::Absent(_), Some(_) | None) => {
                 Maybe::Absent(settled::Absent::Unswitched)
             },
         };
-        let beneath = match switched {
-            Maybe::Present(_) => beneath_root(&tests),
-            Maybe::Absent(_) => Vec::new(),
+        let refinings = match switched {
+            Maybe::Present(_) => refinings(&tests),
+            Maybe::Absent(_) => Refinings::default(),
         };
         let mut binders = Vec::new();
         for (position, (&(_pattern, body), bound)) in arms.iter().zip(&variables).enumerate() {
@@ -4273,13 +4306,9 @@ impl<'source> Lowerer<'_, 'source>
             self.read(body.node, Reading::Computation(inner));
             if let Maybe::Present(stated) = answer {
                 let settled = match switched {
-                    Maybe::Present((family, binder)) => arm_settled(
-                        &tests,
-                        &beneath,
-                        ArmAt(position),
-                        &binders,
-                        (family, binder),
-                    ),
+                    Maybe::Present(binder) => {
+                        arm_settled(&tests, &refinings, ArmAt(position), &binders, binder)
+                    },
                     Maybe::Absent(reason) => Maybe::Absent(reason),
                 };
                 let at = ArmIndex(self.arms.len());
@@ -9065,18 +9094,18 @@ impl<'source> Lowerer<'_, 'source>
 
     /// What each term variable of `frame` reads as at the arm `arm` and every
     /// arm the answer was passed into before it: the scrutinee of each
-    /// settled one its constructor over the variables naming its fields, the
+    /// settled one its constructor over what the arm reads its fields at, the
     /// outermost arm read first.
     ///
     /// # Specification
     /// - requires: the arms `arm` chains stand on `frame`'s chain.
     /// - ensures: one value per term binder of `frame`, index for index, when
     ///   some arm on the chain is settled and `frame` reads its scrutinee and
-    ///   its fields intuitionistically: each variable read through every such
-    ///   arm from the outermost in, an arm reading its scrutinee's variable as
-    ///   its constructor over its fields' variables and every other variable as
-    ///   itself. The unsettled absence otherwise, every variable reading
-    ///   itself.
+    ///   every variable its reading names intuitionistically: each variable
+    ///   read through every such arm from the outermost in, an arm reading its
+    ///   scrutinee's variable as [`Self::built_value`] builds its reading and
+    ///   every other variable as itself. The unsettled absence otherwise, every
+    ///   variable reading itself.
     /// - provides: the substitution an arm's leaf makes in the arm's body, made
     ///   where a match in that body stands, so the match reads its answer and
     ///   its own leaves read their bodies under it before its own refinement.
@@ -9088,6 +9117,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   arm's constructor over each of its own constructors, and its branches
     ///   read the outer scrutinee there too.
     /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(ref read) => read.len() == self.scope.telescope_binders(frame).count(),
         | Maybe::Absent(_) => true,
@@ -9101,7 +9131,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let context = self.scope.telescope_binders(frame).count();
         let mut readings: Option<Vec<ValueId>> = None;
-        'arms: for reading in self.arms_outward(arm).into_iter().rev() {
+        for reading in self.arms_outward(arm).into_iter().rev() {
             let Maybe::Present(ref settled) = reading.settled
             else {
                 continue;
@@ -9110,15 +9140,10 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let mut fields = Vec::with_capacity(settled.fields.len());
-            for &field in &settled.fields {
-                let Some(index) = self.term_depth(frame, field)
-                else {
-                    continue 'arms;
-                };
-                fields.push(variable(arena, index));
-            }
-            let value = constructed(arena, settled.family, settled.tag, fields);
+            let Some(value) = self.built_value(frame, &settled.read, arena)
+            else {
+                continue;
+            };
             let step: Vec<ValueId> = (0 .. context)
                 .map(|position| {
                     if position == held.0 {
@@ -9145,6 +9170,49 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         readings.map_or(Maybe::Absent(passed::Absent::Unsettled), Maybe::Present)
+    }
+
+    /// The value the prefix-ordered `read` spells under `frame`: an arm
+    /// variable's binder as its variable, a constructor over the values its
+    /// fields spell.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value, when `read` spells exactly one term and `frame`
+    ///   reads every binder it names intuitionistically; none otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arm_readings`].
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+    #[spec(ensures: |ret| ret.is_none_or(|value| arena.value(value).is_some()))]
+    fn built_value(
+        &self,
+        frame: Frame,
+        read: &[Built],
+        arena: &mut CoreArena,
+    ) -> Option<ValueId>
+    {
+        let mut values: Vec<ValueId> = Vec::with_capacity(read.len());
+        for &node in read.iter().rev() {
+            match node {
+                Built::Bound(binder) => {
+                    let index = self.term_depth(frame, binder)?;
+                    values.push(variable(arena, index));
+                },
+                Built::Constructed { family, tag, arity } => {
+                    let from = values.len().checked_sub(arity)?;
+                    let fields = values.drain(from ..).rev().collect();
+                    values.push(constructed(arena, family, tag, fields));
+                },
+            }
+        }
+        match *values.as_slice() {
+            [value] => Some(value),
+            _ => None,
+        }
     }
 
     /// The term index the intuitionistic binder `binder` has from `frame`.
@@ -9185,21 +9253,22 @@ impl<'source> Lowerer<'_, 'source>
     ///   equation, a pruned branch the case of no branches on its equation; a
     ///   sum case for a boolean; an integer comparison bound and cased on; a
     ///   hole for a stuck node; and a leaf as its arm's body with each variable
-    ///   replaced by the level that settled it and the case's context carried
-    ///   under the tree's binders, the scrutinee's variable read at the root's
-    ///   constructor where [`refinements`] refines it. An answer passed into
-    ///   arms is read with each variable of the case's frame as
-    ///   [`Self::arm_readings`] reads it, and each leaf reads its body's
-    ///   variables so before its own refinement. Level zero is the scrutinee
-    ///   itself, carried under the binders above its use, so no binding of it
-    ///   is minted. The root carries the written origin, a leaf's copy of its
-    ///   arm's body the origin of what it copies, every other node the inserted
-    ///   match origin, and the arms are recorded beside the root with the
-    ///   scrutinee's value; a match whose first arm matches anything is that
-    ///   arm's body. A match that writes its answer has its root ascribed it,
-    ///   an integer test's case under the comparison's binder, but for a data
-    ///   case and a dependent split, whose motive is that answer. Nothing when
-    ///   the scrutinee, a reached body or a needed answer did not lower.
+    ///   replaced by what [`level_read`] reads the level that settled it at and
+    ///   the case's context carried under the tree's binders, the scrutinee's
+    ///   variable read as [`level_read`] reads level zero where the root
+    ///   refines it. An answer passed into arms is read with each variable of
+    ///   the case's frame as [`Self::arm_readings`] reads it, and each leaf
+    ///   reads its body's variables so before its own refinement. Level zero is
+    ///   the scrutinee itself, carried under the binders above its use, so no
+    ///   binding of it is minted. The root carries the written origin, a leaf's
+    ///   copy of its arm's body the origin of what it copies, every other node
+    ///   the inserted match origin, and the arms are recorded beside the root
+    ///   with the scrutinee's value; a match whose first arm matches anything
+    ///   is that arm's body. A match that writes its answer has its root
+    ///   ascribed it, an integer test's case under the comparison's binder, but
+    ///   for a data case and a dependent split, whose motive is that answer.
+    ///   Nothing when the scrutinee, a reached body or a needed answer did not
+    ///   lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -9207,6 +9276,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the witnesses read each tree back out of the arena.
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
     /// - witness: `lower::native::tests::literal_patterns_compare_and_branch`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
     /// - witness: `lower::native::tests::a_pattern_hole_leaves_its_leaf_stuck`
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     /// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
@@ -9304,7 +9374,13 @@ impl<'source> Lowerer<'_, 'source>
             },
             Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
         };
-        let refined = refinements(&form.tests, &tracked, scrutinised, sink.arena);
+        let refinings = refinings(&form.tests);
+        let dependent = dependents(&form.tests, &tracked, sink.arena);
+        let readings = Readings {
+            refinings: &refinings,
+            dependent: &dependent,
+            held: held_variable(scrutinised, sink.arena),
+        };
         let mut minted: Vec<Maybe<ComputationId, lowered::Absent>> = Vec::from_iter(
             form.tests
                 .iter()
@@ -9316,7 +9392,8 @@ impl<'source> Lowerer<'_, 'source>
                 .get(position)
                 .copied()
                 .unwrap_or(Maybe::Absent(lowered::Absent::Unminted));
-            let at = refined
+            let at = refinings
+                .under
                 .get(position)
                 .copied()
                 .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
@@ -9328,7 +9405,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let id = mint_test(
                 test,
-                scrutinised,
+                (scrutinised, readings),
                 (&bodies, match armed {
                     Maybe::Present(ref read) => read,
                     Maybe::Absent(_) => &[],
@@ -9690,68 +9767,157 @@ struct Scrutinised
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a node of a match's tree reads its scrutinee as itself.
+    /// Why a leaf of a match's tree reads a level as itself.
     pub mod refined {
-        /// No switch above the node refines the scrutinee to a constructor.
+        /// No switch above the leaf refines the level to a constructor.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The node is the root, or the root is no data switch on the
-            /// scrutinee over a bare family.
+            /// No data switch over a bare family above the node scrutinises
+            /// the level.
             Unswitched,
             /// The scrutinee is no variable of the case's frame.
             Unbound,
-            /// The root's motive does not read its scrutinee.
+            /// The switch's motive does not read its scrutinee.
             Independent,
         }
     }
 }
 
-/// The constructor a leaf reads a match's scrutinee at: the root switch's
-/// branch the leaf descends from, over the root's fields.
+/// A branch of a data switch over a bare family, which the nodes below it
+/// stand under.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: `held` is the scrutinee's index in the case's frame, `family` the
-///   bare family that classifies the root's constructors, `tag` and `arity` the
-///   branch's constructor and its field count.
+/// - ensures: `switch` is the switch's position in its tree, `level` the level
+///   it scrutinises under `depth` tree binders, `family` the bare family that
+///   classifies its constructors, and `tag` and `arity` the branch's
+///   constructor and field count, whose fields are the levels `depth + 1` to
+///   `depth + arity`; `outer` is the branch the switch itself stands under.
 /// - executable: none — the record holds no tree to check its branch against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a leaf under a dependent root reads the scrutinee at its
-///   branch's constructor, and one under an independent root reads it as
-///   itself.
+/// - hypothesis: L3 — a leaf under a dependent switch reads the switched level
+///   at its branch's constructor, and one under an independent switch reads it
+///   as itself.
 /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Refined
+struct Refining
 {
-    /// The scrutinee's index in the case's frame.
-    held: usize,
+    /// The switch's position in its tree.
+    switch: TestAt,
+    /// The level the switch scrutinises.
+    level: TreeLevel,
+    /// The tree binders above the switch.
+    depth: Depth,
     /// The family the bare family type names.
     family: ConstantIndex,
     /// The branch's constructor.
     tag: ConstructorTag,
     /// The constructor's field count.
     arity: usize,
+    /// The branch the switch stands under.
+    outer: Maybe<RefiningAt, refined::Absent>,
 }
 
-/// The root switch's branch a node of a match's tree stands under.
+/// A branch of a match's data switches, by its position in the tree's
+/// [`Refinings`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct RefiningAt(usize);
+
+/// The branches of a match's data switches over bare families, and the
+/// innermost one each node of the tree stands under.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: `tag` is the branch's constructor and `arity` its field count.
-/// - executable: none — the record holds no tree to check its branch against.
+/// - ensures: `under` holds one entry per node of the tree; each entry, and
+///   each branch's `outer`, names a branch of `branches` or none.
+/// - executable: none — the record holds no tree to check its entries against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`beneath_root`].
-/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - hypothesis: L3 — as [`Refining`].
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
 /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RootBranch
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Refinings
 {
-    /// The branch's constructor.
-    tag: ConstructorTag,
-    /// The constructor's field count.
-    arity: usize,
+    /// Every branch of every such switch, each after the branch above it.
+    branches: Vec<Refining>,
+    /// The innermost branch above each node.
+    under: Vec<Maybe<RefiningAt, refined::Absent>>,
+}
+
+impl Refinings
+{
+    /// The branch a node below `under` stands under whose switch scrutinises
+    /// `level`.
+    ///
+    /// # Specification
+    /// - requires: `under` is an entry of [`Self::under`] or a branch's
+    ///   `outer`.
+    /// - ensures: the innermost branch on the chain from `under` out whose
+    ///   switch scrutinises `level`; the unswitched absence when none does.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step moves to a branch stored strictly before the last, so the
+    /// walk ends within the store's length.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Refining`].
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(branch) => branch.level == level,
+        | Maybe::Absent(_) => true,
+    })]
+    fn switched(
+        &self,
+        under: Maybe<RefiningAt, refined::Absent>,
+        level: TreeLevel,
+    ) -> Maybe<&Refining, refined::Absent>
+    {
+        let mut at = under;
+        let mut bound = self.branches.len();
+        while let Maybe::Present(RefiningAt(position)) = at {
+            let Some(branch) = self.branches.get(position).filter(|_| position < bound)
+            else {
+                break;
+            };
+            if branch.level == level {
+                return Maybe::Present(branch);
+            }
+            bound = position;
+            at = branch.outer;
+        }
+        Maybe::Absent(refined::Absent::Unswitched)
+    }
+}
+
+/// What a match's leaves read its tree's levels and its scrutinee's variable
+/// at.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `dependent` holds one entry per node of the tree, whether its
+///   motive reads its binder; `held` is the scrutinee's index in the case's
+///   frame, when it is a variable of it.
+/// - executable: none — the record holds no tree to check its entries against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Refining`].
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+#[derive(Clone, Copy, Debug)]
+struct Readings<'tree>
+{
+    /// The tree's switches' branches.
+    refinings: &'tree Refinings,
+    /// Whether each node's motive reads its binder.
+    dependent: &'tree [Dependent],
+    /// The scrutinee's index in the case's frame.
+    held: Maybe<Depth, refined::Absent>,
 }
 
 /// The motive of every data case and dependent split of a tree, read from the
@@ -9765,16 +9931,16 @@ struct RootBranch
 ///   binders; a data case's motive over a bare family and a dependent split's
 ///   motive is its answer with its scrutinee abstracted, as [`abstracted`]
 ///   reads it, and a data case's motive over any other family is its answer
-///   under one binder more, reading none of it, since [`refinements`] reads no
-///   leaf of it at a constructor (#616). A data case's branches answer its
-///   motive at the constructor over their fields when the motive reads its
-///   binder and the bare family classifies the constructor, and its answer
-///   under their fields otherwise, past their index equations either way; a
-///   pruned branch's case of no branches answers that answer under one binder
-///   more, reading none of it; a dependent split's child answers its motive at
-///   the pair of its two components; every other node passes its answer to its
-///   children under the binders it opens. Nodes other than data cases, pruned
-///   branches and dependent splits answer nothing.
+///   under one binder more, reading none of it, since [`Readings::refines`]
+///   finds no branch of it for a leaf to read (#616). A data case's branches
+///   answer its motive at the constructor over their fields when the motive
+///   reads its binder and the bare family classifies the constructor, and its
+///   answer under their fields otherwise, past their index equations either
+///   way; a pruned branch's case of no branches answers that answer under one
+///   binder more, reading none of it; a dependent split's child answers its
+///   motive at the pair of its two components; every other node passes its
+///   answer to its children under the binders it opens. Nodes other than data
+///   cases, pruned branches and dependent splits answer nothing.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -9946,18 +10112,105 @@ fn tracked_motives(
     motives
 }
 
-/// The constructor each node of a match's tree reads the scrutinee at.
+/// The branches of `tests`' data switches over bare families, and the
+/// innermost one each node stands under.
 ///
 /// # Specification
-/// - requires: `tests` is a compiled tree, every child after its parent;
-///   `tracked` holds the motive [`tracked_motives`] read for each node, or
-///   nothing.
-/// - ensures: one entry per node. When the root is a data switch on level zero
-///   over a bare family, the scrutinee is an intuitionistic variable of the
-///   case's frame and the root's motive reads its binder, every node below a
-///   root branch reads the scrutinee at that branch's constructor and the root
-///   reads it as itself; otherwise every node reads it as itself, with the
-///   first reason that holds.
+/// - requires: `tests` is a compiled tree, every child after its parent.
+/// - ensures: one branch per branch of each data switch whose family is bare,
+///   each stored after the branch its switch stands under; each node below such
+///   a branch, under no deeper one, stands under it; the root, and every node
+///   under no such branch, stands under none.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a leaf under a nested switch reads both switched levels
+///   at their constructors, and an arm's leaves name the constructors the arm
+///   reads its scrutinee at.
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+#[spec(ensures: |ret| ret.under.len() == tests.len())]
+fn refinings(tests: &[Test]) -> Refinings
+{
+    let mut refinings = Refinings {
+        branches: Vec::new(),
+        under: alloc::vec![Maybe::Absent(refined::Absent::Unswitched); tests.len()],
+    };
+    let stand = |under: &mut [Maybe<RefiningAt, refined::Absent>], at: TestAt, branch| {
+        if let Some(slot) = under.get_mut(at.0) {
+            *slot = branch;
+        }
+    };
+    for (position, test) in tests.iter().enumerate() {
+        let above = refinings
+            .under
+            .get(position)
+            .copied()
+            .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
+        match *test {
+            Test::Pending | Test::Stuck(_) | Test::Absurd | Test::Leaf { .. } => {},
+            Test::Data {
+                level,
+                depth,
+                family: Maybe::Present(family),
+                ref branches,
+                ..
+            } => {
+                for (tag, &(arity, at)) in branches.iter().enumerate() {
+                    let here = RefiningAt(refinings.branches.len());
+                    refinings.branches.push(Refining {
+                        switch: TestAt(position),
+                        level,
+                        depth,
+                        family,
+                        tag: ConstructorTag::from(tag),
+                        arity,
+                        outer: above,
+                    });
+                    stand(&mut refinings.under, at, Maybe::Present(here));
+                }
+            },
+            Test::Data {
+                family: Maybe::Absent(_),
+                ref branches,
+                ..
+            } => {
+                for &(_arity, at) in branches {
+                    stand(&mut refinings.under, at, above);
+                }
+            },
+            Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
+                stand(&mut refinings.under, yes, above);
+                stand(&mut refinings.under, no, above);
+            },
+            Test::Split { child, .. } | Test::Record { child, .. } => {
+                stand(&mut refinings.under, child, above);
+            },
+            Test::List { nil, cell, .. } => {
+                stand(&mut refinings.under, nil, above);
+                stand(&mut refinings.under, cell, above);
+            },
+            Test::Sum { ref branches, .. } => {
+                for &at in branches {
+                    stand(&mut refinings.under, at, above);
+                }
+            },
+        }
+    }
+
+    refinings
+}
+
+/// Whether the motive [`tracked_motives`] read for each data switch over a
+/// bare family reads its binder.
+///
+/// # Specification
+/// - requires: `tracked` holds the motive [`tracked_motives`] read for each
+///   node of `tests`, or nothing.
+/// - ensures: one entry per node of `tests`, dependent exactly when the node is
+///   a data switch over a bare family whose motive is tracked and does not
+///   strengthen past its binder.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -9965,171 +10218,227 @@ fn tracked_motives(
 /// - hypothesis: L3 — a root whose answer names its scrutinee refines each
 ///   branch's leaves, and one whose answer does not refines none.
 /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
 #[spec(ensures: |ret| ret.len() == tests.len())]
-fn refinements(
+fn dependents(
     tests: &[Test],
     tracked: &[Maybe<CompTypeId, lowered::Absent>],
-    scrutinised: Scrutinised,
     arena: &mut CoreArena,
-) -> Vec<Maybe<Refined, refined::Absent>>
+) -> Vec<Dependent>
 {
-    let unrefined = |reason| alloc::vec![Maybe::Absent(reason); tests.len()];
-    let Some(&Test::Data {
-        level,
-        family: Maybe::Present(family),
-        ..
-    }) = tests.first()
-    else {
-        return unrefined(refined::Absent::Unswitched);
-    };
-    if level != TreeLevel::default() {
-        return unrefined(refined::Absent::Unswitched);
-    }
-    let held = match arena.value(scrutinised.scrutinee) {
-        Some(&Value::Variable {
-            zone: Zone::Intuitionistic,
-            index,
-        }) => usize::try_from(u32::from(index)).unwrap_or(usize::MAX),
-        _ => usize::MAX,
-    };
-    if held >= scrutinised.outer.0 {
-        return unrefined(refined::Absent::Unbound);
-    }
-    let Some(&Maybe::Present(motive)) = tracked.first()
-    else {
-        return unrefined(refined::Absent::Independent);
-    };
-    if matches!(
-        gandr_core_term::strengthen_comp_type(arena, motive),
-        Maybe::Present(_)
-    ) {
-        return unrefined(refined::Absent::Independent);
-    }
-    beneath_root(tests)
-        .into_iter()
-        .map(|under| match under {
-            Maybe::Present(RootBranch { tag, arity }) => Maybe::Present(Refined {
-                held,
-                family,
-                tag,
-                arity,
-            }),
-            Maybe::Absent(reason) => Maybe::Absent(reason),
+    tests
+        .iter()
+        .enumerate()
+        .map(|(position, test)| {
+            let (
+                &Test::Data {
+                    family: Maybe::Present(_),
+                    ..
+                },
+                Some(&Maybe::Present(motive)),
+            ) = (test, tracked.get(position))
+            else {
+                return Dependent(false);
+            };
+            Dependent(matches!(
+                gandr_core_term::strengthen_comp_type(arena, motive),
+                Maybe::Absent(_)
+            ))
         })
         .collect()
 }
 
-/// The branch of a match's root switch each node of its tree stands under.
+/// The scrutinee's index in the case's frame, when it is an intuitionistic
+/// variable of the frame.
 ///
 /// # Specification
-/// - requires: `tests` is a compiled tree, every child after its parent.
-/// - ensures: one entry per node. When the root is a data switch, every node
-///   below its branch for the constructor `t` of `k` fields reads that branch,
-///   `t` over `k` fields; the root, and every node of a tree whose root is no
-///   data switch, reads the unswitched absence.
+/// - requires: nothing.
+/// - ensures: the index of the intuitionistic variable the scrutinee is, when
+///   it is below the frame's term binders; the unbound absence otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a leaf under a dependent root reads the scrutinee at its
-///   branch's constructor, and an arm's leaves name the branch the arm reads
-///   its scrutinee at.
+/// - hypothesis: L3 — a case over a parameter reads it at each constructor.
 /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
-/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-#[spec(ensures: |ret| ret.len() == tests.len())]
-fn beneath_root(tests: &[Test]) -> Vec<Maybe<RootBranch, refined::Absent>>
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(held) => held < scrutinised.outer,
+    | Maybe::Absent(_) => true,
+})]
+fn held_variable(
+    scrutinised: Scrutinised,
+    arena: &CoreArena,
+) -> Maybe<Depth, refined::Absent>
 {
-    let mut beneath = alloc::vec![Maybe::Absent(refined::Absent::Unswitched); tests.len()];
-    let Some(&Test::Data { ref branches, .. }) = tests.first()
-    else {
-        return beneath;
-    };
-    for (tag, &(arity, at)) in branches.iter().enumerate() {
-        if let Some(slot) = beneath.get_mut(at.0) {
-            *slot = Maybe::Present(RootBranch {
-                tag: ConstructorTag::from(tag),
-                arity,
-            });
-        }
+    match arena.value(scrutinised.scrutinee) {
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) => match usize::try_from(u32::from(index)) {
+            Ok(held) if held < scrutinised.outer.0 => Maybe::Present(Depth(held)),
+            Ok(_) | Err(_) => Maybe::Absent(refined::Absent::Unbound),
+        },
+        _ => Maybe::Absent(refined::Absent::Unbound),
     }
-    for (position, test) in tests.iter().enumerate().skip(1) {
-        let Some(&Maybe::Present(read)) = beneath.get(position)
-        else {
-            continue;
-        };
-        let mut mark = |at: TestAt| {
-            if let Some(slot) = beneath.get_mut(at.0) {
-                *slot = Maybe::Present(read);
-            }
-        };
-        match *test {
-            Test::Pending | Test::Stuck(_) | Test::Absurd | Test::Leaf { .. } => {},
-            Test::Data { ref branches, .. } => {
-                for &(_arity, at) in branches {
-                    mark(at);
-                }
-            },
-            Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
-                mark(yes);
-                mark(no);
-            },
-            Test::Split { child, .. } | Test::Record { child, .. } => mark(child),
-            Test::List { nil, cell, .. } => {
-                mark(nil);
-                mark(cell);
-            },
-            Test::Sum { ref branches, .. } => {
-                for &at in branches {
-                    mark(at);
-                }
-            },
-        }
-    }
-
-    beneath
 }
 
-/// The constructor the arm `arm` of a match over the bare family `family`,
-/// on the variable `scrutinee` binds, reads that variable at, over the
-/// binders `variables` of the arm's variables that name its fields.
+impl<'tree> Readings<'tree>
+{
+    /// The branch above a node below `under` that refines `level`: the
+    /// innermost whose switch scrutinises it, when that switch's motive reads
+    /// its binder.
+    ///
+    /// # Specification
+    /// - requires: as [`Refinings::switched`].
+    /// - ensures: the branch [`Refinings::switched`] finds, when its switch is
+    ///   dependent; the independent absence when it is not, and the unswitched
+    ///   absence when there is none.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Refining`].
+    /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(branch) => branch.level == level,
+        | Maybe::Absent(_) => true,
+    })]
+    fn refines(
+        &self,
+        under: Maybe<RefiningAt, refined::Absent>,
+        level: TreeLevel,
+    ) -> Maybe<&'tree Refining, refined::Absent>
+    {
+        match self.refinings.switched(under, level) {
+            Maybe::Present(branch)
+                if self
+                    .dependent
+                    .get(branch.switch.0)
+                    .is_some_and(|&Dependent(reads)| reads) =>
+            {
+                Maybe::Present(branch)
+            },
+            Maybe::Present(_) => Maybe::Absent(refined::Absent::Independent),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+}
+
+/// The value a leaf under `depth` tree binders, below the branch `under`,
+/// reads the level `level` at.
 ///
 /// # Specification
-/// - requires: `beneath` is [`beneath_root`] of `tests`; `variables` holds the
+/// - requires: `level` is at most `depth`; `under` is the leaf's entry of the
+///   readings' [`Refinings::under`].
+/// - ensures: the constructor of the branch [`Readings::refines`] finds for
+///   `level`, over what the leaf reads each of its fields at, read so in turn;
+///   the level's [`level_value`] when none refines it, or when the branch's
+///   switch stands above no binder past the level.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Each level the walk reaches is a field of the branch refining the level
+/// before it, past that level; the levels a chain's branches refine are
+/// distinct and their fields disjoint, so the walk reads each branch on the
+/// chain at most once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm variable at a field a nested switch matched reads
+///   that switch's constructor, and the scrutinee's variable reads every
+///   switched level beneath it so.
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+#[spec(ensures: |ret| arena.value(ret).is_some())]
+fn level_read(
+    arena: &mut CoreArena,
+    (scrutinised, readings): (Scrutinised, Readings<'_>),
+    under: Maybe<RefiningAt, refined::Absent>,
+    depth: Depth,
+    level: TreeLevel,
+) -> ValueId
+{
+    let refining = |at: TreeLevel| match readings.refines(under, at) {
+        Maybe::Present(branch) if branch.depth.0 >= at.0 => Maybe::Present(branch),
+        Maybe::Present(_) => Maybe::Absent(refined::Absent::Unswitched),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
+    if let Maybe::Absent(_) = refining(level) {
+        return level_value(arena, scrutinised, depth, level);
+    }
+    // Each level the reading reaches, in prefix order, with its branch.
+    let mut order: Vec<(TreeLevel, Maybe<&Refining, refined::Absent>)> = Vec::new();
+    let mut pending = alloc::vec![level];
+    while let Some(at) = pending.pop() {
+        let branch = refining(at);
+        if let Maybe::Present(branch) = branch {
+            pending.extend(
+                (0 .. branch.arity)
+                    .rev()
+                    .map(|field| TreeLevel(branch.depth.0.saturating_add(field).saturating_add(1))),
+            );
+        }
+        order.push((at, branch));
+    }
+    let mut values: Vec<ValueId> = Vec::with_capacity(order.len());
+    for &(at, branch) in order.iter().rev() {
+        let value = match branch {
+            Maybe::Present(branch) => {
+                let from = values.len().saturating_sub(branch.arity);
+                let fields = values.drain(from ..).rev().collect();
+                constructed(arena, branch.family, branch.tag, fields)
+            },
+            Maybe::Absent(_) => level_value(arena, scrutinised, depth, at),
+        };
+        values.push(value);
+    }
+    values
+        .pop()
+        .unwrap_or_else(|| level_value(arena, scrutinised, depth, level))
+}
+
+/// What the arm `arm` of a match on the variable `scrutinee` binds reads
+/// that variable at, over the binders `variables` of the arm's variables.
+///
+/// # Specification
+/// - requires: `refinings` is [`refinings`] of `tests`; `variables` holds the
 ///   binders of the arm's variables, in variable order.
-/// - ensures: settled when the arm has a leaf, every leaf of it stands under
-///   one root branch, and each leaf settles every field of that branch's
-///   constructor at a variable, the same one at every leaf; each field then
-///   reads the binder of the first variable settled at its level. Unnamed
+/// - ensures: settled when the arm has a leaf and every leaf of it reads the
+///   scrutinee alike, as [`arm_read`] reads it, at a constructor. Unnamed
 ///   otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an arm naming its constructor's field settles, and one
-///   leaving a field to a wildcard leaves it unnamed.
+/// - hypothesis: L3 — an arm naming its constructor's field settles, one whose
+///   nested pattern switches the field settles at the nested constructor, and
+///   one leaving a field to a wildcard leaves it unnamed.
 /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
 /// - witness: `lower::native::tests::an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
 #[spec(ensures: |ret| match ret {
     | Maybe::Present(ref settled) => {
-        settled.fields.len() <= variables.len() && settled.scrutinee == scrutinee
+        settled.scrutinee == scrutinee
+            && matches!(settled.read.first(), Some(&Built::Constructed { .. }))
     },
     | Maybe::Absent(_) => true,
 })]
 fn arm_settled(
     tests: &[Test],
-    beneath: &[Maybe<RootBranch, refined::Absent>],
+    refinings: &Refinings,
     arm: ArmAt,
     variables: &[ScopeId],
-    (family, scrutinee): (ConstantIndex, ScopeId),
+    scrutinee: ScopeId,
 ) -> Maybe<Settled, settled::Absent>
 {
     let unnamed = Maybe::Absent(settled::Absent::Unnamed);
-    let mut found: Option<Settled> = None;
-    for (test, &under) in tests.iter().zip(beneath) {
+    let mut found: Option<Vec<Built>> = None;
+    for (test, &under) in tests.iter().zip(&refinings.under) {
         let Test::Leaf {
             arm: reached,
+            depth,
             ref bindings,
-            ..
         } = *test
         else {
             continue;
@@ -10137,37 +10446,88 @@ fn arm_settled(
         if reached != arm {
             continue;
         }
-        let Maybe::Present(RootBranch { tag, arity }) = under
+        let Maybe::Present(read) = arm_read(refinings, under, depth, (bindings, variables))
         else {
             return unnamed;
         };
-        let mut named: Vec<Option<ScopeId>> = alloc::vec![None; arity];
-        for (&level, &binder) in bindings.iter().zip(variables) {
-            if let Some(slot) = level
-                .0
-                .checked_sub(1_usize)
-                .and_then(|field| named.get_mut(field))
-            {
-                let _first = slot.get_or_insert(binder);
-            }
+        if !matches!(read.first(), Some(&Built::Constructed { .. })) {
+            return unnamed;
         }
-        let Some(fields) = named.into_iter().collect::<Option<Vec<ScopeId>>>()
-        else {
-            return unnamed;
-        };
-        let reading = Settled {
-            scrutinee,
-            family,
-            tag,
-            fields,
-        };
         match found {
-            Some(ref first) if *first != reading => return unnamed,
+            Some(ref first) if *first != read => return unnamed,
             Some(_) => {},
-            None => found = Some(reading),
+            None => found = Some(read),
         }
     }
-    found.map_or(unnamed, Maybe::Present)
+    found.map_or(unnamed, |read| Maybe::Present(Settled { scrutinee, read }))
+}
+
+/// What a leaf under `depth` tree binders, below the branch `under`,
+/// settling the arm variables `variables` at the levels `bindings`, reads the
+/// scrutinee at as its arm passes it on, in prefix order.
+///
+/// # Specification
+/// - requires: `bindings` and `variables` are the leaf's levels and its arm's
+///   binders, in variable order, each level at most `depth`.
+/// - ensures: each level read as the constructor of the innermost branch above
+///   the leaf whose switch scrutinises it, followed by what the leaf reads each
+///   field at; else as the binder of the first variable settled at it. Unnamed
+///   when some level the reading reaches is neither, or a branch's switch
+///   stands above no binder past the level it scrutinises.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// As [`level_read`]: each level the walk reaches is a field past the level
+/// before it, so the walk reads each branch on the chain at most once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`arm_settled`].
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(ref read) => !read.is_empty(),
+    | Maybe::Absent(_) => true,
+})]
+fn arm_read(
+    refinings: &Refinings,
+    under: Maybe<RefiningAt, refined::Absent>,
+    depth: Depth,
+    (bindings, variables): (&[TreeLevel], &[ScopeId]),
+) -> Maybe<Vec<Built>, settled::Absent>
+{
+    let unnamed = Maybe::Absent(settled::Absent::Unnamed);
+    let mut named: Vec<Option<ScopeId>> = alloc::vec![None; depth.0.saturating_add(1)];
+    for (&level, &binder) in bindings.iter().zip(variables) {
+        if let Some(slot) = named.get_mut(level.0) {
+            let _first = slot.get_or_insert(binder);
+        }
+    }
+    let mut read = Vec::new();
+    let mut pending = alloc::vec![TreeLevel::default()];
+    while let Some(at) = pending.pop() {
+        match refinings.switched(under, at) {
+            Maybe::Present(branch) if branch.depth.0 >= at.0 => {
+                read.push(Built::Constructed {
+                    family: branch.family,
+                    tag: branch.tag,
+                    arity: branch.arity,
+                });
+                pending.extend((0 .. branch.arity).rev().map(|field| {
+                    TreeLevel(branch.depth.0.saturating_add(field).saturating_add(1))
+                }));
+            },
+            Maybe::Present(_) => return unnamed,
+            Maybe::Absent(_) => {
+                let Some(&Some(binder)) = named.get(at.0)
+                else {
+                    return unnamed;
+                };
+                read.push(Built::Bound(binder));
+            },
+        }
+    }
+    Maybe::Present(read)
 }
 
 /// The constructor `tag` of the parameterless family `family` over `fields`.
@@ -10327,20 +10687,21 @@ fn environment_substituted(
 ///
 /// # Specification
 /// - requires: every child of `test` is minted in `minted` or absent; `read` is
-///   the motive [`tracked_motives`] read for this node, `refined` the
-///   constructor [`refinements`] reads the node's scrutinee at, and `answered`
-///   the answer the match writes, read where the node stands, for its root;
-///   `armed` is empty or holds, per term binder of the case's frame, the value
+///   the motive [`tracked_motives`] read for this node, `under` the branch
+///   [`refinings`] stands it under, `readings` the tree's, and `answered` the
+///   answer the match writes, read where the node stands, for its root; `armed`
+///   is empty or holds, per term binder of the case's frame, the value
 ///   [`Lowerer::arm_readings`] reads it as.
 /// - ensures: as [`Lowerer::mint_case`], for one node; a data case and a
-///   dependent split read the read motive; a leaf under a refining root reads
-///   the scrutinee's variable as the refined constructor over the root's
-///   fields; a leaf reads each variable of the case's frame as its entry of a
-///   nonempty `armed`, read so; any other node ascribed `answered`, an integer
-///   test's case under its comparison's binder; nothing when a child, the arm's
-///   body or a needed motive is absent. A leaf's copy of an exit or of a bind
-///   whose rest is distributed is recorded as its original is, and every copy a
-///   leaf makes is reported in `copies` beside its original.
+///   dependent split read the read motive; a leaf reads each arm variable as
+///   [`level_read`] reads the level that settled it, and, under a refining
+///   root, the scrutinee's variable as [`level_read`] reads level zero; a leaf
+///   reads each variable of the case's frame as its entry of a nonempty
+///   `armed`, read so; any other node ascribed `answered`, an integer test's
+///   case under its comparison's binder; nothing when a child, the arm's body
+///   or a needed motive is absent. A leaf's copy of an exit or of a bind whose
+///   rest is distributed is recorded as its original is, and every copy a leaf
+///   makes is reported in `copies` beside its original.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -10350,15 +10711,16 @@ fn environment_substituted(
 /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
 /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
 /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
 fn mint_test(
     test: &Test,
-    scrutinised: Scrutinised,
+    (scrutinised, readings): (Scrutinised, Readings<'_>),
     (bodies, armed): (&[Maybe<ComputationId, lowered::Absent>], &[ValueId]),
     minted: &[Maybe<ComputationId, lowered::Absent>],
-    (read, refined, answered): (
+    (read, under, answered): (
         Maybe<CompTypeId, lowered::Absent>,
-        Maybe<Refined, refined::Absent>,
+        Maybe<RefiningAt, refined::Absent>,
         Maybe<CompTypeId, lowered::Absent>,
     ),
     sink: &mut Sink<'_>,
@@ -10400,9 +10762,15 @@ fn mint_test(
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let armed = armed_for(sink.arena, body, Depth(bindings.len()), armed);
+            let held = match (readings.held, readings.refines(under, TreeLevel::default())) {
+                (Maybe::Present(held), Maybe::Present(_)) => Maybe::Present(held),
+                (Maybe::Present(_), Maybe::Absent(reason)) | (Maybe::Absent(reason), _) => {
+                    Maybe::Absent(reason)
+                },
+            };
             if depth == Depth::default()
                 && bindings.is_empty()
-                && matches!(refined, Maybe::Absent(_))
+                && matches!(held, Maybe::Absent(_))
                 && armed.is_empty()
             {
                 return Maybe::Present(answered_at(sink, body, answered));
@@ -10410,19 +10778,23 @@ fn mint_test(
             let mut environment =
                 Vec::with_capacity(bindings.len().saturating_add(scrutinised.outer.0));
             for &level in bindings.iter().rev() {
-                environment.push(level_value(sink.arena, scrutinised, depth, level));
+                environment.push(level_read(
+                    sink.arena,
+                    (scrutinised, readings),
+                    under,
+                    depth,
+                    level,
+                ));
             }
             for outer in 0 .. scrutinised.outer.0 {
-                let read = match refined {
-                    Maybe::Present(refined) if refined.held == outer => {
-                        let fields = (0 .. refined.arity)
-                            .map(|field| {
-                                let level = TreeLevel(field.saturating_add(1));
-                                level_value(sink.arena, scrutinised, depth, level)
-                            })
-                            .collect();
-                        constructed(sink.arena, refined.family, refined.tag, fields)
-                    },
+                let read = match held {
+                    Maybe::Present(Depth(held)) if held == outer => level_read(
+                        sink.arena,
+                        (scrutinised, readings),
+                        under,
+                        depth,
+                        TreeLevel::default(),
+                    ),
                     Maybe::Present(_) | Maybe::Absent(_) => {
                         variable(sink.arena, Depth(outer.saturating_add(depth.0)))
                     },
