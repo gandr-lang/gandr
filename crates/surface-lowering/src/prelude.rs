@@ -119,7 +119,9 @@ pub fn lay(
                         ImportTarget::Source(imported) => ImportTarget::Source(SourceIndex::from(
                             usize::from(imported).saturating_add(1_usize),
                         )),
-                        held @ (ImportTarget::Unresolved | ImportTarget::Cycle) => held,
+                        held @ (ImportTarget::Unresolved
+                        | ImportTarget::Cycle
+                        | ImportTarget::Unlocked) => held,
                     })
                     .collect(),
             )

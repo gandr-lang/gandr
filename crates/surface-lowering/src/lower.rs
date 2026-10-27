@@ -5204,8 +5204,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the imported declaration — except a constructor the import entered as
     ///   the very same constructor, as every source whose block takes the one
     ///   `Theory` enters its constructors. A declaration its source keeps
-    ///   private binds nothing in an importer. The import itself, and every
-    ///   source without such an import, is untouched.
+    ///   private binds nothing in an importer. An import resolved to
+    ///   [`ImportTarget::Unlocked`] refuses nothing here: it binds nothing, and
+    ///   a name read through it is refused where it is read. The import itself,
+    ///   and every source without such an import, is untouched.
     /// - provides: the per-declaration refusal the corpus pins an import's
     ///   failure by.
     /// - fails: never; a refusal is carried by its declaration.
@@ -5245,6 +5247,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let imported = match target {
                 ImportTarget::Source(imported) => imported,
+                ImportTarget::Unlocked => continue,
                 ImportTarget::Unresolved | ImportTarget::Cycle => {
                     for (index, slot) in collected.slots.iter().enumerate() {
                         if collected.unit.source_at(slot.named.span.start()) != source {
@@ -5253,7 +5256,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let refused = slot.named.span;
                         refusals.push((SlotIndex::from(index), match target {
                             ImportTarget::Cycle => LoweringRefusal::ImportCycle { span, refused },
-                            ImportTarget::Unresolved | ImportTarget::Source(_) => {
+                            ImportTarget::Unresolved
+                            | ImportTarget::Source(_)
+                            | ImportTarget::Unlocked => {
                                 LoweringRefusal::ImportUnresolved { span, refused }
                             },
                         }));
@@ -7699,22 +7704,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the qualified reading of an aliased or qualified import.
     /// - fails: [`LoweringRefusal::UnknownMember`] for a name the imported
     ///   source does not declare; [`LoweringRefusal::UnexportedName`] for one
-    ///   it keeps private or declares without a definition.
+    ///   it keeps private or declares without a definition;
+    ///   [`LoweringRefusal::UnlockedDependency`] at the alias for any name read
+    ///   through an import resolved to [`ImportTarget::Unlocked`].
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMember`] and
-    /// [`LoweringRefusal::UnexportedName`].
+    /// [`LoweringRefusal::UnknownMember`], [`LoweringRefusal::UnexportedName`]
+    /// and [`LoweringRefusal::UnlockedDependency`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an aliased family and value each read from the
-    ///   imported source, an undeclared member refused by name, and a pending
-    ///   member refused at the member.
+    ///   imported source, an undeclared member refused by name, a pending
+    ///   member refused at the member, and a name read through an unlocked
+    ///   alias refused at the alias while its source's other declarations
+    ///   stand.
     /// - witness: `tests::namespace::an_aliased_import_qualifies_its_source_s_names`
     /// - witness: `tests::namespace::a_pending_member_read_through_an_alias_is_refused_at_the_member`
+    /// - witness: `tests::namespace::a_name_read_through_an_unlocked_alias_is_refused_at_it_3072`
     #[spec(ensures: |ref ret| matches!(
         *ret,
-        Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. })
+        Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. }
+            | LoweringRefusal::UnlockedDependency { .. })
     ))]
     fn aliased_member(
         &mut self,
@@ -7732,9 +7743,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
         };
-        let ImportResolution::Path(ImportTarget::Source(target)) = import.resolution()
-        else {
-            return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
+        let target = match import.resolution() {
+            ImportResolution::Path(ImportTarget::Source(target)) => target,
+            ImportResolution::Path(ImportTarget::Unlocked) => {
+                return Err(LoweringRefusal::UnlockedDependency {
+                    span: alias.span,
+                    alias: module,
+                });
+            },
+            ImportResolution::Path(ImportTarget::Unresolved | ImportTarget::Cycle)
+            | ImportResolution::Foreign => {
+                return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
+            },
         };
         let member = self.name_at(selected);
         let unknown = LoweringRefusal::UnknownMember {
@@ -18783,6 +18803,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
                 outcome,
                 inertness: self.inert_component(slot),
+                visibility: self.collected.slot_visibility(SlotIndex::from(position)),
             }));
         }
 

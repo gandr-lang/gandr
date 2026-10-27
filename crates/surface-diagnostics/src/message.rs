@@ -234,6 +234,10 @@ fn lowered(
         LoweringRefusal::ImportCycle { .. } => f.write_str(
             "this import leads back to this source, so its declarations are not read",
         ),
+        LoweringRefusal::UnlockedDependency { alias, .. } => write!(
+            f,
+            "`{alias}` is no module of this package and no dependency its `gandr.lock` records: declare it in `dependencies` and run `gandr lock`"
+        ),
         LoweringRefusal::ImportShadows { name, .. } => {
             write!(f, "`{name}` is bound by an import and again in this source")
         },
@@ -1515,6 +1519,7 @@ mod tests
                 span,
                 refused: span,
             },
+            LoweringRefusal::UnlockedDependency { span, alias: name },
             LoweringRefusal::ImportShadows {
                 span,
                 name,

@@ -735,7 +735,6 @@
 1292 Other view_expression ; L[<expression>] R[<expression> }]
 1301 Other parenthesized_expression ) L[<expression>] R[]
 1305 Other parenthesized_expression , L[<expression>] R[)]
-1313 Other list_expression , L[<expression>] R[]]
 1316 Keyword block val L[{] R[<pattern>]
 1317 Other block = L[<pattern>] R[<expression>]
 1318 Other block ; L[<expression>] R[<expression> }]
