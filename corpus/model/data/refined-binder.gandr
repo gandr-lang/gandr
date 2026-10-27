@@ -1,0 +1,65 @@
+/// `refinedPred` and `occupied` case on a lambda's binder whose type an enclosing case refined to a data type.
+///
+/// Under the arm `Zero`, the binder's type `natOr(Zero)` is a call that returns `Nat`, so the case is a case over `Nat`.
+/// Under the arm `ListL(a)`, the decoder's call returns a list type, and the same holds.
+/// The kernel admits both declarations as the checker does, and both fixtures run.
+///
+/// The checker unfolds the binder's type to the data type before it reads the case.
+/// The kernel reads the decode of the returned call by its own evaluator, with every definition unfolding, before it reads the scrutinee's shape.
+///
+/// - see: #2872
+/// - see: `../universe/decoded-descent.gandr`
+
+// The naturals and the lists.
+import "./data-base.gandr";
+
+// The universe of the naturals, the lists and the functions, and its decoder.
+import "../universe/decoded-descent.gandr";
+
+/// The family that is `Nat` at zero and `Unit` past it.
+pub def natOr(n : Nat) -> Type {
+  case n {
+    Zero => return Nat,
+    Succ(_m) => return Unit
+  }
+}
+
+/// The predecessor under the arm `Zero`, where the binder is a natural.
+pub def refinedPred(n : Nat) -> (natOr(n)) => Nat {
+  case n {
+    Zero => return fn (v) { case v -> -F Nat { Zero => return Zero, Succ(m) => return m } },
+    Succ(_m) => return fn (_u) { return Zero }
+  }
+}
+
+/// Two's predecessor at zero's family runs to one.
+@[ runs("Succ(Zero)") ]
+def predTwo() -> Nat {
+  run pred <- refinedPred(Zero);
+  pred(two)
+}
+
+/// One for a decoded list with an entry, zero for an empty list, a natural itself, and zero for a function.
+/// Under the arm `ListL(a)`, the binder is a list of the decodes of `a`.
+pub def occupied(c : UL) -> elL(c) => Nat {
+  case c {
+    NatL => thunk { fn (v) { v } },
+    ListL(_a) => thunk { fn (v) {
+      case v -> -F Nat {
+        Nil => Zero,
+        Cons(_h, _t) => Succ(Zero)
+      }
+    } },
+    PiL(_a, _b) => thunk { fn (_f) { Zero } }
+  }
+}
+
+/// The list that holds two.
+def twoAlone : List(Nat) = Cons(two, Nil);
+
+/// The list that holds two has an entry, so the count is one.
+@[ runs("Succ(Zero)") ]
+def twoOccupied() -> Nat {
+  run entered <- occupied(ListL(NatL));
+  entered(twoAlone)
+}
