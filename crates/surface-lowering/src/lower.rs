@@ -747,6 +747,8 @@ mod identity;
 
 mod implicit;
 
+mod inert;
+
 mod model;
 
 mod native;
@@ -7762,8 +7764,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   position, [`LoweringRefusal::RegionAsValue`] for a region binder of
     ///   the definition the name stands in that nothing nearer binds,
     ///   [`LoweringRefusal::ModelImplicitValue`] for a model implicit named
-    ///   alone, as [`Self::resolved_term`] refuses it, and the unresolved-name
-    ///   refusal when no scope answers; propagates
+    ///   alone and [`LoweringRefusal::InertRead`] for an inert component read
+    ///   from content, as [`Self::resolved_term`] refuses each, and the
+    ///   unresolved-name refusal when no scope answers; propagates
     ///   [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
     ///
@@ -7965,6 +7968,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   telescope rather than the term context.
     /// - fails: [`LoweringRefusal::PhaseDependence`] for a declaration the
     ///   member `site` belongs to may not read, as [`Self::phased`] decides;
+    ///   [`LoweringRefusal::InertRead`] for an inert field read by a
+    ///   declaration that is none ([`Self::inert_read`]);
     ///   [`LoweringRefusal::ImplicitUnsupplied`] for a declaration with
     ///   implicits named anywhere but a call supplying them; the wrong-sort
     ///   refusal for a flattened model implicit, which is its components and no
@@ -7984,7 +7989,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| match ret {
             | Err(ref refusal) => match resolved {
-                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::ImplicitUnsupplied { .. }),
+                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::ImplicitUnsupplied { .. }),
                 | Resolved::Binder(bound) => self.flattened.contains_key(&bound.binder),
             },
             | Ok(ref plan) => match (resolved, self.in_type.contains(&site.at.node)) {
@@ -8023,6 +8028,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Resolved::Binder(_) => Ok(resolved.term()),
             Resolved::Declaration { constant, .. } => {
                 self.phased(site, SlotIndex::from(usize::from(constant)))?;
+                self.inert_read(
+                    site,
+                    inert::Read::Slot(SlotIndex::from(usize::from(constant))),
+                )?;
                 self.supplied_or_refused(site, constant)?;
                 Ok(resolved.term())
             },
@@ -11120,12 +11129,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the position rule and the phase rule for a path.
     /// - fails: yields [`LoweringRefusal::ForwardMemberReference`] for a member
     ///   declared at or after it; [`LoweringRefusal::PhaseDependence`] for a
-    ///   value read inside a type, as [`Self::phased`] decides.
+    ///   value read inside a type, as [`Self::phased`] decides;
+    ///   [`LoweringRefusal::InertRead`] for an inert field read by a
+    ///   declaration that is none, as [`Self::inert_read`] decides.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::ForwardMemberReference`] and
-    /// [`LoweringRefusal::PhaseDependence`].
+    /// [`LoweringRefusal::PhaseDependence`] and [`LoweringRefusal::InertRead`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a backward member becomes its declared constant while
@@ -11147,7 +11158,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     })
                 }
                 else {
-                    matches!(ret, Err(LoweringRefusal::PhaseDependence { .. }))
+                    matches!(ret, Err(LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. }))
                         || ret.is_ok()
                             && matches!(self.plans.get(site.at.node), Some(&Plan::Constant(constant)) if constant == entry.constant)
                 }
@@ -11175,6 +11186,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             });
         }
         self.phased(site, target)?;
+        self.inert_read(site, inert::Read::Slot(target))?;
         self.plan(site, Plan::Constant(constant));
 
         Ok(())

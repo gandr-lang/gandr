@@ -86,6 +86,7 @@
 //!   <https://doi.org/10.1145/321250.321253> — first-order unification.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -307,6 +308,10 @@ pub struct Presentation
     /// The laws the block states, `law name : …`, in written order, an
     /// included theory's first.
     pub laws: Vec<StatedLaw>,
+    /// The operations the block marks `@[ inert ]`, an included theory's
+    /// among them: fields the manifest step reads and no other declaration
+    /// does.
+    pub inert: BTreeSet<Name>,
 }
 
 /// A law a theory states as the path type a model proves it at: `law sym :
@@ -847,6 +852,8 @@ pub struct ModelComponent
     pub named: Placed,
     /// What it states.
     pub form: Result<ModelForm, ModelFault>,
+    /// Whether the member is an operation its theory marks `@[ inert ]`.
+    pub inert: bool,
 }
 
 /// The signature of a theory's models: its sorts, then its operations, then its
@@ -876,7 +883,8 @@ pub struct ModelSignature
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`derive_members`] of the value's members, the circuit rules and
-///   the stated laws kept beside it.
+///   the stated laws kept beside it, each component inert exactly when the
+///   presentation marks its name inert.
 /// - fails: a value whose members cannot be read, as [`Presentation::members`];
 ///   any other fault is kept on its component.
 /// - panics: none.
@@ -893,11 +901,11 @@ pub struct ModelSignature
 pub fn derive(presentation: &Presentation) -> Result<ModelSignature, PresentationFault>
 {
     let members = presentation.members()?;
-    Ok(derive_members(
-        &members,
-        &presentation.circuits,
-        &presentation.laws,
-    ))
+    let mut signature = derive_members(&members, &presentation.circuits, &presentation.laws);
+    for component in &mut signature.components {
+        component.inert = presentation.inert.contains(&component.name);
+    }
+    Ok(signature)
 }
 
 /// Derive the model signature of a presentation's members, its circuit rules
@@ -946,6 +954,7 @@ pub(crate) fn derive_members(
             name: law.name.clone(),
             named: law.named,
             form: infer::derive_law(&heads, law),
+            inert: false,
         });
     }
     for law in stated {
@@ -953,6 +962,7 @@ pub(crate) fn derive_members(
             name: law.name.clone(),
             named: law.named,
             form: infer::derive_stated(&heads, law),
+            inert: false,
         });
     }
     for circuit in circuits {
@@ -960,6 +970,7 @@ pub(crate) fn derive_members(
             name: circuit.name.clone(),
             named: circuit.named,
             form: Err(ModelFault::Circuit),
+            inert: false,
         });
     }
 
@@ -1028,6 +1039,7 @@ fn derive_heads(
             name: sort.name.clone(),
             named: sort.named,
             form,
+            inert: false,
         });
     }
     let ports = members
@@ -1089,6 +1101,7 @@ fn derive_heads(
             name: operation.name.clone(),
             named: operation.named,
             form,
+            inert: false,
         });
     }
 

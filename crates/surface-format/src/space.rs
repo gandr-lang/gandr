@@ -67,9 +67,14 @@ const FACE: &[RCtxStep] = &[RCtxStep {
     crossed: StepSym::Tile("="),
 }];
 
-/// The rules whose `@[` opens a block of attributes, padded by its brackets;
-/// any other `@[` opens an implicit telescope, hugged by them.
-const ATTRIBUTES: [&str; 2] = ["attribute_block", "attributed_module_member"];
+/// The rules whose `@[` opens a block of attributes, padded by its brackets:
+/// a declaration's, a module member's and a theory member's; any other `@[`
+/// opens an implicit telescope, hugged by them.
+const ATTRIBUTES: [&str; 3] = [
+    "attribute_block",
+    "attributed_module_member",
+    "theory_declaration",
+];
 
 /// The rules whose `#{` opens a module signature, padded by its braces; any
 /// other `#{` opens a record, hugged by them.

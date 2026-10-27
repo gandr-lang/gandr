@@ -486,6 +486,10 @@ fn lowered(
             f,
             "the type `{member}` depends on the value `{reached}`; a type depends only on types"
         ),
+        LoweringRefusal::InertRead { member, reached, .. } => write!(
+            f,
+            "`{member}` reads the inert field `{reached}`; only another inert field reads one"
+        ),
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
@@ -1581,6 +1585,11 @@ mod tests
                 declared: span,
             },
             LoweringRefusal::PhaseDependence {
+                span,
+                member: name,
+                reached: name,
+            },
+            LoweringRefusal::InertRead {
                 span,
                 member: name,
                 reached: name,

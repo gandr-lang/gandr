@@ -485,7 +485,16 @@ impl Reader<'_, '_>
         if !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let members = split_members(run.remaining(), MemberEnd::Semicolon);
+        // A member's attribute blocks come off its front; only `@[ inert ]`
+        // stands there, on an operation.
+        let mut members = Vec::new();
+        for member in split_members(run.remaining(), MemberEnd::Semicolon) {
+            match self.member_attributes(member, member_span(member, at.span)) {
+                Ok(read) => members.push(read),
+                Err(diagnostic) => diagnostics.push(diagnostic),
+            }
+        }
+        let mut inert = BTreeSet::new();
         let mut parts = TheoryParts::default();
         let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
@@ -503,7 +512,7 @@ impl Reader<'_, '_>
         // An include not read leaves the sorts it would bring unknown: its own
         // refusal stands for them, and no port is refused at one (#2410).
         let mut unread_include = false;
-        for member in &members {
+        for &(_, member) in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
             if !reading.eat(Spelling("include")).0 {
@@ -601,6 +610,7 @@ impl Reader<'_, '_>
                     },
                 }
             }
+            inert.extend(presented.inert.iter().cloned());
             inclusions.push(Included {
                 theory: declaration.description.id.clone(),
                 inclusion,
@@ -614,7 +624,7 @@ impl Reader<'_, '_>
         {
             diagnostics.push(run.signature_fault(SignatureFault::AmbiguousJoin(fault)));
         }
-        for member in &members {
+        for &(_, member) in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
             let kind = if reading.eat(Spelling("oper")).0 {
@@ -675,9 +685,17 @@ impl Reader<'_, '_>
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
-        for member in members {
+        for (marked, member) in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
+            if let Some(tile) = marked
+                && !reading.at(Spelling("oper")).0
+            {
+                diagnostics.push(DescriptionDiagnostic {
+                    span: tile,
+                    fault: DescriptionFault::Malformed,
+                });
+            }
             let result = if reading.eat(Spelling("sort")).0 || reading.eat(Spelling("shape")).0 {
                 continue;
             }
@@ -695,6 +713,9 @@ impl Reader<'_, '_>
                     .map(|(operation, tile, ports)| {
                         if !unread_include {
                             diagnostics.extend(undeclared_ports(&operation, &ports, &parts.sorts));
+                        }
+                        if marked.is_some() {
+                            let _fresh = inert.insert(operation.name.clone());
                         }
                         parts.operations.push(operation);
                         placement.operations.push(tile);
@@ -772,6 +793,7 @@ impl Reader<'_, '_>
             circuits: presented_circuits,
             inclusions,
             laws,
+            inert,
         };
         let faces: Vec<SurfaceSpan> = presentation
             .placement
@@ -798,6 +820,55 @@ impl Reader<'_, '_>
             written,
             exported: crate::module::Visibility::Private,
         })
+    }
+
+    /// Read the attribute blocks a theory member opens with, `@[ inert ]`.
+    ///
+    /// # Specification
+    /// - ensures: the member past its blocks, beside the `inert` name's bytes
+    ///   when a block lists it; a member written with no block, whole and
+    ///   unmarked.
+    /// - fails: a name other than `inert`, `inert` written twice or with a
+    ///   payload, and a block its `]` does not close, malformed at the name or
+    ///   the member.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// A located malformed diagnostic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation marked inert, one unmarked, an unknown
+    ///   name, and the mark on a sort, each asserted as the exact presentation
+    ///   or refusal.
+    /// - witness: `description::theory::tests::an_inert_operation_is_marked_on_its_presentation_3029`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.1.len() <= member.len()))]
+    fn member_attributes<'pieces>(
+        &self,
+        member: &'pieces [Piece],
+        span: ByteSpan,
+    ) -> Result<(Option<ByteSpan>, &'pieces [Piece]), DescriptionDiagnostic>
+    {
+        let mut reading = Run::new(member, span);
+        let mut marked = None;
+        while reading.eat(Spelling("@[")).0 {
+            loop {
+                let name = reading.take()?;
+                if self.text(name).0 != INERT || marked.is_some() {
+                    return Err(DescriptionDiagnostic {
+                        span: name.span,
+                        fault: DescriptionFault::Malformed,
+                    });
+                }
+                marked = Some(name.span);
+                if reading.eat(Spelling("]")).0 {
+                    break;
+                }
+                if !reading.eat(Spelling(",")).0 {
+                    return Err(reading.fault(DescriptionFault::Malformed));
+                }
+            }
+        }
+        Ok((marked, reading.remaining()))
     }
 
     /// The `theory` block an `include` member names, its presentation's
@@ -2710,6 +2781,11 @@ fn undeclared_ports(
         })
         .collect()
 }
+
+/// The attribute a theory's operation takes, `@[ inert ]`: a field the
+/// manifest step reads and no other declaration does. It is no declaration's
+/// attribute, so the declaration registry does not hold it.
+const INERT: &str = "inert";
 
 /// The prefix of the private name the reader mints for an anonymous port,
 /// which a written name cannot begin with.

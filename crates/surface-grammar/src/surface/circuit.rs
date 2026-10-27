@@ -64,6 +64,7 @@ use crate::SurfaceForm;
 use crate::TileLabel;
 use crate::model::RegexShape;
 use crate::model::Sym;
+use crate::surface::term::attr_block_inline;
 
 /// Builds the circuit block form's rules.
 ///
@@ -156,7 +157,11 @@ fn theory_declaration(
             t(TileLabel("type_identifier")),
             repeat(seq([t(TileLabel(".")), t(TileLabel("type_identifier"))])),
             t(TileLabel("{")),
-            repeat(seq([theory_member(), t(TileLabel(";"))])),
+            repeat(seq([
+                repeat(attr_block_inline()),
+                theory_member(),
+                t(TileLabel(";")),
+            ])),
             t(TileLabel("}")),
         ]),
     );

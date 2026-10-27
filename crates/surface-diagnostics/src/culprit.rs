@@ -230,6 +230,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
         LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
+        LoweringRefusal::InertRead { .. } => "an inert field read",
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
         LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
         LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
@@ -676,6 +677,7 @@ mod tests
             LoweringRefusal::IllTypedPayload { .. } => "a payload of another schema",
             LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
+            LoweringRefusal::InertRead { .. } => "an inert field read",
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
             LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
             LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
@@ -941,6 +943,11 @@ mod tests
                 declared: at,
             },
             LoweringRefusal::PhaseDependence {
+                span: at,
+                member: name,
+                reached: name,
+            },
+            LoweringRefusal::InertRead {
                 span: at,
                 member: name,
                 reached: name,
