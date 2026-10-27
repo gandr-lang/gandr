@@ -4054,9 +4054,10 @@ INSERT INTO purpose VALUES('workflow-sweep','changed::BASE','constant','The vari
 INSERT INTO purpose VALUES('workflow-sweep','changed::Changed','struct','The corpus sources a change adds or modifies, by name, and the commit the change was read at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','changed::Revision','struct','A revision Git resolves: a commit, a branch, or an expression such as `HEAD^`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::Class','struct','The class a source belongs to by where it sits.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-sweep','corpus::CorpusName','struct','A source''s path below the corpus crate, `/`-separated: `strict/values.gandr`, `fixture/model/identity/circle.gandr`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','corpus::CorpusName','struct','A source''s name: its root''s prefix, then its path below that root.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','corpus::Root','struct','One root a sweep draws sources from: the prefix its sources are named by, its directory and the directory below it that holds no source.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','corpus::Roots','struct','The corpus''s strict and fixture roots, stated once for the walk and for a change.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::Source','struct','One corpus source: where it is on disk, its name and its class.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-sweep','corpus::directory','function','The corpus crate''s directory, canonical.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','corpus::sources','function','Every source under the corpus''s strict and fixture roots, in name order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::Coverage','enum','How much of its inputs a sweep visits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','coverage::NIGHTLY_PROFILE','constant','The nextest profile the nightly workflow runs: every input a sweep visits is visited whole, and a rotating sweep visits the night''s slice of its inputs (Rotation).',NULL,'fits','sound',NULL);
