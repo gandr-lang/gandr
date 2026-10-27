@@ -11,7 +11,8 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 12 │ │ }
    │ └─┘ checked against `(n : Nat, Path(Nat, Succ(n), Succ(Zero))) => Nat`; while checking the body of this thunk
    │
-   ╰ note: `belowTheHead` is refused with NotApart, as its expectation states
+   ├ note: `belowTheHead` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/open-apart.gandr:17:3
@@ -26,4 +27,5 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 18 │ │ }
    │ └─┘ checked against `(n : Nat, Path(Nat, n, Succ(Zero))) => Nat`; while checking the body of this thunk
    │
-   ╰ note: `atTheRoot` is refused with NotApart, as its expectation states
+   ├ note: `atTheRoot` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal

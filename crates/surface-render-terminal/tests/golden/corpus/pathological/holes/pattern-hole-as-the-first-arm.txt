@@ -12,4 +12,5 @@ error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
 18 │ │  }
    │ └──┘ checked against `Color => Integer`; while checking the body of this thunk
    │
-   ╰ note: `classify` is refused with UndecidedCoverage, as its expectation states
+   ├ note: `classify` is refused with UndecidedCoverage, as its expectation states
+   ╰ help: replace the pattern hole with a pattern

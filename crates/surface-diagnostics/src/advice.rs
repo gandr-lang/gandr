@@ -25,6 +25,7 @@ use alloc::string::String;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::session::LinearityDefect;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
@@ -75,7 +76,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — one refusal of every vocabulary name is either worded,
-///   with a one-line help, or unworded; the ten most-seen names are worded.
+///   with a one-line help, or unworded; the most-seen names are worded.
 /// - witness: `advice::tests::the_most_seen_names_are_worded_on_one_line`
 #[inline]
 pub fn advice(refusal: Refusal<'_>) -> Maybe<String, help::Absent>
@@ -110,6 +111,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         } => format!("write {sort} in this position"),
         LoweringRefusal::MalformedForm { form, fault, .. } => malformed(Spoken(form), fault),
         LoweringRefusal::IllFormedDescription { kind, .. } => ill_formed(kind),
+        LoweringRefusal::RulesUncompleted { .. } => String::from(
+            "add a rule that joins the two normal forms, or remove one of the two rules",
+        ),
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::UnresolvedTypeHead { .. }
@@ -173,7 +177,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::RulesOverlapSecondOrder { .. }
         | LoweringRefusal::RulesOverlapCondition { .. }
         | LoweringRefusal::RulesDiverge { .. }
-        | LoweringRefusal::RulesUncompleted { .. }
         | LoweringRefusal::RulesNeverComplete { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
@@ -359,13 +362,45 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "use the view outside {}, or open the `access` inside it",
             Captor(by)
         ),
+        CheckRefusal::Access {
+            defect: AccessDefect::Lent,
+            ..
+        } => String::from("use the held value only after the `access` that lends it ends"),
+        CheckRefusal::Access {
+            defect: AccessDefect::KeptEscaped,
+            ..
+        } => String::from("return a value that the scope's own region does not keep"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::Residue { .. },
+            ..
+        } => String::from(
+            "close the endpoint before the fork half or receive body that bound it ends",
+        ),
+        CheckRefusal::RuleNotRespected { .. } => String::from(
+            "give the arms equal results on the terms that each of the datatype's rules \
+             identifies",
+        ),
+        CheckRefusal::NotApart { .. } => {
+            String::from("write an arm for the path, because its endpoints can be equal")
+        },
+        CheckRefusal::NegativeOccurrence(_) => String::from(
+            "apply the datatype there only to its own parameters, one stage below its \
+             constructor",
+        ),
+        CheckRefusal::RunNotAdmitted { .. } => String::from(
+            "change the run so that each move is one that the protocol admits at that point",
+        ),
+        CheckRefusal::UndecidedCoverage(_) => {
+            String::from("replace the pattern hole with a pattern")
+        },
+        CheckRefusal::ImplicitUnsolved { .. } => {
+            String::from("supply the implicit by name in brackets before the parentheses")
+        },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::RuleNotPresentable { .. }
-        | CheckRefusal::RuleNotRespected { .. }
-        | CheckRefusal::NotApart { .. }
         | CheckRefusal::LoopNotRespected { .. }
         | CheckRefusal::LoopUndecided { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
@@ -377,7 +412,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
-        | CheckRefusal::UndecidedCoverage(_)
         | CheckRefusal::AbsentRecordField(_)
         | CheckRefusal::AbsentTupleComponent(_)
         | CheckRefusal::MissingRecordField { .. }
@@ -414,7 +448,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::FamilyArgumentClassifier { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
         | CheckRefusal::StaticClassifierExpected { .. }
-        | CheckRefusal::NegativeOccurrence(_)
         | CheckRefusal::NestedOccurrence(_)
         | CheckRefusal::IndexOccurrence(_)
         | CheckRefusal::NonUniformOccurrence(_)
@@ -426,7 +459,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
         | CheckRefusal::UnenclosedRun { .. }
-        | CheckRefusal::ImplicitUnsolved { .. }
         | CheckRefusal::ModelUnanswered { .. }
         | CheckRefusal::ModelAmbiguous { .. }
         | CheckRefusal::TacticRefused { .. }
@@ -444,7 +476,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UnassertedLaw { .. }
         | CheckRefusal::NonCovariantMotive { .. }
         | CheckRefusal::RideUnsupported { .. }
-        | CheckRefusal::RunNotAdmitted { .. }
         | CheckRefusal::DialogueUnmatched { .. }
         | CheckRefusal::DialogueInverted { .. }
         | CheckRefusal::ForwardUnsupported { .. }
@@ -452,7 +483,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
     })
 }
 
-/// The ten most-seen refusal names, each worded on one line.
+/// The most-seen refusal names, each worded on one line.
 #[cfg(test)]
 mod tests
 {
@@ -463,7 +494,7 @@ mod tests
     use crate::message::tests::one_of_every_name;
 
     /// The names the procedural rewrite has worded, most-seen first.
-    const WORDED: [&str; 10] = [
+    const WORDED: [&str; 20] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -474,6 +505,16 @@ mod tests
         "ViewEscaped",
         "UnknownMember",
         "DuplicateDefinition",
+        "HeldLent",
+        "ImplicitUnsolved",
+        "NegativeOccurrence",
+        "NotApart",
+        "RuleNotRespected",
+        "RunNotAdmitted",
+        "UndecidedCoverage",
+        "KeptEscaped",
+        "LinearResidue",
+        "RulesUncompleted",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

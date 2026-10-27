@@ -16,4 +16,5 @@ error[RulesUncompleted]: this rule and an earlier one rewrite one term to two no
 22 │   rule flip : pick(one(), y) ==> plus(y, one());
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
    │
-   ╰ note: `Swapped` is refused with RulesUncompleted, as its expectation states
+   ├ note: `Swapped` is refused with RulesUncompleted, as its expectation states
+   ╰ help: add a rule that joins the two normal forms, or remove one of the two rules

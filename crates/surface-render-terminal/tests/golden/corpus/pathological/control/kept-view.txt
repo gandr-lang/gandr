@@ -95,7 +95,8 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
 67 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `rewrapped` is refused with KeptEscaped, as its expectation states
+   ├ note: `rewrapped` is refused with KeptEscaped, as its expectation states
+   ╰ help: return a value that the scope's own region does not keep
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/kept-view.gandr:76:10
@@ -161,4 +162,5 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
 101 │ │ }
     │ └─┘ checked against `() => Integer`; while checking the body of this thunk
     │
-    ╰ note: `leftHold` is refused with KeptEscaped, as its expectation states
+    ├ note: `leftHold` is refused with KeptEscaped, as its expectation states
+    ╰ help: return a value that the scope's own region does not keep

@@ -10,7 +10,8 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 18 │ │ }
    │ └─┘ checked against `Path(Int, S(P(Z)), Z) => Empty`; while checking the body of this thunk
    │
-   ╰ note: `agree` is refused with NotApart, as its expectation states
+   ├ note: `agree` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:23:3
@@ -25,7 +26,8 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 24 │ │ }
    │ └─┘ checked against `(n : Int, Path(Int, S(n), Z)) => Empty`; while checking the body of this thunk
    │
-   ╰ note: `open` is refused with NotApart, as its expectation states
+   ├ note: `open` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:38:3
@@ -43,7 +45,8 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 39 │ │ }
    │ └─┘ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ here(Base), here(Base)) => Empty`; while checking the body of this thunk
    │
-   ╰ note: `cancelled` is refused with NotApart, as its expectation states
+   ├ note: `cancelled` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NonExhaustiveMatch]: this match does not cover every value it can be given
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:44:3

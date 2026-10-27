@@ -15,4 +15,5 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 18 │ │  }
    │ └──┘ checked against `(Int, Int) => Int`; while checking the body of this function; binds count : (Int, Int) => Int
    │
-   ╰ note: `count` is refused with RuleNotRespected, as its expectation states
+   ├ note: `count` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

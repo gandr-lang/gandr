@@ -1,4 +1,4 @@
-error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/data/w-negative.gandr:17:1
    │
 17 │ ┏ data Lop(a : Type) : Type {
@@ -6,9 +6,10 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 19 │ ┃ }
    │ ┗━┛ the declared type under a function's domain, where no stage reaches it
    │
-   ╰ note: `Lop` is refused with NegativeOccurrence, as its expectation states
+   ├ note: `Lop` is refused with NegativeOccurrence, as its expectation states
+   ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
 
-error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/data/w-negative.gandr:27:3
    │
 27 │ ┏   data Hidden : Type {
@@ -16,12 +17,14 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 29 │ ┃   }
    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
    │
-   ╰ note: `Hidden` is refused with NegativeOccurrence, as its expectation states
+   ├ note: `Hidden` is refused with NegativeOccurrence, as its expectation states
+   ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
 
-error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/data/w-negative.gandr:33:3
    │
 33 │   def hidden : Type = Hidden;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━ the declared type under a function's domain, where no stage reaches it
    │
-   ╰ note: `hidden` is refused with NegativeOccurrence, as its expectation states
+   ├ note: `hidden` is refused with NegativeOccurrence, as its expectation states
+   ╰ help: apply the datatype there only to its own parameters, one stage below its constructor

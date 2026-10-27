@@ -12,4 +12,5 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `frozen` is refused with HeldLent, as its expectation states
+  ├ note: `frozen` is refused with HeldLent, as its expectation states
+  ╰ help: use the held value only after the `access` that lends it ends

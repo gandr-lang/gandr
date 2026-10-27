@@ -1,18 +1,20 @@
-error[ImplicitUnsolved]: the implicit `r` this call to `log` omits is determined by neither its arguments nor the type it is checked against; supply it as `log[r = …](…)`
+error[ImplicitUnsolved]: the implicit `r` this call to `log` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/control/row-variable.gandr:23:40
    │
 23 │ def unread() -> Unit { ignored(thunk { log("unread") }) }
    │                                        ━━━━━━━━━━━━━ an implicit left unsolved
    │
-   ╰ note: `unread` is refused with ImplicitUnsolved, as its expectation states
+   ├ note: `unread` is refused with ImplicitUnsolved, as its expectation states
+   ╰ help: supply the implicit `r` by name, as `log[r = …](…)`
 
-error[ImplicitUnsolved]: the solver cannot determine the implicit `r` this call to `log` omits: its row is compared with another open row, each holding an interface the other lacks; supply it as `log[r = …](…)`
+error[ImplicitUnsolved]: the solver cannot determine the implicit `r` this call to `log` omits: its row is compared with another open row, each holding an interface the other lacks
    ╭▸ corpus/pathological/control/row-variable.gandr:30:34
    │
 30 │   ignored(thunk { either(thunk { log("one") }, thunk { stall("other") }) })
    │                                  ━━━━━━━━━━ an implicit left unsolved
    │
-   ╰ note: `undecided` is refused with ImplicitUnsolved, as its expectation states
+   ├ note: `undecided` is refused with ImplicitUnsolved, as its expectation states
+   ╰ help: supply the implicit `r` by name, as `log[r = …](…)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/row-variable.gandr:35:32

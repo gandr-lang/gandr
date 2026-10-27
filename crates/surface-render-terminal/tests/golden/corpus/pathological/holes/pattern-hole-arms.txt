@@ -14,7 +14,8 @@ error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
 28 │ │  }
    │ └──┘ checked against `Color => Integer`; while checking the body of this thunk
    │
-   ╰ note: `classify` is refused with UndecidedCoverage, as its expectation states
+   ├ note: `classify` is refused with UndecidedCoverage, as its expectation states
+   ╰ help: replace the pattern hole with a pattern
 
 error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
    ╭▸ corpus/pathological/holes/pattern-hole-arms.gandr:34:3
@@ -31,4 +32,5 @@ error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
 38 │ │  }
    │ └──┘ checked against `Chosen => Integer`; while checking the body of this thunk
    │
-   ╰ note: `unwrap` is refused with UndecidedCoverage, as its expectation states
+   ├ note: `unwrap` is refused with UndecidedCoverage, as its expectation states
+   ╰ help: replace the pattern hole with a pattern

@@ -67,7 +67,8 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
 51 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `raisedWhileRead` is refused with HeldLent, as its expectation states
+   ├ note: `raisedWhileRead` is refused with HeldLent, as its expectation states
+   ╰ help: use the held value only after the `access` that lends it ends
 
 error[OutOfFragment.index_expression]: the index expression is not supported yet
    ╭▸ corpus/pathological/control/accessor-method.gandr:56:12

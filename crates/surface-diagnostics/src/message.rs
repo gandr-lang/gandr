@@ -991,13 +991,11 @@ fn checked(
         CheckRefusal::ImplicitUnsolved { reason, .. } => match unsolved(reason) {
             Maybe::Present(why) => write!(
                 f,
-                "this call omits an implicit argument the solver cannot determine: {why}; supply \
-                 it by name in brackets before the parentheses"
+                "this call omits an implicit argument the solver cannot determine: {why}"
             ),
             Maybe::Absent(()) => f.write_str(
                 "this call omits an implicit argument that neither its arguments nor the type it \
-                 is checked against determine; supply it by name in brackets before the \
-                 parentheses",
+                 is checked against determine",
             ),
         },
         CheckRefusal::ModelUnanswered { .. } => f.write_str(
@@ -1156,7 +1154,7 @@ fn checked(
         },
         CheckRefusal::NegativeOccurrence(site) => write!(
             f,
-            "the datatype occurs to the left of an arrow in its {} where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor",
+            "the datatype occurs to the left of an arrow in its {} where no stage reaches it",
             Site(site)
         ),
         CheckRefusal::NestedOccurrence(site) => write!(

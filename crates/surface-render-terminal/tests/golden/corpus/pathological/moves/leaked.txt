@@ -11,4 +11,5 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
 14 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `leaked` is refused with LinearResidue, as its expectation states
+   ├ note: `leaked` is refused with LinearResidue, as its expectation states
+   ╰ help: close the endpoint before the fork half or receive body that bound it ends

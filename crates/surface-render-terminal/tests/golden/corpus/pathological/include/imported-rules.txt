@@ -16,4 +16,5 @@ error[RulesUncompleted]: this rule and an earlier one rewrite one term to two no
 15 │   rule swap : mul(one(), pair(x, y)) ==> pair(y, x);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
    │
-   ╰ note: `Swapping` is refused with RulesUncompleted, as its expectation states
+   ├ note: `Swapping` is refused with RulesUncompleted, as its expectation states
+   ╰ help: add a rule that joins the two normal forms, or remove one of the two rules

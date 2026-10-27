@@ -21,7 +21,8 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
 7 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `frozen` is refused with HeldLent, as its expectation states
+  ├ note: `frozen` is refused with HeldLent, as its expectation states
+  ╰ help: use the held value only after the `access` that lends it ends
 
 error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
    ╭▸ corpus/pathological/control/accessor-shared.gandr:13:26

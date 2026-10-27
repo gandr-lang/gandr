@@ -685,6 +685,33 @@ impl Report<'_>
                     upstream: Maybe::Present(_),
                     ..
                 } => Maybe::Absent(help::Absent::Upstream),
+                Subject::Refused {
+                    refusal: refusal @ Refusal::Checking(CheckRefusal::ImplicitUnsolved { at, .. }),
+                    origins,
+                    ..
+                } => match origins.omitted(at) {
+                    Maybe::Present(
+                        &Omitted::Implicit {
+                            ref function,
+                            ref implicit,
+                        }
+                        | &Omitted::Model {
+                            ref function,
+                            ref implicit,
+                            ..
+                        },
+                    ) => Maybe::Present(alloc::format!(
+                        "supply the implicit `{implicit}` by name, as `{function}[{implicit} = \
+                         …](…)`"
+                    )),
+                    Maybe::Present(&Omitted::Scope { .. }) => Maybe::Present(String::from(
+                        "name the model after the scope's subject, as `} with M`",
+                    )),
+                    Maybe::Present(&Omitted::Wildcard) => {
+                        Maybe::Present(String::from("write the term in place of the `_`"))
+                    },
+                    Maybe::Absent(_) => advice(refusal),
+                },
                 Subject::Refused { refusal, .. } => advice(refusal),
                 Subject::Source(refusal) => advice(Refusal::Lowering(refusal)),
                 Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
@@ -1229,38 +1256,34 @@ impl fmt::Display for MessageText<'_>
                     Maybe::Present(why) => write!(
                         f,
                         "the solver cannot determine the implicit `{implicit}` this call to \
-                         `{function}` omits: {why}; supply it as `{function}[{implicit} = \
-                         …](…)`"
+                         `{function}` omits: {why}"
                     ),
                     Maybe::Absent(()) => write!(
                         f,
                         "the implicit `{implicit}` this call to `{function}` omits is determined \
-                         by neither its arguments nor the type it is checked against; supply it \
-                         as `{function}[{implicit} = …](…)`"
+                         by neither its arguments nor the type it is checked against"
                     ),
                 },
                 Maybe::Present(&Omitted::Scope { ref theory, .. }) => match unsolved(reason) {
                     Maybe::Present(why) => write!(
                         f,
                         "the solver cannot determine the model of `{theory}` this scope leaves \
-                         to the models in scope: {why}; name one after its subject, `}} with M`"
+                         to the models in scope: {why}"
                     ),
                     Maybe::Absent(()) => write!(
                         f,
                         "the model of `{theory}` this scope leaves to the models in scope is \
-                         determined by neither its subject nor the type it is checked against; \
-                         name one after its subject, `}} with M`"
+                         determined by neither its subject nor the type it is checked against"
                     ),
                 },
                 Maybe::Present(&Omitted::Wildcard) => match unsolved(reason) {
                     Maybe::Present(why) => write!(
                         f,
-                        "the solver cannot determine the term this `_` stands for: {why}; write \
-                         the term"
+                        "the solver cannot determine the term this `_` stands for: {why}"
                     ),
-                    Maybe::Absent(()) => f.write_str(
-                        "no equation determines the term this `_` stands for; write the term",
-                    ),
+                    Maybe::Absent(()) => {
+                        f.write_str("no equation determines the term this `_` stands for")
+                    },
                 },
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },

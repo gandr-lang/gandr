@@ -11,4 +11,5 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `seat_left_open` is refused with LinearResidue, as its expectation states
+  ├ note: `seat_left_open` is refused with LinearResidue, as its expectation states
+  ╰ help: close the endpoint before the fork half or receive body that bound it ends
