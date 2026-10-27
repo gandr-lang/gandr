@@ -85,58 +85,18 @@ def failing : Prog(Either(ExnOp, Void), Integer) = Op(
   fn (_r) { (Done(0) : Prog(Either(ExnOp, Void), Integer)) }
 );
 
-/// `runExn` at the front of the two-effect row. An applied type cannot yet
-/// stand as a type argument (#2512), so the runs below use the handlers at
-/// their instances, written out.
-def rec runExnAt(p : Prog(Either(ExnOp, Either(StateOp, Void)), Integer)) -> Prog(
-  Either(StateOp, Void),
-  Outcome(Integer)
-) {
-  case p {
-    Done(x) => (Done(Returned(x)) : Prog(Either(StateOp, Void), Outcome(Integer))),
-    Op(o, k) => case o {
-      Left(Raise(c)) => (Done(Raised(c)) : Prog(Either(StateOp, Void), Outcome(Integer))),
-      Right(other) => (Op(other, fn (r) {
-        runExnAt[<](k(r))
-      }) : Prog(Either(StateOp, Void), Outcome(Integer)))
-    }
-  }
-}
-
-/// `runState` at the row exceptions leave.
-def rec runStateAt(p : Prog(Either(StateOp, Void), Outcome(Integer)), s : Integer) -> Prog(
-  Void,
-  Outcome(Integer)
-) {
-  case p {
-    Done(x) => (Done(x) : Prog(Void, Outcome(Integer))),
-    Op(o, k) => case o {
-      Left(Get) => runStateAt[<](k(s), s),
-      Left(Put(t)) => runStateAt[<](k(0), t),
-      Right(none) => case none {}
-    }
-  }
-}
-
-/// `pureOf` at the answer.
-def pureAt(p : Prog(Void, Outcome(Integer))) -> Outcome(Integer) {
-  case p {
-    Done(x) => x,
-    Op(o, _k) => case o {}
-  }
-}
-
 /// Exceptions peeled, then state from four, then nothing left: the second
-/// read sees the stored five.
+/// read sees the stored five. Each handler is called at the row it leaves,
+/// an applied type passed for its type parameter (#2512).
 @[ runs("Returned(50)") ]
 def handled() -> Outcome(Integer) {
-  run p <- runExnAt(guarded);
-  pureAt(runStateAt(p, 4))
+  run p <- runExn(Either(StateOp, Void), Integer, guarded);
+  pureOf(Outcome(Integer), runState(Void, Outcome(Integer), p, 4))
 }
 
 /// The raise ends the program with the state it read.
 @[ runs("Raised(4)") ]
 def handledRaise() -> Outcome(Integer) {
-  run p <- runExnAt(raising);
-  pureAt(runStateAt(p, 4))
+  run p <- runExn(Either(StateOp, Void), Integer, raising);
+  pureOf(Outcome(Integer), runState(Void, Outcome(Integer), p, 4))
 }

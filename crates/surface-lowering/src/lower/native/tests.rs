@@ -1564,6 +1564,37 @@ fn a_data_family_named_where_a_value_is_read_is_quoted()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A data family applied where a value is read is the family's type over its
+/// arguments: passed for a type parameter and as a definition of `Type`,
+/// never a constructor applied to nothing (#2512).
+#[test]
+fn a_data_family_applied_where_a_value_is_read_is_quoted_2512()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}{MAYBE}def row : Type ;\ndef row = Maybe(Nat) ;\ndef same(a : Type, x : a) -> a {{ x }}\ndef nothing() -> Maybe(Nat) {{ same(Maybe(Nat), None) }}\ndef held() -> Maybe(Nat) {{ same(Maybe(Nat), Some(Zero)) }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(&Value::Quote(quoted)) = arena.value(body_named(&module, SurfaceName::from("row")))
+    else {
+        panic!("the applied family is quoted");
+    };
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(quoted)
+    else {
+        panic!("the code is a data type");
+    };
+    assert_eq!(
+        declaration,
+        ConstantIndex::from(1_usize),
+        "the code is the applied family's own type"
+    );
+    assert_eq!(arguments.len(), 1_usize, "over the one argument written");
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// Each family applied to an index is declined, and keeps its own form's key,
 /// the form that carries its refusal (#1204).
 #[test]
