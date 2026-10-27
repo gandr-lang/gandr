@@ -239,6 +239,7 @@ use crate::origin::Insertion;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
+use crate::origin::ScopeAnswer;
 use crate::origin::WrittenModel;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
@@ -2136,7 +2137,11 @@ impl<'source> Lowerer<'_, 'source>
                     subject,
                     frame,
                     binder: binder.node,
-                    handlers: Handlers::Model(Arc::new(Answering { slot, supplied })),
+                    handlers: Handlers::Model(Arc::new(Answering {
+                        slot,
+                        supplied,
+                        written: ScopeAnswer::InScope,
+                    })),
                 }),
             );
             return Ok(());
@@ -2162,7 +2167,11 @@ impl<'source> Lowerer<'_, 'source>
                     subject,
                     frame,
                     binder: binder.node,
-                    handlers: Handlers::Model(Arc::new(Answering { slot, supplied })),
+                    handlers: Handlers::Model(Arc::new(Answering {
+                        slot,
+                        supplied,
+                        written: ScopeAnswer::Named(Name::from(self.name_at(module).as_ref())),
+                    })),
                 }),
             );
             return Ok(());
@@ -3114,6 +3123,10 @@ impl<'source> Lowerer<'_, 'source>
                             sink.origins.place_clause_binder(id, binder, name);
                         }
                     }
+                }
+                if let Handlers::Model(ref answering) = scoped.handlers {
+                    sink.origins
+                        .record_scope_answer(id, answering.written.clone());
                 }
                 if let Interface::Theory(ref theory) = scoped.interface {
                     let sorts = theory

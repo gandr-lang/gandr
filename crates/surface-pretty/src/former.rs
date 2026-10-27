@@ -300,6 +300,21 @@ impl Borrow<str> for Name<'_>
     }
 }
 
+/// What answers a capability scope over a theory, as the source writes it,
+/// when a model answers it: the module the scope names, `with N`, or the one
+/// model in scope, for a scope writing no `with`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Answered<'text>
+{
+    /// The module the scope names, `with N`.
+    Named(Name<'text>),
+    /// The one model in scope; the scope writes no `with`.
+    InScope,
+}
+
 /// How many components a product, a sum, a tuple or a record has.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -909,6 +924,8 @@ pub enum Former<'source, Node>
     /// A capability scope, `handle c : I { c } with { … }`, or over a theory
     /// with the sorts it fixes, `handle c : T with sort C = A … { c } with {
     /// … }`: a handler whose subject stands under the capability's binder.
+    /// A scope a model answers writes it, `with N` or no `with`, in place of
+    /// the clauses.
     Scope
     {
         /// The handled interface's name.
@@ -923,6 +940,9 @@ pub enum Former<'source, Node>
         /// to, a value type, in the order written; none over a host interface
         /// or where the source keeps no manifest.
         sorts: &'source [(Name<'source>, Node)],
+        /// The model answering the scope, as written; none where the scope
+        /// writes its clauses or the source keeps no answer.
+        answered: Option<Answered<'source>>,
     },
     /// A computation fed to a first-class stack, `resume(k, c)`.
     Resume(Node, Node),

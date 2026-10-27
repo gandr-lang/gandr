@@ -30,6 +30,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FixpointEvidence;
 use quenchant_shape::shape::Maybe;
 
+use crate::former::Answered;
 use crate::former::Arity;
 use crate::former::Component;
 use crate::former::ForgetCall;
@@ -515,6 +516,10 @@ pub struct CoreSource<'arena>
     /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
     /// ascending by the scope.
     scopes: &'arena [(ComputationId, Modelled<'arena>)],
+    /// The model answering each capability scope the source writes as
+    /// `handle c : T … { … } with N`, or with no `with`, as written,
+    /// ascending by the scope.
+    answers: &'arena [(ComputationId, Answered<'arena>)],
     /// The reduct the checker applies at each value it crosses at, ascending
     /// by the value.
     crossings: &'arena [(ValueId, ConstantIndex)],
@@ -564,6 +569,7 @@ impl<'arena> CoreSource<'arena>
             relations: &[],
             models: &[],
             scopes: &[],
+            answers: &[],
             crossings: &[],
             forgettings: &[],
             maps: &[],
@@ -779,6 +785,22 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { scopes, ..self }
+    }
+
+    /// This source, writing each capability scope `answers` records as
+    /// answered by the model it names, or by the one in scope, ascending by
+    /// the scope: `with N`, or no `with`, in place of its clauses.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn answering(
+        self,
+        answers: &'arena [(ComputationId, Answered<'arena>)],
+    ) -> Self
+    {
+        Self { answers, ..self }
     }
 
     /// This source, writing the reduct `crossings` records at each value the
@@ -2070,6 +2092,12 @@ impl<'arena> CoreSource<'arena>
                     .ok()
                     .and_then(|at| self.scopes.get(at))
                     .map_or(&[], |&(_, ref scope)| scope.sorts.as_slice()),
+                answered: self
+                    .answers
+                    .binary_search_by_key(&id, |&(held, _)| held)
+                    .ok()
+                    .and_then(|at| self.answers.get(at))
+                    .map(|&(_, answered)| answered),
             },
             Computation::Resume(stack, resumed) => {
                 Former::Resume(value(stack), computation(resumed))

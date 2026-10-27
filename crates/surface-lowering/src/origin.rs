@@ -702,6 +702,10 @@ pub struct OriginTable
     /// in the order lowered. The scope's signature holds the carriers
     /// substituted, not the sorts they stand for.
     scope_theories: Vec<(ComputationId, WrittenModel)>,
+    /// Each capability scope over a theory a model answers, `with N` or no
+    /// `with`, with what answers it as written, in the order lowered. The
+    /// scope's clauses are the ones the lowering derives from the model.
+    scope_answers: Vec<(ComputationId, ScopeAnswer)>,
     /// The implicit each hole a call nominated stands for, by the hole,
     /// ascending by id. The core carries no name; a refusal of the hole
     /// reads it here.
@@ -2308,6 +2312,46 @@ impl OriginTable
     {
         &self.scope_theories
     }
+
+    /// Record that a model answers the capability scope `scope`, as `answer`
+    /// writes it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::scope_answers`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope naming `Passing` and one writing no `with`
+    ///   each answer at the scope as written, and one writing its clauses is
+    ///   absent.
+    /// - witness: `lower::capability::tests::a_scope_records_the_model_answering_it_3196`
+    #[spec(
+        captures: before = self.scope_answers.len(),
+        ensures: self.scope_answers.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_scope_answer(
+        &mut self,
+        scope: ComputationId,
+        answer: ScopeAnswer,
+    )
+    {
+        self.scope_answers.push((scope, answer));
+    }
+
+    /// Each capability scope over a theory a model answers, with what answers
+    /// it as written, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn scope_answers(&self) -> &[(ComputationId, ScopeAnswer)]
+    {
+        &self.scope_answers
+    }
 }
 
 /// A model type as the source writes it: the theory `T` of `Model(T)`, and
@@ -2323,6 +2367,21 @@ pub struct WrittenModel
     pub theory: gandr_theory_levitation::Name,
     /// Each sort the type fixes, beside the type it fixes it to.
     pub sorts: Vec<(gandr_theory_levitation::Name, ValueTypeId)>,
+}
+
+/// What answers a capability scope over a theory, as the source writes it:
+/// the module it names, `with N`, or the one model in scope, for a scope
+/// writing no `with`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScopeAnswer
+{
+    /// The module the scope names, `with N`, as written.
+    Named(gandr_theory_levitation::Name),
+    /// The one model of the theory in scope, the scope writing no `with`.
+    InScope,
 }
 
 /// A label the source writes against an entry: a field of a record or sum

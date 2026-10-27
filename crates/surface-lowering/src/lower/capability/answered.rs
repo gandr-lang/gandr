@@ -42,10 +42,12 @@ use crate::lower::model::ComponentPlace;
 use crate::lower::model::ModelSlot;
 use crate::lower::model::Supplied;
 use crate::origin::Origin;
+use crate::origin::ScopeAnswer;
 
 /// The model answering a capability scope over a theory: the theory's slot,
-/// the sorts the scope's manifest fixes left out, and what the module the
-/// scope names passes for it, or the holes the scope nominates for it.
+/// the sorts the scope's manifest fixes left out, what the module the scope
+/// names passes for it, or the holes the scope nominates for it, and the
+/// answer as the scope writes it.
 ///
 /// # Specification
 /// trivial.
@@ -56,6 +58,8 @@ pub(in crate::lower) struct Answering
     pub slot: ModelSlot,
     /// The module's members, or the scope's holes.
     pub supplied: Supplied,
+    /// The module the scope names, or none.
+    pub written: ScopeAnswer,
 }
 
 impl Lowerer<'_, '_>
