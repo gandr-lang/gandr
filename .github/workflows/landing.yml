@@ -10,9 +10,18 @@ name: landing
 
 # The server-side landing watcher (#2701). `pr:watch` queues a pull request
 # the moment its head is green and restacks a dequeued stack, but only while
-# its seat's shell lives; this run reads every open pull request every 10
-# minutes and acts once (`.config/pr-stack/landing.bash`, decided by
-# `landing.jq`).
+# its seat's shell lives; this run reads every open pull request and acts
+# once (`.config/pr-stack/landing.bash`, decided by `landing.jq`).
+#
+# A reading follows the events that change what lands (#2984): a `CI` run
+# completing (a pull request's head turning green or red, a merge-queue
+# entry passing or failing, `main` moving) and the two states no completion
+# marks, a pull request leaving the queue (`dequeued`) and a draft taken back
+# (`ready_for_review`, the end of a `pr:hold`). There is no schedule: GitHub's
+# scheduler ran this repository's schedules four to five hours late. The run
+# checks out the default branch and runs its script there, never a pull
+# request's code, so `workflow_run`'s write token reaches nothing a pull
+# request wrote.
 #
 # The workflow's own token may not enqueue (the queue answers "Enqueuer is
 # not authorized to merge"), and GitHub starts no run for its pushes, so it
@@ -23,14 +32,19 @@ name: landing
 # onto its base, the rebased commits signed by GitHub. The App's token is
 # minted by `actions/create-github-app-token`, the run's only App-facing step.
 on:
-  schedule:
-    - cron: "*/10 * * * *"
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI]
+    types: [completed]
+  pull_request:
+    types: [dequeued, ready_for_review]
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
-# One reading at a time; a run that finds one going waits rather than racing it.
+# One reading at a time; a run that finds one going waits rather than racing
+# it. Events arriving meanwhile collapse into the one pending reading, which
+# sees everything they changed.
 concurrency:
   group: landing
   cancel-in-progress: false
