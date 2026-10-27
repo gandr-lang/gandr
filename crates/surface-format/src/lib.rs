@@ -1916,15 +1916,19 @@ fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
 /// with no claim means `checks`. An indented `@[ checks ]` is a member
 /// attribute, a distinct concern (#1462), and stays. A block with any other
 /// entry — `checks` beside a `form` or a `doc`, or any other claim — is kept,
-/// as is a `checks` the source spells in its explicit form. The block's line,
-/// and the line break after it, are removed, so the documentation above it
-/// leads the declaration directly.
+/// as is a `checks` the source spells in its explicit form. A block that opens
+/// a line is removed with the whitespace after it, whether the declaration
+/// follows on that line or below; when nothing follows on its line, the line
+/// break goes too, so the documentation above it leads the declaration
+/// directly.
 ///
 /// # Specification
 /// - requires: `source` is a source's text.
-/// - ensures: the text with every column-zero line that is only a bare `@[
-///   checks ]` block, its trailing line break, and any whitespace inside the
-///   block, removed; an indented `@[ checks ]` and every other line unchanged.
+/// - ensures: the text with every bare `@[ checks ]` block that opens a line at
+///   column zero removed, with the whitespace after it on its line, and with
+///   its line break when nothing else stands on that line; any whitespace
+///   inside the block is the block's. An indented `@[ checks ]` and every other
+///   line are unchanged.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the strip is a source-text normalization the formatter
@@ -1947,14 +1951,23 @@ fn strip_bare_checks(source: SourceText<'_>) -> alloc::string::String
             .strip_suffix('\n')
             .unwrap_or(line)
             .trim_end_matches('\r');
-        let claim = content.chars().next().is_some_and(|c| !c.is_whitespace())
-            && content
-                .trim()
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .eq("@[checks]".chars());
-        if !claim {
-            out.push_str(line);
+        let rest = content
+            .strip_prefix("@[")
+            .and_then(|inner| inner.split_once(']'))
+            .filter(|&(entries, _)| {
+                entries
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .eq("checks".chars())
+            })
+            .map(|(_, after)| after.trim_start());
+        match rest {
+            Some("") => {},
+            Some(after) => {
+                out.push_str(after);
+                out.push_str(line.get(content.len() ..).unwrap_or_default());
+            },
+            None => out.push_str(line),
         }
     }
     out

@@ -715,6 +715,34 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
     }
 }
 
+/// The sugared form strips a bare top-level `@[ checks ]` wherever its
+/// declaration stands, on the block's own line or below it, so one pass gives
+/// what two give (#3049).
+#[test]
+fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
+{
+    let grammar = grammar();
+    let source = "/// One.\n@[ checks ] def one(x : Unit) -> -F Unit { return x }\n\n/// Two.\n@[ checks \
+                  ]\ndef two(x : Unit) -> -F Unit { return x }\n";
+    let sugared = |text: &str| {
+        let parsed = parse(&grammar, SourceText::from(text)).expect("the source parses");
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        format(&grammar, &parsed, options)
+            .expect("the source formats")
+            .into_text()
+    };
+    let once = sugared(source);
+    assert_eq!(
+        once,
+        "/// One.\ndef one(x : Unit) -> Unit { x }\n\n/// Two.\ndef two(x : Unit) -> Unit { x }\n",
+        "both blocks go in one pass"
+    );
+    assert_eq!(sugared(&once), once, "a second pass changes nothing");
+}
+
 /// A parenthesised list after a rule's `<=>` is the rule's outputs, not a
 /// tuple: the explicit form keeps it, while a tuple read as a value beside it
 /// is written `#{…}`.
