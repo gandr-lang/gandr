@@ -1470,8 +1470,10 @@ wt step copy-ignored
 # on any; the rule is `.config/claims/unit.jq`, reading the sections through
 # `sections.jq` as `pr:open` does, its cases held by `check:claims`. The
 # vault's dispatch script runs it on the issue a prompt names and refuses to
-# launch on a failure. `.github/ISSUE_TEMPLATE/unit.md` carries the sections,
-# its hints in comments that leave a section empty until it is written.
+# launch on a failure. The web files a unit through the form
+# `.github/ISSUE_TEMPLATE/unit.yml`, a field per section, and the issues
+# workflow (#3113) runs the same reading on every opened or edited issue,
+# labelling `status:unsectioned` while it fails.
 #
 # A `## Sources` line naming a vault page by its filename (#2793) is read
 # against the vault checkout `$XDG_CONFIG_HOME/gandr/references` names
@@ -1540,7 +1542,7 @@ if [[ $pages != null ]]; then
   findings=$(printf '%s\n%s\n' "$findings" "$refused" | awk 'NF')
 fi
 if [[ -n "$findings" ]]; then
-  printf 'unit check FAILED: #%s lacks what a unit issue carries (units.md § units-issue; the template is .github/ISSUE_TEMPLATE/unit.md):\n' "$issue" >&2
+  printf 'unit check FAILED: #%s lacks what a unit issue carries (units.md § units-issue; the form is .github/ISSUE_TEMPLATE/unit.yml):\n' "$issue" >&2
   printf '%s\n' "$findings" | sed 's/^/  - /' >&2
   exit 1
 fi

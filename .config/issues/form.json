@@ -1,0 +1,23 @@
+[
+  {
+    "name": "#3113: a body the unit form wrote becomes a unit's body: the brief leads, each field its `## ` section, an empty field dropped, a `### ` line no field names kept, and the kind and areas become labels",
+    "input": "### Kind\n\nkind:defect\n\n### Area\n\narea:core, area:workflow\n\n### Brief\n\nThe checker refuses a row.\n\n### Detail\n\nUnder a scope.\n\n### Sources\n\n- `a.jq` — **primary**: the rule\n\n### Readings\n\n| Family | Axis | Question | Selected |\n| ------ | ---- | -------- | -------- |\n| Identity | `univalent` | q | no — a form |\n| Locality | `oracle` | q | no — a form |\n| Locality | `descent` | q | no — a form |\n| Place | `located` | q | no — a form |\n| Place | `resident` | q | no — a form |\n| Dimension | `rewriting` | q | no — a form |\n\n### Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `fork` | no |\n| `oracle` | no |\n| `sharing` | no |\n\n### Ledger\n\nNone.\n\n### The shape\n\n_No response_\n\n### Try first\n\n_No response_\n\n### Not in this slice\n\nNothing.\n\n### After\n\nnone\n",
+    "output": {
+      "body": "The checker refuses a row.\n\n### Detail\n\nUnder a scope.\n\n## Sources\n\n- `a.jq` — **primary**: the rule\n\n## Readings\n\n| Family | Axis | Question | Selected |\n| ------ | ---- | -------- | -------- |\n| Identity | `univalent` | q | no — a form |\n| Locality | `oracle` | q | no — a form |\n| Locality | `descent` | q | no — a form |\n| Place | `located` | q | no — a form |\n| Place | `resident` | q | no — a form |\n| Dimension | `rewriting` | q | no — a form |\n\n## Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `fork` | no |\n| `oracle` | no |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+      "labels": ["kind:defect", "area:core", "area:workflow"]
+    }
+  },
+  {
+    "name": "#3113: a form body with required sections left `_No response_` keeps only what was answered, so the reading finds what is missing",
+    "input": "### Kind\n\nkind:gap\n\n### Area\n\narea:surface\n\n### Brief\n\nA gap.\n\n### Sources\n\n_No response_\n\n### Readings\n\n| Family | Axis | Question | Selected |\n| ------ | ---- | -------- | -------- |\n| Identity | `univalent` | q |  |\n| Locality | `oracle` | q |  |\n| Locality | `descent` | q |  |\n| Place | `located` | q |  |\n| Place | `resident` | q |  |\n| Dimension | `rewriting` | q |  |\n\n### Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `fork` | no |\n| `oracle` | no |\n| `sharing` | no |\n\n### Ledger\n\n_No response_\n\n### The shape\n\n_No response_\n\n### Try first\n\n_No response_\n\n### Not in this slice\n\nLater.\n\n### After\n\nnone\n",
+    "output": {
+      "body": "A gap.\n\n## Readings\n\n| Family | Axis | Question | Selected |\n| ------ | ---- | -------- | -------- |\n| Identity | `univalent` | q |  |\n| Locality | `oracle` | q |  |\n| Locality | `descent` | q |  |\n| Place | `located` | q |  |\n| Place | `resident` | q |  |\n| Dimension | `rewriting` | q |  |\n\n## Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `fork` | no |\n| `oracle` | no |\n| `sharing` | no |\n\n## Not in this slice\n\nLater.\n\n## After\n\nnone\n",
+      "labels": ["kind:gap", "area:surface"]
+    }
+  },
+  {
+    "name": "#3113: a body not opening with the form's Kind field is no form's and is left as filed",
+    "input": "Seen on main.\n\n### Kind\n\nkind:defect\n",
+    "output": null
+  }
+]

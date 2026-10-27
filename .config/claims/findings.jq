@@ -20,8 +20,10 @@
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
-# A section's HTML comments are not content, so the issue template's hints
-# leave a section unanswered until it is written.
+# A section's HTML comments are not content, so a hint left in a section
+# leaves it unanswered until it is written. The unit form
+# (`.github/ISSUE_TEMPLATE/unit.yml`, #3113) writes its fields as these
+# sections through the issues workflow.
 
 include "sections";
 

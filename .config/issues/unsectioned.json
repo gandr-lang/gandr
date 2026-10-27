@@ -1,0 +1,132 @@
+[
+  {
+    "name": "#3113: an issue failing the reading is labelled `status:unsectioned` and gets one comment listing the findings under a counted summary",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": []
+    },
+    "output": {
+      "label": "add",
+      "comment": {
+        "act": "create",
+        "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit.\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: a run finding what the standing comment lists, the label on, changes nothing, the comment read as GitHub keeps it, without its trailing newline",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core", "status:unsectioned"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit."
+        }
+      ]
+    },
+    "output": {
+      "label": null,
+      "comment": null
+    }
+  },
+  {
+    "name": "#3113: new findings rewrite the oldest marked comment in place; no second comment is written",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core", "status:unsectioned"],
+      "findings": ["`## Ledger` is missing"],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit.\n"
+        },
+        {
+          "id": 9,
+          "body": "<!-- unit:check -->\nstray"
+        }
+      ]
+    },
+    "output": {
+      "label": null,
+      "comment": {
+        "act": "edit",
+        "id": 7,
+        "body": "<!-- unit:check -->\n<details><summary>unit:check: 1 finding; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit.\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: a pass takes the label off and rewrites the comment to say the sections are complete",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core", "status:unsectioned"],
+      "findings": [],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit.\n"
+        }
+      ]
+    },
+    "output": {
+      "label": "remove",
+      "comment": {
+        "act": "edit",
+        "id": 7,
+        "body": "<!-- unit:check -->\n**unit:check:** sections complete; `status:unsectioned` is off.\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: an issue that passes and was never flagged gets no label and no comment",
+    "input": {
+      "state": "open",
+      "labels": ["kind:gap", "area:surface"],
+      "findings": [],
+      "comments": []
+    },
+    "output": {
+      "label": null,
+      "comment": null
+    }
+  },
+  {
+    "name": "#3113: an epic is not read: its label comes off and its standing comment says why",
+    "input": {
+      "state": "open",
+      "labels": ["kind:epic", "area:core", "status:unsectioned"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit.\n"
+        }
+      ]
+    },
+    "output": {
+      "label": "remove",
+      "comment": {
+        "act": "edit",
+        "id": 7,
+        "body": "<!-- unit:check -->\n**unit:check:** not read: an epic or a `collector` keeps its own shape (`units.md` § units-issue).\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: a closed issue is left as it is",
+    "input": {
+      "state": "closed",
+      "labels": ["kind:defect", "area:core"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": []
+    },
+    "output": {
+      "label": null,
+      "comment": null
+    }
+  }
+]
