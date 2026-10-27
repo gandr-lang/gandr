@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -222,6 +222,7 @@ impl FormName
         Self::DATA_GENERATOR,
         Self::CONSTRUCTOR_BLOCK_MEMBER,
         Self::CELL_MEMBER,
+        Self::RULE_MEMBER,
         Self::CASE,
         Self::CASE_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
@@ -359,6 +360,9 @@ impl FormName
     /// A data block's cell member `name : a <-> b` between two terms,
     /// inlined into the declaration.
     pub const CELL_MEMBER: Self = Self("cell_member");
+    /// A data block's rule member `rule l <=> r` between two terms, inlined
+    /// into the declaration.
+    pub const RULE_MEMBER: Self = Self("rule_member");
     /// The match `case e -> T? { p => c, … }`.
     pub const CASE: Self = Self("case_expression");
     /// A match's view `with e`, folded into the match, and the absurd match
