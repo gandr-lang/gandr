@@ -261,6 +261,10 @@
 //!   Computer Science 293, pages 369–378, 1988.
 //!   [doi:10.1007/3-540-48184-2_32](https://doi.org/10.1007/3-540-48184-2_32) —
 //!   deriving a subtree digest from its children's digests.
+//! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § two walls — a
+//!   chunk that verifies against its digest is integrity only, so a codec's
+//!   decoder still refuses a payload its value cannot hold, a payload index
+//!   past the host's range among them.
 
 // Module documentation that predates the shape lint: 31 headings outside the
 // vocabulary, 3 decision records and 3 budgets exceeded. Each allow leaves with

@@ -98,6 +98,8 @@ use quenchant_shape::shape::Maybe;
 
 use crate::error::ArtifactError;
 
+mod value;
+
 /// The byte width of a declaration record's key.
 pub const ADMISSION_KEY_LEN: usize = 0x08_usize;
 

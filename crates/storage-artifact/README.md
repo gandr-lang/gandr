@@ -1,6 +1,6 @@
 # gandr-storage-artifact
 
-Kernel artifacts on the authenticated record plane: one record per declaration segment, under a BLAKE3 manifest identity.
+Kernel artifacts on the authenticated record plane and the content-addressed value plane: one record per declaration segment, under a BLAKE3 manifest identity or a content pointer.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -23,10 +23,11 @@ Kernel artifacts on the authenticated record plane: one record per declaration s
 ## References
 
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688); [mechanization artifact, doi:10.5281/zenodo.20315616](https://doi.org/10.5281/zenodo.20315616) — the CAM a keyed artifact instantiates, and the token-bound lemmas whose scope the crate root states.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: the integrity design (§ two walls) — a pointer proves which bytes, so the value-plane codec checks the stream's shape alone and the kernel's decoder decides the bytes.
 
 ## Provided features
 
-- `ArtifactRecordSet`: `from_artifact` cuts a kernel artifact at the decoder's segment boundaries, and `from_artifact_keeping` and `from_artifact_after` cut it through a decode resumed after a kept prefix; `from_records` builds a set from records in any order and refuses a repeated admission index; `from_stored` reads a stored tree's records back and refuses a misplaced key; `record_refs`, `reassemble` and `ensure_cut_at` give the tree input, the image and the boundary check.
+- `ArtifactRecordSet`: `from_artifact` cuts a kernel artifact at the decoder's segment boundaries, and `from_artifact_keeping` and `from_artifact_after` cut it through a decode resumed after a kept prefix; `from_records` builds a set from records in any order and refuses a repeated admission index; `from_stored` reads a stored tree's records back and refuses a misplaced key; `record_refs`, `reassemble` and `ensure_cut_at` give the tree input, the image and the boundary check. Its `CanonicalValue` commits the set through `gandr-storage-values`, each declaration segment's constructor holding the one before, so an edit shares every chunk before the edited declaration.
 - `ArtifactRecord`, `AdmissionKey`, `SegmentBytes`, `ReassembledArtifact` and `HEADER_KEY`: one declaration record, its fixed-width big-endian key, the segment bytes, the reassembled image and the header's key.
 - `build`: the commit path, writing the record tree into a `BlockStore` and returning its `ArtifactManifest`.
 - `ArtifactManifest`: `encode`, `decode` and `identity` give a manifest one byte image under `MANIFEST_DOMAIN` and one `ArtifactIdentity` over it; `read_under` reads the artifact back through the kernel's decoder.
@@ -92,6 +93,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | ----- | ------ |
 | Integrity and validity, the kernel reader, scope of the mechanized bounds, laws and their witnesses, references | [`src/lib.rs`](src/lib.rs) |
 | The record layout, the cuts, the declaration grain | [`record`](src/record.rs) |
+| The set on the value plane: its tokens, the nesting and the index gaps | [`record::value`](src/record/value.rs) |
 | The artifact manifest | [`manifest`](src/manifest.rs) |
 | Certificate transport | [`transport`](src/transport.rs) |
 

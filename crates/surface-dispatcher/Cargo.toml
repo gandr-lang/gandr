@@ -36,9 +36,10 @@ path = "tests/lib.rs"
 # whose names it borrows. A `[presentation]` table, the user's configuration
 # file's and a package manifest's alike, is read through toml. A package's
 # lock commits each dependency's identity through the storage tier's store,
-# and records the pointer the value plane returns. A `check` that keeps the
-# kernel's verdicts admits under the policy and key the kernel's verdict
-# vocabulary names.
+# and records the pointer the value plane returns; a package's export commits
+# there too, each kernel artifact as the artifact crate's declaration records.
+# A `check` that keeps the kernel's verdicts admits under the policy and key
+# the kernel's verdict vocabulary names.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a closure's lowering and
 # judgement, the prelude's among them, for the benchmark report.
@@ -55,6 +56,7 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
+gandr-storage-artifact.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
 gandr-surface-corpus.workspace = true

@@ -5,6 +5,7 @@
 //! The artifact contract suite.
 
 use core::fmt::Write as _;
+use core::num::NonZeroU64;
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
@@ -33,6 +34,9 @@ use gandr_storage_artifact::HEADER_KEY;
 use gandr_storage_artifact::MANIFEST_DOMAIN;
 use gandr_storage_artifact::SegmentBytes;
 use gandr_storage_artifact::build;
+use gandr_storage_chunker::Kappa;
+use gandr_storage_chunker::TokenCap;
+use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_records::BlockStore as _;
 use gandr_storage_records::BoundaryMaskBits;
 use gandr_storage_records::BoundaryParams;
@@ -52,6 +56,26 @@ use gandr_storage_records::SeparatorConvention;
 use gandr_storage_records::TreeKind;
 use gandr_storage_records::TreeParams;
 use gandr_storage_records::decode_node;
+use gandr_storage_values::CanonicalValue;
+use gandr_storage_values::CanonicalWord;
+use gandr_storage_values::ChildIndexBase;
+use gandr_storage_values::CodecId;
+use gandr_storage_values::CodecIdentity;
+use gandr_storage_values::CodecVersion;
+use gandr_storage_values::ConstructorTag;
+use gandr_storage_values::EditDepth;
+use gandr_storage_values::EmissionFault;
+use gandr_storage_values::InMemoryChunkStore;
+use gandr_storage_values::TokenBytes;
+use gandr_storage_values::TokenOffset;
+use gandr_storage_values::TokenReader;
+use gandr_storage_values::TokenSink;
+use gandr_storage_values::ValueError;
+use gandr_storage_values::ValueProfile;
+use gandr_storage_values::ValueQuantity;
+use gandr_storage_values::cam_commit;
+use gandr_storage_values::cam_deref;
+use gandr_storage_values::measure_edit;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::Strategy;
 use proptest::prop_assert_eq;
@@ -875,4 +899,265 @@ proptest! {
             first.read_under(&store, TreeParams::current())
         );
     }
+}
+
+/// The cuts the value-plane witnesses commit under: every record a chunk of
+/// its own, the store's pair, and no cut but the cap's.
+///
+/// # Specification
+/// trivial.
+fn cuts() -> [TypedChunkerParams; 3]
+{
+    let params = |kappa: NonZeroU64, cap: NonZeroU64| {
+        TypedChunkerParams::new(Kappa::from(kappa), TokenCap::from(cap))
+    };
+    [
+        params(NonZeroU64::MIN, NonZeroU64::MAX),
+        params(
+            NonZeroU64::MIN.saturating_add(3_u64),
+            NonZeroU64::MIN.saturating_add(63_u64),
+        ),
+        params(NonZeroU64::MAX, NonZeroU64::MAX),
+    ]
+}
+
+/// An artifact's value-plane profile under `params`.
+///
+/// # Specification
+/// trivial.
+fn value_profile(params: TypedChunkerParams) -> ValueProfile
+{
+    ValueProfile::new(
+        params,
+        CodecIdentity::new(CodecId::from(0x01_u16), CodecVersion::from(1_u16)),
+        ChildIndexBase::Absolute,
+    )
+}
+
+#[test]
+fn an_artifact_commits_and_reads_back_to_the_image_the_kernel_decodes()
+{
+    for artifact in [shared_artifact(), long_artifact(Count(40))] {
+        let set = records_of(&artifact);
+        for params in cuts() {
+            let mut store = InMemoryChunkStore::new();
+            let manifest =
+                cam_commit(&mut store, &value_profile(params), &set).expect("the set commits");
+            let back: ArtifactRecordSet =
+                cam_deref(&store, manifest.root()).expect("the set reads back");
+            assert_eq!(back, set, "under {params:?}, the set reads back whole");
+            let image = back.reassemble();
+            assert_eq!(
+                image.as_ref(),
+                artifact.as_ref(),
+                "under {params:?}, the set read back reassembles to the artifact"
+            );
+            assert!(
+                decode(image.as_image()).is_ok(),
+                "under {params:?}, the kernel decodes the image read back"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_set_with_holes_reads_back_off_the_value_plane()
+{
+    // Holes before the first record, between two, and across the 255/256
+    // carry, beside two records with none between them.
+    let indices = [2_usize, 3, 255, 256, 1000];
+    let segments: Vec<Vec<u8>> = indices
+        .iter()
+        .map(|index| format!("segment {index}").into_bytes())
+        .collect();
+    let records = indices
+        .iter()
+        .zip(&segments)
+        .map(|(&index, segment)| {
+            ArtifactRecord::new(
+                ConstantIndex::from(index),
+                SegmentBytes::from(segment.as_slice()),
+            )
+        })
+        .collect();
+    let set = ArtifactRecordSet::from_records(SegmentBytes::from(b"header".as_slice()), records)
+        .expect("the indices are distinct");
+    for params in cuts() {
+        let profile = value_profile(params);
+        let mut store = InMemoryChunkStore::new();
+        let manifest = cam_commit(&mut store, &profile, &set).expect("the set commits");
+        let back: ArtifactRecordSet =
+            cam_deref(&store, manifest.root()).expect("the set reads back");
+        assert_eq!(back, set, "under {params:?}, every index reads back");
+        assert_eq!(
+            cam_commit(&mut store, &profile, &back)
+                .expect("the set commits again")
+                .root(),
+            manifest.root(),
+            "under {params:?}, the set read back is written as the stream it was read from"
+        );
+    }
+}
+
+/// One record of a hand-written token stream.
+#[derive(Clone, Copy, Debug)]
+enum Token
+{
+    /// A constructor opens.
+    Open(ConstructorTag),
+    /// A payload word.
+    Word(CanonicalWord),
+    /// A byte payload.
+    Bytes(TokenBytes<'static>),
+    /// The innermost constructor closes.
+    Close,
+}
+
+/// A value whose emission is a hand-written stream, an artifact or not.
+#[repr(transparent)]
+struct Stream(Vec<Token>);
+
+impl CanonicalValue for Stream
+{
+    /// Plays the stream into the sink.
+    ///
+    /// # Specification
+    /// - requires: nothing; a stream no artifact emits is admitted.
+    /// - ensures: the records in order, stopping at the sink's first refusal.
+    /// - fails: the sink's first refusal.
+    /// - panics: none.
+    /// - executable: none — the records go to an opaque sink, whose record is
+    ///   the committing store's.
+    ///
+    /// # Errors
+    /// The sink's first refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 two balanced streams no artifact emits commit, so the
+    ///   refusals the witness reads are the artifact decoder's.
+    /// - witness: `tests::artifact_contract::a_stream_that_is_no_artifact_is_refused_off_the_value_plane`
+    fn emit_tokens<Sink>(
+        &self,
+        sink: &mut Sink,
+    ) -> Result<(), ValueError>
+    where
+        Sink: TokenSink + ?Sized,
+    {
+        for &token in &self.0 {
+            match token {
+                Token::Open(tag) => sink.open(tag)?,
+                Token::Word(word) => sink.word(word)?,
+                Token::Bytes(bytes) => sink.bytes(bytes)?,
+                Token::Close => sink.close()?,
+            }
+        }
+        Ok(())
+    }
+
+    /// Never decodes: a stream is only ever emitted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decode_tokens(_reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    {
+        Err(ValueError::MalformedEmission {
+            fault: EmissionFault::EmptyValue,
+        })
+    }
+}
+
+#[test]
+fn a_stream_that_is_no_artifact_is_refused_off_the_value_plane()
+{
+    let tag = |byte: u8| Token::Open(ConstructorTag::from(byte));
+    let word = |value: u64| Token::Word(CanonicalWord::from(value));
+    let bytes = Token::Bytes(TokenBytes::from(b"bytes".as_slice()));
+    // A record's constructor where the artifact's stands.
+    let headless = Stream(vec![tag(0x02), bytes, Token::Close]);
+    // Two records after holes: the first lands on the last index the host
+    // addresses, so the second has no index left to land on.
+    let last = u64::try_from(usize::MAX).expect("addresses fit a word");
+    let past = Stream(vec![
+        tag(0x01),
+        bytes,
+        word(2),
+        tag(0x03),
+        tag(0x03),
+        word(last.saturating_sub(1)),
+        bytes,
+        Token::Close,
+        word(0),
+        bytes,
+        Token::Close,
+        Token::Close,
+    ]);
+    for (stream, expected) in [
+        (headless, ValueError::UnexpectedConstructor {
+            found: ConstructorTag::from(0x02_u8),
+            position: TokenOffset::ZERO,
+        }),
+        (past, ValueError::ArithmeticOverflow {
+            quantity: ValueQuantity::PayloadIndex,
+        }),
+    ] {
+        let mut store = InMemoryChunkStore::new();
+        let manifest = cam_commit(&mut store, &value_profile(cuts()[1]), &stream)
+            .expect("the stream is balanced");
+        assert_eq!(
+            cam_deref::<ArtifactRecordSet>(&store, manifest.root()),
+            Err(expected),
+            "a stream no artifact emits is refused by name"
+        );
+    }
+}
+
+#[test]
+fn an_edit_shares_every_chunk_before_it_on_the_value_plane()
+{
+    let set = records_of(&long_artifact(Count(40)));
+    let edited = 30_usize;
+    let segments: Vec<Vec<u8>> = set
+        .records()
+        .iter()
+        .enumerate()
+        .map(|(index, record)| {
+            let mut segment = record.segment().as_ref().to_vec();
+            if index == edited {
+                segment.push(0xA5_u8);
+            }
+            segment
+        })
+        .collect();
+    let records = segments
+        .iter()
+        .enumerate()
+        .map(|(index, segment)| {
+            ArtifactRecord::new(
+                ConstantIndex::from(index),
+                SegmentBytes::from(segment.as_slice()),
+            )
+        })
+        .collect();
+    let changed =
+        ArtifactRecordSet::from_records(set.header(), records).expect("the indices are distinct");
+    // Every record a chunk of its own: each chunk before the edit is shared,
+    // and the edited record's, each after it and the root's are written anew.
+    let profile = value_profile(cuts()[0]);
+    let mut store = InMemoryChunkStore::new();
+    let before = cam_commit(&mut store, &profile, &set)
+        .expect("the set commits")
+        .root();
+    let after = cam_commit(&mut store, &profile, &changed)
+        .expect("the edit commits")
+        .root();
+    let measured = measure_edit(&store, before, after, EditDepth::from(10_u64))
+        .expect("both closures are in the store");
+    assert_eq!(
+        (
+            usize::from(measured.chunks_shared),
+            usize::from(measured.chunks_affected)
+        ),
+        (edited, 40_usize - edited + 1_usize),
+        "the thirty records before the edit are shared; the ten from it on and the root are new"
+    );
 }
