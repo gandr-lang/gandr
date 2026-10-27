@@ -44,6 +44,12 @@
 //!
 //! The tree-sitter grammar does not produce these constructs, so their
 //! provenances are in [`PBG_ONLY_KINDS`](crate::PBG_ONLY_KINDS).
+//!
+//! # References
+//!
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a sort's index binder over
+//!   the host's types is a type identifier, `sort T(A : Type)`.
 
 use alloc::vec::Vec;
 
@@ -643,11 +649,11 @@ fn theory_member() -> Regex
     alt([
         // `sort Nat : Type` — a colour declaration; its right-hand side is an
         // ordinary type (the universe), not a circuit signature. An indexed
-        // sort carries its parameter telescope before the colon.
+        // sort carries its index telescope before the colon.
         seq([
             t(TileLabel("sort")),
             t(TileLabel("type_identifier")),
-            opt(parameter_group()),
+            opt(sort_indices()),
             t(TileLabel(":")),
             h(Sort::Type),
         ]),
@@ -709,6 +715,48 @@ fn theory_member() -> Regex
             t(TileLabel(":")),
             h(Sort::Type),
         ]),
+    ])
+}
+
+/// Build a sort's index telescope `( a : A, … )`: an operation's parameter
+/// list, or a binder named by a type identifier as a definition's type
+/// parameter is, for an index over the host's types, `sort T(A : Type)`.
+///
+/// The list keeps every [`parameter`] form, which the description refuses
+/// past a named port: a narrower list left the one-token-drop records worse
+/// at 64 corpus tokens, whose ghost readings ran through those forms. A type
+/// identifier at an entry's head opens both the binder and an unnamed port's
+/// type, so the `:` after it decides; a lowercase binder opens only the named
+/// port, as before.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one parenthesized optional list whose entries are parameters or a
+///   type identifier, a colon and a type hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
+fn sort_indices() -> Regex
+{
+    seq([
+        t(TileLabel("(")),
+        opt(comma1(alt([
+            parameter(),
+            seq([
+                t(TileLabel("type_identifier")),
+                t(TileLabel(":")),
+                h(Sort::Type),
+            ]),
+        ]))),
+        t(TileLabel(")")),
     ])
 }
 

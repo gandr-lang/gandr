@@ -8,6 +8,12 @@
 //! the [`DeclPolarity`]. Every extension point a declaration table needs —
 //! sorts, grades, attributes, operations and faces — is a field here, so
 //! adding one never retrofits the table.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a sort's index ranges over
+//!   the host's types, `Type`, beside the signature's own sorts.
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -260,15 +266,17 @@ impl SortDesc
 /// One binder of a sort's index telescope: `dom : Ob` in
 /// `sort Hom(dom : Ob, cod : Ob)`.
 ///
-/// An index ranges over a sort, never over a type: the description universe
-/// is indexed by the signature's sort set, and admitting an arbitrary type
-/// would let a description mention something its signature does not declare.
+/// An index ranges over a sort, or over the host's types, `A : Type` in `sort
+/// T(A : Type)`, never over another type: the description universe is indexed
+/// by the signature's sort set, and admitting an arbitrary type would let a
+/// description mention something its signature does not declare.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SortIndex
 {
     /// The binder's name, in scope in the indices that follow it.
     pub name: Name,
-    /// The sort it ranges over, which the same signature declares.
+    /// The sort it ranges over, which the same signature declares, or `Type`
+    /// for the host's types.
     pub sort: Name,
     /// The sort family's index arguments, in telescope order; empty for an
     /// unindexed sort.

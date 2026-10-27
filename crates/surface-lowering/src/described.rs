@@ -809,8 +809,9 @@ impl Typer<'_>
     }
 
     /// The type the sort term `sort` names under `scope`: the decode of the
-    /// sort's code, applied to its indices' values, or the builtin type an
-    /// unindexed name no binder of `scope` answers names.
+    /// sort's code, applied to its indices' values, or the host universe a bare
+    /// `Type` or the builtin type an unindexed name no binder of `scope`
+    /// answers names.
     ///
     /// # Specification
     /// trivial.
@@ -821,6 +822,12 @@ impl Typer<'_>
     ) -> Option<ValueTypeId>
     {
         let code = if sort.indices.is_empty() {
+            if let Maybe::Present(ground) = sort.host_universe() {
+                return Some(
+                    self.arena
+                        .value_type_universe(Sort::Ground(ground), Level::zero()),
+                );
+            }
             let Some(index) = scope.variable(&sort.sort)
             else {
                 return match type_atom(SurfaceName::from(sort.sort.as_ref())) {
