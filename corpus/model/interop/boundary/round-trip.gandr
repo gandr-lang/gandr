@@ -1,0 +1,42 @@
+// Definitions a Rust caller runs on values of its own, through the runtime as
+// a library.
+//
+// This is the boundary's first direction: Rust holds the composed program and
+// calls a definition by name. Nothing crosses by layout yet. Each argument
+// and answer is a value the runtime holds as itself.
+//
+// The Rust test composes this source, names each definition and calls it on
+// integers it builds, then reads the answer back. Each `runs` item below makes
+// the same call from gandr, so both sides state one answer.
+//
+// - see: #2901 — not implemented: values crossing by Rust's default layout,
+//   and the `extern` form calling Rust from gandr
+// - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
+// - see: `model/interop/boundary/function-row.gandr` — the function row an
+//   `extern` is admitted against
+
+/// Twice its argument.
+pub def double(x : Integer) -> Integer { x + x }
+
+/// The first less the second: the arguments' order decides the answer.
+pub def less(x : Integer, y : Integer) -> Integer { x - y }
+
+/// The function adding `n`: a call answers it as a value, unapplied.
+def adder(n : Integer) -> Integer => Integer {
+  thunk { fn (x) { x + n } }
+}
+
+/// `double` at 21, as the Rust test calls it.
+@[ runs("42") ]
+def doubled() -> Integer { double(21) }
+
+/// `less` at 19 and 7, as the Rust test calls it.
+@[ runs("12") ]
+def lessened() -> Integer { less(19, 7) }
+
+/// `adder` at 5, applied to 7.
+@[ runs("12") ]
+def added() -> Integer {
+  run add <- adder(5);
+  add(7)
+}
