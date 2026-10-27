@@ -5,9 +5,8 @@
 // proved by another law of the same type.
 
 /// The category shape: a sort of morphisms dependent on the objects. Its
-/// laws over the dependent sort nest an operation the cell layer does not read
-/// there (#1510).
-@[ refuses("UndescribedMember.NestedOperation") ]
+/// laws over the dependent sort are read with the objects each composite
+/// stands at, so the unit laws agree at `comp(id(a), id(a))` (#1510).
 theory CatShape {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;

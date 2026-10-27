@@ -8,8 +8,12 @@
 //! rank in the path order the check oriented by. A derived rule's peak is
 //! found by the kernel's own reading of the rules
 //! ([`gandr_kernel_term::TheoryRules::peak_of`]), so the peak the value names
-//! is one the kernel replays.
+//! is one the kernel replays. Over an indexed sort completion ran over terms
+//! carrying their indices, which is the reading the kernel decides by: the
+//! peaks are found among the written rules read with their indices, and each
+//! derived rule is stated without them, as the kernel re-derives them.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -70,6 +74,11 @@ use crate::description::written::RuleDirection;
 ///   reads it, stopping before the first rule no peak reaches; and each
 ///   operation the rules mention, of a positive rank in the precedence the
 ///   oriented rules and the ranking derived rules induce, in declaration order.
+///   Where the presented reading carries indices, the peaks are those of the
+///   written rules read with them
+///   ([`Indexing::face`](gandr_theory_computads::Indexing::face)) and each
+///   derived rule is stated stripped of them
+///   ([`Indexing::strip`](gandr_theory_computads::Indexing::strip)).
 /// - panics: none.
 ///
 /// # Adequacy
@@ -100,6 +109,25 @@ where
         .into_iter()
         .map(|(rule, joined)| (rule.clone(), joined))
         .collect();
+    // The indices the derived rules carry: those of the presented reading,
+    // when completion derived its rules there.
+    let indexing = match (&cells.coincidence, &cells.presented) {
+        (&Coincidence::Joined(ref certificates), &Maybe::Present(ref presented))
+            if !certificates.derived_terms.is_empty() =>
+        {
+            match presented.indexing {
+                Maybe::Present(ref indexing) => Some(indexing),
+                Maybe::Absent(_) => None,
+            }
+        },
+        (
+            &(Coincidence::Unexamined
+            | Coincidence::Orthogonal
+            | Coincidence::Refused(_)
+            | Coincidence::Joined(_)),
+            &(Maybe::Present(_) | Maybe::Absent(_)),
+        ) => None,
+    };
     let mut oriented = description.clone();
     oriented.rules = cells.oriented.clone().into();
     let ranking: Vec<(FreeTerm, FreeTerm)> = derived
@@ -113,10 +141,17 @@ where
         .filter(|&(_, rank)| usize::from(rank) > 0)
         .map(|(name, rank)| (name.clone(), rank))
         .collect();
+    let read: Vec<Cow<'_, RuleFace>> = cells
+        .oriented
+        .iter()
+        .map(|face| match indexing.map(|indexing| indexing.face(face)) {
+            Some(Ok(indexed)) => Cow::Owned(indexed),
+            Some(Err(_)) | None => Cow::Borrowed(face),
+        })
+        .collect();
     let mut symbols = Symbols::new(&ranks);
     let nameable = Nameable::from(naming_port(description).is_some());
-    let written: Vec<TheoryRule> = cells
-        .oriented
+    let written: Vec<TheoryRule> = read
         .iter()
         .map(|face| symbols.face(face, nameable))
         .collect();
@@ -139,8 +174,8 @@ where
             break;
         };
         faces.push(DerivedFace {
-            left,
-            right,
+            left: indexing.map_or_else(|| left.clone(), |indexing| indexing.strip(&left)),
+            right: indexing.map_or_else(|| right.clone(), |indexing| indexing.strip(&right)),
             peak: DerivedPeak {
                 outer: RuleIndex::from(usize::from(peak.outer)),
                 position: SidePlace::from(usize::from(peak.position)),

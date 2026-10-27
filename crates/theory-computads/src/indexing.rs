@@ -12,10 +12,11 @@
 //! the indices too, so a critical pair is well sorted, and a closed call
 //! carries the indices its arguments' sorts fix.
 //!
-//! The reading carries a closed call and the oriented rules it normalizes
-//! under ([`crate::PresentedRules::call`]); a presentation's own laws over an
-//! indexed sort stay declined until the kernel's decision of its rules
-//! re-derives the indices they carry (#1510).
+//! The reading carries a presentation's own laws
+//! ([`crate::elaborate_theory_desc`]), a closed call and the oriented rules it
+//! normalizes under ([`crate::PresentedRules::call`]). The kernel re-derives
+//! the same indices when it decides the presentation's rules, so the overlaps
+//! the cell layer certifies are the ones the kernel joins.
 //!
 //! - **Choice.** Index arguments written into the term alphabet's operation
 //!   applications, solved by first-order unification over the signature's
@@ -64,8 +65,9 @@ quenchant_shape::reason_enum! {
             /// constructors fix: its terms carry no indices.
             Generated,
             /// A port binds or abstracts a variable, an operation has other
-            /// than one output, or an index names an operation that has
-            /// indices of its own: the reading carries none of them.
+            /// than one output, an index names an operation that has indices
+            /// of its own, or a law has no sorting, instantiates a variable
+            /// or fires under a row: the reading carries none of them.
             Unsupported,
         }
     }

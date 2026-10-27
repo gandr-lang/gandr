@@ -39,6 +39,14 @@
 //! does not carry, or one whose peak does not replay, leaves its pair to part
 //! in step 4 or is refused by name in step 3.
 //!
+//! Over an indexed sort the written terms do not carry the indices their
+//! sorting fixes, so two laws' overlap can part where the typing makes its
+//! sides one: a category's `comp(id(a), id(b))`. Steps 3 and 4 then read
+//! each rule with its operations' implicit indices first, solved from the
+//! sorts their arguments stand at ([`indexed`]), and step 2 orders the rules
+//! as written. A presentation that reading does not cover is decided as
+//! written.
+//!
 //! The terms are first order but for instantiations. A symbol is an
 //! operation application, a constructor application, a results tuple, an
 //! atom's abstraction or an atom named inside one, or a binding field or a
@@ -972,8 +980,11 @@ pub struct TheoryRuleRefusal
     pub fault: TheoryRuleFault,
 }
 
-/// A presentation's rules as the decision reads them: the symbol table, the
-/// written rules oriented, and the derived rules with their peaks.
+/// A presentation's rules as the decision reads them.
+///
+/// The symbol table, the written rules oriented, the derived rules with their
+/// peaks, and the same rules in the indexed reading where the presentation
+/// has one.
 ///
 /// # Specification
 /// trivial.
@@ -986,6 +997,10 @@ pub struct TheoryRules
     rules: Vec<TheoryRule>,
     /// One peak per derived rule, in order: the last `peaks.len()` rules.
     peaks: Vec<CriticalPeak>,
+    /// The rules in the indexed reading ([`indexed`]), in the same order;
+    /// empty where the presentation has none, its pairs then decided over
+    /// `rules`.
+    indexed: Vec<TheoryRule>,
 }
 
 impl TheoryRules
@@ -1005,6 +1020,7 @@ impl TheoryRules
             symbols,
             rules: written,
             peaks: Vec::new(),
+            indexed: Vec::new(),
         }
     }
 
@@ -1056,6 +1072,24 @@ impl TheoryRules
         &self.peaks
     }
 
+    /// The rules whose critical pairs and peaks the decision reads: the
+    /// indexed reading where the presentation has one, the rules as read
+    /// otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decided(&self) -> &[TheoryRule]
+    {
+        if self.indexed.is_empty() {
+            &self.rules
+        }
+        else {
+            &self.indexed
+        }
+    }
+
     /// The rules a value of the presentation code carries.
     ///
     /// # Specification
@@ -1082,7 +1116,13 @@ impl TheoryRules
     ///   for a rule with an `Inst` — is conditioned; where none is, no term
     ///   names an atom, a condition holds of every instance, and no rule is. A
     ///   rule followed by `Under` fires in the rows it describes, each theory
-    ///   labelled by its first naming in the chain.
+    ///   labelled by its first naming in the chain. Where the sort chain states
+    ///   an indexed sort, and every rule is first order, unconditioned and
+    ///   sorted by the operation chain's ports, each rule is read again with
+    ///   every operation application's implicit indices first, the variables
+    ///   its ports' sorts name that no input port is, solved by unifying the
+    ///   sorts its arguments stand at ([`Self::decided`]); otherwise there is
+    ///   no such reading.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
     ///   being readable at: a member out of that order, a condition before
     ///   every written rule or after a row, an `Open` after no `Under`, a term
@@ -1111,8 +1151,11 @@ impl TheoryRules
     ///   name; a condition, or a variable moved out of the abstraction,
     ///   conditions its rule where a port takes the channel and not where none
     ///   does; a variable split across the abstraction on a left side is
-    ///   refused undecided; an occurrence no abstraction binds is unreadable.
+    ///   refused undecided; an occurrence no abstraction binds is unreadable. A
+    ///   category's left unit law reads with the three objects `id(a)` and `f`
+    ///   fix, and laws over no indexed sort have no indexed reading.
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
+    /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
     /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
     /// - witness: `theory_rules::tests::rules_under_rows_join_under_the_row_their_overlap_composes_2448`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.peaks.len() <= rules.rules.len()))]
@@ -1144,8 +1187,11 @@ impl TheoryRules
     ///   variable or is conditioned joins in the second-order reading
     ///   ([`Self::second_order`]); and every other critical pair normalizes to
     ///   one term under the rules that instantiate nothing and are not
-    ///   conditioned. Otherwise the first failing rule in that order and its
-    ///   fault; a divergent or undecided overlap is named at its outer rule.
+    ///   conditioned. Peaks and first-order pairs are those of
+    ///   [`Self::decided`], the rules read with their indices where the
+    ///   presentation has that reading, so an overlap a sorting rules out is no
+    ///   pair. Otherwise the first failing rule in that order and its fault; a
+    ///   divergent or undecided overlap is named at its outer rule.
     /// - provides: the kernel's own decision that a presentation's rules are a
     ///   convergent rewriting system deciding the equations its written rules
     ///   generate, re-derived at every admission and replay.
@@ -1172,8 +1218,10 @@ impl TheoryRules
     ///   extrusion and garbage collection where a port takes the channel each
     ///   converge alone and join together, the overlap composing their
     ///   freshness conditions, while a restriction of nothing beside scope
-    ///   extrusion parts at their overlap.
+    ///   extrusion parts at their overlap; a category's unit laws join over the
+    ///   objects each sorting fixes and part without them.
     /// - witness: `theory_rules::tests::a_unit_law_converges_and_a_second_unit_parts_from_it`
+    /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
     /// - witness: `theory_rules::tests::a_malformed_rule_is_refused_by_its_fault`
@@ -1192,7 +1240,12 @@ impl TheoryRules
             rule: RuleIndex::from(index),
             fault,
         };
-        for (index, rule) in self.rules.iter().enumerate() {
+        for (index, rule) in self
+            .rules
+            .iter()
+            .enumerate()
+            .chain(self.indexed.iter().enumerate())
+        {
             self.well_formed(rule)
                 .map_err(|fault| refuse(index, fault))?;
         }
@@ -1202,11 +1255,12 @@ impl TheoryRules
                 return Err(refuse(index, TheoryRuleFault::Unoriented));
             }
         }
-        let first = self.rules.len().saturating_sub(self.peaks.len());
+        let decided = self.decided();
+        let first = decided.len().saturating_sub(self.peaks.len());
         let mut work = PairBuffers::default();
         for (offset, &peak) in self.peaks.iter().enumerate() {
             let index = first.saturating_add(offset);
-            let (Some(before), Some(rule)) = (self.rules.get(.. index), self.rules.get(index))
+            let (Some(before), Some(rule)) = (decided.get(.. index), decided.get(index))
             else {
                 return Err(refuse(index, TheoryRuleFault::NoPeak));
             };
@@ -1217,12 +1271,12 @@ impl TheoryRules
             }
         }
         self.second_order(fuel)?;
-        for (outer, rule) in self.rules.iter().enumerate() {
+        for (outer, rule) in decided.iter().enumerate() {
             for (position, &node) in rule.left().iter().enumerate() {
                 if !matches!(node, TheoryNode::Symbol(_)) {
                     continue;
                 }
-                for inner in 0 .. self.rules.len() {
+                for inner in 0 .. decided.len() {
                     if position == 0 && inner == outer {
                         continue;
                     }
@@ -1231,32 +1285,30 @@ impl TheoryRules
                         position: SidePosition(position),
                         inner: RuleIndex::from(inner),
                     };
-                    let other = self.rules.get(inner);
+                    let other = decided.get(inner);
                     if rule.reading() == Reading::SecondOrder
                         || other.is_some_and(|other| other.reading() == Reading::SecondOrder)
                     {
                         continue;
                     }
-                    let joined = self
-                        .pair(&self.rules, peak, &mut work, fuel)
-                        .and_then(|pair| {
-                            if pair == Verdict::Fails {
-                                return Ok(Verdict::Holds);
-                            }
-                            self.normalize(
-                                &self.rules,
-                                &mut work.by_outer,
-                                (&mut work.bindings, &mut work.rewritten),
-                                fuel,
-                            )?;
-                            self.normalize(
-                                &self.rules,
-                                &mut work.by_inner,
-                                (&mut work.bindings, &mut work.rewritten),
-                                fuel,
-                            )?;
-                            Ok(Verdict::from(work.by_outer == work.by_inner))
-                        });
+                    let joined = self.pair(decided, peak, &mut work, fuel).and_then(|pair| {
+                        if pair == Verdict::Fails {
+                            return Ok(Verdict::Holds);
+                        }
+                        self.normalize(
+                            decided,
+                            &mut work.by_outer,
+                            (&mut work.bindings, &mut work.rewritten),
+                            fuel,
+                        )?;
+                        self.normalize(
+                            decided,
+                            &mut work.by_inner,
+                            (&mut work.bindings, &mut work.rewritten),
+                            fuel,
+                        )?;
+                        Ok(Verdict::from(work.by_outer == work.by_inner))
+                    });
                     match joined {
                         Ok(Verdict::Holds) => {},
                         Ok(Verdict::Fails) => {
@@ -1384,9 +1436,10 @@ impl TheoryRules
         Higher::new(self).closed_normal_form(self, term, fuel)
     }
 
-    /// The first critical pair of these rules whose two normal forms under
-    /// them are `rule`'s two sides: the peak a completion that derived `rule`
-    /// from these rules names for it, sought in `search`'s buffers.
+    /// The first critical pair of these rules, as decided ([`Self::decided`]),
+    /// whose two normal forms under them are `rule`'s two sides: the peak a
+    /// completion that derived `rule` from these rules names for it, sought in
+    /// `search`'s buffers.
     ///
     /// # Specification
     /// - requires: these rules are well formed.
@@ -1406,7 +1459,7 @@ impl TheoryRules
     ///   peak of the rules before it, and the peaks found replay; a rule no
     ///   pair reaches has none.
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |peak| peak.is_none_or(|peak| usize::from(peak.outer) < self.rules.len() && usize::from(peak.inner) < self.rules.len())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |peak| peak.is_none_or(|peak| usize::from(peak.outer) < self.decided().len() && usize::from(peak.inner) < self.decided().len())))]
     #[inline]
     pub fn peak_of(
         &self,
@@ -1416,12 +1469,13 @@ impl TheoryRules
     ) -> Result<Option<CriticalPeak>, Exhausted>
     {
         let work = &mut search.0;
-        for (outer, overlapped) in self.rules.iter().enumerate() {
+        let decided = self.decided();
+        for (outer, overlapped) in decided.iter().enumerate() {
             for (position, &node) in overlapped.left().iter().enumerate() {
                 if !matches!(node, TheoryNode::Symbol(_)) {
                     continue;
                 }
-                for inner in 0 .. self.rules.len() {
+                for inner in 0 .. decided.len() {
                     if position == 0 && inner == outer {
                         continue;
                     }
@@ -1430,7 +1484,7 @@ impl TheoryRules
                         position: SidePosition(position),
                         inner: RuleIndex::from(inner),
                     };
-                    if self.joins(&self.rules, peak, rule, work, fuel)? == Verdict::Holds {
+                    if self.joins(decided, peak, rule, work, fuel)? == Verdict::Holds {
                         return Ok(Some(peak));
                     }
                 }
@@ -2042,7 +2096,7 @@ struct Position(usize);
 /// # Specification
 /// trivial.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Node(usize);
 
 /// A variable's ordinal, or its place among the variables first seen.
@@ -3292,6 +3346,10 @@ impl<'arena> Reader<'arena>
                 fault: TheoryRuleFault::UndecidedCondition,
             });
         }
+        let indexed = self
+            .signature(sorts, operations)
+            .and_then(|signature| self.indexed(&signature))
+            .unwrap_or_default();
         let symbols = self
             .keys
             .iter()
@@ -3319,6 +3377,7 @@ impl<'arena> Reader<'arena>
             symbols,
             rules: self.rules,
             peaks: self.peaks,
+            indexed,
         })
     }
 
@@ -3913,6 +3972,7 @@ fn scoped<'arena>(
 }
 
 mod higher;
+mod indexed;
 pub mod row;
 
 #[cfg(test)]

@@ -121,11 +121,15 @@
 //! and [`elaborate_data_desc`] declines it ([`DescReading::Generative`]). Over
 //! unindexed sorts a critical pair of well-sorted laws is well sorted: two
 //! subterms unify only under one operation, whose argument sorts are fixed.
-//! Over an indexed sort that fails, so such a law stays declined: in
+//! Over an indexed sort that fails for the terms as written: in
 //! `comp(id(a), f) ==> f` and `comp(f, id(b)) ==> f` the objects `a` and `b`
-//! are fixed by the types `f` stands at, which a term does not carry, and the
-//! untyped overlap `comp(id(a), id(b))` parts into `id(a)` and `id(b)` where
-//! the typing makes them one.
+//! are fixed by the types `f` stands at, and the untyped overlap
+//! `comp(id(a), id(b))` parts into `id(a)` and `id(b)` where the typing makes
+//! them one. So over an indexed sort each law is read with the indices its
+//! sorting fixes ([`Indexing::face`]), `comp(a, a, b, id(a), f)`, whose
+//! overlaps are the well-sorted ones; the kernel re-derives the same indices
+//! when it decides the presentation. A block one of whose laws has no sorting
+//! has no indexed reading, and its laws over an indexed sort stay declined.
 //!
 //! - **Choice.** The term reading is added where the sequent one has nothing to
 //!   say; a description writing no face that calls for terms has none, and its
@@ -136,9 +140,7 @@
 //!   operation, declined, which leaves a presented type no rule at all and a
 //!   presentation's laws unchecked as one rewriting system.
 //! - **Reversal.** A sequent alphabet with command positions inside a producer
-//!   holds every reading in one store, and the presented one is retired; laws
-//!   over an indexed sort are read when the term alphabet carries the index
-//!   terms each variable's type fixes.
+//!   holds every reading in one store, and the presented one is retired.
 //!
 //! [`TermAlphabet`]: crate::TermAlphabet
 //!
@@ -824,9 +826,7 @@ pub struct PresentedRules
     /// The indices each operation application carries, over a description
     /// with an indexed sort: every cell's terms carry them, so a call is read
     /// with them ([`Self::call`]) and a normal form without
-    /// ([`Self::written`]). A presentation's own reading carries none yet,
-    /// its laws over an indexed sort declined; a reading of its oriented
-    /// rules may (#1510).
+    /// ([`Self::written`]). Absent when a law of the block has no sorting.
     pub indexing: Maybe<Indexing, indexed_reading::Absent>,
 }
 
@@ -949,7 +949,8 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — the same law nesting an operation on its left is declined
 ///   under the generative reading, read over terms under the shape reading, and
-///   declined under the shape reading once a sort is indexed.
+///   under the shape reading over an indexed sort read with its indices, or
+///   declined when another law of the block has no sorting.
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DescReading
@@ -957,11 +958,12 @@ pub enum DescReading
     /// A family's own rules: an operation face compiles to the operation's
     /// body, so a face the sequent reading cannot shape is declined.
     Generative,
-    /// A presentation's laws: over unindexed sorts, a face the sequent reading
-    /// cannot shape — an operation applied where an argument stands,
-    /// `turn(unturn(x))`, or a call with no argument to cut against,
-    /// `f(x) ==> zero()` — is read over terms; over an indexed sort it is
-    /// declined as under the generative reading.
+    /// A presentation's laws: a face the sequent reading cannot shape — an
+    /// operation applied where an argument stands, `turn(unturn(x))`, or a call
+    /// with no argument to cut against, `f(x) ==> zero()` — is read over terms,
+    /// over an indexed sort with the indices its sorting fixes; where a law of
+    /// the block has no sorting, it is declined as under the generative
+    /// reading.
     Shape,
 }
 
@@ -1014,16 +1016,19 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   which neither store knows.
 /// - ensures: a face calls for terms when it passed the operation gate and is
 ///   constructor-headed, or, under [`DescReading::Shape`] with every sort
-///   unindexed, when its sequent elaboration fails with
-///   [`ElaborateError::UnsupportedShape`] or
+///   unindexed or the block indexed — every face sorted by [`Indexing::face`]
+///   and none instantiating a variable or firing under a row — when its sequent
+///   elaboration fails with [`ElaborateError::UnsupportedShape`] or
 ///   [`ElaborateError::EmptyOperation`]; otherwise that failure declines the
 ///   face.
 /// - ensures: `presented` is present exactly when a face calls for terms, and
 ///   then holds every face that passed the operation gate and, if it does not
-///   call for terms, was admitted — as [`face_cell`] builds it, in rule order;
-///   where some operation's input port takes an atom, a face stating a
-///   freshness condition or moving a variable across an abstraction is held
-///   beside the store instead, as [`conditioned_cell`] builds it.
+///   call for terms, was admitted — as [`face_cell`] builds it from the face
+///   [`Indexing::face`] sorts when the block is indexed, and from the face as
+///   written otherwise, in rule order, its `indexing` that indexing; where some
+///   operation's input port takes an atom, a face stating a freshness condition
+///   or moving a variable across an abstraction is held beside the store
+///   instead, as [`conditioned_cell`] builds it.
 /// - ensures: `circuits` holds one [`CircuitElaboration`] per circuit rule, in
 ///   declaration order; a rule whose body denotes no single composite is
 ///   declined with [`ElaborateError::NoCircuitComposite`] before its derived
@@ -1055,6 +1060,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
 /// - witness: `elaborate::tests::empty_descriptions_and_mixed_reports_preserve_declaration_indices`
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
+/// - witness: `elaborate::tests::a_presented_reading_carries_its_indices_1510`
 /// - witness: `elaborate::tests::a_law_returning_a_nullary_operation_is_read_over_terms_909`
 /// - witness: `elaborate::tests::a_second_order_law_reaches_no_store`
 /// - witness: `elaborate::tests::a_law_under_a_row_reaches_no_store_2448`
@@ -1077,9 +1083,15 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
         }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_))).count()) == desc.rules.len()
         && match ret.presented {
             Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
-                .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
+                .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if match presented.indexing {
+                    Maybe::Present(ref indexing) => indexing.face(face).is_ok_and(|indexed| *stored == face_cell(&indexed)),
+                    Maybe::Absent(_) => *stored == face_cell(face),
+                })))
                 && presented.conditioned.iter().all(|&(index, ref cell)| desc.rules.get(usize::from(index))
-                    .is_some_and(|face| *cell == conditioned_cell(face)))
+                    .is_some_and(|face| match presented.indexing {
+                        Maybe::Present(ref indexing) => indexing.face(face).is_ok_and(|indexed| *cell == conditioned_cell(&indexed)),
+                        Maybe::Absent(_) => *cell == conditioned_cell(face),
+                    }))
                 && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
             Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len())
                 .saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_))).count()) == desc.rules.len(),
@@ -1135,14 +1147,42 @@ fn elaborate_desc<G>(
     let mut admitted_faces = Vec::with_capacity(desc.rules.len());
     let mut declined_faces = Vec::new();
     // Every face either reading holds, in rule order, and whether one of them
-    // calls for the term reading. A law over an indexed sort stays declined:
-    // its indices are bound by the sorts its variables stand at, which the
-    // kernel's reading of a presentation does not re-derive yet (#1510).
-    let laws_over_terms =
-        reading == DescReading::Shape && desc.sorts.iter().all(|sort| sort.indices.is_empty());
-    let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
+    // calls for the term reading. A law over an indexed sort is read with the
+    // indices its sorting fixes (`Indexing::face`), which the kernel's
+    // decision of the presentation re-derives. Where one law's sides do not
+    // sort, or a law instantiates a variable or fires under a row, the block
+    // has no indexed reading, as the kernel then has none, and its laws over
+    // an indexed sort stay declined.
+    let mut indexing = match reading {
+        DescReading::Shape => Indexing::of(desc),
+        DescReading::Generative => Maybe::Absent(indexed_reading::Absent::Generated),
+    };
+    let mut sorted: Vec<Cow<'_, RuleFace>> = desc.rules.iter().map(Cow::Borrowed).collect();
+    if let Maybe::Present(ref indexed) = indexing {
+        let faces: Option<Vec<Cow<'_, RuleFace>>> = desc
+            .rules
+            .iter()
+            .map(|face| {
+                if bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_)) {
+                    None
+                }
+                else {
+                    indexed.face(face).ok().map(Cow::Owned)
+                }
+            })
+            .collect();
+        match faces {
+            Some(faces) => sorted = faces,
+            None => indexing = Maybe::Absent(indexed_reading::Absent::Unsupported),
+        }
+    }
+    let laws_over_terms = reading == DescReading::Shape
+        && (desc.sorts.iter().all(|sort| sort.indices.is_empty())
+            || matches!(indexing, Maybe::Present(_)));
+    let mut read: Vec<(AdmittedFaceIndex, Cow<'_, RuleFace>)> =
+        Vec::with_capacity(desc.rules.len());
     let mut presents = false;
-    for (index, face) in desc.rules.iter().enumerate() {
+    for ((index, face), sorted) in desc.rules.iter().enumerate().zip(sorted) {
         if bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_)) {
             continue;
         }
@@ -1166,7 +1206,7 @@ fn elaborate_desc<G>(
         match outcome {
             Ok(terms) => {
                 presents |= terms;
-                read.push((AdmittedFaceIndex::from(index), face));
+                read.push((AdmittedFaceIndex::from(index), sorted));
             },
             Err(error) => declined_faces.push((DeclinedFaceIndex::from(index), error)),
         }
@@ -1178,17 +1218,17 @@ fn elaborate_desc<G>(
         let mut conditioned = Vec::new();
         for (index, face) in read {
             if nameable && bool::from(face.conditioned()) {
-                conditioned.push((index, conditioned_cell(face)));
+                conditioned.push((index, conditioned_cell(&face)));
             }
             else {
-                faces.push((index, terms.insert(face_cell(face))));
+                faces.push((index, terms.insert(face_cell(&face))));
             }
         }
         Maybe::Present(PresentedRules {
             store: terms,
             faces,
             conditioned,
-            indexing: Maybe::Absent(indexed_reading::Absent::Unindexed),
+            indexing,
         })
     }
     else {
@@ -3956,8 +3996,10 @@ mod tests
                 .collect::<Vec<_>>(),
             "every law that passed is read over terms, in rule order"
         );
-        // Over an indexed sort the same laws stay declined: a term does not
-        // carry the indices its variables' types fix.
+        // Over an indexed sort a law with no sorting, `add(Zero(), n)` naming
+        // a constructor or `x ==> x` applying no operation, leaves the block
+        // no indexed reading, so the nested laws stay declined as a family
+        // declines them.
         let mut indexed = laws;
         indexed.sorts = [SortDesc::family("Nat", DeclPolarity::Data, [
             SortIndex::new("n", "Nat"),
@@ -3966,12 +4008,29 @@ mod tests
         let presentation = elaborate_theory_desc(&indexed);
         assert_eq!(
             family.declined_faces, presentation.declined_faces,
-            "an indexed presentation declines what a family does"
+            "an indexed presentation with an unsorted law declines what a family does"
         );
         assert_eq!(
             Maybe::Absent(presented_reading::Absent::NoTermFace),
             presentation.presented,
             "and has no term reading"
+        );
+        // With only the nested laws every law sorts, and each is read with
+        // the indices its sorting fixes.
+        indexed.rules = indexed.rules.iter().step_by(2).cloned().collect();
+        let presentation = elaborate_theory_desc(&indexed);
+        assert_eq!(
+            Vec::<(DeclinedFaceIndex, ElaborateError)>::new(),
+            presentation.declined_faces,
+            "an indexed presentation whose laws sort declines none of them"
+        );
+        let Maybe::Present(presented) = presentation.presented
+        else {
+            panic!("the nested laws are read over indexed terms");
+        };
+        assert!(
+            matches!(presented.indexing, Maybe::Present(_)),
+            "the reading carries the block's indexing"
         );
     }
 
@@ -4008,19 +4067,17 @@ mod tests
             presented.faces,
             "the one law is the one term cell"
         );
-        // Over an indexed sort the law stays declined, as every term law does.
+        // Over an indexed sort the law is read with the indices its sorting
+        // fixes, here none.
         let mut indexed = laws;
         indexed.sorts = [SortDesc::family("Nat", DeclPolarity::Data, [
             SortIndex::new("n", "Nat"),
         ])]
         .into();
         assert_eq!(
-            vec![(
-                DeclinedFaceIndex::from(0_usize),
-                ElaborateError::EmptyOperation
-            )],
+            Vec::<(DeclinedFaceIndex, ElaborateError)>::new(),
             elaborate_theory_desc(&indexed).declined_faces,
-            "an indexed presentation declines it"
+            "an indexed presentation reads it too"
         );
     }
 
@@ -4028,9 +4085,8 @@ mod tests
     fn a_presented_reading_carries_its_indices_1510()
     {
         // A category's laws over `Hom(dom, cod)` nest an identity where a
-        // composite's argument stands: the presentation declines them until
-        // the kernel re-derives their indices, and a reading carrying them
-        // reads each composite with the objects its sorting fixes.
+        // composite's argument stands: the presentation reads each composite
+        // with the objects its sorting fixes, as the kernel re-derives them.
         let var = |name: &str| FreeTerm::var(name);
         let hom = |name: &str, dom: &str, cod: &str| {
             SortRef::new(name, "Hom").applied([var(dom), var(cod)])
@@ -4075,17 +4131,28 @@ mod tests
             ]),
         ]
         .into();
-        assert_eq!(
-            elaborate_theory_desc(&category).presented,
-            Maybe::Absent(presented_reading::Absent::NoTermFace),
-            "a presentation declines the nested laws over the indexed sort"
-        );
-        let presented = PresentedRules {
-            store: CellStore::new(),
-            faces: Vec::new(),
-            conditioned: Vec::new(),
-            indexing: Indexing::of(&category),
+        let Maybe::Present(presented) = elaborate_theory_desc(&category).presented
+        else {
+            panic!("the nested laws over the indexed sort are read over terms");
         };
+        let Maybe::Present(ref indexing) = presented.indexing
+        else {
+            panic!("the reading carries the block's indexing");
+        };
+        let unit = category
+            .rules
+            .first()
+            .map(|rule| indexing.face(rule))
+            .expect("the left unit law")
+            .expect("the left unit law sorts");
+        assert_eq!(
+            presented
+                .faces
+                .first()
+                .map(|&(_, cell)| presented.store.get(cell)),
+            Some(Maybe::Present(&face_cell(&unit))),
+            "the left unit law is its face carrying the objects it fixes"
+        );
         let Ok(indexed) = presented.call(&comp(id("x"), id("x")))
         else {
             panic!("two identities at one object compose");

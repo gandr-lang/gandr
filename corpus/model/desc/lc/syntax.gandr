@@ -26,10 +26,10 @@ import "../model-in-source.gandr";
 /// substitutions between them and terms in a context; the empty context,
 /// substitution, context extension, weakening, the newest variable, single
 /// substitution and lifting; abstraction and application; the six
-/// substitution laws. Its laws over the indexed sorts nest an operation the
-/// cell layer does not read there (#1510); `Model(LC)` derives from it all the
-/// same.
-@[ refuses("UndescribedMember.NestedOperation") ]
+/// substitution laws. Law 3 moves a weakening past a lift and back, so no
+/// path order orients it and the rules are refused; `Model(LC)` derives from
+/// the block all the same.
+@[ refuses("RulesUnoriented") ]
 pub theory LC {
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;

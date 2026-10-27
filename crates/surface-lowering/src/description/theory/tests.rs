@@ -485,12 +485,8 @@ fn the_cat_shape_laws_are_written_faces()
             .iter()
             .map(|diagnostic| diagnostic.fault.clone())
             .collect::<Vec<_>>(),
-        [const {
-            crate::desc_cells::CellFault::Rule(
-                gandr_theory_computads::ElaborateError::UnsupportedShape,
-            )
-        }; 3],
-        "an operation application where the cut reads a value has no cell yet"
+        [],
+        "each law is read over terms with the objects its sorting fixes"
     );
 }
 
@@ -1298,17 +1294,17 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
         r#"Presents(Sort("Pt", End, End), Const("base", End, Port("", "Pt", End, End), Oper("turn", Port("x", "Pt", End, End), Port("", "Pt", End, End), Oper("unturn", Port("x", "Pt", End, End), Port("", "Pt", End, End), End))), Rule("turnUnturn", App("turn", Arg(App("unturn", Arg(Var("x"), End)), End)), Var("x"), Rule("unturnTurn", App("unturn", Arg(App("turn", Arg(Var("x"), End)), End)), Var("x"), Rank("turn", "1", Rank("unturn", "1", End)))))"#,
         "the value carries the constant `base` as a `Const`, each law as a `Rule`, read node for node, then the rank of each operation a law applies"
     );
-    assert!(
-        matches!(
-            cat.outcome(),
-            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::UndescribedMember {
-                fault: MemberFault::NestedOperation,
-                ..
-            })
-        ),
-        "a law over an indexed sort stays declined, so its block defines no value: {:?}",
-        cat.outcome()
-    );
+    let crate::DeclarationOutcome::Completed {
+        declared_type: cat_type,
+        body: cat_body,
+    } = cat.outcome()
+    else {
+        panic!(
+            "a law over an indexed sort is read with the indices its sorting fixes, so its \
+             block defines a value too: {:?}",
+            cat.outcome()
+        )
+    };
     let declarations = [
         gandr_core_checker::Declaration::data(
             code.constant(),
@@ -1320,6 +1316,12 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
             Maybe::Present(declared_type),
             Maybe::Present(body),
             gandr_core_checker::OriginToken::from(1_usize),
+        ),
+        gandr_core_checker::Declaration::new(
+            cat.constant(),
+            Maybe::Present(cat_type),
+            Maybe::Present(cat_body),
+            gandr_core_checker::OriginToken::from(2_usize),
         ),
     ];
     let report = gandr_core_checker::check_module(
@@ -1337,9 +1339,10 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     assert!(
         matches!(verdicts.as_slice(), [
             gandr_core_checker::Verdict::Data,
+            gandr_core_checker::Verdict::Checked { .. },
             gandr_core_checker::Verdict::Checked { .. }
         ]),
-        "the checker checks the rule-bearing value at `Theory`: {verdicts:?}"
+        "the checker checks each rule-bearing value at `Theory`: {verdicts:?}"
     );
 }
 

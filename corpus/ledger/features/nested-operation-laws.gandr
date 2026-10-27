@@ -1,6 +1,6 @@
 /// `nested-operation-laws`: Operations nested in a law or a call.
-/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused.
-/// Not implemented: a law nesting an operation over an indexed sort, and a family's rule nesting one, are refused `UndescribedMember.NestedOperation` until the kernel re-derives the indices they carry; #1510 owes it.
+/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused; a law nesting an operation over an indexed sort is read, completed and decided with those indices.
+/// Not implemented: a family's rule nesting an operation, and a law whose sides sort only modulo the block's rules, are refused `UndescribedMember.NestedOperation`; #1510 and #522 owe them.
 // A choice that commits to its left branch once a cut stands there, over a
 // sort graded by how a computation may end (#2792): `orBot(cut, fail)` nests
 // two operations where the cell layer reads values, so it normalizes over
@@ -20,4 +20,35 @@ theory GradedCut {
   oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
 
   rule cutLeft : orBot(x, y) ==> x;
+}
+
+/// A category's shape: its laws over `Hom(dom, cod)` are read with the
+/// objects each composite stands at, so the unit laws agree at
+/// `comp(id(a), id(a))`.
+theory Category {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+
+  oper id : (a : Ob) --> Hom(a, a);
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+
+  rule unitL : comp(id(a), f) ==> f;
+  rule unitR : comp(f, id(b)) ==> f;
+  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+}
+
+/// Views of an edited morphism: `fuse` and `step` rewrite `view(edit(f))`
+/// two ways, so completion derives `view(patch(f)) ==> fresh(f)` over the
+/// objects `f` stands at, and the kernel replays it from its peak.
+theory EditedViews {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+
+  oper view : (f : Hom(x, y)) --> Hom(x, y);
+  oper edit : (f : Hom(x, y)) --> Hom(x, y);
+  oper patch : (f : Hom(x, y)) --> Hom(x, y);
+  oper fresh : (f : Hom(x, y)) --> Hom(x, y);
+
+  rule fuse : view(edit(f)) ==> fresh(f);
+  rule step : edit(f) ==> patch(f);
 }
