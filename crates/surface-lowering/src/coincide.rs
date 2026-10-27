@@ -158,6 +158,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::TrackingIssue;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
@@ -1526,7 +1527,11 @@ impl fmt::Display for NormalFormFault
     /// Writes why the call has no normal form.
     ///
     /// # Specification
-    /// - ensures: one phrase per fault, naming the step budget when it ran out.
+    /// - ensures: one phrase per fault, naming the step budget when it ran out;
+    ///   a call that does not elaborate is named by its reason, a shape the
+    ///   cell layer does not read yet with the issue that owes a nested
+    ///   operation, and a reason [`elaborate_call`] never returns as a call
+    ///   that does not elaborate.
     /// - fails: the formatting sink's error when it refuses the text.
     /// - panics: none.
     /// - executable: none — a formatter exposes no readback of the written
@@ -1539,6 +1544,7 @@ impl fmt::Display for NormalFormFault
     /// - hypothesis: L3 — an unread call and a call into a refused block read
     ///   apart.
     /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
+    /// - witness: `coincide::tests::a_call_the_cells_cannot_read_names_its_reason_and_its_issue_2855`
     #[inline]
     fn fmt(
         &self,
@@ -1552,9 +1558,26 @@ impl fmt::Display for NormalFormFault
             Self::UnknownSymbol => {
                 f.write_str("no normal form: the call names a symbol the block does not declare")
             },
-            Self::NotACall(_) => {
+            Self::NotACall(ElaborateError::LhsNotOperation) => {
                 f.write_str("no normal form: the term is no call the block's operations read")
             },
+            Self::NotACall(ElaborateError::EmptyOperation) => f.write_str(
+                "no normal form: the call passes its operation no argument, and a cell cuts an \
+                 operation against its first",
+            ),
+            Self::NotACall(ElaborateError::UnsupportedShape) => write!(
+                f,
+                "no normal form: the call holds an operation, a results tuple or a binder where \
+                 the cell layer reads a value; a nested operation is tracked by {}",
+                TrackingIssue::NESTED_OPERATION
+            ),
+            Self::NotACall(
+                ElaborateError::UnrepresentableOperation
+                | ElaborateError::ResultArity { .. }
+                | ElaborateError::NonLinear(_)
+                | ElaborateError::MixedPolarity(_)
+                | ElaborateError::NoCircuitComposite(_),
+            ) => f.write_str("no normal form: the call does not elaborate to a command"),
             Self::Exhausted => write!(f, "no normal form within {NORMAL_FORM_STEPS} steps"),
             Self::Uncertified => f.write_str("no normal form: the path does not replay"),
             Self::Unwritable(_) => f.write_str("no normal form: it writes no term"),
