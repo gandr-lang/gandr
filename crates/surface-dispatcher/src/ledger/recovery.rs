@@ -14,11 +14,13 @@
 //! or the start of what comes after. A mutant whose first error marks other
 //! bytes, or marks none, is a finding. A mutant the checker accepts is counted
 //! and not a finding: a deleted optional tile, or a near miss that spells
-//! another form, is no mistake. Nor is a deletion that leaves a well-formed
-//! source, one the lowering reads with no refusal, though the checker refuses
-//! it (#2340): `-> -F +{Integer}` less `Integer` is the empty sum, a type the
-//! corpus writes on purpose, and the first ill-typed term is then the body's
-//! injection. With no mistake of form left, the checker's first refusal is
+//! another form, is no mistake. Nor is a mutant that leaves a well-formed
+//! source, one the lowering reads with no refusal but for a name no
+//! declaration answers, though the check refuses it (#2340): `-> -F
+//! +{Integer}` less `Integer` is the empty sum, a type the corpus writes on
+//! purpose, and the first ill-typed term is then the body's injection; `def
+//! rec f` less `rec` is a definition that cannot call itself, and its own
+//! call is unresolved. With no mistake of form left, the first refusal is
 //! where the source goes wrong by construction, so it is counted well formed
 //! beside the accepted, not filed.
 //!
@@ -57,6 +59,7 @@ use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::SPELLED;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_parser::CandidateLabel;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::TileSpelling;
@@ -171,7 +174,8 @@ struct Reported
     /// Its primary span, measured in the mutant's own text, when it has one.
     span: Option<Site>,
     /// Whether the mutant was well formed: the lowering read every
-    /// declaration and refused none, so the first error is the checker's.
+    /// declaration and refused none but for an unresolved name, so the first
+    /// error is a meaning's, not a form's.
     formed: bool,
 }
 
@@ -315,9 +319,9 @@ pub struct RecoveryReport
     swept: usize,
     /// How many the checker accepted.
     accepted: usize,
-    /// How many deletions left a well-formed source the checker refused: no
-    /// mistake of form is left to mark, so the checker's first refusal is
-    /// where the source now goes wrong.
+    /// How many mutants left a well-formed source the check refused: no
+    /// mistake of form is left to mark, so the first refusal is where the
+    /// source now goes wrong.
     formed: usize,
     /// The mutants whose first error does not mark their mutation, in
     /// exemplar and byte order.
@@ -591,11 +595,12 @@ fn mutants(
 /// - requires: nothing.
 /// - ensures: one mutant per tile and mutation as [`mutants`] makes them, each
 ///   checked as `check` checks a source under a `ledger` directory; a mutant is
-///   accepted when the check reports no error, counted well formed when it is a
-///   deletion the lowering read whole and its first error, the checker's, does
-///   not mark the site, and a finding otherwise when its first error's primary
-///   span neither overlaps nor touches the mutation's site, or the error has
-///   none. The scratch directory the mutants are written under is removed.
+///   accepted when the check reports no error, counted well formed when the
+///   lowering refused none of its declarations but for an unresolved name and
+///   its first error does not mark the site, and a finding otherwise when its
+///   first error's primary span neither overlaps nor touches the mutation's
+///   site, or the error has none. The scratch directory the mutants are written
+///   under is removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -608,10 +613,12 @@ fn mutants(
 /// # Adequacy
 /// - hypothesis: L3 — a definition's exemplar is swept tile by tile, every
 ///   mutant counted and each first error read against its site; a deletion
-///   leaving another well-formed declaration whose body the checker refuses is
-///   counted well formed, not filed.
+///   leaving another well-formed declaration whose body the checker refuses,
+///   and a `rec` deleted or a declaration's keyword name missed, leaving only
+///   unresolved names, are counted well formed, not filed.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
+/// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
@@ -660,7 +667,8 @@ pub(super) fn sweep(
             } = step
             {
                 // Well formed: the lowering read the source and refused no
-                // declaration of it, so what the check reports is semantic.
+                // declaration of it but for a name no declaration answers,
+                // so what the check reports is a meaning, not a form.
                 let formed = matches!(
                     *composed,
                     Composed::Settled {
@@ -669,7 +677,11 @@ pub(super) fn sweep(
                         ..
                     } if unstatable.is_empty()
                         && report.declarations().iter().all(|declaration| {
-                            !matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Lowering(_)))
+                            !matches!(
+                                declaration.produced().refusal(),
+                                Maybe::Present(Refusal::Lowering(ref refused))
+                                    if !matches!(*refused, LoweringRefusal::UnresolvedName { .. })
+                            )
                         })
                 );
                 let index = path
@@ -714,7 +726,7 @@ pub(super) fn sweep(
         let marked = first
             .span
             .is_some_and(|span| span.start <= mutant.site.end && mutant.site.start <= span.end);
-        if !marked && mutant.mutation == Mutation::Deleted && first.formed {
+        if !marked && first.formed {
             report.formed = report.formed.saturating_add(1);
         }
         else if !marked {
@@ -999,5 +1011,57 @@ mod tests
                 "{exemplar}:{at}: `{tile}` {mutation} is reported first at its mutation: {report}"
             );
         }
+    }
+
+    /// #2876: `rec` deleted from `def rec down` leaves a definition that
+    /// cannot call itself, and `loop` missed as `loo` renames a declaration
+    /// the exemplar names by the keyword. Each leaves a source with another
+    /// meaning, refused only at a use no declaration answers, so it is counted
+    /// well formed and not filed.
+    #[test]
+    fn a_mutant_leaving_only_unresolved_names_is_no_finding_2876()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-unresolved",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "run-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/run-expression.gandr"),
+            ),
+            (
+                "binary-expression.then.gandr",
+                include_str!("../../../../corpus/ledger/syntax/binary-expression.then.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let unresolved = [
+            ("run-expression.gandr", 157_usize, "rec", Mutation::Deleted),
+            (
+                "binary-expression.then.gandr",
+                124,
+                "loop",
+                Mutation::Missed(String::from("loo")),
+            ),
+        ];
+        for &(exemplar, at, tile, ref mutation) in &unresolved {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == *mutation
+                }),
+                "{exemplar}:{at}: `{tile}` {mutation} leaves only unresolved names: {report}"
+            );
+        }
+        assert!(report.formed >= unresolved.len(), "{report}");
     }
 }
