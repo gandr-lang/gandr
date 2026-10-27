@@ -2916,11 +2916,17 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Looped<Node>
 {
-    /// `loop { b }`, its body run on each pass.
+    /// `loop { b }`, its body run on each pass, then the rest its breaks go
+    /// on with, if they go on with one: the commuting puts what follows the
+    /// loop at each break, `split () (); r`.
     Loop
     {
         /// The body, under the loop's binder and those `threads` opens.
         body: Node,
+        /// What follows the loop, under the loop's binder and as many more
+        /// as the count beside it: those the path from the body to the breaks
+        /// opens.
+        rest: Option<(Node, OpenBinders)>,
         /// The held slots the loop threads through its passes.
         threads: Threads<Node>,
     },
@@ -3074,6 +3080,125 @@ where
     None
 }
 
+/// What the breaks ending a loop's passes go on with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Breaks<Node>
+{
+    /// No pass ends in a break that goes on.
+    None,
+    /// Every break that goes on goes on with the one node, under as many
+    /// binders below the pass as the count says.
+    One(Node, OpenBinders),
+    /// Breaks go on with different nodes, or the search met what it does not
+    /// read past: a loop, a linear binder, or more nodes than a walk visits.
+    Apart,
+}
+
+/// What the breaks ending the passes of `pass` go on with: each split of
+/// unit over no binder, `split () (); r`, that a path through `pass` ends in.
+///
+/// The commuting puts what follows a loop at each of its breaks, copied
+/// once per depth it reaches, so the breaks at one depth share one copy.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: following, from `pass` itself, each position a path through a
+///   pass runs on into — a bind's rest, a case's branches, a split's body, a
+///   data case's written arms, a list case's or fold's branches, an opened
+///   value's body and an ascription's body, as [`children`] passes a pass's end
+///   on to them — [`Breaks::One`] when every split of unit over no binder the
+///   paths end in has one body, under one count of the intuitionistic binders
+///   the path opens; [`Breaks::None`] when the paths end in none;
+///   [`Breaks::Apart`] when they end in several bodies or at several counts, or
+///   a path meets a fixpoint, an application of one, a fork, a hold, a
+///   placement or a receive, whose rests stand under a linear binder, or more
+///   than [`VISIT_BUDGET`] nodes.
+/// - provides: the rest [`passes`] reads a `loop`'s off its breaks, and whether
+///   a `while`'s breaks go on with its rest.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop` breaking alone and from one arm with a rest
+///   following it, a `while` breaking in its true branch, and a `loop` whose
+///   two breaks go on with different nodes.
+/// - witness: `tests::goldens::a_loop_a_rest_follows_writes_its_breaks_bare_3231`
+#[spec(ensures: |ret| !matches!(broken(source, pass), Some(Break::Rest(_))) || matches!(ret, Breaks::One(_, under) if under.0 == 0_usize))]
+fn breaks<S>(
+    source: &S,
+    pass: S::Node,
+) -> Breaks<S::Node>
+where
+    S: Source + ?Sized,
+{
+    let mut found = Breaks::None;
+    let mut pending = Vec::from([(pass, 0_usize)]);
+    let mut remaining = VISIT_BUDGET;
+    while let Some((node, under)) = pending.pop() {
+        let Some(left) = remaining.checked_sub(1_u32)
+        else {
+            return Breaks::Apart;
+        };
+        remaining = left;
+        if let Some(Break::Rest(rest)) = broken(source, node) {
+            found = match found {
+                Breaks::None => Breaks::One(rest, OpenBinders(under)),
+                Breaks::One(held, at) if held == rest && at.0 == under => found,
+                Breaks::One(..) | Breaks::Apart => return Breaks::Apart,
+            };
+            continue;
+        }
+        let mut deeper = |child: Option<S::Node>, count: usize| {
+            if let Some(child) = child {
+                pending.push((child, under.saturating_add(count)));
+            }
+        };
+        let former = source.read(node);
+        if let Former::Bind(_, rest) | Former::Leta { body: rest, .. } = former {
+            deeper(Some(rest), 1_usize);
+        }
+        else if let Former::Case { arity, .. } = former {
+            for index in 0_usize .. usize::from(arity) {
+                deeper(source.component(node, Component::from(index)), 1_usize);
+            }
+        }
+        else if let Former::Split { arity, body, .. } = former {
+            deeper(Some(body), usize::from(arity));
+        }
+        else if let Former::DataCase { arity, .. } = former {
+            for index in 0_usize .. usize::from(arity) {
+                let arm = arm(source, node, Component::from(index));
+                if !arm.pruned {
+                    deeper(arm.body, arm.fields.saturating_add(arm.equations));
+                }
+            }
+        }
+        else if let Former::ListCase { nil, cons, .. } | Former::ListFold { nil, cons, .. } =
+            former
+        {
+            deeper(Some(nil), 0_usize);
+            deeper(Some(cons), 2_usize);
+        }
+        else if let Former::Ascription { body, .. } = former {
+            deeper(Some(body), 0_usize);
+        }
+        else if let Former::Fixpoint(_)
+        | Former::Fork { .. }
+        | Former::Hold { .. }
+        | Former::Place { .. }
+        | Former::Receive { .. } = former
+        {
+            return Breaks::Apart;
+        }
+        else if let Former::Application(function, _) = former
+            && let Former::Fixpoint(_) = source.read(function)
+        {
+            return Breaks::Apart;
+        }
+    }
+    found
+}
+
 /// The loop the fixpoint `node`, or the application of one, lowered from, in
 /// a position admitting `admits`.
 ///
@@ -3095,7 +3220,7 @@ where
 ///   threading loop when the lambda holds its argument again as [`held_again`]
 ///   reads it and the fixpoint is applied to as many slots; for a fixpoint
 ///   whose body is no lambda, the loop [`passes`] reads; where a pass ends,
-///   only a `while` or a `for` a rest follows; none otherwise.
+///   only a loop a rest follows; none otherwise.
 /// - provides: the reading [`slots`], [`Walk::visit`], [`Walk::pass_end`] and
 ///   [`Walk::form`] share.
 /// - fails: never.
@@ -3127,8 +3252,12 @@ where
     // Where a pass ends, the loop's rest goes on with the pass, so a loop
     // stands there only with a rest to write.
     let kept = |reading: Looped<S::Node>| match reading {
-        Looped::While { rest: Some(_), .. } | Looped::For { rest: Some(_), .. } => Some(reading),
-        Looped::Loop { .. } | Looped::While { rest: None, .. } | Looped::For { rest: None, .. } => {
+        Looped::Loop { rest: Some(_), .. }
+        | Looped::While { rest: Some(_), .. }
+        | Looped::For { rest: Some(_), .. } => Some(reading),
+        Looped::Loop { rest: None, .. }
+        | Looped::While { rest: None, .. }
+        | Looped::For { rest: None, .. } => {
             (admits != Admits::Computation(Tail::Passes)).then_some(reading)
         },
     };
@@ -3204,14 +3333,16 @@ where
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: a `while` when `body` binds a computation and cases on the bound
 ///   value in two branches the second of which is a break; a `loop` over `body`
-///   otherwise; either carrying `threads`.
+///   otherwise, its rest the one its breaks go on with ([`breaks`]) when it
+///   threads no slot, and none otherwise; either carrying `threads`.
 /// - provides: the passes [`looped`] reads under a fixpoint, alone or applied
 ///   to the slots it threads.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot.
+/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot,
+///   and a `loop` a rest follows.
 /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
 /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
 #[spec(ensures: |ret| matches!(ret, Looped::Loop { threads: kept, .. } | Looped::While { threads: kept, .. } if kept.held() == threads.held()))]
@@ -3246,7 +3377,17 @@ where
             threads,
         };
     }
-    Looped::Loop { body, threads }
+    // A `loop`: what follows it is put at its breaks. A threading loop's
+    // breaks read the slots held again, so its rest is no rest of the loop.
+    let rest = match (threads, breaks(source, body)) {
+        (Threads::Unthreaded, Breaks::One(rest, under)) => Some((rest, under)),
+        (Threads::Unthreaded, Breaks::None | Breaks::Apart) | (Threads::Slots { .. }, _) => None,
+    };
+    Looped::Loop {
+        body,
+        rest,
+        threads,
+    }
 }
 
 /// How many slots a threading loop's lambda body `each` holds again, and the
@@ -3323,20 +3464,22 @@ where
 /// The slots the `loop` or the `while` `reading` visits in a position
 /// admitting `admits`: the body, or the condition, the true branch and the
 /// rest, each under the loop's binder and those its threading opens
-/// ([`Threads::opened`]), and a `while`'s branch and rest under the test's
-/// two more.
+/// ([`Threads::opened`]), a `while`'s branch and rest under the test's two
+/// more, and a `loop`'s rest under those its breaks stand under.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one pass slot for a `loop`; for a `while`, the condition
-///   continuing, the true branch a pass and the rest, where one follows,
-///   admitting `admits`; none for a `for`.
+/// - ensures: for a `loop`, one pass slot and, where a rest follows, the rest
+///   admitting `admits`; for a `while`, the condition continuing, the true
+///   branch a pass and the rest, where one follows, admitting `admits`; none
+///   for a `for`.
 /// - provides: the slots [`children`] gives a loop, alone or threading.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot.
+/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot,
+///   and a `loop` a rest follows.
 /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
 /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
 #[spec(ensures: |ret| ret.len() <= 3_usize)]
@@ -3346,11 +3489,26 @@ fn passing<Node>(
 ) -> Vec<Slot<Node>>
 {
     match reading {
-        Looped::Loop { body, threads } => Vec::from([Slot::of(
+        Looped::Loop {
             body,
-            Admits::Computation(Tail::Passes),
-            Binds::intuitionistic(OpenBinders(threads.opened().0.saturating_add(1_usize))),
-        )]),
+            rest,
+            threads,
+        } => {
+            let looping = threads.opened().0.saturating_add(1_usize);
+            let mut slots = Vec::from([Slot::of(
+                body,
+                Admits::Computation(Tail::Passes),
+                Binds::intuitionistic(OpenBinders(looping)),
+            )]);
+            if let Some((rest, under)) = rest {
+                slots.push(Slot::of(
+                    rest,
+                    admits,
+                    Binds::intuitionistic(OpenBinders(looping.saturating_add(under.0))),
+                ));
+            }
+            slots
+        },
         Looped::While {
             condition,
             then,
@@ -3872,11 +4030,14 @@ enum LoopBinder
     /// The loop's own, the thunk a pass forces to run the next: forced at the
     /// end of a pass it is written `continue`. A rest follows the loop when
     /// `rest` holds, so a returner ending a pass is an exit, `return v`, and
-    /// otherwise the loop's end, `break(v)`.
+    /// otherwise the loop's end, `break(v)`; where `breaks` holds too, a
+    /// split of unit ending a pass goes on with that rest, a bare `break`.
     Own
     {
         /// Whether a rest follows the loop.
         rest: bool,
+        /// Whether every split of unit ending a pass goes on with the rest.
+        breaks: bool,
     },
     /// A `for` loop's remaining tail, which a pass hands the loop's own
     /// binder to run the next: `(force k) t` is `continue`.
@@ -3926,6 +4087,9 @@ struct Looping
     own: OpenBinders,
     /// Whether a rest follows the loop.
     rest: bool,
+    /// Whether every split of unit ending a pass goes on with the rest, so
+    /// is written as a bare `break`.
+    breaks: bool,
     /// What a pass hands the loop's own binder.
     pass: Pass,
 }
@@ -3936,6 +4100,8 @@ enum PassEnd
 {
     /// The loop's own binder forced, `continue`.
     Continue,
+    /// A split of unit going on with the loop's rest, a bare `break`.
+    Break,
     /// As an exit, or as a former the path runs on through.
     Written,
     /// Not at all: a computation left bare there runs the loop again.
@@ -5604,7 +5770,8 @@ impl Walk<'_, '_>
     ///
     /// The loop's own binder forced is `continue`, and so is the loop's own
     /// binder applied to what a pass hands on: in a `for` loop the remaining
-    /// tail, and in a threading loop the slots it holds again. A returner is
+    /// tail, and in a threading loop the slots it holds again. A split of unit
+    /// going on with the loop's rest is a bare `break`. A returner is
     /// written `break(v)` where the loop ends the body and `return v` where a
     /// rest follows it, a call `become c`, and a bind or a case runs the path
     /// on into its rest or its branches. An exit written in a handler's
@@ -5620,8 +5787,10 @@ impl Walk<'_, '_>
     ///   on: the variable whose open binder is a `for` loop's tail, the linear
     ///   variable whose open binder holds a threading loop's one slot, or the
     ///   tuple of the linear variables whose open binders hold its slots, in
-    ///   order; [`PassEnd::Written`] for a loop [`looped`] reads there, a bind,
-    ///   a case of any kind, a returner ending a loop no rest follows, inside a
+    ///   order; [`PassEnd::Break`] for a split of unit over no binder where the
+    ///   innermost loop's breaks go on with its rest ([`LoopBinder::Own`]);
+    ///   [`PassEnd::Written`] for a loop [`looped`] reads there, a bind, a case
+    ///   of any kind, a returner ending a loop no rest follows, inside a
     ///   handler subject of a body a reset delimits a shift over a returner,
     ///   and outside every handler subject a returner and any other call;
     ///   [`PassEnd::Unwritten`] otherwise.
@@ -5632,14 +5801,15 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pass ending in `continue` in a `loop`, a `for` and
-    ///   a `while` threading one slot and two, `break(v)`, `return v` and
-    ///   `become c`, one naming the loop's binder, one ending in another loop
-    ///   whose rest continues the first, and a `return` leaving a handler.
+    ///   a `while` threading one slot and two, `break(v)`, `return v`, a bare
+    ///   `break` a rest follows and `become c`, one naming the loop's binder,
+    ///   one ending in another loop whose rest continues the first, and a
+    ///   `return` leaving a handler.
     /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
     /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
-    #[spec(ensures: |ret| ret != PassEnd::Continue || !self.loops.is_empty())]
+    #[spec(ensures: |ret| (ret != PassEnd::Continue && ret != PassEnd::Break) || !self.loops.is_empty())]
     fn pass_end<S>(
         &self,
         source: &S,
@@ -5656,6 +5826,11 @@ impl Walk<'_, '_>
         let outside = self.subjects == 0_usize;
         let innermost = self.loops.last().copied();
         let rest = innermost.is_some_and(|looping| looping.rest);
+        if innermost.is_some_and(|looping| looping.breaks)
+            && let Some(Break::Rest(_)) = broken(source, node)
+        {
+            return PassEnd::Break;
+        }
         // Whether `node` reads as the variable in `zone` whose open binder is
         // at `position`.
         let names = |node, zone: Zone, position: OpenBinders| {
@@ -7021,9 +7196,10 @@ impl Walk<'_, '_>
             )]
             Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
         }
-        // The end of a loop's pass is written as an exit, a `continue`, or a
-        // former the path runs on through; anything else there the surface
-        // cannot write, since a computation left bare runs the loop again.
+        // The end of a loop's pass is written as an exit, a `continue`, a
+        // bare `break`, or a former the path runs on through; anything else
+        // there the surface cannot write, since a computation left bare runs
+        // the loop again.
         let pass = (admits == Admits::Computation(Tail::Passes))
             .then(|| self.pass_end(source, node, &former));
         if pass == Some(PassEnd::Continue) {
@@ -7031,6 +7207,9 @@ impl Walk<'_, '_>
                 Production("continue_expression"),
                 self.atom(Glyphs("continue")),
             );
+        }
+        if pass == Some(PassEnd::Break) {
+            return writes(Production("break_expression"), self.atom(Glyphs("break")));
         }
         #[cfg_attr(
             dylint_lib = "quenchant_dylints",
@@ -8022,8 +8201,29 @@ impl Walk<'_, '_>
         };
         let rest = matches!(
             looping,
-            Some(Looped::While { rest: Some(_), .. } | Looped::For { rest: Some(_), .. })
+            Some(
+                Looped::Loop { rest: Some(_), .. }
+                    | Looped::While { rest: Some(_), .. }
+                    | Looped::For { rest: Some(_), .. }
+            )
         );
+        // Whether every split of unit ending a pass is a break going on with
+        // the rest: a `loop`'s rest is read off them; a `while`'s true branch
+        // stands at its exit's depth, so a break there shares the exit's copy.
+        let breaking = match looping {
+            Some(Looped::Loop { rest, .. }) => rest.is_some(),
+            Some(Looped::While {
+                then,
+                rest: Some(rest),
+                threads: Threads::Unthreaded,
+                ..
+            }) => match breaks(source, then) {
+                Breaks::None => true,
+                Breaks::One(held, under) => held == rest && under.0 == 0_usize,
+                Breaks::Apart => false,
+            },
+            Some(Looped::While { .. } | Looped::For { .. }) | None => false,
+        };
         let threads = match looping {
             Some(Looped::Loop { threads, .. } | Looped::While { threads, .. }) => threads,
             Some(Looped::For { .. }) | None => Threads::Unthreaded,
@@ -8105,7 +8305,10 @@ impl Walk<'_, '_>
                     looping.map(|_| LoopBinder::Hidden)
                 }
                 else if depth == 0_usize {
-                    looping.map(|_| LoopBinder::Own { rest })
+                    looping.map(|_| LoopBinder::Own {
+                        rest,
+                        breaks: breaking,
+                    })
                 }
                 else if let Some(Looped::For { .. }) = looping {
                     // A `for` loop's body: the loop's own, the remaining
@@ -9760,9 +9963,15 @@ impl Walk<'_, '_>
                 if let Some(reading) = looped(source, node, admits) =>
             {
                 match reading {
-                    Looped::Loop { .. } => {
+                    Looped::Loop { rest, .. } => {
                         let _ = parts.text("loop {").body();
-                        writes(Production("loop_expression"), Binding::Prefix)
+                        if rest.is_some() {
+                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            writes(Production("block"), Binding::Sequence)
+                        }
+                        else {
+                            writes(Production("loop_expression"), Binding::Prefix)
+                        }
                     },
                     Looped::While { rest, .. } => {
                         let _ = parts.text("while ").piece(Binding::Arrow).text(" {").body();
@@ -11183,9 +11392,10 @@ where
                 let position = OpenBinders(walk.opened.len().saturating_sub(1_usize));
                 let _fresh = walk.hidden.insert(position);
                 match binder {
-                    LoopBinder::Own { rest } => walk.loops.push(Looping {
+                    LoopBinder::Own { rest, breaks } => walk.loops.push(Looping {
                         own: position,
                         rest,
+                        breaks,
                         pass: Pass::Nothing,
                     }),
                     LoopBinder::Tail => {
@@ -11293,7 +11503,7 @@ mod tests
     use super::VISIT_BUDGET;
 
     /// The root handle of a deliberately changing source.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct ChangingNode;
 
     /// A leaf during the scan and an alternating type cycle during the walk.

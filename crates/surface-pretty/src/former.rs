@@ -1313,8 +1313,9 @@ pub enum Unspelled
 /// and the printer stays total over it.
 pub trait Source
 {
-    /// The handle a node is named by.
-    type Node: Copy;
+    /// The handle a node is named by. Two handles are equal exactly when they
+    /// name one node, so the printer can tell a node it met before.
+    type Node: Copy + Eq;
 
     /// The node `node` names, as the printer reads it.
     ///

@@ -461,7 +461,7 @@ fn bound(
 
 /// A row of a hand-built table.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Row(usize);
 
 /// A source over hand-built rows, malformed at will: a child of the wrong
@@ -6732,6 +6732,102 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
         spelled(&source, body(leaking)),
         approximate(Written("loop { break(a) }")),
         "a pass naming the loop's unwritten binder keeps the notation"
+    );
+}
+
+/// A loop a rest follows is written with the rest after it, which the
+/// lowering puts at each of its breaks, `split () (); r`, and each such break
+/// is a bare `break`: a `loop` reads the rest off its breaks where they go on
+/// with one copy, and a `while`'s break in its true branch shares its exit's.
+/// A `loop` whose breaks go on with copies at two depths writes each where it
+/// stands (#3231).
+#[test]
+fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
+{
+    let mut core = CoreArena::new();
+    let partial = gandr_kernel_term::FixpointEvidence::Partial;
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let nothing = core.value_unit();
+    let unbound = ComponentCount::from(0_usize);
+    // `fn (a) { loop { break } ; a }`: the rest under the loop's binder.
+    let after = variable(&mut core, 1_u32);
+    let rest = core.computation_return(after);
+    let broken = core.computation_split(nothing, unbound, rest);
+    let fixpoint = core.computation_fixpoint(broken, partial);
+    let alone = core.computation_lambda(fixpoint);
+    // `fn (a) { loop { case a { +{.0 = b} => break, +{.1 = b} => continue } }
+    // ; a }`: the rest under the loop's binder and the arm's.
+    let test = variable(&mut core, 1_u32);
+    let after = variable(&mut core, 2_u32);
+    let rest = core.computation_return(after);
+    let broken = core.computation_split(nothing, unbound, rest);
+    let own = variable(&mut core, 1_u32);
+    let continued = core.computation_force(own);
+    let branches = core.computation_case(test, &[broken, continued]);
+    let fixpoint = core.computation_fixpoint(branches, partial);
+    let armed = core.computation_lambda(fixpoint);
+    // The same, the second arm running `force a` before its own break: a
+    // second copy of the rest, one binder deeper.
+    let test = variable(&mut core, 1_u32);
+    let ran = variable(&mut core, 2_u32);
+    let ran = core.computation_force(ran);
+    let later = variable(&mut core, 3_u32);
+    let rest = core.computation_return(later);
+    let again = core.computation_split(nothing, unbound, rest);
+    let bound = core.computation_bind(ran, again);
+    let branches = core.computation_case(test, &[broken, bound]);
+    let fixpoint = core.computation_fixpoint(branches, partial);
+    let apart = core.computation_lambda(fixpoint);
+    // `fn (a) { while force a { break } ; a }`: the true branch's break and
+    // the exit share the rest's copy under the loop's, the test's and the
+    // branch's binders.
+    let tested = variable(&mut core, 1_u32);
+    let condition = core.computation_force(tested);
+    let after = variable(&mut core, 3_u32);
+    let rest = core.computation_return(after);
+    let broken = core.computation_split(nothing, unbound, rest);
+    let test = variable(&mut core, 0_u32);
+    let branches = core.computation_case(test, &[broken, broken]);
+    let body = core.computation_bind(condition, branches);
+    let fixpoint = core.computation_fixpoint(body, partial);
+    let whiled = core.computation_lambda(fixpoint);
+    let source = CoreSource::new(&core, &[]);
+    for root in [alone, armed, apart, whiled] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(alone)),
+        faithful(Written("fn (a) { loop { break } ; a }")),
+        "a `loop`'s break goes on with the rest written after it"
+    );
+    assert_eq!(
+        spelled(&source, body(armed)),
+        faithful(Written(
+            "fn (a) { loop { case a { +{.0 = c} => break, +{.1 = c} => continue } } ; a }"
+        )),
+        "a break in an arm goes on with the rest under the arm's binder"
+    );
+    let (text, fidelity) = spelled(&source, body(apart));
+    assert!(
+        text.matches("case unit { unit => break(a")
+            .nth(1_usize)
+            .is_some()
+            && text
+                .matches("case unit { unit => break(a")
+                .nth(2_usize)
+                .is_none()
+            && !text.contains("break }")
+            && !text.contains("break,")
+            && fidelity == faithful(Written("")).1,
+        "breaks going on with copies at two depths are each written where they stand: {text}"
+    );
+    assert_eq!(
+        spelled(&source, body(whiled)),
+        faithful(Written("fn (a) { while force a { break } ; a }")),
+        "a `while`'s break sharing its exit's rest is bare"
     );
 }
 
