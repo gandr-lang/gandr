@@ -25,7 +25,7 @@
 //! # References
 //!
 //! - `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems`
-//!   — primary: § 8.2's Lemma 9 bounds how far one step stretches the distance
+//!   — exemplar: § 8.2's Lemma 9 bounds how far one step stretches the distance
 //!   between two instances of a hole by the number of times the contractum
 //!   writes it, over non-expansive symbols: the count a row reports.
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: each cell's
