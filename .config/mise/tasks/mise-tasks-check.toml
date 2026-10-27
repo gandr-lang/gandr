@@ -674,8 +674,9 @@ run = "typos"
 # outside the allowlist, matched by Git's glob pathspec so `*` stays within
 # one directory, which sizelint's patterns cannot express. The ledger's
 # README, its generated syntax ledger and its bootstrap census (#2896) are on
-# it, a library's README (its module map, `library/std/README.md`), and the
-# issue and pull request templates, which GitHub reads as markdown. The
+# it, a library's README (its module map, `library/std/README.md`), the
+# issue and pull request templates, which GitHub reads as markdown, and the
+# filers' issue templates (#3112), which `issue:file` posts as markdown. The
 # second holds every tracked markdown file to its budget in `sizelint.toml`;
 # treefmt's sizelint pass leaves markdown to this gate. The syntax ledger is
 # exempt: it is generated, one row per grammar rule, and
@@ -695,6 +696,7 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)ledger/syntax.md' \
   ':(exclude,glob)ledger/census.md' \
   ':(exclude,glob).github/ISSUE_TEMPLATE/*.md' \
+  ':(exclude,glob).config/issues/templates/*.md' \
   ':(exclude,glob).github/pull_request_template.md')
 if [ -n "$outside" ]; then
   printf '%s\n' "$outside" >&2
@@ -1549,7 +1551,12 @@ fi
 # `.config/issues/labels.jq` gives the defaults `issue:file` and
 # `issue:labels` add and the problems they refuse, each case in
 # `.config/issues/cases.json` an issue's labels, the defaults table and those
-# lines; the table read is `.config/issues/defaults.toml` itself.
+# lines; the table read is `.config/issues/defaults.toml` itself. A filer
+# files a unit (#3112): `.config/issues/template.jq` fills a filer's
+# template, each case in `.config/issues/templates.json` a template, its
+# fields and the body or the refusal, and every template under
+# `.config/issues/templates/`, its fields filled, renders a body `unit:check`
+# passes.
 ["check:issues"]
 description = "The issue automations give each recorded case its decision"
 tools.jq = "1.8.1"
@@ -1567,8 +1574,21 @@ labelled=$(mktemp)
 trap 'rm -f "$labelled"' EXIT
 jq -c --argjson defaults "$(yq -p toml -o json -I0 '.' .config/issues/defaults.toml)" 'map(.input.defaults = $defaults)' .config/issues/cases.json > "$labelled"
 cases labels .config/issues/filed.jq "$labelled"
+cases templates .config/issues/rendered.jq .config/issues/templates.json
+concerns=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
+templates=0
+for template in .config/issues/templates/*.md; do
+  templates=$((templates + 1))
+  findings=$(jq -R -s -r -L .config/issues 'include "template";
+      . as $t | render(placeholders | map(. as $f | {key: $f, value: (if $t | test("\\| \\{\\{\($f)\\}\\} \\|") then "no — a field" else "1" end)}) | from_entries; "## Observation\n\nx\n")' "$template" \
+    | jq -R -s -r -L .config/claims --argjson concerns "$concerns" -f .config/claims/unit.jq)
+  if [[ -n $findings ]]; then
+    printf 'issues template %s renders a body unit:check refuses:\n%s\n' "$template" "$findings" >&2
+    failed=1
+  fi
+done
 (( failed == 0 )) || exit 1
-echo "issues check OK: $(jq length .config/epics/cases.json) parents gave their decisions, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals"
+echo "issues check OK: $(jq length .config/epics/cases.json) parents gave their decisions, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals, $(jq length .config/issues/templates.json) renderings theirs, and $templates filer templates render units"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each
@@ -1587,11 +1607,12 @@ echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as re
 '''
 
 # The stall detector's readings (#2785): `facts.jq` reads the open pull
-# requests off one answer to `.config/stall/query.graphql`, and `detect.jq`
-# decides the stalls among them, what to page and what to remember. Each case
-# in `.config/stall/cases.json` holds a recorded reading, no network, and the
-# compact JSON it must give: a case per kind, its threshold's edge, and the
-# page-once memory.
+# requests off one answer to `.config/stall/query.graphql`, `detect.jq`
+# decides the stalls among them, what to page and what to remember, and
+# `reports.jq` the stall reports whose event is over (#3112). Each case in
+# `.config/stall/cases.json` holds a recorded reading, no network, and the
+# compact JSON it must give: a case per kind, its threshold's edge, the
+# page-once memory, and the reports closed and kept.
 ["check:stall"]
 description = "The stall detector's readings give each recorded case its findings"
 tools.jq = "1.8.1"

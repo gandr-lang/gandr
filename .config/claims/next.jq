@@ -1,10 +1,12 @@
 # The claim order (#2533, `tracker.md` § tracker-claims): the next item a
 # seat on an area claims, as one `number<TAB>bucket<TAB>title` line, or none,
 # after one `collector: #n (k open rows)` line for each collector in the
-# area (#3111), one `needs sections: #n` or `blocked: #n` line for each issue
-# ranked ahead of it that lacks a unit's sections or waits on an open issue,
-# and one `restate: `<axis>`: <question>` line for each of the pick's
-# readings still the migration's `unstated` placeholder (#2955).
+# area (#3111), one `unsectioned: #n` line for each candidate in the area a
+# filer marked `status:unsectioned` (#3112), one `needs sections: #n` or
+# `blocked: #n` line for each other issue ranked ahead of it that lacks a
+# unit's sections or waits on an open issue, and one `restate: `<axis>`:
+# <question>` line for each of the pick's readings still the migration's
+# `unstated` placeholder (#2955).
 #
 # Input:
 #   area     the area's label, `area:<name>`
@@ -35,7 +37,10 @@
 # (`findings.jq`, #2744) and no open issue blocks (#2902); each one ranked
 # ahead of it that fails either is named once, as blocked when it is, so the
 # coordinator sees whose sections to write and the seat why it was passed
-# over. A `needs sections:` line quotes the question of each axis whose
+# over. An issue a filer marked `status:unsectioned` and still lacking its
+# sections is named as such, ranked ahead or not, so the coordinator writes
+# exactly those sections (#3112). A
+# `needs sections:` line quotes the question of each axis whose
 # reading is bare. A pick whose reading is the `unstated` placeholder is
 # claimed all the same, its axes' questions printed first: the seat restates
 # those rows on the issue as its first act, and `pr:open` refuses the landing
@@ -97,8 +102,9 @@ def open_rows:
       | .[] | [., "planned"])
   ] as $ranked
 | ([.issues[] | select(has("collector") and has($area))] | sort_by(.number) | .[] | open_rows as $k | "collector: #\(.number) (\($k) open row\(if $k == 1 then "" else "s" end))"),
+  ($open | map(select(has($area) and has("status:unsectioned") and (ready | not))) | sort_by(.number) | .[] | "unsectioned: #\(.number)"),
   ([range(0; $ranked | length) | select($ranked[.][0] | ready and (blocked | not))] | first) as $at
 | ($ranked[:$at // ($ranked | length)]
     | reduce .[] as $entry ([]; if any(.[]; .number == $entry[0].number) then . else . + [$entry[0]] end)
-    | .[] | if blocked then "blocked: #\(.number)" else needs end),
+    | .[] | select(has("status:unsectioned") and (ready | not) | not) | if blocked then "blocked: #\(.number)" else needs end),
   ($at // empty | $ranked[.] | (.[0] | quoted(unstated_axes)[] | "restate: \(.)"), "\(.[0].number)\t\(.[1])\t\(.[0].title)")
