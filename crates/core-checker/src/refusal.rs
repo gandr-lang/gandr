@@ -1266,6 +1266,21 @@ pub enum CheckRefusal
         /// Its declared capability type.
         declared: ValueTypeId,
     },
+    /// The two halves of a fork may both use one host interface, and one of
+    /// them may change what it reaches: the halves run as peers, so nothing
+    /// orders their operations on it. Each footprint is named as the held
+    /// capability granting exactly what its half may perform.
+    FootprintsOverlap
+    {
+        /// The fork.
+        at: ComputationId,
+        /// The child's footprint.
+        child: ValueTypeId,
+        /// The parent's footprint.
+        parent: ValueTypeId,
+        /// What both may use where one may change it.
+        shared: ValueTypeId,
+    },
     /// A bisimilarity statement `bisim(A, B)` whose two sessions are not
     /// bisimilar: some observation of one is no observation of the other.
     SessionNotEquivalent
@@ -1451,7 +1466,7 @@ impl CheckRefusal
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
         | Self::TacticRefused { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
-        | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
+        | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } | Self::FootprintsOverlap { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
@@ -1528,6 +1543,7 @@ impl CheckRefusal
             | Self::CapabilityEscaped { .. }
             | Self::CapabilityConsumable(_)
             | Self::CapabilityUngranted { .. }
+            | Self::FootprintsOverlap { .. }
             | Self::SessionNotEquivalent { .. }
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }
@@ -1604,7 +1620,7 @@ impl CheckRefusal
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
-        | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. }
+        | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. } | Self::FootprintsOverlap { shared: found, .. }
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
         | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found }
         | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. } =>
@@ -1681,6 +1697,7 @@ impl CheckRefusal
             | Self::CapabilityUngranted {
                 declared: found, ..
             }
+            | Self::FootprintsOverlap { shared: found, .. }
             | Self::FunextUnsupported {
                 classifier: found, ..
             }

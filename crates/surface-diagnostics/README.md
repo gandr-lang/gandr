@@ -8,6 +8,7 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -72,6 +73,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Spelled types and kept failures | [`spelled`](src/spelled.rs) |
 | Verbosity | [`verbosity`](src/verbosity.rs) |
 | Lints, `explicit-exits` and `explicit-runs` among them | [`lint`](src/lint.rs) |
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the `FootprintsOverlap` label, authority both halves of a fork hold and one may change.
 
 ## License
 

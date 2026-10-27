@@ -1,0 +1,19 @@
+/// `FootprintsOverlap` refuses a fork whose two halves write through one capability.
+///
+/// Two halves that both change one host interface race, because nothing orders their operations.
+///
+/// The checker reads each half's footprint off the types of the names it mentions.
+/// Both footprints hold `write` on `Fs`, which changes the host, so the fork is refused.
+///
+/// - see: corpus/ledger/features/footprint-separation.gandr
+
+/// Both halves write `notes` through one capability that may read and write.
+@[ refuses("FootprintsOverlap") ]
+def racing(c : Cap { read, write }) -> [Fs] Unit {
+  fork (task : end) {
+    c.write("notes", "task");
+    close(task)
+  } as found;
+  c.write("notes", "parent");
+  close(found)
+}

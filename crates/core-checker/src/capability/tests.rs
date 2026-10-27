@@ -772,3 +772,49 @@ fn a_binder_is_named_through_every_former()
         );
     }
 }
+
+/// A footprint reads what a type lets its holder do to the host: a held
+/// capability's authority and a returner's row, found under a thunk's
+/// domain and its codomain; a capability a scope introduces is answered by
+/// the scope, and adds nothing (#2789).
+#[test]
+fn a_footprint_reads_held_authority_and_rows_through_every_former()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let [read, write] = ["read", "write"].map(OperationName::from);
+    let reading = files(&host, &[read]);
+    let held = arena.value_type_capability(reading, CapabilityGrade::Durable, Region::Held);
+    let writing = files(&host, &[write]);
+    let scoped = arena.value_type_capability(
+        writing,
+        CapabilityGrade::Durable,
+        Region::Scoped(RegionDepth::from(1_u32)),
+    );
+    let both = arena.value_type_product(&[held, scoped]);
+    let unit = arena.value_type_unit();
+    let prints = arena.comp_type_returner_with_effects(unit, EffectRow::singleton(host.console));
+    let takes = arena.comp_type_arrow(both, prints);
+    let suspended = arena.value_type_thunk(takes);
+    let mut footprint = super::Footprint::default();
+    footprint.reach(&arena, TypeNode::Value(suspended)).unwrap();
+    let named = footprint.capability(&mut arena).unwrap();
+    let Some(&gandr_core_term::ValueType::Capability { ref authority, .. }) =
+        arena.value_type(named)
+    else {
+        panic!("a footprint is named as a capability");
+    };
+    let granted: alloc::vec::Vec<(&str, &str)> = authority
+        .signatures()
+        .flat_map(|signature| {
+            signature
+                .operations()
+                .map(|operation| (signature.name().as_ref(), operation.name.as_ref()))
+        })
+        .collect();
+    assert_eq!(
+        granted,
+        [("Console", "print"), ("Fs", "read")],
+        "the held reader and the printing row count; the scope's writer does not"
+    );
+}

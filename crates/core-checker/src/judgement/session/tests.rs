@@ -968,6 +968,222 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
     );
 }
 
+/// `Cap {operations}` over the host's file system, held by the host for the
+/// run.
+///
+/// # Specification
+/// trivial.
+fn held_files(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    operations: &[gandr_core_term::effect::OperationName],
+) -> ValueTypeId
+{
+    let authority = gandr_core_term::effect::EffectRow::authority(&[host
+        .fs
+        .restrict(operations)
+        .expect("`Fs` performs these")])
+    .expect("one interface");
+    arena.value_type_capability(
+        authority,
+        gandr_core_term::effect::capability::CapabilityGrade::Durable,
+        gandr_core_term::effect::capability::Region::Held,
+    )
+}
+
+/// A file operation the fork witnesses perform on `"notes"`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Notes
+{
+    /// `read("notes")`, which changes nothing.
+    Read,
+    /// `write(("notes", "notes"))`, which changes the file system.
+    Write,
+}
+
+/// The file operation `operation` on `"notes"`: exercised through the
+/// variable `capability` of the run, or performed by name without one.
+///
+/// # Specification
+/// trivial.
+fn on_notes(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    capability: Option<DeBruijnIndex>,
+    operation: Notes,
+) -> ComputationId
+{
+    let path = arena.value_literal(Literal::Text(StringLiteral::new(String::from("notes"))));
+    let (operation, payload) = match operation {
+        Notes::Read => ("read", path),
+        Notes::Write => ("write", arena.value_tuple(&[path, path])),
+    };
+    match capability {
+        Some(index) => {
+            let capability = arena.value_variable(Zone::Intuitionistic, index);
+            arena.computation_exercise(capability, host.fs.clone(), operation.into(), payload)
+        },
+        None => arena.computation_perform(host.fs.clone(), operation.into(), payload),
+    }
+}
+
+/// Check `term` against the returner of the unit at the row `Fs`, under a
+/// `Cap {read}` and then a `Cap {write}` the host holds for the run.
+///
+/// # Specification
+/// trivial.
+fn check_holding_files(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    term: ComputationId,
+) -> Result<(), CheckRefusal>
+{
+    let reader = held_files(arena, host, &["read".into()]);
+    let writer = held_files(arena, host, &["write".into()]);
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner_with_effects(
+        unit,
+        gandr_core_term::effect::EffectRow::singleton(host.fs.clone()),
+    );
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    context.binders().open(Zone::Intuitionistic, reader);
+    context.binders().open(Zone::Intuitionistic, writer);
+    let returner = form_comp_type(&mut context, returner)?;
+    check_comp(&mut context, term, returner).map(|_| ())
+}
+
+/// The operations the held capability type `capability` grants, each as
+/// `Interface.operation`.
+///
+/// # Specification
+/// trivial.
+fn granted(
+    arena: &CoreArena,
+    capability: ValueTypeId,
+) -> Vec<String>
+{
+    let Some(&gandr_core_term::ValueType::Capability {
+        ref authority,
+        region: gandr_core_term::effect::capability::Region::Held,
+        ..
+    }) = arena.value_type(capability)
+    else {
+        panic!("a footprint is named as a held capability");
+    };
+    authority
+        .signatures()
+        .flat_map(|signature| {
+            signature.operations().map(|operation| {
+                alloc::format!("{}.{}", signature.name().as_ref(), operation.name.as_ref())
+            })
+        })
+        .collect()
+}
+
+/// The two halves of a fork run as peers, so they may share a host interface
+/// only to read through it: a reader beside a writer is refused naming each
+/// half's footprint and what they share; two readers check; a writer beside a
+/// half that uses no capability checks; two halves writing by name, through
+/// no capability, once each has closed its end, are refused; a task the child
+/// forks counts toward the child (#2789).
+#[test]
+fn two_halves_share_a_capability_only_to_read_through_it_2789()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    let (reader, writer) = (DeBruijnIndex::from(1_u32), DeBruijnIndex::from(0_u32));
+    // r : Cap {read}, w : Cap {write};
+    // fork (s : end) { r.read("notes"); close(s) } as d; w.write(("notes",
+    // "notes")); close(d)
+    let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);
+    let child = parent_open(&mut arena, read);
+    let write = on_notes(&mut arena, &host, Some(writer), Notes::Write);
+    let parent = parent_open(&mut arena, write);
+    let racing = fork(&mut arena, protocol, child, parent);
+    let refused = check_holding_files(&mut arena, &host, racing);
+    let Err(CheckRefusal::FootprintsOverlap {
+        at,
+        child,
+        parent,
+        shared,
+    }) = refused
+    else {
+        panic!("a reader beside a writer on one interface is refused: {refused:?}");
+    };
+    assert_eq!(at, racing, "the fork is refused");
+    assert_eq!(
+        [
+            granted(&arena, child),
+            granted(&arena, parent),
+            granted(&arena, shared)
+        ],
+        [
+            alloc::vec![String::from("Fs.read")],
+            alloc::vec![String::from("Fs.write")],
+            alloc::vec![String::from("Fs.read"), String::from("Fs.write")],
+        ],
+        "each half's footprint is what it may do, and the shared one both"
+    );
+    // fork (s : end) { r.read("notes"); close(s) } as d; r.read("notes"); close(d)
+    let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);
+    let child = parent_open(&mut arena, read);
+    let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);
+    let parent = parent_open(&mut arena, read);
+    let reading = fork(&mut arena, protocol, child, parent);
+    assert_eq!(
+        check_holding_files(&mut arena, &host, reading),
+        Ok(()),
+        "two readers share the file system"
+    );
+    // fork (s : end) { w.write(("notes", "notes")); close(s) } as d; close(d)
+    let write = on_notes(&mut arena, &host, Some(writer), Notes::Write);
+    let child = parent_open(&mut arena, write);
+    let closed = Program::new(&mut arena).close();
+    let alone = fork(&mut arena, protocol, child, closed);
+    assert_eq!(
+        check_holding_files(&mut arena, &host, alone),
+        Ok(()),
+        "a writer beside a half that touches no file is separate from it"
+    );
+    // fork (s : end) { close(s); write(("notes", "notes")) } as d; close(d);
+    // write(("notes", "notes"))
+    let closed = Program::new(&mut arena).close();
+    let write = on_notes(&mut arena, &host, None, Notes::Write);
+    let child = arena.computation_bind(closed, write);
+    let closed = Program::new(&mut arena).close();
+    let write = on_notes(&mut arena, &host, None, Notes::Write);
+    let parent = arena.computation_bind(closed, write);
+    let by_name = fork(&mut arena, protocol, child, parent);
+    let refused = check_holding_files(&mut arena, &host, by_name);
+    assert!(
+        matches!(refused, Err(CheckRefusal::FootprintsOverlap { at, .. }) if at == by_name),
+        "two halves writing by name share the file system to change it: {refused:?}"
+    );
+    // fork (s : end) {
+    //   fork (t : end) { w.write(("notes", "notes")); close(t) } as e; close(e);
+    // close(s) } as d; w.write(("notes", "notes")); close(d)
+    let write = on_notes(&mut arena, &host, Some(writer), Notes::Write);
+    let inner_child = parent_open(&mut arena, write);
+    let inner_end = Program::new(&mut arena).close();
+    let outer_end = arena.computation_session(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(1_u32),
+    });
+    let inner_parent = arena.computation_bind(inner_end, outer_end);
+    let inner = fork(&mut arena, protocol, inner_child, inner_parent);
+    let write = on_notes(&mut arena, &host, Some(writer), Notes::Write);
+    let parent = parent_open(&mut arena, write);
+    let nested = fork(&mut arena, protocol, inner, parent);
+    let refused = check_holding_files(&mut arena, &host, nested);
+    assert!(
+        matches!(refused, Err(CheckRefusal::FootprintsOverlap { at, .. }) if at == nested),
+        "a task the child forks writes for the child, beside the writing parent: {refused:?}"
+    );
+}
+
 #[test]
 fn offer_arms_leaving_different_endpoints_are_refused()
 {

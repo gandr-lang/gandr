@@ -489,6 +489,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::CapabilityEscaped { .. }) => "capability-escaped",
         Typing::Refused(Refusal::CapabilityConsumable(_)) => "capability-consumable",
         Typing::Refused(Refusal::CapabilityUngranted(_)) => "capability-ungranted",
+        Typing::Refused(Refusal::FootprintsOverlap { .. }) => "footprints-overlap",
     })
 }
 
