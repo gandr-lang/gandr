@@ -1332,6 +1332,7 @@ fn budget_exhaustion_survives_the_counter_ceiling()
             budget: u64::from(ReplayBudget::from(budget)),
             table: crate::ContentTable::new(),
             memo: gandr_kernel_check_memo::NullMemo,
+            owed: Vec::new(),
         };
         assert_eq!(run.charge(), expected);
         assert_eq!(run.spent, after);
@@ -1357,6 +1358,7 @@ fn trace_consumption_preserves_the_end_and_position_ceiling()
             budget: 1,
             table: crate::ContentTable::new(),
             memo: gandr_kernel_check_memo::NullMemo,
+            owed: Vec::new(),
         };
         assert_eq!(replay.peek(), super::Next::Decision(SHARED));
         assert_eq!(replay.peek(), super::Next::Decision(SHARED));
@@ -1394,6 +1396,7 @@ fn frozen_heads_are_side_local_and_opacity_takes_precedence()
         budget: 1,
         table: crate::ContentTable::new(),
         memo: gandr_kernel_check_memo::NullMemo,
+        owed: Vec::new(),
     };
     for (index, initial) in [
         (0, super::Status::Defined),
@@ -3524,6 +3527,121 @@ fn a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831()
         ),
         super::EndpointReading::Apart,
         "a call reading to another definition stays apart"
+    );
+}
+
+/// A step's own reading converts two endpoints stuck on a variable whose arms
+/// differ by a definition one side holds and the other runs, when what it
+/// runs to is a record type over a call: the held arm's δ-step returns
+/// `⌜{ok : El(⟨e(inj₀ ())⟩), v : 1}⌝` and the run arm `⌜{ok : 1, v : 1}⌝`,
+/// the inner call run too, and the two codes read alike once the decode is
+/// read. A run arm whose decode reads to another type stays apart. The
+/// kernel's conversion with definitions unfolding relates the held call and
+/// the run arm alone the same way.
+#[test]
+fn a_step_reads_a_record_code_a_stuck_arm_returns_3045()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    use gandr_kernel_term::FieldLabel;
+
+    let mut arena = TermArena::new();
+    // `f(a)` for the constant `f` at `constant`.
+    let call = |arena: &mut TermArena, constant: usize, argument| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let unit = arena.value_unit();
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_code = |arena: &mut TermArena, quoted| {
+        let code = arena.value_quote(quoted);
+        arena.computation_return(code)
+    };
+    // `e`, constant 0, is `thunk { λh. case h { _ => return ⌜1⌝ ; _ => return
+    // ⌜Integer⌝ } }`.
+    let h = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let to_unit = returns_code(&mut arena, unit_type);
+    let to_integer = returns_code(&mut arena, integer);
+    let picked = arena.computation_case(h, &[to_unit, to_integer]);
+    let picked = arena.computation_lambda(picked);
+    let e = arena.value_thunk(picked);
+    // `{ok : ok, v : 1}`.
+    let record = |arena: &mut TermArena, ok| {
+        arena.value_type_record(BTreeMap::from([
+            (FieldLabel::from(String::from("ok")), ok),
+            (FieldLabel::from(String::from("v")), unit_type),
+        ]))
+    };
+    // `inner`, constant 1, is `thunk { λh. return ⌜{ok : El(⟨e(h)⟩), v : 1}⌝ }`.
+    let at_e = call(&mut arena, 0, h);
+    let at_e = arena.value_returned(at_e);
+    let owed = arena.value_type_element(at_e, Level::zero());
+    let owed = record(&mut arena, owed);
+    let returns_record = returns_code(&mut arena, owed);
+    let inner = arena.computation_lambda(returns_record);
+    let inner = arena.value_thunk(inner);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Body(e), Unfoldable::Body(inner)]);
+    // `returned(case x { _ => return ⌜1⌝ ; _ => arm })`, stuck on `x`.
+    let stuck = |arena: &mut TermArena, arm| {
+        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let other = returns_code(arena, unit_type);
+        let cased = arena.computation_case(x, &[other, arm]);
+        arena.value_returned(cased)
+    };
+    let empty = arena.value_injection(Side::Left.into(), unit);
+    let held_call = call(&mut arena, 1, empty);
+    let held = stuck(&mut arena, held_call);
+    let ran_record = record(&mut arena, unit_type);
+    let ran_code = returns_code(&mut arena, ran_record);
+    let ran = stuck(&mut arena, ran_code);
+    let elsewhere_record = record(&mut arena, integer);
+    let elsewhere_code = returns_code(&mut arena, elsewhere_record);
+    let elsewhere = stuck(&mut arena, elsewhere_code);
+    let read = |arena: &mut TermArena, left, right| {
+        super::read_endpoints(
+            arena,
+            &unfoldings,
+            &[crate::conv::SetAside::Values(left, right)],
+            ReplayBudget::DEFAULT,
+            super::StuckEndpoints::Unfolding,
+        )
+    };
+    let unfold = |arena: &mut TermArena, right| {
+        convert_unfolding(
+            arena,
+            &unfoldings,
+            ReplaySides::Computations(held_call, right),
+            ReplayBudget::DEFAULT,
+        )
+    };
+    let mark = arena.watermark();
+    assert_eq!(
+        read(&mut arena, held, ran),
+        super::EndpointReading::Converts,
+        "the held call's record code reads as the record the checker ran"
+    );
+    assert_eq!(
+        read(&mut arena, held, elsewhere),
+        super::EndpointReading::Apart,
+        "a decode reading to another type stays apart"
+    );
+    assert_eq!(
+        unfold(&mut arena, ran_code),
+        KernelVerdict::Convertible,
+        "the conversion reads the record code it owes"
+    );
+    assert_eq!(
+        unfold(&mut arena, elsewhere_code),
+        KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Unreadable)),
+        "an owed code reading to another type declines"
+    );
+    assert_eq!(
+        mark,
+        arena.watermark(),
+        "the reading mints nothing it keeps"
     );
 }
 

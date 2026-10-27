@@ -261,7 +261,13 @@
 //! hold nothing that could still unfold are apart, and any other pair is
 //! refused rather than guessed at. Rigidity reads through quoted types and the
 //! codes they decode, so the engine's verdict of apart is one the kernel
-//! reaches in its own terms.
+//! reaches in its own terms. The kernel's own conversion with definitions
+//! unfolding, which no engine trace drives, owes two quotes instead of
+//! refusing them: a δ-step can return a code holding a call the other side
+//! ran, so the pair closes on condition, and once the replay ends the returned
+//! endpoints and decodes the walk over the two quoted types sets aside are
+//! read as a step's reading reads them. The reading runs on its own worklist
+//! after the replay, never inside it.
 //!
 //! A static definition's certificate unfolds one instance of an operator.
 //! [`Unfoldable::Operator`] hands the replay the operator's body with its
@@ -1119,6 +1125,7 @@ where
         budget: u64::from(budget),
         table: ContentTable::new(),
         memo: NullMemo,
+        owed: Vec::new(),
     };
     let outcome = run.drive(Goal::premise(Premise { left, right }, expect));
     run.arena.truncate_to(watermark);
@@ -1183,6 +1190,7 @@ pub fn convert(
         budget: u64::from(budget),
         table: ContentTable::new(),
         memo: NullMemo,
+        owed: Vec::new(),
     };
     let outcome = run.drive(Goal::premise(Premise { left, right }, Expect::Convertible));
     run.arena.truncate_to(watermark);
@@ -1192,7 +1200,11 @@ pub fn convert(
 /// The kernel's own conversion of two terms with definitions unfolding.
 ///
 /// The forced rules of [`convert`] apply, and at a head naming a definition
-/// `unfoldings` holds, the one δ-step it admits, the left side's first.
+/// `unfoldings` holds, the one δ-step it admits, the left side's first. Two
+/// quotes that are neither α-equal nor both rigid convert when the returned
+/// endpoints and decodes the walk over their quoted types sets aside read
+/// alike, as [`read_endpoints`] reads a step's endpoints: the replay owes the
+/// pair, and the reading follows it.
 ///
 /// This is the conversion an obligation the record decides "by conversion"
 /// asks for, where a side runs a definition the other side states by what it
@@ -1203,10 +1215,12 @@ pub fn convert(
 ///
 /// # Specification
 /// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
-/// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules and
-///   the δ-steps derive the two sides convertible within `budget`;
-///   [`KernelVerdict::Declined`] with [`ReplayDecline::Budget`] when the run
-///   outruns it, and some other decline otherwise; never
+/// - ensures: [`KernelVerdict::Convertible`] exactly when the forced rules, the
+///   δ-steps and the reading of every quote pair they owe derive the two sides
+///   convertible within `budget`, the reading taking what the replay left;
+///   [`KernelVerdict::Declined`] with [`ReplayDecline::Budget`] when the replay
+///   outruns it, with [`ReplayRefusal::Unreadable`] when an owed pair does not
+///   read alike, and some other decline otherwise; never
 ///   [`KernelVerdict::NotConvertible`]. `arena` holds what it held on entry.
 /// - provides: the conversion a loop obligation is decided by.
 /// - fails: never — a decline is a verdict.
@@ -1215,8 +1229,11 @@ pub fn convert(
 /// # Adequacy
 /// - hypothesis: L3 — a definition run at a head converts with what it computes
 ///   here and declines under [`convert`], and a definition that unfolds to
-///   itself runs past a small budget and is declined as such.
+///   itself runs past a small budget and is declined as such; a call returning
+///   a record code over another call converts with the record its run reaches,
+///   and not with one whose field reads to another type.
 /// - witness: `replay::tests::the_kernel_unfolds_a_defined_head_within_its_budget`
+/// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
@@ -1230,8 +1247,71 @@ pub fn convert_unfolding(
     budget: ReplayBudget,
 ) -> KernelVerdict
 {
-    let (left, right) = terms(sides);
     let watermark = arena.watermark();
+    let Unfolded {
+        verdict,
+        owed,
+        left,
+    } = unfold_owing(arena, unfoldings, sides, budget);
+    let verdict = if owed.is_empty() {
+        verdict
+    }
+    else {
+        match read_endpoints(arena, unfoldings, &owed, left, StuckEndpoints::Unfolding) {
+            EndpointReading::Converts => KernelVerdict::Convertible,
+            EndpointReading::Apart => {
+                KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Unreadable))
+            },
+        }
+    };
+    arena.truncate_to(watermark);
+    verdict
+}
+
+/// What the kernel's conversion with definitions unfolding comes to before
+/// the quote pairs it owes are read.
+#[derive(Debug)]
+struct Unfolded
+{
+    /// The replay's verdict.
+    verdict: KernelVerdict,
+    /// The quote pairs the verdict owes; empty unless it is
+    /// [`KernelVerdict::Convertible`].
+    owed: Vec<SetAside>,
+    /// The budget the replay left.
+    left: ReplayBudget,
+}
+
+/// The replay [`convert_unfolding`] runs, short of reading the quote pairs
+/// it owes, and without restoring `arena`: the owed pairs name nodes the
+/// replay minted, which their reader needs.
+///
+/// # Specification
+/// - requires: the two sides, and every body in `unfoldings`, live in `arena`.
+/// - ensures: the replay's verdict, never [`KernelVerdict::NotConvertible`];
+///   the quote pairs the replay closed on condition, none unless the verdict is
+///   [`KernelVerdict::Convertible`]; and the budget the replay left. Every node
+///   an owed pair names lives in `arena`.
+/// - provides: the one replay whose owed pairs [`convert_unfolding`] and
+///   [`read_endpoints`] read, each on its own loop, so neither reading calls
+///   back into the other.
+/// - fails: never — a decline is a verdict.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call returning a record code over another call owes
+///   that code against the record its run reaches.
+/// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
+#[spec(ensures: |ret| ret.verdict != KernelVerdict::NotConvertible
+    && (ret.owed.is_empty() || ret.verdict == KernelVerdict::Convertible))]
+fn unfold_owing(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    sides: ReplaySides,
+    budget: ReplayBudget,
+) -> Unfolded
+{
+    let (left, right) = terms(sides);
     let mut run = Replay {
         arena,
         unfoldings,
@@ -1243,10 +1323,19 @@ pub fn convert_unfolding(
         budget: u64::from(budget),
         table: ContentTable::new(),
         memo: NullMemo,
+        owed: Vec::new(),
     };
     let outcome = run.drive(Goal::premise(Premise { left, right }, Expect::Convertible));
-    run.arena.truncate_to(watermark);
-    concluded(outcome, Expect::Convertible)
+    let verdict = concluded(outcome, Expect::Convertible);
+    let mut owed = run.owed;
+    if verdict != KernelVerdict::Convertible {
+        owed.clear();
+    }
+    Unfolded {
+        verdict,
+        owed,
+        left: ReplayBudget::from(run.budget.saturating_sub(run.spent)),
+    }
 }
 
 /// The kernel's own reading of the step `left` to `right`.
@@ -1358,13 +1447,14 @@ pub(crate) enum StuckEndpoints
 ///   every pair it sets aside read the same way, or, when both are stuck
 ///   endpoints, their computations converge the same way, or, under
 ///   [`StuckEndpoints::Unfolding`], they convert under [`convert_unfolding`]
-///   within `budget` — and every decode's code normalizes to a quote whose
-///   quoted type converges with the other side the same way, and every
-///   dependent codomain converges the same way with its plain codomain weakened
-///   by one binder. A normalization that stops short of a value — budget, a
-///   partial fixpoint, an unreadable node — leaves its pair apart, and so does
-///   a decode whose code reads to no quote and a pair whose normal forms do not
-///   convert. `arena` holds what it held on entry.
+///   within `budget`, every quote pair it owes read the same way — and every
+///   decode's code normalizes to a quote whose quoted type converges with the
+///   other side the same way, and every dependent codomain converges the same
+///   way with its plain codomain weakened by one binder. A normalization that
+///   stops short of a value — budget, a partial fixpoint, an unreadable node —
+///   leaves its pair apart, and so does a decode whose code reads to no quote
+///   and a pair whose normal forms do not convert. `arena` holds what it held
+///   on entry.
 /// - provides: the checker's reading of a returned endpoint, and of the type a
 ///   returned code denotes, at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
@@ -1374,9 +1464,11 @@ pub(crate) enum StuckEndpoints
 /// - reason: the `while let` loop over a worklist of set-aside pairs, not
 ///   recursion.
 /// - measure: the budget left. A pair adds to the worklist only after reading a
-///   returned code, reading two returned endpoints or weakening a codomain,
-///   each of which charges the budget at least one step, and the walk over one
-///   type or computation adds finitely many pairs.
+///   returned code, reading two returned endpoints, weakening a codomain or
+///   taking the quote pairs a conversion with definitions unfolding owes, each
+///   of which charges the budget at least one step, and the walk over one type
+///   or computation, like one such conversion, adds finitely many pairs. The
+///   conversion reads none of what it owes, so it never calls back here.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
@@ -1390,13 +1482,16 @@ pub(crate) enum StuckEndpoints
 ///   names it does not; the arena's watermark is restored. Under
 ///   [`StuckEndpoints::Unfolding`], two stuck endpoints whose arms differ by a
 ///   call one side holds and the other runs convert, and they stay apart under
-///   [`StuckEndpoints::Structural`].
+///   [`StuckEndpoints::Structural`]. Two whose arms differ by a call returning
+///   a record code over another call and the record its run reaches convert
+///   too, and stay apart when the record's field reads to another type.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `replay::tests::endpoints_a_stuck_endpoint_carries_are_read_in_turn_698`
 /// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
+/// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
@@ -1419,6 +1514,7 @@ pub(crate) fn read_endpoints(
         budget: u64::from(budget),
         table: ContentTable::new(),
         memo: NullMemo,
+        owed: Vec::new(),
     };
     let mut reading = EndpointReading::Converts;
     let mut worklist = pending.to_vec();
@@ -1443,20 +1539,36 @@ pub(crate) fn read_endpoints(
                 // A step's own reading runs its code to the quote it returns, so
                 // two stuck endpoints that differ by a definition a stuck arm
                 // calls, held on one side and run on the other, convert by the
-                // kernel's δ-steps (#2831).
+                // kernel's δ-steps (#2831). A quote pair the δ-steps reach and
+                // owe is read on this worklist in turn (#3045).
                 if stuck == StuckEndpoints::Unfolding
                     && matches!(
                         (run.arena.value(left_normal), run.arena.value(right_normal)),
                         (Some(&Value::Returned(_)), Some(&Value::Returned(_)))
                     )
-                    && convert_unfolding(
+                {
+                    let mark = run.arena.watermark();
+                    let Unfolded { verdict, owed, .. } = unfold_owing(
                         run.arena,
                         run.unfoldings,
                         ReplaySides::Values(left_normal, right_normal),
                         budget,
-                    ) == KernelVerdict::Convertible
-                {
-                    continue;
+                    );
+                    if verdict == KernelVerdict::Convertible {
+                        if owed.is_empty() {
+                            run.arena.truncate_to(mark);
+                        }
+                        else {
+                            let Ok(()) = run.charge()
+                            else {
+                                reading = EndpointReading::Apart;
+                                break;
+                            };
+                            worklist.extend(owed);
+                        }
+                        continue;
+                    }
+                    run.arena.truncate_to(mark);
                 }
                 match (run.arena.value(left_normal), run.arena.value(right_normal)) {
                     (Some(&Value::Quote(one)), Some(&Value::Quote(other))) => {
@@ -1571,6 +1683,7 @@ pub(crate) fn read_decode(
         budget: u64::from(budget),
         table: ContentTable::new(),
         memo: NullMemo,
+        owed: Vec::new(),
     };
     if let Ok(normal) = run.normalize_returned(code)
         && let Some(&Value::Quote(quoted)) = run.arena.value(normal)
@@ -2257,6 +2370,10 @@ where
     table: ContentTable,
     /// The rewrite memo: off, since nothing here reuses a rewrite.
     memo: NullMemo,
+    /// The pairs of quotes a reading with definitions unfolding closed on
+    /// condition: each converts only once [`read_endpoints`] reads it alike.
+    /// Empty under every other reading.
+    owed: Vec<SetAside>,
 }
 
 impl<I> Replay<'_, I>
@@ -4366,7 +4483,9 @@ where
     /// - requires: nothing.
     /// - ensures: as [`Self::decompose`], over the value formers; two
     ///   reflexivities decompose to their points. A returned endpoint never
-    ///   reaches here: [`Self::settle`] reads it first.
+    ///   reaches here: [`Self::settle`] reads it first. Under
+    ///   [`Reading::Unfolding`], two quotes neither α-equal nor both rigid
+    ///   close convertible with the pair pushed to the replay's `owed`.
     /// - provides: the former half of [`Self::decompose`].
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id or a returned
     ///   endpoint.
@@ -4575,9 +4694,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // α-equal codes convert — a dependent arrow whose codomain ignores
             // its binder being the plain arrow (#577) — rigid α-distinct codes
             // are apart, and a pair neither settles is refused rather than
-            // guessed at.
+            // guessed at. The kernel's own conversion owes two such quotes
+            // instead: a code its δ-step returned may hold a call another side
+            // ran, `El(⟨emp(h)⟩)` against `1`, and the pair converts once its
+            // caller reads it as a step's endpoints are read (#3045).
             (&Value::Quote(_), &Value::Quote(_))
             | (&Value::QuoteComputation(_), &Value::QuoteComputation(_)) => {
+                let owable = self.reading == Reading::Unfolding
+                    && matches!((one, other), (&Value::Quote(_), &Value::Quote(_)));
                 if equal_weakened(self.arena, ConversionGoal::Value(left, right))
                     == Convertibility::Convertible
                 {
@@ -4591,6 +4715,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     (Rigidity::Rigid, Rigidity::Rigid)
                 ) {
                     Structure::Leaf(Expect::NotConvertible)
+                }
+                else if owable {
+                    self.owed.push(SetAside::Values(left, right));
+                    Structure::Leaf(Expect::Convertible)
                 }
                 else {
                     return Err(unreadable());

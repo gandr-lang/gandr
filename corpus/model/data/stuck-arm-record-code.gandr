@@ -1,0 +1,71 @@
+/// This source checks pairs against definitions whose dependent record types reach a record type over a call.
+///
+/// It pins the kernel's replay of those definitions' unfoldings, which relates the kernel's own δ-step to the checker's reduct.
+///
+/// Each record type is reached through an arm stuck on the outer record's first field. The checker's reduct runs the call inside the record type. The kernel's δ-step holds it, and the kernel reads the two codes alike once their decodes are read.
+///
+/// - see: #3045
+/// - see: #2831
+import "./data-base.gandr";
+
+// The heaps and `emp`, the type of evidence that a heap is empty.
+import "./stuck-arm-call.gandr";
+
+/// A natural paired with evidence that `h` is empty: a record type over a call.
+def evidenced(h : Heap) -> Type {
+  return type(#{v : Nat, ok : emp(h)})
+}
+
+/// What a natural owes of a heap: nothing at zero, `evidenced` at a successor.
+def owe(h : Heap, x : Nat) -> Type {
+  case x {
+    Zero => return Unit,
+    Succ(_s) => evidenced(h)
+  }
+}
+
+/// The naturals paired with what each owes of `h`, a dependent record named by a definition.
+def wpR(h : Heap) -> Type {
+  return type(#{w : Nat, ok : owe(h, w)})
+}
+
+/// Zero and the unit check against the definition's record type.
+def proof(u : Unit) -> wpR(Emp) {
+  (Zero, u)
+}
+
+/// A write: a natural, evidence that `h` is empty, and the continuation at the natural.
+def write(h : Heap, k : Nat => Type) -> Type {
+  return type(#{v : Nat, ok : emp(h), next : k(v)})
+}
+
+/// What a read owes at the natural it read: the rest at zero, a write at a successor.
+def matchRead(h : Heap, rest : Type, w : Nat) -> Type {
+  case w {
+    Zero => rest,
+    Succ(_s) => write(h, fn (_v) { return Unit })
+  }
+}
+
+/// A read: a natural and what it owes.
+def read(h : Heap, rest : Type) -> Type {
+  return type(#{w : Nat, ok : matchRead(h, rest, w)})
+}
+
+/// `n` reads in turn, a recursive fold.
+def rec fold(n : Nat, h : Heap) -> Type {
+  case n {
+    Zero => return Unit,
+    Succ(m) => read(h, fold[<](m, h))
+  }
+}
+
+/// Two reads, each zero, check against the reads written out.
+def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) {
+  (Zero, (Zero, u))
+}
+
+/// The fold of two reads converts with the reads written out.
+def foldedReads(_u : Unit) -> (read(Emp, read(Emp, Unit))) => fold(Succ(Succ(Zero)), Emp) {
+  return fn (h) { h }
+}
