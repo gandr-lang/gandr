@@ -4,7 +4,7 @@
 // once it runs over levitated codes, where codes nest (#2343).
 
 // `Fields`, `Field`, `Done`, `U16`, `U8` and `structLayout`.
-import "../../model/layouts/rust-default.gandr";
+import "../../../library/std/src/layout.gandr";
 
 /// `struct Outer { a: u8, inner: Small }`, `Small` written as its fields where a scalar stands, is refused (#2343).
 @[ refuses("TypeMismatch") ]

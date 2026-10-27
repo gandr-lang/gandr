@@ -6,9 +6,10 @@
 /// rustc stays the authority on a Rust type's layout; the program is checked against what it printed.
 ///
 /// - see: corpus/model/layouts/rust-default.gandr
+/// - see: library/std/src/layout.gandr
 
 // `Field`, `Done`, `Variant`, `NoVariant`, the scalars, `structLayout` and `enumLayout`.
-import "../../model/layouts/rust-default.gandr";
+import "../../../library/std/src/layout.gandr";
 
 /// `struct Pair { flag: bool, count: u32 }` puts `count` first: rustc prints `count` at 0, `flag` at 4, in 8 bytes.
 @[ runs("Layout(8, 4, At(\"count\", 0, At(\"flag\", 4, End)))") ]

@@ -15,6 +15,9 @@ import "../../model/data/data-base.gandr";
 import "../../model/specification/niche-realizability.gandr";
 
 // `Row`, `admit` and the printed layouts.
+import "../../../library/std/src/boundary.gandr";
+
+// `fRow`.
 import "../../model/interop/boundary/function-row.gandr";
 
 /// The niche at a reference to an int and the tagged layout: equivalent at

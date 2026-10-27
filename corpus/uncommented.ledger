@@ -1929,10 +1929,6 @@ model/layouts/ribbit-list.gandr:<file> unshaped:ReferenceOutsideReferences
 model/layouts/ribbit-list.gandr:<file> unshaped:Semicolon
 model/layouts/ribbit-list.gandr:<file> unshaped:SentenceLength
 model/layouts/ribbit-list.gandr:<file> unshaped:WhatLength
-model/layouts/rust-default.gandr:<file> unshaped:HeadParagraphs
-model/layouts/rust-default.gandr:<file> unshaped:ReferenceOutsideReferences
-model/layouts/rust-default.gandr:<file> unshaped:Semicolon
-model/layouts/rust-default.gandr:<file> unshaped:SentenceLength
 model/metaprograms/derive-eq-over-codes.gandr:<file> unshaped:HeadParagraphs
 model/metaprograms/derive-eq-over-codes.gandr:<file> unshaped:ReferenceOutsideReferences
 model/metaprograms/derive-eq-over-codes.gandr:<file> unshaped:Semicolon
