@@ -1,5 +1,6 @@
 //! The fixture comment gate: every source opens with a comment, and every
-//! top-level item carries one immediately before its attribute block. The
+//! item and every member of a block carries one immediately before it (an
+//! item before its attribute block). The
 //! committed ledger is the existing debt. A finding the ledger does not hold
 //! is new debt; a ledger line the corpus no longer owes is stale.
 //!

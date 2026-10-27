@@ -1,0 +1,32 @@
+/// The naturals.
+data Nat : Type {
+  /// The base.
+  Zero : Nat;
+  /// One more than `n`.
+  Succ : (n : Nat) --> Nat;
+  /// The successor of zero is not zero.
+  rule Succ(Zero) <=> Succ(Zero);
+}
+
+/// A state theory.
+theory T {
+  /// The state.
+  sort S : Type+;
+  /// Reading the state.
+  oper get : (k : S) --> S;
+}
+
+/// A stream.
+codata Stream(a : Type) : Type[-] {
+  /// The head.
+  head : a;
+  /// The rest.
+  tail : Stream(a);
+}
+
+/// A module.
+module M {
+  /// One.
+  @[ checks ]
+  def one = 1;
+}
