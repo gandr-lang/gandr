@@ -1,0 +1,172 @@
+// One list with two memory layouts, after Ribbit (Baudon, "Algebraic Data
+// Types for High-Performance Computing", PhD thesis, ENS de Lyon, 2024,
+// Example 3.4): the list of `i32` laid out pointer-tagged, one element per
+// pointer, and packed, two elements per pointer with a lone last element
+// inline. A layout is a second data type over the list's code, admitted by
+// an equivalence with the list whose round trips are proved by recursion and
+// replayed by the kernel; `ua` makes each equivalence a path between types,
+// so a program written once over the list runs on either layout by transport
+// and a value moves between layouts along their composite. What is checked is
+// the equivalence. The layouts are data, not bytes: each constructor's
+// comment names the memory type Ribbit gives it, and code emitted from a
+// layout stands outside the trust boundary. `equiv` decides no round trip
+// over a type that holds itself (#1316), so each equivalence is written out.
+
+/// The list of Ribbit's Example 3.1: empty, or an `i32` before the rest.
+pub data Ints : Type {
+  /// The empty list.
+  Nil : Ints;
+  /// `head` before `tail`.
+  Cons : (head : i32, tail : Ints) --> Ints;
+}
+
+/// The pointer-tagged layout: the low bit of a word tells the empty list from a pointer to a cell.
+pub data Tagged : Type {
+  /// `_64 ⋉ [0 : 1] : (1)1`, a word whose low bit is set.
+  TagNil : Tagged;
+  /// `&64 {{head, tail}} ⋉ [0 : 1] : (0)1`, a pointer whose low bit is clear to the head and the tail.
+  TagCons : (head : i32, tail : Tagged) --> Tagged;
+}
+
+/// The packed layout: the low two bits of a word tell the empty list, one element inline and a pointer to two.
+pub data Packed : Type {
+  /// `_64 ⋉ [0 : 2] : (0)2`, the empty list.
+  Empty : Packed;
+  /// `_64 ⋉ [0 : 2] : (1)2 ⋉ [2 : 32] : x`, a last element stored in the word.
+  One : (x : i32) --> Packed;
+  /// `&64 {{x, y, rest}} ⋉ [0 : 2] : (2)2`, a pointer to two elements and the rest.
+  Many : (x : i32, y : i32, rest : Packed) --> Packed;
+}
+
+/// A list laid out tagged, one cell per element.
+pub def rec tag(l : Ints) -> Tagged {
+  case l {
+    Nil => TagNil,
+    Cons(x, rest) => TagCons(x, tag[<](rest))
+  }
+}
+
+/// A tagged list read back as the list.
+pub def rec untag(l : Tagged) -> Ints {
+  case l {
+    TagNil => Nil,
+    TagCons(x, rest) => Cons(x, untag[<](rest))
+  }
+}
+
+/// Reading a tagged list back undoes laying it out, cell by cell.
+pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
+  case l {
+    Nil => here(Nil),
+    Cons(x, rest) => transport(
+      \z. Path(Ints, Cons(x, untag(tag(rest))), Cons(x, z)),
+      untagged[<](rest),
+      here(Cons(x, untag(tag(rest))))
+    )
+  }
+}
+
+/// Laying a list out tagged undoes reading it back, cell by cell.
+pub def rec tagged(l : Tagged) -> Path(Tagged, tag(untag(l)), l) {
+  case l {
+    TagNil => here(TagNil),
+    TagCons(x, rest) => transport(
+      \z. Path(Tagged, TagCons(x, tag(untag(rest))), TagCons(x, z)),
+      tagged[<](rest),
+      here(TagCons(x, tag(untag(rest))))
+    )
+  }
+}
+
+/// A list laid out packed, two elements per pointer and a lone last element inline.
+pub def rec pack(l : Ints) -> Packed {
+  case l {
+    Nil => Empty,
+    Cons(x, Nil) => One(x),
+    Cons(x, Cons(y, rest)) => Many(x, y, pack[<](rest))
+  }
+}
+
+/// A packed list read back as the list.
+pub def rec unpack(p : Packed) -> Ints {
+  case p {
+    Empty => Nil,
+    One(x) => Cons(x, Nil),
+    Many(x, y, rest) => Cons(x, Cons(y, unpack[<](rest)))
+  }
+}
+
+/// Reading a packed list back undoes packing it, two elements at a time.
+pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
+  case l {
+    Nil => here(Nil),
+    Cons(x, Nil) => here(Cons(x, Nil)),
+    Cons(x, Cons(y, rest)) => transport(
+      \z. Path(Ints, Cons(x, Cons(y, unpack(pack(rest)))), Cons(x, Cons(y, z))),
+      unpacked[<](rest),
+      here(Cons(x, Cons(y, unpack(pack(rest)))))
+    )
+  }
+}
+
+/// Packing a list undoes reading it back, two elements at a time.
+pub def rec packed(p : Packed) -> Path(Packed, pack(unpack(p)), p) {
+  case p {
+    Empty => here(Empty),
+    One(x) => here(One(x)),
+    Many(x, y, rest) => transport(
+      \z. Path(Packed, Many(x, y, pack(unpack(rest))), Many(x, y, z)),
+      packed[<](rest),
+      here(Many(x, y, pack(unpack(rest))))
+    )
+  }
+}
+
+/// The tagged layout, admitted by its equivalence with the list.
+pub def taggedLayout : Ints ≃ Tagged = (tag, ((untag, untagged), (untag, tagged)));
+
+/// The packed layout, admitted by its equivalence with the list.
+pub def packedLayout : Ints ≃ Packed = (pack, ((unpack, unpacked), (unpack, packed)));
+
+/// The list is its tagged layout, as types.
+pub def taggedPath : Path(Type, Ints, Tagged) = ua(taggedLayout);
+
+/// The list is its packed layout, as types.
+pub def packedPath : Path(Type, Ints, Packed) = ua(packedLayout);
+
+/// A tagged list moved to the packed layout along one admission's reverse and the other, a composite formed at the transport, not named, until #2995.
+pub def relayout(p : Path(Type, Ints, Tagged), q : Path(Type, Ints, Packed), l : Tagged) -> Packed {
+  transport(\X. X, back(p) then q, l)
+}
+
+/// One, two and three, laid out tagged.
+pub def oneTwoThree : Tagged = TagCons(1i32, TagCons(2i32, TagCons(3i32, TagNil)));
+
+/// One, two and three move to the packed layout as one pointer to two elements and the third inline.
+@[ runs("Many(1i32, 2i32, One(3i32))") ]
+def moved() -> Packed { relayout(taggedPath, packedPath, oneTwoThree) }
+
+/// The length of a list, written once over the list.
+pub def rec length(l : Ints) -> Integer {
+  case l {
+    Nil => 0,
+    Cons(x, rest) => {
+      run n <- length[<](rest);
+      n + 1
+    }
+  }
+}
+
+/// The length on the tagged layout, by transport along its admission.
+@[ runs("3") ]
+def taggedLength() -> Integer {
+  run f <- transport(\X. X => Integer, taggedPath, fn (l) { length(l) });
+  f(oneTwoThree)
+}
+
+/// The length on the packed layout, by transport along its admission.
+@[ runs("3") ]
+def packedLength() -> Integer {
+  run f <- transport(\X. X => Integer, packedPath, fn (l) { length(l) });
+  f(Many(1i32, 2i32, One(3i32)))
+}
