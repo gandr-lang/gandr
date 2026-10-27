@@ -2531,5 +2531,45 @@
       "retry_at": 480
     },
     "output": "\"a1|720\""
+  },
+  {
+    "name": "#2854: one DIRTY reading is no conflict; it waits a poll, holding its head",
+    "program": "dirty.jq",
+    "input": {
+      "status": "DIRTY",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seen": null
+    },
+    "output": "{\"act\":\"confirm\",\"seen\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+    "name": "#2854: a DIRTY reading at a head that moved since the last one is no conflict either; the count starts again",
+    "program": "dirty.jq",
+    "input": {
+      "status": "DIRTY",
+      "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": "{\"act\":\"confirm\",\"seen\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+  },
+  {
+    "name": "#2854: a DIRTY reading repeated at the same head is a conflict",
+    "program": "dirty.jq",
+    "input": {
+      "status": "DIRTY",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": "{\"act\":\"conflict\",\"seen\":null}"
+  },
+  {
+    "name": "#2854: a merge state no longer DIRTY clears the reading held",
+    "program": "dirty.jq",
+    "input": {
+      "status": "BLOCKED",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": "{\"act\":\"clear\",\"seen\":null}"
   }
 ]
