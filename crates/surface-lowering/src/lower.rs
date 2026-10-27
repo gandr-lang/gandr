@@ -15282,10 +15282,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — bound and constant codes are applied to their
     ///   arguments in source order; every node in the static application spine
-    ///   records the written origin, rather than an inserted decode origin.
+    ///   records the written origin, rather than an inserted decode origin; a
+    ///   type family's parameter named alone is labelled at its written kind.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `tests::modules::a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142`
     #[spec(
         ensures: |ret| match stretch(&self.operands, arguments)
             .iter()
@@ -15318,10 +15320,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 from,
                 binder,
                 telescope,
-            } => sink.arena.value_variable(
-                Zone::Intuitionistic,
-                self.scope.index_in(from, binder, telescope),
-            ),
+            } => {
+                // A family's body is never checked where it is written, so a
+                // parameter it names alone answers at its kind.
+                if written.is_empty()
+                    && let Some(kind) = self.family_parameter_kind(binder)
+                {
+                    sink.origins.record_label(Label {
+                        span: origin.span(),
+                        labelled: Labelled::Kind(kind),
+                    });
+                }
+                sink.arena.value_variable(
+                    Zone::Intuitionistic,
+                    self.scope.index_in(from, binder, telescope),
+                )
+            },
             Code::Constant(constant) => sink.arena.value_constant(constant),
         };
         sink.origins.record_value(applied, origin);

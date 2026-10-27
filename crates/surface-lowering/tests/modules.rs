@@ -54,6 +54,7 @@ use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
+use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweredStructure;
@@ -2559,6 +2560,51 @@ fn a_type_member_names_a_computation_type_3080()
             })) if path == "J.V" && span == span_of(argued, "-F Integer", 0_usize)
         )),
         "a computation member argued for a functor's abstract parameter refuses its witness"
+    );
+}
+
+/// #3142: a family's body is expanded where it is applied and never checked
+/// where it is written, so a parameter it passes to a data type answers at the
+/// kind it is written with, in a module and at the top level; the same name in
+/// a signature is judged there and keeps no such label.
+#[test]
+fn a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142()
+{
+    let source = "data Maybe(a : Type) : Type {\n  None : Maybe(a);\n  Some : (x : a) --> \
+                  Maybe(a);\n}\nmodule Loose { type R(a : Type) = Maybe(a); }\ntype Top(a : \
+                  Type) = Maybe(a);\ndef g(a : Type, m : Maybe(a)) -> Integer { 0 }\n";
+    let argument = |declared: &str| {
+        let start = source.find(declared).expect("the family is written") + declared.len() - 2;
+        ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start + 1))
+            .expect("one byte is a span")
+    };
+    let lowered = lower(source);
+    let kinds: Vec<_> = lowered
+        .module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            Labelled::Kind(kind) => Some((label.span, lowered.arena.value_type(kind).cloned())),
+            Labelled::ValueType { .. }
+            | Labelled::CompType { .. }
+            | Labelled::Value(_)
+            | Labelled::Endpoint(_)
+            | Labelled::Bound(_)
+            | Labelled::Branch { .. } => None,
+        })
+        .collect();
+    let universe = Some(ValueType::Universe {
+        sort: gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        level: gandr_kernel_strata::Level::zero(),
+    });
+    assert_eq!(
+        kinds,
+        [
+            (argument("R(a : Type) = Maybe(a)"), universe.clone()),
+            (argument("Top(a : Type) = Maybe(a)"), universe),
+        ],
+        "each `a` in a family's `Maybe(a)` answers at `Type`, and `g`'s at none"
     );
 }
 
