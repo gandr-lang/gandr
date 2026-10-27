@@ -638,6 +638,9 @@ pub enum RefusalName
     ImportUnresolved,
     /// A declaration of a source whose imports lead back to it.
     ImportCycle,
+    /// A name read through a module path that names no module of the package
+    /// and no dependency its lock records.
+    UnlockedDependency,
     /// A name an import binds and another binding of the source binds too.
     ImportShadows,
     /// A name an import answers with a declaration its source does not export.
@@ -991,7 +994,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 220_usize] = [
+    pub const VOCABULARY: [Self; 221_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1066,6 +1069,7 @@ impl RefusalName
         Self::DuplicateImportAlias,
         Self::ImportUnresolved,
         Self::ImportCycle,
+        Self::UnlockedDependency,
         Self::ImportShadows,
         Self::UnexportedName,
         Self::ShadowedBuiltin,
@@ -1278,7 +1282,8 @@ impl RefusalName
         (Self::UnresolvedTypeHead, b"UnresolvedTypeHead") | (Self::DuplicateSignature,
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
-        b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::ImportShadows,
+        b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::UnlockedDependency,
+        b"UnlockedDependency") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
         (Self::BareFeedback, b"BareFeedback") |
@@ -1526,6 +1531,7 @@ impl RefusalName
             Self::DuplicateImportAlias => "DuplicateImportAlias",
             Self::ImportUnresolved => "ImportUnresolved",
             Self::ImportCycle => "ImportCycle",
+            Self::UnlockedDependency => "UnlockedDependency",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
             Self::PathCode => "PathCode",
@@ -2208,6 +2214,8 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::ImportUnresolved { .. }),
         RefusalName::ImportUnresolved) |
         (Self::Lowering(LoweringRefusal::ImportCycle { .. }), RefusalName::ImportCycle) |
+        (Self::Lowering(LoweringRefusal::UnlockedDependency { .. }),
+        RefusalName::UnlockedDependency) |
         (Self::Lowering(LoweringRefusal::ImportShadows { .. }), RefusalName::ImportShadows) |
         (Self::Lowering(LoweringRefusal::UnexportedName { .. }),
         RefusalName::UnexportedName) |
@@ -2509,7 +2517,8 @@ impl Refusal<'_>
         RefusalName::DuplicateDefinition) | (LoweringRefusal::DuplicateImportAlias { ..
         }, RefusalName::DuplicateImportAlias) | (LoweringRefusal::ImportUnresolved { .. },
         RefusalName::ImportUnresolved) | (LoweringRefusal::ImportCycle { .. },
-        RefusalName::ImportCycle) | (LoweringRefusal::ImportShadows { .. },
+        RefusalName::ImportCycle) | (LoweringRefusal::UnlockedDependency { .. },
+        RefusalName::UnlockedDependency) | (LoweringRefusal::ImportShadows { .. },
         RefusalName::ImportShadows) | (LoweringRefusal::UnexportedName { .. },
         RefusalName::UnexportedName) | (LoweringRefusal::ShadowedBuiltin { .. },
         RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
@@ -2606,6 +2615,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::DuplicateImportAlias { .. } => RefusalName::DuplicateImportAlias,
         LoweringRefusal::ImportUnresolved { .. } => RefusalName::ImportUnresolved,
         LoweringRefusal::ImportCycle { .. } => RefusalName::ImportCycle,
+        LoweringRefusal::UnlockedDependency { .. } => RefusalName::UnlockedDependency,
         LoweringRefusal::ImportShadows { .. } => RefusalName::ImportShadows,
         LoweringRefusal::UnexportedName { .. } => RefusalName::UnexportedName,
         LoweringRefusal::ShadowedBuiltin { .. } => RefusalName::ShadowedBuiltin,

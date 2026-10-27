@@ -231,6 +231,11 @@ pub enum ImportTarget
     Unresolved,
     /// A source whose imports lead back to the importer.
     Cycle,
+    /// A module path whose head names nothing among the package's sources and
+    /// no dependency its lock records: an alias the package's `dependencies`
+    /// may declare and its `gandr.lock` does not yet hold (#533 p3). The import
+    /// binds nothing, and a name read through it is refused at that name.
+    Unlocked,
 }
 
 /// One source of a unit: where its text starts, and what its imports
@@ -395,7 +400,7 @@ impl Unit
             previous = source.start;
             let forward = source.imports.iter().any(|target| match *target {
                 ImportTarget::Source(SourceIndex(imported)) => imported >= position,
-                ImportTarget::Unresolved | ImportTarget::Cycle => false,
+                ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => false,
             });
             if forward {
                 return Err(UnitFault::Forward(SourceIndex(position)));

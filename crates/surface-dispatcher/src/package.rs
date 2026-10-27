@@ -25,6 +25,11 @@
 //! and the second is refused as drift, so a hand edit is never overwritten
 //! and never read.
 //!
+//! # A package's dependencies are locked by address
+//!
+//! [`lock`] resolves the dependencies a library declares and writes the
+//! `gandr.lock` its imports read them through (#533 p3).
+//!
 //! # References
 //!
 //! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a package's
@@ -46,6 +51,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::Inertness;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::Visibility;
 use gandr_surface_lowering::decode_escapes;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -61,10 +67,17 @@ use crate::evaluate::Evaluation;
 use crate::evaluate::Program;
 use crate::evaluate::declaration_name;
 use crate::root::classify;
+use crate::workspace::Spelling;
 use crate::workspace::Unmembered;
 use crate::workspace::WORKSPACE;
 use crate::workspace::Workspace;
 use crate::workspace::workspace_root;
+
+pub mod lock;
+
+use self::lock::DEPENDENCIES;
+use self::lock::Lock;
+use self::lock::SignatureKey;
 
 /// The file name of a package's library, the source that declares the
 /// package's model.
@@ -242,7 +255,7 @@ quenchant_shape::reason_enum! {
 ///   once, in that order. Paths below `working` are listed relative to it, `.`
 ///   for `working` itself, as a path a caller gives would be.
 /// - provides: the paths `check`, `test` and `fmt` walk, and the packages whose
-///   manifests `check` reconciles.
+///   locks and manifests `check` reconciles.
 /// - fails: [`Unpathed::Nowhere`] when no path is given and `working` is in no
 ///   package and no workspace; [`Unpathed::Unmembered`] when a workspace the
 ///   verb works on names no packages.
@@ -414,12 +427,15 @@ pub struct Manifest
     endpoint: String,
     /// Each module of the package but its root, by its path, in order.
     modules: Vec<String>,
+    /// Each dependency the library's `dependencies` lists, in order.
+    dependencies: Vec<lock::Dependency>,
 }
 
 impl Manifest
 {
     /// The manifest `program`'s `Package` model states, each of its fields run
-    /// to its string, and the modules of `package`.
+    /// to its string, the modules of `package`, and the dependencies the
+    /// library lists.
     ///
     /// # Specification
     /// - requires: `program` is the program of the package's library, and `own`
@@ -429,22 +445,30 @@ impl Manifest
     ///   value's spelling; the first field none of them declares is
     ///   [`Unmanifested::Undeclared`], and the first whose run is no string
     ///   [`Unmanifested::Unstrung`] with what it came to. The modules are
-    ///   [`modules`] of `package`'s sources, in order.
+    ///   [`modules`] of `package`'s sources, in order. The dependencies are
+    ///   `dependencies` among the same declarations, run once, each element its
+    ///   alias and path; none when none declares it, and
+    ///   [`Unmanifested::Undepended`] with what it came to when it runs to no
+    ///   list of dependencies.
     /// - provides: the manifest `gandr check` writes.
-    /// - fails: a field undeclared, or run to no string.
+    /// - fails: a field undeclared, or run to no string; `dependencies` run to
+    ///   no list of them.
     /// - panics: none.
     /// - executable: none — each field is run on the program's machine, which a
     ///   predicate could only check by running it again; the witness observes
     ///   each outcome.
     ///
     /// # Errors
-    /// The first field that is undeclared, or does not run to a string.
+    /// The first field that is undeclared, or does not run to a string; then
+    /// `dependencies`, when it runs to no list of dependencies.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a model holding every field, one of them escaped,
     ///   reads each; one missing `version` and one whose name is an integer are
-    ///   refused at that field.
+    ///   refused at that field; a library listing a dependency renders its
+    ///   table.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
+    /// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
     #[inline]
     pub fn of(
         program: &mut Program<'_>,
@@ -460,6 +484,7 @@ impl Manifest
             documentation: strung(program, own, Field::Documentation)?,
             endpoint: strung(program, own, Field::Endpoint)?,
             modules: modules(package.sources()).into_keys().collect(),
+            dependencies: depended(program, own)?,
         })
     }
 
@@ -473,8 +498,10 @@ impl Manifest
     ///   `documentation` and `endpoint` as TOML basic strings, each `"`, `\`
     ///   and control character escaped, and `modules` an array of the modules'
     ///   paths, one per line, in order, or `[]` when there are none, as the
-    ///   tree's TOML formatter writes it. The same manifest renders the same
-    ///   bytes.
+    ///   tree's TOML formatter writes it; then, when the library lists any, a
+    ///   `[dependencies]` table, one line per dependency in order, `alias = {
+    ///   path = "…" }`, the alias bare when it is a TOML bare key and a basic
+    ///   string otherwise. The same manifest renders the same bytes.
     /// - provides: the file [`reconcile`] writes.
     /// - fails: never.
     /// - panics: none.
@@ -484,12 +511,12 @@ impl Manifest
     ///   name holds a quote, a backslash and a newline escapes each.
     /// - witness: `tests::package::a_manifest_renders_its_digest_and_its_table_2687`
     #[spec(ensures: |ref ret| ret.starts_with(WRITTEN)
-        && matches!(Split::of(Manifested(ret)).authorship(), Authorship::Checker))]
+        && matches!(Split::of(Manifested(ret), Opening(WRITTEN)).authorship(), Authorship::Checker))]
     #[inline]
     #[must_use]
     pub fn render(&self) -> String
     {
-        let body = format!(
+        let mut body = format!(
             "\n[package]\nname = {}\nversion = {}\nauthors = {}\nlicence = {}\ndocumentation = \
              {}\nendpoint = {}\nmodules = {}\n",
             Basic(&self.name),
@@ -500,6 +527,18 @@ impl Manifest
             Basic(&self.endpoint),
             Listed(&self.modules)
         );
+        if !self.dependencies.is_empty() {
+            body.push_str("\n[dependencies]\n");
+        }
+        for dependency in &self.dependencies {
+            let lock::Coordinate::Path(ref path) = dependency.coordinate;
+            let _written = writeln!(
+                body,
+                "{} = {{ path = {} }}",
+                Key(dependency.alias.as_ref()),
+                Basic(path)
+            );
+        }
         format!(
             "{WRITTEN}\n{DIGEST}{}\n{body}",
             blake3::hash(body.as_bytes()).to_hex()
@@ -561,9 +600,53 @@ fn strung(
         .ok_or(Unmanifested::Unstrung { field, came })
 }
 
-/// A package's address: the BLAKE3 digest of its items' content keys, every
-/// inert component of its models left out (#533 § p2). It says what the
-/// package is, never where it is, and no manifest carries it.
+/// The dependencies the library's `dependencies` lists, run on `program`.
+///
+/// # Specification
+/// - requires: as [`Manifest::of`].
+/// - ensures: as [`Manifest::of`] states for the dependencies.
+/// - fails: [`Unmanifested::Undepended`].
+/// - panics: none.
+/// - executable: none — as [`Manifest::of`].
+///
+/// # Errors
+/// [`Unmanifested::Undepended`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Manifest::of`].
+/// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
+fn depended(
+    program: &mut Program<'_>,
+    own: &SettleReport<'_>,
+) -> Result<Vec<lock::Dependency>, Unmanifested>
+{
+    let Maybe::Present(constant) = program.named_among(
+        SurfaceName::from(DEPENDENCIES),
+        own.declarations().iter().map(DeclarationReport::constant),
+    )
+    else {
+        return Ok(Vec::new());
+    };
+    let came = program.evaluate(constant).to_string();
+    let Some(listed) = Spelling::from(came.as_str()).dependencies()
+    else {
+        return Err(Unmanifested::Undepended { came });
+    };
+    Ok(listed
+        .into_iter()
+        .map(|(alias, path)| lock::Dependency {
+            alias: lock::Alias::new(alias),
+            coordinate: lock::Coordinate::Path(path),
+        })
+        .collect())
+}
+
+/// A package's address: the BLAKE3 digest of what the package is.
+///
+/// It digests its items' content keys, every inert component of its models
+/// left out (#533 § p2), and its dependencies' addresses (§ p3). It says what
+/// the package is, never where it is or what its dependents call it, and no
+/// manifest carries it.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PackageAddress([u8; 32]);
@@ -584,24 +667,42 @@ impl core::fmt::Display for PackageAddress
     }
 }
 
+/// What a package is: its address, and the key of the interface its root
+/// exports.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Identity
+{
+    /// The package's address.
+    pub address: PackageAddress,
+    /// The package's signature key.
+    pub signature: SignatureKey,
+}
+
 impl Package
 {
-    /// The package's address: each of its sources, its library then its
+    /// The package's identity: each of its sources, its library then its
     /// modules in [`modules`] order, read as `shadows` holds it, laid out over
     /// its imports and lowered, and each of the source's own items digested in
     /// admission order as its path and its content key, a model's inert
-    /// component left out.
+    /// component and the library's `dependencies` left out; then the
+    /// addresses `lock` records; and the paths the library exports, keyed.
     ///
     /// # Specification
     /// - requires: `grammar` is the grammar the package's sources are read
-    ///   under.
-    /// - ensures: the BLAKE3 digest, over the sources in that order and each
-    ///   one's own items in its unit's admission order, of each item that is no
-    ///   [`Inertness::Inert`] declaration, as its path's dotted spelling
-    ///   prefixed by its length and then its content key's bytes. An item of an
+    ///   under, and `lock` the lock its dependencies resolve to.
+    /// - ensures: the address is the BLAKE3 digest, over the sources in that
+    ///   order and each one's own items in its unit's admission order, of each
+    ///   item that is no [`Inertness::Inert`] declaration and not the library's
+    ///   top-level `dependencies`, as its path's dotted spelling prefixed by
+    ///   its length and then its content key's bytes, followed by each address
+    ///   of [`Lock::addresses`] in order, prefixed by `u64::MAX`. An item of an
     ///   import is the importer's to leave out: only the declarations each
     ///   source writes are digested, so each enters once. Equal content at
-    ///   equal paths is one address, whatever the inert fields state.
+    ///   equal paths over equal dependencies is one address, whatever the inert
+    ///   fields state and wherever and under whatever alias each dependency is
+    ///   found. The signature key is the BLAKE3 digest of each dotted path of a
+    ///   [`Visibility::Public`] item the library digests, ascending, prefixed
+    ///   by its length.
     /// - provides: the identity p3's lock carries for the package.
     /// - fails: [`Unaddressed`] at the first source or item that has no key.
     /// - panics: none.
@@ -618,47 +719,70 @@ impl Package
     /// - hypothesis: L3 — in a two-source package, an edit to an inert field
     ///   leaves the address and every other item's key where they were, and an
     ///   edit to a content item moves the address; every corpus package's inert
-    ///   fields, each edited, leave its address unchanged.
+    ///   fields, each edited, leave its address unchanged; a dependency's
+    ///   content edit moves its dependent's address, and its inert edit does
+    ///   not.
     /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
     /// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
+    /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
     #[inline]
-    pub fn address(
+    pub fn identity(
         &self,
         grammar: &Pbg,
         shadows: &dyn Shadows,
-    ) -> Result<PackageAddress, Unaddressed>
+        lock: &Lock,
+    ) -> Result<Identity, Unaddressed>
     {
         let mut hasher = blake3::Hasher::new();
-        for source in
-            core::iter::once(self.library.clone()).chain(modules(self.sources()).into_values())
-        {
-            digested(grammar, &source, shadows, &mut hasher)?;
+        let mut exported = BTreeSet::new();
+        digested(
+            grammar,
+            &self.library,
+            shadows,
+            &mut hasher,
+            Some(&mut exported),
+        )?;
+        for source in modules(self.sources()).into_values() {
+            digested(grammar, &source, shadows, &mut hasher, None)?;
         }
-        Ok(PackageAddress(*hasher.finalize().as_bytes()))
+        for address in lock.addresses() {
+            let _digested = hasher.update(&u64::MAX.to_le_bytes()).update(&address.0);
+        }
+        let mut signed = blake3::Hasher::new();
+        for path in &exported {
+            let length = u64::try_from(path.len()).unwrap_or(u64::MAX);
+            let _signed = signed.update(&length.to_le_bytes()).update(path.as_bytes());
+        }
+        Ok(Identity {
+            address: PackageAddress(*hasher.finalize().as_bytes()),
+            signature: SignatureKey::new(signed.finalize()),
+        })
     }
 }
 
 /// Digest into `hasher` the own items of the source at `source`, as
-/// [`Package::address`] states.
+/// [`Package::identity`] states, filing each exported path into `exported`
+/// when it is given: the library's, whose `dependencies` is left out.
 ///
 /// # Specification
-/// - requires: as [`Package::address`].
-/// - ensures: as [`Package::address`], for this one source.
-/// - fails: as [`Package::address`].
+/// - requires: as [`Package::identity`].
+/// - ensures: as [`Package::identity`], for this one source.
+/// - fails: as [`Package::identity`].
 /// - panics: none.
-/// - executable: none — as [`Package::address`].
+/// - executable: none — as [`Package::identity`].
 ///
 /// # Errors
-/// As [`Package::address`].
+/// As [`Package::identity`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Package::address`].
+/// - hypothesis: L3 — as [`Package::identity`].
 /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
 fn digested(
     grammar: &Pbg,
     source: &Path,
     shadows: &dyn Shadows,
     hasher: &mut blake3::Hasher,
+    mut exported: Option<&mut BTreeSet<String>>,
 ) -> Result<(), Unaddressed>
 {
     let unlowered = |why: String| Unaddressed::Unlowered {
@@ -709,6 +833,9 @@ fn digested(
             let segment: &str = segment.as_ref();
             path.push_str(segment);
         }
+        if exported.is_some() && path == DEPENDENCIES {
+            continue;
+        }
         if refused {
             return Err(Unaddressed::Refused {
                 source: source.to_path_buf(),
@@ -725,6 +852,11 @@ fn digested(
         let length = u64::try_from(path.len()).unwrap_or(u64::MAX);
         let _digested = hasher.update(&length.to_le_bytes()).update(path.as_bytes());
         key.digest_into(hasher);
+        if let Some(ref mut exported) = exported
+            && declaration.visibility() == Visibility::Public
+        {
+            let _fresh = exported.insert(path.clone());
+        }
     }
     Ok(())
 }
@@ -954,6 +1086,12 @@ pub enum Unmanifested
         /// What its run came to, spelled.
         came: String,
     },
+    /// The library's `dependencies` does not run to a list of dependencies.
+    Undepended
+    {
+        /// What its run came to, spelled.
+        came: String,
+    },
 }
 
 impl core::fmt::Display for Unmanifested
@@ -977,6 +1115,12 @@ impl core::fmt::Display for Unmanifested
                 f,
                 "`{}` runs to `{came}`, not to a string, so no `{MANIFEST}` is written",
                 field.path()
+            ),
+            Self::Undepended { ref came } => write!(
+                f,
+                "`{DEPENDENCIES}` runs to `{came}`, not to a list of dependencies, so no \
+                 `{MANIFEST}` is written: list each as `#{{ alias = \"…\", coordinate = \
+                 Path(\"…\") }}`"
             ),
         }
     }
@@ -1091,7 +1235,7 @@ pub fn reconcile(
         Err(error) => return Err(ManifestFault::Io(error)),
     };
     if matches!(
-        Split::of(Manifested(&standing)).authorship(),
+        Split::of(Manifested(&standing), Opening(WRITTEN)).authorship(),
         Authorship::Hand
     ) {
         return Err(ManifestFault::Drifted);
@@ -1120,6 +1264,11 @@ enum Authorship
     Hand,
 }
 
+/// The line a file the checker wrote opens with.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Opening(&'static str);
+
 /// A manifest file read as its header's digest and its body.
 struct Split<'file>
 {
@@ -1131,15 +1280,18 @@ struct Split<'file>
 
 impl<'file> Split<'file>
 {
-    /// `file` split at its header.
+    /// `file` split at its header, which opens with `opening`.
     ///
     /// # Specification
     /// trivial.
-    fn of(file: Manifested<'file>) -> Self
+    fn of(
+        file: Manifested<'file>,
+        opening: Opening,
+    ) -> Self
     {
         let Manifested(text) = file;
         let headed = text
-            .strip_prefix(WRITTEN)
+            .strip_prefix(opening.0)
             .and_then(|rest| rest.strip_prefix('\n'))
             .and_then(|rest| {
                 let (line, body) = rest.split_once('\n')?;
@@ -1170,6 +1322,34 @@ impl<'file> Split<'file>
         }
         else {
             Authorship::Hand
+        }
+    }
+}
+
+/// A string written as a TOML key: bare when it is a bare key, letters,
+/// digits, `_` and `-` alone, and a basic string otherwise.
+#[repr(transparent)]
+struct Key<'text>(&'text str);
+
+impl core::fmt::Display for Key<'_>
+{
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        if !self.0.is_empty()
+            && self
+                .0
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            f.write_str(self.0)
+        }
+        else {
+            Basic(self.0).fmt(f)
         }
     }
 }

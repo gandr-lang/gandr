@@ -1,0 +1,10 @@
+/// `UnlockedDependency`: a source reads a name through a module path that names no module of the package and no dependency its lock records.
+import circle;
+
+/// A declaration reading nothing through the path stands.
+def origin : Integer;
+def origin = 0;
+
+@[ refuses("UnlockedDependency") ]
+def radius : Integer;
+def radius = circle.radius;

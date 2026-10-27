@@ -870,6 +870,17 @@ pub enum LoweringRefusal<'source>
         refused: ByteSpan,
     },
 
+    /// A name read through a module path whose head names no module of the
+    /// package and no dependency its `gandr.lock` records: an alias its
+    /// `dependencies` declare is read only once `gandr lock` has locked it.
+    UnlockedDependency
+    {
+        /// The bytes of the alias where the name is read through it.
+        span: ByteSpan,
+        /// The alias, the head of the import's module path.
+        alias: SurfaceName<'source>,
+    },
+
     /// A name two sources bind for one source: an unqualified import binding
     /// a name the importer declares, or two unqualified imports binding one
     /// name.
@@ -1879,6 +1890,10 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::ImportCycle { .. } => f.write_str(
                 "this source's import is an edge of an import cycle, so none of its declarations is read",
             ),
+            Self::UnlockedDependency { alias, .. } => write!(
+                f,
+                "`{alias}` names no module of this package and no dependency its `gandr.lock` records"
+            ),
             Self::ImportShadows { name, .. } => write!(
                 f,
                 "`{name}` is bound by an import and by another binding of this source"
@@ -2387,6 +2402,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { span, .. }
             | Self::ImportUnresolved { span, .. }
             | Self::ImportCycle { span, .. }
+            | Self::UnlockedDependency { span, .. }
             | Self::ImportShadows { span, .. }
             | Self::UnexportedName { span, .. }
             | Self::ShadowedBuiltin { span, .. }
@@ -2521,7 +2537,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 73_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 74_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2851,6 +2867,10 @@ mod tests
             LoweringRefusal::UnknownTactic {
                 span: s(135_usize, 136_usize),
             },
+            LoweringRefusal::UnlockedDependency {
+                span: s(137_usize, 138_usize),
+                alias: SurfaceName::from("hello"),
+            },
         ]
     }
 
@@ -2935,6 +2955,7 @@ mod tests
             s(131_usize, 132_usize),
             s(133_usize, 134_usize),
             s(135_usize, 136_usize),
+            s(137_usize, 138_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

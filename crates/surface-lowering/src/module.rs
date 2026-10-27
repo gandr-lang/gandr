@@ -2428,7 +2428,9 @@ impl<'source> Collected<'source>
                 pending.extend(self.imports.of(at).filter_map(
                     |further| match further.resolution() {
                         ImportResolution::Path(ImportTarget::Source(next)) => Some(next),
-                        ImportResolution::Path(ImportTarget::Unresolved | ImportTarget::Cycle)
+                        ImportResolution::Path(
+                            ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
+                        )
                         | ImportResolution::Foreign => None,
                     },
                 ));
@@ -10120,6 +10122,9 @@ pub struct DeclarationParts<'source>
     pub outcome: DeclarationOutcome<'source>,
     /// Whether the name is a model's inert component.
     pub inertness: Inertness,
+    /// Whether the name's source exports it: what a package's signature key
+    /// reads of its root (#533 p3).
+    pub visibility: Visibility,
 }
 
 /// One declared name, lowered.
@@ -10331,6 +10336,18 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn inertness(&self) -> Inertness
     {
         self.parts.inertness
+    }
+
+    /// Whether the name's source exports it, which its package's signature
+    /// key reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn visibility(&self) -> Visibility
+    {
+        self.parts.visibility
     }
 }
 

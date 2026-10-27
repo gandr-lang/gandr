@@ -234,6 +234,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { .. }
             | Self::ImportUnresolved { .. }
             | Self::ImportCycle { .. }
+            | Self::UnlockedDependency { .. }
             | Self::ImportShadows { .. }
             | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
@@ -305,6 +306,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { .. }
             | Self::ImportUnresolved { .. }
             | Self::ImportCycle { .. }
+            | Self::UnlockedDependency { .. }
             | Self::ImportShadows { .. }
             | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
@@ -784,7 +786,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 75_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 76_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1090,6 +1092,10 @@ mod tests
                 level: SurfaceName::from("18446744073709551615"),
             },
             LoweringRefusal::HostConflict { span: empty },
+            LoweringRefusal::UnlockedDependency {
+                span: empty,
+                alias: SurfaceName::from("hello"),
+            },
         ]
     }
 
@@ -1172,6 +1178,7 @@ mod tests
             FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

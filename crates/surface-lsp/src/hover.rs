@@ -986,10 +986,9 @@ fn imported(
             else {
                 ImportBase::Importer
             };
-            let file = named_path(
-                &ImportPath::new(String::from(import.written.uri.as_ref()), base)
-                    .resolved(hovering.document.parent().unwrap_or(&hovering.document)),
-            );
+            let named = ImportPath::new(String::from(import.written.uri.as_ref()), base)
+                .resolved(hovering.document.parent().unwrap_or(&hovering.document));
+            let file = named_path(named.file());
             match hovering.targets.get(ordinal) {
                 Some(&ImportTarget::Source(source)) => {
                     let read = format!(
@@ -1005,6 +1004,11 @@ fn imported(
                         Maybe::Absent(_) => read,
                     }
                 },
+                Some(&ImportTarget::Unlocked) => format!(
+                    "`{}` names no module of this package and no dependency its `gandr.lock` \
+                     records: declare it in `dependencies` and run `gandr lock`.",
+                    import.written.uri.as_ref()
+                ),
                 Some(&ImportTarget::Cycle) => format!(
                     "`{}` imports this document back, so neither is read.",
                     file.display()

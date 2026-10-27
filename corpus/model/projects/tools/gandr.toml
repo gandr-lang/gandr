@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 9a5aac15dc07b82455c5fb3de45830d3bafe847bfdce82487354ba9c04d07cb5
+# blake3: 16a2cab239ed6d00222184dc6b551ee8332dd6357985473e0d58270cc84acf44
 
 [package]
 name = "tools"
@@ -9,3 +9,6 @@ licence = "MIT OR Apache-2.0"
 documentation = "https://github.com/gandr-lang/gandr"
 endpoint = "https://github.com/gandr-lang/gandr"
 modules = []
+
+[dependencies]
+hello = { path = "../hello" }

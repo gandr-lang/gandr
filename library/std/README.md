@@ -10,7 +10,7 @@ The standard library: the package every gandr program can read, built and checke
 
 | module | holds | absorbs | seam | status |
 | ------ | ----- | ------- | ---- | ------ |
-| `std.package` | `Versioned`, `Gandr.Package`, `Gandr.Workspace`, and `Gandr.Module` and `Gandr.Dependency` with no model yet (#533 p2, p3) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
+| `std.package` | `Versioned`, `Gandr.Package`, `Gandr.Workspace`, `Gandr.Module` with no model yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#533 p2, p3) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
 | `std.nix` | `Nix.Derivation`, `Nix.Attribute` | none | none: a type provider (#2763) | reserved |
 | `std.authority` | the ambient authority, `main`'s parameter, from which each host module's root capability is opened | none | `cap_std::ambient_authority`, `AmbientAuthority` | reserved |
 | `std.fs` | `Fs` under a directory capability: open, read, write, create and remove beneath it; temporary directories removed with their scope | `corpus/model/builtins/host-modules.gandr`, `corpus/model/control/capability-attenuate.gandr` | `cap_std::fs::Dir`, `cap_tempfile::TempDir`, `cap_primitives::fs::open_dir` (resolution beneath its start); rustix `fs` | reserved |
