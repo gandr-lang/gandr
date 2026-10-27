@@ -6,7 +6,9 @@
 # the reason beside it, and never pre-emptively. A `check:*` task is a gate
 # every contributor runs locally, idempotent and cheap relative to what it
 # guards; reports and uploads (coverage, mutants, benches) live under `ci:` and
-# are never globbed into `check`.
+# are never globbed into `check`. A gate whose rule is a jq program held to
+# recorded cases runs them through `.config/cases/run.bash` (#3039), never a
+# loop of its own.
 
 [check]
 description = "Every gate"
@@ -891,16 +893,7 @@ run = '''
 set -euo pipefail
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-failed=0
-while IFS= read -r case; do
-  got=$(jq .input <<< "$case" | jq -r -f .config/tracking/tracking.jq)
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'tracking case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/tracking/cases.json)
-(( failed == 0 )) || exit 1
+.config/cases/run.bash tracking .config/tracking/cases.json --program .config/tracking/tracking.jq
 sed -nE 's/^ *pub const ([A-Z_]+): Self = Self\(([0-9]+)\);$/\1 \2/p' crates/core-term/src/failure.rs \
   | jq -R '[inputs | split(" ") | {name: .[0], number: (.[1] | tonumber)}]' -n > "$tmp/constants.json"
 { cat ledger/features.sql; printf '%s\n' "SELECT id, coalesce(issue, '') AS issue FROM feature WHERE status = 'declined' ORDER BY id;"; } \
@@ -1039,14 +1032,7 @@ set -euo pipefail
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 failed=0
-while IFS= read -r case; do
-  mapfile -t args < <(jq -r '.args | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r "${args[@]}" -f .config/crate-map/map.jq)
-  if [[ "$got" != "$(jq -r .output <<< "$case")" ]]; then
-    printf 'crate map case FAILED: %s\n  gave: %s\n' "$(jq -r .name <<< "$case")" "$got" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/crate-map/cases.json)
+.config/cases/run.bash 'crate map' .config/crate-map/cases.json --program .config/crate-map/map.jq || failed=1
 db="$fresh/concerns.db"
 sqlite3 -bail "$db" < ledger/concerns.sql
 sqlite3 "$db" .dump > "$fresh/concerns.sql"
@@ -1119,24 +1105,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  mapfile -t args < <(jq -r '(.args // {}) | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
-  if got=$(jq .input <<< "$case" | jq -j -c "${args[@]}" -f ".config/census/$(jq -r .program <<< "$case")" 2>&1); then
-    if [[ $(jq .fails <<< "$case") == true ]]; then
-      printf 'census case FAILED: %s\n  gave: %s\n  wanted: a refusal\n' "$name" "$got" >&2
-      failed=1
-    elif [[ "$got" != "$(jq -j -c .output <<< "$case")" ]]; then
-      printf 'census case FAILED: %s\n  gave: %s\n' "$name" "$got" >&2
-      failed=1
-    fi
-  elif [[ $(jq .fails <<< "$case") != true ]]; then
-    printf 'census case FAILED: %s\n  refused: %s\n' "$name" "$got" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/census/cases.json)
-if (( failed )); then
+if ! .config/cases/run.bash census .config/census/cases.json --programs .config/census --mode j; then
   echo 'census check FAILED' >&2
   exit 1
 fi
@@ -1161,19 +1130,7 @@ set -euo pipefail
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 failed=0
-while IFS= read -r case; do
-  mapfile -t args < <(jq -r '.args | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
-  fails=$(jq -r '.fails // false' <<< "$case")
-  if got=$(jq .input <<< "$case" | jq -r "${args[@]}" -f .config/purposes/items.jq 2> /dev/null); then
-    [[ $fails == false && "$got" == "$(jq -r .output <<< "$case")" ]] || got="gave: $got"
-  else
-    [[ $fails == true ]] || got='failed'
-  fi
-  if [[ $got == 'gave: '* || $got == failed ]]; then
-    printf 'purposes entry case FAILED: %s\n  %s\n' "$(jq -r .name <<< "$case")" "$got" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/purposes/cases.json)
+.config/cases/run.bash 'purposes entry' .config/purposes/cases.json --program .config/purposes/items.jq || failed=1
 db="$fresh/purposes.db"
 sqlite3 -bail "$db" < ledger/purposes.sql
 sqlite3 "$db" .dump > "$fresh/purposes.sql"
@@ -1364,19 +1321,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  program=$(jq -r .program <<< "$case")
-  mapfile -t args < <(jq -r '(.args // {}) | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
-  mode=-c
-  if [[ "$program" == prefix.jq || "$program" == state.jq ]]; then mode=-r; fi
-  got=$(jq .input <<< "$case" | jq "$mode" "${args[@]}" -f ".config/pr-stack/$program")
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'pr-stack case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/pr-stack/cases.json)
+.config/cases/run.bash pr-stack .config/pr-stack/cases.json --programs .config/pr-stack --mode c --raw prefix.jq --raw state.jq || failed=1
 triggers=$(yq -o=json '.on' .github/workflows/landing.yml | jq -c -f .config/pr-stack/triggers.jq | jq -r '.[] | ".github/workflows/landing.yml: \(.)"')
 if [[ -n "$triggers" ]]; then
   printf '%s\n' "$triggers" >&2
@@ -1482,16 +1427,7 @@ run = '''
 set -euo pipefail
 failed=0
 cases() {
-  local kind=$1 program=$2 file=$3 case name got want
-  while IFS= read -r case; do
-    name=$(jq -r .name <<< "$case")
-    got=$(jq .input <<< "$case" | jq -r -L .config/claims -L .config/issues -f ".config/claims/$program")
-    want=$(jq -r .output <<< "$case")
-    if [[ "$got" != "$want" ]]; then
-      printf '%s case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$kind" "$name" "$got" "$want" >&2
-      failed=1
-    fi
-  done < <(jq -c '.[]' ".config/claims/$file")
+  .config/cases/run.bash "$1" ".config/claims/$3" --program ".config/claims/$2" -L .config/issues || failed=1
 }
 cases claims decide.jq cases.json
 cases opening opening.jq opening.json
@@ -1553,16 +1489,7 @@ run = '''
 set -euo pipefail
 claims=.config/claims
 if [[ -z "${usage_body:-}" ]]; then
-  failed=0
-  while IFS= read -r case; do
-    got=$(jq .input <<< "$case" | jq -r -L "$claims" -f "$claims/refactoring.jq")
-    want=$(jq -r .output <<< "$case")
-    if [[ "$got" != "$want" ]]; then
-      printf 'refactoring case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$want" >&2
-      failed=1
-    fi
-  done < <(jq -c '.[]' "$claims/refactoring.json")
-  (( failed == 0 )) || exit 1
+  .config/cases/run.bash refactoring "$claims/refactoring.json" --program "$claims/refactoring.jq"
   echo "refactoring check OK: $(jq length "$claims/refactoring.json") bodies their resolutions"
   exit 0
 fi
@@ -1607,16 +1534,7 @@ run = '''
 set -euo pipefail
 failed=0
 cases() {
-  local kind=$1 program=$2 file=$3 case name got want
-  while IFS= read -r case; do
-    name=$(jq -r .name <<< "$case")
-    got=$(jq .input <<< "$case" | jq -r -L "$(dirname "$program")" -f "$program")
-    want=$(jq -r .output <<< "$case")
-    if [[ "$got" != "$want" ]]; then
-      printf '%s case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$kind" "$name" "$got" "$want" >&2
-      failed=1
-    fi
-  done < <(jq -c '.[]' "$file")
+  .config/cases/run.bash "$1" "$3" --program "$2" || failed=1
 }
 cases epics .config/epics/close.jq .config/epics/cases.json
 cases triage .config/triage/triage.jq .config/triage/cases.json
@@ -1639,18 +1557,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  program=$(jq -r .program <<< "$case")
-  got=$(jq .input <<< "$case" | jq -c -f ".config/mutants/$program")
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'mutants case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/mutants/cases.json)
-(( failed == 0 )) || exit 1
+.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
@@ -1666,18 +1573,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  program=$(jq -r .program <<< "$case")
-  got=$(jq .input <<< "$case" | jq -c -f ".config/stall/$program")
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'stall case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/stall/cases.json)
-(( failed == 0 )) || exit 1
+.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
 '''
 
@@ -1697,20 +1593,11 @@ run = '''
 set -euo pipefail
 failed=0
 cases() {
-  local mode=$1 program=$2 file=$3 case name got want
-  while IFS= read -r case; do
-    name=$(jq -r .name <<< "$case")
-    got=$(jq .input <<< "$case" | jq "$mode" -f ".config/hotpath/$program")
-    want=$(jq -r .output <<< "$case")
-    if [[ "$got" != "$want" ]]; then
-      printf 'hotpath case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
-      failed=1
-    fi
-  done < <(jq -c '.[]' ".config/hotpath/$file")
+  .config/cases/run.bash hotpath ".config/hotpath/$3" --program ".config/hotpath/$2" --mode "$1" || failed=1
 }
-cases -c report.jq cases.json
-cases -r upload.jq upload.json
-cases -c unsent.jq unsent.json
+cases c report.jq cases.json
+cases r upload.jq upload.json
+cases c unsent.jq unsent.json
 (( failed == 0 )) || exit 1
 echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes and $(jq length .config/hotpath/unsent.json) unsent issues read as recorded"
 '''
