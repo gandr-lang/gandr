@@ -2419,6 +2419,7 @@ impl<'source> Lowerer<'_, 'source>
                         node: typed,
                         frame: answer.frame,
                         over: super::native::Over::Written,
+                        arm: answer.arm,
                     };
                     let _first = self.answers.insert(body, stated);
                     Maybe::Present(stated)

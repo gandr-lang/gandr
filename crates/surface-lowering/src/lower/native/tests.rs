@@ -3978,6 +3978,62 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A match in an arm, with no answer of its own, on the variable naming the
+/// arm's field, answers at the arm's constructor: its motive reads the
+/// scrutinee it abstracts, and its branches read the outer scrutinee at the
+/// arm's constructor over their own, two arms deep as one (#2994).
+#[test]
+fn a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def inner(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(Zero), Succ(m) => case m {{ Zero => return here(Succ(Zero)), Succ(k) => return here(Succ(Succ(k))) }} }} }}\n\
+         def named(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(Zero), Succ(m) => case m {{ Zero => return here(n), Succ(k) => return here(n) }} }} }}\n\
+         def deep(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(Zero), Succ(m) => case m {{ Zero => return here(Succ(Zero)), Succ(k) => case k {{ Zero => return here(Succ(Succ(Zero))), Succ(j) => return here(Succ(Succ(Succ(j)))) }} }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let inner = tail_of(&arena, body_named(&module, SurfaceName::from("inner")));
+    let motives: Vec<_> = reachable(&arena, inner)
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            Some(&Computation::DataCase { motive, .. }) => Some(motive),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        motives.len(),
+        2_usize,
+        "the outer match and the one in its arm"
+    );
+    for motive in motives {
+        assert!(
+            matches!(
+                gandr_core_term::strengthen_comp_type(&mut arena, motive),
+                Maybe::Absent(_)
+            ),
+            "each motive reads the scrutinee it abstracts"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// An arm that leaves a field to a wildcard cannot name the constructor it
+/// reads its scrutinee at, so a match in it on the field it does name takes
+/// the answer as written, and its branches, reading the whole scrutinee,
+/// check (#2994).
+#[test]
+fn an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}data Pair : Type {{ Mk : (a : Nat, b : Nat) --> Pair; }}\n\
+         def half(p : Pair) -> -F Path(Pair, p, p) {{ case p {{ Mk(a, _) => case a {{ Zero => return here(p), Succ(c) => return here(p) }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let _lowered = body_named(&module, SurfaceName::from("half"));
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn the_presentation_code_names_its_family_where_a_type_is_read()
 {
