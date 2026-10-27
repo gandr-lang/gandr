@@ -1049,9 +1049,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   level of that field's variable, or for an indexed sort of the call
     ///   [`Self::family_call`] mints; for an unindexed sort, the type its
     ///   component reads — the member's type, or the atom a sealed component
-    ///   declares — or, where no type component bears its name, the builtin
-    ///   type it names; for an indexed one, its family expanded over the index
-    ///   terms' values.
+    ///   declares — or, where no type component bears its name, the host
+    ///   universe `Type` names or the builtin type it names; for an indexed
+    ///   one, its family expanded over the index terms' values.
     /// - fails: a sort no type component of the module or field answers and no
     ///   builtin type names, of another index count, or whose type did not
     ///   lower, as unlowered; one whose component is refused, with its refusal.
@@ -1129,6 +1129,14 @@ impl<'source> Lowerer<'_, 'source>
             })
             .copied()
         else {
+            if let Maybe::Present(ground) = sort.host_universe() {
+                let id = sink.arena.value_type_universe(
+                    Sort::Ground(ground),
+                    Level::constant(Universe::FUSS_FREE.level),
+                );
+                sink.origins.record_value_type(id, minting.origin);
+                return Ok(id);
+            }
             let builtin = match type_atom(SurfaceName::from(sort.sort.as_ref())) {
                 Maybe::Present(atom) if sort.indices.is_empty() => sink.atom(atom, minting.origin),
                 Maybe::Present(_) | Maybe::Absent(_) => return Err(Missing::Unlowered),

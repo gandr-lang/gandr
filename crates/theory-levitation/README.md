@@ -8,6 +8,7 @@ The code universe of gandr's levitated descriptions: codes, the declaration tabl
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -123,6 +124,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Elaborating a circuit block | [`elaborate`](src/elaborate.rs) |
 | The presentation code `Theory` and what waits on the fragment | [`theory`](src/theory.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
+
+## References
+
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index ranges over the host's types.
 
 ## License
 

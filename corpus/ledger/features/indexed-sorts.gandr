@@ -1,5 +1,5 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
-/// Implemented: sorts indexed by other sorts in a `theory` block and in `Model(S)`, an indexed sort stated as a function from its indices into the universe.
+/// Implemented: sorts indexed by other sorts, or by the host's types, in a `theory` block and in `Model(S)`, an indexed sort stated as a function from its indices into the universe.
 /// Not implemented: rules over indexed sorts; #522 owes it.
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
@@ -51,4 +51,22 @@ module SetoidCat : Model(CatShape) {
   ) -> t => v {
     thunk { compose(t, u, v, f, g) }
   }
+}
+
+/// A carrier indexed by the host's types: its index ranges over `Type`, the
+/// binder named as a definition's type parameter is, and an operation over it
+/// takes the index its port's sort names.
+theory Carrier {
+  sort T(A : Type) : Type;
+
+  oper same : (x : T(a)) --> T(a);
+}
+
+/// Lists as a model of the carrier: `T` is a family from the host's types
+/// into the universe.
+module Lists : Model(Carrier) {
+  type T(a : Type) = List(a);
+
+  /// The list unchanged.
+  def same(a : Type, x : List(a)) -> List(a) { x }
 }

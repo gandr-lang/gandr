@@ -84,12 +84,16 @@
 //! - J. A. Robinson. "A Machine-Oriented Logic Based on the Resolution
 //!   Principle." _Journal of the ACM_ 12(1) (1965).
 //!   <https://doi.org/10.1145/321250.321253> — first-order unification.
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a sort indexed by the
+//!   host's types derives its family over `Type`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
@@ -152,6 +156,50 @@ pub struct SortTerm
     pub sort: Name,
     /// Its index terms, left to right.
     pub indices: Vec<FreeTerm>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a sort term names no universe of the host.
+    pub mod host_universe {
+        /// The reason a sort term names no universe of the host.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The term names a sort or a builtin type, or applies its head to
+            /// index terms.
+            Named,
+        }
+    }
+}
+
+impl SortTerm
+{
+    /// The ground sort of the host universe the term names: the value types
+    /// for a bare `Type`, the sort an index of a sort indexed by host types
+    /// ranges over.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value sort exactly when the term is `Type` applied to no
+    ///   index term.
+    /// - fails: never; every other term is an absence.
+    /// - panics: none.
+    /// - executable: none — the clause would read the name again, which is the
+    ///   comparison the body makes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sort indexed at `Type` derives its family over the
+    ///   universe, and a theory sort beside it keeps its own head.
+    /// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
+    pub(crate) fn host_universe(&self) -> Maybe<GroundSort, host_universe::Absent>
+    {
+        if self.indices.is_empty() && self.sort.as_ref() == crate::form::TileName::UNIVERSE.as_ref()
+        {
+            Maybe::Present(GroundSort::Value)
+        }
+        else {
+            Maybe::Absent(host_universe::Absent::Named)
+        }
+    }
 }
 
 /// A named port: an operation's input or output, or a sort's index.
@@ -1011,8 +1059,9 @@ pub(crate) fn derive_laws(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one component per presented sort and operation, in that order,
-///   each group in written order, and each one's head by its name, a builtin
-///   type a port names held as a closed sort.
+///   each group in written order, and each one's head by its name, the host
+///   universe a sort's index ranges over and a builtin type a port names held
+///   as closed sorts.
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
 /// - executable: none — as [`derive_members`].
@@ -1030,6 +1079,14 @@ fn derive_heads(
     let mut heads: BTreeMap<Name, Result<infer::Head, ModelFault>> = BTreeMap::new();
     let mut components = Vec::new();
     for sort in &members.sorts {
+        for index in &sort.indices {
+            if let Maybe::Present(_) = index.sort.host_universe()
+                && !heads.contains_key(&index.sort.sort)
+            {
+                let closed = infer::derive_head(&heads, infer::HeadKind::Sort, &[], &[]);
+                let _first = heads.insert(index.sort.sort.clone(), closed);
+            }
+        }
         let head = infer::derive_head(&heads, infer::HeadKind::Sort, &sort.indices, &[]);
         let form = head.clone().map(|derived| ModelForm::Sort {
             indices: derived.binders,

@@ -206,6 +206,38 @@ fn the_cat_shape_sorts_are_a_type_and_a_family()
     );
 }
 
+/// A sort indexed by the host's types derives the family from `Type` into
+/// the universe, beside an index over a sort of the theory, and an operation
+/// over it binds the index its port's sort names at `Type`.
+#[test]
+fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
+{
+    let model = derived(
+        r"theory Carrier {
+  sort Ob : Type;
+  sort T(A : Type) : Type;
+  sort At(o : Ob, A : Type) : Type;
+  oper same : (x : T(a)) --> T(a);
+}",
+    );
+
+    assert_eq!(
+        spelled(&model, "T"),
+        "type T : (A : Type) => Type",
+        "an index over the host's types is a binder at `Type`"
+    );
+    assert_eq!(
+        spelled(&model, "At"),
+        "type At : (o : Ob, A : Type) => Type",
+        "an index at `Type` beside one at a sort of the theory"
+    );
+    assert_eq!(
+        spelled(&model, "same"),
+        "same : (a : Type, x : T(a)) => T(a)",
+        "the index the port's sort names is bound at `Type` first"
+    );
+}
+
 /// A theory's stated laws derive the components a model proves, after its
 /// rules: the written binders, then each hypothesis, then the path, a `Bool`
 /// literal standing as a whole side; a side naming a variable no binder binds,
