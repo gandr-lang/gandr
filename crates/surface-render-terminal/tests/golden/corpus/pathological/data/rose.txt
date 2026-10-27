@@ -28,4 +28,5 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 80 │ │  }
    │ └──┘ checked against `Bush => Nat`; while checking the body of this function; binds forged : Bush => Nat
    │
-   ╰ note: `forged` is refused with StageNotBelow, as its expectation states
+   ├ note: `forged` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

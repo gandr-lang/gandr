@@ -4,4 +4,5 @@ error[UnresolvedName]: `nosuch` is not defined
 2 │ def refuted(x : Integer) -> -F Path(Integer, nosuch(x), x) {
   │                                              ━━━━━━ not found in this scope
   │
-  ╰ note: `refuted` is refused with UnresolvedName, as its expectation states
+  ├ note: `refuted` is refused with UnresolvedName, as its expectation states
+  ╰ help: define `nosuch`, or import the module that exports it

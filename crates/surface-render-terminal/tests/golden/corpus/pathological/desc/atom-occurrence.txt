@@ -4,7 +4,8 @@ error[IllFormedDescription]: a rule names the atom `a` under no abstraction of i
 19 │   rule stray : nu(bind a. par(a, nil())) ==> nil();
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `Misplaced` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Misplaced` is refused with IllFormedDescription, as its expectation states
+   ╰ help: name the atom only inside `bind a . t`, at a port of the sort that it abstracts
 
 error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
    ╭▸ corpus/pathological/desc/atom-occurrence.gandr:36:3
@@ -23,4 +24,5 @@ error[IllFormedDescription]: the rule holds only of an instance of `p` that does
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `Split` is refused with IllFormedDescription, as its expectation states
-   ╰ note: tracked by #1934 <https://github.com/gandr-lang/gandr/issues/1934>
+   ├ note: tracked by #1934 <https://github.com/gandr-lang/gandr/issues/1934>
+   ╰ help: put the variable under the same abstractions at each of its occurrences

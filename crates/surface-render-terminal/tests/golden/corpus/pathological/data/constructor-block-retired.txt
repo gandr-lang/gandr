@@ -4,4 +4,5 @@ error[MalformedForm]: a keyword or symbol of this parameter is out of place
 5 │ data Maybe(a) { None, Some(x : a) }
   │             ━ out of place
   │
-  ╰ note: `Maybe` is refused with MalformedForm, as its expectation states
+  ├ note: `Maybe` is refused with MalformedForm, as its expectation states
+  ╰ help: move the keyword or symbol to its place in the parameter

@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/specification/niche-realizability.gandr:32:30
    │
 29 │     def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefWp(w, keptOpt, h) {
@@ -24,4 +24,5 @@ error[TypeMismatch]: mismatched types
 37 │ │   }
    │ └───┘ checked against `(w : Nat, h : Heap) => vOpt(vInt, w, h) => derefWp(w, keptOpt, h)`; while checking the body of this thunk
    │
-   ╰ note: `derefMeets` is refused with TypeMismatch, as its expectation states
+   ├ note: `derefMeets` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

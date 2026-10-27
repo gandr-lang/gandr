@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/universe/v-infinity.gandr:24:42
    │
 10 │      Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
@@ -24,7 +24,8 @@ error[TypeMismatch]: mismatched types
 26 │ │  }
    │ └──┘ checked against `Vinf => Ord`; while checking the body of this function; binds unranked : Vinf => Ord
    │
-   ╰ note: `unranked` is refused with TypeMismatch, as its expectation states
+   ├ note: `unranked` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/universe/v-infinity.gandr:32:54
@@ -47,7 +48,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 34 │ │  }
    │ └──┘ checked against `Vinf => Ord`; while checking the body of this function; binds circular : Vinf => Ord
    │
-   ╰ note: `circular` is refused with StageNotBelow, as its expectation states
+   ├ note: `circular` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[DataFieldLevel]: a constructor field lives in a larger universe than its datatype
    ╭▸ corpus/pathological/universe/v-infinity.gandr:39:15

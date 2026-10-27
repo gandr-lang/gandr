@@ -14,7 +14,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 41 │ │  }
    │ └──┘ checked against `(l : Ints) => Path(Ints, listOf(tagsOf(l)), l)`; while checking the body of this thunk
    │
-   ╰ note: `restored` is refused with EndpointMismatch, as its expectation states
+   ├ note: `restored` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[EquivUnsupported]: `equiv` needs two closed pure translators between types built from units, integers, strings, tuples, sums, lists and data types that do not hold themselves
    ╭▸ corpus/pathological/layouts/ribbit-list.gandr:45:42

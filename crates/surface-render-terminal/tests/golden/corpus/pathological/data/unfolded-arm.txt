@@ -12,7 +12,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 16 │ │ }
    │ └─┘ checked against `(n : Nat) => Path(Nat, double(Succ(n)), plusTwo(n))`; while checking the body of this thunk
    │
-   ╰ note: `callDropped` is refused with EndpointMismatch, as its expectation states
+   ├ note: `callDropped` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/unfolded-arm.gandr:21:3
@@ -28,4 +29,5 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 22 │ │ }
    │ └─┘ checked against `(n : Nat) => Path(Nat, double(Succ(n)), Succ(plusTwo(double(n))))`; while checking the body of this thunk
    │
-   ╰ note: `overshot` is refused with EndpointMismatch, as its expectation states
+   ├ note: `overshot` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

@@ -4,7 +4,8 @@ error[UnresolvedName]: `Nowhere` is not defined
 39 │ def nowhere() -> -F Integer { stepped[s = Nowhere](4) }
    │                                           ━━━━━━━ not found in this scope
    │
-   ╰ note: `nowhere` is refused with UnresolvedName, as its expectation states
+   ├ note: `nowhere` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Nowhere`, or import the module that exports it
 
 error[UnknownMember]: the module `Mute` has no member `read`
    ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:43:40
@@ -12,7 +13,8 @@ error[UnknownMember]: the module `Mute` has no member `read`
 43 │ def mute() -> -F Integer { stepped[s = Mute](4) }
    │                                        ━━━━ no member of this name
    │
-   ╰ note: `mute` is refused with UnknownMember, as its expectation states
+   ├ note: `mute` is refused with UnknownMember, as its expectation states
+   ╰ help: use a member that `Mute` declares, or add `read` to `Mute`
 
 error[ModelImplicitValue]: the model implicit `s` is its components, never a value; read them as `s.x`, and supply the slot by a module's name or a model implicit's, `f[s = M]`
    ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:47:42

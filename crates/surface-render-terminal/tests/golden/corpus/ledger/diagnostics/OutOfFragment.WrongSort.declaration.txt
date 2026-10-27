@@ -4,4 +4,5 @@ error[OutOfFragment.WrongSort.declaration]: a view expression cannot stand where
 4 │ leta x = 1 ;
   │ ━━━━━━━━━━━━ a form of another sort than this position takes
   │
-  ╰ note: `leta` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
+  ├ note: `leta` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
+  ╰ help: write a declaration in this position

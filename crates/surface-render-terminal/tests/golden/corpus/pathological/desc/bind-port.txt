@@ -4,7 +4,8 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 23 │   oper new : (body : pi+ (x : Val). bind (c : Name). Proc) --> Proc;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
    │
-   ╰ note: `InnerAbstraction` is refused with MalformedForm, as its expectation states
+   ├ note: `InnerAbstraction` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value
 
 error[IllFormedDescription]: the port `t` abstracts an atom of the sort `Tm`, which is not an atom sort
    ╭▸ corpus/pathological/desc/bind-port.gandr:11:1
@@ -15,7 +16,8 @@ error[IllFormedDescription]: the port `t` abstracts an atom of the sort `Tm`, wh
 14 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
-   ╰ note: `OrdinaryAbstraction` is refused with IllFormedDescription, as its expectation states
+   ├ note: `OrdinaryAbstraction` is refused with IllFormedDescription, as its expectation states
+   ╰ help: abstract over an atom sort, or bind the variable with `pi+` instead
 
 error[UnstatedComponent.Abstraction]: the model signature cannot state `nu`, which abstracts an atom over a port, whose models are nominal sets'
    ╭▸ corpus/pathological/desc/bind-port.gandr:30:30

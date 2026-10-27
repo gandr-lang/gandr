@@ -4,4 +4,5 @@ error[UnknownMember]: the module `Unread` has no member `read`
 22 │ module Unreadable = MkCounter(Unread);
    │                               ━━━━━━ no member of this name
    │
-   ╰ note: `Unreadable` is refused with UnknownMember, as its expectation states
+   ├ note: `Unreadable` is refused with UnknownMember, as its expectation states
+   ╰ help: use a member that `Unread` declares, or add `read` to `Unread`

@@ -39,7 +39,7 @@ error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, 
    │
    ╰ note: `bare` is refused with GenericMisplaced, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:56:15
    │
 56 │ def eqWrong : (Point, Point) => Integer = Eq.generic(Point);
@@ -49,7 +49,8 @@ error[TypeMismatch]: mismatched types
    │
    ├ note: while checking the body of this function; binds _ : (Point, Point) => Integer, _ : Point, _ : Point
    ├ note: while comparing the type this synthesises with the one it is checked against
-   ╰ note: `eqWrong` is refused with TypeMismatch, as its expectation states
+   ├ note: `eqWrong` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:60:35

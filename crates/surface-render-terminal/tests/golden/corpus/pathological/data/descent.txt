@@ -17,7 +17,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 21 │ │  }
    │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds again : Nat => Nat
    │
-   ╰ note: `again` is refused with StageNotBelow, as its expectation states
+   ├ note: `again` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[DescentOnSeveralParameters]: this call descends on `m`, and an earlier one on `n`; a recursive definition descends on one parameter, the one its matches take apart
    ╭▸ corpus/pathological/data/descent.gandr:32:16

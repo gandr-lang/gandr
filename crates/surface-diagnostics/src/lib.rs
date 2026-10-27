@@ -108,6 +108,7 @@
 )]
 extern crate alloc;
 
+mod advice;
 mod binders;
 mod culprit;
 mod frame;
@@ -119,6 +120,8 @@ mod report;
 mod spelled;
 mod verbosity;
 
+pub use crate::advice::advice;
+pub use crate::advice::help;
 pub use crate::binders::Around;
 pub use crate::binders::Naming;
 pub use crate::binders::Scoped;

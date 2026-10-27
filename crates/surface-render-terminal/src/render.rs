@@ -16,13 +16,12 @@
 //!
 //! A ledger line is its path, a colon and its text, unstyled.
 //!
-//! A diagnostic that proposes a fix closes with a `help` group quoting the
-//! excerpt with the fix applied, the edit marked, so a reader sees the line
-//! as the fix leaves it.
+//! The help closes the notes. A proposed fix closes the report as a `help`
+//! group: the excerpt with the fix applied and the edit marked.
 //!
 //! | Level | Adds |
 //! | ----- | ---- |
-//! | `User`, the default | the message, labels, contexts, note and an unimplemented refusal's `tracked by #N <url>` |
+//! | `User`, the default | the message, labels, contexts, note, an unimplemented refusal's `tracked by #N <url>` and the help |
 //! | `Detailed` | `class:`, `detail:` where the producer's wording differs from the message, `expression:` when the primary span is one line, `hypotheses:` when any are in scope |
 //! | `Debug` | `spans:` every locus's bytes, `rules:` each context's stable name, `refusal:` the producer's refusal and failure as their implementers print them |
 //! | `Json` | instead of the snippet, the diagnostic's one-line JSON image |
@@ -69,12 +68,12 @@ use crate::style::Rendered;
 ///   annotation and each located context marked at its bytes, under its path,
 ///   or names its path alone when it marks nothing; closes with each unlocated
 ///   context as a note, its note, the issue tracking it as a note when its
-///   refusal is unimplemented, and then the details its level adds; and, when
-///   it proposes a fix inside its excerpt, a `help` group quoting the excerpt
-///   with the fix applied. A source with an empty path is named `<input>`.
-///   Plain adds no styling; styled adds the backend's colour sequences. Caller
-///   path controls remain literal in both modes. No framing terminator is
-///   appended.
+///   refusal is unimplemented, its help, and then the details its level adds;
+///   and, when it proposes a fix inside its excerpt, a `help` group quoting the
+///   excerpt with the fix applied. A source with an empty path is named
+///   `<input>`. Plain adds no styling; styled adds the backend's colour
+///   sequences. Caller path controls remain literal in both modes. No framing
+///   terminator is appended.
 /// - provides: the plain text the driver prints and the tests compare.
 /// - fails: never.
 /// - panics: none; every span reaches the backend inside the excerpt.
@@ -201,6 +200,9 @@ pub fn render(
     let tracked = diagnostic.tracked();
     if let Maybe::Present(ref sentence) = tracked {
         group = group.element(Level::NOTE.message(sentence.as_str()));
+    }
+    if let Maybe::Present(ref help) = diagnostic.help {
+        group = group.element(Level::HELP.message(help.as_str()));
     }
     let details = diagnostic.details(verbosity);
     for detail in &details {

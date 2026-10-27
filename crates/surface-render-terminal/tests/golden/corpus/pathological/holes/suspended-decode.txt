@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/holes/suspended-decode.gandr:27:31
    │
 27 │ def threeAtString : stringy = 3;
@@ -6,9 +6,10 @@ error[TypeMismatch]: mismatched types
    │                     │
    │                     the type it is checked against
    │
-   ╰ note: `threeAtString` is refused with TypeMismatch, as its expectation states
+   ├ note: `threeAtString` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/holes/suspended-decode.gandr:32:26
    │
 19 │ def held : other;
@@ -19,9 +20,10 @@ error[TypeMismatch]: mismatched types
    │                   │
    │                   the type it is checked against
    │
-   ╰ note: `acrossHoles` is refused with TypeMismatch, as its expectation states
+   ├ note: `acrossHoles` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/holes/suspended-decode.gandr:37:40
    │
 37 │ def halfWaiting : code * Integer = (3, "three");
@@ -29,4 +31,5 @@ error[TypeMismatch]: mismatched types
    │                          │
    │                          the type it is checked against
    │
-   ╰ note: `halfWaiting` is refused with TypeMismatch, as its expectation states
+   ├ note: `halfWaiting` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

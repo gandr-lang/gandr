@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/vectors.gandr:15:3
    │
 14 │   def overstated() -> Vec(Integer, Succ(Succ(Zero))) {
@@ -10,9 +10,10 @@ error[TypeMismatch]: mismatched types
 16 │ │ }
    │ └─┘ checked against `() => Vec(Integer, Succ(Succ(Zero)))`; while checking the body of this thunk
    │
-   ╰ note: `overstated` is refused with TypeMismatch, as its expectation states
+   ├ note: `overstated` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/vectors.gandr:21:37
    │
 20 │ data Misindexed(a : Type) : Nat -> Type {
@@ -20,4 +21,5 @@ error[TypeMismatch]: mismatched types
 21 │   Wrong : (x : a) --> Misindexed(a, x);
    │                                     ━ its type does not convert: expected `Nat`, found `?`
    │
-   ╰ note: `Misindexed` is refused with TypeMismatch, as its expectation states
+   ├ note: `Misindexed` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

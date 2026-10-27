@@ -4,9 +4,10 @@ error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a 
 37 │ def stated() -> -F Integer { (3 : Integer); return 1 }
    │                              ━━━━━━━━━━━━━ a form of another sort than this position takes
    │
-   ╰ note: `stated` is refused with OutOfFragment.WrongSort, as its expectation states
+   ├ note: `stated` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ corpus/pathological/basics/annotations.gandr:7:18
   │
 7 │ def misstated = ("three" : Integer);
@@ -14,9 +15,10 @@ error[TypeMismatch]: mismatched types
   │                  │
   │                  its type does not convert: expected `Integer`, found `String`
   │
-  ╰ note: `misstated` is refused with TypeMismatch, as its expectation states
+  ├ note: `misstated` is refused with TypeMismatch, as its expectation states
+  ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/annotations.gandr:12:4
    │
 11 │ ┌ def misreturned() -> Integer {
@@ -29,9 +31,10 @@ error[TypeMismatch]: mismatched types
 13 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `misreturned` is refused with TypeMismatch, as its expectation states
+   ├ note: `misreturned` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/annotations.gandr:17:45
    │
 17 │ def mistyped : Integer => Integer = thunk { fn (x : String) { 1 } };
@@ -42,9 +45,10 @@ error[TypeMismatch]: mismatched types
    │                │                    checked against `Integer => Integer`; while checking the body of this thunk
    │                the type it synthesises
    │
-   ╰ note: `mistyped` is refused with TypeMismatch, as its expectation states
+   ├ note: `mistyped` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/annotations.gandr:21:15
    │
 21 │ def inner = (("three" : Integer), 1);
@@ -55,9 +59,10 @@ error[TypeMismatch]: mismatched types
    │             │synthesised; while finishing the type of this
    │             synthesised; while collecting the field types of this
    │
-   ╰ note: `inner` is refused with TypeMismatch, as its expectation states
+   ├ note: `inner` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/annotations.gandr:25:28
    │
 25 │ def disagreeing : String = (3 : Integer);
@@ -67,9 +72,10 @@ error[TypeMismatch]: mismatched types
    │                   │        its type does not convert: expected `String`, found `Integer`
    │                   the type it is checked against
    │
-   ╰ note: `disagreeing` is refused with TypeMismatch, as its expectation states
+   ├ note: `disagreeing` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/annotations.gandr:31:45
    │
 30 │ ┌ def splitWrong() -> Integer {
@@ -84,4 +90,5 @@ error[TypeMismatch]: mismatched types
 33 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `splitWrong` is refused with TypeMismatch, as its expectation states
+   ├ note: `splitWrong` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

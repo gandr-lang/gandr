@@ -4,4 +4,5 @@ error[UnknownMember]: the module `Answers` has no member `question`
 9 │ def asked = Answers.question ;
   │                     ━━━━━━━━ no member of this name
   │
-  ╰ note: `asked` is refused with UnknownMember, as its expectation states
+  ├ note: `asked` is refused with UnknownMember, as its expectation states
+  ╰ help: use a member that `Answers` declares, or add `question` to `Answers`

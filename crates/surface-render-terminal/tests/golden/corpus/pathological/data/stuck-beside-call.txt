@@ -18,7 +18,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 18 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `walkTwiceOvershot` is refused with EndpointMismatch, as its expectation states
+   ├ note: `walkTwiceOvershot` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/stuck-beside-call.gandr:27:3
@@ -40,4 +41,5 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 28 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `walkTwiceInner` is refused with EndpointMismatch, as its expectation states
+   ├ note: `walkTwiceInner` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

@@ -4,7 +4,8 @@ error[IllFormedDescription]: `q` stands under an abstraction of `a` on one side 
 17 │   rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q));
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `Captured` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Captured` is refused with IllFormedDescription, as its expectation states
+   ╰ help: state the atom fresh for the variable with `where a # q`
 
 error[IllFormedDescription]: the freshness condition on the atom `b` and `q` names an atom no abstraction of the rule abstracts, or a variable its left side does not bind
    ╭▸ corpus/pathological/desc/freshness.gandr:29:3
@@ -12,4 +13,5 @@ error[IllFormedDescription]: the freshness condition on the atom `b` and `q` nam
 29 │   rule gc : nu(bind a. q) <=> q where a # q, b # q;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `Unknown` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Unknown` is refused with IllFormedDescription, as its expectation states
+   ╰ help: name in the condition an atom that the rule abstracts and a variable that its left side binds

@@ -12,7 +12,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 10 │ │ }
    │ └─┘ checked against `(e : Integer * Integer) => Path(Integer * Integer, (e.1, e.0), e)`; while checking the body of this thunk
    │
-   ╰ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
+   ├ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/eta.gandr:19:3
@@ -33,7 +34,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 20 │ │ }
    │ └─┘ checked against `(e : Integer * Integer, d : Integer * Integer) => Path(Integer * Integer, (e.0, e.1), d)`; while checking the body of this thunk
    │
-   ╰ note: `etaOther` is refused with EndpointMismatch, as its expectation states
+   ├ note: `etaOther` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/eta.gandr:29:3
@@ -53,4 +55,5 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 30 │ │ }
    │ └─┘ checked against `(e : #{l : Integer, r : Integer}) => Path(#{l : Integer, r : Integer}, #{.l = e.r, .r = e.l}, e)`; while checking the body of this thunk
    │
-   ╰ note: `etaCrossed` is refused with EndpointMismatch, as its expectation states
+   ├ note: `etaCrossed` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

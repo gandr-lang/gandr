@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/eliminator-answer-type-mismatch.gandr:9:40
    │
  8 │ ┌ def answered() -> String {
@@ -14,4 +14,5 @@ error[TypeMismatch]: mismatched types
 11 │ │ }
    │ └─┘ checked against `() => String`; while checking the body of this thunk
    │
-   ╰ note: `answered` is refused with TypeMismatch, as its expectation states
+   ├ note: `answered` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

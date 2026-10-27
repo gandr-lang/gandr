@@ -443,6 +443,10 @@ fn rendered(
         },
         Maybe::Absent(_) => Value::Null,
     };
+    if let Maybe::Present(ref help) = diagnostic.help {
+        message.push_str("\nhelp: ");
+        message.push_str(help);
+    }
     json!({"range": lead, "code": code, "href": href, "message": message, "related": related})
 }
 

@@ -786,6 +786,7 @@ mod tests
             elsewhere: Vec::new(),
             hypotheses: Vec::new(),
             note: Maybe::Absent(report_note::Absent::Statement),
+            help: Maybe::Absent(gandr_surface_diagnostics::help::Absent::Statement),
             expression: Maybe::Absent(gandr_surface_diagnostics::expression::Absent::Unlocated),
             excerpt: Maybe::Absent(gandr_surface_diagnostics::report_span::Absent::OutsideText),
             fix: Maybe::Absent(fix::Absent::Unproposed),

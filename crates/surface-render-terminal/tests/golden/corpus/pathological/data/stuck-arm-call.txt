@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/stuck-arm-call.gandr:13:19
    │
 12 │   def unselected(w : Nat, h : Heap) -> (viaZero(w, h)) => emp(h) {
@@ -15,4 +15,5 @@ error[TypeMismatch]: mismatched types
 14 │ │ }
    │ └─┘ checked against `(w : Nat, h : Heap) => viaZero(w, h) => emp(h)`; while checking the body of this thunk
    │
-   ╰ note: `unselected` is refused with TypeMismatch, as its expectation states
+   ├ note: `unselected` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

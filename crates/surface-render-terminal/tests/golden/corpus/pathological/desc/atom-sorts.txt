@@ -8,7 +8,8 @@ error[IllFormedDescription]: the operation `fresh` returns `Name`, an atom sort,
 11 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
-   ╰ note: `Minting` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Minting` is refused with IllFormedDescription, as its expectation states
+   ╰ help: return a sort that is not an atom sort
 
 error[IllFormedDescription]: the port `t` binds a variable of the sort `Name`, which is not representable
    ╭▸ corpus/pathological/desc/atom-sorts.gandr:17:1
@@ -20,4 +21,5 @@ error[IllFormedDescription]: the port `t` binds a variable of the sort `Name`, w
 21 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
-   ╰ note: `AtomBinder` is refused with IllFormedDescription, as its expectation states
+   ├ note: `AtomBinder` is refused with IllFormedDescription, as its expectation states
+   ╰ help: bind the variable over a declared, representable sort

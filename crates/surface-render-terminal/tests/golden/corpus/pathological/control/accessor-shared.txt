@@ -4,7 +4,8 @@ error[MalformedForm]: a keyword or symbol of this access expression is out of pl
 28 │   access shared c as w { pure unit } unwind { pure unit }
    │                                      ━━━━━━ out of place
    │
-   ╰ note: `unwound` is refused with MalformedForm, as its expectation states
+   ├ note: `unwound` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the access expression
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
   ╭▸ corpus/pathological/control/accessor-shared.gandr:6:26

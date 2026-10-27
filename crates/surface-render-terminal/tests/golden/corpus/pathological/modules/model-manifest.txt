@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/model-manifest.gandr:22:24
    │
 13 │ module Opaque :> Model(Scaled) {
@@ -9,7 +9,8 @@ error[TypeMismatch]: mismatched types
    │              │
    │              the type it is checked against
    │
-   ╰ note: `leaked` is refused with TypeMismatch, as its expectation states
+   ├ note: `leaked` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[UnknownMember]: the module `Scaled` has no member `Rate`
    ╭▸ corpus/pathological/modules/model-manifest.gandr:27:43
@@ -17,4 +18,5 @@ error[UnknownMember]: the module `Scaled` has no member `Rate`
 27 │ module Misnamed : Model(Scaled) with sort Rate = Integer {
    │                                           ━━━━ no member of this name
    │
-   ╰ note: `Misnamed` is refused with UnknownMember, as its expectation states
+   ├ note: `Misnamed` is refused with UnknownMember, as its expectation states
+   ╰ help: use a member that `Scaled` declares, or add `Rate` to `Scaled`

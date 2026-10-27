@@ -21,7 +21,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 20 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `unkept` is refused with ViewEscaped, as its expectation states
+   ├ note: `unkept` is refused with ViewEscaped, as its expectation states
+   ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
    ╭▸ corpus/pathological/control/kept-view.gandr:29:44
@@ -47,7 +48,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 37 │ │   }
    │ └───┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `keptExclusive` is refused with ViewEscaped, as its expectation states
+   ├ note: `keptExclusive` is refused with ViewEscaped, as its expectation states
+   ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
    ╭▸ corpus/pathological/control/kept-view.gandr:46:5
@@ -95,7 +97,7 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
    │
    ╰ note: `rewrapped` is refused with KeptEscaped, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/kept-view.gandr:76:10
    │
 72 │    def answered() -> () => Integer {
@@ -122,7 +124,8 @@ error[TypeMismatch]: mismatched types
 81 │ │  }
    │ └──┘ checked against `() => () => Integer`; while checking the body of this thunk
    │
-   ╰ note: `answered` is refused with TypeMismatch, as its expectation states
+   ├ note: `answered` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
    ╭▸ corpus/pathological/control/kept-view.gandr:89:3

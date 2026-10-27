@@ -22,7 +22,7 @@ error[ImplicitUnsolved]: the solver cannot determine the implicit `b` this call 
    │
    ╰ note: `escaping` is refused with ImplicitUnsolved, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:34:29
    │
 34 │ def disagreeing() -> Unit { same(3) }
@@ -32,7 +32,8 @@ error[TypeMismatch]: mismatched types
    │ │                    the type it is checked against
    │ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `disagreeing` is refused with TypeMismatch, as its expectation states
+   ├ note: `disagreeing` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ImplicitInParentheses]: `same`'s implicit `a` is supplied by name, `same[a = …](…)`, not among the parentheses
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:39:29
@@ -48,7 +49,8 @@ error[UnresolvedName]: `b` is not defined
 44 │ def strayResident = thunk { same[b = Integer](3) };
    │                                  ━ not found in this scope
    │
-   ╰ note: `strayResident` is refused with UnresolvedName, as its expectation states
+   ├ note: `strayResident` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `b`, or import the module that exports it
 
 error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `same[a = …](…)`
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:49:17
@@ -58,7 +60,7 @@ error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `sa
    │
    ╰ note: `sameNamed` is refused with ImplicitUnsupplied, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:54:51
    │
 54 │ def chosenStanding : Type => Integer = chosen[x = 7];
@@ -67,7 +69,8 @@ error[TypeMismatch]: mismatched types
    │                                        │          its type does not convert: expected `?`, found `Integer`
    │                                        checked against `Type => Integer`; while checking the argument of this application; binds _ : Type
    │
-   ╰ note: `chosenStanding` is refused with TypeMismatch, as its expectation states
+   ├ note: `chosenStanding` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither can come first
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:58:1

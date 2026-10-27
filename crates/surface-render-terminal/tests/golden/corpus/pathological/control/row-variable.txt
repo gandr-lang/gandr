@@ -14,7 +14,7 @@ error[ImplicitUnsolved]: the solver cannot determine the implicit `r` this call 
    │
    ╰ note: `undecided` is refused with ImplicitUnsolved, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/row-variable.gandr:35:32
    │
 35 │ def narrowed() -> [Div] Unit { log("narrowed") }
@@ -24,4 +24,5 @@ error[TypeMismatch]: mismatched types
    │ │                 the type it is checked against
    │ checked against `+U (-F [Div] Unit)`; while checking the body of this thunk
    │
-   ╰ note: `narrowed` is refused with TypeMismatch, as its expectation states
+   ├ note: `narrowed` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

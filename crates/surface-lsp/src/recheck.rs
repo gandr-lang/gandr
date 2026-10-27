@@ -1645,6 +1645,10 @@ fn diagnostic(
             message.push_str("\nnote: ");
             message.push_str(sentence);
         }
+        if let Maybe::Present(ref help) = found.help {
+            message.push_str("\nhelp: ");
+            message.push_str(help);
+        }
         for detail in found.details(verbosity) {
             let _written = write!(message, "\n{detail}");
         }

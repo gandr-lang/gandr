@@ -4,7 +4,8 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 24 │   shape Line : 2 {};
    │   ━━━━━━━━━━━━━━━━━ out of place
    │
-   ╰ note: `TwoShapes` is refused with MalformedForm, as its expectation states
+   ├ note: `TwoShapes` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value
 
 error[IllFormedDescription]: the face `far` holds a point outside the shape `Square`
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:7:1
@@ -15,7 +16,8 @@ error[IllFormedDescription]: the face `far` holds a point outside the shape `Squ
 10 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
-   ╰ note: `Past` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Past` is refused with IllFormedDescription, as its expectation states
+   ╰ help: put in the face only points that the shape holds
 
 error[IllFormedDescription]: the shape `Square` names the face `left` twice
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:15:1
@@ -26,4 +28,5 @@ error[IllFormedDescription]: the shape `Square` names the face `left` twice
 18 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
-   ╰ note: `Twice` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
+   ╰ help: give each face of the shape its own name

@@ -4,7 +4,8 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 45 │   @[ inert ]
    │      ━━━━━ out of place
    │
-   ╰ note: `Sorted` is refused with MalformedForm, as its expectation states
+   ├ note: `Sorted` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value
 
 error[MalformedForm]: a keyword or symbol of this def value is out of place
    ╭▸ corpus/pathological/modules/inert-field.gandr:53:6
@@ -12,7 +13,8 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 53 │   @[ checks ]
    │      ━━━━━━ out of place
    │
-   ╰ note: `Checked` is refused with MalformedForm, as its expectation states
+   ├ note: `Checked` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value
 
 error[InertRead]: `tag` reads the inert field `label`; only another inert field reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:30:13

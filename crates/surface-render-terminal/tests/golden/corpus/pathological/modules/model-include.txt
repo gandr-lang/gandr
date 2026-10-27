@@ -12,7 +12,8 @@ error[UnresolvedName]: `Nowhere` is not defined
 23 │   include Nowhere;
    │           ━━━━━━━ not found in this scope
    │
-   ╰ note: `Stray` is refused with UnresolvedName, as its expectation states
+   ├ note: `Stray` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Nowhere`, or import the module that exports it
 
 error[DuplicateDefinition]: `least` is defined twice
    ╭▸ corpus/pathological/modules/model-include.gandr:37:11
@@ -23,4 +24,5 @@ error[DuplicateDefinition]: `least` is defined twice
 39 │   def least() -> Integer { 1 }
    │       ───── first written here
    │
-   ╰ note: `Shadowing` is refused with DuplicateDefinition, as its expectation states
+   ├ note: `Shadowing` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `least` its own name, or delete one of them

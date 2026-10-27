@@ -437,10 +437,17 @@ fn a_type_mismatch_is_located_at_its_term()
             diagnostic.detail.title.as_str()
         ),
         (
-            "mismatched types",
+            "the type of this term does not match the type it is checked against",
             "the type this term synthesises does not convert to the type it is checked against"
         ),
         "the message is plain; the checker's own words stay the title"
+    );
+    assert_eq!(
+        diagnostic.help,
+        Maybe::Present(String::from(
+            "change the term or the type it is checked against, so that the two types agree"
+        )),
+        "the help says what to do about the mismatch"
     );
     assert_eq!(
         diagnostic.expression,

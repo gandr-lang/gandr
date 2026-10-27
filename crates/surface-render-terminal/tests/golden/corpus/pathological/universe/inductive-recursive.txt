@@ -48,7 +48,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ├ note: while synthesising the code this type decodes
    ├ note: while synthesising the computation of this endpoint
    ├ note: while checking the argument of this application
-   ╰ note: `Odd` is refused with StageNotBelow, as its expectation states
+   ├ note: `Odd` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:37
@@ -72,7 +73,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ├ note: while synthesising the code this type decodes
    ├ note: while synthesising the computation of this endpoint
    ├ note: while checking the argument of this application
-   ╰ note: `decode` is refused with StageNotBelow, as its expectation states
+   ├ note: `decode` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:37
@@ -96,7 +98,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ├ note: while synthesising the code this type decodes
    ├ note: while synthesising the computation of this endpoint
    ├ note: while checking the argument of this application
-   ╰ note: `base` is refused with StageNotBelow, as its expectation states
+   ├ note: `base` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:83:51
@@ -121,7 +124,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 85 │ │    }
    │ └────┘ checked against `Loop => Type`; while checking the body of this function; binds unloop : Loop => Type
    │
-   ╰ note: `Loop` is refused with StageNotBelow, as its expectation states
+   ├ note: `Loop` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:83:51
@@ -146,7 +150,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 85 │ │    }
    │ └────┘ checked against `Loop => Type`; while checking the body of this function; binds unloop : Loop => Type
    │
-   ╰ note: `unloop` is refused with StageNotBelow, as its expectation states
+   ├ note: `unloop` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[CompoundEndpoint]: a path endpoint must compute a value without effects
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:92:49

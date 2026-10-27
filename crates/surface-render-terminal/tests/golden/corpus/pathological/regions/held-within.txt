@@ -20,7 +20,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 19 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `keptPastHold` is refused with ViewEscaped, as its expectation states
+   ├ note: `keptPastHold` is refused with ViewEscaped, as its expectation states
+   ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
    ╭▸ corpus/pathological/regions/held-within.gandr:28:71
@@ -52,4 +53,5 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 39 │ │   }
    │ └───┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `keptPastNestedHold` is refused with ViewEscaped, as its expectation states
+   ├ note: `keptPastNestedHold` is refused with ViewEscaped, as its expectation states
+   ╰ help: use the view outside a thunk, or open the `access` inside it

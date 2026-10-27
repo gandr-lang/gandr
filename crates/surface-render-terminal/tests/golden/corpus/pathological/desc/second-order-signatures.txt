@@ -4,7 +4,8 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 19 │   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
    │
-   ╰ note: `BoundIndex` is refused with MalformedForm, as its expectation states
+   ├ note: `BoundIndex` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value
 
 error[OutOfFragment.Misplaced]: the representable universe type classifies a theory's sort member, and stands nowhere else
    ╭▸ corpus/pathological/desc/second-order-signatures.gandr:24:23
@@ -23,4 +24,5 @@ error[IllFormedDescription]: the port `t` binds a variable of the sort `Tm`, whi
 12 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
-   ╰ note: `Unbindable` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Unbindable` is refused with IllFormedDescription, as its expectation states
+   ╰ help: bind the variable over a declared, representable sort

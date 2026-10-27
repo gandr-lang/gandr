@@ -4,7 +4,8 @@ error[OutOfFragment.WrongSort]: a primitive type cannot stand where a session co
 14 │   fork (seat : !Integer. Integer) { close(seat) } as desk;
    │                          ━━━━━━━ a form of another sort than this position takes
    │
-   ╰ note: `value_type_as_continuation` is refused with OutOfFragment.WrongSort, as its expectation states
+   ├ note: `value_type_as_continuation` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a session continuation in this position
 
 error[MalformedForm]: a keyword or symbol of this select session type is out of place
    ╭▸ corpus/pathological/sessions/fragment.gandr:20:28
@@ -12,7 +13,8 @@ error[MalformedForm]: a keyword or symbol of this select session type is out of 
 20 │   fork (seat : !Integer. +{end, end}) { close(seat) } as desk;
    │                            ━━━ out of place
    │
-   ╰ note: `branch_without_label` is refused with MalformedForm, as its expectation states
+   ├ note: `branch_without_label` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the select session type
 
 error[OutOfFragment.Endpoint]: a session action acts on an endpoint: a name a `fork` binds as one of its ends
   ╭▸ corpus/pathological/sessions/fragment.gandr:3:9

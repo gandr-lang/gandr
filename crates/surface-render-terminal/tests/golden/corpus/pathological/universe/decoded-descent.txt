@@ -36,7 +36,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 36 │ │     }
    │ └─────┘ checked against `(c : UL) => elL(c) => Nat`; while checking the body of this function; binds totalDirect : (a : UL) => elL(a) => Nat
    │
-   ╰ note: `totalDirect` is refused with StageNotBelow, as its expectation states
+   ├ note: `totalDirect` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
    ╭▸ corpus/pathological/universe/decoded-descent.gandr:41:40

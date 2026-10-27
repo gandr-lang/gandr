@@ -4,4 +4,5 @@ error[UnresolvedName]: `Lam` is not defined
 14 │     Tree.Lam(body) => 1,
    │          ━━━ not found in this scope
    │
-   ╰ note: `lambda` is refused with UnresolvedName, as its expectation states
+   ├ note: `lambda` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Lam`, or import the module that exports it

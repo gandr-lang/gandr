@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/divergence.gandr:11:12
    │
 10 │    def spinPure(x : Bool) -> Bool {
@@ -18,9 +18,10 @@ error[TypeMismatch]: mismatched types
 19 │ │  }
    │ └──┘ checked against `Bool => Bool`; while checking the body of this thunk
    │
-   ╰ note: `spinPure` is refused with TypeMismatch, as its expectation states
+   ├ note: `spinPure` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/divergence.gandr:37:3
    │
 22 │   def spin(x : Bool) -> [Div] Bool {
@@ -36,9 +37,10 @@ error[TypeMismatch]: mismatched types
 38 │ │ }
    │ └─┘ checked against `Bool => Bool`; while checking the body of this thunk
    │
-   ╰ note: `spinFirst` is refused with TypeMismatch, as its expectation states
+   ├ note: `spinFirst` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/divergence.gandr:46:5
    │
 22 │    def spin(x : Bool) -> [Div] Bool {
@@ -58,7 +60,8 @@ error[TypeMismatch]: mismatched types
 50 │ │  }
    │ └──┘ checked against `Bool => Bool`; while checking the body of this thunk
    │
-   ╰ note: `tamed` is refused with TypeMismatch, as its expectation states
+   ├ note: `tamed` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/control/divergence.gandr:60:3
@@ -81,4 +84,5 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 61 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `unreadDiv` is refused with EndpointMismatch, as its expectation states
+   ├ note: `unreadDiv` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

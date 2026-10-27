@@ -4,7 +4,8 @@ error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computa
 71 │   } with Passing
    │          ━━━━━━━ a form of another sort than this position takes
    │
-   ╰ note: `answeredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
+   ├ note: `answeredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
 
 error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computation is expected
     ╭▸ corpus/pathological/effects/state-handler.gandr:122:14
@@ -12,7 +13,8 @@ error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computa
 122 │   handle c : Console {
     │              ━━━━━━━ a form of another sort than this position takes
     │
-    ╰ note: `unansweredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
+    ├ note: `unansweredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
+    ╰ help: write a computation in this position
 
 error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `S`, which is a sort the operations do not return, which the manifest leaves unfixed
    ╭▸ corpus/pathological/effects/state-handler.gandr:14:15
@@ -36,7 +38,8 @@ error[UnresolvedName]: `T` is not defined
 39 │   handle st : State with sort T = Integer {
    │                               ━ not found in this scope
    │
-   ╰ note: `undeclared` is refused with UnresolvedName, as its expectation states
+   ├ note: `undeclared` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `T`, or import the module that exports it
 
 error[UnresolvedName]: `Stateless` is not defined
    ╭▸ corpus/pathological/effects/state-handler.gandr:53:10
@@ -44,9 +47,10 @@ error[UnresolvedName]: `Stateless` is not defined
 53 │   } with Stateless
    │          ━━━━━━━━━ not found in this scope
    │
-   ╰ note: `answeredByNothing` is refused with UnresolvedName, as its expectation states
+   ├ note: `answeredByNothing` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Stateless`, or import the module that exports it
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/effects/state-handler.gandr:60:3
    │
 59 │    def answeredAtInteger() -> Integer {
@@ -60,7 +64,8 @@ error[TypeMismatch]: mismatched types
 63 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `answeredAtInteger` is refused with TypeMismatch, as its expectation states
+   ├ note: `answeredAtInteger` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ModelUnanswered]: no module in scope is a model of `State` answering this scope at the types its manifest and subject force: `Passing` is not; name one after its subject, `} with M`, or write its clauses, `} with { … }`
    ╭▸ corpus/pathological/effects/state-handler.gandr:78:3
@@ -72,7 +77,7 @@ error[ModelUnanswered]: no module in scope is a model of `State` answering this 
    │
    ╰ note: `unansweredAtTwo` is refused with ModelUnanswered, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/effects/state-handler.gandr:89:3
    │
 88 │   def inScopeAtInteger() -> Integer {
@@ -86,7 +91,8 @@ error[TypeMismatch]: mismatched types
    ├ note: while checking the return clause of this handler; binds _ : Integer
    ├ note: while comparing the type this synthesises with the one it is checked against
    ├ note: while finishing the type of this
-   ╰ note: `inScopeAtInteger` is refused with TypeMismatch, as its expectation states
+   ├ note: `inScopeAtInteger` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ModelAmbiguous]: more than one module in scope is a model of `State` answering this scope: `Passing` and `Forgetting`; name the one meant after its subject, `} with M`
     ╭▸ corpus/pathological/effects/state-handler.gandr:113:3

@@ -130,6 +130,8 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::advice::advice;
+use crate::advice::help;
 use crate::culprit::Culprit;
 use crate::frame::contexts;
 use crate::lint::Lint;
@@ -677,6 +679,21 @@ impl Report<'_>
                 | Subject::InferredExit(_)
                 | Subject::InferredRun(_)
                 | Subject::Deprecated(_) => Maybe::Absent(report_note::Absent::Warning),
+            },
+            help: match self.subject {
+                Subject::Refused {
+                    upstream: Maybe::Present(_),
+                    ..
+                } => Maybe::Absent(help::Absent::Upstream),
+                Subject::Refused { refusal, .. } => advice(refusal),
+                Subject::Source(refusal) => advice(Refusal::Lowering(refusal)),
+                Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
+                    Maybe::Absent(help::Absent::Statement)
+                },
+                Subject::Shadowed(_)
+                | Subject::InferredExit(_)
+                | Subject::InferredRun(_)
+                | Subject::Deprecated(_) => Maybe::Absent(help::Absent::Warning),
             },
             expression,
             excerpt,

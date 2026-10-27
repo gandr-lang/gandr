@@ -12,7 +12,8 @@ error[IllFormedDescription]: a rule uses `t` where no port binds it over the sam
 26 │   rule betaShadow : app(lam(t), u) <=> app(t, u);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `BetaShadow` is refused with IllFormedDescription, as its expectation states
+   ├ note: `BetaShadow` is refused with IllFormedDescription, as its expectation states
+   ╰ help: use the variable where a port binds it over the same sorts, with one argument for each variable it binds
 
 error[IllFormedDescription]: a rule uses `t` where no port binds it over the same sorts
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:35:3
@@ -20,7 +21,8 @@ error[IllFormedDescription]: a rule uses `t` where no port binds it over the sam
 35 │   rule zeta : let(u, t) <=> t(u, u);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `LetTwice` is refused with IllFormedDescription, as its expectation states
+   ├ note: `LetTwice` is refused with IllFormedDescription, as its expectation states
+   ╰ help: use the variable where a port binds it over the same sorts, with one argument for each variable it binds
 
 error[IllFormedDescription]: a rule applies `f`, which the signature does not declare
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:47:3
@@ -28,7 +30,8 @@ error[IllFormedDescription]: a rule applies `f`, which the signature does not de
 47 │   rule putPut : put(s, put(f(s), k)) <=> put(f(s), k);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `Undeclared` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Undeclared` is refused with IllFormedDescription, as its expectation states
+   ╰ help: declare the operation in the signature, or write the rule over operations it declares
 
 error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping terms, one of them applies a variable a binding port binds, and the overlap rewrites to two different normal forms, so the block's rules are refused
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:58:3

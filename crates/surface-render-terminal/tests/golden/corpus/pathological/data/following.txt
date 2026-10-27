@@ -19,4 +19,5 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 18 │ │  }
    │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds halvedThroughPlus : Nat => Nat
    │
-   ╰ note: `halvedThroughPlus` is refused with StageNotBelow, as its expectation states
+   ├ note: `halvedThroughPlus` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

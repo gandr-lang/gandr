@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/loop-space-section.gandr:54:16
    │
 51 │    def rec forged(c : Circle) -> Path(Circle, spin(wind(c)), c) {
@@ -15,4 +15,5 @@ error[TypeMismatch]: mismatched types
 57 │ │  }
    │ └──┘ checked against `(c : Circle) => Path(Circle, spin(wind(c)), c)`; while checking the body of this function; binds forged : (a : Circle) => Path(Circle, spin(wind(a)), a)
    │
-   ╰ note: `forged` is refused with TypeMismatch, as its expectation states
+   ├ note: `forged` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
