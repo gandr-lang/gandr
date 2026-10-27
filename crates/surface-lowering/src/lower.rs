@@ -3786,8 +3786,9 @@ struct Sink<'run>
     /// The host's interfaces, once a capability form has minted them.
     host: capability::Host,
     /// The signature each capability scope over a theory handles, by the
-    /// scope's node, minted at the first form naming it.
-    theories: BTreeMap<NodeIndex, EffectSig>,
+    /// scope's node and where the signature stands, minted at the first form
+    /// naming it there.
+    theories: BTreeMap<(NodeIndex, capability::Standing), EffectSig>,
     /// Every fixpoint a loop minted, and each copy a match leaf made of one:
     /// the commuting walks into its body.
     loops: BTreeSet<ComputationId>,
@@ -4161,7 +4162,7 @@ struct SinkTables
     /// [`Sink::host`].
     host: capability::Host,
     /// [`Sink::theories`].
-    theories: BTreeMap<NodeIndex, EffectSig>,
+    theories: BTreeMap<(NodeIndex, capability::Standing), EffectSig>,
     /// [`Sink::loops`].
     loops: BTreeSet<ComputationId>,
     /// [`Sink::breaks`].
@@ -17164,6 +17165,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let signature = match self.instance_theories.get(&binder) {
             Some(theory) => self.interface_signature(
                 &capability::Interface::Theory(Arc::clone(theory)),
+                capability::Standing::Read,
                 sink,
                 origin,
             ),

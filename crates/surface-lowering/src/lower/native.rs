@@ -8221,10 +8221,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `ty` is minted under `frame`, counting only the frames that
     ///   bind in `telescope`.
-    /// - ensures: `ty` itself when every frame binds; otherwise `ty` with a
-    ///   binder inserted for each frame that does not, each node the rewrite
-    ///   copies recorded at the origin of the node it copies and every other
-    ///   node it mints with `origin`.
+    /// - ensures: as [`Self::carry_value_type`] to `frame` itself.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -8243,7 +8240,48 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> ValueTypeId
     {
-        if self.scope.binders_in(frame, telescope).all(|binds| binds) {
+        self.carry_value_type(ty, frame, telescope, frame, sink, origin)
+    }
+
+    /// `ty`, a value type read under `from` in `telescope`, carried into the
+    /// term context of `to`, a frame whose chain passes through `from`.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `from`, counting only the frames that
+    ///   bind in `telescope`; `from` is `to` or a frame of `to`'s chain.
+    /// - ensures: `ty` itself when every frame of `from`'s chain binds and `to`
+    ///   is `from`; otherwise `ty` with a binder inserted for each frame of
+    ///   `from`'s chain that does not bind, then every free index raised by the
+    ///   intuitionistic frames `to`'s chain has past `from`, each node the
+    ///   rewrite copies recorded at the origin of the node it copies and every
+    ///   other node it mints with `origin`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed annotation is carried unchanged; a type a
+    ///   scope fixes to a parameter is read at the scope and at an exercise
+    ///   under it.
+    /// - witness: `lower::native::tests::a_relocated_annotation_keeps_its_bytes`
+    /// - witness: `lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
+    pub(super) fn carry_value_type(
+        &self,
+        ty: ValueTypeId,
+        from: Frame,
+        telescope: Telescope,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let gap = self
+            .scope
+            .telescope_binders(to)
+            .count()
+            .saturating_sub(self.scope.telescope_binders(from).count());
+        let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
+        if lift == Binders::NONE && self.scope.binders_in(from, telescope).all(|binds| binds) {
             return ty;
         }
         let mark = sink.arena.watermark();
@@ -8252,9 +8290,9 @@ impl<'source> Lowerer<'_, 'source>
         let carried = self.relocate(
             sink.arena,
             wrapped,
-            frame,
+            from,
             telescope,
-            Binders::default(),
+            lift,
             Some(&mut copies),
         );
         let result = match sink.arena.comp_type(carried) {

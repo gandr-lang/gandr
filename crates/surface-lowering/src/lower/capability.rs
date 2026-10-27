@@ -233,6 +233,7 @@ use crate::origin::Origin;
 use crate::origin::WrittenModel;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
+use crate::resolve::Telescope;
 use crate::resolve::binder_site;
 use crate::unbuilt::Unbuilt;
 
@@ -393,6 +394,20 @@ impl Interface
     }
 }
 
+/// Where a theory's signature stands: where its fixed types were read, in the
+/// signature's telescope, or in the term context of a frame under it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) enum Standing
+{
+    /// Where the fixed types were read: a row in a declaration's type.
+    Read,
+    /// The term context of this frame: a scope's, or an exercise's.
+    Term(Frame),
+}
+
 /// An exercise `c.op(v, …)` or a perform `I.op(v, …)`, as the classification
 /// read it.
 ///
@@ -409,6 +424,8 @@ pub(super) struct Exercised
     operation: OperationName,
     /// The bytes of the head `c.op` that selects it.
     head: ByteSpan,
+    /// The frame the exercise is read under.
+    frame: Frame,
     /// The payload's values, in the lowerer's operand store.
     payload: Stretch,
 }
@@ -461,6 +478,8 @@ pub(super) struct Scoped
     interface: Interface,
     /// The capability's binder, as written.
     binder: NodeIndex,
+    /// The frame the scope is read under, where its manifest's types are read.
+    frame: Frame,
     /// The subject, under the capability's binder.
     subject: Block,
     /// What answers the interface's operations.
@@ -1426,6 +1445,7 @@ impl<'source> Lowerer<'_, 'source>
                 performer,
                 interface,
                 operation,
+                frame,
                 head: head.span,
                 payload,
             }),
@@ -1917,6 +1937,7 @@ impl<'source> Lowerer<'_, 'source>
                 super::Plan::Scope(Scoped {
                     interface,
                     subject,
+                    frame,
                     binder: binder.node,
                     handlers: Handlers::Model(Arc::new(Answering { slot, supplied })),
                 }),
@@ -1942,6 +1963,7 @@ impl<'source> Lowerer<'_, 'source>
                 super::Plan::Scope(Scoped {
                     interface,
                     subject,
+                    frame,
                     binder: binder.node,
                     handlers: Handlers::Model(Arc::new(Answering { slot, supplied })),
                 }),
@@ -2083,6 +2105,7 @@ impl<'source> Lowerer<'_, 'source>
             super::Plan::Scope(Scoped {
                 interface,
                 subject,
+                frame,
                 binder: binder.node,
                 handlers: Handlers::Written(Written {
                     on_return,
@@ -2429,7 +2452,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .map(|&(ref interface, region)| (interface, region));
         for (interface, region) in interfaces.chain(labels) {
-            match self.interface_signature(interface, sink, origin) {
+            match self.interface_signature(interface, Standing::Read, sink, origin) {
                 Maybe::Present(signature) => placed.push((signature, region)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -2487,17 +2510,18 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(id)
     }
 
-    /// The signature of `interface` in the module's arena: the host's, or the
-    /// theory's, minted at the first form naming its scope and the same
-    /// signature for every form after.
+    /// The signature of `interface` in the module's arena, standing as
+    /// `standing` says: the host's, or the theory's, minted at the first form
+    /// naming its scope at that standing and the same signature for every
+    /// form after.
     ///
     /// # Specification
     /// - requires: every type a theory operation names is already minted or
     ///   absent.
     /// - ensures: the host interface's signature, as [`Sink::signature`]; a
     ///   theory's, one operation per theory operation, its payload and its
-    ///   reply each [`Self::tuple_at`] of the operation's types, kept by the
-    ///   scope so every later call answers it.
+    ///   reply each [`Self::tuple_at`] of the operation's types at `standing`,
+    ///   kept by the scope and the standing so every later call answers it.
     /// - fails: never; the first absence among the types, or the unminted
     ///   absence for a theory naming one operation twice, which the theory's
     ///   own presentation rules out.
@@ -2505,8 +2529,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a scope over `State` and the exercises in its subject
-    ///   check against one signature.
+    ///   check against one signature, each where it stands.
     /// - witness: `lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
+    /// - witness: `lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
     #[spec(ensures: |ref ret| match *ret {
         | Maybe::Present(ref signature) => match *interface {
             | Interface::Host(ref name) => signature.name() == name,
@@ -2517,6 +2542,7 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn interface_signature(
         &self,
         interface: &Interface,
+        standing: Standing,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<EffectSig, lowered::Absent>
@@ -2525,18 +2551,18 @@ impl<'source> Lowerer<'_, 'source>
             Interface::Host(ref name) => return sink.signature(name, origin),
             Interface::Theory(ref theory) => theory,
         };
-        if let Some(minted) = sink.theories.get(&theory.scope) {
+        if let Some(minted) = sink.theories.get(&(theory.scope, standing)) {
             return Maybe::Present(minted.clone());
         }
         let operations = theory
             .operations
             .iter()
             .map(|operation| {
-                let payload = match self.tuple_at(&operation.payload, sink, origin) {
+                let payload = match self.tuple_at(&operation.payload, standing, sink, origin) {
                     Maybe::Present(payload) => payload,
                     Maybe::Absent(reason) => return Err(reason),
                 };
-                let reply = match self.tuple_at(&operation.reply, sink, origin) {
+                let reply = match self.tuple_at(&operation.reply, standing, sink, origin) {
                     Maybe::Present(reply) => reply,
                     Maybe::Absent(reason) => return Err(reason),
                 };
@@ -2555,18 +2581,20 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let _first = sink.theories.insert(theory.scope, signature.clone());
+        let _first = sink
+            .theories
+            .insert((theory.scope, standing), signature.clone());
         Maybe::Present(signature)
     }
 
-    /// The type of the values whose written types are `types`: the unit for
-    /// none, its own for one, and their tuple for several, as an exercise
-    /// passes its arguments.
+    /// The type of the values whose written types are `types`, at `standing`:
+    /// the unit for none, its own for one, and their tuple for several, as an
+    /// exercise passes its arguments.
     ///
     /// # Specification
     /// - requires: every node of `types` is already minted or absent.
-    /// - ensures: the one type's minted id for one; otherwise the product of
-    ///   the minted ids, in order, at `origin`.
+    /// - ensures: the one type's [`Self::fixed_at`] for one; otherwise the
+    ///   product of each type's, in order, at `origin`.
     /// - fails: never; the first absence among the types.
     /// - panics: none.
     ///
@@ -2581,16 +2609,17 @@ impl<'source> Lowerer<'_, 'source>
     fn tuple_at(
         &self,
         types: &[NodeIndex],
+        standing: Standing,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         if let &[only] = types {
-            return self.value_type_at(only);
+            return self.fixed_at(only, standing, sink, origin);
         }
         let components = types
             .iter()
-            .map(|&ty| match self.value_type_at(ty) {
+            .map(|&ty| match self.fixed_at(ty, standing, sink, origin) {
                 Maybe::Present(id) => Ok(id),
                 Maybe::Absent(reason) => Err(reason),
             })
@@ -2603,6 +2632,43 @@ impl<'source> Lowerer<'_, 'source>
             },
             Err(reason) => Maybe::Absent(reason),
         }
+    }
+
+    /// The type written at `written`, a type a theory's sort is fixed to, at
+    /// `standing`.
+    ///
+    /// # Specification
+    /// - requires: `written` is already minted or absent; at a frame's term
+    ///   context, `written` is read under that frame or one of its chain.
+    /// - ensures: the minted type where it was read; at a frame's term context,
+    ///   the minted type carried there from the frame it is read under, as
+    ///   [`Self::carry_value_type`] from the signature's telescope.
+    /// - fails: never; the type's absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope fixing a sort to a parameter reads the
+    ///   parameter at the scope and at an exercise under its binder.
+    /// - witness: `lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => sink.arena.value_type(id).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn fixed_at(
+        &self,
+        written: NodeIndex,
+        standing: Standing,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        self.value_type_at(written).map(|minted| match standing {
+            Standing::Read => minted,
+            Standing::Term(at) => {
+                let from = self.reading(written).frame();
+                self.carry_value_type(minted, from, Telescope::Signature, at, sink, origin)
+            },
+        })
     }
 
     /// Mint the exercise or the perform `exercised` plans.
@@ -2647,7 +2713,8 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(payload) => payload,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        self.interface_signature(&exercised.interface, sink, origin)
+        let standing = Standing::Term(exercised.frame);
+        self.interface_signature(&exercised.interface, standing, sink, origin)
             .map(|signature| {
                 if let Maybe::Present(&EffectOp { payload, reply, .. }) =
                     signature.operation(&exercised.operation)
@@ -2804,7 +2871,8 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(minted) => minted,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        self.interface_signature(&scoped.interface, sink, origin)
+        let standing = Standing::Term(scoped.frame);
+        self.interface_signature(&scoped.interface, standing, sink, origin)
             .map(|signature| {
                 let id =
                     sink.arena
@@ -2843,9 +2911,11 @@ impl<'source> Lowerer<'_, 'source>
                     let sorts = theory
                         .manifest
                         .iter()
-                        .filter_map(|&(ref sort, ty)| match self.value_type_at(ty) {
-                            Maybe::Present(fixed) => Some((sort.clone(), fixed)),
-                            Maybe::Absent(_) => None,
+                        .filter_map(|&(ref sort, ty)| {
+                            match self.fixed_at(ty, standing, sink, origin) {
+                                Maybe::Present(fixed) => Some((sort.clone(), fixed)),
+                                Maybe::Absent(_) => None,
+                            }
                         })
                         .collect();
                     sink.origins.record_scope_theory(id, WrittenModel {
