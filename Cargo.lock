@@ -1421,6 +1421,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-prose"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "clap",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "gandr-workflow-spec-cost"
 version = "0.0.0"
 dependencies = [

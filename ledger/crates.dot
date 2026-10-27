@@ -84,6 +84,7 @@ digraph crates {
     "workflow-coverage-guard";
     "workflow-hotpath-guard";
     "workflow-lane-budget";
+    "workflow-prose";
     "workflow-spec-cost";
     "workflow-sweep";
     "workflow-test-timing";
