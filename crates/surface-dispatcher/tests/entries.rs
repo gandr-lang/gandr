@@ -131,8 +131,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression forget", Standing::Owed(0)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
-    // #2968: the instance name in a call a theory scope's laws rewrite.
-    ("Expression identifier", Standing::Owed(4)),
+    ("Expression identifier", Standing::Owed(0)),
     ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),

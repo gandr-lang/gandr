@@ -1507,12 +1507,15 @@ impl TypeTable
     ///   its computation returns, and a component of a run's tuple or a model's
     ///   field nothing reads at its place in the split tuple's type; a
     ///   declaration refused as shadowing answers nowhere inside it while a
-    ///   term after it does; both halves of a declaration find its type.
+    ///   term after it does; both halves of a declaration find its type; a
+    ///   written name no run judged, as in a call a scope's laws rewrite away,
+    ///   answers as its binder's first judged use does.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `tests::corpus::sweeps::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
     /// - witness: `typed::tests::a_run_binder_answers_at_what_its_computation_returns_298`
+    /// - witness: `typed::tests::a_rewritten_call_s_instance_name_answers_at_its_binder_s_type_2968`
     /// - witness: `typed::tests::an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181`
     /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
     /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
@@ -1730,11 +1733,17 @@ impl TypeTable
                 });
             }
         }
+        // Each binder at its first judged use, and each written use no run
+        // judged at that use's type: the instance name in a call a theory
+        // scope's laws rewrite away is still written (#2968).
         let mut binders = BTreeSet::new();
+        let mut first_uses: BTreeMap<ByteSpan, (TypeNode, ValueId, ConstantIndex, BinderDepth)> =
+            BTreeMap::new();
         for &(variable, binder) in origins.bindings() {
             if let Some((first, (constant, depth))) = first_of(TermNode::Value(variable))
                 && binders.insert(binder)
             {
+                let _new = first_uses.insert(binder, (first, variable, constant, depth));
                 entries.push(Entry {
                     span: binder,
                     subject: Subject::Binder,
@@ -1744,6 +1753,27 @@ impl TypeTable
                     standing: Standing::Judged(Within {
                         constant,
                         node: CoreNode::Value(variable),
+                        depth: Some(depth),
+                    }),
+                });
+            }
+        }
+        for &(variable, binder) in origins.bindings() {
+            if let Maybe::Present(origin) = origins.value(variable)
+                && origin.provenance() == Provenance::Written
+                && first_of(TermNode::Value(variable)).is_none()
+                && let Some(&(first, judged, constant, depth)) = first_uses.get(&binder)
+            {
+                let (subject, last) = term_subject(&arena, (first, first));
+                entries.push(Entry {
+                    span: origin.span(),
+                    subject,
+                    provenance: Provenance::Written,
+                    ty: first,
+                    last,
+                    standing: Standing::Judged(Within {
+                        constant,
+                        node: CoreNode::Value(judged),
                         depth: Some(depth),
                     }),
                 });
@@ -8038,6 +8068,78 @@ mod tests
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Binder, SourceText::from("Nat")),
                 "a binder {reason}"
+            );
+        }
+    }
+
+    /// #2968: the instance name in a read a scope's get-get rewrites away
+    /// answers as the name in the read it keeps does, and a scope over a
+    /// theory with no law keeps both reads, each answering on its own.
+    #[test]
+    fn a_rewritten_call_s_instance_name_answers_at_its_binder_s_type_2968()
+    {
+        let theory = |name: &str, law: &str| {
+            format!(
+                "theory {name} {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s \
+                 : S) . C) --> C;\n{law}}}\n\n"
+            )
+        };
+        let scope = |name: &str, theory: &str| {
+            format!(
+                "def {name}() -> -F Integer {{\n  handle st : {theory} with sort S = Integer {{\n    \
+                 run a <- st.get();\n    run b <- st.get();\n    pure a + b\n  }} with {{\n    \
+                 pure(x) => pure x,\n    oper get(k) => k(4)\n  }}\n}}\n\n"
+            )
+        };
+        let text = format!(
+            "{}{}{}{}",
+            theory(
+                "StateGetGet",
+                "  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, \
+                 s));\n"
+            ),
+            theory("State", ""),
+            scope("once", "StateGetGet"),
+            scope("twice", "State"),
+        );
+        let source = SourceText::from(text.as_str());
+        let table = table(source);
+        let at = |from: &str, needle: &str| {
+            let start = text.find(from).expect("the declaration occurs");
+            let tail = text
+                .get(start ..)
+                .expect("the declaration starts on a boundary");
+            let offset = start.saturating_add(tail.find(needle).expect("the needle occurs"));
+            match table.at(
+                ByteOffset::from(offset),
+                PageWidth::from(80_u32),
+                Form::Explicit.into(),
+            ) {
+                Maybe::Present(entry) => Some((
+                    entry.span(),
+                    entry.subject(),
+                    String::from(entry.ty().as_ref()),
+                )),
+                Maybe::Absent(_) => None,
+            }
+        };
+        for name in ["def once", "def twice"] {
+            let (Some(kept), Some(second)) = (
+                at(name, "st.get();\n    run b"),
+                at(name, "st.get();\n    pure"),
+            )
+            else {
+                panic!("`{name}`: both reads' instance names answer");
+            };
+            assert_eq!(
+                (&kept.1, &kept.2),
+                (&second.1, &second.2),
+                "`{name}`: the second read's `st` answers as the first's"
+            );
+            assert_eq!(
+                usize::from(second.0.end()).saturating_sub(usize::from(second.0.start())),
+                2_usize,
+                "`{name}`: the second `st` answers at its own span"
             );
         }
     }
