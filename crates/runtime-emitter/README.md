@@ -26,6 +26,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - Haoran Xu and Fredrik Kjolstad. "Copy-and-Patch Compilation: A Fast Compilation Algorithm for High-Level Languages and Bytecode." _Proceedings of the ACM on Programming Languages_ 5 (OOPSLA), article 136, 2021. [doi:10.1145/3485513](https://doi.org/10.1145/3485513). The algorithm: stencils with holes, copied and patched per item.
 - [`object`](https://docs.rs/object/0.40.0/object/): the relocation view over ELF and Mach-O the build script reads the stencil object through.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — the LAM, a regioned location-addressable store, that a run's regions are.
+- `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut's writer is its producer run on its own, which `evaluate_closed_on` runs apart from its reader's heap.
 
 ## Provided features
 
@@ -33,6 +34,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `lower_unfused`, `Rule`, `Fused`, `replay`, `FusionRefusal`, `dispatches`: the lowering before its adjacent pairs run as superinstructions, the rules that fuse them, the trace a fused function carries, the replay that re-derives it and its cost in dispatches.
 - `evaluate`, `evaluate_on`, `evaluate_unfused_on`, `Tier`, `Declined`, `TransferRefusal`: a run under the policy or on one tier, fused or unfused, its outcome moved into the caller's store, or why it gave none.
 - `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each.
+- `evaluate_closed_on`, `lower_suspended`: a command binding one covariable run over the values a store environment binds, laid out on the run's heap first: a cut's writer run apart from its reader's heap.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
 - `PATCHER`: whether this host emits native code.
 - `Fuel` and `Status`, re-exported: the code-word jumps a run may take, and why it returned.

@@ -12,6 +12,19 @@
 //! start, which offers a host handler its requests a second time; the bound
 //! costs address space only. The choice reverses if a workload needs more
 //! than a bound holds, when the bound becomes the caller's to set.
+//!
+//! A command closed over a store's values runs the same way, its captures
+//! laid out on the run's heap first, as a host's reply is, and the run
+//! allocating past them: a cut's writer runs so, on a thread of its own, apart
+//! from its reader's heap. The writer's captures cross by location, a
+//! `HeapValueId` in the store, inside one process; they are never committed by
+//! content.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: a cut's writer is
+//!   its producer run on its own, the cut's concurrent schedule beside the
+//!   sequential one (§ futures-in-gandr item 1, § futures-try-first).
 
 #[cfg(gandr_patcher)]
 use alloc::sync::Arc;
@@ -21,6 +34,7 @@ use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
+use gandr_core_sequent::Environment;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
@@ -29,6 +43,7 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Observed;
+use gandr_runtime_stencils::Refusal;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::Word;
@@ -40,9 +55,11 @@ use crate::host::Calls;
 use crate::host::Codes;
 use crate::host::Parts;
 use crate::host::Refused;
+use crate::host::Unlaid;
 use crate::lower::Form;
 use crate::lower::Lowered;
 use crate::lower::lower;
+use crate::lower::lower_suspended;
 use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
 use crate::native::EmitRefusal;
@@ -160,6 +177,12 @@ pub enum Declined
     /// The host resumed with a value its store does not hold, or one a run
     /// cannot hold: code the host built rather than a value the run moved out.
     Reply(HeapValueId),
+    /// A value the environment binds that the run cannot hold — a closure, a
+    /// stack, a capability, or a head or code the function does not table —
+    /// or one its store does not hold.
+    Capture(HeapValueId),
+    /// The environment binds other than the command's captures.
+    Environment,
 }
 
 impl From<Form> for Declined
@@ -237,6 +260,15 @@ impl core::fmt::Display for Declined
                     f,
                     "the host resumed with {value}, which the run cannot hold"
                 )
+            },
+            Self::Capture(value) => {
+                write!(
+                    f,
+                    "the environment binds {value}, which the run cannot hold"
+                )
+            },
+            Self::Environment => {
+                f.write_str("the environment binds other than the command's captures")
             },
         }
     }
@@ -428,7 +460,7 @@ pub fn evaluate_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    on_tier(tier, &lowered, arena, fuel, store, None)?.hostless()
+    on_tier(tier, &lowered, arena, fuel, store, &[], None)?.hostless()
 }
 
 /// As [`evaluate_on`], the command's unfused lowering run: every instruction
@@ -457,7 +489,52 @@ pub fn evaluate_unfused_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower_unfused(arena, definitions, root)?;
-    on_tier(tier, &lowered, arena, fuel, store, None)?.hostless()
+    on_tier(tier, &lowered, arena, fuel, store, &[], None)?.hostless()
+}
+
+/// Run `body`, a command binding one covariable, on `tier` over the values
+/// `environment` binds in `store`, and move its outcome into `store`.
+///
+/// A cut's writer runs so, closed over a store's values apart from its
+/// reader's heap.
+///
+/// # Specification
+/// - requires: `environment` binds the producer bindings `body`'s support
+///   selects, innermost first, as a transfer binds a thunk suspending `body`;
+///   every constant `body` reaches is defined in `definitions`.
+/// - ensures: as [`evaluate_on`] for `body` with its covariable delivering to
+///   `★`, each bound value first laid out on the run's heap as a host's reply
+///   is.
+/// - executable: none — as [`evaluate_on`].
+///
+/// # Errors
+/// As [`evaluate_on`]; [`Declined::Environment`] for an environment binding
+/// other than `body`'s captures, and [`Declined::Capture`] naming a bound
+/// value the run cannot hold.
+///
+/// # Adequacy
+/// - hypothesis: L2 — thunks a run answered with, over no capture, one, two and
+///   one shared by two fields, run from the store on both tiers and answer what
+///   forcing each in place answers; a capture slot swapped, dropped or left
+///   uncounted changes an answer. L3 — an environment binding one value too few
+///   or too many declines, and a captured function declines naming it.
+/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
+/// - witness: `tests::closed::an_environment_other_than_the_captures_declines`
+#[inline]
+pub fn evaluate_closed_on(
+    tier: Tier,
+    (arena, definitions): (&CommandArena, &Definitions),
+    (body, environment): (CommandId, Environment),
+    (fuel, store): (Fuel, &mut Store),
+) -> Result<Outcome, Declined>
+{
+    let lowered = lower_suspended(arena, definitions, body)?;
+    let captured: Vec<HeapValueId> = store.bound_values(environment).collect();
+    if captured.len() != lowered.captures.len() {
+        return Err(Declined::Environment);
+    }
+    on_tier(tier, &lowered, arena, fuel, store, &captured, None)?.hostless()
 }
 
 /// As [`evaluate`], an operation no handler of the run claims offered to
@@ -531,7 +608,7 @@ where
         host,
         aborted: None,
     };
-    let ran = on_tier(tier, &lowered, arena, fuel, store, Some(&mut adapter))?;
+    let ran = on_tier(tier, &lowered, arena, fuel, store, &[], Some(&mut adapter))?;
     hosted(ran, adapter)
 }
 
@@ -576,14 +653,16 @@ fn by_policy(
 ) -> Result<Ran, Declined>
 {
     match *POLICY {
-        Policy::Always => match run_native(lowered, arena, fuel, store, offer.as_deref_mut()) {
-            Err(Declined::NoPatcher) => run_executor(lowered, arena, fuel, store, offer),
-            #[cfg(gandr_patcher)]
-            Err(Declined::Emission(_)) => run_executor(lowered, arena, fuel, store, offer),
-            ran => ran,
+        Policy::Always => {
+            match run_native(lowered, arena, fuel, store, &[], offer.as_deref_mut()) {
+                Err(Declined::NoPatcher) => run_executor(lowered, arena, fuel, store, &[], offer),
+                #[cfg(gandr_patcher)]
+                Err(Declined::Emission(_)) => run_executor(lowered, arena, fuel, store, &[], offer),
+                ran => ran,
+            }
         },
-        Policy::Never => run_executor(lowered, arena, fuel, store, offer),
-        Policy::Cached => run_cached(lowered, arena, fuel, store, offer),
+        Policy::Never => run_executor(lowered, arena, fuel, store, &[], offer),
+        Policy::Cached => run_cached(lowered, arena, fuel, store, &[], offer),
     }
 }
 
@@ -593,19 +672,21 @@ fn by_policy(
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`evaluate_on_with_host`], and [`Declined::Capture`] naming a value of
+/// `captured` the run cannot hold.
 fn on_tier(
     tier: Tier,
     lowered: &Lowered,
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
+    captured: &[HeapValueId],
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
     match tier {
-        Tier::Native => run_native(lowered, arena, fuel, store, offer),
-        Tier::Executor => run_executor(lowered, arena, fuel, store, offer),
+        Tier::Native => run_native(lowered, arena, fuel, store, captured, offer),
+        Tier::Executor => run_executor(lowered, arena, fuel, store, captured, offer),
     }
 }
 
@@ -615,12 +696,13 @@ fn on_tier(
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`on_tier`].
 fn run_executor(
     lowered: &Lowered,
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
+    captured: &[HeapValueId],
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
@@ -638,6 +720,7 @@ fn run_executor(
             offer,
         },
         fuel,
+        captured,
     )
 }
 
@@ -647,13 +730,14 @@ fn run_executor(
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`on_tier`].
 #[cfg(gandr_patcher)]
 fn run_native(
     lowered: &Lowered,
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
+    captured: &[HeapValueId],
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
@@ -677,7 +761,7 @@ fn run_native(
             emitted
         }
     };
-    run_emitted(&emitted, lowered, arena, fuel, (store, offer))
+    run_emitted(&emitted, lowered, arena, fuel, (store, captured, offer))
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -693,10 +777,11 @@ fn run_native(
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
+    captured: &[HeapValueId],
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
-    let _ = (lowered, arena, fuel, store, offer);
+    let _ = (lowered, arena, fuel, store, captured, offer);
     Err(Declined::NoPatcher)
 }
 
@@ -706,12 +791,13 @@ fn run_native(
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`on_tier`].
 fn run_cached(
     lowered: &Lowered,
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
+    captured: &[HeapValueId],
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
@@ -724,10 +810,10 @@ fn run_cached(
             .get(&lowered.function)
             .map(Arc::clone);
         if let Some(emitted) = held {
-            return run_emitted(&emitted, lowered, arena, fuel, (store, offer));
+            return run_emitted(&emitted, lowered, arena, fuel, (store, captured, offer));
         }
     }
-    run_executor(lowered, arena, fuel, store, offer)
+    run_executor(lowered, arena, fuel, store, captured, offer)
 }
 
 /// Run code the cache served.
@@ -736,14 +822,14 @@ fn run_cached(
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`on_tier`].
 #[cfg(gandr_patcher)]
 fn run_emitted(
     emitted: &Emitted,
     lowered: &Lowered,
     arena: &CommandArena,
     fuel: Fuel,
-    (store, offer): (&mut Store, Option<&mut (dyn Offer + '_)>),
+    (store, captured, offer): (&mut Store, &[HeapValueId], Option<&mut (dyn Offer + '_)>),
 ) -> Result<Ran, Declined>
 {
     let codes = Codes::Native {
@@ -762,29 +848,34 @@ fn run_emitted(
             offer,
         },
         fuel,
+        captured,
     )
 }
 
-/// Run `code` once over the calling thread's regions and move how it ended
-/// into `parts`' store.
+/// Run `code` once over the calling thread's regions, the store's values
+/// `captured` laid out in the entry window's capture slots, and move how it
+/// ended into `parts`' store.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on_with_host`].
+/// As [`on_tier`].
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every named program run natively answers what the
 ///   interpreter answers, and a returned body leaves the window region where it
 ///   found it; a run that answered nothing, or gave the code no window region,
-///   changes both.
+///   changes both. A command over captures answers as forcing it in place does;
+///   a body entered at the heap's start allocates over its captures.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
 fn run(
     code: Code<'_>,
     parts: Parts<'_, '_>,
     fuel: Fuel,
+    captured: &[HeapValueId],
 ) -> Result<Ran, Declined>
 {
     let lowered = parts.lowered;
@@ -821,7 +912,6 @@ fn run(
             frames.wrapping_add(1).write(Word::ZERO);
         }
         let base = frames.wrapping_add(2);
-        let window = buffers.window.as_mut_ptr();
         let mut calls = Calls::new(parts);
         let mut runtime = Runtime::new(
             heap,
@@ -835,6 +925,26 @@ fn run(
         runtime.set_globals(table);
         let windows = buffers.windows.as_mut_ptr();
         runtime.set_windows(windows, windows.wrapping_add(buffers.windows.capacity()));
+        // A command closed over the store runs over its captures laid out on
+        // its heap, each held by its slot of the entry window.
+        let laid = calls
+            .laid_out(&mut runtime, captured)
+            .map_err(|unlaid| match unlaid {
+                Unlaid::Value(value) => Declined::Capture(value),
+                Unlaid::Run(Refusal::Heap) => Declined::Exhausted(Status::HeapExhausted),
+                Unlaid::Run(Refusal::Frames) => Declined::Exhausted(Status::FramesExhausted),
+                Unlaid::Run(Refusal::Operands) => Declined::Stuck,
+            })?;
+        for (&slot, word) in lowered.captures.iter().zip(laid) {
+            let held = usize::try_from(slot.0)
+                .ok()
+                .and_then(|at| buffers.window.get_mut(at))
+                .ok_or(Declined::Environment)?;
+            *held = word;
+        }
+        let window = buffers.window.as_mut_ptr();
+        // The run allocates past the captures laid on its heap.
+        let top = runtime.heap_top();
         let answer = match code {
             #[cfg(gandr_patcher)]
             // SAFETY: the entry is a copy the emitter patched in a region the
@@ -842,7 +952,7 @@ fn run(
             // their limits, the sentinel frame below the base mark, and the
             // window holds the function's slots.
             Code::Native(entry, _) => unsafe {
-                gandr_runtime_stencils::enter(entry, &raw mut runtime, heap, base, window)
+                gandr_runtime_stencils::enter(entry, &raw mut runtime, top, base, window)
             },
             // SAFETY: the program was built from this function and lives for
             // the call; the regions are as above.
@@ -850,7 +960,7 @@ fn run(
                 gandr_runtime_stencils::execute(
                     program.entry(),
                     &raw mut runtime,
-                    heap,
+                    top,
                     base,
                     window,
                 )
@@ -1000,6 +1110,8 @@ mod tests
             Declined::Exhausted(Status::Running),
             Declined::from(TransferRefusal::Producer),
             Declined::Reply(reply),
+            Declined::Capture(reply),
+            Declined::Environment,
         ];
         assert_eq!(
             Declined::Unbound,
@@ -1025,6 +1137,10 @@ mod tests
         assert!(
             reasons[10].to_string().contains(reply.to_string().as_str()),
             "names the reply"
+        );
+        assert!(
+            reasons[11].to_string().contains(reply.to_string().as_str()),
+            "names the capture"
         );
         for status in [Status::Halted, Status::Unmatched, Status::Stuck] {
             assert_eq!(

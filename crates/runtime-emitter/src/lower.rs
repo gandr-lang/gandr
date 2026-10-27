@@ -1038,6 +1038,10 @@ pub struct Lowered
     pub fused: Vec<Fused>,
     /// Every closure site, in creation order.
     pub sites: Vec<Site>,
+    /// The entry window's slots holding the captures of a suspended root
+    /// ([`lower_suspended`]), innermost first, as the store environment it
+    /// runs under binds them; none for a closed command.
+    pub captures: Vec<Slot>,
     /// Every fold cell closure the function creates.
     pub cells: Vec<Cell>,
     /// Every bind frame of a reified stack, in creation order.
@@ -2569,6 +2573,45 @@ impl Lowering<'_>
         at
     }
 
+    /// Open `body`, a command binding one covariable, as the function's root:
+    /// the producer bindings its support selects in the entry window's first
+    /// slots, as a closure body's base scope holds its captures, and its
+    /// covariable aliasing the halt frame's mark, as a `μ` cut against `★`
+    /// binds one. Answers the captures' slots, innermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] for a body the arena does not hold.
+    fn suspended(
+        &mut self,
+        body: CommandId,
+    ) -> Result<Vec<Slot>, Form>
+    {
+        let node = NodeAddress::Command(body);
+        let support = self.arena.node_scope(node).ok_or(Form::Dangling)?;
+        let binders = support
+            .producers()
+            .outside(Zone::Intuitionistic, BinderDepth::from(0_usize))
+            .map(|index| u32::from(index).saturating_add(1))
+            .max()
+            .unwrap_or_default();
+        // The scope the body would be created in: one producer binder per
+        // index up to the outermost it names, which `enclose` keeps where the
+        // body captures it.
+        let mut creator = Scope::Empty;
+        for _ in 0 .. binders {
+            creator = self.scopes.bind(creator, Binding::Producer).0;
+        }
+        let (base, _) = self.enclosed(creator, node, Crossed::NONE)?;
+        let captures = self.captured(Suspension::Thunk(body), base)?;
+        let (inner, alpha) = self.bind(base, Binding::Covariable);
+        self.emit(StencilId::AliasTop, alpha.operand(), Operand::Unused);
+        self.tasks.push(Task::Command(body, inner));
+        Ok(captures)
+    }
+
     /// Run one task.
     ///
     /// # Specification
@@ -3753,13 +3796,55 @@ pub fn lower(
     root: CommandId,
 ) -> Result<Lowered, Form>
 {
-    let lowered = lower_unfused(arena, definitions, root)?;
+    Ok(fused(lowered(arena, definitions, Root::Closed(root))?))
+}
+
+/// Lower `body`, a command binding one covariable, to run over the producer
+/// bindings its support selects, then fuse its adjacent pairs: the code a
+/// command closed over a store's values runs.
+///
+/// # Specification
+/// - ensures: as [`lower`], the entry opening `body` over a window whose first
+///   slots, [`Lowered::captures`], hold the bindings its support selects — the
+///   captures a closure suspending `body` would hold, innermost first — and
+///   binding its covariable to the halt frame's mark, so delivering to it ends
+///   the run with the value delivered. Each capture slot holds one owner, which
+///   the body consumes.
+/// - executable: none — as [`lower`].
+///
+/// # Errors
+/// As [`lower_unfused`]; [`Form::Unbound`] for a linear variable `body`
+/// names, which no store binds.
+///
+/// # Adequacy
+/// - hypothesis: L2 — thunks a run answered with, over no capture, one, two and
+///   one shared by two fields, run from the store on both tiers and answer what
+///   forcing each in place answers; a capture slot swapped, dropped or left
+///   uncounted changes an answer or frees a value still read.
+/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
+#[inline]
+pub fn lower_suspended(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    body: CommandId,
+) -> Result<Lowered, Form>
+{
+    Ok(fused(lowered(arena, definitions, Root::Suspended(body))?))
+}
+
+/// `lowered` with its adjacent pairs fused, the trace recorded.
+///
+/// # Specification
+/// trivial.
+fn fused(lowered: Lowered) -> Lowered
+{
     let (function, trace) = fuse(&lowered.function);
-    Ok(Lowered {
+    Lowered {
         function,
         fused: trace,
         ..lowered
-    })
+    }
 }
 
 /// Lower the closed command `root`, every instruction its own dispatch: the
@@ -3795,7 +3880,36 @@ pub fn lower_unfused(
     root: CommandId,
 ) -> Result<Lowered, Form>
 {
-    let survey = survey(arena, definitions, root)?;
+    lowered(arena, definitions, Root::Closed(root))
+}
+
+/// What a lowering opens at its entry.
+#[derive(Clone, Copy, Debug)]
+enum Root
+{
+    /// A closed command, delivering to `★`.
+    Closed(CommandId),
+    /// A command binding one covariable, over the producer bindings its
+    /// support selects.
+    Suspended(CommandId),
+}
+
+/// Lower `root` unfused: [`lower_unfused`] for a closed command, the
+/// unfused function of [`lower_suspended`] for a suspended one.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`lower_unfused`].
+fn lowered(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: Root,
+) -> Result<Lowered, Form>
+{
+    let (Root::Closed(command) | Root::Suspended(command)) = root;
+    let survey = survey(arena, definitions, command)?;
     let ownership =
         Ownership::of(arena, &survey.roots, &survey.reached).map_err(|_dangling| Form::Dangling)?;
     let mut reuses = Vec::with_capacity(ownership.reuses().len());
@@ -3813,7 +3927,7 @@ pub fn lower_unfused(
         cells: Vec::new(),
         bounds: Vec::new(),
         scopes: Scopes::default(),
-        tasks: Vec::from([Task::Command(root, Scope::Empty)]),
+        tasks: Vec::new(),
         blocks: Vec::new(),
         bodies: Vec::new(),
         window: 0,
@@ -3833,6 +3947,13 @@ pub fn lower_unfused(
         ownership,
         reuses,
         tokens: Vec::new(),
+    };
+    let captures = match root {
+        Root::Closed(command) => {
+            lowering.tasks.push(Task::Command(command, Scope::Empty));
+            Vec::new()
+        },
+        Root::Suspended(body) => lowering.suspended(body)?,
     };
     let mut entry: Option<Position> = None;
     loop {
@@ -3894,6 +4015,7 @@ pub fn lower_unfused(
         function: lowering.function,
         fused: Vec::new(),
         sites: lowering.sites,
+        captures,
         cells: lowering.cells,
         bounds: lowering.bounds,
         heads: lowering.heads,

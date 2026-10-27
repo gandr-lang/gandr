@@ -408,6 +408,32 @@ impl<'run, 'host> Calls<'run, 'host>
         }
     }
 
+    /// Lay the caller's store's values `values` out on the run's heap, in
+    /// order, as a host's reply is laid out: the captures a command closed
+    /// over the store runs over.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Laying::laid`].
+    #[inline]
+    pub fn laid_out(
+        &mut self,
+        runtime: &mut Runtime,
+        values: &[HeapValueId],
+    ) -> Result<Vec<Word>, Unlaid>
+    {
+        Laying {
+            store: self.store,
+            heads: &self.heads,
+            code_table: self.code_table,
+            literals: &mut self.literals,
+            moved: &self.moved,
+        }
+        .laid(runtime, values)
+    }
+
     /// Why the host refused the call a stuck run stopped at, when it named a
     /// reason.
     ///
@@ -993,8 +1019,8 @@ impl<'run, 'host> Calls<'run, 'host>
                     literals: &mut self.literals,
                     moved: &self.moved,
                 };
-                match laying.laid(runtime, reply) {
-                    Ok(word) => Ok(word),
+                match laying.laid(runtime, core::slice::from_ref(&reply)) {
+                    Ok(words) => words.first().copied().ok_or(Refusal::Operands),
                     Err(Unlaid::Value(value)) => {
                         self.refused = Some(Refused::Reply(value));
                         Err(Refusal::Operands)
@@ -1446,12 +1472,12 @@ struct Frame
     window: Option<Slots>,
 }
 
-/// Why a host's reply could not be laid out on the run's heap.
+/// Why a store's value could not be laid out on the run's heap.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Unlaid
+pub enum Unlaid
 {
     /// The store does not hold this value, or a run cannot hold it: code the
     /// host built, a capability no handler of the run introduced.
@@ -1460,8 +1486,8 @@ enum Unlaid
     Run(Refusal),
 }
 
-/// A reply laid out on the run's heap: read from the caller's store, a value
-/// the run moved out answered by the object it was moved from.
+/// Values of the caller's store laid out on the run's heap: a value the run
+/// moved out answered by the object it was moved from.
 struct Laying<'laying>
 {
     /// The caller's store.
@@ -1478,83 +1504,94 @@ struct Laying<'laying>
 
 impl Laying<'_>
 {
-    /// The object the store's value `reply` is laid out as, its fields laid
-    /// out first.
+    /// The objects the store's values `values` are laid out as, in order,
+    /// each object's fields laid out first.
     ///
     /// # Specification
     /// - requires: `runtime` is the record of the run whose objects `moved`
     ///   names.
     /// - ensures: a value the run moved out answers the object it was moved
     ///   from, so a thunk or a function keeps its identity; any other value is
-    ///   allocated once, however many fields hold it, counted one owner per
-    ///   holder, as the run lays out its own: an integer a word holds as an
-    ///   integer object, another literal as an object naming its new row in the
-    ///   run's literal table, a tuple, an injection or a datatype's constructor
-    ///   over its fields, a head the function's table holds as a head object,
-    ///   an opaque constant as an opaque object.
+    ///   allocated once, however many of `values` and their fields hold it,
+    ///   counted one owner per holder, as the run lays out its own: an integer
+    ///   a word holds as an integer object, another literal as an object naming
+    ///   its new row in the run's literal table, a tuple, an injection or a
+    ///   datatype's constructor over its fields, a head the function's table
+    ///   holds as a head object, an opaque constant as an opaque object.
     /// - executable: none — the objects are memory no predicate reads.
     ///
     /// # Errors
     /// [`Unlaid::Value`] naming a value the store does not hold, a head the
-    /// function's table lacks, or code or a capability the host built;
-    /// [`Unlaid::Run`] past the heap's limit.
+    /// function's table lacks, or code, a capability, a closure or a stack
+    /// the run did not move out; [`Unlaid::Run`] past the heap's limit.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — replies of an integer, the unit, the payload itself,
     ///   a value the store does not hold and a pair holding one value twice,
-    ///   each continuing or stopping the run as it states; a second holder left
-    ///   uncounted frees the value while it is read.
+    ///   and two captures bound to one value, each continuing or stopping the
+    ///   run as it states; a second holder left uncounted frees the value while
+    ///   it is read.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
     /// - witness: `tests::seam::a_host_reply_sharing_a_field_counts_each_holder_3170`
+    /// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
     fn laid(
         &mut self,
         runtime: &mut Runtime,
-        reply: HeapValueId,
-    ) -> Result<Word, Unlaid>
+        values: &[HeapValueId],
+    ) -> Result<Vec<Word>, Unlaid>
     {
         let store = self.store;
         let mut laid: BTreeMap<HeapValueId, Word> =
             self.moved.iter().map(|(&word, &id)| (id, word)).collect();
         // The values this laying allocates, each counted one owner by its
-        // allocation, and those of them a field already holds: each later
-        // field holding one counts one owner more.
+        // allocation, and those of them a holder already holds: each later
+        // holder, a field or one of `values`, counts one owner more.
         let mut fresh = BTreeSet::new();
         let mut held = BTreeSet::new();
-        let mut pending = Vec::from([(reply, false)]);
-        while let Some((id, entered)) = pending.pop() {
-            if laid.contains_key(&id) {
-                continue;
-            }
-            let value = store.value(id).ok_or(Unlaid::Value(id))?;
-            let fields: &[HeapValueId] = if let HeapValue::Constructed { ref fields, .. } = *value {
-                fields
-            }
-            else {
-                &[]
-            };
-            if !entered {
-                pending.push((id, true));
-                pending.extend(
-                    fields
-                        .iter()
-                        .rev()
-                        .filter(|field| !laid.contains_key(field))
-                        .map(|&field| (field, false)),
-                );
-                continue;
-            }
-            let word = self.object(runtime, id, &laid)?;
-            for &field in fields {
-                if fresh.contains(&field) && !held.insert(field) {
-                    share(*laid.get(&field).ok_or(Unlaid::Value(field))?);
+        let mut words = Vec::with_capacity(values.len());
+        for &root in values {
+            let mut pending = Vec::from([(root, false)]);
+            while let Some((id, entered)) = pending.pop() {
+                if laid.contains_key(&id) {
+                    continue;
                 }
+                let value = store.value(id).ok_or(Unlaid::Value(id))?;
+                let fields: &[HeapValueId] =
+                    if let HeapValue::Constructed { ref fields, .. } = *value {
+                        fields
+                    }
+                    else {
+                        &[]
+                    };
+                if !entered {
+                    pending.push((id, true));
+                    pending.extend(
+                        fields
+                            .iter()
+                            .rev()
+                            .filter(|field| !laid.contains_key(field))
+                            .map(|&field| (field, false)),
+                    );
+                    continue;
+                }
+                let word = self.object(runtime, id, &laid)?;
+                for &field in fields {
+                    if fresh.contains(&field) && !held.insert(field) {
+                        share(*laid.get(&field).ok_or(Unlaid::Value(field))?);
+                    }
+                }
+                laid.insert(id, word);
+                fresh.insert(id);
             }
-            laid.insert(id, word);
-            fresh.insert(id);
+            let word = *laid.get(&root).ok_or(Unlaid::Value(root))?;
+            if fresh.contains(&root) && !held.insert(root) {
+                share(word);
+            }
+            words.push(word);
         }
-        laid.get(&reply).copied().ok_or(Unlaid::Value(reply))
+        Ok(words)
     }
 
     /// Allocate the store's value `id`, its fields laid out in `laid`.

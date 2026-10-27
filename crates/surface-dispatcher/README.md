@@ -53,7 +53,6 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 | ------- | ----------------- |
 | [Reports](src/report.rs) and [exercised rows](src/exercised.rs) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
 | [Filesystem walk](src/walk.rs) | Explicit links retain their reported path and use their target for classification; a visit at three threads yields the serial visit's rows and report, and a stopped visit hands over nothing more; a diamond of importers is lowered once. |
-| [Evaluation](src/evaluate.rs) | Each declaration stands at its admission position, a skipped position holding none; terminal classification preserves declaration identity; nested fields retain order and repeated references. |
 | [Corpus registration](tests/corpus.rs) | A directory with a source extension is traversed rather than registered as a source. |
 
 ## Expected features
@@ -123,6 +122,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed manifests — metadata is gandr, so `gandr.toml` is output, never read.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — the census reports each cell's counts.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts.
+- `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures try-first.
 
 ## License
 
