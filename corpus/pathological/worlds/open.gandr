@@ -1,0 +1,38 @@
+// What is not open stays at the world it was made at.
+//
+// A handle crosses as the content of the value it holds. A thunk names its
+// environment by location, so its bytes mean nothing at another world. A
+// handle to one is not open, and a value holding one is not mobile either.
+//
+// Each declaration migrates to the seat and returns what it made there. The
+// refusal names the judgement that fails: `NotOpen` for what a handle holds,
+// `Immobile` for a former met directly.
+//
+// - see: Rainey et al., "LoCalMem", PACMPL 10 (ICFP 2026), § 5.1, openness
+// - see: `model/worlds/open.gandr` — what is open crosses
+
+// The operator's and the seat's worlds, each declaration's entry.
+import "../../model/worlds/seat-and-operator.gandr";
+
+/// A handle to a suspended count is refused: what it holds is not open.
+@[ refuses("NotOpen") ]
+@[ entry((operator, seat)) ]
+def heldThunk() -> -F ((() => Integer) at seat) {
+  migrate [seat] { (hold thunk { pure 3 }) }
+}
+
+/// A handle to a record holding a suspended count is refused: one field is
+/// not open, so the record is not.
+@[ refuses("NotOpen") ]
+@[ entry((operator, seat)) ]
+def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
+  migrate [seat] { (hold #{done = 3, later = thunk { pure 4 }}) }
+}
+
+/// The same record without a handle is refused as immobile: a former met
+/// directly fails authority first.
+@[ refuses("Immobile") ]
+@[ entry((operator, seat)) ]
+def bareRecord() -> #{done : Integer, later : () => Integer} {
+  migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
+}

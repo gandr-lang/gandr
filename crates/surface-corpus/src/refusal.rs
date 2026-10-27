@@ -98,6 +98,7 @@ use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::FailureClass;
 use gandr_core_term::generic::Uncovered;
 use gandr_kernel_term::StringLiteral;
@@ -1139,8 +1140,12 @@ pub enum RefusalName
     /// A codata application at another arity than its declaration's
     /// telescope.
     CodataArity,
-    /// A value crossing to a world its type does not reach.
+    /// A value crossing to a world its type is not mobile at: a former
+    /// carries authority meaningful only where it was made.
     Immobile,
+    /// A handle crossing to another world over a value whose representation
+    /// is not open: it names a location the far world cannot read.
+    NotOpen,
     /// A migration with no capability for its world.
     CapabilityMissing,
     /// A migration under a former that may run it other than once.
@@ -1184,7 +1189,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 221_usize] = [
+    pub const VOCABULARY: [Self; 222_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1395,6 +1400,7 @@ impl RefusalName
         Self::CodataObservationLevel,
         Self::CodataArity,
         Self::Immobile,
+        Self::NotOpen,
         Self::CapabilityMissing,
         Self::CapabilityCaptured,
         Self::Elsewhere,
@@ -1644,6 +1650,7 @@ impl RefusalName
         | (Self::CodataObservationLevel, b"CodataObservationLevel")
         | (Self::CodataArity, b"CodataArity")
         | (Self::Immobile, b"Immobile")
+        | (Self::NotOpen, b"NotOpen")
         | (Self::CapabilityMissing, b"CapabilityMissing")
         | (Self::CapabilityCaptured, b"CapabilityCaptured")
         | (Self::Elsewhere, b"Elsewhere")
@@ -1789,6 +1796,7 @@ impl RefusalName
             Self::CodataObservationLevel => "CodataObservationLevel",
             Self::CodataArity => "CodataArity",
             Self::Immobile => "Immobile",
+            Self::NotOpen => "NotOpen",
             Self::CapabilityMissing => "CapabilityMissing",
             Self::CapabilityCaptured => "CapabilityCaptured",
             Self::Elsewhere => "Elsewhere",
@@ -2655,7 +2663,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
-        | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
+        | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::NotOpen | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
         | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
         | (Self::Checking(CheckRefusal::CapabilityOutsideAuthority { .. }), RefusalName::CapabilityOutsideAuthority)
@@ -3083,7 +3091,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Codata { fault: CodataFault::Occurrence, .. }, RefusalName::CodataOccurrence)
         | (CheckRefusal::Codata { fault: CodataFault::ObservationLevel, .. }, RefusalName::CodataObservationLevel)
         | (CheckRefusal::Codata { fault: CodataFault::Arity, .. }, RefusalName::CodataArity)
-        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { .. }, .. }, RefusalName::Immobile)
+        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Mobile, .. }, .. }, RefusalName::Immobile)
+        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Open, .. }, .. }, RefusalName::NotOpen)
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityMissing { .. }, .. }, RefusalName::CapabilityMissing)
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
         | (CheckRefusal::Located { defect: LocatedDefect::Elsewhere { .. }, .. }, RefusalName::Elsewhere)
@@ -3229,7 +3238,14 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             CodataFault::Arity => RefusalName::CodataArity,
         },
         CheckRefusal::Located { defect, .. } => match defect {
-            LocatedDefect::Immobile { .. } => RefusalName::Immobile,
+            LocatedDefect::Immobile {
+                predicate: Predicate::Mobile,
+                ..
+            } => RefusalName::Immobile,
+            LocatedDefect::Immobile {
+                predicate: Predicate::Open,
+                ..
+            } => RefusalName::NotOpen,
             LocatedDefect::CapabilityMissing { .. } => RefusalName::CapabilityMissing,
             LocatedDefect::CapabilityCaptured { .. } => RefusalName::CapabilityCaptured,
             LocatedDefect::Elsewhere { .. } => RefusalName::Elsewhere,

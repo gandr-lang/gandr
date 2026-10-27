@@ -19,7 +19,7 @@ def unmarkedBack() -> Seat.Dispatch {
 /// A handle to the dispatch taken back from the seat, refused: a handle
 /// crosses only when what it holds is open, and an unmarked abstract type is
 /// not.
-@[ refuses("Immobile") ]
+@[ refuses("NotOpen") ]
 @[ entry((operator, seat)) ]
 def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
   migrate [seat] { (hold Seat.task) }

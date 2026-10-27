@@ -49,6 +49,7 @@ use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::Predicate;
 use gandr_surface_corpus::BoundaryClause;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
@@ -1323,8 +1324,15 @@ fn checked(
             ),
         },
         CheckRefusal::Located { defect, .. } => match defect {
-            LocatedDefect::Immobile { .. } => f.write_str(
-                "this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead",
+            LocatedDefect::Immobile {
+                predicate: Predicate::Mobile,
+                ..
+            } => f.write_str("this value crosses to another world, but its type is not mobile"),
+            LocatedDefect::Immobile {
+                predicate: Predicate::Open,
+                ..
+            } => f.write_str(
+                "this handle crosses to another world, but the value it holds is not open",
             ),
             LocatedDefect::CapabilityMissing { .. } => f.write_str(
                 "this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it",
@@ -1469,6 +1477,7 @@ pub mod tests
     use gandr_core_checker::ua::UaDefect;
     use gandr_core_checker::ua::Way;
     use gandr_core_checker::worlds::LocatedDefect;
+    use gandr_core_checker::worlds::Predicate;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
@@ -2335,7 +2344,16 @@ pub mod tests
                     crossed: gandr_core_checker::worlds::Crossed::Result,
                     ty: value_type,
                     former: value_type,
-                    predicate: gandr_core_checker::worlds::Predicate::Mobile,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: gandr_core_checker::worlds::Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
                 },
             },
             CheckRefusal::Located {

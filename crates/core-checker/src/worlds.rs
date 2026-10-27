@@ -142,6 +142,14 @@
 //!   CMU-CS-08-126, Carnegie Mellon University, 2008.
 //!   <http://tom7.org/papers/modal-types-for-mobile-code.pdf> — the
 //!   worlds, the validity of a world-free hypothesis, and mobility.
+//! - Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S.
+//!   Koparkar, Mikah Kainen, and Vidush Singhal. "`LoCalMem`: Type-Directed
+//!   Adaptive Serialization for Location- and Content-Addressable Memory."
+//!   _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290,
+//!   August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) —
+//!   § 5.1, openness: a type is open when its values hold no bare location
+//!   pointer, and a content pointer is open when what it points at is, the
+//!   reading of a handle's crossing.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

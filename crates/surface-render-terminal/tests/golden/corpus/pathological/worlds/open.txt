@@ -1,0 +1,35 @@
+error[NotOpen]: this handle crosses to another world, but the value it holds is not open
+   ╭▸ corpus/pathological/worlds/open.gandr:21:3
+   │
+20 │ ┌ def heldThunk() -> -F ((() => Integer) at seat) {
+21 │ │   migrate [seat] { (hold thunk { pure 3 }) }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a handle whose held value is not open: found `() => Integer`
+22 │ │ }
+   │ └─┘ checked against `() => (() => Integer) at seat`; while checking the body of this thunk
+   │
+   ├ note: `heldThunk` is refused with NotOpen, as its expectation states
+   ╰ help: hold data in the handle, or an abstract type that its signature marks `mobile`
+
+error[NotOpen]: this handle crosses to another world, but the value it holds is not open
+   ╭▸ corpus/pathological/worlds/open.gandr:29:3
+   │
+28 │ ┌ def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
+29 │ │   migrate [seat] { (hold #{done = 3, later = thunk { pure 4 }}) }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a handle whose held value is not open: found `() => Integer`
+30 │ │ }
+   │ └─┘ checked against `() => #{done : Integer, later : () => Integer} at seat`; while checking the body of this thunk
+   │
+   ├ note: `heldRecord` is refused with NotOpen, as its expectation states
+   ╰ help: hold data in the handle, or an abstract type that its signature marks `mobile`
+
+error[Immobile]: this value crosses to another world, but its type is not mobile
+   ╭▸ corpus/pathological/worlds/open.gandr:37:3
+   │
+36 │ ┌ def bareRecord() -> #{done : Integer, later : () => Integer} {
+37 │ │   migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type holds a former that is not mobile: found `() => Integer`
+38 │ │ }
+   │ └─┘ checked against `() => #{done : Integer, later : () => Integer}`; while checking the body of this thunk
+   │
+   ├ note: `bareRecord` is refused with Immobile, as its expectation states
+   ╰ help: return data or a handle from the migration, or mark the abstract type `mobile` in its signature

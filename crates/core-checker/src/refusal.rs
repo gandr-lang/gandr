@@ -1620,11 +1620,12 @@ impl CheckRefusal
     ///   dependent bind or stack and a compound endpoint the type its body
     ///   synthesised, a static Pi over no classifier of codes the child it
     ///   stands over, a session action and a leftover endpoint the endpoint's
-    ///   session type, a capability refusal the capability type it met, and an
-    ///   unasserted law the statement it would admit, each expecting a former
-    ///   the refusal names rather than a type; a forged capability expects the
-    ///   capability type it stood at and found nothing; every other refusal
-    ///   compares no types.
+    ///   session type, a capability refusal the capability type it met, an
+    ///   unasserted law the statement it would admit, and a refused crossing
+    ///   the former that does not cross, each expecting a former the refusal
+    ///   names rather than a type; a forged capability expects the capability
+    ///   type it stood at and found nothing; every other refusal compares no
+    ///   types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
     ///   [`compared::Absent::Unnamed`] absence.
@@ -1655,7 +1656,8 @@ impl CheckRefusal
         | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. } | Self::FootprintsOverlap { shared: found, .. }
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
         | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found }
-        | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. } =>
+        | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. }
+        | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
     })]
@@ -1741,6 +1743,10 @@ impl CheckRefusal
             | Self::UnassertedLaw { at: found }
             | Self::Linearity {
                 defect: crate::session::LinearityDefect::Residue { state: found, .. },
+                ..
+            }
+            | Self::Located {
+                defect: crate::worlds::LocatedDefect::Immobile { former: found, .. },
                 ..
             } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
             Self::NotADataType(_)

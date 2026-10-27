@@ -31,7 +31,7 @@ INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theo
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','bcd5208d8b0414d4706e2afdb774c208bf266495');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-sequent','','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8f6ba796e48eeb5dd454e59b998a36aca44c69d1');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','memory','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','1b6091fc402781549385efd19a99c87b29c0fe2d');
-INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','world','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','553995ee36318b2c837be659cdc92ae4e79640eb');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','world','background','775f54d99d0fd78230b9e5afa51d674039fd0fd5','2026-10-27','1ed0fa5ee5623d4bb42b3ae9c5791ccaf6a2e722');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-emitter','','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8fcba5da1cb322710f478861e7eecb99fa0b1c4e');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-artifact','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','ef9bb00ebb8083a526b1a08c9c150047066064d8');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-chunker','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','6227fbbd288c00a8d4056ac5d9aad7844826e3bb');
@@ -273,6 +273,7 @@ INSERT INTO reference VALUES('doi:10.1145/3776695','core-term','','background',N
 INSERT INTO reference VALUES('doi:10.1145/3776695','kernel-conversion-trace','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3776695','kernel-core','replay','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3776695','kernel-term','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1145/3828688','core-checker','worlds','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/502034.502052','storage-chunker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/502034.502052','storage-records','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/502034.502052','storage-values','','background',NULL,NULL,NULL);

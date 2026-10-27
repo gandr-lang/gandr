@@ -6,9 +6,16 @@
 //! reaches one CAM, the location- and content-addressable memories of
 //! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`:
 //! a location means something at its own world alone, and a value crosses to
-//! another by content. A crossing asks `mobile`, the authority, which the
-//! checker decides, and `Open`, no location inside, which nothing decides
-//! yet. Its wall is validity: a judgement decides a crossing, never a digest.
+//! another by content. Its wall is validity: a judgement decides a crossing,
+//! never a digest.
+//!
+//! A value crosses between worlds only when its type passes two judgements.
+//! **Mobile** is authority: nothing the value holds is meaningful only where
+//! it was made. **Open** is representation: the value names no location, so
+//! its bytes read the same at every world, the precondition of committing it
+//! by content. The checker decides both on every former, in
+//! `gandr_core_checker::worlds`, and refuses a crossing that fails either by
+//! the judgement's own name, `Immobile` or `NotOpen`.
 //!
 //! # A world is a locus, never a host
 //!
