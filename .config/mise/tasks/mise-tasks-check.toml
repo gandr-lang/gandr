@@ -1353,7 +1353,9 @@ SELECT count(*) || ' rows, ' || count(DISTINCT key) || ' sources at ' || count(D
 FROM reference;"); keys read $resolved"
 {% endraw %}'''
 
-# The stacking rule's readings (#1264): `chain.jq` reads a pull request's
+# The stacking rule's readings (#1264): `open.jq` reads the open pull
+# requests and why each is held, a draft or the owner's `hold:owner` (#3253),
+# `rests.jq` the hold a landing rests on, `chain.jq` a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on,
 # `state.jq` a member's readiness (#2783), `dirty.jq` whether `pr:watch`'s
 # `DIRTY` reading is a conflict (#2854), `superseded.jq` whether a cancelled

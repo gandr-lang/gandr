@@ -23,30 +23,29 @@ stacking_current() {
   fi
 }
 
-# The open pull requests that land, drafts left out, as a JSON array of
-# `{number, head, base, created, landing, held, stack, bot}`: `landing` when
-# the pull request is in the merge queue or set to enter it (auto-merge), so
-# its branch is about to be deleted and nothing new stacks on it (#1455);
-# `held` when it carries the `landing` label, a `pr:land` waiting to queue it
-# (#1556); `stack` the number of the linked stack holding it, or null (#1520);
-# `bot` when an app such as Dependabot opened it, so nothing stacks on it
-# (#2550).
+# The open pull requests, held ones among them, as a JSON array (`open.jq`).
 open_prs() {
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
     -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } author { __typename } } } } }' \
-    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null), held: any(.labels.nodes[]; .name == "landing"), stack: .stack.number, bot: (.author.__typename == "Bot")}' \
-    | jq -cs .
+    --jq '.data.repository.pullRequests.nodes[]' \
+    | jq -cs -f "$pr_stack_dir/open.jq"
+}
+
+# The open pull requests that land: the held ones, a draft or the owner's
+# `hold:owner` (#3253), left out.
+landable_prs() {
+  open_prs | jq -c 'map(select(.hold == null))'
 }
 
 # The stack holding pull request `$1`, bottom to top (`chain.jq`).
 server_stack() {
-  open_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/chain.jq"
+  landable_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/chain.jq"
 }
 
 # The open pull request a new one on branch `$1` stacks on (`top.jq`), or
 # `null`.
 stack_top() {
-  open_prs | jq -c --arg own "$1" --arg trunk "$trunk" -f "$pr_stack_dir/top.jq"
+  landable_prs | jq -c --arg own "$1" --arg trunk "$trunk" -f "$pr_stack_dir/top.jq"
 }
 
 # The top a new pull request on branch `$1` stacks on, once no `pr:land` holds
@@ -567,9 +566,19 @@ cut_reason() {
 # queued on its own carries the stack's commits (`carried_queued`), while a
 # queued unit takes nothing more, after queueing a unit the cap cut short,
 # or when the open members take no link above the queued ones;
-# `queue_stack`'s failure otherwise.
+# `queue_stack`'s failure otherwise. A pull request held on purpose, or
+# stacked above one, is refused with 2 and one line naming the hold
+# (`rests.jq`, #3253): nothing of it is queued.
 land_prefix() {
-  local server queued carried required cap room number state states=() decision verdict upto stop status=0
+  local server queued carried required cap room number state states=() decision verdict upto stop status=0 rests
+  rests=$(open_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/rests.jq")
+  if [[ "$rests" != null ]]; then
+    case $(jq -r .hold <<< "$rests") in
+      owner) echo "#$(jq -r .number <<< "$rests") held by the owner; the stack above it waits: \`pr:release\` ends the hold" >&2 ;;
+      *) echo "#$(jq -r .number <<< "$rests") is a draft, held on purpose; the stack above it waits: \`pr:release\` ends the hold" >&2 ;;
+    esac
+    return 2
+  fi
   server=$(server_stack "$1")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$1 is not open" >&2; return 2; }
   queued=$(queued_of "$server")

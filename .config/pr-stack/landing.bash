@@ -20,7 +20,8 @@ source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 token=${LANDING_TOKEN_HELD:-false}
 required=$(required_contexts)
 
-# The open pull requests, drafts left out, as `landing.jq` reads them.
+# The open pull requests, held ones left out (a draft, or the owner's
+# `hold:owner`, #3253), as `landing.jq` reads them.
 read_prs() {
   local pr
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -f query='
@@ -43,7 +44,7 @@ read_prs() {
           }
         }
       }
-    }' --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not)' \
+    }' --jq '.data.repository.pullRequests.nodes[] | select((.isDraft or any(.labels.nodes[]; .name == "hold:owner")) | not)' \
     | while IFS= read -r pr; do
         jq -c --argjson reading "$(jq '.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []' <<< "$pr" \
           | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")" \
