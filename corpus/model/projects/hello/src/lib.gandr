@@ -23,6 +23,14 @@ pub module Package : Model(Gandr.Package) {
   def documentation = "https://github.com/gandr-lang/gandr";
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The language version, the workspace's.
+  def gandr = Workspace.gandr;
+  /// The features the sources use, the workspace's.
+  def features = Workspace.features;
+  /// The systems the package builds on, the workspace's.
+  def systems = Workspace.systems;
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
 }
 
 /// The greeting, read from the module `text.greet` by its path, at the type

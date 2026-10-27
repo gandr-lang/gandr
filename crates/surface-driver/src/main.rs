@@ -299,6 +299,7 @@ use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::FeatureId;
+use gandr_surface_dispatcher::FeatureLedger;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
@@ -326,6 +327,7 @@ use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Rewrite;
 use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::RunVerdict;
+use gandr_surface_dispatcher::Running;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::StageVerdict;
@@ -1070,13 +1072,15 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
 ///   system.
 ///
 /// # Errors
-/// The [`config::Fault`] reading the file met.
+/// The [`gandr_surface_dispatcher::PresentationFault`] reading the file met.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a configured spelling prints, a flag outranks it, and a
 ///   malformed file stops the run, through the binary.
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
-fn spelling(flag: Option<SpellingName>) -> Result<Spelling, config::Fault>
+fn spelling(
+    flag: Option<SpellingName>
+) -> Result<Spelling, gandr_surface_dispatcher::PresentationFault>
 {
     match flag {
         Some(name) => Ok(Spelling::from(name)),
@@ -2657,7 +2661,8 @@ fn locked<'packaged>(
     }
 }
 
-/// Reconcile `package`'s manifest with what its library states, and address
+/// Check that the running toolchain meets what `package`'s library asks of
+/// it, then reconcile the manifest with what the library states, and address
 /// the package over `lock`, printing what came of each, and the verdict it
 /// leaves the run at.
 ///
@@ -2665,9 +2670,13 @@ fn locked<'packaged>(
 /// - requires: `manifest` is what `package`'s library states, and `lock`, when
 ///   given, the lock its dependencies resolve to.
 /// - ensures: a library that states no manifest is `gandr: <library>: <why>` on
-///   standard error and unsettles the run. Otherwise the manifest is reconciled
-///   at `package`'s root: written, rewritten or unchanged is `manifest: <path>:
-///   <what> (address <hex>)` on standard output, the address of the package's
+///   standard error and unsettles the run. A manifest whose toolchain the
+///   running one leaves unmet ([`gandr_surface_dispatcher::Toolchain::unmet`]
+///   against the built-in features ledger) is `gandr: <library>: <clause>: …`
+///   on standard error, one line per constraint unmet, writes nothing and
+///   unsettles. Otherwise the manifest is reconciled at `package`'s root:
+///   written, rewritten or unchanged is `manifest: <path>: <what> (address
+///   <hex>)` on standard output, the address of the package's
 ///   [`Package::identity`] over `lock` under the built-in grammar, at the JSON
 ///   level an object whose `level` is `manifest` carrying `address`, and
 ///   settles. A package with no address prints the line without it, then
@@ -2690,6 +2699,7 @@ fn locked<'packaged>(
 ///   stays across an inert edit and moves with a content one.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+/// - witness: `tests::cli::a_package_s_toolchain_is_met_or_refused_by_its_clause_3135`
 fn manifested(
     package: &Package,
     manifest: Result<Manifest, Unmanifested>,
@@ -2710,6 +2720,20 @@ fn manifested(
             return Ok(RunVerdict::Unsettled);
         },
     };
+    let ledger = match FeatureLedger::built_in() {
+        Ok(ledger) => ledger,
+        Err(fault) => {
+            writeln!(stderr, "gandr: the built-in features ledger: {fault}")?;
+            return Ok(RunVerdict::Faulted);
+        },
+    };
+    let unmet = manifest.toolchain().unmet(&Running::this(&ledger));
+    if !unmet.is_empty() {
+        for clause in &unmet {
+            writeln!(stderr, "gandr: {}: {clause}", package.library().display())?;
+        }
+        return Ok(RunVerdict::Unsettled);
+    }
     let path = package.manifest();
     match reconcile(&path, &manifest) {
         Ok(reconciled) => {

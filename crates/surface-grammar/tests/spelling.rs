@@ -12,6 +12,7 @@ use gandr_surface_grammar::SPELLED;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::Sym;
 use gandr_surface_grammar::TileLabel;
+use gandr_surface_grammar::Unspelled;
 use gandr_surface_grammar::aliased;
 use gandr_surface_grammar::built_in;
 use gandr_surface_grammar::spelled;
@@ -35,6 +36,20 @@ fn tiles(
             RegexShape::Seq(children) | RegexShape::Alt(children) => pending.extend(children),
             RegexShape::Optional(child) | RegexShape::Repeat(child) => pending.push(child),
         }
+    }
+}
+
+/// #3135: a spelling reads from the name a `[presentation]` table writes it
+/// by, and no other name reads.
+#[test]
+fn a_spelling_reads_from_its_name_3135()
+{
+    assert_eq!(["unicode", "ascii"].map(str::parse::<Spelling>), [
+        Ok(Spelling::Unicode),
+        Ok(Spelling::Ascii)
+    ]);
+    for name in ["Unicode", "", "latin"] {
+        assert_eq!(name.parse::<Spelling>(), Err(Unspelled), "`{name}`");
     }
 }
 

@@ -1,12 +1,13 @@
 /// `project-manifest`: A package, its root and its manifest.
-/// Implemented: a package is the sources beside its `lib.gandr`, found from any path in it, and `gandr check` writes `gandr.toml` at its root from the library's `Package` model and the modules its sources make, refusing a hand edit as drift, and prints the package's address on the manifest's line; `import text.greet ;` names a module by its path and binds it qualified, and `import text.greet (greeting) ;` binds the names it lists by their own names as well; a `workspace.gandr` names its member packages and states what they share as a model of `Gandr.Workspace`, and `gandr check` in it checks every member.
+/// Implemented: a package is the sources beside its `lib.gandr`, found from any path in it, and `gandr check` writes `gandr.toml` at its root from the library's `Package` model, the modules its sources make, its `[toolchain]` table and, when its `spelling` names one, its `[presentation]` table, refusing a hand edit as drift, and prints the package's address on the manifest's line; a language server opened on the package writes in that spelling over the user's; `import text.greet ;` names a module by its path and binds it qualified, and `import text.greet (greeting) ;` binds the names it lists by their own names as well; a `workspace.gandr` names its member packages and states what they share as a model of `Gandr.Workspace`, and `gandr check` in it checks every member.
 /// Not implemented: a type read through a module path of three names or more without an alias; #2874 owes it.
 
 // The manifest theories, from `std.package` by its path (#533 p3).
 import "../../../library/std/src/package.gandr";
 
 /// The model a library declares: what `gandr check` records in `gandr.toml`.
-/// Its fields are inert: only the manifest step reads them (#3029).
+/// Its fields but what it asks of the toolchain are inert: only the manifest
+/// step reads them (#3029).
 pub module Package : Model(Gandr.Package) {
   /// The name the manifest records.
   @[ runs("\"hello\"") ]
@@ -21,4 +22,12 @@ pub module Package : Model(Gandr.Package) {
   def documentation = "https://github.com/gandr-lang/gandr";
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version the sources ask for.
+  def gandr = ">= 0.0";
+  /// The features the sources use.
+  def features = "project-manifest";
+  /// The systems the package builds on: any.
+  def systems = "";
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
 }

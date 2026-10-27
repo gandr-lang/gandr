@@ -9,23 +9,63 @@
 // documented and fetched from, say what it is called, not what it is. What a
 // package depends on is not inert: a library's `dependencies` lists each
 // `Dependency`, `gandr check` locks each one's address in `gandr.lock`, and
-// the package's address digests those addresses (#3072).
+// the package's address digests those addresses (#3072). Nor is what a
+// package asks of the toolchain that checks it: `gandr check` refuses a
+// package whose `Toolchain` the running toolchain does not meet, and the
+// package's address digests it.
 
-/// What a package and a workspace both state: the version they release at.
-/// `Gandr.Package` and `Gandr.Workspace` include it, so a member reads its
-/// version from its workspace's model.
+/// The version a package and a workspace release at, which [`Project`]
+/// brings to both, so a member reads its version from its workspace's model.
 pub theory Versioned {
   /// The version, as a package's manifest records it.
   @[ inert ]
   oper version : String;
 }
 
+/// What a package and a workspace ask of the toolchain that checks them,
+/// which [`Project`] brings to both, so a member may read its constraints from
+/// its workspace's model. A constraint is content, so the package's address
+/// digests it. Each list is one line of `,`-separated entries, none when it
+/// is empty, until an operation's port can be a list (#2993).
+pub theory Toolchain {
+  /// The least language version the sources are written for, `>= 0.3`, or
+  /// empty for any.
+  oper gandr : String;
+  /// The features the sources use, each a feature's key in gandr's features
+  /// ledger, which the toolchain implements whole or in part.
+  oper features : String;
+  /// The systems the package is built on, each `<architecture>-<os>` as
+  /// `x86_64-linux`, or empty for any.
+  oper systems : String;
+}
+
+/// What a package and a workspace both state: the version they release at
+/// and what they ask of the toolchain. `Gandr.Package` and `Gandr.Workspace`
+/// include it, so the two theories it joins are joined once.
+pub theory Project {
+  include Versioned;
+  include Toolchain;
+}
+
+/// How a package's sources are shown: the `[presentation]` table of its
+/// `gandr.toml`, the table the user's configuration file writes, which a
+/// language server opened on the package reads over the user's. Each field
+/// is inert: how a source is shown is not what it is.
+pub theory Presentation {
+  /// The spelling a construct with a glyph is written in, `unicode` or
+  /// `ascii`, or empty to leave the reader's own.
+  @[ inert ]
+  oper spelling : String;
+}
+
 /// A package: the project a `lib.gandr` roots, described by the model its
 /// `module Package : Model(Gandr.Package)` is, from which the checker writes
-/// the project's `gandr.toml`. Every field is inert: what a package is called,
-/// who wrote it and where it is documented leave its address alone (#3030).
+/// the project's `gandr.toml`. Its own fields are inert: what a package is
+/// called, who wrote it, where it is documented and how it is shown leave its
+/// address alone (#3030). What it asks of the toolchain is not.
 pub theory Gandr.Package {
-  include Versioned;
+  include Project;
+  include Presentation;
   /// The package's name, which the manifest records it by.
   @[ inert ]
   oper name : String;
@@ -49,7 +89,7 @@ pub theory Gandr.Package {
 /// `members` it names. Its members' libraries import it and read what it
 /// states.
 pub theory Gandr.Workspace {
-  include Versioned;
+  include Project;
 }
 
 /// A module of a package: a source below its library, named by its path from

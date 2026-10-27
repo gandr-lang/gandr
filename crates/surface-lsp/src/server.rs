@@ -81,8 +81,10 @@ use gandr_surface_dispatcher::Freshness;
 use gandr_surface_dispatcher::Generations;
 use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Laid;
+use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Polled;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::TypeTable;
@@ -90,6 +92,7 @@ use gandr_surface_dispatcher::forget;
 use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::named_path;
+use gandr_surface_dispatcher::read_presentation;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
@@ -1456,8 +1459,9 @@ pub struct Workspace
     /// Where each watching connection hears which document changed.
     watchers: BTreeMap<Peer, Sender<DocumentUri>>,
     /// The spelling its user's configuration names: what a connection writes
-    /// types in until its editor's `gandr.presentation.spelling` says
-    /// otherwise, and what a query writes them in.
+    /// types in until its project's manifest or its editor's
+    /// `gandr.presentation.spelling` says otherwise, and what a query writes
+    /// them in.
     spelling: Spelling,
     /// Every source under the folders the connections opened, with the files
     /// each imports: where a reference or rename request finds the importers
@@ -2268,9 +2272,10 @@ pub struct Server
     /// as the verbosity is; zero holds nothing.
     quiet: Duration,
     /// The form and spelling its editor's `gandr.presentation` settings name,
-    /// read as the verbosity is, the spelling its workspace's configuration
-    /// names when the editor names none, and the markup its client's markdown
-    /// renderer reads, read at `initialize`.
+    /// read as the verbosity is; the spelling the manifest of the package its
+    /// folders open names when the editor names none, and its workspace's
+    /// configuration's when neither does; and the markup its client's
+    /// markdown renderer reads, read at `initialize`.
     style: Style,
     /// Whether its client takes a definition as links, read at `initialize`.
     linked: Linked,
@@ -4356,11 +4361,12 @@ impl Server
     /// - ensures: initialization and shutdown advance the lifecycle once, and
     ///   initialization takes the verbosity, the quiet interval and the
     ///   presentation form and spelling its options name, the user level,
-    ///   [`QUIET`], the sugared form and the workspace's spelling when they
-    ///   name none, and the markup and the definition links its client's
-    ///   capabilities name; other requests preserve them, and no request
-    ///   changes `workspace`. The response echoes the identifier and carries
-    ///   the method result or its lifecycle, unknown-method or
+    ///   [`QUIET`], the sugared form and, for the spelling, the one
+    ///   [`projected`] reads from its folders' package, else the workspace's,
+    ///   when they name none, and the markup and the definition links its
+    ///   client's capabilities name; other requests preserve them, and no
+    ///   request changes `workspace`. The response echoes the identifier and
+    ///   carries the method result or its lifecycle, unknown-method or
     ///   invalid-parameter error.
     /// - provides: one response per request.
     /// - fails: refusals are error responses, never Rust errors.
@@ -4377,6 +4383,7 @@ impl Server
     /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
     /// - witness: `server::tests::the_outline_requests_answer_a_known_document`
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
+    /// - witness: `server::tests::a_project_s_spelling_outranks_the_user_s_and_yields_to_the_editor_s_3135`
     /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::formatting_answers_the_edits_that_lay_a_document_out`
@@ -4386,14 +4393,22 @@ impl Server
     #[spec(
         captures: [phase = self.phase, initial = initial_settings(&params), markup = initial_markup(&params),
             linked = initial_links(&params), offsets = initial_offsets(&params), watching = initial_watching(&params),
-            progress = initial_progress(&params), refreshing = initial_refreshing(&params)],
+            progress = initial_progress(&params), refreshing = initial_refreshing(&params),
+            project = if matches!((self.phase, method.as_ref()), (Phase::Waiting, "initialize")) {
+                projected(&initial_roots(&params))
+            } else {
+                Maybe::Absent(unprojected::Absent::Unpackaged)
+            }],
         ensures: |ret| match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
                 && self.verbosity == initial.verbosity().unwrap_or_default()
                 && self.quiet == initial.quiet().unwrap_or(QUIET)
                 && self.style == Style {
                     form: initial.form().unwrap_or(Form::Sugared),
-                    spelling: initial.spelling().unwrap_or(workspace.spelling),
+                    spelling: initial.spelling().unwrap_or(match project {
+                        Maybe::Present(spelling) => spelling,
+                        Maybe::Absent(_) => workspace.spelling,
+                    }),
                     markup,
                 }
                 && self.linked == linked
@@ -4610,11 +4625,17 @@ impl Server
             (Phase::Waiting, "initialize") => {
                 self.phase = Phase::Running;
                 let settings = initial_settings(&params);
+                let roots = initial_roots(&params);
                 self.verbosity = settings.verbosity().unwrap_or_default();
                 self.quiet = settings.quiet().unwrap_or(QUIET);
                 self.style = Style {
                     form: settings.form().unwrap_or(Form::Sugared),
-                    spelling: settings.spelling().unwrap_or(workspace.spelling),
+                    spelling: settings
+                        .spelling()
+                        .unwrap_or_else(|| match projected(&roots) {
+                            Maybe::Present(spelling) => spelling,
+                            Maybe::Absent(_) => workspace.spelling,
+                        }),
                     markup: initial_markup(&params),
                 };
                 self.linked = initial_links(&params);
@@ -4635,7 +4656,7 @@ impl Server
                 self.showing = initial_showing(&params);
                 self.listing = initial_listing(&params);
                 self.viewer = initial_viewer(&params);
-                workspace.rooted(self.peer, &initial_roots(&params));
+                workspace.rooted(self.peer, &roots);
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -8386,6 +8407,62 @@ fn initial_roots(params: &Value) -> Vec<PathBuf>
     InitializeParams::deserialize(params)
         .map(|params| params.roots())
         .unwrap_or_default()
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a connection's folders name no project spelling.
+    pub mod unprojected {
+        /// The reason none is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No folder sits in a package.
+            Unpackaged,
+            /// The package's manifest names no spelling, or no manifest stands.
+            Unnamed,
+            /// The package's manifest does not read as a `[presentation]`
+            /// table: `gandr check` refuses it before any editor reads it.
+            Unread,
+        }
+    }
+}
+
+/// The spelling the manifest of the package the first of `roots` to sit in
+/// one names in its `[presentation]` table.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the first root [`Package::discover`] finds a package from, its
+///   manifest read as [`read_presentation`] reads it: the spelling it names;
+///   [`unprojected::Absent::Unpackaged`] when no root is in a package,
+///   [`unprojected::Absent::Unnamed`] when the table names none, and
+///   [`unprojected::Absent::Unread`] when the manifest does not read.
+/// - provides: the project's rank between the editor's setting and the user's
+///   configuration.
+/// - fails: never; a manifest that does not read is an absence.
+/// - panics: none.
+/// - executable: none — the result depends on the file system, which the
+///   clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a folder in a package whose manifest names `ascii` writes
+///   hovers in ASCII over a user's Unicode.
+/// - witness: `server::tests::a_project_s_spelling_outranks_the_user_s_and_yields_to_the_editor_s_3135`
+fn projected(roots: &[PathBuf]) -> Maybe<Spelling, unprojected::Absent>
+{
+    let Some(package) = roots.iter().find_map(|root| match Package::discover(root) {
+        Maybe::Present(package) => Some(package),
+        Maybe::Absent(_) => None,
+    })
+    else {
+        return Maybe::Absent(unprojected::Absent::Unpackaged);
+    };
+    match read_presentation(package.manifest()) {
+        Ok(Presentation {
+            spelling: Some(spelling),
+        }) => Maybe::Present(spelling),
+        Ok(Presentation { spelling: None }) => Maybe::Absent(unprojected::Absent::Unnamed),
+        Err(_) => Maybe::Absent(unprojected::Absent::Unread),
+    }
 }
 
 /// The paths of the files `changes` names, as [`named_path`] names each,
@@ -15482,6 +15559,75 @@ mod tests
             )),
             "and the next hover answers in it"
         );
+    }
+
+    /// #3135: a connection opened on a package whose manifest's
+    /// `[presentation]` table names `ascii` writes hovers in ASCII over its
+    /// user's Unicode, until its editor names a spelling of its own.
+    #[test]
+    fn a_project_s_spelling_outranks_the_user_s_and_yields_to_the_editor_s_3135()
+    {
+        let root = std::env::temp_dir().join(format!("gandr-lsp-project-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).expect("the scratch package is created");
+        let text = "def r : Integer ≃ String ;\ndef r = 1 ;\n";
+        std::fs::write(root.join("src/lib.gandr"), text).expect("the library is written");
+        std::fs::write(
+            root.join("gandr.toml"),
+            "[presentation]\nspelling = \"ascii\"\n",
+        )
+        .expect("the manifest is written");
+        let mut server = Connected {
+            server: Server::default(),
+            workspace: Workspace::spelled(super::Spelling::Unicode),
+            ..Connected::default()
+        };
+        let folder = format!("file://{}", root.display());
+        let library = format!("{folder}/src/lib.gandr");
+        let _answered = send(
+            &mut server,
+            Json(&format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":{{}},
+                    "rootUri":"{folder}"}}}}"#
+            )),
+        );
+        let _opened = send(
+            &mut server,
+            Json(&format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{
+                    "uri":"{library}","languageId":"gandr","version":1,
+                    "text":"def r : Integer ≃ String ;\ndef r = 1 ;\n"}}}}}}"#
+            )),
+        );
+        let hovered = |server: &mut Connected| {
+            send(
+                server,
+                Json(&format!(
+                    r#"{{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{{
+                        "textDocument":{{"uri":"{library}"}},
+                        "position":{{"line":0,"character":4}}}}}}"#
+                )),
+            )
+            .pointer("/0/result/contents/value")
+            .and_then(Value::as_str)
+            .and_then(|value| value.lines().nth(1))
+            .map(str::to_owned)
+        };
+        assert_eq!(
+            hovered(&mut server),
+            Some(String::from("r : Integer <~> String")),
+            "the project's spelling outranks the user's"
+        );
+        let _republished = server.handle(&Body::from(
+            br#"{"jsonrpc":"2.0","method":"workspace/didChangeConfiguration",
+                "params":{"settings":{"gandr":{"presentation":{"spelling":"unicode"}}}}}"#
+                .to_vec(),
+        ));
+        assert_eq!(
+            hovered(&mut server),
+            Some(String::from("r : Integer ≃ String")),
+            "the editor's own spelling outranks the project's"
+        );
+        std::fs::remove_dir_all(&root).expect("the scratch package is removed");
     }
 
     #[test]

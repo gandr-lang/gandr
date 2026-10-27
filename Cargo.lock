@@ -772,7 +772,6 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "serde_json",
- "toml",
  "tracing",
  "tracing-subscriber",
 ]
@@ -940,6 +939,7 @@ dependencies = [
  "self_cell",
  "serde_json",
  "sysctl",
+ "toml",
  "tracing",
 ]
 

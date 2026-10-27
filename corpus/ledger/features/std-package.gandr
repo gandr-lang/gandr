@@ -1,12 +1,12 @@
 /// `std-package`: The standard library's manifest theories.
-/// Implemented: `std.package`, `library/std/src/package.gandr`, states `Versioned`, `Gandr.Package` and `Gandr.Workspace`, which a library's and a workspace's models implement, `Gandr.Module`, which no source models yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#3072); every field of a package, its `name`, `version`, `authors`, `licence`, `documentation` and `endpoint`, is inert, read only by the manifest step and another inert field (#3029); a source imports it by the relative path to its source, from under any root.
-/// Not implemented: no source imports `std.package` by name, which #533 owes; `authors` is no list, and `dependencies` is no operation of `Gandr.Package`, which #2993 owes.
+/// Implemented: `std.package`, `library/std/src/package.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a library's and a workspace's models implement, `Gandr.Module`, which no source models yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#3072); every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert field (#3029), while `gandr`, `features` and `systems` are content (#3135); a source imports it by the relative path to its source, from under any root.
+/// Not implemented: no source imports `std.package` by name, which #533 owes; `authors`, `features` and `systems` are no lists, and `dependencies` is no operation of `Gandr.Package`, which #2993 owes.
 
 // The manifest theories, from `std.package` by its path.
 import "../../../library/std/src/package.gandr";
 
-/// A package's model, every field inert: only the manifest step reads them
-/// (#3029).
+/// A package's model, every field but what it asks of the toolchain inert:
+/// only the manifest step reads them (#3029).
 pub module Package : Model(Gandr.Package) {
   /// The package's name, which the manifest records it by.
   def name = "probe";
@@ -21,6 +21,14 @@ pub module Package : Model(Gandr.Package) {
   def documentation = "https://github.com/gandr-lang/gandr";
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version the sources ask for.
+  def gandr = ">= 0.0";
+  /// The features the sources use: none.
+  def features = "";
+  /// The systems the package builds on: any.
+  def systems = "";
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
 }
 
 /// The package's dependencies: each an alias and the path its root stands at.

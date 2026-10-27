@@ -1227,7 +1227,9 @@ fn a_malformed_invocation_exits_two()
 macro_rules! fields {
     () => {
         "  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation = \
-         \"https://d.example\";\n  def endpoint = \"https://e.example\";\n"
+         \"https://d.example\";\n  def endpoint = \"https://e.example\";\n  def gandr = \">= \
+         0.0\";\n  def features = \"project-manifest\";\n  def systems = \"\";\n  def spelling = \
+         \"\";\n"
     };
 }
 
@@ -1354,7 +1356,8 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
         first.ends_with(
             "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\nauthors = \"Ada\"\nlicence = \
              \"MIT\"\ndocumentation = \"https://d.example\"\nendpoint = \
-             \"https://e.example\"\nmodules = [\n  \"text.greet\",\n]\n"
+             \"https://e.example\"\nmodules = [\n  \"text.greet\",\n]\n\n[toolchain]\ngandr = \">= \
+             0.0\"\nfeatures = [\n  \"project-manifest\",\n]\nsystems = []\n"
         ),
         "{first}"
     );
@@ -1426,6 +1429,72 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
         !manifest.exists(),
         "an unsettled library writes no manifest"
     );
+}
+
+/// #3135: `check` of a package whose toolchain constraints the running
+/// toolchain meets writes its manifest; one asking for a later language
+/// version, a feature the toolchain's ledger does not implement or a system
+/// it does not run on is refused by that clause, naming the field and both
+/// sides, and leaves the manifest as it stands.
+#[test]
+fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
+{
+    let scratch = Scratch::new(Path::new("toolchain"));
+    let library = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
+    );
+    let manifest = scratch.0.join("hello/gandr.toml");
+    let checked = || {
+        let mut command = gandr(&[Path::new("check"), &library]);
+        command.current_dir(&scratch.0);
+        ran(command)
+    };
+    let met = checked();
+    assert_eq!(code(&met), Code(0_i32), "{}", stderr(&met));
+    let written = std::fs::read_to_string(&manifest).expect("the manifest is written");
+    for (from, to, clause) in [
+        (
+            "\">= 0.0\"",
+            "\">= 99.0\"",
+            "ToolchainUnmet.gandr: `Package.gandr` asks for gandr `>= 99.0`, and this toolchain is \
+             gandr 0.0.0",
+        ),
+        (
+            "\"project-manifest\"",
+            "\"project-manifest, not-a-feature\"",
+            "ToolchainUnmet.feature.not-a-feature: `Package.features` asks for `not-a-feature`, \
+             which this toolchain's features ledger does not implement",
+        ),
+        (
+            "systems = \"\"",
+            "systems = \"none-such\"",
+            "ToolchainUnmet.system: `Package.systems` asks for one of `none-such`, and this \
+             toolchain runs on `",
+        ),
+    ] {
+        std::fs::write(
+            &library,
+            format!("{STD_PACKAGE}{}", LIBRARY.replace(from, to)),
+        )
+        .expect("the constraint changes");
+        let unmet = checked();
+        assert_eq!(code(&unmet), Code(1_i32), "{to}: {}", stdout(&unmet));
+        assert!(
+            stderr(&unmet).contains(&format!("lib.gandr: {clause}")),
+            "{to}: {}",
+            stderr(&unmet)
+        );
+        assert!(
+            !stdout(&unmet).contains("manifest: "),
+            "{to}: nothing is reconciled"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&manifest).expect("the manifest reads"),
+            written,
+            "{to}: the manifest is left as it stands"
+        );
+    }
 }
 
 /// #3072: `check` of a package depending on a sibling by path writes its
@@ -1535,7 +1604,8 @@ fn a_workspace_checks_each_member_it_names_2687()
     let stated = |members: &str| {
         format!(
             "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) {{\n  def version = \
-             \"0.2.0\";\n}}\npub def members : List(String) = {members};\n"
+             \"0.2.0\";\n  def gandr = \"\";\n  def features = \"\";\n  def systems = \
+             \"\";\n}}\npub def members : List(String) = {members};\n"
         )
     };
     let workspace = scratch.file(

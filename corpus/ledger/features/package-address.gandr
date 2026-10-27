@@ -1,11 +1,11 @@
 /// `package-address`: A package's address.
-/// Implemented: a package's address digests each item its sources declare, as its path and its content key, every inert component of its models left out; `gandr check` prints it on the manifest's line, and `gandr.toml` does not carry it.
+/// Implemented: a package's address digests each item its sources declare, as its path and its content key, every inert component of its models left out and what a model asks of the toolchain kept; `gandr check` prints it on the manifest's line, and `gandr.toml` does not carry it.
 
 // The manifest theories, from `std.package` by its path.
 import "../../../library/std/src/package.gandr";
 
-/// The package's model: every field inert, so an edit to any of them leaves
-/// the address where it was.
+/// The package's model: every field but what it asks of the toolchain inert,
+/// so an edit to any of those leaves the address where it was.
 pub module Package : Model(Gandr.Package) {
   /// The name the manifest records.
   def name = "hello";
@@ -19,6 +19,15 @@ pub module Package : Model(Gandr.Package) {
   def documentation = "https://github.com/gandr-lang/gandr";
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version the sources ask for: content, so an edit to
+  /// it moves the address (#3135).
+  def gandr = ">= 0.0";
+  /// The features the sources use, content as `gandr` is.
+  def features = "project-manifest";
+  /// The systems the package builds on, content as `gandr` is.
+  def systems = "";
+  /// The spelling the package asks for, inert as its name is.
+  def spelling = "";
 }
 
 /// The package's content: an edit to it moves the address.

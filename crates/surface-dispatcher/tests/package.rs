@@ -432,14 +432,19 @@ fn manifest_of(source: SourceText<'static>) -> Result<Manifest, Unmanifested>
 macro_rules! rest {
     () => {
         "def authors = \"Ada, Grace\" ; def licence = \"MIT\" ; def documentation = \
-         \"https://d.example\" ; def endpoint = \"https://e.example\" ;"
+         \"https://d.example\" ; def endpoint = \"https://e.example\" ; def gandr = \">= 0.1\" ; \
+         def features = \"a, b\" ; def systems = \"\" ; def spelling = \"\" ;"
     };
 }
 
 /// The manifest body the fields [`rest`] states render to after `name` and
-/// `version`.
+/// `version`, up to `modules`.
 const REST: &str = "authors = \"Ada, Grace\"\nlicence = \"MIT\"\ndocumentation = \
                     \"https://d.example\"\nendpoint = \"https://e.example\"\n";
+
+/// The toolchain table the fields [`rest`] states render to after `modules`.
+const TOOLCHAIN: &str = "\n[toolchain]\ngandr = \">= 0.1\"\nfeatures = [\n  \"a\",\n  \"b\",\n]\nsystems \
+                         = []\n";
 
 /// #2687, #3030: a manifest reads each field of the `Package` model, each run
 /// to its string and decoded; a model missing a field, and one whose field is
@@ -466,7 +471,7 @@ fn a_manifest_reads_the_package_model_2687()
     assert!(
         read.render().ends_with(&format!(
             "\n[package]\nname = \"a \\\"quoted\\\" name\"\nversion = \"0.1.0\"\n{REST}modules = \
-             []\n"
+             []\n{TOOLCHAIN}"
         )),
         "the decoded name, quoted again for TOML: {}",
         read.render()
@@ -529,8 +534,9 @@ fn a_manifest_renders_the_dependencies_its_library_lists_3072()
     )))
     .expect("the model and its dependencies read");
     assert!(
-        read.render()
-            .ends_with("modules = []\n\n[dependencies]\nhello = { path = \"../hello\" }\n"),
+        read.render().ends_with(&format!(
+            "modules = []\n{TOOLCHAIN}\n[dependencies]\nhello = {{ path = \"../hello\" }}\n"
+        )),
         "the table follows the package's: {}",
         read.render()
     );
@@ -561,7 +567,9 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
     )))
     .expect("the model reads")
     .render();
-    let body = format!("\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\n{REST}modules = []\n");
+    let body = format!(
+        "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\n{REST}modules = []\n{TOOLCHAIN}"
+    );
     assert_eq!(
         rendered,
         format!(
@@ -580,6 +588,92 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
     assert!(
         escaped.contains("\nname = \"back\\\\slash\\nline\\ttab\"\n"),
         "a backslash, a newline and a tab escaped: {escaped}"
+    );
+}
+
+/// #3135: a manifest renders what the model asks of the toolchain as its
+/// `[toolchain]` table, `gandr` as written and each list one entry a line;
+/// a `gandr` stating no constraint, and a model missing `features`, are
+/// refused.
+#[test]
+fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
+{
+    /// The model of a package `p` stating `$toolchain` beside its other fields.
+    macro_rules! model {
+        ($toolchain:literal) => {
+            manifest_of(SourceText::from(concat!(
+                "module Package { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
+                 \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
+                 ; def spelling = \"\" ; ",
+                $toolchain,
+                " }"
+            )))
+        };
+    }
+    let read = model!(
+        "def gandr = \">= 0.3.1\" ; def features = \" package-lock ,, std-package \" ; def \
+         systems = \"x86_64-linux\" ;"
+    )
+    .expect("the constraints read");
+    assert!(
+        read.render().ends_with(
+            "modules = []\n\n[toolchain]\ngandr = \">= 0.3.1\"\nfeatures = [\n  \
+             \"package-lock\",\n  \"std-package\",\n]\nsystems = [\n  \"x86_64-linux\",\n]\n"
+        ),
+        "the table follows the package's, each entry trimmed: {}",
+        read.render()
+    );
+    assert_eq!(
+        model!("def gandr = \"0.3\" ; def features = \"\" ; def systems = \"\" ;"),
+        Err(Unmanifested::Unconstrained {
+            came: String::from("0.3"),
+        }),
+        "a version with no `>=`"
+    );
+    assert_eq!(
+        model!("def gandr = \"\" ; def systems = \"\" ;"),
+        Err(Unmanifested::Undeclared(Field::Features)),
+        "a missing `features`"
+    );
+}
+
+/// #3135: a manifest renders the spelling its model names as its
+/// `[presentation]` table, the table the user's configuration file writes,
+/// and none for an empty one; a name no spelling has is refused.
+#[test]
+fn a_manifest_renders_the_presentation_its_model_names_3135()
+{
+    /// The model of a package `p` stating `$spelling` beside its other fields.
+    macro_rules! model {
+        ($spelling:literal) => {
+            manifest_of(SourceText::from(concat!(
+                "module Package { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
+                 \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
+                 ; def gandr = \">= 0.1\" ; def features = \"a, b\" ; def systems = \"\" ; def \
+                 spelling = ",
+                $spelling,
+                " ; }"
+            )))
+        };
+    }
+    let ascii = model!("\"ascii\"").expect("the spelling reads").render();
+    assert!(
+        ascii.ends_with(&format!(
+            "modules = []\n{TOOLCHAIN}\n[presentation]\nspelling = \"ascii\"\n"
+        )),
+        "the table follows the toolchain's: {ascii}"
+    );
+    let unnamed = model!("\"\"").expect("an empty spelling reads").render();
+    assert!(
+        !unnamed.contains("[presentation]"),
+        "an empty spelling leaves the reader's own: {unnamed}"
+    );
+    assert_eq!(
+        model!("\"latin\""),
+        Err(Unmanifested::Unspelled {
+            came: String::from("latin"),
+        }),
+        "a name no spelling has"
     );
 }
 
@@ -610,7 +704,9 @@ fn a_manifest_lists_the_modules_its_sources_make_2687()
         .expect("the model reads")
         .render();
     assert!(
-        rendered.ends_with("\nmodules = [\n  \"text.greet\",\n  \"util\",\n]\n"),
+        rendered.ends_with(&format!(
+            "\nmodules = [\n  \"text.greet\",\n  \"util\",\n]\n{TOOLCHAIN}"
+        )),
         "each module by its path, the root and the nested package's left out: {rendered}"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
@@ -778,10 +874,11 @@ const STD_PACKAGE: &str = concat!(
     "/../../library/std/src/package.gandr\";\n"
 );
 
-/// #3030: in a package of a library and one module, an edit to an inert
-/// field of the model leaves the package's address and the key of every item
-/// but the field's where they were, and an edit to the module's item moves
-/// the address.
+/// #3030, #3135: in a package of a library and one module, an edit to an
+/// inert field of the model leaves the package's address and the key of every
+/// item but the field's where they were; an edit to a toolchain constraint,
+/// which is content, moves the address and only its own key, and so does an
+/// edit to the module's item.
 #[test]
 fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
 {
@@ -791,15 +888,16 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
     ]);
     let library = directory.join("hello/src/lib.gandr");
     let leaf = directory.join("hello/src/text/greet.gandr");
-    let stated = |name: &str| {
+    let stated = |name: &str, gandr: &str| {
         format!(
             "import text.greet (greeting);\n{STD_PACKAGE}pub module Package : \
              Model(Gandr.Package) {{\n  def name : String = \"{name}\";\n  def version = \
              \"0.1.0\";\n  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation \
-             = \"d\";\n  def endpoint = \"e\";\n}}\npub def welcome = greeting;\n"
+             = \"d\";\n  def endpoint = \"e\";\n  def gandr = \"{gandr}\";\n  def features = \
+             \"\";\n  def systems = \"\";\n  def spelling = \"\";\n}}\npub def welcome = greeting;\n"
         )
     };
-    std::fs::write(&library, stated("hello")).expect("the library is written");
+    std::fs::write(&library, stated("hello", ">= 0.0")).expect("the library is written");
     std::fs::write(&leaf, "pub def greeting = \"hello, world\";\n").expect("the leaf is written");
     let Maybe::Present(package) = Package::discover(&library)
     else {
@@ -813,7 +911,10 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
             .address
     };
     let before = address(&Held::default());
-    let renamed = Held(BTreeMap::from([(library.clone(), stated("howdy"))]));
+    let renamed = Held(BTreeMap::from([(
+        library.clone(),
+        stated("howdy", ">= 0.0"),
+    )]));
     assert_eq!(
         address(&renamed),
         before,
@@ -825,6 +926,20 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
     assert!(
         !renamed_items.is_empty() && renamed_items.iter().all(|key| key == "name"),
         "only the field's own key moves, and every other item's key stays: {renamed_items:?}"
+    );
+    let constrained = Held(BTreeMap::from([(
+        library.clone(),
+        stated("hello", ">= 0.1"),
+    )]));
+    assert_ne!(
+        address(&constrained),
+        before,
+        "an edit to `gandr` moves the address"
+    );
+    let constrained_items = moved(&unrenamed, &keyed(&grammar, &library, &constrained));
+    assert!(
+        !constrained_items.is_empty() && constrained_items.iter().all(|key| key == "gandr"),
+        "only the constraint's own key moves: {constrained_items:?}"
     );
     let regreeted = Held(BTreeMap::from([(
         leaf,
@@ -875,8 +990,8 @@ fn moved(
 /// - requires: `std.package` writes each operation as `oper <name> : <type>;`
 ///   on one line, an `@[ inert ]` mark on the line before it, and each theory
 ///   as `pub theory <name> {` closed by a line `}`.
-/// - ensures: the operations of `Versioned` and `Gandr.Package` marked inert,
-///   in the order the source states them.
+/// - ensures: the operations of `Versioned`, `Presentation` and `Gandr.Package`
+///   marked inert, in the order the source states them.
 /// - fails: never on the admitted domain.
 /// - panics: a source that cannot be read.
 /// - executable: none — the fields are the source's, which the sweep reads.
@@ -908,7 +1023,7 @@ fn inert_fields() -> Vec<String>
             .strip_prefix("oper ")
             .and_then(|rest| rest.split_once(" : "))
             && marked
-            && matches!(theory, "Versioned" | "Gandr.Package")
+            && matches!(theory, "Versioned" | "Presentation" | "Gandr.Package")
         {
             fields.push(String::from(name));
         }
@@ -1082,7 +1197,9 @@ impl Library<'_>
         format!(
             "{imports}{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name : \
              String = \"p\";\n  def version = \"{version}\";\n  def authors = \"Ada\";\n  def \
-             licence = \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n}}\n{rest}"
+             licence = \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n  def \
+             gandr = \"\";\n  def features = \"\";\n  def systems = \"\";\n  def spelling = \
+             \"\";\n}}\n{rest}"
         )
     }
 }

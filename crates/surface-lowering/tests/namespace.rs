@@ -1559,8 +1559,10 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
     let source = "import \"./package.gandr\" ;\nmodule Package : Model(Gandr.Package) {\n  def \
                   name : String = \"probe\";\n  def version : String = \"0.1.0\";\n  def authors \
                   : String = \"Ada\";\n  def licence : String = \"MIT\";\n  def documentation : \
-                  String = \"d\";\n  def endpoint : String = \"e\";\n}\nmodule Partial : \
-                  Model(Gandr.Package) {\n  def name : String = \"partial\";\n}\n";
+                  String = \"d\";\n  def endpoint : String = \"e\";\n  def gandr : String = \
+                  \"\";\n  def features : String = \"\";\n  def systems : String = \"\";\n  def \
+                  spelling : String = \"\";\n}\nmodule Partial : Model(Gandr.Package) {\n  def \
+                  name : String = \"partial\";\n}\n";
     let (text, unit) = laid(&[
         (
             SourceText::from(include_str!("../../../library/std/src/package.gandr")),
@@ -1575,14 +1577,24 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
     let partial = text.rfind("Package)").expect("`Partial` names the theory");
     assert_eq!(
         refused(&module),
-        ["version", "authors", "licence", "documentation", "endpoint"]
-            .map(|member| format!("{:?}", LoweringRefusal::UnknownMember {
-                span: ByteSpan::new(ByteOffset::from(partial), ByteOffset::from(partial + 7))
-                    .expect("a span"),
-                module: SurfaceName::from("Partial"),
-                member: SurfaceName::from(member),
-            }))
-            .to_vec(),
+        [
+            "version",
+            "gandr",
+            "features",
+            "systems",
+            "spelling",
+            "authors",
+            "licence",
+            "documentation",
+            "endpoint"
+        ]
+        .map(|member| format!("{:?}", LoweringRefusal::UnknownMember {
+            span: ByteSpan::new(ByteOffset::from(partial), ByteOffset::from(partial + 7))
+                .expect("a span"),
+            module: SurfaceName::from("Partial"),
+            member: SurfaceName::from(member),
+        }))
+        .to_vec(),
         "`Package` models the library's theory, and `Partial` lacks all but its `name`"
     );
 }

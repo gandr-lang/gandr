@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `dependencies`: relock with `gandr lock`, never by hand.
-# blake3: a1c9394ebb5b721a8fa4def7cb01b24bac401cede4d14676e3e3186b323f5d83
+# blake3: d10bb253873a5741f91fdc432a5b614b69c5ccf3527984ff6c4d009e7d449b86
 
 [dependencies]
-hello = { path = "../hello", address = "3c0d50f8f96afd0708dc1291e186c15b8f1e2b3a5b9b218029072bf04c4d55dd", signature = "0a037ceaeb62076b81aaf04613b49b17c8023c8217dc12919bbaf565b21f9c84" }
+hello = { path = "../hello", address = "23274d87225a6264819c0b988b746b805488fb6af885701d08642de0f6b6238f", signature = "b8385439a02a47f0acfe7be15325d762aad65400ac1d3f7e456d0c44d708e35a" }
