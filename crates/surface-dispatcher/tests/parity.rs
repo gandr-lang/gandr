@@ -13,6 +13,7 @@ use core::fmt;
 use std::path::Path;
 
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Crossing;
@@ -53,6 +54,7 @@ use gandr_surface_pretty::Elided;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::ForgetMap;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Manifest;
 use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Notation;
@@ -924,9 +926,9 @@ fn read(
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming();
-    // Each model type, and each capability scope over a theory and the model
-    // answering it, as the source writes it, which the record or the signature
-    // it lowers to does not hold.
+    // Each model type, and each capability scope and row entry over a theory
+    // and the model answering a scope, as the source writes it, which the
+    // record or the signature it lowers to does not hold.
     let mut models: Vec<(ValueTypeId, Modelled<'_>)> = module
         .origins()
         .models()
@@ -953,6 +955,24 @@ fn read(
         })
         .collect();
     answers.sort_by_key(|&(scope, _)| scope);
+    let mut rows: Vec<(CompTypeId, Vec<Manifest<'_, CoreNode>>)> = Vec::new();
+    for &(returner, ref entry) in module.origins().row_theories() {
+        let manifest = Manifest {
+            theory: Name::from(entry.model.theory.as_ref()),
+            region: entry.region,
+            sorts: entry
+                .model
+                .sorts
+                .iter()
+                .map(|&(ref sort, ty)| (Name::from(sort.as_ref()), CoreNode::ValueType(ty)))
+                .collect(),
+        };
+        match rows.iter_mut().find(|&&mut (held, _)| held == returner) {
+            Some(&mut (_, ref mut manifests)) => manifests.push(manifest),
+            None => rows.push((returner, Vec::from([manifest]))),
+        }
+    }
+    rows.sort_by_key(|&(returner, _)| returner);
     // Each forgetting map onto its own theory, whose written call the explicit
     // form writes as the map's form, as the formatter keeps it.
     let mut maps: Vec<(ConstantIndex, ForgetMap<'_>)> = module
@@ -981,6 +1001,7 @@ fn read(
         .modeling(&models)
         .scoping(&scopes)
         .answering(&answers)
+        .manifesting(&rows)
         .naming_implicits(&implicits)
         .flattening(&slots);
     // A body leaves each written reduct's or forgetting map's call to the

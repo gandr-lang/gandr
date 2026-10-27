@@ -239,6 +239,7 @@ use crate::origin::Insertion;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
+use crate::origin::RowTheory;
 use crate::origin::ScopeAnswer;
 use crate::origin::WrittenModel;
 use crate::resolve::Frame;
@@ -2619,9 +2620,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   default label and each label's instance at its region, each an extern
     ///   block's signature, a host's, or a theory's at the types its entry
     ///   fixes ([`Self::interface_signature`]), its tail standing for the row
-    ///   the tail's value denotes; the argument's, a fixed type's or the tail's
-    ///   absence when it did not lower, and the unminted absence when two
-    ///   labels name one instance.
+    ///   the tail's value denotes, and each entry over a theory recorded at the
+    ///   returner with its instance's region, the theory and the sorts it fixes
+    ///   as written; the argument's, a fixed type's or the tail's absence when
+    ///   it did not lower, and the unminted absence when two labels name one
+    ///   instance.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2631,6 +2634,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    /// - witness: `lower::capability::tests::a_row_records_the_theory_and_sorts_each_entry_fixes_3230`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::CompType(id)) => sink.origins.comp_type(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -2668,10 +2672,27 @@ impl<'source> Lowerer<'_, 'source>
             .placed
             .iter()
             .map(|&(ref interface, region)| (interface, region));
+        let mut theories = Vec::new();
         for (interface, region) in interfaces.chain(labels) {
             match self.interface_signature(interface, Standing::Read, sink, origin) {
                 Maybe::Present(signature) => placed.push((signature, region)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+            if let Interface::Theory(ref theory) = *interface {
+                let mut sorts = Vec::with_capacity(theory.manifest.len());
+                for &(ref sort, ty) in &theory.manifest {
+                    match self.fixed_at(ty, Standing::Read, sink, origin) {
+                        Maybe::Present(fixed) => sorts.push((sort.clone(), fixed)),
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    }
+                }
+                theories.push(RowTheory {
+                    region,
+                    model: WrittenModel {
+                        theory: Name::from(theory.name.as_ref()),
+                        sorts,
+                    },
+                });
             }
         }
         let Ok(effects) = EffectRow::from_placed(placed)
@@ -2682,6 +2703,9 @@ impl<'source> Lowerer<'_, 'source>
             .arena
             .comp_type_returner_with_effects(result, effects.with_tail(tail));
         sink.origins.record_comp_type(id, origin);
+        for entry in theories {
+            sink.origins.record_row_theory(id, entry);
+        }
 
         Maybe::Present(Lowered::CompType(id))
     }

@@ -331,6 +331,7 @@ pub use crate::former::Elided;
 pub use crate::former::ForgetCall;
 pub use crate::former::Forgotten;
 pub use crate::former::Former;
+pub use crate::former::Manifest;
 pub use crate::former::ModelSlot;
 pub use crate::former::Name;
 pub use crate::former::Notation;
@@ -1088,9 +1089,15 @@ quenchant_shape::reason_enum! {
 ///   one entry per parameter, each implicit `xᵢ` is written after the region
 ///   binders as `xᵢ : Aᵢ`, `@[xᵢ : Aᵢ, …]`, under the name the telescope
 ///   records where nothing earlier takes it, and only the explicit parameters
-///   stand in the parentheses. The presentation is approximate, its unspelled
-///   reasons collected, when a header type or the body is. Absent for any other
-///   shape, and when no names for the parameters are found.
+///   stand in the parentheses. Where the returner's row labels an instance of a
+///   theory whose entry `source` records ([`CoreSource::manifesting`]) at a
+///   region binder past every other the header writes, and a parameter is a
+///   capability at that binder, the row's label is the parameter's name, `[st :
+///   T with sort C = A]`, and neither the binder nor the parameter is written:
+///   `Cap {…}` names a host interface's operations alone. The presentation is
+///   approximate, its unspelled reasons collected, when a header type or the
+///   body is. Absent for any other shape, and when no names for the parameters
+///   are found.
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, a suspended computation as the
@@ -1126,6 +1133,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::goldens::a_suspended_returner_spells_whole_1449`
 /// - witness: `tests::goldens::a_lambda_the_checker_thunks_spells_whole_2228`
 /// - witness: `tests::goldens::a_definition_writes_its_implicits_in_its_telescope_2267`
+/// - witness: `tests::goldens::a_labelled_theory_entry_spells_its_label_3230`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
         && presentation.as_ref().ends_with('}')
@@ -1314,9 +1322,62 @@ pub fn present_whole(
         return Ok(Maybe::Absent(whole::Absent::Unnamed));
     };
     let names = binders.split_off(regions.len());
+    // A row's labelled entry over a theory is written as its label, `[st : T
+    // with sort C = A]`: `Cap {…}` names a host interface's operations alone,
+    // so its capability and its region binder go unwritten, the row's label
+    // the capability's name. Each such entry pairs the first parameter that
+    // is a capability at its label's binder with that binder's position, and
+    // only where those binders are the header's last: a label's binder is
+    // opened after every one the header writes.
+    let labelled: Vec<(usize, usize)> = {
+        use gandr_core_term::effect::capability::Region;
+
+        let mut capabilities = alloc::collections::BTreeMap::new();
+        for (at, &(_, domain, _)) in arrows.iter().enumerate() {
+            if let Former::Capability {
+                region: Region::Bound(binder),
+                ..
+            } = source.read(domain)
+            {
+                let _first = capabilities.entry(binder).or_insert(at);
+            }
+        }
+        let mut labelled = Vec::new();
+        if let Former::EffectfulReturner { manifests, .. } = source.read(codomain) {
+            for manifest in manifests {
+                if let Region::Bound(binder) = manifest.region
+                    && let Ok(position) = regions.binary_search(&binder)
+                    && let Some(&at) = capabilities.get(&binder)
+                {
+                    labelled.push((at, position));
+                }
+            }
+        }
+        let mut positions: Vec<usize> = labelled.iter().map(|&(_, position)| position).collect();
+        positions.sort_unstable();
+        let last = regions.len().saturating_sub(positions.len());
+        if positions.iter().copied().eq(last .. regions.len()) {
+            labelled
+        }
+        else {
+            Vec::new()
+        }
+    };
+    let label_at = |position: usize| {
+        labelled
+            .iter()
+            .find(|&&(_, held)| held == position)
+            .and_then(|&(at, _)| names.get(at))
+    };
+    let unwritten = |at: usize| labelled.iter().any(|&(held, _)| held == at);
     let bounding: Vec<Option<Name<'_>>> = binders
         .iter()
-        .map(|region| Some(Name::from(region.as_str())))
+        .enumerate()
+        .map(|(position, region)| {
+            Some(Name::from(
+                label_at(position).map_or(region.as_str(), String::as_str),
+            ))
+        })
         .collect();
     let source = source.bounding(&bounding);
     // A type stands under the binders of the dependent arrows before it;
@@ -1389,20 +1450,26 @@ pub fn present_whole(
     let starts = |at: usize| slots.iter().position(|slot| slot.at == at);
     let mut text = format!("{opener} {}", name.as_ref());
     let mut written = Vec::new();
-    let prefixed = |at: usize| resident(at) || starts(at).is_some();
-    if !binders.is_empty() || (0_usize .. names.len()).any(prefixed) {
+    let prefixed = |at: usize| !unwritten(at) && (resident(at) || starts(at).is_some());
+    let regions_written: Vec<&String> = binders
+        .iter()
+        .enumerate()
+        .filter(|&(position, _)| label_at(position).is_none())
+        .map(|(_, region)| region)
+        .collect();
+    if !regions_written.is_empty() || (0_usize .. names.len()).any(prefixed) {
         text.push_str(" @[");
-        for (entry, region) in binders.iter().enumerate() {
+        for (entry, region) in regions_written.iter().enumerate() {
             if entry > 0_usize {
                 text.push_str(", ");
             }
             text.push_str(region);
             text.push_str(" : Region");
         }
-        let mut entry = binders.len();
+        let mut entry = regions_written.len();
         for (at, (parameter, typed)) in names.iter().zip(&parts).enumerate() {
             let started = starts(at);
-            if !resident(at) && started.is_none() {
+            if !prefixed(at) {
                 continue;
             }
             if entry > 0_usize {
@@ -1434,7 +1501,7 @@ pub fn present_whole(
         .iter()
         .zip(&parts)
         .enumerate()
-        .filter(|&(at, _)| !resident(at) && !slotted(at))
+        .filter(|&(at, _)| !resident(at) && !slotted(at) && !unwritten(at))
         .map(|(_, written_parameter)| written_parameter)
         .enumerate()
     {

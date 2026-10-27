@@ -36,6 +36,7 @@ use crate::former::Component;
 use crate::former::ForgetCall;
 use crate::former::Forgotten;
 use crate::former::Former;
+use crate::former::Manifest;
 use crate::former::ModelSlot;
 use crate::former::Name;
 use crate::former::Recursion;
@@ -520,6 +521,9 @@ pub struct CoreSource<'arena>
     /// `handle c : T … { … } with N`, or with no `with`, as written,
     /// ascending by the scope.
     answers: &'arena [(ComputationId, Answered<'arena>)],
+    /// Each returner's row entries over a theory as the source writes them,
+    /// `-F [st : T with sort C = A …] B`, ascending by the returner.
+    rows: &'arena [(CompTypeId, Vec<Manifest<'arena, CoreNode>>)],
     /// The reduct the checker applies at each value it crosses at, ascending
     /// by the value.
     crossings: &'arena [(ValueId, ConstantIndex)],
@@ -570,6 +574,7 @@ impl<'arena> CoreSource<'arena>
             models: &[],
             scopes: &[],
             answers: &[],
+            rows: &[],
             crossings: &[],
             forgettings: &[],
             maps: &[],
@@ -801,6 +806,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { answers, ..self }
+    }
+
+    /// This source, writing each row entry over a theory `rows` records with
+    /// the sorts it fixes, ascending by the returner.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn manifesting(
+        self,
+        rows: &'arena [(CompTypeId, Vec<Manifest<'arena, CoreNode>>)],
+    ) -> Self
+    {
+        Self { rows, ..self }
     }
 
     /// This source, writing the reduct `crossings` records at each value the
@@ -1786,6 +1806,12 @@ impl<'arena> CoreSource<'arena>
                         result: CoreNode::ValueType(result),
                         effects,
                         tail: effects.tail().map(CoreNode::ValueType),
+                        manifests: self
+                            .rows
+                            .binary_search_by_key(&id, |&(held, _)| held)
+                            .ok()
+                            .and_then(|at| self.rows.get(at))
+                            .map_or(&[], |&(_, ref manifests)| manifests.as_slice()),
                     }
                 }
             },

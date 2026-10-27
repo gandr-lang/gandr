@@ -702,6 +702,12 @@ pub struct OriginTable
     /// in the order lowered. The scope's signature holds the carriers
     /// substituted, not the sorts they stand for.
     scope_theories: Vec<(ComputationId, WrittenModel)>,
+    /// Each returner whose row holds a theory's instance, `-F [st : T with sort
+    /// C = A …] B` or `-F [T with sort C = A …] B`, beside the instance's
+    /// region and the theory and the sorts its entry fixes as written, one
+    /// pair per such instance, in the order lowered. The row's signature holds
+    /// the sorts substituted, not the sorts they stand for.
+    row_theories: Vec<(CompTypeId, RowTheory)>,
     /// Each capability scope over a theory a model answers, `with N` or no
     /// `with`, with what answers it as written, in the order lowered. The
     /// scope's clauses are the ones the lowering derives from the model.
@@ -2313,6 +2319,34 @@ impl OriginTable
         &self.scope_theories
     }
 
+    /// Record that the returner `returner`'s row holds an instance of the
+    /// theory `entry` names, at the region and the sorts it fixes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::row_theories`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row over `State` fixed at `Integer`, labelled and
+    ///   whole, answers at the returner with the theory, its one sort and the
+    ///   instance's region; a host interface beside it records nothing.
+    /// - witness: `lower::capability::tests::a_row_records_the_theory_and_sorts_each_entry_fixes_3230`
+    #[spec(
+        captures: before = self.row_theories.len(),
+        ensures: self.row_theories.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_row_theory(
+        &mut self,
+        returner: CompTypeId,
+        entry: RowTheory,
+    )
+    {
+        self.row_theories.push((returner, entry));
+    }
+
     /// Record that a model answers the capability scope `scope`, as `answer`
     /// writes it.
     ///
@@ -2339,6 +2373,19 @@ impl OriginTable
     )
     {
         self.scope_answers.push((scope, answer));
+    }
+
+    /// Each returner whose row holds a theory's instance, beside the instance's
+    /// region and the theory and the sorts its entry fixes as written, in the
+    /// order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn row_theories(&self) -> &[(CompTypeId, RowTheory)]
+    {
+        &self.row_theories
     }
 
     /// Each capability scope over a theory a model answers, with what answers
@@ -2382,6 +2429,23 @@ pub enum ScopeAnswer
     Named(gandr_theory_levitation::Name),
     /// The one model of the theory in scope, the scope writing no `with`.
     InScope,
+}
+
+/// A row's entry over a theory as the source writes it.
+///
+/// The region of the instance it names — held for an entry naming the theory
+/// whole, a label's region binder for a labelled one — and the theory with
+/// the sorts it fixes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RowTheory
+{
+    /// The instance's region.
+    pub region: gandr_core_term::effect::capability::Region,
+    /// The theory and the sorts the entry fixes.
+    pub model: WrittenModel,
 }
 
 /// A label the source writes against an entry: a field of a record or sum

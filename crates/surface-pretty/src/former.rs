@@ -315,6 +315,23 @@ pub enum Answered<'text>
     InScope,
 }
 
+/// A row's entry over a theory as the source writes it: the theory's name,
+/// the region of the instance it names, and each sort it fixes beside the
+/// type it fixes it to, in the order written.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Manifest<'text, Node>
+{
+    /// The theory, as written.
+    pub theory: Name<'text>,
+    /// The instance's region: held for an entry naming the theory whole.
+    pub region: gandr_core_term::effect::capability::Region,
+    /// Each sort the entry fixes and its type.
+    pub sorts: alloc::vec::Vec<(Name<'text>, Node)>,
+}
+
 /// How many components a product, a sum, a tuple or a record has.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -504,7 +521,8 @@ pub enum Former<'source, Node>
     Returner(Node),
     /// The returner `-F [I, …] A` of a value type whose computation may
     /// request the interfaces of its row, `-F [I, … | t] A` when the row is
-    /// open through the row `t`.
+    /// open through the row `t`; an entry over a theory writes the sorts it
+    /// fixes, `-F [T with sort C = A …] B`.
     EffectfulReturner
     {
         /// The value returned.
@@ -513,6 +531,9 @@ pub enum Former<'source, Node>
         effects: &'source dyn Authority,
         /// The row it is open through: a value type that reads as its row.
         tail: Option<Node>,
+        /// Each entry over a theory as written, with the sorts it fixes; none
+        /// where the source keeps no manifest.
+        manifests: &'source [Manifest<'source, Node>],
     },
     /// The arrow `A -> C`, whose codomain binds nothing.
     Arrow

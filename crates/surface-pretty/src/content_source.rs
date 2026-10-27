@@ -661,6 +661,7 @@ impl Source for ContentSource<'_>
                         result,
                         effects,
                         tail: effects.tail(),
+                        manifests: &[],
                     }
                 }
             },

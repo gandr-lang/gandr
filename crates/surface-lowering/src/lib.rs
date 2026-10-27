@@ -503,6 +503,7 @@ pub use crate::origin::OriginToken;
 pub use crate::origin::PatternReading;
 pub use crate::origin::PatternSpan;
 pub use crate::origin::Provenance;
+pub use crate::origin::RowTheory;
 pub use crate::origin::ScopeAnswer;
 pub use crate::origin::SplitComponent;
 pub use crate::origin::WrittenModel;
