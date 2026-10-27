@@ -1467,6 +1467,14 @@ wt step copy-ignored
 # vault's dispatch script runs it on the issue a prompt names and refuses to
 # launch on a failure. `.github/ISSUE_TEMPLATE/unit.md` carries the sections,
 # its hints in comments that leave a section empty until it is written.
+#
+# A `## Sources` line naming a vault page by its filename (#2793) is read
+# against the vault checkout `$XDG_CONFIG_HOME/gandr/references` names
+# (`.config/references/vault.bash`, the rule `.config/claims/vault.jq`): the
+# page's `vault:<mint>` is shown beside its name, and a filename no vault page
+# carries is refused, a wrong name being a wrong source. A filename the tree
+# carries is the tree's. Without a vault checkout, as in CI, the lines are
+# read for their shape alone.
 ["unit:check"]
 description = "Refuse a unit issue missing a section work needs"
 usage = '''
@@ -1478,15 +1486,35 @@ run = '''
 set -euo pipefail
 issue=${usage_issue:?}
 [[ $issue =~ ^[0-9]+$ ]] || { echo "unit:check takes an issue number, not \`$issue\`" >&2; exit 2; }
-claims=$(git rev-parse --show-toplevel)/.config/claims
-concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
-findings=$(gh issue view "$issue" --json body --jq .body | jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq")
+root=$(git rev-parse --show-toplevel)
+claims=$root/.config/claims
+source "$root/.config/references/vault.bash"
+concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
+body=$(gh issue view "$issue" --json body --jq .body)
+findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq" <<< "$body")
+pages=$(vault_pages)
+shown=
+if [[ $pages != null ]]; then
+  scratch=$(mktemp -d)
+  trap 'rm -rf "$scratch"' EXIT
+  git -C "$root" ls-files | awk -F/ '{ print $NF }' | sort -u > "$scratch/tree"
+  printf '%s\n' "$pages" > "$scratch/pages.json"
+  vault=$(jq -n --arg body "$body" --slurpfile pages "$scratch/pages.json" --rawfile tree "$scratch/tree" '{body: $body, pages: $pages[0], tree: $tree}' \
+    | jq -r -L "$claims" -f "$claims/shown.jq")
+  refused=$(awk -F'\t' '$1 == "refuse" { print $2 }' <<< "$vault")
+  shown=$(awk -F'\t' '$1 == "show" { print "  " $2 }' <<< "$vault")
+  findings=$(printf '%s\n%s\n' "$findings" "$refused" | awk 'NF')
+fi
 if [[ -n "$findings" ]]; then
   printf 'unit check FAILED: #%s lacks what a unit issue carries (units.md § units-issue; the template is .github/ISSUE_TEMPLATE/unit.md):\n' "$issue" >&2
   printf '%s\n' "$findings" | sed 's/^/  - /' >&2
   exit 1
 fi
 echo "unit check OK: #$issue carries every section a unit needs"
+if [[ -n "$shown" ]]; then
+  echo "its vault pages, read against the vault \$XDG_CONFIG_HOME/gandr/references names:"
+  printf '%s\n' "$shown"
+fi
 '''
 
 # A seat claims its own next item, in the order `tracker.md` § tracker-claims
@@ -1786,6 +1814,15 @@ gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}"
 # `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
 #
+# Vault pages are cited by their mint (#2793). With the vault checkout
+# `$XDG_CONFIG_HOME/gandr/references` names, the task writes each page's
+# `vault:<mint>` beside its filename in the body's `## Sources read`
+# (`annotated.jq`), so the item's key is the one a crate carries verbatim.
+# When an issue marks a vault page primary and the change touches a crate's
+# sources, that crate must cite the page in a `# References` line, or the
+# body marks the page `read: <what it informed>`. Without the checkout,
+# neither applies.
+#
 # Before anything else the task sweeps the clone's landed worktrees and
 # refuses under the disk floor (`wt:sweep --guard`).
 ["pr:open"]
@@ -1833,10 +1870,46 @@ regressions=$(git diff -U0 --no-renames --no-color "$from" HEAD -- ':(glob)corpu
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
+# The vault pages the issues name, and the crates' citations of them (#2793).
+# With a vault checkout configured (`.config/references/vault.bash`), each
+# resolved page's `vault:<mint>` is written beside its filename in the body's
+# `## Sources read`, and `opening.jq` asks each crate whose sources the change
+# touches to cite the issues' primary pages; without one, as in CI, neither.
+source "$(git rev-parse --show-toplevel)/.config/references/vault.bash"
+source "$(git rev-parse --show-toplevel)/.config/references/ledger.bash"
+vaultdir=$(mktemp -d)
+pages=$(vault_pages)
+if [[ $pages == null ]]; then
+  echo null > "$vaultdir/vault.json"
+else
+  git ls-files | awk -F/ '{ print $NF }' | sort -u > "$vaultdir/tree"
+  printf '%s\n' "$pages" > "$vaultdir/pages.json"
+  jq -n --rawfile body "$body" --slurpfile pages "$vaultdir/pages.json" --rawfile tree "$vaultdir/tree" '{body: $body, pages: $pages[0], tree: $tree}' \
+    | jq -j -L "$claims" -f "$claims/annotated.jq" > "$vaultdir/body"
+  if ! cmp -s "$vaultdir/body" "$body"; then
+    cp "$vaultdir/body" "$body"
+    echo "wrote each vault page's \`vault:<mint>\` beside its filename in $body's \`## Sources read\`"
+  fi
+  git diff --no-renames --name-only "$from" HEAD -- ':(glob)crates/*/src/**' ':(glob)crates/*/README.md' \
+    | awk -F/ '{ print $2 }' | sort -u > "$vaultdir/touched"
+  : > "$vaultdir/cites"
+  if [[ -s "$vaultdir/touched" ]]; then
+    mapfile -t cited_sources < <(references_sources | awk -F/ 'NR == FNR { touched[$0] = 1; next } touched[$2]' "$vaultdir/touched" -)
+    if (( ${#cited_sources[@]} )); then
+      LC_ALL=C awk -f .config/references/cites.awk "${cited_sources[@]}" | awk -F'\t' '$1 == "cite" { print $3 "\t" $2 }' > "$vaultdir/cites"
+    fi
+  fi
+  jq -n --slurpfile pages "$vaultdir/pages.json" --rawfile tree "$vaultdir/tree" --rawfile touched "$vaultdir/touched" --rawfile cites "$vaultdir/cites" -L "$claims" \
+    'include "vault"; {pages: $pages[0], tree: ($tree | vault_tree), touched: ($touched | split("\n") | map(select(. != ""))),
+      cited: ($cites | split("\n") | map(select(. != "") | split("\t")) | group_by(.[0]) | map({key: .[0][0], value: (map(.[1]) | unique)}) | from_entries)}' \
+    > "$vaultdir/vault.json"
+fi
 findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
   --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" --argjson surface "$surface" \
-  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface}' \
+  --slurpfile vault "$vaultdir/vault.json" \
+  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, vault: $vault[0]}' \
   | jq -r -L "$claims" -f "$claims/opening.jq")
+rm -rf "$vaultdir"
 if [[ -n "$findings" ]]; then
   echo "$findings" >&2
   if grep -qv '^note: ' <<< "$findings"; then exit 2; fi

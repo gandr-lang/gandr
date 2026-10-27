@@ -1309,7 +1309,12 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # scratch repository whose head adds `padding` rows of about 500 bytes to
 # this checkout's features table, under a body naming none, and holds its
 # exit and the count of lines it prints: a table past the argument limit is
-# read, not refused by the shell (#2671).
+# read, not refused by the shell (#2671). Each case in
+# `.config/claims/shown.json` holds an issue body, the vault's pages and the
+# tree's filenames, and the lines `unit:check` reads for the vault pages the
+# body names (`shown.jq`, #2793); each in `.config/claims/annotated.json` a
+# body and the body `pr:open` writes back with each page's mint beside its
+# filename (`annotated.jq`).
 ["check:claims"]
 description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings, claim:next each board its claim, ledger:patched each landing its refusals and ledger:reserved each lowered reserved rule its refusal"
 tools.jq = "1.8.1"
@@ -1335,6 +1340,8 @@ cases unit unit.jq unit.json
 cases next next.jq next.json
 cases ledger ledger.jq ledger.json
 cases reserved reserved.jq reserved.json
+cases shown shown.jq shown.json
+cases annotated annotated.jq annotated.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -1362,7 +1369,7 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/patched.json) tables their reading"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading"
 '''
 
 # The issue automations' decisions. An epic closes when its last sub-issue
