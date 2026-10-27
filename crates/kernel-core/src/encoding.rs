@@ -33,6 +33,25 @@
 //! hereditarily finite set reading of a support: the records fix which sets
 //! exist and how they compose, and no set's numeric code is ever formed.
 //!
+//! # A definition is named by its content
+//!
+//! A table told an environment's admitted declarations names a reference to
+//! a **plain definition** — admitted checked, alone, outside every atom's
+//! minting admission, monomorphic, and carrying no laws, relations,
+//! operation rules, stages, presentation or sealing provenance — by a
+//! **definition record**: its declared type's id, its body's id and its
+//! **rank**, the number of earlier plain definitions of the environment with
+//! the same type and body. A key over such a reference then reads what the
+//! definition is, not where the environment admitted it, so two environments
+//! that admitted the same declarations in another order build the same
+//! records. The rank keeps the names injective: the kernel compares two
+//! constants by their positions without unfolding either, so two definitions
+//! of one content are two constants to it, and a key that merged them could
+//! answer for one with a term naming the other. Admission ranks a definition
+//! by comparing digests, then the two definitions exactly. Every other
+//! constant reference is named by its admission position, as is every
+//! reference in a table told nothing.
+//!
 //! # The digest is a positive fast path and never a decision
 //!
 //! **Equal digests never decide agreement.** A collision would be a silent
@@ -79,6 +98,14 @@
 //! about content the table already holds allocates nothing. What the content
 //! key buys over an identity key on a real corpus is unmeasured; a measurement
 //! showing that pass dominating the reuse payoff re-keys the memo.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: a key is the
+//!   kernel's whole input only when the constants it reaches are named by
+//!   content (§ kernel-reassessment-design item 2), and those names are
+//!   table-local, agreeing across tables by re-interned records (item 10), as
+//!   the definition record is.
 
 use alloc::vec::Vec;
 
@@ -99,6 +126,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerWidth;
@@ -236,7 +264,10 @@ fn stage_bound() -> WireTag
 const _: () = {
     let mut rows = gandr_kernel_term::NODE_TAG_TABLE.as_slice();
     while let &[row, ref rest @ ..] = rows {
-        assert!(row.tag.0 < GOAL_TAG, "node tag overlaps a reserved byte");
+        assert!(
+            row.tag.0 < DEFINITION_TAG,
+            "node tag overlaps a reserved byte"
+        );
         rows = rest;
     }
 };
@@ -252,9 +283,13 @@ const COVER_TAG: u8 = 0xFC;
 /// first.
 const CONTEXT_TAG: u8 = 0xFB;
 
-/// The byte a goal record reserves: one question, the memo's key. The lowest
-/// reserved byte; every node tag sits below it.
+/// The byte a goal record reserves: one question, the memo's key.
 const GOAL_TAG: u8 = 0xFA;
+
+/// The byte a definition record reserves: a reference to a plain definition,
+/// named by its declared type and body. The lowest reserved byte; every node
+/// tag sits below it.
+const DEFINITION_TAG: u8 = 0xF9;
 
 /// The tag distinguishing an absent optional component from a present one.
 ///
@@ -306,6 +341,35 @@ impl KeyRecord
         })
     }
 }
+
+/// How a table names one admitted constant when a reference reaches it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConstantName
+{
+    /// By its admission position.
+    Position,
+    /// By its content: a plain definition's declared type and body, and its
+    /// rank among the earlier ones with the same two.
+    Definition
+    {
+        /// The declared value type's root.
+        declared: ValueTypeId,
+        /// The body's root.
+        body: ValueId,
+        /// How many earlier plain definitions of the environment carry the
+        /// same declared type and body.
+        rank: DefinitionRank,
+        /// The digest of the declared type and body, which admission compares
+        /// before it compares the two exactly; no record holds it.
+        digest: ContentDigest,
+    },
+}
+
+/// How many earlier plain definitions of one environment carry a definition's
+/// declared type and body.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct DefinitionRank(usize);
 
 /// Which family an unreadable reference belonged to.
 ///
@@ -731,6 +795,9 @@ pub struct ContentTable
     members: Vec<ContentId>,
     /// The placement walk's task stack.
     tasks: Vec<EncodeTask>,
+    /// How each admitted constant is named, by admission position; a position
+    /// past the end is named by itself.
+    constants: Vec<ConstantName>,
 }
 
 /// Where one record's bytes sit in a [`ContentTable`]'s stream.
@@ -1064,6 +1131,42 @@ impl ContentTable
         &self.stream
     }
 
+    /// Name the constants of `entries` past those already named: each plain
+    /// definition by its content, every other constant by its position.
+    ///
+    /// # Specification
+    /// - requires: `entries` extends the entries this table was told before,
+    ///   and every root a plain definition among them names lives in the arena
+    ///   the table places nodes of.
+    /// - ensures: the table names exactly the constants `entries` holds, each
+    ///   as its admission named it; the names it held before are unchanged.
+    /// - provides: the reading a session's keys take of every constant
+    ///   reference, set before the session places a node.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the predicate checks the count named; a definition
+    ///   and an axiom referent each admitted before and after another
+    ///   definition separate reading by content from reading by position.
+    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+    #[spec(captures: named_before = self.constants.len(),
+        ensures: self.constants.len() == named_before.max(usize::from(entries.len())))]
+    pub(crate) fn name_constants(
+        &mut self,
+        entries: &crate::env::Entries,
+    )
+    {
+        let named = self.constants.len();
+        self.constants.extend(
+            entries
+                .iter()
+                .skip(named)
+                .map(crate::env::AdmittedDeclaration::key_name),
+        );
+    }
+
     /// Assign `node` and everything it reaches a content id, returning its own.
     ///
     /// # Specification
@@ -1087,7 +1190,10 @@ impl ContentTable
     ///   consumes a task. Depth-first processing closes a node before another
     ///   path opens it.
     /// - boundedness: the finite arena is minted child-before-parent across all
-    ///   families, so its dependency graph is acyclic.
+    ///   families, so its dependency graph is acyclic. A definition record's
+    ///   children are the declared type and body of a definition admitted
+    ///   checked, whose body names only constants admitted before it, so
+    ///   following references descends in admission order.
     /// - input recursion: none.
     ///
     /// # Adequacy
@@ -1128,7 +1234,7 @@ impl ContentTable
                         continue;
                     }
                     tasks.push(EncodeTask::Close(open));
-                    push_children(arena, open, &mut tasks);
+                    push_children(arena, &self.constants, open, &mut tasks);
                 },
                 EncodeTask::Close(close) => {
                     if let Maybe::Present(_) = self.placed.get(close) {
@@ -1544,7 +1650,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     ///   an index, a constant position, a literal, an injection's summand, or a
     ///   level — then each child's content id in the order the format writes
     ///   them; distinct formers write distinct tags, so no two write one
-    ///   record.
+    ///   record. A reference to a constant the table names by its content
+    ///   writes the definition tag, then the declared type's and the body's ids
+    ///   and the definition's rank, and no position.
     /// - provides: the value arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
@@ -1559,13 +1667,19 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
     /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
     #[spec(
         requires: match *value {
             Value::Constructor { datatype, ref fields, .. } => matches!(self.placed.get(AnyNode::ValueType(datatype)), Maybe::Present(_)) && fields.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::Record(ref fields) => fields.values().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => matches!(self.placed.get(AnyNode::ValueType(classifier)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(payload_paths)), Maybe::Present(_)),
             Value::PathEquiv { path_type, forward, backward, .. } => matches!(self.placed.get(AnyNode::ValueType(path_type)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(forward)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(backward)), Maybe::Present(_)),
-            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
+            Value::ListNil | Value::Variable(_) | Value::Literal(_) => true,
+            Value::Constant(index) => match constant_name(&self.constants, index) {
+                ConstantName::Definition { declared, body, .. } => matches!(self.placed.get(AnyNode::ValueType(declared)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(body)), Maybe::Present(_)),
+                ConstantName::Position => true,
+            },
             Value::Tuple(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => matches!(self.placed.get(AnyNode::Value(first)), Maybe::Present(_))
                             && matches!(self.placed.get(AnyNode::Value(second)), Maybe::Present(_)),
@@ -1600,7 +1714,10 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::HigherEvaluation { .. } => gandr_kernel_term::NODE_V_HIGHER_EVALUATION,
             Value::QuantifiedEvaluation { .. } => gandr_kernel_term::NODE_V_QUANTIFIED_EVALUATION,
             Value::Variable(..) => gandr_kernel_term::NODE_V_VARIABLE,
-            Value::Constant(..) => gandr_kernel_term::NODE_V_CONSTANT,
+            Value::Constant(index) => match constant_name(&self.constants, index) {
+                ConstantName::Definition { .. } => WireTag::from(DEFINITION_TAG),
+                ConstantName::Position => gandr_kernel_term::NODE_V_CONSTANT,
+            },
             Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
             Value::ListCons(..) => gandr_kernel_term::NODE_V_LIST_CONS,
             Value::Literal(..) => gandr_kernel_term::NODE_V_LITERAL,
@@ -1804,9 +1921,22 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_V_VARIABLE);
                 record.put_word(EncodedWord(u64::from(u32::from(index))));
             },
-            Value::Constant(index) => {
-                record.put_tag(gandr_kernel_term::NODE_V_CONSTANT);
-                record.put_count(ComponentCount(usize::from(index)));
+            Value::Constant(index) => match constant_name(&self.constants, index) {
+                ConstantName::Definition {
+                    declared,
+                    body,
+                    rank: DefinitionRank(rank),
+                    ..
+                } => {
+                    record.put_tag(WireTag::from(DEFINITION_TAG));
+                    record.put_content(self.content_of(AnyNode::ValueType(declared)));
+                    record.put_content(self.content_of(AnyNode::Value(body)));
+                    record.put_count(ComponentCount(rank));
+                },
+                ConstantName::Position => {
+                    record.put_tag(gandr_kernel_term::NODE_V_CONSTANT);
+                    record.put_count(ComponentCount(usize::from(index)));
+                },
             },
             Value::Literal(ref literal) => {
                 record.put_tag(gandr_kernel_term::NODE_V_LITERAL);
@@ -2466,12 +2596,30 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     }
 }
 
+/// How `constants` names the constant at `index`: its name there, or its
+/// position for an index past the end.
+///
+/// # Specification
+/// trivial.
+fn constant_name(
+    constants: &[ConstantName],
+    index: ConstantIndex,
+) -> ConstantName
+{
+    constants
+        .get(usize::from(index))
+        .copied()
+        .unwrap_or(ConstantName::Position)
+}
+
 /// Push `node`'s children as open tasks, in the order the format writes them.
 ///
 /// # Specification
 /// - requires: nothing; an unreadable node pushes nothing.
 /// - ensures: pushes one open task per child, in the order the format writes
-///   them, so each child is placed before the parent's record is built.
+///   them, so each child is placed before the parent's record is built. A
+///   reference to a constant `constants` names by its content has that
+///   definition's declared type and body as its children.
 /// - provides: the scheduling half of the numbering walk, which is what keeps
 ///   the record of a node a function of its children's ids.
 /// - fails: never.
@@ -2487,13 +2635,18 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
 /// - witness: `session::tests::session_relations_replay_without_search`
 /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
+/// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
 #[spec(captures: entry_len = tasks.len(), ensures: tasks.get(entry_len..).is_some_and(|added| {
     let opened = added.iter().map(|task| match *task { EncodeTask::Open(node) => Some(node), EncodeTask::Close(_) => None });
     match node {
         AnyNode::Value(id) => match arena.value(id) { Some(matched_native_node) => match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => opened.eq((core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))).map(Some)),
 Value::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::Value)).map(Some)),
-Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
+Value::ListNil | Value::Variable(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
+Value::Constant(index) => match constant_name(constants, index) {
+    ConstantName::Definition { declared, body, .. } => opened.eq([AnyNode::ValueType(declared), AnyNode::Value(body)].into_iter().map(Some)),
+    ConstantName::Position => opened.eq((core::iter::empty()).map(Some)),
+},
 Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => opened.eq(([AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
@@ -2555,6 +2708,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
 }))]
 fn push_children(
     arena: &TermArena,
+    constants: &[ConstantName],
     node: AnyNode,
     tasks: &mut Vec<EncodeTask>,
 )
@@ -2573,10 +2727,14 @@ fn push_children(
             Some(&Value::Record(ref fields)) => {
                 tasks.extend((fields.values().copied().map(AnyNode::Value)).map(EncodeTask::Open));
             },
-            None
-            | Some(
-                &Value::ListNil | &Value::Variable(_) | &Value::Constant(_) | &Value::Literal(_),
-            ) => {},
+            None | Some(&Value::ListNil | &Value::Variable(_) | &Value::Literal(_)) => {},
+            Some(&Value::Constant(index)) => match constant_name(constants, index) {
+                ConstantName::Definition { declared, body, .. } => {
+                    tasks.push(EncodeTask::Open(AnyNode::ValueType(declared)));
+                    tasks.push(EncodeTask::Open(AnyNode::Value(body)));
+                },
+                ConstantName::Position => {},
+            },
             Some(&Value::Tuple(ref components)) => {
                 tasks.extend(
                     components
@@ -3612,6 +3770,71 @@ pub fn content_digest(
     table.stream().digest()
 }
 
+/// The name of a plain definition of `declared` and `body` about to be
+/// admitted after `entries`: its two roots and its rank among the earlier
+/// definitions named by the same two, each constant they reach read by its
+/// position.
+///
+/// # Specification
+/// - requires: the roots, and those of every definition `entries` names by
+///   content, live in `arena`.
+/// - ensures: a definition name over `declared` and `body`, ranked by the
+///   earlier entries whose declared types and bodies are identical in reachable
+///   content. A digest filters the entries and one table decides each
+///   candidate, so no digest decides.
+/// - provides: admission's naming of a plain definition, injective on the
+///   environment's positions.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two definitions of one type and body admitted into one
+///   environment are ranked apart; the predicate checks the roots kept.
+/// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+#[must_use]
+#[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
+    if kept_declared == declared && kept_body == body))]
+pub(crate) fn name_definition(
+    arena: &TermArena,
+    entries: &crate::env::Entries,
+    declared: ValueTypeId,
+    body: ValueId,
+) -> ConstantName
+{
+    let digest = {
+        let mut table = ContentTable::new();
+        let _declared = table.place(arena, AnyNode::ValueType(declared));
+        let _body = table.place(arena, AnyNode::Value(body));
+        table.stream().digest()
+    };
+    let rank = entries
+        .iter()
+        .filter(|entry| match entry.key_name() {
+            ConstantName::Definition {
+                declared: earlier_declared,
+                body: earlier_body,
+                digest: earlier_digest,
+                ..
+            } => {
+                earlier_digest == digest && {
+                    let mut table = ContentTable::new();
+                    table.place(arena, AnyNode::ValueType(declared))
+                        == table.place(arena, AnyNode::ValueType(earlier_declared))
+                        && table.place(arena, AnyNode::Value(body))
+                            == table.place(arena, AnyNode::Value(earlier_body))
+                }
+            },
+            ConstantName::Position => false,
+        })
+        .count();
+    ConstantName::Definition {
+        declared,
+        body,
+        rank: DefinitionRank(rank),
+        digest,
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -3622,9 +3845,11 @@ mod tests
     use anodized::spec;
     use gandr_kernel_term::AnyNode;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::FractionDigits;
     use gandr_kernel_term::IntegerLiteral;
+    use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::Magnitude;
     use gandr_kernel_term::NumericLiteral;
@@ -4753,6 +4978,173 @@ mod tests
         assert!(
             table.records > 0,
             "a memo that keeps its answers is keyed by their content"
+        );
+    }
+
+    /// Where a naming fixture admits its referent beside the unrelated pair.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ReferentOrder
+    {
+        /// The referent, then the pair.
+        First,
+        /// The pair, then the referent.
+        Second,
+    }
+
+    /// Admit `referent` and a pair definition in `order`, then
+    /// `c : Unit = referent`; return the record stream a table told the
+    /// environment's entries builds for `c`'s body.
+    ///
+    /// # Specification
+    /// - requires: `referent` admits one declaration at the unit type.
+    /// - ensures: the stream of every record `c`'s body reaches, in the order
+    ///   the walk assigns them.
+    /// - provides: the admission-order fixtures the constant naming cases
+    ///   compare.
+    /// - fails: never.
+    /// - panics: when an admission refuses.
+    /// - executable: none — the cases compare two calls' streams, which no
+    ///   single call's predicate states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition and an axiom referent each admitted
+    ///   before and after an unrelated definition.
+    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+    fn reference_stream(
+        referent: &dyn Fn(&mut crate::env::Environment) -> ConstantIndex,
+        order: ReferentOrder,
+    ) -> ContentEncoding
+    {
+        let mut environment = crate::env::Environment::new();
+        let pair = |environment: &mut crate::env::Environment| {
+            let mut staging = environment.stage();
+            let unit = staging.arena().value_type_unit();
+            let declared = staging.arena().value_type_product(&[unit, unit]);
+            let one = staging.arena().value_unit();
+            let body = staging.arena().value_tuple(&[one, one]);
+            let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(staged).expect("the pair admits")
+        };
+        let reached = match order {
+            ReferentOrder::First => {
+                let reached = referent(&mut environment);
+                let _pair = pair(&mut environment);
+                reached
+            },
+            ReferentOrder::Second => {
+                let _pair = pair(&mut environment);
+                referent(&mut environment)
+            },
+        };
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let reference = staging.arena().value_constant(reached);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, reference);
+        let _c = environment.add_decl(staged).expect("the reference admits");
+        let mut table = ContentTable::new();
+        table.name_constants(environment.entries());
+        let _id = table.place(environment.arena(), AnyNode::Value(reference));
+        table.stream().clone()
+    }
+
+    /// Admit `name : Unit = ()`.
+    ///
+    /// # Specification
+    /// - ensures: the definition's position.
+    /// - provides: the plain definition the naming cases reference.
+    /// - fails: never.
+    /// - panics: when the admission refuses.
+    /// - executable: none — the position is the environment's, which the cases
+    ///   read back through its entries.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit definition admits in every environment.
+    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+    fn unit_definition(environment: &mut crate::env::Environment) -> ConstantIndex
+    {
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = staging.arena().value_unit();
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .expect("the unit definition admits")
+            .position()
+    }
+
+    #[test]
+    fn a_definition_reference_reads_alike_in_either_admission_order()
+    {
+        let first = reference_stream(&unit_definition, ReferentOrder::First);
+        let second = reference_stream(&unit_definition, ReferentOrder::Second);
+        assert_eq!(
+            first, second,
+            "a plain definition's reference reads its content, not where it was admitted"
+        );
+    }
+
+    #[test]
+    fn an_axiom_reference_keeps_its_position()
+    {
+        let axiom = |environment: &mut crate::env::Environment| {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let staged = staging.axiom(LevelSignature::monomorphic(), declared);
+            environment
+                .add_decl(staged)
+                .expect("the axiom admits")
+                .position()
+        };
+        let first = reference_stream(&axiom, ReferentOrder::First);
+        let second = reference_stream(&axiom, ReferentOrder::Second);
+        assert_ne!(
+            first, second,
+            "an axiom has no body to name it by, so its reference reads its position"
+        );
+    }
+
+    #[test]
+    fn two_definitions_of_one_content_keep_two_names()
+    {
+        let mut environment = crate::env::Environment::new();
+        let left = unit_definition(&mut environment);
+        let right = unit_definition(&mut environment);
+        let ranks = [left, right].map(|position| {
+            match environment
+                .entries()
+                .get(usize::from(position))
+                .map(crate::env::AdmittedDeclaration::key_name)
+            {
+                Some(super::ConstantName::Definition { rank, .. }) => rank,
+                Some(super::ConstantName::Position) | None => {
+                    panic!("a plain definition is named by its content")
+                },
+            }
+        });
+        assert_eq!(
+            ranks,
+            [super::DefinitionRank(0), super::DefinitionRank(1)],
+            "the second definition of one type and body is ranked behind the first"
+        );
+        let mut staging = environment.stage();
+        let left = staging.arena().value_constant(left);
+        let right = staging.arena().value_constant(right);
+        let unit = staging.arena().value_type_unit();
+        let declared = staging.arena().value_type_product(&[unit, unit]);
+        let pair = staging.arena().value_tuple(&[left, right]);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, pair);
+        let _pair = environment
+            .add_decl(staged)
+            .expect("the pair of references admits");
+        let mut table = ContentTable::new();
+        table.name_constants(environment.entries());
+        assert_ne!(
+            table.place(environment.arena(), AnyNode::Value(left)),
+            table.place(environment.arena(), AnyNode::Value(right)),
+            "two definitions keep two names however alike their content: a key \
+             never answers for one with the other"
         );
     }
 }

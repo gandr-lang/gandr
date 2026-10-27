@@ -8,6 +8,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -29,7 +30,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, a refused trace's `ReplayRefusal` classed as an ill-formed query, a foreign answer or a path disagreement (`RefusalClass`); `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
 - **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`: `Flow`, `stay`, `then`, `ride` and its telescope form, with forward, function and session certificates replayed on readmission), all through ordinary admission.
 - **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
-- **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests.
+- **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests. A key names a reference to a plain definition by its declared type, body and rank among the definitions of that content, and every other constant by its admission position.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: goal expansions and memo recalls per plane, the observation every measurement here is asserted through.
 - **Errors.** `KernelError`, whose payloads are content — a head former and the offending node's content digest — because admission truncates the arena and an arena id would dangle.
@@ -109,6 +110,10 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | Session codes and certificates | [`src/session.rs`](src/session.rs) |
 | The stage universe and residual readmission | [`src/stage.rs`](src/stage.rs) |
 | Guarded admission of equation families | [`src/admission.rs`](src/admission.rs) |
+
+## References
+
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 2 and 10) — a key names the constants it reaches by content, in table-local records.
 
 ## License
 

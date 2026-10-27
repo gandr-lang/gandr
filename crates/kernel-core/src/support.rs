@@ -121,6 +121,21 @@ impl SupportContext
         Self::default()
     }
 
+    /// Name the constants of `entries` in this session's keys, as
+    /// [`ContentTable::name_constants`] does: each plain definition by its
+    /// content, every other constant by its position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn name_constants(
+        &mut self,
+        entries: &crate::env::Entries,
+    )
+    {
+        self.table.name_constants(entries);
+    }
+
     /// The two halves a rewrite needs: the content numbering its key is derived
     /// from, and the memo it records into.
     ///
