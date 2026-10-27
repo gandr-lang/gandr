@@ -135,6 +135,27 @@ fn tuple(
     )
 }
 
+/// The thunk suspending command `body` over `captures`, innermost first, in
+/// `store`.
+///
+/// # Specification
+/// trivial.
+fn thunk(
+    store: &mut Store,
+    body: CommandId,
+    captures: &[HeapValueId],
+) -> HeapValueId
+{
+    let environment = captures
+        .iter()
+        .rev()
+        .try_fold(Environment::EMPTY, |environment, &value| {
+            store.bind_value(environment, value)
+        })
+        .expect("the store binds");
+    put(store, HeapValue::Thunk { body, environment })
+}
+
 /// Assert the value `left` binds at `here` and the one `right` binds at
 /// `there` are equal as trees, wherever and however each is stored.
 ///
@@ -165,6 +186,26 @@ fn assert_same(
             ) if ours == theirs && our_fields.len() == their_fields.len() => {
                 pending.extend(our_fields.iter().copied().zip(their_fields.iter().copied()));
             },
+            (
+                Some(&HeapValue::Thunk {
+                    body: ours,
+                    environment: our_environment,
+                }),
+                Some(&HeapValue::Thunk {
+                    body: theirs,
+                    environment: their_environment,
+                }),
+            ) if ours == theirs => {
+                let our_captures: Vec<HeapValueId> = left.bound_values(our_environment).collect();
+                let their_captures: Vec<HeapValueId> =
+                    right.bound_values(their_environment).collect();
+                assert_eq!(
+                    our_captures.len(),
+                    their_captures.len(),
+                    "{here:?} and {there:?} capture alike"
+                );
+                pending.extend(our_captures.into_iter().zip(their_captures));
+            },
             (ours, theirs) => panic!("{here:?} is {ours:?} where {there:?} is {theirs:?}"),
         }
     }
@@ -184,8 +225,14 @@ fn reached(
     let mut pending = vec![root];
     while let Some(id) = pending.pop() {
         seen.push(id);
-        if let Some(&HeapValue::Constructed { ref fields, .. }) = store.value(id) {
-            pending.extend(fields.iter().copied());
+        match store.value(id) {
+            Some(&HeapValue::Constructed { ref fields, .. }) => {
+                pending.extend(fields.iter().copied());
+            },
+            Some(&HeapValue::Thunk { environment, .. }) => {
+                pending.extend(store.bound_values(environment));
+            },
+            _ => {},
         }
     }
     seen
@@ -193,7 +240,8 @@ fn reached(
 
 /// One value of every crossing head and every literal kind, the heads at
 /// their edges: the unit, the record of no labels, a lift at a join of two
-/// atoms, a family named and not.
+/// atoms, a family named and not, a thunk over no capture and over several in
+/// their order, its body's index up to the widest.
 ///
 /// # Specification
 /// trivial.
@@ -269,6 +317,9 @@ fn every_head(store: &mut Store) -> Vec<HeapValueId>
             &[one, nil],
         ));
     }
+    values.push(thunk(store, CommandId::from(0_u32), &[]));
+    values.push(thunk(store, CommandId::from(9_u32), &[one, text]));
+    values.push(thunk(store, CommandId::from(u32::MAX), &[text, one, nil]));
     let nested = values.clone();
     values.push(tuple(store, &nested));
     values
@@ -416,7 +467,8 @@ fn a_long_list_crosses()
 
 /// Each value that does not cross, held in a tuple's second field after an
 /// integer, is refused naming its address and what it is, and nothing is
-/// written.
+/// written; so is a capability a thunk there captures, though the thunk itself
+/// crosses.
 #[test]
 fn a_value_that_does_not_cross_is_refused_by_name_and_writes_nothing()
 {
@@ -428,13 +480,6 @@ fn a_value_that_does_not_cross_is_refused_by_name_and_writes_nothing()
                 frames: Box::new([]),
             },
             Uncrossable::Stack,
-        ),
-        (
-            HeapValue::Thunk {
-                body: CommandId::from(0_u32),
-                environment: Environment::EMPTY,
-            },
-            Uncrossable::Thunk,
         ),
         (
             HeapValue::Fixpoint {
@@ -495,6 +540,24 @@ fn a_value_that_does_not_cross_is_refused_by_name_and_writes_nothing()
             "{head:?} wrote nothing"
         );
     }
+    let mut store = Store::new();
+    let one = literal(&mut store, integer(Sign::NonNegative, "1".into()));
+    let capability = put(&mut store, HeapValue::Capability);
+    let suspended = thunk(&mut store, CommandId::from(0_u32), &[one, capability]);
+    let pair = tuple(&mut store, &[one, suspended]);
+    let mut chunks = InMemoryChunkStore::new();
+    assert_eq!(
+        commit(&store, pair, params(), &mut chunks).map(|manifest| manifest.root()),
+        Err(CrossingRefusal::Uncrossable {
+            value: capability,
+            head: Uncrossable::Capability,
+        })
+    );
+    assert_eq!(
+        usize::from(chunks.chunk_count()),
+        0_usize,
+        "a thunk's capture wrote nothing"
+    );
 }
 
 /// One record of a hand-written emission.

@@ -671,6 +671,38 @@ impl Scopes
         }
         (base, sources)
     }
+
+    /// The base of a closure body's scope from what `captured` selects alone:
+    /// a producer binder per index up to the outermost it selects, outermost
+    /// first, each selected one in a fresh slot, in order. The captures lie as
+    /// [`Self::enclose`] lays them for a creator binding nothing else, so a
+    /// closure whose creator the lowering never walks has a base.
+    ///
+    /// # Specification
+    /// trivial.
+    fn apart(
+        &mut self,
+        captured: &Captured,
+    ) -> Scope
+    {
+        let mut base = Scope::Empty;
+        let Some(&outermost) = captured.producers.last()
+        else {
+            return base;
+        };
+        for index in (0 ..= outermost).rev() {
+            let depth = self.depth(base);
+            let slot = captured.producers.contains(&index).then_some(depth);
+            self.binders.push(Binder {
+                parent: base,
+                binding: Binding::Producer,
+                slot,
+                depth: slot.map_or(depth, |taken| Slot(taken.0.saturating_add(1))),
+            });
+            base = Scope::At(self.binders.len().saturating_sub(1));
+        }
+        base
+    }
 }
 
 /// The index `counter` stands at, advancing it past.
@@ -1410,6 +1442,56 @@ impl Lowering<'_>
             entry,
             flavour,
         )?;
+        let captures = self.captured(Suspension::Producer(producer), base)?;
+        self.sites.push(Site {
+            label,
+            producer,
+            captures,
+        });
+        Ok(())
+    }
+
+    /// Record a site for the thunk `producer` suspending `body`, which a
+    /// migration's body holds: its body queued over its captures alone, and
+    /// nothing allocated. A thunk the migration's world answers crosses back
+    /// as its body's command, and the host lays it out at this site's code. A
+    /// thunk capturing a linear binder records none, as no crossing carries
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] for a node the arena does not hold;
+    /// [`Form::Unbound`] as [`Self::captured`].
+    fn apart(
+        &mut self,
+        producer: ProducerId,
+        body: CommandId,
+    ) -> Result<(), Form>
+    {
+        let support = self
+            .arena
+            .node_scope(NodeAddress::Producer(producer))
+            .ok_or(Form::Dangling)?;
+        if support.producers().indices(Zone::Linear).next().is_some() {
+            return Ok(());
+        }
+        let captured = Captured {
+            producers: support
+                .producers()
+                .indices(Zone::Intuitionistic)
+                .map(u32::from)
+                .collect(),
+            linears: BTreeSet::new(),
+        };
+        let base = self.scopes.apart(&captured);
+        let label = self.function.label();
+        self.bodies.push(Body {
+            label,
+            entry: Entry::Force(body),
+            scope: base,
+        });
         let captures = self.captured(Suspension::Producer(producer), base)?;
         self.sites.push(Site {
             label,
@@ -2513,7 +2595,9 @@ impl Lowering<'_>
     /// migration's body runs at its world, lowered apart by the host to run
     /// closed; here its captures are gathered, innermost first, into the tuple
     /// the host call takes, each capture's owner passing to the tuple as a
-    /// closure's captures pass to the closure.
+    /// closure's captures pass to the closure. Each thunk the body reaches
+    /// gains a site here ([`Self::apart`]), so a thunk the migration answers
+    /// has code in this function.
     ///
     /// # Specification
     /// trivial.
@@ -2557,6 +2641,23 @@ impl Lowering<'_>
                 self.tasks.push(Task::Load(continuation, scope));
             },
             WorldForm::Migrate { body, .. } => {
+                let arena = self.arena;
+                let mut reached = Vec::new();
+                reach(
+                    arena,
+                    &[NodeAddress::Command(body)],
+                    &mut BTreeSet::new(),
+                    &mut reached,
+                )
+                .map_err(|_dangling| Form::Dangling)?;
+                for node in reached {
+                    if let NodeAddress::Producer(thunk) = node
+                        && let ProducerNode::Thunk { body: suspended } =
+                            *arena.producer(thunk).ok_or(Form::Dangling)?
+                    {
+                        self.apart(thunk, suspended)?;
+                    }
+                }
                 let captures = self.captured(Suspension::Thunk(body), scope)?;
                 let call = self.call(&Callee::Migrate { at: id, body }, Immediate::from(1_u32))?;
                 let header =

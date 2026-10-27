@@ -1,12 +1,13 @@
 /// `world-migration` runs a migration's body at its world and brings its answer back.
 ///
-/// Implemented: `migrate [w] { t }` runs `t` on a thread and over a store of its own, closed over its captures; each capture crosses in by content and the answer crosses back, on both tiers; `hold v` runs to `v`, and `leta` binds the content of the handle it opens.
-/// Not implemented: a world that names a process, a migration between two, and a closure that a migration answers; #3190 owes the first two and #3265 the third.
+/// Implemented: `migrate [w] { t }` runs `t` on a thread and over a store of its own, closed over its captures; each capture crosses in by content and the answer crosses back, on both tiers; a thunk it answers runs at the caller, forced or applied there; `hold v` runs to `v`, and `leta` binds the content of the handle it opens.
+/// Not implemented: a world that names a process, a migration between two, and a field the caller projects from a record a migration answers; #3190 owes the first two and #3275 the third.
 ///
 /// The first migration holds the work done at the seat and brings its handle back; `leta` opens it, and the second migration reads it at the seat, so it crosses in as that body's capture.
 /// The second body answers a record built only at the seat, which crosses back to the operator.
 ///
 /// - see: corpus/model/worlds/twice.gandr
+/// - see: corpus/model/worlds/closure-axes.gandr
 /// - see: crates/runtime-emitter/tests/world.rs
 
 // The operator's and the seat's worlds.

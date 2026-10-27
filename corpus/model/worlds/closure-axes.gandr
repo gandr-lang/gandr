@@ -6,10 +6,12 @@
 // every capture and every homed declaration it names crosses.
 //
 // Each declaration forms a thunk at the seat and returns it to the operator.
+// The last two force it or apply it there, so it runs as it runs in place.
 // The thunks are closed, or over an integer, a marked report or a handle to
 // an integer. The image's three axes are the capture rules, so every capture
 // stands at no region, at ω and at the thunk's own world.
 //
+// - see: #3265 — `forced` and `applied`, a thunk run at the operator
 // - see: `pathological/worlds/closure-axes.gandr` — what a thunk captures that
 //   stays
 // - see: Epstein, Black and Peyton Jones, "Towards Haskell in the Cloud",
@@ -20,13 +22,13 @@
 import "./seat-and-operator.gandr";
 
 /// A suspended report comes back from the seat: it names no capture.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("thunk { Seat.progress }") ]
 def suspendedBack() -> () => Seat.Report {
   migrate [seat] { pure thunk { pure Seat.progress } }
 }
 
 /// A thunk over an integer bound at the seat comes back with the integer.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("thunk { 3 + 1 }") ]
 def counted() -> () => Integer {
   migrate [seat] {
     run n <- pure 3;
@@ -36,7 +38,7 @@ def counted() -> () => Integer {
 
 /// A thunk over the seat's report comes back, since the signature marks the
 /// report mobile.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("thunk { \"progress\" }") ]
 def reported() -> () => Seat.Report {
   migrate [seat] {
     run report <- pure Seat.progress;
@@ -45,10 +47,31 @@ def reported() -> () => Seat.Report {
 }
 
 /// A thunk over a handle to an integer comes back, since the handle is open.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("thunk { 3 }") ]
 def pointing() -> () => (Integer at seat) {
   migrate [seat] {
     run held : Integer at seat <- (hold 3);
     pure thunk { pure held }
   }
+}
+
+/// The operator forces the thunk over the seat's integer, which runs there
+/// with its capture.
+@[ entry((operator, seat)), runs("4") ]
+def forced() -> Integer {
+  run later : () => Integer <- migrate [seat] {
+    run n <- pure 3;
+    pure thunk { pure n + 1 }
+  };
+  force later
+}
+
+/// A function over the seat's integer applies at the operator.
+@[ entry((operator, seat)), runs("5") ]
+def applied() -> Integer {
+  run bump : Integer => Integer <- migrate [seat] {
+    run n <- pure 3;
+    pure thunk { fn (x) { pure x + n } }
+  };
+  bump(2)
 }
