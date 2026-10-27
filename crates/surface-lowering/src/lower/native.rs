@@ -3760,6 +3760,79 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// The data or codata family `head`, the head of a call written at
+    /// `site`, names.
+    ///
+    /// # Specification
+    /// - requires: `head` is the first operand of the call at `site`.
+    /// - ensures: what the head's name resolves to when the head is a
+    ///   capitalised name no constructor carries and the declaration it
+    ///   resolves to is a data or a codata family; the undeclared absence for
+    ///   any other head.
+    /// - provides: the family a call applies where a value is read, so a type
+    ///   written as a family's application is read as that type wherever it is
+    ///   passed (#2512).
+    /// - fails: the refusals the name's resolution yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The resolution's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data family applied as a type argument and as a
+    ///   definition's body, a constructor and a function applied the same way
+    ///   keep their own readings.
+    /// - witness: `lower::native::tests::a_data_family_applied_where_a_value_is_read_is_quoted_2512`
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
+                matches!(self.data_family(constant), Maybe::Present(_))
+                    || matches!(self.codata_family(constant), Maybe::Present(_))
+            },
+            | Ok(Maybe::Present(Resolved::Binder(_))) => false,
+            | Ok(Maybe::Absent(_)) | Err(_) => true,
+        },
+    )]
+    pub(super) fn family_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Resolved, family::Absent>, LoweringRefusal<'source>>
+    {
+        let undeclared = Maybe::Absent(family::Absent::Undeclared);
+        let Some(node) = self.tree.node(head.node)
+        else {
+            return Ok(undeclared);
+        };
+        let Shape::Form {
+            former: Former::Constructor,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Ok(undeclared);
+        };
+        let name = self.name_at(head);
+        if let Maybe::Present(_constructor) = self.constructor_named(site, name) {
+            return Ok(undeclared);
+        }
+        let named = Site { at: head, ..site };
+        let Maybe::Present(resolved) = self.resolve_name(named, site.reading.frame(), name)?
+        else {
+            return Ok(undeclared);
+        };
+        let Resolved::Declaration { constant, .. } = resolved
+        else {
+            return Ok(undeclared);
+        };
+        if matches!(self.data_family(constant), Maybe::Present(_))
+            || matches!(self.codata_family(constant), Maybe::Present(_))
+        {
+            return Ok(Maybe::Present(resolved));
+        }
+
+        Ok(undeclared)
+    }
+
     /// The number of parameters of the codata family declared at `constant`.
     ///
     /// # Specification

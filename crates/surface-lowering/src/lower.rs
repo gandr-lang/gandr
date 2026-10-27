@@ -10392,7 +10392,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`Self::resumption`] and [`Self::method`] read them; a call standing
     ///   where a value is read whose head is a type former's name, free —
     ///   `Path` over three arguments, `List(A)`, `Flow`, `Stack`, `Run` — is
-    ///   the type it spells, as [`Self::applied_head`] plans it, quoted; any
+    ///   the type it spells, as [`Self::applied_head`] plans it, quoted, and
+    ///   one whose head names a data or a codata family is that family's type
+    ///   over the arguments, as [`Self::static_application`] plans it, quoted,
+    ///   so `Box(Integer)` passed for a type parameter is the type (#2512); any
     ///   other call standing as a computation reads its head at the head
     ///   position and each argument as a value, all in its own frame, a model
     ///   implicit's components and an omitted instance standing at the call
@@ -10453,7 +10456,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && constructed.fields.end == self.operands.len()
                     },
                     | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
-                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
+                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..) | Plan::Data(..) | Plan::Codata(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
                     | _ => false,
@@ -10509,6 +10512,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 end: self.operands.len(),
             };
             return self.applied_head(site, head, name, written, &[]);
+        }
+        if let Reading::Value(_) = site.reading
+            && let Run::One(head) = cursor.clone().operands()
+            && let Maybe::Present(family) = self.family_head(site, head)?
+        {
+            self.resolved(head.span, family);
+            let _head = cursor.operands();
+            let start = self.operands.len();
+            arguments(site, &mut cursor, &mut self.operands)?;
+            let applied = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            return self.static_application(site, family, applied);
         }
         if self.exercise(site, &cursor)? == arity::Planned(true) {
             return Ok(());
