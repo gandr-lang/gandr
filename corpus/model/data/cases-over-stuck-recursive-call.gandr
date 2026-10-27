@@ -1,0 +1,69 @@
+/// This source converts two cases over cases of one stuck recursive call.
+///
+/// It pins how the checker compares `outer(first(look(a, b)))` with the same cases, each written again by a twin of its definition.
+///
+/// Each side's outer case eliminates a held endpoint whose computation is itself a case over the held call `look(a, b)`. The kernel reads each side as binds stacked over that call and makes them one by associativity. The checker records those steps, then compares the calls and the cases over one fresh variable, and the kernel replays the comparison.
+///
+/// - see: #3086
+/// - see: #879
+import "./data-base.gandr";
+import "./data-maybe.gandr";
+
+/// This function gives zero at a present natural.
+def first(m : Maybe(Nat)) -> Maybe(Nat) {
+  case m {
+    None => None,
+    Some(_x) => Some(Zero)
+  }
+}
+
+/// This function is `first`, written again.
+def second(m : Maybe(Nat)) -> Maybe(Nat) {
+  case m {
+    None => None,
+    Some(_x) => Some(Zero)
+  }
+}
+
+/// This function gives the successor of a present natural.
+def outer(n : Maybe(Nat)) -> Maybe(Nat) {
+  case n {
+    None => None,
+    Some(y) => Some(Succ(y))
+  }
+}
+
+/// This function is `outer`, written again.
+def outerTwin(n : Maybe(Nat)) -> Maybe(Nat) {
+  case n {
+    None => None,
+    Some(y) => Some(Succ(y))
+  }
+}
+
+/// This function looks the natural `k` places below `n`, stuck until both are constructors.
+def rec look(n : Nat, k : Nat) -> Maybe(Nat) {
+  case n {
+    Zero => None,
+    Succ(p) => case k {
+      Zero => Some(p),
+      Succ(q) => look[<](p, q)
+    }
+  }
+}
+
+/// The outer case over `first` meets the outer case over `second`.
+def wrappedRec(
+  a : Nat,
+  b : Nat
+) -> Path(Maybe(Nat), outer(first(look(a, b))), outer(second(look(a, b)))) {
+  here(outer(first(look(a, b))))
+}
+
+/// The outer case meets its twin over one inner case.
+def twinRec(
+  a : Nat,
+  b : Nat
+) -> Path(Maybe(Nat), outer(first(look(a, b))), outerTwin(first(look(a, b)))) {
+  here(outer(first(look(a, b))))
+}

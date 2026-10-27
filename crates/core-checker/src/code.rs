@@ -1169,10 +1169,13 @@ impl CodeDefinitions
     /// - ensures: for a `run` that applies a defined constant `f` to arguments,
     ///   the run of `f`'s body at those arguments read back with every constant
     ///   held rigid, the binders read as rigid variables: when that is `return
-    ///   v` with `v` a returned call of a constant other than `code`, the step
+    ///   v` with `v` a returned code other than `code` whose computation is a
+    ///   call of a constant, or binds over calls of constants that end in one —
+    ///   `emp(tailOf(h))`, its argument's call sequenced ahead of it — the step
     ///   unfolding `code` to `v`. [`unfolding::Absent::Rigid`] otherwise: a run
     ///   of any other head, a body that waits on a binder before it selects an
-    ///   arm, and an arm that makes no call.
+    ///   arm, and an arm that makes no call or continues past a bind into
+    ///   anything but a call.
     /// - provides: the step a call takes to the call its arm reached, which
     ///   then converts with the call written out, or steps again.
     /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
@@ -1183,12 +1186,20 @@ impl CodeDefinitions
     /// # Errors
     /// - [`CheckRefusal`] — as above.
     ///
+    /// # Termination
+    /// - reason: `while let` loops descending an application spine and a
+    ///   worklist over the binds the reached code holds, not recursion.
+    /// - measure: the focus's arena position while descending; then the
+    ///   computations left on the worklist, each a strict part of one before.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a call whose arm reaches another definition's call
     ///   stuck on a binder steps to it, and the call it reaches, casing at once
     ///   on its binder, is rigid; one stuck on its own selecting argument is
-    ///   rigid.
+    ///   rigid; an arm whose call takes another call's result, bound ahead of
+    ///   it, steps to the two, and one that continues into a quote is rigid.
     /// - witness: `code::tests::a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832`
+    /// - witness: `code::tests::a_definition_whose_arm_calls_over_a_stuck_call_steps_to_it_3042`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
             && step.redex() == code
@@ -1249,9 +1260,23 @@ impl CodeDefinitions
         else {
             return rigid;
         };
+        // An argument that is itself a call is sequenced ahead of the call it
+        // feeds, so the arm reads back as binds over calls ending in one.
+        let calls_through_binds = |core: &CoreArena, reached: ComputationId| {
+            let mut pending = Vec::from([reached]);
+            while let Some(at) = pending.pop() {
+                if let Some(&Computation::Bind(bound, continued)) = core.computation(at) {
+                    pending.extend([bound, continued]);
+                }
+                else if calls_a_constant(core, at).is_none() {
+                    return false;
+                }
+            }
+            true
+        };
         match core.value(returned) {
             Some(&Value::Returned(reached))
-                if calls_a_constant(core, reached).is_some()
+                if calls_through_binds(core, reached)
                     && equal_certificate_syntax(core, returned, code)
                         != CertificateEquality::Equal =>
             {

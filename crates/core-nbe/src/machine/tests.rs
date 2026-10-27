@@ -4196,6 +4196,75 @@ fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
 }
 
 #[test]
+fn two_cases_over_cases_of_one_held_call_compare_level_by_level_3086()
+{
+    // `⟨case ⟨case ⟨S⟩ { _ => return () ; _ => return () }⟩ { q => return q
+    // ; _ => return () }⟩` against the same with `⟨unit⟩` for the inner first
+    // arm's `()`, for the stuck call `S` and the definition `unit = return
+    // ()`: `outer(first(look(a, b)))` against `outer(second(look(a, b)))`, in
+    // miniature. Each outer case eliminates an endpoint whose computation is
+    // itself a case over `⟨S⟩`; the two decompose as the kernel reads each,
+    // `(S to y. case y {…}) to x. case x {…}`, the inner level first, and
+    // `unit` unfolds to meet `()`. Inner arms apart refute at that arm.
+    // Before, both pairs declined.
+    let mut core = CoreArena::new();
+    let stuck = stuck_call(&mut core);
+    let held = core.value_returned(stuck);
+    let occurrence = innermost(&mut core);
+    let unit = core.value_unit();
+    let returned_unit = core.computation_return(unit);
+    let unit_body = core.value_thunk(returned_unit);
+    let unit_name = core.value_constant(Name::Zero.constant());
+    let unforced = call(&mut core, unit_name, &[]);
+    let unforced = core.value_returned(unforced);
+    let pair = core.value_tuple(&[unit, unit]);
+    let returned_pair = core.computation_return(pair);
+    let payload = core.computation_return(occurrence);
+    let cased = |core: &mut CoreArena, first_arm| {
+        let inner = core.computation_case(held, &[first_arm, returned_unit]);
+        let inner = core.value_returned(inner);
+        let outer = core.computation_case(inner, &[payload, returned_unit]);
+        core.value_returned(outer)
+    };
+    let left = cased(&mut core, returned_unit);
+    let unfolding = core.computation_return(unforced);
+    let right = cased(&mut core, unfolding);
+    let apart = cased(&mut core, returned_pair);
+    let world = World::new(core, &[(Name::Zero, unit_body)]).holding();
+
+    let converts = Sides::Values(left, right);
+    let (verdict, decisions) = world.traced(converts);
+    assert_eq!(
+        MachineVerdict::Convertible,
+        verdict,
+        "the two cases compare level by level: {decisions:?}"
+    );
+    assert!(
+        decisions.contains(&ConversionDecision::Unfold {
+            constant: TraceNode::Constant(Name::Zero.constant()),
+        }),
+        "the inner arm meets `p` by unfolding `unit`: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::Convertible,
+        world.replayed(converts, verdict, &decisions),
+        "the kernel decomposes the same binds: {decisions:?}"
+    );
+    let refutes = Sides::Values(left, apart);
+    let (verdict, decisions) = world.traced(refutes);
+    assert_eq!(
+        MachineVerdict::NotConvertible,
+        verdict,
+        "an inner arm apart refutes: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::NotConvertible,
+        world.replayed(refutes, verdict, &decisions),
+        "and the kernel refutes at the same arm: {decisions:?}"
+    );
+}
+
+#[test]
 fn two_held_transports_convert_by_their_computations()
 {
     // `⟨comp(R)⟩` against `⟨other((), R)⟩` for the rigid path `R`, where

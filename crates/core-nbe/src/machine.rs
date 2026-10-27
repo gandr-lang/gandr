@@ -2491,6 +2491,21 @@ where
             Plan::Decompose(subgoals) => {
                 self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
             },
+            Plan::Reassociated {
+                reassociations,
+                subgoals,
+            } => {
+                // The kernel makes each side's stacked binds one before it
+                // decomposes, the left first; the machine holds both sides
+                // as one neutral, so it only records the steps.
+                for side in [ConversionSide::Left, ConversionSide::Right] {
+                    for _step in 0 .. reassociations {
+                        self.derivations
+                            .decide(id, ConversionDecision::Reassociate { side })?;
+                    }
+                }
+                self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
+            },
             Plan::Step(Step::Unfold(side)) => {
                 let advance = self.unfold(id, goal, pair, side)?;
                 self.advanced(id, advance)
@@ -3349,30 +3364,43 @@ where
     /// The eliminations of `held` before its first bind applied to `variable`:
     /// the continuation of the bind the kernel reads over a held endpoint an
     /// elimination inspects, `E[c] ⇝ c to x. E[x]` with `E` the elimination
-    /// context up to that bind.
+    /// context up to that bind. When `held`'s endpoint's computation itself
+    /// eliminates a held endpoint, `E₁[⟨E₂[⟨c⟩]⟩]`, `variable` stands for the
+    /// innermost call, `E₁[⟨E₂[x]⟩]`: the continuation the kernel reads once
+    /// the binds stacked over `c` are one.
     ///
     /// # Specification
     /// - requires: `variable` is fresh at the parent goal's depth.
-    /// - ensures: a stuck computation whose head is `variable` and whose spine
-    ///   is the first part of `held`'s by [`absorbed_eliminations`].
+    /// - ensures: a stuck computation whose spine is the first part of `held`'s
+    ///   by [`absorbed_eliminations`], headed by `variable` when `held`'s
+    ///   endpoint's computation is headed by no returned endpoint, else by the
+    ///   returned endpoint of the same reading of that computation.
     /// - provides: one side of [`Subgoal::Continued`] and the held side of
     ///   [`Subgoal::Bound`].
     /// - fails: [`ConversionFault::Domain`] for a dangling node,
-    ///   [`ConversionFault::MachineInvariant`] when `held`'s spine starts with
+    ///   [`ConversionFault::MachineInvariant`] when a level's spine starts with
     ///   a bind or is empty, or `variable` is no neutral.
     /// - panics: none.
     ///
     /// # Errors
     /// As above.
     ///
+    /// # Termination
+    /// - reason: a `while let` reading one returned head per turn, then one
+    ///   over the levels it read, not recursion.
+    /// - measure: the allocation position of the neutral read, each minted
+    ///   before the one whose head holds it; then the levels left.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — two applications of one fixpoint at one held call
     ///   compare their fixpoints and the arguments past the gate at the bound
     ///   variable, as the kernel compares the binds' continuations, and refute
     ///   at the argument apart; a forced, applied endpoint compares with a bind
-    ///   whose continuation forces and applies its variable.
+    ///   whose continuation forces and applies its variable; two cases over
+    ///   cases of one held call compare their levels over the bound variable.
     /// - witness: `machine::tests::two_held_eliminations_of_one_call_compare_by_their_parts_879`
     /// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
+    /// - witness: `machine::tests::two_cases_over_cases_of_one_held_call_compare_level_by_level_3086`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|continued|
         matches!(self.domain.computation(*continued), Some(&DomainComp::Neutral { neutral, .. })
             if self.domain.neutral(neutral).is_some_and(|node| Some(node.spine().len())
@@ -3383,30 +3411,53 @@ where
         variable: DomainValueId,
     ) -> Result<DomainCompId, ConversionFault>
     {
-        let count = absorbed_eliminations(
-            self.domain
-                .neutral(held)
-                .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
-                .spine(),
-        )
-        .0
-        .len();
-        if count == 0 {
-            return Err(ConversionFault::MachineInvariant);
+        let dangling = ConversionFault::Domain(DomainFault::Dangling);
+        let mut levels = Vec::from([held]);
+        let mut focus = held;
+        while let NeutralHead::Returned(inner) = self.domain.neutral(focus).ok_or(dangling)?.head()
+        {
+            let Some(&DomainComp::Neutral { neutral, .. }) = self.domain.computation(inner)
+            else {
+                break;
+            };
+            if !matches!(
+                self.domain.neutral(neutral).ok_or(dangling)?.head(),
+                NeutralHead::Returned(_)
+            ) {
+                break;
+            }
+            levels.push(neutral);
+            focus = neutral;
         }
-        let mut grown = self.neutral_of(Glued::Value(variable))?;
-        for position in 0 .. count {
-            let elimination = *self
-                .domain
-                .neutral(held)
-                .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
-                .spine()
-                .get(position)
-                .ok_or(ConversionFault::MachineInvariant)?;
-            grown = extend_spine(self.domain, grown, elimination)
-                .map_err(ConversionFault::Evaluation)?;
+        let mut built = None;
+        while let Some(level) = levels.pop() {
+            let node = self.domain.neutral(level).ok_or(dangling)?;
+            let count = absorbed_eliminations(node.spine()).0.len();
+            let unfolding = node.unfolding();
+            if count == 0 {
+                return Err(ConversionFault::MachineInvariant);
+            }
+            let mut grown = match built {
+                None => self.neutral_of(Glued::Value(variable))?,
+                Some(endpoint) => self
+                    .domain
+                    .neutral_node(NeutralHead::Returned(endpoint), Vec::new(), unfolding)
+                    .map_err(ConversionFault::Domain)?,
+            };
+            for position in 0 .. count {
+                let elimination = *self
+                    .domain
+                    .neutral(level)
+                    .ok_or(dangling)?
+                    .spine()
+                    .get(position)
+                    .ok_or(ConversionFault::MachineInvariant)?;
+                grown = extend_spine(self.domain, grown, elimination)
+                    .map_err(ConversionFault::Evaluation)?;
+            }
+            built = Some(self.domain.comp_neutral(grown, CompTermFace::Reduced));
         }
-        Ok(self.domain.comp_neutral(grown, CompTermFace::Reduced))
+        built.ok_or(ConversionFault::MachineInvariant)
     }
 
     /// The constant a neutral is headed by.
