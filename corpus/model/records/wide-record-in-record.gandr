@@ -2,7 +2,7 @@
 ///
 /// The inner record's key binds its own field, so the outer record's label stays unread and its fields stay a record.
 ///
-/// Each record type here is read back from its printed spelling, and the reading prints as the same record.
+/// The round trip reads each record type here back from its printed spelling and prints the reading as the same record.
 ///
 /// - see: #3010 — the reading printed again as a product
 

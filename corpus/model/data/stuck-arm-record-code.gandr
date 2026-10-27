@@ -1,8 +1,8 @@
 /// This source checks pairs against definitions whose dependent record types reach a record type over a call.
 ///
-/// It pins the kernel's replay of those definitions' unfoldings, which relates the kernel's own δ-step to the checker's reduct.
+/// It pins how the kernel replays the unfoldings of those definitions: its own δ-step against the checker's reduct.
 ///
-/// Each record type is reached through an arm stuck on the outer record's first field. The checker's reduct runs the call inside the record type. The kernel's δ-step holds it, and the kernel reads the two codes alike once their decodes are read.
+/// Each record type sits behind a stuck arm over the outer record's first field. The checker's reduct runs the call inside the record type. The kernel's δ-step holds it, and the kernel reads the two codes alike once it reads their decodes.
 ///
 /// - see: #3045
 /// - see: #2831
@@ -11,7 +11,7 @@ import "./data-base.gandr";
 // The heaps and `emp`, the type of evidence that a heap is empty.
 import "./stuck-arm-call.gandr";
 
-/// A natural paired with evidence that `h` is empty: a record type over a call.
+/// The record type over a call that pairs a natural with evidence that `h` is empty.
 def evidenced(h : Heap) -> Type {
   return type(#{v : Nat, ok : emp(h)})
 }
@@ -24,7 +24,7 @@ def owe(h : Heap, x : Nat) -> Type {
   }
 }
 
-/// The naturals paired with what each owes of `h`, a dependent record named by a definition.
+/// The dependent record this definition names, which pairs each natural with what it owes of `h`.
 def wpR(h : Heap) -> Type {
   return type(#{w : Nat, ok : owe(h, w)})
 }
@@ -39,7 +39,7 @@ def write(h : Heap, k : Nat => Type) -> Type {
   return type(#{v : Nat, ok : emp(h), next : k(v)})
 }
 
-/// What a read owes at the natural it read: the rest at zero, a write at a successor.
+/// What a read owes at the natural it reads: the rest at zero, a write at a successor.
 def matchRead(h : Heap, rest : Type, w : Nat) -> Type {
   case w {
     Zero => rest,

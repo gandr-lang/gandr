@@ -1,5 +1,5 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
-/// Implemented: sorts indexed by other sorts, or by the host's types, in a `theory` block and in `Model(S)`, an indexed sort stated as a function from its indices into the universe.
+/// Implemented: sorts that other sorts or the host's types index, in a `theory` block and in `Model(S)`, each sort a function from its indices into the universe.
 /// Not implemented: rules over indexed sorts; #522 owes it.
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
