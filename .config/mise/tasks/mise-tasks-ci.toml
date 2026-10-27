@@ -563,6 +563,35 @@ run = [
   "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",
 ]
 
+# A build script's `rerun-if-changed` inputs are read by mtime, not by
+# checksum, so a fresh checkout's dates reran `runtime-emitter`'s build script
+# on every restored state, and rebuilt every crate above it (#3206). An
+# archived state records the sources it was built from, and an unpacked one
+# dates each source unchanged since to before its build
+# (`.config/build-state/sources.bash`, its cases held by `check:build-state`).
+["ci:sources-record"]
+description = "Record the tracked sources a build state was built from, inside its target directory"
+usage = 'arg "<target>" help="the profile directory the state archives"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/build-state/sources.bash
+sources_record "$usage_target"
+'''
+
+["ci:sources-restamp"]
+description = "Date the sources an unpacked build state was built from to before its build"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/build-state/sources.bash
+records=()
+for dir in target/debug target/enforcing/debug; do
+  if [[ -e $dir/$SOURCES_RECORD ]]; then records+=("$dir/$SOURCES_RECORD"); fi
+done
+sources_restamp "${records[@]}"
+'''
+
 # Main keeps one cache entry per state: the run that saved one deletes the
 # entries under the state's key prefix it supersedes. Push runs of main
 # overlap, so an older landing's run can save after a newer one's; a run

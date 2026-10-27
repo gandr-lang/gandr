@@ -323,7 +323,8 @@ jobs:
           CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || env.CI_DOCS == 'true' && 'ci:prune-docs' || env.CI_DOCTESTS == 'true' && 'ci:prune-doctests' || 'ci:prune-plain' }}
         run: mise run "$CI_PRUNE_TASK"
       # Keep modes and mtimes in a zstd tar; upload without zip recompression.
-      # Each flavor keeps only its own test-profile target directory.
+      # Each flavor keeps only its own test-profile target directory, with
+      # the sources it was built from recorded inside (#3206).
       # Dispatches also upload, so warm measurements cover the promotion path;
       # a lane on main caches its state itself and uploads none.
       # The plain baseline only reads state: its full plain build would evict
@@ -336,6 +337,7 @@ jobs:
         env:
           CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || 'target/debug' }}
         run: |
+          mise run --quiet ci:sources-record "$CI_BUILD_TARGET"
           tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
           echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
       - &upload-build-state
@@ -383,11 +385,16 @@ jobs:
           if [[ -e "queue-state/build-state-$CI_BUILD_STATE.tar.zst" ]]; then mv -f "queue-state/build-state-$CI_BUILD_STATE.tar.zst" .; fi
           if [[ -e "build-state-$CI_BUILD_STATE.tar.zst" ]]; then echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"; fi
           if [[ -e dylint-drivers.tar ]]; then echo CI_DYLINT_DRIVERS_FOUND=true >> "$GITHUB_ENV"; fi
+      # A checkout dates every source now, after the state's build-script
+      # outputs, and a build script's inputs are read by mtime: each source
+      # unchanged since the state was built is dated before it (#3206).
       - &unpack-build-state
         name: unpack build state
         if: &state-found ${{ env.CI_BUILD_STATE_FOUND == 'true' }}
         shell: bash
-        run: zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+        run: |
+          zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+          mise run --quiet ci:sources-restamp
       # The dependency cache also holds Cargo's registry; this fills it.
       - &fetch-dependencies
         name: fetch locked dependencies
