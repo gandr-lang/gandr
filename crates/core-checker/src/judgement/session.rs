@@ -193,6 +193,12 @@ pub(super) struct Sessions
     /// The level of the owed stack the resumption or abandonment being
     /// judged ends: its one mention that reads it.
     pub ending: Option<usize>,
+    /// What each fork half being judged may do to the host so far, the
+    /// innermost half last.
+    pub footprints: Vec<crate::capability::Footprint>,
+    /// Each judged child's footprint while its parent is judged, the
+    /// innermost fork last.
+    separated: Vec<crate::capability::Footprint>,
     /// Each open offer's zone as the offer found it, then as its first arm
     /// left it, innermost offer last.
     zones: Vec<LinearZone>,
@@ -223,6 +229,8 @@ impl Sessions
             owing: Vec::new(),
             owed: Vec::new(),
             ending: None,
+            footprints: Vec::new(),
+            separated: Vec::new(),
             zones: Vec::new(),
             free: FreeIndices::default(),
         }
@@ -248,6 +256,10 @@ pub(super) struct Scope
     owed: usize,
     /// The offers' zones held.
     zones: usize,
+    /// The fork halves' footprints held.
+    footprints: usize,
+    /// The judged children's footprints held.
+    separated: usize,
 }
 
 /// Where one offer's or one case's zones stand on the run's zone stack: the
@@ -320,12 +332,14 @@ impl Machine<'_, '_>
             owing: self.sessions.owing.len(),
             owed: self.sessions.owed.len(),
             zones: self.sessions.zones.len(),
+            footprints: self.sessions.footprints.len(),
+            separated: self.sessions.separated.len(),
         }
     }
 
     /// Drop every linear slot bound, every lending, keep, region, capture
-    /// record and owed continuation made and every offer zone kept since
-    /// `scope`, spent or not: the linear half of unwinding a refused or
+    /// record, owed continuation and footprint made and every offer zone kept
+    /// since `scope`, spent or not: the linear half of unwinding a refused or
     /// recovered judgement.
     ///
     /// # Specification
@@ -343,7 +357,9 @@ impl Machine<'_, '_>
         && self.sessions.regions.len() <= scope.regions
         && self.sessions.owing.len() <= scope.owing
         && self.sessions.owed.len() <= scope.owed
-        && self.sessions.zones.len() <= scope.zones)]
+        && self.sessions.zones.len() <= scope.zones
+        && self.sessions.footprints.len() <= scope.footprints
+        && self.sessions.separated.len() <= scope.separated)]
     pub(super) fn close_sessions(
         &mut self,
         scope: Scope,
@@ -359,6 +375,8 @@ impl Machine<'_, '_>
         self.sessions.owed.truncate(scope.owed);
         self.sessions.ending = None;
         self.sessions.zones.truncate(scope.zones);
+        self.sessions.footprints.truncate(scope.footprints);
+        self.sessions.separated.truncate(scope.separated);
     }
 
     /// The endpoints the run bound and still holds, outermost first.
@@ -1303,6 +1321,7 @@ impl Machine<'_, '_>
             | CheckRefusal::CapabilityEscaped { .. }
             | CheckRefusal::CapabilityConsumable(_)
             | CheckRefusal::CapabilityUngranted { .. }
+            | CheckRefusal::FootprintsOverlap { .. }
             | CheckRefusal::SessionNotEquivalent { .. }
             | CheckRefusal::SessionNotSubtype { .. }
             | CheckRefusal::SessionCodeExpected { .. }
@@ -2925,6 +2944,66 @@ impl Machine<'_, '_>
         })
     }
 
+    /// Add to the innermost fork half being judged what a name it mentions,
+    /// of type `declared`, lets it do to the host
+    /// ([`crate::capability::Footprint::reach`]); nothing outside a fork.
+    ///
+    /// # Specification
+    /// - ensures: the innermost footprint holds every operation it held.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does
+    ///   not resolve.
+    /// - panics: none.
+    /// - executable: none — as [`crate::capability::Footprint::reach`].
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child and a parent each naming a capability that
+    ///   writes are refused, and each naming one that only reads checks.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    pub(super) fn footprint_mentioned(
+        &mut self,
+        declared: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(footprint) = self.sessions.footprints.last_mut()
+        else {
+            return Ok(());
+        };
+        footprint.reach(self.context.arena(), TypeNode::Value(declared))
+    }
+
+    /// Add to the innermost fork half being judged the operation the request
+    /// `at` performs by name; nothing outside a fork or for another former.
+    ///
+    /// # Specification
+    /// - ensures: the innermost footprint holds every operation it held.
+    /// - panics: none.
+    /// - executable: none — as [`crate::capability::Footprint::reach`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two halves each writing a file by name are refused.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    pub(super) fn footprint_performed(
+        &mut self,
+        at: ComputationId,
+    )
+    {
+        let Some(footprint) = self.sessions.footprints.last_mut()
+        else {
+            return;
+        };
+        if let Some(&Computation::Perform {
+            ref signature,
+            ref operation,
+            ..
+        }) = self.context.arena().computation(at)
+        {
+            footprint.perform(signature, operation);
+        }
+    }
+
     /// Refuse `term`, at `node`, naming an owed continuation where `by` may
     /// run its end other than once.
     ///
@@ -2985,8 +3064,9 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: the annotation formed.
-    /// - ensures: one linear slot more, at the annotation's session type; one
-    ///   `ForkChild` frame waits on the child's check.
+    /// - ensures: one linear slot more, at the annotation's session type; the
+    ///   child's footprint opens empty; one `ForkChild` frame waits on the
+    ///   child's check.
     /// - fails: [`CheckRefusal::ShapeMismatch`] wanting
     ///   [`ExpectedShape::Session`] for an annotation that is no session type
     ///   at its weak head; [`CheckRefusal::Access`] naming
@@ -3124,6 +3204,9 @@ impl Machine<'_, '_>
             .context
             .arena_mut()
             .comp_type_returner_with_effects(unit, row);
+        self.sessions
+            .footprints
+            .push(crate::capability::Footprint::default());
         self.wait(Frame::ForkChild {
             at,
             direction,
@@ -3194,14 +3277,17 @@ impl Machine<'_, '_>
     }
 
     /// Continue a fork whose child checked: require the child's end and its
-    /// share of the enclosing ones spent, then bind the parent's end at the
-    /// dual and judge the parent in the fork's direction.
+    /// share of the enclosing ones spent, set the child's footprint aside,
+    /// then bind the parent's end at the dual and judge the parent in the
+    /// fork's direction.
     ///
     /// # Specification
     /// - requires: the child checked.
     /// - ensures: the child's slot is closed and the parent's opened at the
-    ///   dual of `session`; one `ForkParent` frame waits on the parent.
-    /// - fails: as [`Self::spend`].
+    ///   dual of `session`; the parent's footprint opens empty; one
+    ///   `ForkParent` frame waits on the parent.
+    /// - fails: as [`Self::spend`]; [`CheckRefusal::MachineInvariant`] when no
+    ///   child's footprint is open.
     /// - panics: none.
     ///
     /// # Errors
@@ -3226,6 +3312,15 @@ impl Machine<'_, '_>
         };
         let share = self.free_linear(CoreTerm::Computation(child))?;
         self.spend(at, &share)?;
+        let child_footprint = self
+            .sessions
+            .footprints
+            .pop()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.sessions.separated.push(child_footprint);
+        self.sessions
+            .footprints
+            .push(crate::capability::Footprint::default());
         let dual = session_at(self.context, session)?.dual();
         let dual = self.context.arena_mut().value_type_session(dual);
         let depth = self.context.depth(Zone::Intuitionistic);
@@ -3245,13 +3340,19 @@ impl Machine<'_, '_>
     }
 
     /// Finish a fork whose parent was judged: require the parent's end spent
-    /// and hand the parent's result on.
+    /// and the two halves' footprints separate, add both to the half around
+    /// the fork, if any, and hand the parent's result on.
     ///
     /// # Specification
     /// - requires: the parent was judged in `direction`.
     /// - ensures: the parent's slot is closed; the fork checked, or synthesised
-    ///   the parent's type.
-    /// - fails: as [`Self::spend`].
+    ///   the parent's type; the half around the fork, if any, holds every
+    ///   operation either half held.
+    /// - fails: as [`Self::spend`]; [`CheckRefusal::FootprintsOverlap`] at the
+    ///   fork when an interface is in both footprints and one of them holds an
+    ///   operation on it that does not only read the host;
+    ///   [`CheckRefusal::MachineInvariant`] when the halves' footprints are not
+    ///   open.
     /// - panics: none.
     ///
     /// # Errors
@@ -3259,9 +3360,12 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an operator that leaves its end open is refused at
-    ///   the fork; the seat exchange's operator closes it on every path.
+    ///   the fork; the seat exchange's operator closes it on every path; two
+    ///   halves writing through one capability are refused, and two reading
+    ///   through it check.
     /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
     pub(super) fn joined(
         &mut self,
@@ -3271,6 +3375,26 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         self.spend(at, &[])?;
+        let (Some(parent), Some(child)) = (
+            self.sessions.footprints.pop(),
+            self.sessions.separated.pop(),
+        )
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if let Some(shared) = child.overlap(&parent) {
+            let arena = self.context.arena_mut();
+            return Err(CheckRefusal::FootprintsOverlap {
+                at,
+                child: child.capability(arena)?,
+                parent: parent.capability(arena)?,
+                shared: shared.capability(arena)?,
+            });
+        }
+        if let Some(around) = self.sessions.footprints.last_mut() {
+            around.absorb(child);
+            around.absorb(parent);
+        }
         match (direction, produced) {
             (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
             (Direction::Synthesise, Produced::CompType(ty)) => {

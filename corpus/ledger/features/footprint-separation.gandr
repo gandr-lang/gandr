@@ -1,0 +1,38 @@
+/// `footprint-separation` checks two forks whose halves share no host interface that either may change.
+///
+/// Implemented: the checker refuses `FootprintsOverlap` at a fork whose halves share a host interface that one of them may change.
+/// Not implemented: a face naming each half's footprint, which #2879 owes, and a row read per operation, which #2878 owes.
+///
+/// A half's footprint holds the host operations that the names it mentions let it perform.
+/// The checker reads it off their types: a held capability at its authority, a returner's row and an operation called by name.
+/// Two halves share an interface only when every operation either half holds on it only reads.
+///
+/// - see: corpus/ledger/diagnostics/FootprintsOverlap.gandr
+/// - see: Xu, Bračevac, Pham, Zhao and Odersky, System Capybara, arXiv:2607.09383, § 4.5
+
+// The task's protocol.
+import "../../model/tasks/task-base.gandr";
+
+/// Both halves hold the capability attenuated to reading, so they share the file system only to read it.
+def reading(c : Cap { read }) -> [Fs] Unit {
+  fork (task : Task.Join) {
+    run text <- c.read(Task.notes);
+    send(task, text);
+    close(task)
+  } as found;
+  run mine <- c.read(Task.notes);
+  recv(found) as text;
+  close(found)
+}
+
+/// A writer beside an exiter reaches two interfaces, so its halves share nothing.
+def apart(files : Cap { write }, process : Cap { exit }) -> [Fs, Proc] Unit {
+  fork (task : Task.Join) {
+    files.write(Task.notes, "task");
+    send(task, Task.notes);
+    close(task)
+  } as found;
+  process.exit(0);
+  recv(found) as text;
+  close(found)
+}

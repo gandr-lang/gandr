@@ -71,6 +71,11 @@
 //! enter when the parser and lowering acquire their syntax; the kernel’s code,
 //! bridge, higher-field, funext, Flow and List rule-language witnesses remain
 //! at their owning boundaries.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal
+//!   `FootprintsOverlap` of try-first 1, classed a malformed source.
 
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -567,6 +572,9 @@ pub enum RefusalName
     CapabilityConsumable,
     /// A held capability claiming authority the host did not grant.
     CapabilityUngranted,
+    /// Two halves of a fork that may both use one host interface, one of
+    /// them to change what it reaches.
+    FootprintsOverlap,
     /// A `bisim` relating two protocols that are not bisimilar.
     SessionNotEquivalent,
     /// A `sim` whose source does not simulate its target.
@@ -981,7 +989,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 218_usize] = [
+    pub const VOCABULARY: [Self; 219_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1036,6 +1044,7 @@ impl RefusalName
         Self::CapabilityEscaped,
         Self::CapabilityConsumable,
         Self::CapabilityUngranted,
+        Self::FootprintsOverlap,
         Self::SessionNotEquivalent,
         Self::SessionNotSubtype,
         Self::SessionCodeExpected,
@@ -1451,6 +1460,7 @@ impl RefusalName
         | (Self::CapabilityEscaped, b"CapabilityEscaped")
         | (Self::CapabilityConsumable, b"CapabilityConsumable")
         | (Self::CapabilityUngranted, b"CapabilityUngranted")
+        | (Self::FootprintsOverlap, b"FootprintsOverlap")
         | (Self::SessionNotEquivalent, b"SessionNotEquivalent")
         | (Self::SessionNotSubtype, b"SessionNotSubtype")
         | (Self::SessionCodeExpected, b"SessionCodeExpected")
@@ -1593,6 +1603,7 @@ impl RefusalName
             Self::CapabilityEscaped => "CapabilityEscaped",
             Self::CapabilityConsumable => "CapabilityConsumable",
             Self::CapabilityUngranted => "CapabilityUngranted",
+            Self::FootprintsOverlap => "FootprintsOverlap",
             Self::SessionNotEquivalent => "SessionNotEquivalent",
             Self::SessionNotSubtype => "SessionNotSubtype",
             Self::SessionCodeExpected => "SessionCodeExpected",
@@ -2401,6 +2412,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::CapabilityEscaped { .. }), RefusalName::CapabilityEscaped)
         | (Self::Checking(CheckRefusal::CapabilityConsumable(_)), RefusalName::CapabilityConsumable)
         | (Self::Checking(CheckRefusal::CapabilityUngranted { .. }), RefusalName::CapabilityUngranted)
+        | (Self::Checking(CheckRefusal::FootprintsOverlap { .. }), RefusalName::FootprintsOverlap)
         | (Self::Checking(CheckRefusal::SessionNotEquivalent { .. }), RefusalName::SessionNotEquivalent)
         | (Self::Checking(CheckRefusal::SessionNotSubtype { .. }), RefusalName::SessionNotSubtype)
         | (Self::Checking(CheckRefusal::SessionCodeExpected { .. }), RefusalName::SessionCodeExpected)
@@ -2822,6 +2834,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::CapabilityEscaped { .. }, RefusalName::CapabilityEscaped)
         | (CheckRefusal::CapabilityConsumable(_), RefusalName::CapabilityConsumable)
         | (CheckRefusal::CapabilityUngranted { .. }, RefusalName::CapabilityUngranted)
+        | (CheckRefusal::FootprintsOverlap { .. }, RefusalName::FootprintsOverlap)
         | (CheckRefusal::SessionNotEquivalent { .. }, RefusalName::SessionNotEquivalent)
         | (CheckRefusal::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
         | (CheckRefusal::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
@@ -2965,6 +2978,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
         CheckRefusal::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,
         CheckRefusal::CapabilityUngranted { .. } => RefusalName::CapabilityUngranted,
+        CheckRefusal::FootprintsOverlap { .. } => RefusalName::FootprintsOverlap,
         CheckRefusal::SessionNotEquivalent { .. } => RefusalName::SessionNotEquivalent,
         CheckRefusal::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
         CheckRefusal::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,

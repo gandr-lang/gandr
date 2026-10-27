@@ -18,7 +18,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
 
-**How.** `dispatch` is a total match over the closed `Invocation` enum. How a source is composed is in [`compose`](src/compose.rs), how the walk reads, forks and judges in [`walk`](src/walk.rs), and how a staging hands its programs to the checker in [`stage`](src/stage.rs).
+**How.** `dispatch` is a total match over the closed `Invocation` enum.
 
 ## Provided features
 
@@ -122,6 +122,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed manifests — metadata is gandr, so `gandr.toml` is output, never read.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — the census reports each cell's counts.
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts.
 
 ## License
 

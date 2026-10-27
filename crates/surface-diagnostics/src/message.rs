@@ -1320,6 +1320,10 @@ fn checked(
         CheckRefusal::CapabilityUngranted { .. } => {
             f.write_str("this capability claims authority the host did not grant")
         },
+        CheckRefusal::FootprintsOverlap { .. } => f.write_str(
+            "both halves of this fork may use the authority found here, and one of them may \
+             change it",
+        ),
     }
 }
 
@@ -2190,6 +2194,12 @@ mod tests
             CheckRefusal::CapabilityUngranted {
                 constant: ConstantIndex::from(0_usize),
                 declared: value_type,
+            },
+            CheckRefusal::FootprintsOverlap {
+                at: computation,
+                child: value_type,
+                parent: value_type,
+                shared: value_type,
             },
             CheckRefusal::UnenclosedRun { at: value },
             CheckRefusal::ImplicitUnsolved {

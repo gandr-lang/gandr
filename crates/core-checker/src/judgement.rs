@@ -4605,6 +4605,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(declared) => {
                     self.located_here(term, index)?;
                     self.mention(term, index)?;
+                    self.footprint_mentioned(declared)?;
                     // The slot's type moved to this depth as a root update:
                     // the value bridge reads it through the relocation, and
                     // every other rule settles it where it reads it.
@@ -4629,6 +4630,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Constant(constant) => match self.context.consult(constant) {
                 Maybe::Present(declared) => {
                     self.located_constant(term, constant, declared.id())?;
+                    self.footprint_mentioned(declared.id())?;
                     let read = match self.quantified_at(constant, declared.id())? {
                         Maybe::Present(staged) => staged,
                         Maybe::Absent(crate::quantified::Unread::Plain) => declared.id(),
@@ -5778,6 +5780,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 // stands nearest when it runs, so any of them may receive the
                 // rest of the run as a continuation.
                 self.region_captured(term, session::Answerer::Anyone, payload)?;
+                self.footprint_performed(term);
                 let result = self
                     .context
                     .arena_mut()
@@ -9565,6 +9568,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::CapabilityEscaped { .. }
                     | CheckRefusal::CapabilityConsumable(_)
                     | CheckRefusal::CapabilityUngranted { .. }
+                    | CheckRefusal::FootprintsOverlap { .. }
                     | CheckRefusal::SessionNotEquivalent { .. }
                     | CheckRefusal::SessionNotSubtype { .. }
                     | CheckRefusal::SessionCodeExpected { .. }

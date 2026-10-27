@@ -8,6 +8,7 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -111,6 +112,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The synthesis stream | [`stream`](src/stream.rs) |
 | Sessions | [`session`](src/session.rs) |
 | Specification evidence, the consumer and references | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: a stored `FootprintsOverlap` keeps both halves' footprints and what they share.
 
 ## License
 

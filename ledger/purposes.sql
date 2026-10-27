@@ -671,9 +671,11 @@ INSERT INTO purpose VALUES('core-term','effect::host::DIV','constant','The diver
 INSERT INTO purpose VALUES('core-term','effect::host::ENV','constant','The read-only process environment interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::EXEC','constant','The process execution interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::FS','constant','The filesystem interface''s name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::HostAccess','enum','How a host operation meets the host: it only reads it, or it changes what another task could observe.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The seven host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PROC','constant','The early process-exit interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The completion ring''s buffer interface''s name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::access','function','How an interface''s operation meets the host, so two forked halves may share an interface whose shared operations only read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::divergence','function','The divergence interface''s signature: named Div with no operation, so it names no type and needs no arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::FailureClass','enum','Whose fact a refusal records: a user absence, an unimplemented feature, a malformed source, or an engine fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::TrackingIssue','struct','The issue on gandr''s tracker whose landing builds what a refusal or an editor answer is missing.',NULL,'fits','sound',NULL);

@@ -3,7 +3,7 @@
 //!
 //! The leaves — the authority as a set of (interface, operation) grant atoms,
 //! the region a capability lives for and its grade — are `gandr-core-term`'s
-//! `effect::capability`. This module states the five rules the judgement runs
+//! `effect::capability`. This module states the six rules the judgement runs
 //! over them, and holds the pieces of those rules that read no machine state.
 //!
 //! # The rules
@@ -21,6 +21,13 @@
 //!                Γ, x : A ⊢ N ⇐ F^ε A    Γ, p : A_op, k : U(F^ε B_op → F^ε A) ⊢ N_op ⇐ F^ε A
 //!   Scope       ──────────────────────────────────────────────────────────────────────────
 //!                Γ ⊢ scope c : I in M with { return x ↦ N; op p k ↦ N_op } ⇐ F^ε A
+//!
+//!                M reaches φ    N reaches ψ    φ ⋈ ψ
+//!   Separate    ─────────────────────────────────────────
+//!                Γ ⊢ fork (x : S) { M } as y; N ⇐ F^ε A
+//!
+//!   φ ⋈ ψ  iff  every operation φ(I) ∪ ψ(I) holds only reads the host,
+//!               for each interface I that both φ and ψ reach
 //! ```
 //!
 //! - **Introduction at the entry.** A declaration with a signature and no body
@@ -43,6 +50,15 @@
 //!   the region one deeper than every scope around it. Its answer may not
 //!   mention that region or a deeper one: [`CheckRefusal::CapabilityEscaped`]
 //!   at the scope.
+//! - **Separate** is the premise of a fork, whose halves run as peers. Each
+//!   half's footprint, [`Footprint`], is the host operations the names it
+//!   mentions let it perform: a held capability at its authority, a returner's
+//!   row at each interface it names, and an operation performed by name. The
+//!   halves share an interface only where every operation either holds on it
+//!   only reads ([`gandr_core_term::effect::host::access`]); otherwise
+//!   [`CheckRefusal::FootprintsOverlap`] at the fork, naming both footprints
+//!   and what they share. A nested fork's footprints join their enclosing
+//!   half's.
 //!
 //! # Decisions
 //!
@@ -80,11 +96,34 @@
 //!   admits no binder, so checking it as durable would let it be exercised
 //!   twice. Revocation is the end of the region; nothing revokes a capability
 //!   mid-run.
+//! - **A footprint is read, not recorded.** A closure's type already records
+//!   the summaries a footprint is made of, a held capability's authority and a
+//!   returner's row, so a half's footprint is read off the types of the names
+//!   it mentions and no type gains a summary. It is keyed by interface, since
+//!   two capabilities over one interface reach one host, and counts a row entry
+//!   whole, by the first decision: a helper that only reads `Fs` counts as
+//!   changing it. A scoped capability is answered by its scope's handler, not
+//!   by the host, and adds nothing. A row's tail adds nothing either: a tail is
+//!   instantiated only by a thunk the half mentions, whose own type is read.
+//!   Reversal: a row entry attenuated to operations (#2878), and a footprint
+//!   keyed finer than an interface when the host's state is partitioned, such
+//!   as a path within the file system.
 //! - **Nothing persists.** The kernel admits no effectful former, so the bridge
 //!   refuses a capability type, an exercise and a scope by name, as it refuses
 //!   a request and a handler. Authority is decided here, completely, and an
 //!   exercise carries no evidence beyond the operation it names. Reversal: when
 //!   the kernel admits effectful computations.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the Separate rule,
+//!   two closures over one durable capability under a fork refused and their
+//!   read-only twin accepted (try-first 1).
+//! - Yichen Xu, Oliver Bračevac, Cao Nguyen Pham, Yaoyu Zhao and Martin
+//!   Odersky. "System Capybara: Tracking Capabilities for Separation and
+//!   Freshness." 2026. `arXiv:2607.09383`, § 4.5: two footprints are separate
+//!   when every location they share is read-only in both, read here at an
+//!   interface.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -99,14 +138,20 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::EffectLabel;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::effect::host::AuthorityError;
+use gandr_core_term::effect::host::HostAccess;
 use gandr_core_term::effect::host::HostSignatures;
+use gandr_core_term::effect::host::access;
 use gandr_core_term::row::RowInclusion;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
@@ -593,102 +638,383 @@ where
 {
     let mut pending = alloc::vec![root];
     while let Some(node) = pending.pop() {
-        let dangling = CheckRefusal::DanglingNode {
-            node: CoreNode::Type(node),
-        };
-        match node {
-            TypeNode::Value(at) => match *arena.value_type(at).ok_or(dangling)? {
-                ValueType::Capability { region, .. } if chosen(region) => {
-                    return Ok(Reach::Mentions);
-                },
-                ValueType::Capability { ref authority, .. } => {
-                    pending.extend(authority.types().map(TypeNode::Value));
-                },
-                ValueType::Kept { region, .. } if chosen(region) => return Ok(Reach::Keeps),
-                ValueType::Kept { value, .. } => pending.push(TypeNode::Value(value)),
-                ValueType::Data { ref arguments, .. } => {
-                    pending.extend(arguments.iter().filter_map(|&argument| {
-                        match arena.value(argument) {
-                            Some(&Value::Quote(quoted)) => Some(TypeNode::Value(quoted)),
-                            Some(&Value::QuoteComputation(quoted)) => {
-                                Some(TypeNode::Computation(quoted))
-                            },
-                            Some(_) | None => None,
-                        }
-                    }));
-                },
-                ValueType::Record(ref fields) => {
-                    pending.extend(fields.values().copied().map(TypeNode::Value));
-                },
-                ValueType::Product(ref components) | ValueType::Sum(ref components) => {
-                    pending.extend(components.iter().copied().map(TypeNode::Value));
-                },
-                ValueType::List(inner)
-                | ValueType::Lift { inner, .. }
-                | ValueType::Path { carrier: inner, .. }
-                | ValueType::Flow { carrier: inner, .. }
-                | ValueType::Staged { base: inner, .. } => pending.push(TypeNode::Value(inner)),
-                ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
-                ValueType::StaticPi { domain, codomain }
-                | ValueType::Sigma {
-                    first: domain,
-                    second: codomain,
-                } => {
-                    pending.extend([TypeNode::Value(domain), TypeNode::Value(codomain)]);
-                },
-                ValueType::Stack { input, output } => {
-                    pending.extend([TypeNode::Computation(input), TypeNode::Computation(output)]);
-                },
-                ValueType::Session(ref session) => {
-                    pending.extend(session.payloads().iter().copied().map(TypeNode::Value));
-                },
-                ValueType::World(ref world) => {
-                    pending.extend(world.types().map(TypeNode::Value));
-                },
-                ValueType::PathUniverse(..)
-                | ValueType::Run(_)
-                | ValueType::Prefix(_)
-                | ValueType::Dialogue(_)
-                | ValueType::Web
-                | ValueType::Base(_)
-                | ValueType::Universe { .. }
-                | ValueType::Element { .. }
-                | ValueType::Abstract(_)
-                | ValueType::Unknown
-                | ValueType::Buffer
-                | ValueType::Row
-                | ValueType::RowTail(_) => {},
-            },
-            TypeNode::Computation(at) => match *arena.comp_type(at).ok_or(dangling)? {
-                CompType::Returner {
-                    result,
-                    ref effects,
-                } => {
-                    pending.push(TypeNode::Value(result));
-                    pending.extend(effects.types().map(TypeNode::Value));
-                },
-                CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
-                    pending.extend([TypeNode::Value(domain), TypeNode::Computation(codomain)]);
-                },
-                CompType::With(ref components) => {
-                    pending.extend(components.iter().copied().map(TypeNode::Computation));
-                },
-                CompType::Codata { ref arguments, .. } => {
-                    pending.extend(arguments.iter().filter_map(|&argument| {
-                        match arena.value(argument) {
-                            Some(&Value::Quote(quoted)) => Some(TypeNode::Value(quoted)),
-                            Some(&Value::QuoteComputation(quoted)) => {
-                                Some(TypeNode::Computation(quoted))
-                            },
-                            Some(_) | None => None,
-                        }
-                    }));
-                },
-                CompType::Element { .. } | CompType::Unknown => {},
-            },
+        if let TypeNode::Value(at) = node {
+            let found = arena.value_type(at).ok_or(CheckRefusal::DanglingNode {
+                node: CoreNode::Type(node),
+            })?;
+            if let ValueType::Capability { region, .. } = *found
+                && chosen(region)
+            {
+                return Ok(Reach::Mentions);
+            }
+            if let ValueType::Kept { region, .. } = *found
+                && chosen(region)
+            {
+                return Ok(Reach::Keeps);
+            }
         }
+        successors(arena, node, &mut pending)?;
     }
     Ok(Reach::Clear)
+}
+
+/// Push onto `pending` every type the type `node` names through its own
+/// former: a capability's authority's types, a kept type's value, a data or
+/// codata type's quoted arguments, a returner's result and row, and each
+/// component, domain and codomain. A code is not decoded.
+///
+/// # Specification
+/// - ensures: `pending` grows by the types `node`'s former names, and by
+///   nothing for a leaf.
+/// - fails: [`CheckRefusal::DanglingNode`] for a `node` that does not resolve.
+/// - panics: none.
+/// - executable: none — the answer is the former's own children; a clause
+///   restating it would match the former again.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`first_region`] and [`Footprint::reach`], which walk
+///   every former through it.
+/// - witness: `capability::tests::a_binder_is_named_through_every_former`
+/// - witness: `capability::tests::a_footprint_reads_held_authority_and_rows_through_every_former`
+fn successors(
+    arena: &CoreArena,
+    node: TypeNode,
+    pending: &mut Vec<TypeNode>,
+) -> Result<(), CheckRefusal>
+{
+    let dangling = CheckRefusal::DanglingNode {
+        node: CoreNode::Type(node),
+    };
+    match node {
+        TypeNode::Value(at) => match *arena.value_type(at).ok_or(dangling)? {
+            ValueType::Capability { ref authority, .. } => {
+                pending.extend(authority.types().map(TypeNode::Value));
+            },
+            ValueType::Kept { value, .. } => pending.push(TypeNode::Value(value)),
+            ValueType::Data { ref arguments, .. } => {
+                pending.extend(quoted(arena, arguments));
+            },
+            ValueType::Record(ref fields) => {
+                pending.extend(fields.values().copied().map(TypeNode::Value));
+            },
+            ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                pending.extend(components.iter().copied().map(TypeNode::Value));
+            },
+            ValueType::List(inner)
+            | ValueType::Lift { inner, .. }
+            | ValueType::Path { carrier: inner, .. }
+            | ValueType::Flow { carrier: inner, .. }
+            | ValueType::Staged { base: inner, .. } => pending.push(TypeNode::Value(inner)),
+            ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
+            ValueType::StaticPi { domain, codomain }
+            | ValueType::Sigma {
+                first: domain,
+                second: codomain,
+            } => {
+                pending.extend([TypeNode::Value(domain), TypeNode::Value(codomain)]);
+            },
+            ValueType::Stack { input, output } => {
+                pending.extend([TypeNode::Computation(input), TypeNode::Computation(output)]);
+            },
+            ValueType::Session(ref session) => {
+                pending.extend(session.payloads().iter().copied().map(TypeNode::Value));
+            },
+            ValueType::World(ref world) => {
+                pending.extend(world.types().map(TypeNode::Value));
+            },
+            ValueType::PathUniverse(..)
+            | ValueType::Run(_)
+            | ValueType::Prefix(_)
+            | ValueType::Dialogue(_)
+            | ValueType::Web
+            | ValueType::Base(_)
+            | ValueType::Universe { .. }
+            | ValueType::Element { .. }
+            | ValueType::Abstract(_)
+            | ValueType::Unknown
+            | ValueType::Buffer
+            | ValueType::Row
+            | ValueType::RowTail(_) => {},
+        },
+        TypeNode::Computation(at) => match *arena.comp_type(at).ok_or(dangling)? {
+            CompType::Returner {
+                result,
+                ref effects,
+            } => {
+                pending.push(TypeNode::Value(result));
+                pending.extend(effects.types().map(TypeNode::Value));
+            },
+            CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
+                pending.extend([TypeNode::Value(domain), TypeNode::Computation(codomain)]);
+            },
+            CompType::With(ref components) => {
+                pending.extend(components.iter().copied().map(TypeNode::Computation));
+            },
+            CompType::Codata { ref arguments, .. } => {
+                pending.extend(quoted(arena, arguments));
+            },
+            CompType::Element { .. } | CompType::Unknown => {},
+        },
+    }
+    Ok(())
+}
+
+/// The types a data or codata type's arguments quote, in order: a value
+/// argument that quotes no type names none.
+///
+/// # Specification
+/// trivial.
+fn quoted<'arena>(
+    arena: &'arena CoreArena,
+    arguments: &'arena [ValueId],
+) -> impl Iterator<Item = TypeNode> + 'arena
+{
+    arguments
+        .iter()
+        .filter_map(|&argument| match arena.value(argument) {
+            Some(&Value::Quote(quoted)) => Some(TypeNode::Value(quoted)),
+            Some(&Value::QuoteComputation(quoted)) => Some(TypeNode::Computation(quoted)),
+            Some(_) | None => None,
+        })
+}
+
+/// What one half of a fork may do to the host: each interface it may use,
+/// with the operations it may perform there. A half's footprint is read off
+/// the types of the names it mentions and the operations it performs by
+/// name, so a closure's footprint is the summary its type already records:
+/// a held capability's authority, and the row of each returner it reaches.
+/// Two halves are separate when no interface is in both footprints, or every
+/// operation either performs on a shared one only reads the host
+/// ([`gandr_core_term::effect::host::access`]).
+///
+/// # Specification
+/// - ensures: one entry per interface, holding each operation once with the
+///   payload and reply types its interface gives it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two children over one capability granting `read` and
+///   `write` are refused naming both footprints; two holding `read` only are
+///   accepted; a scoped capability and a row's tail add nothing.
+/// - witness: `capability::tests::a_footprint_reads_held_authority_and_rows_through_every_former`
+/// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Footprint(BTreeMap<EffectName, BTreeMap<OperationName, EffectOp>>);
+
+impl Footprint
+{
+    /// Add every operation the type `root` lets a holder perform on the
+    /// host: each held capability's authority, and each interface of each
+    /// returner's row, through every former [`successors`] walks. A
+    /// capability a scope introduces is answered by the scope, not the host,
+    /// and a row's tail names no interface; neither adds anything.
+    ///
+    /// # Specification
+    /// - ensures: every operation already held is still held.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does
+    ///   not resolve.
+    /// - panics: none.
+    /// - executable: none — the clause frames the footprint as it was before
+    ///   the call, which a predicate would copy whole.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `while let` worklist, not recursion; each node is popped
+    ///   once per path that reaches it, and the arena is acyclic.
+    /// - measure: the paths under `root` not yet popped.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held capability inside a thunk's domain, a
+    ///   returner's row, a scoped capability and a row tail, each read.
+    /// - witness: `capability::tests::a_footprint_reads_held_authority_and_rows_through_every_former`
+    pub(crate) fn reach(
+        &mut self,
+        arena: &CoreArena,
+        root: TypeNode,
+    ) -> Result<(), CheckRefusal>
+    {
+        let mut pending = alloc::vec![root];
+        while let Some(node) = pending.pop() {
+            match node {
+                TypeNode::Value(at) => {
+                    if let Some(&ValueType::Capability {
+                        ref authority,
+                        region: Region::Held,
+                        ..
+                    }) = arena.value_type(at)
+                    {
+                        self.signatures(authority.instances());
+                    }
+                },
+                TypeNode::Computation(at) => {
+                    if let Some(&CompType::Returner { ref effects, .. }) = arena.comp_type(at) {
+                        self.signatures(effects.instances());
+                    }
+                },
+            }
+            successors(arena, node, &mut pending)?;
+        }
+        Ok(())
+    }
+
+    /// Add every operation of each signature an interface's default label
+    /// carries; an instance a scope introduces is skipped.
+    ///
+    /// # Specification
+    /// trivial.
+    fn signatures<'row>(
+        &mut self,
+        entries: impl Iterator<Item = (&'row EffectLabel, &'row EffectSig)>,
+    )
+    {
+        for (label, signature) in entries {
+            if matches!(*label, EffectLabel::Interface(_)) {
+                let held = self.0.entry(signature.name().clone()).or_default();
+                for operation in signature.operations() {
+                    held.entry(operation.name.clone())
+                        .or_insert_with(|| operation.clone());
+                }
+            }
+        }
+    }
+
+    /// Add the operation `operation` of `signature`, performed by name.
+    ///
+    /// # Specification
+    /// - ensures: the operation is held when `signature` declares it; nothing
+    ///   changes otherwise.
+    /// - panics: none.
+    /// - executable: none — as [`Self::reach`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reach`]: a half performing an operation by
+    ///   name holds it.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    pub(crate) fn perform(
+        &mut self,
+        signature: &EffectSig,
+        operation: &OperationName,
+    )
+    {
+        if let Maybe::Present(declared) = signature.operation(operation) {
+            self.0
+                .entry(signature.name().clone())
+                .or_default()
+                .entry(operation.clone())
+                .or_insert_with(|| declared.clone());
+        }
+    }
+
+    /// Add every operation `other` holds.
+    ///
+    /// # Specification
+    /// - ensures: every operation either footprint held is held.
+    /// - panics: none.
+    /// - executable: none — as [`Self::reach`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reach`]: an inner fork's halves both count
+    ///   toward the half around it.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    pub(crate) fn absorb(
+        &mut self,
+        other: Self,
+    )
+    {
+        for (interface, operations) in other.0 {
+            let held = self.0.entry(interface).or_default();
+            for (name, operation) in operations {
+                held.entry(name).or_insert(operation);
+            }
+        }
+    }
+
+    /// The interfaces both footprints use where either may change the host,
+    /// each with the operations both sides hold there; `None` exactly when
+    /// the two are separate.
+    ///
+    /// # Specification
+    /// - ensures: an interface is kept only when both footprints hold it and
+    ///   one of its operations either holds does not only read the host; an
+    ///   overlap holds at least one interface.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `read` on both sides is separate; `read` beside
+    ///   `write` is not; two interfaces apart are separate.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|shared| !shared.0.is_empty() && shared.0.keys().all(|interface| self.0.contains_key(interface) && other.0.contains_key(interface))))]
+    pub(crate) fn overlap(
+        &self,
+        other: &Self,
+    ) -> Option<Self>
+    {
+        let mut shared = Self::default();
+        for (interface, mine) in &self.0 {
+            let Some(theirs) = other.0.get(interface)
+            else {
+                continue;
+            };
+            let changes = mine
+                .keys()
+                .chain(theirs.keys())
+                .any(|operation| access(interface, operation) == HostAccess::Changes);
+            if changes {
+                let mut both = mine.clone();
+                for (name, operation) in theirs {
+                    both.entry(name.clone())
+                        .or_insert_with(|| operation.clone());
+                }
+                shared.0.insert(interface.clone(), both);
+            }
+        }
+        if shared.0.is_empty() {
+            None
+        }
+        else {
+            Some(shared)
+        }
+    }
+
+    /// The footprint as the type of a durable capability the host holds,
+    /// whose authority is exactly the footprint: how a refusal names it.
+    ///
+    /// # Specification
+    /// - ensures: a held, durable capability type granting each held operation.
+    /// - fails: [`CheckRefusal::MachineInvariant`] never, for a footprint
+    ///   holding each operation once per interface.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::MachineInvariant`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the refused children's footprints, each named as the
+    ///   capability granting what the half holds.
+    /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&id| matches!(arena.value_type(id), Some(&ValueType::Capability { grade: CapabilityGrade::Durable, region: Region::Held, .. }))))]
+    pub(crate) fn capability(
+        &self,
+        arena: &mut CoreArena,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        let signatures = self
+            .0
+            .iter()
+            .map(|(interface, operations)| {
+                EffectSig::new(interface.clone(), operations.values().cloned())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_conflict| CheckRefusal::MachineInvariant)?;
+        let authority = EffectRow::authority(&signatures)
+            .map_err(|_conflict| CheckRefusal::MachineInvariant)?;
+        Ok(arena.value_type_capability(authority, CapabilityGrade::Durable, Region::Held))
+    }
 }
 
 /// Admit the declaration `constant`, owed at `declared`, as a capability the
