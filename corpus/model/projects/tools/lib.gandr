@@ -30,6 +30,13 @@ pub module Package : Model(Gandr.Package) {
   def documentation = "https://github.com/gandr-lang/gandr";
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The language version, the workspace's.
+  def gandr = Workspace.gandr;
+  /// The features the sources use: the workspace's, the lock that reads its
+  /// dependency, and the import at a signature.
+  def features = "project-manifest, package-lock, package-signature";
+  /// The systems the package builds on, the workspace's.
+  def systems = Workspace.systems;
 }
 
 /// The packages this one depends on: `hello`, found at its sibling's root.

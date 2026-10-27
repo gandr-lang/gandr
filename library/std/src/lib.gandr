@@ -18,4 +18,10 @@ pub module Package : Model(Gandr.Package) {
   def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std";
   /// The address a resolver may fetch `std` from.
   def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version `std` is written for.
+  def gandr = ">= 0.0";
+  /// The features `std` asks the toolchain for: none it names yet.
+  def features = "";
+  /// The systems `std` is built on: any.
+  def systems = "";
 }

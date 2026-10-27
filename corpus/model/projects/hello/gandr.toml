@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 745e79d5696032a2f0869b030ba261bef6753f4bc6e7119d4df2de8b431c1005
+# blake3: 7ee8521aa2f31b9257ba996188c207d1158c9ec82dee26750892a50904ca1d1a
 
 [package]
 name = "hello"
@@ -11,3 +11,10 @@ endpoint = "https://github.com/gandr-lang/gandr"
 modules = [
   "text.greet",
 ]
+
+[toolchain]
+gandr = ">= 0.0"
+features = [
+  "project-manifest",
+]
+systems = []

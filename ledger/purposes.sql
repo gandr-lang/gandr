@@ -2039,6 +2039,12 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::lock::reconcile_lock',
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::relock','function','Write a package''s lock as its dependencies resolve, whatever stands there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package and a workspace''s directory to its members, and the packages they reach.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a package''s manifest to what its model states, refusing one edited by hand.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Running','struct','The toolchain a package is checked by: its version, the features its ledger implements and the system it runs on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Separated','struct','A model''s line of `,`-separated entries, as its field states it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Toolchain','struct','What a package''s model asks of the toolchain: a least language version, the features its sources use and the systems it is built on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Unconstrained','struct','Why a model''s `gandr`, or the version in it, states no constraint the check can read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Unmet','enum','A constraint the running toolchain leaves unmet, named by the clause it is refused by.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Version','struct','A language version, `major.minor.patch`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The driver''s worker threads: one pool at one width, started on the first fork that has two items or more and reused by every later fork.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::PoolFault','struct','Why the driver''s pool could not start.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Goals','enum','What `check` does with a declaration unsettled by its obligations alone.',NULL,'fits','sound',NULL);

@@ -30,6 +30,12 @@
 //! [`lock`] resolves the dependencies a library declares and writes the
 //! `gandr.lock` its imports read them through (#533 p3).
 //!
+//! # A package's toolchain constraints are checked
+//!
+//! [`toolchain`] reads what the package's model asks of the toolchain, and
+//! `gandr check` refuses a package whose constraints the running toolchain
+//! does not meet (#533 p5).
+//!
 //! # References
 //!
 //! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a package's
@@ -74,10 +80,13 @@ use crate::workspace::Workspace;
 use crate::workspace::workspace_root;
 
 pub mod lock;
+pub mod toolchain;
 
 use self::lock::DEPENDENCIES;
 use self::lock::Lock;
 use self::lock::SignatureKey;
+use self::toolchain::Separated;
+use self::toolchain::Toolchain;
 
 /// The file name of a package's library, the source that declares the
 /// package's model.
@@ -427,6 +436,8 @@ pub struct Manifest
     endpoint: String,
     /// Each module of the package but its root, by its path, in order.
     modules: Vec<String>,
+    /// `Package.gandr`, `Package.features` and `Package.systems`.
+    toolchain: Toolchain,
     /// Each dependency the library's `dependencies` lists, in order.
     dependencies: Vec<lock::Dependency>,
 }
@@ -444,31 +455,35 @@ impl Manifest
     ///   reports, in [`Field`] order, run once, and its string decoded from the
     ///   value's spelling; the first field none of them declares is
     ///   [`Unmanifested::Undeclared`], and the first whose run is no string
-    ///   [`Unmanifested::Unstrung`] with what it came to. The modules are
-    ///   [`modules`] of `package`'s sources, in order. The dependencies are
+    ///   [`Unmanifested::Unstrung`] with what it came to. The toolchain is
+    ///   [`Toolchain::read`] of `gandr`, `features` and `systems`, and a
+    ///   `gandr` it cannot read is [`Unmanifested::Unconstrained`]. The modules
+    ///   are [`modules`] of `package`'s sources, in order. The dependencies are
     ///   `dependencies` among the same declarations, run once, each element its
     ///   alias and path; none when none declares it, and
     ///   [`Unmanifested::Undepended`] with what it came to when it runs to no
     ///   list of dependencies.
     /// - provides: the manifest `gandr check` writes.
-    /// - fails: a field undeclared, or run to no string; `dependencies` run to
-    ///   no list of them.
+    /// - fails: a field undeclared, or run to no string; a `gandr` stating no
+    ///   constraint; `dependencies` run to no list of them.
     /// - panics: none.
     /// - executable: none — each field is run on the program's machine, which a
     ///   predicate could only check by running it again; the witness observes
     ///   each outcome.
     ///
     /// # Errors
-    /// The first field that is undeclared, or does not run to a string; then
-    /// `dependencies`, when it runs to no list of dependencies.
+    /// The first field that is undeclared, or does not run to a string; a
+    /// `gandr` stating no constraint; then `dependencies`, when it runs to no
+    /// list of dependencies.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a model holding every field, one of them escaped,
     ///   reads each; one missing `version` and one whose name is an integer are
-    ///   refused at that field; a library listing a dependency renders its
-    ///   table.
+    ///   refused at that field; a `gandr` with no `>=` is refused; a library
+    ///   listing a dependency renders its table.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
     /// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
+    /// - witness: `tests::package::a_manifest_renders_the_toolchain_its_model_asks_for_3135`
     #[inline]
     pub fn of(
         program: &mut Program<'_>,
@@ -476,16 +491,39 @@ impl Manifest
         package: &Package,
     ) -> Result<Self, Unmanifested>
     {
+        let name = strung(program, own, Field::Name)?;
+        let version = strung(program, own, Field::Version)?;
+        let authors = strung(program, own, Field::Authors)?;
+        let licence = strung(program, own, Field::Licence)?;
+        let documentation = strung(program, own, Field::Documentation)?;
+        let endpoint = strung(program, own, Field::Endpoint)?;
+        let gandr = strung(program, own, Field::Gandr)?;
+        let features = strung(program, own, Field::Features)?;
+        let systems = strung(program, own, Field::Systems)?;
+        let toolchain = Toolchain::read(gandr.clone(), Separated(&features), Separated(&systems))
+            .map_err(|_unconstrained| Unmanifested::Unconstrained { came: gandr })?;
         Ok(Self {
-            name: strung(program, own, Field::Name)?,
-            version: strung(program, own, Field::Version)?,
-            authors: strung(program, own, Field::Authors)?,
-            licence: strung(program, own, Field::Licence)?,
-            documentation: strung(program, own, Field::Documentation)?,
-            endpoint: strung(program, own, Field::Endpoint)?,
+            name,
+            version,
+            authors,
+            licence,
+            documentation,
+            endpoint,
             modules: modules(package.sources()).into_keys().collect(),
+            toolchain,
             dependencies: depended(program, own)?,
         })
+    }
+
+    /// What the package's model asks of the toolchain.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn toolchain(&self) -> &Toolchain
+    {
+        &self.toolchain
     }
 
     /// The manifest as the checker writes it: the header, then the body.
@@ -498,7 +536,9 @@ impl Manifest
     ///   `documentation` and `endpoint` as TOML basic strings, each `"`, `\`
     ///   and control character escaped, and `modules` an array of the modules'
     ///   paths, one per line, in order, or `[]` when there are none, as the
-    ///   tree's TOML formatter writes it; then, when the library lists any, a
+    ///   tree's TOML formatter writes it; then a `[toolchain]` table with
+    ///   `gandr` as written and `features` and `systems` arrays of their
+    ///   entries, written as `modules` is; then, when the library lists any, a
     ///   `[dependencies]` table, one line per dependency in order, `alias = {
     ///   path = "…" }`, the alias bare when it is a TOML bare key and a basic
     ///   string otherwise. The same manifest renders the same bytes.
@@ -527,6 +567,7 @@ impl Manifest
             Basic(&self.endpoint),
             Listed(&self.modules)
         );
+        let _written = write!(body, "{}", self.toolchain);
         if !self.dependencies.is_empty() {
             body.push_str("\n[dependencies]\n");
         }
@@ -1051,6 +1092,12 @@ pub enum Field
     Documentation,
     /// `Package.endpoint`.
     Endpoint,
+    /// `Package.gandr`.
+    Gandr,
+    /// `Package.features`.
+    Features,
+    /// `Package.systems`.
+    Systems,
 }
 
 impl Field
@@ -1068,6 +1115,9 @@ impl Field
             Self::Licence => "Package.licence",
             Self::Documentation => "Package.documentation",
             Self::Endpoint => "Package.endpoint",
+            Self::Gandr => "Package.gandr",
+            Self::Features => "Package.features",
+            Self::Systems => "Package.systems",
         })
     }
 }
@@ -1090,6 +1140,12 @@ pub enum Unmanifested
     Undepended
     {
         /// What its run came to, spelled.
+        came: String,
+    },
+    /// The library's `Package.gandr` states no constraint the check reads.
+    Unconstrained
+    {
+        /// What it runs to.
         came: String,
     },
 }
@@ -1121,6 +1177,12 @@ impl core::fmt::Display for Unmanifested
                 "`{DEPENDENCIES}` runs to `{came}`, not to a list of dependencies, so no \
                  `{MANIFEST}` is written: list each as `#{{ alias = \"…\", coordinate = \
                  Path(\"…\") }}`"
+            ),
+            Self::Unconstrained { ref came } => write!(
+                f,
+                "`{}` is `{came}`, which states no constraint, so no `{MANIFEST}` is written: \
+                 write `>= <major>.<minor>`, or nothing for any version",
+                Field::Gandr.path()
             ),
         }
     }
@@ -1388,9 +1450,13 @@ impl core::fmt::Display for Basic<'_>
 /// one line per string, each a basic string indented two spaces and followed
 /// by a comma, between `[` and `]` on lines of their own.
 #[repr(transparent)]
-struct Listed<'strings>(&'strings [String]);
+struct Listed<'strings, Item>(&'strings [Item])
+where
+    Item: AsRef<str>;
 
-impl core::fmt::Display for Listed<'_>
+impl<Item> core::fmt::Display for Listed<'_, Item>
+where
+    Item: AsRef<str>,
 {
     /// # Specification
     /// trivial.
@@ -1404,7 +1470,7 @@ impl core::fmt::Display for Listed<'_>
         }
         f.write_str("[\n")?;
         for string in self.0 {
-            writeln!(f, "  {},", Basic(string))?;
+            writeln!(f, "  {},", Basic(string.as_ref()))?;
         }
         f.write_char(']')
     }

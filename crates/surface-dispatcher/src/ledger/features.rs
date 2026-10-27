@@ -2,7 +2,10 @@
 //!
 //! `ledger/features.sql` holds one row per feature of gandr: its area, its
 //! name, its status, one sentence on what it is, and the exemplar and corpus
-//! sources that show it. [`FeatureLedger::read`] reads it under a tree's root.
+//! sources that show it. [`FeatureLedger::read`] reads it under a tree's root,
+//! and [`FeatureLedger::built_in`] reads the copy the binary was built with:
+//! what the running toolchain implements, which a package's constraints are
+//! checked against wherever the package stands.
 //! `gandr ledger list` prints a line per feature, narrowed to an area and a
 //! status; `gandr ledger show <id>` prints a feature's row, then each of its
 //! exemplars' sources whole, whose `///` comments explain the form, then its
@@ -38,6 +41,9 @@ use super::LedgerFault;
 
 /// The ledger's file, from a tree's root.
 const LEDGER: &str = "ledger/features.sql";
+
+/// The ledger the binary was built with.
+const BUILT_IN: &str = include_str!("../../../../ledger/features.sql");
 
 /// The statement that opens the table's definition.
 const CREATE: &str = "CREATE TABLE feature(";
@@ -137,8 +143,26 @@ impl FromStr for Status
 
 /// A feature's identifier, its row's `id`.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FeatureId(pub String);
+
+impl AsRef<str> for FeatureId
+{
+    /// The identifier's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
+    }
+}
+
+/// The text of a ledger dump, as the file holds it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Dump<'text>(&'text str);
 
 /// An area of the ledger, a row's `area`.
 #[repr(transparent)]
@@ -564,14 +588,66 @@ impl FeatureLedger
             path: path.clone(),
             error,
         })?;
+        Self::parsed(root, &path, Dump(&text))
+    }
+
+    /// The ledger the binary was built with, its exemplars read under the
+    /// working directory.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::read`] reads the tree's own ledger, over the text
+    ///   of `ledger/features.sql` as the binary was built.
+    /// - provides: what the running toolchain implements, read wherever the
+    ///   checked package stands.
+    /// - fails: as [`Self::read`] for a malformed row; never for the file,
+    ///   which is the binary's own.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LedgerFault::Features`] naming the line and what is wrong with it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in ledger is the committed one, row for
+    ///   row, while the tree's ledger is the one the binary was built from.
+    /// - witness: `ledger::features::tests::the_built_in_ledger_is_the_committed_one`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == Path::new(".")))]
+    #[inline]
+    pub fn built_in() -> Result<Self, LedgerFault>
+    {
+        Self::parsed(Path::new("."), Path::new(LEDGER), Dump(BUILT_IN))
+    }
+
+    /// The ledger `dump` holds, read from `path` under `root`.
+    ///
+    /// # Specification
+    /// - requires: `dump` is the file at `path`.
+    /// - ensures: as [`Self::read`], over `dump`.
+    /// - fails: as [`Self::read`], for a malformed row.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LedgerFault::Features`] naming `path`, the line and what is wrong
+    /// with it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::read`].
+    /// - witness: `ledger::features::tests::a_value_of_another_shape_refuses_the_ledger_naming_its_line`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.root == root))]
+    fn parsed(
+        root: &Path,
+        path: &Path,
+        dump: Dump<'_>,
+    ) -> Result<Self, LedgerFault>
+    {
         let refused = |line: usize, malformed: Malformed| LedgerFault::Features {
-            path: path.clone(),
+            path: path.to_path_buf(),
             line: line.saturating_add(1),
             malformed,
         };
         let mut features = Vec::new();
         let mut columns: Option<Vec<&str>> = None;
-        for (number, line) in text.lines().enumerate() {
+        for (number, line) in dump.0.lines().enumerate() {
             if let Some(read) = columns.as_mut() {
                 let trimmed = line.trim_start();
                 if trimmed.starts_with(')') {
@@ -599,6 +675,38 @@ impl FeatureLedger
             root: root.to_path_buf(),
             features,
         })
+    }
+
+    /// Where the ledger's feature `id` stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the status of the row whose id is `id`.
+    /// - provides: a toolchain's answer to a package's `features` constraint,
+    ///   which a status [`Status::Implemented`] or [`Status::Partial`] meets.
+    /// - fails: no row is `id`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LedgerFault::NoFeature`] naming the id.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of a scratch ledger's four rows stands at its
+    ///   own status, and an id no row holds is refused.
+    /// - witness: `ledger::features::tests::a_feature_stands_at_its_row_s_status`
+    #[spec(ensures: |ref ret| ret.as_ref().err().is_none_or(|fault|
+        matches!(*fault, LedgerFault::NoFeature { id: ref missing } if *missing == id.0)))]
+    #[inline]
+    pub fn status(
+        &self,
+        id: &FeatureId,
+    ) -> Result<Status, LedgerFault>
+    {
+        self.features
+            .iter()
+            .find(|feature| feature.id == id.0)
+            .map(|feature| feature.status)
+            .ok_or_else(|| LedgerFault::NoFeature { id: id.0.clone() })
     }
 
     /// The features in `area`, when one is named, with `status`, when one is
@@ -1013,6 +1121,52 @@ mod tests
         assert_eq!(
             listed.iter().map(ToString::to_string).collect::<Vec<_>>(),
             vec!["a [planned] A: What a is."]
+        );
+    }
+
+    #[test]
+    fn the_built_in_ledger_is_the_committed_one()
+    {
+        assert_eq!(
+            FeatureLedger::built_in()
+                .expect("the built-in ledger reads")
+                .features,
+            FeatureLedger::read(&committed())
+                .expect("the committed ledger reads")
+                .features,
+            "the binary carries the tree's ledger, row for row"
+        );
+    }
+
+    #[test]
+    fn a_feature_stands_at_its_row_s_status()
+    {
+        let scratch = Scratch::new(
+            Path::new("status"),
+            Rows(concat!(
+                "INSERT INTO feature VALUES('declined','syntax','D',NULL,'declined','ordinary',NULL,'What d is.',NULL,NULL,NULL,'#1',NULL);\n",
+                "INSERT INTO feature VALUES('implemented','syntax','I',NULL,'implemented','ordinary',NULL,'What i is.',NULL,NULL,'crate-tests',NULL,'#2');\n",
+                "INSERT INTO feature VALUES('partial','syntax','P',NULL,'partial','ordinary',NULL,'What p is.',NULL,NULL,'crate-tests','#3','#4');\n",
+                "INSERT INTO feature VALUES('planned','syntax','Q',NULL,'planned','ordinary',NULL,'What q is.',NULL,NULL,NULL,'#5',NULL);\n",
+            )),
+        );
+        let ledger = FeatureLedger::read(&scratch.0).expect("the scratch ledger reads");
+        let status = |id: &str| ledger.status(&FeatureId(String::from(id)));
+        assert_eq!(
+            ["declined", "implemented", "partial", "planned"]
+                .map(|id| status(id).expect("the row stands")),
+            [
+                Status::Declined,
+                Status::Implemented,
+                Status::Partial,
+                Status::Planned
+            ],
+            "each row at its own status"
+        );
+        let absent = status("absent");
+        assert!(
+            matches!(absent, Err(LedgerFault::NoFeature { ref id }) if id == "absent"),
+            "{absent:?}"
         );
     }
 

@@ -10,7 +10,7 @@ The standard library: the package every gandr program can read, built and checke
 
 | module | holds | absorbs | seam | status |
 | ------ | ----- | ------- | ---- | ------ |
-| `std.package` | `Versioned`, `Gandr.Package`, `Gandr.Workspace`, `Gandr.Module` with no model yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#533 p2, p3) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
+| `std.package` | `Versioned` and `Toolchain`, which `Project` joins, `Gandr.Package`, `Gandr.Workspace`, `Gandr.Module` with no model yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#533 p2, p3, p5) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
 | `std.layout` | Rust's default layout as a program over codes: `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout` (#2804) | the program of `corpus/model/layouts/rust-default.gandr`, which keeps its rustc witnesses | none: no host access | landed |
 | `std.boundary` | a function row of the foreign boundary: `Code`, `Row`, the witness record `summary` reads off `std.layout`, `Printed`, `Declared` and `admit` with the `Clause` it names (#2900) | the row and `admit` of `corpus/model/interop/boundary/function-row.gandr`, which keeps its externs | none: no host access | landed |
 | `std.nix` | `Nix.Derivation`, `Nix.Attribute` | none | none: a type provider (#2763) | reserved |

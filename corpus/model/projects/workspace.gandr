@@ -8,9 +8,16 @@
 // path until a project imports a package by name (#533 p3).
 import "../../../library/std/src/package.gandr";
 
-/// What the members share: the version each states.
+/// What the members share: the version each states. Each member reads what it
+/// asks of the toolchain here unless it asks more.
 pub module Workspace : Model(Gandr.Workspace) {
   def version = "0.1.0";
+  /// The least language version the members ask for.
+  def gandr = ">= 0.0";
+  /// The features every member uses.
+  def features = "project-manifest";
+  /// The systems the members build on: any.
+  def systems = "";
 }
 
 /// The workspace's packages, each a directory below it.

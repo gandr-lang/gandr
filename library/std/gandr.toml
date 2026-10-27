@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: f5fd3601f6bce3bc9cb3d4d203936316098232222514a848351dfb6f6c208c2e
+# blake3: 0ca67a21db5d022b5d59b364c50cf4cadee7a3bf51c27877065ad8582581649b
 
 [package]
 name = "std"
@@ -13,3 +13,8 @@ modules = [
   "layout",
   "package",
 ]
+
+[toolchain]
+gandr = ">= 0.0"
+features = []
+systems = []

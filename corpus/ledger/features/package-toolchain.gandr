@@ -1,0 +1,30 @@
+/// `package-toolchain`: A package's toolchain constraints.
+/// Implemented: a package's model states what it asks of the toolchain, `gandr`, the least language version as `>= 0.3`, `features`, keys of the features ledger, and `systems`, each `<architecture>-<os>`, an empty one asking nothing; `gandr check` refuses one the running toolchain leaves unmet as `ToolchainUnmet.gandr`, `ToolchainUnmet.feature.<key>` or `ToolchainUnmet.system`, naming the field and both sides, and writes no manifest; a met one is the manifest's `[toolchain]` table, and an edit to a constraint moves the package's address.
+/// Not implemented: an operation's port takes no list yet, so `features` and `systems` each stay one string until #2993 lands.
+
+// The manifest theories, from `std.package` by its path.
+import "../../../library/std/src/package.gandr";
+
+/// A package asking for this language version or later, two features this
+/// toolchain implements, and any system.
+pub module Package : Model(Gandr.Package) {
+  /// The name the manifest records.
+  def name = "probe";
+  /// The version the manifest records.
+  def version = "0.1.0";
+  /// The package's authors.
+  def authors = "The gandr authors";
+  /// The licence, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the package's documentation stands at.
+  def documentation = "https://github.com/gandr-lang/gandr";
+  /// The address a resolver may fetch the package from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version the sources ask for.
+  @[ runs("\">= 0.0\"") ]
+  def gandr = ">= 0.0";
+  /// The features the sources use: the manifest and the lock.
+  def features = "project-manifest, package-lock";
+  /// The systems the package builds on: any.
+  def systems = "";
+}
