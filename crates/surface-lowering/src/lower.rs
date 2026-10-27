@@ -20813,6 +20813,7 @@ fn typed_number_literal(text: SourceFragment<'_>) -> Maybe<Literal, literal::Abs
     },
 )]
 #[inline]
+#[must_use]
 pub fn decode_escapes(content: SourceFragment<'_>) -> String
 {
     let spelled: &str = content.as_ref();

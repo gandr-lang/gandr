@@ -444,6 +444,7 @@ pub use crate::lower::Onto;
 pub use crate::lower::Returned;
 pub use crate::lower::RunOperand;
 pub use crate::lower::RunSpelling;
+pub use crate::lower::decode_escapes;
 pub use crate::lower::entry_shape;
 pub use crate::lower::lower_module;
 pub use crate::lower::lower_unit;

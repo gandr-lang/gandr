@@ -1129,8 +1129,7 @@ fn every_width_stages_the_serial_run()
 fn a_malformed_invocation_exits_two()
 {
     for arguments in [
-        &["check"][..],
-        &["test"],
+        &["run"][..],
         &["frobnicate"],
         &["check", "--unknown", "a.gandr"],
         &["check", "--jobs", "0", "a.gandr"],
@@ -1146,6 +1145,157 @@ fn a_malformed_invocation_exits_two()
             "{arguments:?}: nothing on standard output"
         );
     }
+}
+
+/// A package's library declaring its model, `name` and `version`.
+const LIBRARY: &str = "/// The package.\npub module Package : Model(Gandr.Package) {\n  def name = \
+                       \"hello\";\n  def version = \"0.1.0\";\n}\n";
+
+/// #2687: `check`, `test` and `fmt` run with no path work on the package the
+/// working directory sits in, whole, from any directory in it; outside every
+/// package each is refused before any source is read.
+#[test]
+fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
+{
+    let scratch = Scratch::new(Path::new("no-path"));
+    let _library = scratch.file(Path::new("hello/src/lib.gandr"), Text::from(LIBRARY));
+    let _leaf = scratch.file(
+        Path::new("hello/src/text/greet.gandr"),
+        Text::from("/// A greeting.\ndef greeting = \"hello, world\" ;\n"),
+    );
+    let within = |arguments: &[&str], directory: &str| {
+        let mut command = gandr(arguments);
+        command.current_dir(scratch.0.join(directory));
+        ran(command)
+    };
+    let checked = within(&["check"], "hello/src/text");
+    assert_eq!(code(&checked), Code(0_i32), "{}", stderr(&checked));
+    assert!(
+        stdout(&checked).contains("sources: 2 read"),
+        "the leaf's directory checks the whole package: {}",
+        stdout(&checked)
+    );
+    for (arguments, directory) in [(&["test"][..], "hello"), (&["fmt"], "hello/src")] {
+        let output = within(arguments, directory);
+        assert_eq!(
+            code(&output),
+            Code(0_i32),
+            "{arguments:?} in `{directory}`: {}",
+            stderr(&output)
+        );
+    }
+    for arguments in [&["check"][..], &["test"], &["fmt"]] {
+        let output = within(arguments, ".");
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "{arguments:?} outside a package"
+        );
+        assert!(output.stdout.is_empty(), "{arguments:?}: nothing is read");
+        assert!(
+            stderr(&output).starts_with("gandr: no path given"),
+            "{arguments:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+/// #2687: `check` writes a package's `gandr.toml` from its model, leaves it
+/// unchanged when the model is, rewrites it when the model changes, and
+/// refuses a hand edit as drift, leaving it as it stands; a library that
+/// states no `version`, and one that does not settle, write none.
+#[test]
+fn a_package_s_manifest_is_written_and_drift_refused_2687()
+{
+    let scratch = Scratch::new(Path::new("manifest"));
+    let library = scratch.file(Path::new("hello/src/lib.gandr"), Text::from(LIBRARY));
+    let leaf = scratch.file(
+        Path::new("hello/src/text/greet.gandr"),
+        Text::from("def greeting = \"hello, world\" ;\n"),
+    );
+    let manifest = scratch.0.join("hello/gandr.toml");
+    let checked = || {
+        let mut command = gandr(&[Path::new("check"), &leaf]);
+        command.current_dir(&scratch.0);
+        ran(command)
+    };
+    let reconciled = |output: &Output| {
+        stdout(output)
+            .lines()
+            .find_map(|line| line.strip_prefix("manifest: "))
+            .map(String::from)
+    };
+    let written = checked();
+    assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
+    assert_eq!(
+        reconciled(&written),
+        Some(format!(
+            "{}: written",
+            manifest.canonicalize().expect("written").display()
+        ))
+    );
+    let first = std::fs::read_to_string(&manifest).expect("the manifest is written");
+    assert!(
+        first.ends_with("\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\n"),
+        "{first}"
+    );
+    let again = checked();
+    assert_eq!(code(&again), Code(0_i32));
+    assert!(reconciled(&again).is_some_and(|line| line.ends_with(": unchanged")));
+    std::fs::write(&library, LIBRARY.replace("0.1.0", "0.2.0")).expect("the model changes");
+    let rewritten = checked();
+    assert_eq!(code(&rewritten), Code(0_i32));
+    assert!(reconciled(&rewritten).is_some_and(|line| line.ends_with(": rewritten")));
+    let second = std::fs::read_to_string(&manifest).expect("the manifest is rewritten");
+    assert!(second.contains("version = \"0.2.0\""), "{second}");
+    let edited = second.replace("hello", "howdy");
+    std::fs::write(&manifest, &edited).expect("the hand edit is written");
+    let drifted = checked();
+    assert_eq!(code(&drifted), Code(1_i32), "a hand edit unsettles the run");
+    assert!(
+        stderr(&drifted).contains("gandr.toml: drifted"),
+        "{}",
+        stderr(&drifted)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&manifest).expect("the manifest reads"),
+        edited,
+        "left as it stands"
+    );
+    std::fs::remove_file(&manifest).expect("the manifest is removed");
+    std::fs::write(
+        &library,
+        "pub module Package : Model(Gandr.Package) {\n  def name = \"hello\";\n}\n",
+    )
+    .expect("the model loses its version");
+    let unstated = checked();
+    assert_ne!(code(&unstated), Code(0_i32), "{}", stdout(&unstated));
+    assert!(!manifest.exists(), "no manifest is written");
+    std::fs::write(&library, "def name : Integer ;\ndef name = \"hello\" ;\n")
+        .expect("the library is ill-typed");
+    let unsettled = checked();
+    assert_eq!(code(&unsettled), Code(1_i32));
+    assert!(
+        !manifest.exists(),
+        "an unsettled library writes no manifest"
+    );
+}
+
+/// #2687: the witness project's committed `gandr.toml` is the one its model
+/// renders: checking the package leaves it unchanged.
+#[test]
+fn the_witness_project_s_manifest_is_its_model_s_2687()
+{
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/projects/hello");
+    let output = ran(gandr(&[Path::new("check"), &project]));
+    assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    assert!(
+        stdout(&output)
+            .lines()
+            .any(|line| line.starts_with("manifest: ") && line.ends_with("gandr.toml: unchanged")),
+        "{}",
+        stdout(&output)
+    );
 }
 
 #[test]

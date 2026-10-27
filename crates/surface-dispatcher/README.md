@@ -8,6 +8,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -57,7 +58,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 
 ## Expected features
 
-- **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
+- **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
 - **A file system.** `Walk::visit` lists directories and reads sources, and `Formatting::step` reads them and writes a changed layout back; every failure to do so is a fault step, never a panic.
 - **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process; its default width is the host's physical performance cores ([width](src/width.rs)).
 
@@ -115,6 +116,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The stage verb | [`stage`](src/stage.rs) |
 | The format verb | [`format`](src/format.rs) |
 | The ledger verb | [`ledger`](src/ledger.rs) |
+
+## References
+
+- `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed manifests — metadata is gandr, so `gandr.toml` is output, never read.
 
 ## License
 
