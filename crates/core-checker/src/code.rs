@@ -1855,14 +1855,16 @@ impl CodeDefinitions
     }
 
     /// Read the closed claim `claim` back under `definitions`, round by round,
-    /// until its body returns or a round changes nothing.
+    /// until a round changes nothing.
     ///
     /// # Specification
     /// - requires: as [`Self::evaluate_claim`].
-    /// - ensures: [`Readback::Returned`] at the first round whose readback is
-    ///   `thunk (λⁿ. return v)`; [`Readback::Stuck`] at a round that reads back
-    ///   what it read; [`Readback::Unsuspended`] for a readback that is no
-    ///   thunk.
+    /// - ensures: at the first round that reads back what it read,
+    ///   [`Readback::Returned`] when that readback is `thunk (λⁿ. return v)`
+    ///   and [`Readback::Stuck`] otherwise; [`Readback::Unsuspended`] for a
+    ///   readback that is no thunk. A round that returns but still changed
+    ///   something is read again: its readback spends a call an arm of a stuck
+    ///   case makes without running it, and the next round runs it.
     /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
     ///   readback faults or runs out of fuel, or the rounds run out.
     /// - panics: none.
@@ -1880,6 +1882,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
     /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
     /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
+    /// - witness: `bridge::tests::a_call_in_a_stuck_arm_of_a_returned_code_replays_2831`
     #[spec(ensures: |ret| match ret {
         | Ok(Readback::Returned { normal, returned }) => core.value(normal).is_some() && core.value(returned).is_some(),
         | Ok(Readback::Stuck(normal)) => core.value(normal).is_some(),
@@ -1917,13 +1920,17 @@ impl CodeDefinitions
             while let Some(&Computation::Lambda(inner)) = core.computation(body) {
                 body = inner;
             }
-            if let Some(&Computation::Return(returned)) = core.computation(body) {
-                return Ok(Readback::Returned {
-                    normal: read,
-                    returned,
-                });
-            }
+            // A round that returns may still hold a call it spent without
+            // running, a definition called in an arm of a case stuck on a
+            // binder: the next round runs it, so only a round that reads back
+            // what it read is the normal form (#2831).
             if equal_certificate_syntax(core, read, current) == CertificateEquality::Equal {
+                if let Some(&Computation::Return(returned)) = core.computation(body) {
+                    return Ok(Readback::Returned {
+                        normal: read,
+                        returned,
+                    });
+                }
                 return Ok(Readback::Stuck(read));
             }
             rounds = rounds.checked_add(1).ok_or(undecided)?;

@@ -1000,6 +1000,7 @@ pub(crate) fn related_endpoints(
                     unfoldings,
                     &[set_aside],
                     ReplayBudget::DEFAULT,
+                    crate::replay::StuckEndpoints::Structural,
                 ) == crate::replay::EndpointReading::Converts
                 {
                     continue;
@@ -1014,8 +1015,13 @@ pub(crate) fn related_endpoints(
             crate::conv::ConversionGoal::Value(left, right),
             &mut pending,
         ) == Convertibility::Convertible
-            && crate::replay::read_endpoints(arena, unfoldings, &pending, ReplayBudget::DEFAULT)
-                == crate::replay::EndpointReading::Converts
+            && crate::replay::read_endpoints(
+                arena,
+                unfoldings,
+                &pending,
+                ReplayBudget::DEFAULT,
+                crate::replay::StuckEndpoints::Structural,
+            ) == crate::replay::EndpointReading::Converts
         {
             continue;
         }

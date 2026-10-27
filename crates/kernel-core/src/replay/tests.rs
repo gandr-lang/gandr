@@ -2198,7 +2198,8 @@ fn a_decode_reads_as_the_quote_its_code_returns()
                     code: decode,
                     other
                 }],
-                ReplayBudget::DEFAULT
+                ReplayBudget::DEFAULT,
+                super::StuckEndpoints::Structural,
             ),
             reading
         );
@@ -3392,7 +3393,8 @@ fn a_stuck_endpoint_reads_as_what_it_reduced_to()
             &mut arena,
             &Unfoldings::new(alloc::vec![Unfoldable::Opaque]),
             &[crate::conv::SetAside::Values(redex, call)],
-            ReplayBudget::DEFAULT
+            ReplayBudget::DEFAULT,
+            super::StuckEndpoints::Structural,
         ),
         super::EndpointReading::Converts
     );
@@ -3441,6 +3443,7 @@ fn endpoints_a_stuck_endpoint_carries_are_read_in_turn_698()
             &unfoldings,
             &[crate::conv::SetAside::Values(left, right)],
             ReplayBudget::DEFAULT,
+            super::StuckEndpoints::Structural,
         )
     };
     assert_eq!(
@@ -3452,6 +3455,75 @@ fn endpoints_a_stuck_endpoint_carries_are_read_in_turn_698()
         read(&mut arena, through_definition, elsewhere),
         super::EndpointReading::Apart,
         "a transported endpoint reading to another call stays apart"
+    );
+}
+
+/// A step's own reading converts two endpoints stuck on a variable whose arms
+/// differ by a definition one side holds and the other runs, and the
+/// structural reading a relation takes keeps them apart (#2831). An arm
+/// calling another definition stays apart either way.
+#[test]
+fn a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831()
+{
+    let mut arena = TermArena::new();
+    // `f(a)` for the constant `f` at `constant`.
+    let call = |arena: &mut TermArena, constant: usize, argument| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    // `g`, constant 1, is `thunk { λz. h(z) }` for the opaque `h`, constant 0,
+    // and `k`, constant 2, is opaque.
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let body = call(&mut arena, 0, bound);
+    let lambda = arena.computation_lambda(body);
+    let defined = arena.value_thunk(lambda);
+    let unfoldings = Unfoldings::new(alloc::vec![
+        Unfoldable::Opaque,
+        Unfoldable::Body(defined),
+        Unfoldable::Opaque,
+    ]);
+    // `returned(case x { _ => f(y) ; _ => return () })`, stuck on `x`.
+    let stuck = |arena: &mut TermArena, constant: usize| {
+        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let y = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let arm = call(arena, constant, y);
+        let unit = arena.value_unit();
+        let other = arena.computation_return(unit);
+        let cased = arena.computation_case(x, &[arm, other]);
+        arena.value_returned(cased)
+    };
+    let held = stuck(&mut arena, 1);
+    let run = stuck(&mut arena, 0);
+    let elsewhere = stuck(&mut arena, 2);
+    let read = |arena: &mut TermArena, left, right, reading| {
+        super::read_endpoints(
+            arena,
+            &unfoldings,
+            &[crate::conv::SetAside::Values(left, right)],
+            ReplayBudget::DEFAULT,
+            reading,
+        )
+    };
+    assert_eq!(
+        read(&mut arena, held, run, super::StuckEndpoints::Unfolding),
+        super::EndpointReading::Converts,
+        "the held call reads as the call it runs to"
+    );
+    assert_eq!(
+        read(&mut arena, held, run, super::StuckEndpoints::Structural),
+        super::EndpointReading::Apart,
+        "a relation's reading compares the stuck endpoints by structure"
+    );
+    assert_eq!(
+        read(
+            &mut arena,
+            held,
+            elsewhere,
+            super::StuckEndpoints::Unfolding
+        ),
+        super::EndpointReading::Apart,
+        "a call reading to another definition stays apart"
     );
 }
 

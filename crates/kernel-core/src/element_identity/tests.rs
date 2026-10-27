@@ -2157,6 +2157,7 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
             &Unfoldings::new(bodies),
             &[crate::conv::SetAside::Values(left, right)],
             ReplayBudget::DEFAULT,
+            crate::replay::StuckEndpoints::Structural,
         )
     };
     assert_eq!(

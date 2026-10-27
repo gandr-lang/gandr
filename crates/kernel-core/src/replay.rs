@@ -1256,7 +1256,9 @@ pub fn convert_unfolding(
 /// at a head naming a definition `unfoldings` holds, and the normal forms
 /// converted by the one conversion — two quotes by the structural walk over
 /// their types, whose own returned endpoints and decodes are read the same
-/// way.
+/// way. Two stuck endpoints the walk separates convert by the kernel's
+/// conversion with definitions unfolding: a call a stuck arm holds on one
+/// side and runs on the other is the same computation (#2831).
 ///
 /// The reading takes no trace: the reduction of a pure computation to
 /// `return v` chooses nothing, so a dialogue could only restate the term.
@@ -1268,10 +1270,10 @@ pub fn convert_unfolding(
 /// # Specification
 /// - requires: the two values, and every body in `unfoldings`, live in `arena`.
 /// - ensures: [`KernelVerdict::Convertible`] exactly when [`read_endpoints`]
-///   converts the pair within `budget`; otherwise
-///   [`ReplayRefusal::Contradicted`] at the empty trace's first position, never
-///   [`KernelVerdict::NotConvertible`]: a reading that stops short of a value
-///   certifies nothing. `arena` holds what it held on entry.
+///   converts the pair within `budget` under [`StuckEndpoints::Unfolding`];
+///   otherwise [`ReplayRefusal::Contradicted`] at the empty trace's first
+///   position, never [`KernelVerdict::NotConvertible`]: a reading that stops
+///   short of a value certifies nothing. `arena` holds what it held on entry.
 /// - provides: the readmission's re-derivation of an open returned code's step.
 /// - fails: never — a decline is a verdict.
 /// - panics: none.
@@ -1281,6 +1283,7 @@ pub fn convert_unfolding(
 ///   with the quote over the calls the arm makes, and a forged quote stays
 ///   apart; a reading that compared the two syntactically separates the first.
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+/// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before && ret != KernelVerdict::NotConvertible,
@@ -1295,7 +1298,13 @@ pub fn read_step(
     budget: ReplayBudget,
 ) -> KernelVerdict
 {
-    match read_endpoints(arena, unfoldings, &[SetAside::Values(left, right)], budget) {
+    match read_endpoints(
+        arena,
+        unfoldings,
+        &[SetAside::Values(left, right)],
+        budget,
+        StuckEndpoints::Unfolding,
+    ) {
         EndpointReading::Converts => KernelVerdict::Convertible,
         EndpointReading::Apart => {
             KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
@@ -1313,6 +1322,19 @@ pub(crate) enum EndpointReading
     Converts,
     /// Some pair stays apart.
     Apart,
+}
+
+/// How [`read_endpoints`] compares two returned endpoints that both stay stuck.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StuckEndpoints
+{
+    /// By the structural walk over their computations alone: a relation's
+    /// endpoints, where every unfolding is a recorded decision.
+    Structural,
+    /// By the walk, or else by the kernel's conversion with definitions
+    /// unfolding: a step's own reading, which runs a code to its quote, so a
+    /// call held in a stuck arm and the same call run read alike.
+    Unfolding,
 }
 
 /// What `pending` comes to once its returned endpoints, decodes and codomains
@@ -1334,13 +1356,15 @@ pub(crate) enum EndpointReading
 ///   every value pair's normal forms convert under [`convert_values`] — or,
 ///   when both are quotes, their quoted types converge under the walk with
 ///   every pair it sets aside read the same way, or, when both are stuck
-///   endpoints, their computations converge the same way — and every decode's
-///   code normalizes to a quote whose quoted type converges with the other side
-///   the same way, and every dependent codomain converges the same way with its
-///   plain codomain weakened by one binder. A normalization that stops short of
-///   a value — budget, a partial fixpoint, an unreadable node — leaves its pair
-///   apart, and so does a decode whose code reads to no quote and a pair whose
-///   normal forms do not convert. `arena` holds what it held on entry.
+///   endpoints, their computations converge the same way, or, under
+///   [`StuckEndpoints::Unfolding`], they convert under [`convert_unfolding`]
+///   within `budget` — and every decode's code normalizes to a quote whose
+///   quoted type converges with the other side the same way, and every
+///   dependent codomain converges the same way with its plain codomain weakened
+///   by one binder. A normalization that stops short of a value — budget, a
+///   partial fixpoint, an unreadable node — leaves its pair apart, and so does
+///   a decode whose code reads to no quote and a pair whose normal forms do not
+///   convert. `arena` holds what it held on entry.
 /// - provides: the checker's reading of a returned endpoint, and of the type a
 ///   returned code denotes, at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
@@ -1363,12 +1387,16 @@ pub(crate) enum EndpointReading
 ///   apart; a decode whose code returns the other side's quote converts, one
 ///   whose code returns another quote or stays stuck does not; a dependent
 ///   codomain that ignores its binder converts with the plain one and one that
-///   names it does not; the arena's watermark is restored.
+///   names it does not; the arena's watermark is restored. Under
+///   [`StuckEndpoints::Unfolding`], two stuck endpoints whose arms differ by a
+///   call one side holds and the other runs convert, and they stay apart under
+///   [`StuckEndpoints::Structural`].
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `replay::tests::endpoints_a_stuck_endpoint_carries_are_read_in_turn_698`
+/// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
@@ -1376,6 +1404,7 @@ pub(crate) fn read_endpoints(
     unfoldings: &Unfoldings,
     pending: &[SetAside],
     budget: ReplayBudget,
+    stuck: StuckEndpoints,
 ) -> EndpointReading
 {
     let watermark = arena.watermark();
@@ -1408,6 +1437,24 @@ pub(crate) fn read_endpoints(
                     left_normal,
                     right_normal,
                 ) == Convertibility::Convertible
+                {
+                    continue;
+                }
+                // A step's own reading runs its code to the quote it returns, so
+                // two stuck endpoints that differ by a definition a stuck arm
+                // calls, held on one side and run on the other, convert by the
+                // kernel's δ-steps (#2831).
+                if stuck == StuckEndpoints::Unfolding
+                    && matches!(
+                        (run.arena.value(left_normal), run.arena.value(right_normal)),
+                        (Some(&Value::Returned(_)), Some(&Value::Returned(_)))
+                    )
+                    && convert_unfolding(
+                        run.arena,
+                        run.unfoldings,
+                        ReplaySides::Values(left_normal, right_normal),
+                        budget,
+                    ) == KernelVerdict::Convertible
                 {
                     continue;
                 }

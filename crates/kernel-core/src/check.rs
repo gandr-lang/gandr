@@ -570,8 +570,13 @@ fn read_returned(
     }
     let unfoldings = entry_unfoldings(judgement);
     if structural == Convertibility::Convertible
-        && read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
-            == EndpointReading::Converts
+        && read_endpoints(
+            arena,
+            &unfoldings,
+            &pending,
+            ReplayBudget::DEFAULT,
+            crate::replay::StuckEndpoints::Structural,
+        ) == EndpointReading::Converts
     {
         return Ok(EndpointReading::Converts);
     }

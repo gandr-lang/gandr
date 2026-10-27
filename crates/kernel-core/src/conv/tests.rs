@@ -495,7 +495,8 @@ fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
                     &mut arena,
                     &Unfoldings::default(),
                     &pending,
-                    ReplayBudget::DEFAULT
+                    ReplayBudget::DEFAULT,
+                    crate::replay::StuckEndpoints::Structural,
                 ),
                 reading,
                 "{what}: read at a mode switch"

@@ -1759,6 +1759,90 @@ fn a_closed_decode_holding_a_call_under_its_quote_crosses_read()
     );
 }
 
+/// A closed decode whose run returns a dependent pair's quote, its second
+/// factor a call stuck on the first component that calls another definition
+/// in an arm: `repr(())` runs to `⌜(r : Unit + Unit) × El(⟨q r⟩)⌝`, `q`
+/// casing on `r` and calling `g` in its first arm. The checker reads the run
+/// to its normal form, the call in the arm run, and the kernel's own reading
+/// relates that form to the call the definition holds, so the pair crosses
+/// (#2831).
+#[test]
+fn a_call_in_a_stuck_arm_of_a_returned_code_replays_2831()
+{
+    // def g : U (Unit + Unit -> F Type) =
+    //     thunk λh. case h { _ => return ⌜Unit⌝ ; _ => return ⌜Integer⌝ } ;
+    // def q : U (Unit + Unit -> F Type) =
+    //     thunk λr. case r { _ => g(inj₀ ()) ; _ => return ⌜Integer⌝ } ;
+    // def repr : U (Unit -> F Type) =
+    //     thunk λ_. return ⌜(r : Unit + Unit) × El(⟨q r⟩)⌝ ;
+    // def packed : El(⟨repr ()⟩) = (inj₀ (), ()) ;
+    let mut arena = CoreArena::new();
+    let small = small(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let two = arena.value_type_sum(&[unit_type, unit_type]);
+    let returns_code = arena.comp_type_returner(small);
+    let picking = arena.comp_type_arrow(two, returns_code);
+    let picking = arena.value_type_thunk(picking);
+    let unit_code = arena.value_quote(unit_type);
+    let integer_code = arena.value_quote(integer);
+    let to_unit = arena.computation_return(unit_code);
+    let to_integer = arena.computation_return(integer_code);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let picked = arena.computation_case(bound, &[to_unit, to_integer]);
+    let g = arena.computation_lambda(picked);
+    let g = arena.value_thunk(g);
+    let call = |arena: &mut CoreArena, constant: usize, argument: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let unit = arena.value_unit();
+    let left = arena.value_injection(gandr_core_term::Summand::from(0_usize), unit);
+    let to_g = call(&mut arena, 0, left);
+    let owing = arena.computation_case(bound, &[to_g, to_integer]);
+    let q = arena.computation_lambda(owing);
+    let q = arena.value_thunk(q);
+    let at_q = call(&mut arena, 1, bound);
+    let at_q = arena.value_returned(at_q);
+    let owed = arena.value_type_element(at_q, Level::zero());
+    let pair = arena.value_type_sigma(two, owed);
+    let pair_code = arena.value_quote(pair);
+    let to_pair = arena.computation_return(pair_code);
+    let repr = arena.computation_lambda(to_pair);
+    let repr = arena.value_thunk(repr);
+    let arrowing = arena.comp_type_arrow(unit_type, returns_code);
+    let arrowing = arena.value_type_thunk(arrowing);
+    let closed_call = call(&mut arena, 2, unit);
+    let closed_call = arena.value_returned(closed_call);
+    let at_repr = arena.value_type_element(closed_call, Level::zero());
+    let packed = arena.value_tuple(&[left, unit]);
+    let module = [
+        declaration(At(0), Maybe::Present(picking), Maybe::Present(g)),
+        declaration(At(1), Maybe::Present(picking), Maybe::Present(q)),
+        declaration(At(2), Maybe::Present(arrowing), Maybe::Present(repr)),
+        declaration(At(3), Maybe::Present(at_repr), Maybe::Present(packed)),
+    ];
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    for judged in report.judged() {
+        assert!(
+            matches!(judged.verdict(), Verdict::Checked { .. }),
+            "the decode runs to the pair type, where the pair checks: {:?}",
+            judged.verdict()
+        );
+    }
+    let readmission = readmit_with(&mut arena, &report, |certificate| certificate);
+    let packed_entry = &readmission.readmitted()[3];
+    assert!(
+        matches!(*packed_entry.outcome(), Outcome::Defined { .. }),
+        "the kernel reads the run to the pair type the checker read: {:?}",
+        packed_entry.outcome()
+    );
+}
+
 #[test]
 fn a_declining_certificate_faults_the_declaration()
 {
