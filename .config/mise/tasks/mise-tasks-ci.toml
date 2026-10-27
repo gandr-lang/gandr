@@ -2576,7 +2576,8 @@ issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "
 mentions=$(jq -Rrs -L "$claims" 'include "sections"; superseded[]' "$body" \
   | while IFS= read -r key; do { git grep -nIF -e "$key" || true; } | jq -R . | jq -s --arg key "$key" '{($key): .}'; done \
   | jq -s 'add // {}')
-from=$(mise run --quiet evidence:base)
+# Measured on a fetched trunk (#3148, `measured_from`).
+from=$(measured_from)
 concerns_at() { { git show "$1:ledger/concerns.sql"; printf '%s\n' "$2"; } | sqlite3 -json; }
 ids=$(concerns_at HEAD 'SELECT id FROM concern ORDER BY id;')
 had=$(concerns_at "$from" 'SELECT id FROM concern ORDER BY id;')

@@ -1369,8 +1369,12 @@ FROM reference;"); keys read $resolved"
 # whose lower branch landed squashed, once per case in
 # `.config/pr-stack/restacks.json`: only the upper's own commit is replayed,
 # and with no landed head the conflict names its file (#3078).
+# `.config/pr-stack/fetched-base.bash` stacks an upper on a lower in a
+# scratch repository, once per case in `.config/pr-stack/fetched.json`: a
+# lower merged on the origin since the last fetch measures the upper from the
+# lower's head, not the stale trunk (#3148, `measured_from`).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, and a restack replays only a stack's own commits"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, and a change is measured from a fetched trunk"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1384,8 +1388,9 @@ if [[ -n "$triggers" ]]; then
   failed=1
 fi
 .config/pr-stack/own-commits.bash || failed=1
+.config/pr-stack/fetched-base.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk"
 '''
 
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,

@@ -92,6 +92,18 @@ own_fork() {
   echo HEAD
 }
 
+# The revision the checked-out change is measured from (#3148), on a trunk
+# fetched first: a pull request below that merged since the seat last
+# fetched is the trunk's, never read as this change's own paths.
+measured_from() {
+  git fetch --quiet origin "$trunk"
+  evidence_base
+}
+
+# `evidence:base`, the measurement `measured_from` takes once the trunk is
+# fetched; `fetched-base.bash` reads it as the merge base it falls back to.
+evidence_base() { mise run --quiet evidence:base; }
+
 # Whether pull request `$1` is in the merge queue or set to enter it on its
 # own (auto-merge). Either way it lands alone, and GitHub refuses to link it
 # into a stack.
