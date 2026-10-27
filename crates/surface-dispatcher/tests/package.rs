@@ -5,6 +5,8 @@
 //! them as test code rather than as shipping code.
 
 use alloc::collections::BTreeMap;
+use core::convert::Infallible;
+use core::ops::ControlFlow;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -12,6 +14,7 @@ use anodized::spec;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::content_keys;
+use gandr_kernel_term::EncodedArtifact;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
 use gandr_storage_values::ValueError;
@@ -21,6 +24,8 @@ use gandr_surface_dispatcher::Alias;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Coordinate;
 use gandr_surface_dispatcher::Dependency;
+use gandr_surface_dispatcher::Export;
+use gandr_surface_dispatcher::Exporting;
 use gandr_surface_dispatcher::Field;
 use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::LOCK;
@@ -32,17 +37,23 @@ use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Manifest;
 use gandr_surface_dispatcher::ManifestFault;
 use gandr_surface_dispatcher::Package;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Unaddressed;
+use gandr_surface_dispatcher::Unexported;
 use gandr_surface_dispatcher::Unmanifested;
 use gandr_surface_dispatcher::Unmembered;
 use gandr_surface_dispatcher::Unpathed;
 use gandr_surface_dispatcher::Unresolved;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::Workspace;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::compose;
+use gandr_surface_dispatcher::exported_source;
 use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_dispatcher::lower_source;
@@ -1611,6 +1622,154 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
             .err()
             .is_some_and(|unresolved| unresolved.to_string().starts_with("DependencyCycle: ")),
         "the refusal is named"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+/// The export a walk of `sources` under `root` builds, beside the artifact
+/// each source was admitted with, by its path from `root`.
+///
+/// # Specification
+/// trivial.
+fn exported_walk(
+    root: &Path,
+    sources: &Path,
+) -> (
+    Result<Export, Unexported>,
+    BTreeMap<PathBuf, EncodedArtifact>,
+)
+{
+    let mut exporting = Exporting::default();
+    let mut admitted = BTreeMap::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![sources.to_path_buf()]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
+            let from = path
+                .canonicalize()
+                .expect("the source canonicalizes")
+                .strip_prefix(root)
+                .expect("the source is under the root")
+                .to_path_buf();
+            if let Step::Source {
+                composed:
+                    Composed::Settled {
+                        kernel: Maybe::Present(ref kernel),
+                        ..
+                    },
+                ..
+            } = step
+            {
+                let _first = admitted.insert(from.clone(), kernel.clone());
+            }
+            exporting.take(&from, &step);
+            ControlFlow::Continue(())
+        },
+    );
+    (exporting.finish(), admitted)
+}
+
+/// #3225: a package's export holds each artifact its walk admitted, filed
+/// under each source it was admitted for, and committed under the package's
+/// address its root names it, the same pointer a second commit names, and
+/// reads back byte for byte: two sources one import joins read back one
+/// artifact, which the kernel decodes, and a third reads back its own; a path
+/// the package does not hold reads back none; and a package with an unsettled
+/// source has no export, naming the source.
+#[test]
+fn a_package_s_export_holds_what_its_check_admitted_3225()
+{
+    let directory = scratch(Path::new("export"), &[]);
+    for (source, text) in [
+        (
+            "src/lib.gandr",
+            "def answer : Integer ;\ndef answer = 42 ;\n",
+        ),
+        (
+            "src/shapes/point.gandr",
+            "pub data Point : Type {\n  Here : Point;\n}\n",
+        ),
+        (
+            "src/shapes/here.gandr",
+            "import \"./point.gandr\" ;\n\ndef here : Point ;\ndef here = Here ;\n",
+        ),
+    ] {
+        let path = directory.join(source);
+        std::fs::create_dir_all(path.parent().expect("a source has a directory"))
+            .expect("the source's directory is made");
+        std::fs::write(&path, text).expect("the source is written");
+    }
+    let (export, admitted) = exported_walk(&directory, &directory.join("src"));
+    let export = export.expect("every source settles");
+    let mut store = stored(Path::new("export"));
+    let grammar = built_in().expect("the built-in grammar builds");
+    let address = rooted(&directory)
+        .identity(&grammar, &Held::default(), &Lock::default(), &store)
+        .expect("the package addresses")
+        .address;
+    let pointer = export
+        .commit(&mut store, &address)
+        .expect("the export commits");
+    assert_eq!(
+        store.roots().root(&Export::root(&address)),
+        Maybe::Present(pointer),
+        "the package's address names the export"
+    );
+    assert_eq!(
+        export.commit(&mut store, &address),
+        Ok(pointer),
+        "a second commit names the same pointer"
+    );
+    let back: Export = store.deref(pointer).expect("the export reads back");
+    assert_eq!(back, export, "the export reads back whole");
+    assert_eq!(admitted.len(), 3_usize, "each source was admitted");
+    for (source, image) in &admitted {
+        let Maybe::Present(read) = back.artifact(source)
+        else {
+            panic!("{} is exported", source.display());
+        };
+        assert_eq!(
+            read.as_ref(),
+            image.as_ref(),
+            "{} reads back the artifact it was admitted with",
+            source.display()
+        );
+        assert!(
+            gandr_kernel_term::decode(read.as_image()).is_ok(),
+            "the kernel decodes {}'s artifact",
+            source.display()
+        );
+    }
+    let artifact = |source: &str| match back.artifact(Path::new(source)) {
+        Maybe::Present(read) => read.as_ref().to_vec(),
+        Maybe::Absent(absent) => panic!("{source}: {absent:?}"),
+    };
+    assert_eq!(
+        artifact("src/shapes/point.gandr"),
+        artifact("src/shapes/here.gandr"),
+        "the sources an import joins share one artifact"
+    );
+    assert_ne!(
+        artifact("src/lib.gandr"),
+        artifact("src/shapes/here.gandr"),
+        "a source joined to none has its own"
+    );
+    assert_eq!(
+        back.artifact(Path::new("src/shapes/absent.gandr")),
+        Maybe::Absent(exported_source::Absent::Unexported),
+        "a path the package does not hold reads back none"
+    );
+    std::fs::write(
+        directory.join("src/shapes/here.gandr"),
+        "def here = missing ;\n",
+    )
+    .expect("the source is rewritten");
+    assert_eq!(
+        exported_walk(&directory, &directory.join("src")).0,
+        Err(Unexported::Unsettled {
+            source: PathBuf::from("src/shapes/here.gandr")
+        }),
+        "a package with an unsettled source has no export"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }

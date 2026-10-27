@@ -153,6 +153,7 @@ digraph crates {
   "runtime-net" -> "storage-values";
   "storage-artifact" -> "kernel-term";
   "storage-artifact" -> "storage-records";
+  "storage-artifact" -> "storage-values";
   "storage-artifact" -> "theory-cell-complexes";
   "storage-artifact" -> "theory-decomposition-spaces";
   "storage-artifact" -> "theory-deep-inference";
@@ -188,6 +189,7 @@ digraph crates {
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
   "surface-dispatcher" -> "runtime-net";
+  "surface-dispatcher" -> "storage-artifact";
   "surface-dispatcher" -> "storage-store";
   "surface-dispatcher" -> "storage-values";
   "surface-dispatcher" -> "surface-corpus";
@@ -334,6 +336,7 @@ digraph crates {
   "kernel-check-memo" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "kernel-core" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "runtime-emitter" -> "runtime-net" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
-  "runtime-net" -> "storage-chunker" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "runtime-net" -> "storage-artifact" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "storage-artifact" -> "storage-chunker" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "storage-chunker" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
 }

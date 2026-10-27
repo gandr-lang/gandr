@@ -273,6 +273,8 @@ pub enum ValueQuantity
     ChunkCount,
     /// The locality bound.
     LocalityBound,
+    /// An index a value's codec accumulates from its payload words.
+    PayloadIndex,
 }
 
 impl fmt::Display for ValueQuantity
@@ -291,7 +293,7 @@ impl fmt::Display for ValueQuantity
     /// Propagates the formatter's write failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 on all five arithmetic quantities observes pairwise
+    /// - hypothesis: L3 on all six arithmetic quantities observes pairwise
     ///   distinct renderings and exact sink refusal. It distinguishes collapsed
     ///   variants and swallowed errors without pinning diagnostic wording or
     ///   covering alternate formatter modes.
@@ -308,6 +310,7 @@ impl fmt::Display for ValueQuantity
             Self::ByteLength => "byte length",
             Self::ChunkCount => "chunk count",
             Self::LocalityBound => "locality bound",
+            Self::PayloadIndex => "payload index",
         })
     }
 }
@@ -725,6 +728,7 @@ mod tests
             ValueQuantity::ByteLength,
             ValueQuantity::ChunkCount,
             ValueQuantity::LocalityBound,
+            ValueQuantity::PayloadIndex,
         );
     }
 

@@ -100,6 +100,7 @@ use crate::workspace::WORKSPACE;
 use crate::workspace::Workspace;
 use crate::workspace::workspace_root;
 
+pub mod export;
 pub mod lock;
 pub mod toolchain;
 

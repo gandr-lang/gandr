@@ -1,5 +1,6 @@
-//! Kernel artifacts on the authenticated record plane: one record per
-//! declaration segment, under a BLAKE3 manifest identity. In the storage
+//! Kernel artifacts on the authenticated record plane and the content-addressed
+//! value plane: one record per declaration segment, under a BLAKE3 manifest
+//! identity or a content pointer. In the storage
 //! picture this crate is where the kernel's export enters the CAM, the
 //! content-addressable memory of
 //! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`.
@@ -13,7 +14,10 @@
 //! [`ArtifactManifest`] naming it; [`ArtifactManifest::identity`] is the one
 //! identity an artifact has. [`ArtifactManifest::read_under`] reads the tree
 //! back, checks it against the manifest, and hands the reassembled bytes to
-//! the kernel's bounded decoder.
+//! the kernel's bounded decoder. On the value plane the set is a
+//! `CanonicalValue` of `gandr-storage-values`, which a value store commits to
+//! a content pointer and reads back; the reader reassembles it and decodes it
+//! the same way.
 //!
 //! # Integrity and validity
 //!
@@ -36,7 +40,8 @@
 //! # Records and the manifest
 //!
 //! The record layout and where its cuts come from are stated in the `record`
-//! module; the artifact manifest, its image and what its identity binds, in the
+//! module, and the set's tokens on the value plane in `record::value`; the
+//! artifact manifest, its image and what its identity binds, in the
 //! `manifest` module.
 //!
 //! # The only storage crate that reads the kernel

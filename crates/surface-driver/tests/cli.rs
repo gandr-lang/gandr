@@ -16,6 +16,9 @@ use std::process::Output;
 use std::process::Stdio;
 
 use anodized::spec;
+use gandr_storage_store::RootName;
+use gandr_storage_store::Store;
+use gandr_surface_dispatcher::Export;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::write_frame;
@@ -1778,6 +1781,83 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
     assert_eq!(
         stderr(&faulted),
         "gandr: no directory names the store: set `XDG_DATA_HOME` or `HOME`\n"
+    );
+}
+
+/// #3225: `check` of a package commits its export into the store the run
+/// opens, under the root `export/<address>`, the address its manifest line
+/// prints: the export holds the library's artifact and a module's, which the
+/// store reads back, and a second check names the same pointer; a package
+/// with an unsettled source names no export.
+#[test]
+fn a_checked_package_s_export_is_named_by_its_address_3225()
+{
+    let scratch = Scratch::new(Path::new("export"));
+    let _library = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
+    );
+    let _module = scratch.file(
+        Path::new("hello/src/text/greet.gandr"),
+        Text::from("def greeting = \"hello, world\" ;\n"),
+    );
+    let data = scratch.0.join("data");
+    let check = || {
+        let mut command = gandr(&[Path::new("check"), Path::new("hello")]);
+        command.current_dir(&scratch.0).env("XDG_DATA_HOME", &data);
+        ran(command)
+    };
+    // The export the root names, after a run that printed `output`.
+    let exported = |output: &Output| {
+        let Some(address) = stdout(output)
+            .lines()
+            .find_map(|line| line.strip_prefix("manifest: "))
+            .and_then(|line| line.strip_suffix(')'))
+            .and_then(|line| line.split_once(" (address "))
+            .map(|(_, address)| String::from(address))
+        else {
+            panic!("a manifest line with an address: {}", stdout(output));
+        };
+        let store = Store::open(&data.join("gandr/store")).expect("the run's store opens");
+        let Maybe::Present(pointer) = store
+            .roots()
+            .root(&RootName::new(format!("export/{address}")))
+        else {
+            panic!("the address names an export: {}", stdout(output));
+        };
+        let export: Export = store.deref(pointer).expect("the export reads back");
+        (pointer, export)
+    };
+    let first = check();
+    assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
+    let (pointer, export) = exported(&first);
+    for source in ["src/lib.gandr", "src/text/greet.gandr"] {
+        assert!(
+            matches!(export.artifact(Path::new(source)), Maybe::Present(_)),
+            "the export holds {source}'s artifact"
+        );
+    }
+    let again = check();
+    assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
+    assert_eq!(
+        exported(&again).0,
+        pointer,
+        "a second check names the same export"
+    );
+    std::fs::remove_dir_all(&data).expect("the store is removed");
+    let _broken = scratch.file(
+        Path::new("hello/src/text/broken.gandr"),
+        Text::from("def broken = missing ;\n"),
+    );
+    let unsettled = check();
+    assert_eq!(code(&unsettled), Code(1_i32), "{}", stderr(&unsettled));
+    let store = Store::open(&data.join("gandr/store")).expect("the run's store opens");
+    assert!(
+        store
+            .roots()
+            .names()
+            .all(|name| !name.as_ref().starts_with("export/")),
+        "a package with an unsettled source names no export"
     );
 }
 
