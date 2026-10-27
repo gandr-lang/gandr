@@ -1397,6 +1397,101 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     );
 }
 
+/// #3072: `check` of a package depending on a sibling by path writes its
+/// `gandr.lock` once, through which its source reads the sibling, and leaves
+/// it unchanged on a second run; a content edit to the sibling is refused as
+/// `LockDrift.hello`, the lock left byte for byte, until `gandr lock`
+/// rewrites it and `check` settles again.
+#[test]
+fn check_writes_a_lock_and_refuses_its_drift_3072()
+{
+    let scratch = Scratch::new(Path::new("lock"));
+    let hello = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
+    );
+    let _sibling = scratch.file(
+        Path::new("sibling/src/lib.gandr"),
+        Text::from(
+            format!(
+                "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
+                 alias = \"hello\", coordinate = Path(\"../hello\") }}];\npub def greeting = \
+                 hello.welcome;\n",
+                LIBRARY.replace("\"hello\"", "\"sibling\"")
+            )
+            .as_str(),
+        ),
+    );
+    let lock = scratch.0.join("sibling/gandr.lock");
+    let verb = |name: &str| {
+        let mut command = gandr(&[Path::new(name), Path::new("sibling")]);
+        command.current_dir(&scratch.0);
+        ran(command)
+    };
+    let line = |output: &Output| {
+        stdout(output)
+            .lines()
+            .find_map(|line| line.strip_prefix("lock: "))
+            .map(String::from)
+    };
+    let written = verb("check");
+    assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
+    let named = lock.canonicalize().expect("the lock is written");
+    assert_eq!(
+        line(&written),
+        Some(format!("{}: written", named.display())),
+        "{}",
+        stdout(&written)
+    );
+    let first = std::fs::read_to_string(&lock).expect("the lock reads");
+    let manifest =
+        std::fs::read_to_string(scratch.0.join("sibling/gandr.toml")).expect("the manifest reads");
+    assert!(
+        manifest.ends_with("\n[dependencies]\nhello = { path = \"../hello\" }\n"),
+        "the manifest renders the dependencies table: {manifest}"
+    );
+    let again = verb("check");
+    assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
+    assert_eq!(
+        line(&again),
+        Some(format!("{}: unchanged", named.display()))
+    );
+    assert_eq!(
+        std::fs::read_to_string(&lock).ok().as_ref(),
+        Some(&first),
+        "a second run leaves the lock byte for byte"
+    );
+    std::fs::write(
+        &hello,
+        format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"howdy\";\n"),
+    )
+    .expect("hello changes");
+    let drifted = verb("check");
+    assert_eq!(code(&drifted), Code(1_i32), "drift unsettles the run");
+    assert!(
+        stderr(&drifted).contains("gandr.lock: LockDrift.hello: "),
+        "{}",
+        stderr(&drifted)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&lock).ok().as_ref(),
+        Some(&first),
+        "a drifted lock is left as it stands"
+    );
+    let relocked = verb("lock");
+    assert_eq!(code(&relocked), Code(0_i32), "{}", stderr(&relocked));
+    assert_eq!(
+        line(&relocked),
+        Some(format!("{}: rewritten", named.display()))
+    );
+    let settled = verb("check");
+    assert_eq!(code(&settled), Code(0_i32), "{}", stderr(&settled));
+    assert_eq!(
+        line(&settled),
+        Some(format!("{}: unchanged", named.display()))
+    );
+}
+
 /// #2687: a workspace's `check` with no path, at its root or in a directory
 /// of it in no package, checks its source and each member it names and writes
 /// each member's `gandr.toml` from that member's own model, though both
@@ -1475,6 +1570,9 @@ fn a_workspace_checks_each_member_it_names_2687()
 
 /// #2687: the witness workspace's committed `gandr.toml` files are the ones
 /// its members' models render: checking the workspace leaves each unchanged.
+/// #3072: `tools`' committed `gandr.lock` is the one its dependency on
+/// `hello` resolves to wherever the tree is checked out, so the check leaves
+/// it unchanged too.
 #[test]
 fn the_witness_project_s_manifest_is_its_model_s_2687()
 {
@@ -1491,6 +1589,14 @@ fn the_witness_project_s_manifest_is_its_model_s_2687()
         reconciled
             .iter()
             .all(|line| line.contains("gandr.toml: unchanged (address ")),
+        "{printed}"
+    );
+    let locked: Vec<&str> = printed
+        .lines()
+        .filter(|line| line.starts_with("lock: "))
+        .collect();
+    assert!(
+        matches!(locked.as_slice(), [line] if line.ends_with("projects/tools/gandr.lock: unchanged")),
         "{printed}"
     );
 }

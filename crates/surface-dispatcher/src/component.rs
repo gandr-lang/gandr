@@ -144,6 +144,8 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::package::Package;
+use crate::package::lock;
+use crate::package::lock::Alias;
 use crate::root::SourceRoot;
 use crate::root::classify;
 
@@ -368,15 +370,17 @@ impl ImportPath
     }
 
     /// The file a source in `directory` names: joined to `directory`, or to
-    /// the directory of the root module of the package `directory` sits in.
+    /// the directory of the root module of the package `directory` sits in,
+    /// or under the dependency its module path's head is an alias of.
     ///
     /// # Specification
     /// - requires: `directory` is the importing source's directory.
-    /// - ensures: an [`ImportBase::Importer`] file joined to `directory`; an
-    ///   [`ImportBase::Root`] file joined to the directory of the `lib.gandr`
-    ///   [`Package::discover`] finds from `directory`, which stands before an
-    ///   unsaved importer does, or to `directory` when it finds none: a source
-    ///   in no package is the root module of its own.
+    /// - ensures: an [`ImportBase::Importer`] file joined to `directory`, a
+    ///   [`Named::File`]; an [`ImportBase::Root`] file as
+    ///   [`ImportPath::in_package`] names it under the sources of the package
+    ///   [`Package::discover`] finds from `directory`, or under `directory`,
+    ///   with no lock, when it finds none: a source in no package is the root
+    ///   module of its own.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause reads the file system again.
@@ -384,21 +388,103 @@ impl ImportPath
     /// # Adequacy
     /// - hypothesis: L3 — a module path imported from a source under `src/text`
     ///   names its file under `src`, and a quoted path its file beside the
-    ///   importer.
+    ///   importer; a module path whose head is a locked alias names the
+    ///   dependency's library, and one whose head is neither is unlocked.
     /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
+    /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
     #[inline]
     #[must_use]
     pub fn resolved(
         &self,
         directory: &Path,
-    ) -> PathBuf
+    ) -> Named
     {
         match self.base {
-            ImportBase::Importer => directory.join(&self.file),
+            ImportBase::Importer => Named::File(directory.join(&self.file)),
             ImportBase::Root => match Package::discover(directory) {
-                Maybe::Present(package) => package.sources().join(&self.file),
-                Maybe::Absent(_) => directory.join(&self.file),
+                Maybe::Present(package) => self.in_package(package.sources(), Some(&package)),
+                Maybe::Absent(_) => self.in_package(directory, None),
             },
+        }
+    }
+
+    /// The file the module path names under `sources`, the sources of
+    /// `package` when it is given: under them when its head names a source or
+    /// a directory there, else under the dependency the package's lock
+    /// records for the head.
+    ///
+    /// # Specification
+    /// - requires: the path's file is a module path's file, `hello.gandr` or
+    ///   `hello/text/greet.gandr`; `sources` is `package`'s sources when it is
+    ///   given.
+    /// - ensures: [`Named::File`] of the file under `sources` when its head —
+    ///   the first segment, the stem of a file alone — names a `.gandr` file or
+    ///   a directory there; else [`Named::File`] of the dependency's library
+    ///   for a head alone, or of the rest of the path under its sources, when
+    ///   the lock at `package`'s root records the head as an alias;
+    ///   [`Named::Unlocked`] of the file under `sources` otherwise, and for no
+    ///   package.
+    /// - provides: the one rule an import through an alias reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause reads the file system again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses of [`ImportPath::resolved`].
+    /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+    fn in_package(
+        &self,
+        sources: &Path,
+        package: Option<&Package>,
+    ) -> Named
+    {
+        let local = sources.join(&self.file);
+        let mut segments = Path::new(&self.file).components();
+        let Some(head) = segments.next().and_then(|head| head.as_os_str().to_str())
+        else {
+            return Named::File(local);
+        };
+        let rest = segments.as_path();
+        let (head, rest) = if rest.as_os_str().is_empty() {
+            (head.strip_suffix(".gandr").unwrap_or(head), None)
+        }
+        else {
+            (head, Some(rest))
+        };
+        if sources.join(head).with_extension("gandr").exists() || sources.join(head).is_dir() {
+            return Named::File(local);
+        }
+        package
+            .and_then(|package| lock::through(package, &Alias::new(String::from(head)), rest))
+            .map_or(Named::Unlocked(local), Named::File)
+    }
+}
+
+/// The file an import names, as [`ImportPath::resolved`] finds it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Named
+{
+    /// The file: of the package, beside the importer, or of a dependency the
+    /// package's lock records.
+    File(PathBuf),
+    /// A module path whose head names no source of the package and no
+    /// dependency its lock records; the file the package would hold for it,
+    /// which an editor may hold unsaved.
+    Unlocked(PathBuf),
+}
+
+impl Named
+{
+    /// The file named, or the one the package would hold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn file(&self) -> &Path
+    {
+        match *self {
+            Self::File(ref file) | Self::Unlocked(ref file) => file,
         }
     }
 }
@@ -574,6 +660,9 @@ enum Edge
     To(Position),
     /// No source the importer's root holds.
     Unresolved,
+    /// A module path whose head is no module of the package and no dependency
+    /// its lock records.
+    Unlocked,
 }
 
 /// Whether a source read into the graph parses.
@@ -1123,13 +1212,15 @@ impl Graph
     /// - ensures: each source whose text spells `import` is read for its path
     ///   imports as the graph's [`Reading`] says, unless they were given, and
     ///   its imports resolved in the order it writes them, each read as
-    ///   [`Graph::resolve`] reads it under `shadows`. Given, it is
-    ///   [`Parse::Parsed`] with their edges, unparsed; read whole, it is
-    ///   [`Parse::Parsed`] with its edges, or [`Parse::Unparsed`] with none;
-    ///   read by its import forms, it is [`Parse::Parsed`] with its edges when
-    ///   they write a path import and stays [`Parse::Unchecked`] otherwise.
-    ///   Each source an edge names is [`Parse::Parsed`] or [`Parse::Unparsed`];
-    ///   every other source stays [`Parse::Unchecked`].
+    ///   [`Graph::resolve`] reads it under `shadows`, but for a module path
+    ///   [`Named::Unlocked`] that no editor holds, which is [`Edge::Unlocked`]
+    ///   and read not at all. Given, it is [`Parse::Parsed`] with their edges,
+    ///   unparsed; read whole, it is [`Parse::Parsed`] with its edges, or
+    ///   [`Parse::Unparsed`] with none; read by its import forms, it is
+    ///   [`Parse::Parsed`] with its edges when they write a path import and
+    ///   stays [`Parse::Unchecked`] otherwise. Each source an edge names is
+    ///   [`Parse::Parsed`] or [`Parse::Unparsed`]; every other source stays
+    ///   [`Parse::Unchecked`].
     /// - fails: never.
     /// - panics: none.
     /// - intension: one breadth-first pass over the sources as they are read;
@@ -1184,7 +1275,13 @@ impl Graph
             self.parsed.absorb(parsed);
             let edges: Vec<Edge> = written
                 .iter()
-                .map(|address| self.resolve(&address.resolved(&directory), root, shadows))
+                .map(|address| match address.resolved(&directory) {
+                    Named::File(file) => self.resolve(&file, root, shadows),
+                    Named::Unlocked(file) if shadows.shadowed(&named_path(&file)).is_some() => {
+                        self.resolve(&file, root, shadows)
+                    },
+                    Named::Unlocked(_) => Edge::Unlocked,
+                })
                 .collect();
             if let Some(reading) = self.read.get_mut(next) {
                 reading.parse = parse;
@@ -1199,7 +1296,7 @@ impl Graph
             .flat_map(|read| read.edges.iter())
             .filter_map(|&edge| match edge {
                 Edge::To(to) => Some(to),
-                Edge::Unresolved => None,
+                Edge::Unresolved | Edge::Unlocked => None,
             })
             .collect();
         for to in named {
@@ -1255,7 +1352,7 @@ impl Graph
     /// - witness: `component::tests::a_fixture_imports_a_strict_source_and_not_the_reverse_2767`
     #[spec(ensures: |ret| match ret {
         Edge::To(position) => position.0 < self.read.len(),
-        Edge::Unresolved => true,
+        Edge::Unresolved | Edge::Unlocked => true,
     })]
     fn resolve(
         &mut self,
@@ -1496,7 +1593,9 @@ impl Graph
                     .iter()
                     .filter_map(|&edge| match self.target(&reaches, Position(from), edge) {
                         ImportTarget::Source(to) => Some(Position(usize::from(to))),
-                        ImportTarget::Unresolved | ImportTarget::Cycle => None,
+                        ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => {
+                            None
+                        },
                     })
                     .collect()
             })
@@ -1512,7 +1611,8 @@ impl Graph
     ///   apart; otherwise [`ImportTarget::Cycle`] for an edge whose target
     ///   leads back to `from`; [`ImportTarget::Source`] holding the target's
     ///   graph position for a resolved edge whose target parses and is not set
-    ///   apart; [`ImportTarget::Unresolved`] otherwise.
+    ///   apart; [`ImportTarget::Unlocked`] for an [`Edge::Unlocked`];
+    ///   [`ImportTarget::Unresolved`] otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1524,7 +1624,7 @@ impl Graph
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     #[spec(ensures: |ret| match ret {
         ImportTarget::Source(to) => usize::from(to) < self.read.len(),
-        ImportTarget::Unresolved | ImportTarget::Cycle => true,
+        ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked => true,
     })]
     fn target(
         &self,
@@ -1557,6 +1657,7 @@ impl Graph
             {
                 ImportTarget::Source(SourceIndex::from(to.0))
             },
+            Edge::Unlocked => ImportTarget::Unlocked,
             Edge::To(_) | Edge::Unresolved => ImportTarget::Unresolved,
         }
     }
@@ -1612,7 +1713,9 @@ impl Graph
                             .map_or(ImportTarget::Unresolved, |&index| {
                                 ImportTarget::Source(index)
                             }),
-                        held @ (ImportTarget::Unresolved | ImportTarget::Cycle) => held,
+                        held @ (ImportTarget::Unresolved
+                        | ImportTarget::Cycle
+                        | ImportTarget::Unlocked) => held,
                     })
                     .collect()
             });
@@ -1983,7 +2086,7 @@ pub fn imports_named(
     let directory = path.parent().unwrap_or(path);
     written
         .iter()
-        .map(|address| named_path(&address.resolved(directory)))
+        .map(|address| named_path(address.resolved(directory).file()))
         .collect()
 }
 

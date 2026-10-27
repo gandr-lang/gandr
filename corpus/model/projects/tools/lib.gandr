@@ -1,6 +1,9 @@
 // #2687: a workspace's second member, its library alone at its root, its
 // version read from the workspace it sits in.
 import "../workspace.gandr";
+// The sibling package this one depends on, read through `gandr.lock` by its
+// alias (#3072).
+import hello;
 // The manifest theories, from `std.package` by its path (#533 p3).
 import "../../../../library/std/src/package.gandr";
 
@@ -20,3 +23,12 @@ pub module Package : Model(Gandr.Package) {
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
 }
+
+/// The packages this one depends on: `hello`, found at its sibling's root.
+pub def dependencies : List(Dependency) = [
+  #{alias = "hello", coordinate = Path("../hello")},
+];
+
+/// hello's greeting, which the alias reads through the lock.
+@[ runs("\"hello, world\"") ]
+pub def relayed = hello.welcome;

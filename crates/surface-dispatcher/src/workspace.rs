@@ -166,48 +166,14 @@ impl Workspace
     #[inline]
     pub fn members(&self) -> Result<Vec<Package>, Unmembered>
     {
-        let source = self.source();
-        let text = std::fs::read_to_string(&source).map_err(|error| Unmembered::Unread {
-            message: error.to_string(),
-        })?;
-        let grammar = built_in().map_err(|error| Unmembered::Refused {
-            why: error.to_string(),
-        })?;
-        let laid = lay_out(
-            &grammar,
-            &source,
-            classify(&source),
-            SourceText::from(text.as_str()),
-        );
-        let laid_text = SourceText::from(laid.text.as_str());
-        let mut lowerings = LoweringCount::default();
-        let composed = lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings)
-            .and_then(|lowering| {
-                judge_lowering(
-                    CorpusRoot::Strict,
-                    (lowering, laid_text),
-                    &HostGrant::UNBOUNDED,
-                    laid.base,
-                )
-            })
-            .map_err(|fault| Unmembered::Refused {
-                why: fault.to_string(),
-            })?;
-        let mut program = match composed {
-            Composed::Settled { program, .. } => program,
-            Composed::Refused(refusal) => {
-                return Err(Unmembered::Refused {
-                    why: refusal.to_string(),
-                });
-            },
-        };
-        let constant = match program.named(SurfaceName::from(MEMBERS)) {
-            Maybe::Present(constant) => constant,
-            Maybe::Absent(declaration_name::Absent::Undeclared) => {
+        let came = match ran_alone(&self.source(), SurfaceName::from(MEMBERS)) {
+            Ok(Maybe::Present(came)) => came,
+            Ok(Maybe::Absent(declaration_name::Absent::Undeclared)) => {
                 return Err(Unmembered::Undeclared);
             },
+            Err(Unran::Unread { message }) => return Err(Unmembered::Unread { message }),
+            Err(Unran::Refused { why }) => return Err(Unmembered::Refused { why }),
         };
-        let came = program.evaluate(constant).to_string();
         let Some(named) = Spelling(&came).listed()
         else {
             return Err(Unmembered::Unlisted { came });
@@ -230,10 +196,112 @@ impl Workspace
     }
 }
 
+/// What the declaration `name` of the source at `source` runs to, spelled,
+/// the source checked alone over the sources it imports.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the source read, laid out over its imports as the walk lays them
+///   out, lowered and judged under the strict root, and `name` run on the
+///   program's machine, its value spelled; `Undeclared` when the source
+///   declares no `name`.
+/// - provides: the one reading of a value a source states about its own package
+///   or workspace: a workspace's `members` and a library's `dependencies`.
+/// - fails: [`Unran::Unread`] for a source that cannot be read, and
+///   [`Unran::Refused`] for one that does not compose or is refused as a whole.
+/// - panics: none.
+/// - executable: none — `name` is run on the program's machine, which a
+///   predicate could only check by running it again.
+///
+/// # Errors
+/// [`Unran`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses of [`Workspace::members`] and
+///   [`Package::dependencies`].
+/// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
+/// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+#[inline]
+pub fn ran_alone(
+    source: &Path,
+    name: SurfaceName<'_>,
+) -> Result<Maybe<String, declaration_name::Absent>, Unran>
+{
+    let text = std::fs::read_to_string(source).map_err(|error| Unran::Unread {
+        message: error.to_string(),
+    })?;
+    let grammar = built_in().map_err(|error| Unran::Refused {
+        why: error.to_string(),
+    })?;
+    let laid = lay_out(
+        &grammar,
+        source,
+        classify(source),
+        SourceText::from(text.as_str()),
+    );
+    let laid_text = SourceText::from(laid.text.as_str());
+    let mut lowerings = LoweringCount::default();
+    let composed = lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings)
+        .and_then(|lowering| {
+            judge_lowering(
+                CorpusRoot::Strict,
+                (lowering, laid_text),
+                &HostGrant::UNBOUNDED,
+                laid.base,
+            )
+        })
+        .map_err(|fault| Unran::Refused {
+            why: fault.to_string(),
+        })?;
+    let mut program = match composed {
+        Composed::Settled { program, .. } => program,
+        Composed::Refused(refusal) => {
+            return Err(Unran::Refused {
+                why: refusal.to_string(),
+            });
+        },
+    };
+    Ok(match program.named(name) {
+        Maybe::Present(constant) => Maybe::Present(program.evaluate(constant).to_string()),
+        Maybe::Absent(absent) => Maybe::Absent(absent),
+    })
+}
+
+/// Why [`ran_alone`] ran nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unran
+{
+    /// The source cannot be read.
+    Unread
+    {
+        /// What reading it met.
+        message: String,
+    },
+    /// The source does not compose, or is refused as a whole.
+    Refused
+    {
+        /// Why, spelled.
+        why: String,
+    },
+}
+
 /// A run's value as the machine spells it, read from its start.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Spelling<'text>(&'text str);
+pub struct Spelling<'text>(&'text str);
+
+impl<'text> From<&'text str> for Spelling<'text>
+{
+    /// Reads the text as a run's spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(text: &'text str) -> Self
+    {
+        Self(text)
+    }
+}
 
 impl Spelling<'_>
 {
@@ -258,16 +326,56 @@ impl Spelling<'_>
     #[inline]
     fn listed(self) -> Option<Vec<String>>
     {
+        self.listed_as(Self::quoted)
+    }
+
+    /// The dependencies the spelling lists: `cons(#{.alias = "a", .coordinate
+    /// = Path("../a")}, nil)` is the alias `a` at the path `../a`, each string
+    /// decoded; none for any other spelling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the alias and path of each element of a spelling `cons(d₁,
+    ///   cons(d₂, … nil))`, each `dᵢ` written `#{.alias = a, .coordinate =
+    ///   Path(p)}` with `a` and `p` quoted strings, in order; none when
+    ///   anything else stands anywhere in it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::listed`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two dependencies, none, and a record missing its
+    ///   coordinate each read as listed or not.
+    /// - witness: `workspace::tests::a_run_s_spelling_lists_its_dependencies_3072`
+    #[inline]
+    pub fn dependencies(self) -> Option<Vec<(String, String)>>
+    {
+        self.listed_as(|spelling| {
+            let (alias, Self(rest)) = Self(spelling.0.strip_prefix("#{.alias = ")?).quoted()?;
+            let (path, Self(rest)) = Self(rest.strip_prefix(", .coordinate = Path(")?).quoted()?;
+            Some(((alias, path), Self(rest.strip_prefix(")}")?)))
+        })
+    }
+
+    /// The elements the spelling lists, each read by `element`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn listed_as<T>(
+        self,
+        element: impl Fn(Self) -> Option<(T, Self)>,
+    ) -> Option<Vec<T>>
+    {
         let mut rest = self.0;
-        let mut strings = Vec::new();
+        let mut elements = Vec::new();
         while let Some(after) = rest.strip_prefix("cons(") {
-            let (string, Self(after)) = Self(after).quoted()?;
-            strings.push(string);
+            let (read, Self(after)) = element(Self(after))?;
+            elements.push(read);
             rest = after.strip_prefix(", ")?;
         }
         let closers = rest.strip_prefix("nil")?;
-        (closers.len() == strings.len() && closers.bytes().all(|byte| byte == b')'))
-            .then_some(strings)
+        (closers.len() == elements.len() && closers.bytes().all(|byte| byte == b')'))
+            .then_some(elements)
     }
 
     /// The string literal the spelling opens with, decoded, and what follows
@@ -408,5 +516,33 @@ mod tests
         ] {
             assert_eq!(Spelling(other).listed(), None, "`{other}` lists no strings");
         }
+    }
+
+    #[test]
+    fn a_run_s_spelling_lists_its_dependencies_3072()
+    {
+        let pair = |alias: &str, path: &str| (String::from(alias), String::from(path));
+        assert_eq!(
+            Spelling(
+                "cons(#{.alias = \"hello\", .coordinate = Path(\"../hello\")}, cons(#{.alias = \
+                 \"tools\", .coordinate = Path(\"../tools\")}, nil))"
+            )
+            .dependencies(),
+            Some(Vec::from([
+                pair("hello", "../hello"),
+                pair("tools", "../tools")
+            ])),
+            "two dependencies read in order"
+        );
+        assert_eq!(
+            Spelling("nil").dependencies(),
+            Some(Vec::new()),
+            "no dependency reads as none"
+        );
+        assert_eq!(
+            Spelling("cons(#{.alias = \"hello\"}, nil)").dependencies(),
+            None,
+            "a dependency without its coordinate lists nothing"
+        );
     }
 }

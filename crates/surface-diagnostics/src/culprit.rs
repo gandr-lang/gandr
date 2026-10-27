@@ -152,6 +152,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ShadowedBuiltin { .. } => "shadows a builtin",
         LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
         LoweringRefusal::ImportCycle { .. } => "leads back to this source",
+        LoweringRefusal::UnlockedDependency { .. } => "no module or locked dependency of this name",
         LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
         LoweringRefusal::UnexportedName {
             reason: Unexported::Undefined,
@@ -597,6 +598,9 @@ mod tests
             LoweringRefusal::ShadowedBuiltin { .. } => "shadows a builtin",
             LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
             LoweringRefusal::ImportCycle { .. } => "leads back to this source",
+            LoweringRefusal::UnlockedDependency { .. } => {
+                "no module or locked dependency of this name"
+            },
             LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
             LoweringRefusal::UnexportedName {
                 reason: Unexported::Undefined,

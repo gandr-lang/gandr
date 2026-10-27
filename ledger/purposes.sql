@@ -1922,6 +1922,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','component::Freshness','enum','H
 INSERT INTO purpose VALUES('surface-dispatcher','component::ImportBase','enum','The directory an import''s file is named relative to: the importer''s, or the package''s root module''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ImportPath','struct','The file a path or module import names, and the directory it is named relative to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Laid','struct','A source''s import closure laid out as one unit.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','component::Named','enum','The file an import names: of the package, beside the importer or of a locked dependency, or a module path no module and no locked dependency answers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ParsedBytes','struct','How many bytes of source text a run has parsed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Shadows','trait','The text an editor holds for a source, which an import of that source reads in place of the file at its path, and whether a change to a file on disk is reported.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Unshadowed','struct','No source shadowed: every import reads the file at its path.',NULL,'fits','sound',NULL);
@@ -2013,6 +2014,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Field','enum','A field of the `Package` model a manifest records.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Identity','struct','What a package is: its address over its dependencies'' addresses, and the key of the paths its root exports.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::LIBRARY','constant','The file name of a package''s library, the source that declares the package''s model.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::MANIFEST','constant','The file name of the manifest the checker writes at a package''s root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Manifest','struct','What a package''s model states for its manifest: its name, its version and the inert fields beside them, and its modules.',NULL,'fits','sound',NULL);
@@ -2023,6 +2025,17 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::Reconciled','enum','Wh
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unaddressed','enum','Why a package has no address: a source that does not read or lower, or an item the lowering refused or no content key names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unmanifested','enum','Why a library''s model gives no manifest: a field it does not declare, or one that runs to no string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unpathed','enum','Why a verb has no paths to walk: no path given in no package and no workspace, or a workspace naming no packages.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Alias','struct','The name a source imports a dependency by.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Coordinate','enum','Where a dependency is found, never part of what it is: a path from the dependent''s root.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Dependency','struct','A dependency as a library''s `dependencies` declares it: its alias and its coordinate.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::LOCK','constant','The file name of the lock the checker writes at a package''s root.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Lock','struct','A package''s lock: each dependency by its alias, at its coordinate, address and signature key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::LockFault','enum','Why a lock was not reconciled: it drifted from what the dependencies resolve to, was edited by hand, or could not be read or written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Locked','struct','One dependency as its dependent''s lock records it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::SignatureKey','struct','A package''s signature key: the digest of the dotted paths its root exports.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Unresolved','enum','Why a package''s dependencies resolve to no lock: an unreadable `dependencies`, a coordinate rooting no package, a cycle, a stale dependency lock, an alias twice, or a dependency with no address.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::reconcile_lock','function','Hold a package''s lock to what its dependencies resolve to, writing it only where none stands and refusing drift.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::relock','function','Write a package''s lock as its dependencies resolve, whatever stands there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package and a workspace''s directory to its members, and the packages they reach.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a package''s manifest to what its model states, refusing one edited by hand.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The driver''s worker threads: one pool at one width, started on the first fork that has two items or more and reused by every later fork.','fork','fits','sound',NULL);

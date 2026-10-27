@@ -3064,6 +3064,47 @@ fn an_import_closing_a_cycle_refuses_its_source()
     );
 }
 
+/// #3072: a module path naming no module of the package and no dependency
+/// its lock records binds nothing, and refuses only the declarations reading
+/// through it, at the alias; every other declaration of the source stands,
+/// so a library's `dependencies` runs before its lock is written.
+#[test]
+fn a_name_read_through_an_unlocked_alias_is_refused_at_it_3072()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[(
+        SourceText::from(
+            "import hello ;\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = \
+             hello.welcome ;",
+        ),
+        &[ImportTarget::Unlocked],
+    )]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let alias = text.find("hello.welcome").expect("the path is written");
+    let outcome = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == name)
+            .map(gandr_surface_lowering::LoweredDeclaration::outcome)
+    };
+    assert!(
+        matches!(
+            outcome("two"),
+            Some(DeclarationOutcome::Refused(LoweringRefusal::UnlockedDependency { span, alias: named }))
+                if named.as_ref() == "hello" && span == bytes(alias, alias + "hello".len())
+        ),
+        "the use is refused at the alias: {:?}",
+        outcome("two")
+    );
+    assert!(
+        !matches!(outcome("one"), Some(DeclarationOutcome::Refused(_)) | None),
+        "a declaration reading nothing through the alias stands: {:?}",
+        outcome("one")
+    );
+}
+
 #[test]
 fn a_constructor_an_import_binds_again_refuses_its_family()
 {

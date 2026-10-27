@@ -14,8 +14,15 @@ use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::content_keys;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleReport;
+use gandr_surface_dispatcher::Alias;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Coordinate;
+use gandr_surface_dispatcher::Dependency;
 use gandr_surface_dispatcher::Field;
+use gandr_surface_dispatcher::LOCK;
+use gandr_surface_dispatcher::Lock;
+use gandr_surface_dispatcher::LockFault;
+use gandr_surface_dispatcher::Locked;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Manifest;
@@ -24,9 +31,11 @@ use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_dispatcher::Unaddressed;
 use gandr_surface_dispatcher::Unmanifested;
 use gandr_surface_dispatcher::Unmembered;
 use gandr_surface_dispatcher::Unpathed;
+use gandr_surface_dispatcher::Unresolved;
 use gandr_surface_dispatcher::Workspace;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::compose;
@@ -37,6 +46,8 @@ use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_dispatcher::package_root;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
+use gandr_surface_dispatcher::reconcile_lock;
+use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -502,6 +513,40 @@ fn a_manifest_reads_the_package_model_2687()
     );
 }
 
+/// #3072: a library's `dependencies` renders the manifest's dependency table,
+/// each alias with its path, and one that runs to no list of dependencies is
+/// refused with what it came to.
+#[test]
+fn a_manifest_renders_the_dependencies_its_library_lists_3072()
+{
+    let read = manifest_of(SourceText::from(concat!(
+        "data Coordinate : Type { Path : (path : String) --> Coordinate; } ",
+        "type Dependency = #{ alias : String, coordinate : Coordinate }; ",
+        "module Package { def name = \"tools\" ; def version = \"0.1.0\" ; ",
+        rest!(),
+        " } def dependencies : List(Dependency) = [ #{ alias = \"hello\", coordinate = \
+         Path(\"../hello\") } ] ;"
+    )))
+    .expect("the model and its dependencies read");
+    assert!(
+        read.render()
+            .ends_with("modules = []\n\n[dependencies]\nhello = { path = \"../hello\" }\n"),
+        "the table follows the package's: {}",
+        read.render()
+    );
+    assert_eq!(
+        manifest_of(SourceText::from(concat!(
+            "module Package { def name = \"tools\" ; def version = \"0.1.0\" ; ",
+            rest!(),
+            " } def dependencies = 3 ;"
+        ))),
+        Err(Unmanifested::Undepended {
+            came: String::from("3"),
+        }),
+        "dependencies that are no list"
+    );
+}
+
 /// #2687: a manifest renders its header, the digest of its body and its
 /// table, the same bytes each time, an empty module list as `[]` the way the
 /// tree's TOML formatter writes it, and escapes what TOML's basic strings
@@ -763,8 +808,9 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
     let grammar = built_in().expect("the built-in grammar builds");
     let address = |held: &Held| {
         package
-            .address(&grammar, held)
+            .identity(&grammar, held, &Lock::default())
             .expect("the package addresses")
+            .address
     };
     let before = address(&Held::default());
     let renamed = Held(BTreeMap::from([(library.clone(), stated("howdy"))]));
@@ -958,9 +1004,12 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
         else {
             panic!("`{}` roots a package", library.display());
         };
-        let before = package
-            .address(&grammar, &Held::default())
-            .expect("the package addresses");
+        let address = |held: &Held| {
+            package
+                .identity(&grammar, held, &Lock::default())
+                .map(|identity| identity.address)
+        };
+        let before = address(&Held::default()).expect("the package addresses");
         let stated = std::fs::read_to_string(&library).expect("the library reads");
         let (edited, counts) = swept(&library, &fields);
         for field in &fields {
@@ -973,7 +1022,7 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
         }
         let held = Held(BTreeMap::from([(library.clone(), edited)]));
         assert_eq!(
-            package.address(&grammar, &held),
+            address(&held),
             Ok(before),
             "`{}`'s inert fields, swept, leave its address; the items moved: {:?}",
             library.display(),
@@ -996,10 +1045,338 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
             format!("{stated}\n/// A declaration the sweep adds.\npub def swept = 1;\n"),
         )]));
         assert_ne!(
-            package.address(&grammar, &added),
+            address(&added),
             Ok(before),
             "`{}`'s address moves with its content",
             library.display()
         );
     }
+}
+
+/// A library a case writes: what it imports before `std.package`, the
+/// version its `Package` model states, and what follows the model.
+#[derive(Clone, Copy, Debug)]
+struct Library<'text>
+{
+    /// The imports before `std.package`'s.
+    imports: &'text str,
+    /// The model's `version`.
+    version: &'text str,
+    /// The declarations after the model.
+    rest: &'text str,
+}
+
+impl Library<'_>
+{
+    /// The library's source.
+    ///
+    /// # Specification
+    /// trivial.
+    fn source(self) -> String
+    {
+        let Self {
+            imports,
+            version,
+            rest,
+        } = self;
+        format!(
+            "{imports}{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name : \
+             String = \"p\";\n  def version = \"{version}\";\n  def authors = \"Ada\";\n  def \
+             licence = \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n}}\n{rest}"
+        )
+    }
+}
+
+/// The package `hello` a case writes: its version and the greeting its
+/// `welcome` exports.
+#[derive(Clone, Copy, Debug)]
+struct Hello
+{
+    /// The model's `version`.
+    version: &'static str,
+    /// What `welcome` is.
+    welcome: &'static str,
+}
+
+/// A scratch directory named for `test` holding the package `hello` as
+/// `written`, and the package `sibling` depending on it by the path
+/// `../hello` and reading `hello.welcome`.
+///
+/// # Specification
+/// trivial.
+fn siblings(
+    test: &Path,
+    written: Hello,
+) -> PathBuf
+{
+    let directory = scratch(test, &[
+        Path::new("hello/src/lib.gandr"),
+        Path::new("sibling/src/lib.gandr"),
+    ]);
+    write_hello(&directory, written);
+    std::fs::write(
+        directory.join("sibling/src/lib.gandr"),
+        Library {
+            imports: "import hello;\n",
+            version: "0.1.0",
+            rest: "pub def dependencies : List(Dependency) = [#{ alias = \"hello\", coordinate = \
+                   Path(\"../hello\") }];\npub def greeting = hello.welcome;\n",
+        }
+        .source(),
+    )
+    .expect("the sibling is written");
+    directory
+}
+
+/// Write `hello`'s library under `directory` as `written`.
+///
+/// # Specification
+/// trivial.
+fn write_hello(
+    directory: &Path,
+    written: Hello,
+)
+{
+    let rest = format!("pub def welcome = \"{}\";\n", written.welcome);
+    std::fs::write(
+        directory.join("hello/src/lib.gandr"),
+        Library {
+            imports: "",
+            version: written.version,
+            rest: &rest,
+        }
+        .source(),
+    )
+    .expect("hello is written");
+}
+
+/// The package rooted at `root`.
+///
+/// # Specification
+/// trivial.
+fn rooted(root: &Path) -> Package
+{
+    match Package::discover(root) {
+        Maybe::Present(package) => package,
+        Maybe::Absent(package_root::Absent::Unpackaged) => {
+            panic!("`{}` roots a package", root.display())
+        },
+    }
+}
+
+/// #3072: a library's `dependencies` runs before its lock is written, the
+/// use through the alias alone refused; the lock records the dependency's
+/// coordinate, address and signature key, is written once, read back equal
+/// and unchanged on a second run, and is the same bytes resolved from another
+/// directory; with it, the use reads the dependency.
+#[test]
+fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = siblings(Path::new("lock"), Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    let sibling = rooted(&directory.join("sibling"));
+    let hello = rooted(&directory.join("hello"));
+    assert_eq!(
+        sibling.dependencies(),
+        Ok(Vec::from([Dependency {
+            alias: Alias::new(String::from("hello")),
+            coordinate: Coordinate::Path(String::from("../hello")),
+        }])),
+        "the dependencies run before any lock stands"
+    );
+    let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default());
+    assert!(
+        matches!(unlocked, Err(Unaddressed::Refused { ref item, .. }) if item == "greeting"),
+        "with no lock, the use through the alias is refused, and only it: {unlocked:?}"
+    );
+    let lock = sibling.resolve(&grammar).expect("the dependencies resolve");
+    let own = hello
+        .identity(&grammar, &Held::default(), &Lock::default())
+        .expect("hello addresses");
+    assert_eq!(
+        lock.locked(&Alias::new(String::from("hello"))),
+        Some(&Locked {
+            coordinate: Coordinate::Path(String::from("../hello")),
+            address: own.address,
+            signature: own.signature,
+        }),
+        "the lock records hello's coordinate and identity"
+    );
+    assert!(
+        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        "an absent lock is written"
+    );
+    let written =
+        std::fs::read_to_string(directory.join("sibling").join(LOCK)).expect("the lock reads");
+    assert!(
+        matches!(Lock::read(&sibling), Maybe::Present(ref read) if *read == lock),
+        "the lock reads back as it was written"
+    );
+    assert_eq!(
+        sibling.resolve(&grammar).as_ref(),
+        Ok(&lock),
+        "a second resolution is the same lock"
+    );
+    assert!(
+        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Unchanged)),
+        "a second run writes nothing"
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.join("sibling").join(LOCK)).ok(),
+        Some(written.clone()),
+        "the lock stands byte for byte"
+    );
+    let locked = sibling
+        .identity(&grammar, &Held::default(), &lock)
+        .expect("with the lock, the use reads `hello.welcome`");
+    let elsewhere = siblings(Path::new("lock-elsewhere"), Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    let other = rooted(&elsewhere.join("sibling"));
+    let relocked = other.resolve(&grammar).expect("the copy resolves");
+    assert_eq!(
+        relocked.render(),
+        written,
+        "the lock is the same bytes resolved from another directory"
+    );
+    assert!(
+        matches!(reconcile_lock(&other, &relocked), Ok(Reconciled::Written)),
+        "the copy's lock is written"
+    );
+    assert_eq!(
+        other
+            .identity(&grammar, &Held::default(), &relocked)
+            .map(|identity| identity.address),
+        Ok(locked.address),
+        "the dependent's address is the same from another directory"
+    );
+    for scratch in [directory, elsewhere] {
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+    }
+}
+
+/// #3072: an inert edit to a dependency leaves its dependent's lock; a
+/// content edit moves the dependency's address, and the standing lock is
+/// refused as `LockDrift.hello`, left byte for byte, until `relock` writes
+/// it again; a hand edit to the lock is refused as drift.
+#[test]
+fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = siblings(Path::new("drift"), Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    let sibling = rooted(&directory.join("sibling"));
+    let path = directory.join("sibling").join(LOCK);
+    let lock = sibling.resolve(&grammar).expect("the dependencies resolve");
+    assert!(
+        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        "the lock is written"
+    );
+    let standing = std::fs::read_to_string(&path).expect("the lock reads");
+    write_hello(&directory, Hello {
+        version: "0.2.0",
+        welcome: "hello",
+    });
+    assert!(
+        matches!(
+            reconcile_lock(&sibling, &sibling.resolve(&grammar).expect("it resolves")),
+            Ok(Reconciled::Unchanged)
+        ),
+        "an inert edit to the dependency leaves the lock"
+    );
+    write_hello(&directory, Hello {
+        version: "0.2.0",
+        welcome: "howdy",
+    });
+    let moved = sibling.resolve(&grammar).expect("it resolves");
+    assert_ne!(
+        moved
+            .locked(&Alias::new(String::from("hello")))
+            .map(|locked| locked.address),
+        lock.locked(&Alias::new(String::from("hello")))
+            .map(|locked| locked.address),
+        "a content edit moves the dependency's address"
+    );
+    let drifted = reconcile_lock(&sibling, &moved);
+    assert!(
+        matches!(drifted, Err(LockFault::Drifted(ref aliases)) if *aliases == [Alias::new(String::from("hello"))]),
+        "the standing lock is drift at `hello`: {drifted:?}"
+    );
+    assert_eq!(
+        drifted.map_err(|fault| fault.to_string()).err().as_deref(),
+        Some(
+            "LockDrift.hello: the lock records another dependency than it resolves to, so it is \
+             left as it stands; relock with `gandr lock`"
+        ),
+        "the drift names its alias"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).ok(),
+        Some(standing),
+        "a drifted lock is left byte for byte"
+    );
+    assert!(
+        matches!(relock(&sibling, &moved), Ok(Reconciled::Rewritten)),
+        "relocking rewrites it"
+    );
+    assert!(
+        matches!(reconcile_lock(&sibling, &moved), Ok(Reconciled::Unchanged)),
+        "the relocked lock holds"
+    );
+    let mut edited = std::fs::read_to_string(&path).expect("the lock reads");
+    edited.push_str("# by hand\n");
+    std::fs::write(&path, edited).expect("the lock is edited");
+    assert!(
+        matches!(reconcile_lock(&sibling, &moved), Err(LockFault::Edited)),
+        "a hand edit is refused"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+/// #3072: two packages depending on each other by path are refused as a
+/// `DependencyCycle`, naming the chain of roots from the one resolved back to
+/// it.
+#[test]
+fn a_dependency_cycle_is_refused_by_its_paths_3072()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = scratch(Path::new("cycle"), &[
+        Path::new("a/src/lib.gandr"),
+        Path::new("b/src/lib.gandr"),
+    ]);
+    for (from, to) in [("a", "b"), ("b", "a")] {
+        std::fs::write(
+            directory.join(from).join("src/lib.gandr"),
+            format!(
+                "{STD_PACKAGE}pub def dependencies : List(Dependency) = [#{{ alias = \"{to}\", \
+                 coordinate = Path(\"../{to}\") }}];\n"
+            ),
+        )
+        .expect("the library is written");
+    }
+    let resolved = rooted(&directory.join("a")).resolve(&grammar);
+    assert_eq!(
+        resolved,
+        Err(Unresolved::Cycle {
+            chain: Vec::from([
+                directory.join("a"),
+                directory.join("b"),
+                directory.join("a")
+            ]),
+        }),
+        "the cycle is refused by its paths"
+    );
+    assert!(
+        resolved
+            .err()
+            .is_some_and(|unresolved| unresolved.to_string().starts_with("DependencyCycle: ")),
+        "the refusal is named"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
