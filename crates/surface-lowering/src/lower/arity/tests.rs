@@ -539,6 +539,50 @@ fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
     );
 }
 
+/// A nested type list's key binds its name rather than naming an outer
+/// label, and one rebinding the label hides it from the entries after it, so
+/// the outer record stays a record; a nested entry before the rebinding still
+/// names the outer label and links it (#3010).
+#[test]
+fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def keyed : #{d : Integer, s : #{d : String, t : String}} ; def hidden : #{d : \
+         Integer, s : #{d : String, t : Path(String, d, d)}} ; def domain : #{d : Integer, f : \
+         (d : Integer) => Integer} ; def seen : #{d : Integer, s : #{e : Path(Integer, d, d), d : \
+         String}} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "keyed"),
+        ["#{d,s}", "Integer", "#{d,t}", "String", "String"],
+        "a nested record's key is no mention of the outer label"
+    );
+    assert_eq!(
+        declared(&arena, &module, "hidden")
+            .first()
+            .map(String::as_str),
+        Some("#{d,s}"),
+        "a name after the nested key reads the nested binder"
+    );
+    assert_eq!(
+        declared(&arena, &module, "domain")
+            .first()
+            .map(String::as_str),
+        Some("#{d,f}"),
+        "a dependent arrow's binder is no mention of the outer label"
+    );
+    assert_eq!(
+        declared(&arena, &module, "seen")
+            .first()
+            .map(String::as_str),
+        Some("S"),
+        "a nested entry before the rebinding names the outer label"
+    );
+}
+
 /// Each dependent pair keeps where both its labels are written: its binder's,
 /// and its second component's where that is the last entry or another pair;
 /// a pair over a product of the entries after it keeps its binder's alone
