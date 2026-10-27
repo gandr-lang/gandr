@@ -14,6 +14,9 @@ use crate::report::Report;
 use crate::report::RunId;
 use crate::report::Sample;
 use crate::report::Standing;
+use crate::workflows::CacheUsage;
+use crate::workflows::Timed;
+use crate::workflows::WorkflowName;
 
 /// The label marking the issue the report keeps: its body is the report, and
 /// it closes once every lane is within budget.
@@ -53,6 +56,39 @@ pub enum Window
 
 /// The query printing each successful job's seconds and name.
 const JOB_QUERY: &str = r#".jobs[] | select(.conclusion == "success") | "\((.completed_at | fromdate) - (.started_at | fromdate))\t\(.name)""#;
+
+/// The query printing each completed job's seconds and name, whatever its
+/// conclusion: a failed or cancelled job's time counts in its run's sum.
+const COMPLETED_JOB_QUERY: &str = r#".jobs[] | select(.completed_at != null and .started_at != null) | "\((.completed_at | fromdate) - (.started_at | fromdate) | if . < 0 then 0 else . end)\t\(.name)""#;
+
+/// The `gh api` route listing the repository's workflows.
+const WORKFLOWS: &str = "repos/{owner}/{repo}/actions/workflows";
+
+/// The query printing each active workflow's identifier and name.
+const WORKFLOW_QUERY: &str = r#".workflows[] | select(.state == "active") | "\(.id)\t\(.name)""#;
+
+/// The query printing each listed run's identifier and wall seconds, from its
+/// start to its last update.
+const TIMED_QUERY: &str = r#".workflow_runs[] | "\(.id)\t\((.updated_at | fromdate) - (.run_started_at | fromdate) | if . < 0 then 0 else . end)""#;
+
+/// The `gh api` route reporting the repository's Actions cache usage.
+const CACHE: &str = "repos/{owner}/{repo}/actions/cache/usage";
+
+/// The query printing the active caches' bytes and count.
+const CACHE_QUERY: &str = r#""\(.active_caches_size_in_bytes)\t\(.active_caches_count)""#;
+
+/// Which of a run's jobs [`samples`] reads.
+///
+/// # Specification
+/// - provides: the two readings of a run's jobs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Jobs
+{
+    /// The successful jobs: a lane's median is a time its job took to pass.
+    Successful,
+    /// Every completed job: a run's summed time counts what it spent.
+    Completed,
+}
 
 /// The title of the one issue the report files.
 #[repr(transparent)]
@@ -296,11 +332,14 @@ pub fn recent_runs(
         .collect()
 }
 
-/// The successful jobs of `run`, each with its time.
+/// The successful or the completed jobs of `run`, as `jobs` asks, each with
+/// its time.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
-/// - ensures: one sample per successful job `gh` lists for the run.
+/// - ensures: one sample per job `gh` lists for the run that `jobs` admits: a
+///   successful one for [`Jobs::Successful`], any completed one for
+///   [`Jobs::Completed`].
 /// - provides: a run's contribution to every lane's median.
 /// - fails: [`BudgetError::Gh`] when `gh` fails or prints a line that is not a
 ///   sample.
@@ -314,8 +353,12 @@ pub fn recent_runs(
 /// - hypothesis: L3 — a fake `gh` printing two jobs per run feeds each lane's
 ///   median; a run's jobs dropped or misattributed changes the report.
 /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
 #[inline]
-pub fn samples(run_id: RunId) -> Result<Vec<Sample>, BudgetError>
+pub fn samples(
+    run_id: RunId,
+    jobs: Jobs,
+) -> Result<Vec<Sample>, BudgetError>
 {
     let mut command = Command::new("gh");
     command.args([
@@ -326,7 +369,10 @@ pub fn samples(run_id: RunId) -> Result<Vec<Sample>, BudgetError>
         "-f",
         "per_page=100",
         "--jq",
-        JOB_QUERY,
+        match jobs {
+            Jobs::Successful => JOB_QUERY,
+            Jobs::Completed => COMPLETED_JOB_QUERY,
+        },
     ]);
     let text = run(&mut command, Feed::Nothing)?;
     text.lines()
@@ -337,6 +383,122 @@ pub fn samples(run_id: RunId) -> Result<Vec<Sample>, BudgetError>
             })
         })
         .collect()
+}
+
+/// Every active workflow with its newest completed runs timed.
+///
+/// # Specification
+/// - requires: `gh` on the path, authenticated for the repository.
+/// - ensures: one entry per active workflow, in the listing's order, holding at
+///   most `count` of its newest completed runs, newest first, each with its
+///   wall time and its completed jobs.
+/// - provides: what the workflow table summarises.
+/// - fails: [`BudgetError::Gh`] when `gh` fails or prints a line that is not a
+///   workflow, a timed run or a job.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fake `gh` listing two workflows, one with three runs
+///   read with a count of two; a workflow's runs attributed to another, a run's
+///   jobs dropped or the count ignored changes the table.
+/// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+#[inline]
+pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetError>
+{
+    let mut list = Command::new("gh");
+    list.args([
+        "api",
+        "--method",
+        "GET",
+        WORKFLOWS,
+        "-f",
+        "per_page=100",
+        "--jq",
+        WORKFLOW_QUERY,
+    ]);
+    let listing = run(&mut list, Feed::Nothing)?;
+    let unread = |command: &Command, line: &str, what: &str| BudgetError::Gh {
+        command: format!("{command:?}"),
+        message: format!("`{line}` is not {what}"),
+    };
+    let per_page = format!("per_page={}", usize::from(count));
+    let mut route = String::new();
+    let mut workflows = Vec::new();
+    for line in listing.lines() {
+        let (id, name) = line
+            .split_once('\t')
+            .filter(|&(id, name)| !name.is_empty() && id.parse::<u64>().is_ok())
+            .ok_or_else(|| unread(&list, line, "a workflow's identifier and name"))?;
+        route.clear();
+        route.push_str("repos/{owner}/{repo}/actions/workflows/");
+        route.push_str(id);
+        route.push_str("/runs");
+        let mut runs = Command::new("gh");
+        runs.args([
+            "api",
+            "--method",
+            "GET",
+            &route,
+            "-f",
+            "status=completed",
+            "-f",
+            &per_page,
+            "--jq",
+            TIMED_QUERY,
+        ]);
+        let text = run(&mut runs, Feed::Nothing)?;
+        let mut timed = Vec::new();
+        for line in text.lines().take(usize::from(count)) {
+            let (run_id, wall) = line
+                .split_once('\t')
+                .and_then(|(run_id, wall)| {
+                    Some((run_id.parse::<RunId>().ok()?, wall.parse().ok()?))
+                })
+                .ok_or_else(|| unread(&runs, line, "a run's identifier and wall seconds"))?;
+            timed.push(Timed {
+                run: run_id,
+                wall,
+                jobs: samples(run_id, Jobs::Completed)?,
+            });
+        }
+        workflows.push((WorkflowName::from(name), timed));
+    }
+    Ok(workflows)
+}
+
+/// The repository's Actions cache usage.
+///
+/// # Specification
+/// - requires: `gh` on the path, authenticated for the repository.
+/// - ensures: the active caches' bytes and count as GitHub reports them.
+/// - provides: the workflow table's cache line.
+/// - fails: [`BudgetError::Gh`] when `gh` fails or prints what is not a usage.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fake `gh` reporting a usage read into the table; a
+///   usage invented or a route misnamed changes the cache line.
+/// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+#[inline]
+pub fn cache_usage() -> Result<CacheUsage, BudgetError>
+{
+    let mut command = Command::new("gh");
+    command.args(["api", "--method", "GET", CACHE, "--jq", CACHE_QUERY]);
+    let text = run(&mut command, Feed::Nothing)?;
+    text.parse::<CacheUsage>()
+        .ok()
+        .ok_or_else(|| BudgetError::Gh {
+            command: format!("{command:?}"),
+            message: format!("`{}` is not the caches' bytes and count", text.trim()),
+        })
 }
 
 /// Files `report` on the one issue titled `title`: opened or updated while a

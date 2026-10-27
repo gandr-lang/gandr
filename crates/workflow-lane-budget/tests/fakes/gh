@@ -6,6 +6,10 @@ case "$1 $2" in
     case "$4" in
       */workflows/ci.yml/runs) case "$*" in *event=schedule*) printf '9\n8\n' ;; *) printf '3\n2\n1\n' ;; esac ;;
       */workflows/nightly.yml/runs) case "$*" in *event=schedule*) printf '6\n5\n4\n' ;; *) echo "unscheduled nightly listing: $*" >&2; exit 2 ;; esac ;;
+      */actions/workflows) printf '11\tCI\n12\tNightly\n' ;;
+      */actions/workflows/11/runs) printf '3\t900\n2\t800\n1\t700\n' ;;
+      */actions/workflows/12/runs) printf '6\t700\n5\t650\n4\t600\n' ;;
+      */actions/cache/usage) printf '10738220202\t144\n' ;;
       */runs/*/jobs) run=${4%/jobs}; run=${run##*/}; printf '%s00\tcheck Clippy wall\n5\tdetect changed-file categories\n%s0\tmutate the night'"'"'s crate (linux)\n' "$run" "$run" ;;
       */actions/runs/3) if [ "$FAKE_GH_CONE" = unbased ]; then printf 'push\t3333333333333333333333333333333333333333\t\tmain'; else printf 'merge_group\t3333333333333333333333333333333333333333\t\tgh-readonly-queue/main/pr-9-1111111111111111111111111111111111111111'; fi ;;
       */actions/runs/2) printf 'merge_group\t4444444444444444444444444444444444444444\t\tgh-readonly-queue/main/pr-10-2222222222222222222222222222222222222222' ;;

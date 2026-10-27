@@ -347,7 +347,9 @@ jobs:
   # recovery lanes are held over its scheduled runs (`--nightly`): about 1.5
   # times the 194 to 216 s each third of the all-features crates took on a
   # dispatch, and the 210 s the recovery sweep's setup and run took inside
-  # the sweeps job.
+  # the sweeps job. The hosted budget is this workflow's summed job time per
+  # run (`--summed`): 15 minutes for its median, 20 the ceiling no night
+  # passes; the table times every active workflow and reads the cache's usage.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -395,4 +397,5 @@ jobs:
           --daily "mutate the night's crate (linux)=840"
           --nightly "test every crate with every feature on=300"
           --nightly "sweep the exemplars for recovery, specifications enforced=320"
+          --summed "Nightly=900/1200"
           >> "$GITHUB_STEP_SUMMARY"

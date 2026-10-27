@@ -23,6 +23,13 @@ pub enum BudgetError
         /// The argument.
         text: String,
     },
+    /// A `--summed` argument is not a workflow name, `=`, and whole seconds
+    /// of a budget and a ceiling no smaller, `/` between them.
+    Summed
+    {
+        /// The argument.
+        text: String,
+    },
     /// A `gh` invocation could not run, exited unsuccessfully, or printed
     /// what this crate does not read.
     Gh
@@ -73,6 +80,11 @@ impl fmt::Display for BudgetError
                 "`{text}` names the deep cone; a scheduled lane is held to one budget over \
                  its scheduled runs"
             ),
+            Self::Summed { ref text } => write!(
+                f,
+                "`{text}` is not a workflow name, `=`, and whole seconds of a budget `/` a \
+                 ceiling no smaller"
+            ),
             Self::Gh {
                 ref command,
                 ref message,
@@ -108,6 +120,13 @@ mod tests
                 },
                 "`mutate the night's crate (linux):deep=840` names the deep cone; a scheduled \
                  lane is held to one budget over its scheduled runs",
+            ),
+            (
+                BudgetError::Summed {
+                    text: "Nightly=1200/900".into(),
+                },
+                "`Nightly=1200/900` is not a workflow name, `=`, and whole seconds of a budget \
+                 `/` a ceiling no smaller",
             ),
             (
                 BudgetError::Gh {

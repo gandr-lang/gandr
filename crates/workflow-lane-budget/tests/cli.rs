@@ -422,3 +422,58 @@ fn a_run_without_a_base_is_held_deep()
     assert!(log.contains("compare/2222222222222222222222222222222222222222...4444444444444444444444444444444444444444"), "{log}");
     std::fs::remove_dir_all(&scratch).unwrap();
 }
+
+#[test]
+fn a_summed_budget_tables_every_workflow()
+{
+    let scratch = scratch!("summed");
+    let output = run!(
+        scratch,
+        [
+            "--runs",
+            "2",
+            "--budget",
+            "check Clippy wall=1000",
+            "--summed",
+            "Nightly=500/600",
+            "--issue",
+            "CI lane budgets",
+        ],
+        "[]",
+        "",
+        "all"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Every lane is within; the nightly's summed times, 665 s and 555 s, put
+    // its median past the budget and run 6 past the ceiling, so the report
+    // is over and the issue opens. Run 6's Clippy job grew the most past its
+    // median over the two nights.
+    assert!(
+        stdout.ends_with(
+            "\nSummed job time and wall time over each workflow's last 2 completed runs, \
+             against the summed budgets in `nightly.yml`.\n\n\
+             <details><summary>2 workflows — over: 1 over, 0 unmeasured</summary>\n\n\
+             | workflow | runs | wall median | wall max | summed median | past budget | past \
+             ceiling | standing |\n\
+             | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n\
+             | CI | 2 | 13m 20s | 15m 0s | 3m 45s | — | — | unbudgeted |\n\
+             | Nightly | 2 | 10m 50s | 11m 40s | 9m 15s | 2 past 8m 20s | 1 past 10m 0s | \
+             **over** |\n\
+             \n- Nightly run 6: 11m 5s summed, over its 10m 0s ceiling; `check Clippy wall` \
+             took 10m 0s against its median 8m 20s.\n\
+             \nActions cache: 10.0 GiB in 144 caches.\n\n</details>\n\
+             \nOpened https://example.invalid/issues/7.\n"
+        ),
+        "{stdout}"
+    );
+    let log = log!(scratch);
+    assert!(
+        log.contains("actions/workflows/12/runs -f status=completed -f per_page=2"),
+        "{log}"
+    );
+    assert!(log.contains("/runs/5/jobs"), "{log}");
+    assert!(!log.contains("/runs/4/jobs"), "{log}");
+    std::fs::remove_dir_all(&scratch).unwrap();
+}

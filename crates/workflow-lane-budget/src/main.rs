@@ -2,12 +2,14 @@
 //! merge-queue and pull-request runs, against its budget.
 //!
 //! `lane-budget --budget NAME=SECONDS... [--daily NAME=SECONDS...] [--nightly
-//! NAME=SECONDS...] [--runs N] [--issue TITLE]` samples the newest `N` runs
-//! through `gh`, classifies each by the cone its landing touched, and, with
-//! `--daily`, samples the CI workflow's newest `N` scheduled runs for the
-//! lanes only they hold; with `--nightly`, the nightly workflow's. It prints
-//! the Markdown report and with `--issue` opens, updates, reopens or closes the
-//! one issue of that title.
+//! NAME=SECONDS...] [--summed NAME=BUDGET/CEILING...] [--runs N] [--issue
+//! TITLE]` samples the newest `N` runs through `gh`, classifies each by the
+//! cone its landing touched, and, with `--daily`, samples the CI workflow's
+//! newest `N` scheduled runs for the lanes only they hold; with `--nightly`,
+//! the nightly workflow's; with `--summed`, every active workflow's newest `N`
+//! completed runs, timed whole, and the cache's usage. It prints the Markdown
+//! report and with `--issue` opens, updates, reopens or closes the one issue of
+//! that title.
 //!
 //! # Exit codes
 //!
@@ -28,8 +30,11 @@ use gandr_workflow_lane_budget::Cone;
 use gandr_workflow_lane_budget::IssueTitle;
 use gandr_workflow_lane_budget::Report;
 use gandr_workflow_lane_budget::RunCount;
+use gandr_workflow_lane_budget::Summed;
+use gandr_workflow_lane_budget::Workflows;
 use gandr_workflow_lane_budget::cone;
 use gandr_workflow_lane_budget::github;
+use gandr_workflow_lane_budget::github::Jobs;
 use gandr_workflow_lane_budget::github::Window;
 
 /// The exit code of a refusal or a malformed invocation.
@@ -58,6 +63,12 @@ struct Cli
     /// is not cone-classified, so a deep budget is refused.
     #[arg(long = "nightly")]
     nightly: Vec<Unclassified>,
+    /// A workflow's budget for the lower median of its runs' summed job time
+    /// and the ceiling no run's may pass, in whole seconds, as
+    /// `NAME=BUDGET/CEILING`; any adds the table of every active workflow's
+    /// runs timed whole and the cache's usage.
+    #[arg(long = "summed")]
+    summed: Vec<Summed>,
     /// The title of the one issue to open while a lane is over budget and to
     /// close once every lane is within.
     #[arg(long)]
@@ -148,12 +159,13 @@ fn main() -> ExitCode
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: standard output receives the report, its daily table sampled only
-///   with `--daily` and its nightly table only with `--nightly`, then, with
-///   `--issue`, one line naming what filing did.
+///   with `--daily`, its nightly table only with `--nightly` and its workflow
+///   table only with `--summed`, then, with `--issue`, one line naming what
+///   filing did.
 /// - provides: the whole command.
-/// - fails: every refusal of [`github::recent_runs`], [`github::samples`] and
-///   [`github::file`]; [`BudgetError::Output`] when standard output cannot be
-///   written.
+/// - fails: every refusal of [`github::recent_runs`], [`github::samples`],
+///   [`github::timed`], [`github::cache_usage`] and [`github::file`];
+///   [`BudgetError::Output`] when standard output cannot be written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes on standard output and the
 ///   repository's issue.
@@ -167,13 +179,14 @@ fn main() -> ExitCode
 /// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
 /// - witness: `tests::cli::a_daily_lane_is_sampled_over_the_scheduled_runs`
 /// - witness: `tests::cli::a_nightly_lane_is_sampled_over_the_nightly_runs`
+/// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
 fn run(cli: Cli) -> Result<(), BudgetError>
 {
     let runs = github::recent_runs(cli.runs, Window::Landing)?;
     let mut samples = Vec::new();
     for &run_id in &runs {
         let cone = cone::classify(run_id)?;
-        for sample in github::samples(run_id)? {
+        for sample in github::samples(run_id, Jobs::Successful)? {
             samples.push((cone, sample));
         }
     }
@@ -192,9 +205,14 @@ fn run(cli: Cli) -> Result<(), BudgetError>
         let runs = github::recent_runs(cli.runs, window)?;
         let mut samples = Vec::new();
         for &run_id in &runs {
-            samples.extend(github::samples(run_id)?);
+            samples.extend(github::samples(run_id, Jobs::Successful)?);
         }
         report = report.with_scheduled(window, &budgets, runs, samples);
+    }
+    if !cli.summed.is_empty() {
+        let timed = github::timed(cli.runs)?;
+        let cache = github::cache_usage()?;
+        report = report.with_workflows(Workflows::new(&cli.summed, cli.runs, timed, cache));
     }
     let output = |error: std::io::Error| BudgetError::Output {
         message: error.to_string(),

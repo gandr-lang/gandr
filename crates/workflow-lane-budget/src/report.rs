@@ -16,6 +16,8 @@ use crate::budget::Lane;
 use crate::budget::Seconds;
 use crate::cone::Cone;
 use crate::github::Window;
+use crate::workflows::Unbudgeted;
+use crate::workflows::Workflows;
 
 /// A workflow run's identifier.
 #[repr(transparent)]
@@ -379,6 +381,8 @@ pub struct Report
     rows: Vec<Row>,
     /// One table per scheduled window given budgets, in the order given.
     scheduled: Vec<Scheduled>,
+    /// The workflow table, when a workflow was given a summed budget.
+    workflows: Maybe<Workflows, Unbudgeted>,
 }
 
 impl Report
@@ -410,6 +414,7 @@ impl Report
             runs,
             rows: rows(budgets, samples),
             scheduled: Vec::new(),
+            workflows: Maybe::Absent(Unbudgeted::NoSummedBudget),
         }
     }
 
@@ -458,33 +463,67 @@ impl Report
         self
     }
 
-    /// How the report stands: over when any lane is over, otherwise within.
+    /// The report with the workflow table `workflows` after its lane tables.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the lane tables unchanged, and `workflows` written after them
+    ///   and counted in the standing.
+    /// - provides: the summed budgets' share of the report.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the construction is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a workflow over beside lanes within puts the report
+    ///   over and its table after theirs; a table dropped or left out of the
+    ///   standing changes the filing.
+    /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+    #[inline]
+    #[must_use]
+    pub fn with_workflows(
+        mut self,
+        workflows: Workflows,
+    ) -> Self
+    {
+        self.workflows = Maybe::Present(workflows);
+        self
+    }
+
+    /// How the report stands: over when any lane or workflow is over,
+    /// otherwise within.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Standing::Over`] exactly when some row, landing or
-    ///   scheduled, is over; [`Standing::Within`] otherwise, unmeasured rows
-    ///   included.
+    ///   scheduled, is over, or the workflow table is; [`Standing::Within`]
+    ///   otherwise, unmeasured rows included.
     /// - provides: whether the issue is opened or closed.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause would walk every row, the body itself.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Row::standing`], and a daily or a nightly row
-    ///   over beside landing rows within.
+    /// - hypothesis: L3 — as [`Row::standing`], a daily or a nightly row over
+    ///   beside landing rows within, and a workflow over beside lanes within.
     /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
+    /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
     #[inline]
     #[must_use]
     pub fn standing(&self) -> Standing
     {
-        if self
-            .rows
-            .iter()
-            .chain(self.scheduled.iter().flat_map(|table| &table.rows))
-            .any(|row| row.standing() == Standing::Over)
+        let workflows = match self.workflows {
+            Maybe::Present(ref workflows) => workflows.standing(),
+            Maybe::Absent(Unbudgeted::NoSummedBudget) => Standing::Within,
+        };
+        if workflows == Standing::Over
+            || self
+                .rows
+                .iter()
+                .chain(self.scheduled.iter().flat_map(|table| &table.rows))
+                .any(|row| row.standing() == Standing::Over)
         {
             Standing::Over
         }
@@ -625,7 +664,10 @@ impl fmt::Display for Report
             )?;
             table(f, &scheduled.rows, scheduled.window, &scheduled.runs)?;
         }
-        Ok(())
+        match self.workflows {
+            Maybe::Present(ref workflows) => write!(f, "{workflows}"),
+            Maybe::Absent(Unbudgeted::NoSummedBudget) => Ok(()),
+        }
     }
 }
 
