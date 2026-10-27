@@ -1,7 +1,8 @@
-error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against; supply it as `twice[combine = …](…)`
+error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against
   ╭▸ corpus/ledger/diagnostics/ImplicitUnsolved.gandr:9:28
   │
 9 │ def undetermined = thunk { twice(3) } ;
   │                            ━━━━━━━━ an implicit left unsolved
   │
-  ╰ note: `undetermined` is refused with ImplicitUnsolved, as its expectation states
+  ├ note: `undetermined` is refused with ImplicitUnsolved, as its expectation states
+  ╰ help: supply the implicit `combine` by name, as `twice[combine = …](…)`

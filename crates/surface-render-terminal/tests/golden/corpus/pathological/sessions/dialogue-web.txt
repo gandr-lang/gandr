@@ -62,4 +62,5 @@ error[RunNotAdmitted]: the protocol does not admit this run
 51 │ ┃ );
    │ ┗━┛ a move in the other direction
    │
-   ╰ note: `answered` is refused with RunNotAdmitted, as its expectation states
+   ├ note: `answered` is refused with RunNotAdmitted, as its expectation states
+   ╰ help: change the run so that each move is one that the protocol admits at that point

@@ -14,4 +14,5 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 22 │ │  }
    │ └──┘ checked against `Int => Int`; while checking the body of this function; binds tell : Int => Int
    │
-   ╰ note: `tell` is refused with RuleNotRespected, as its expectation states
+   ├ note: `tell` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

@@ -1,4 +1,4 @@
-error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:24:3
    │
 24 │ ┏   data Left : Type {
@@ -6,9 +6,10 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 26 │ ┃   }
    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
    │
-   ╰ note: `Left` is refused with NegativeOccurrence, as its expectation states
+   ├ note: `Left` is refused with NegativeOccurrence, as its expectation states
+   ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
 
-error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:31:3
    │
 31 │ ┏   data Right : Type {
@@ -16,15 +17,17 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 33 │ ┃   }
    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
    │
-   ╰ note: `Right` is refused with NegativeOccurrence, as its expectation states
+   ├ note: `Right` is refused with NegativeOccurrence, as its expectation states
+   ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
 
-error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:37:3
    │
 37 │   def right : Type;
    │   ━━━━━━━━━━━━━━━━━ the declared type under a function's domain, where no stage reaches it
    │
-   ╰ note: `right` is refused with NegativeOccurrence, as its expectation states
+   ├ note: `right` is refused with NegativeOccurrence, as its expectation states
+   ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:37

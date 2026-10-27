@@ -7,13 +7,14 @@ error[OutOfFragment.WrongSort]: a wildcard cannot stand where a computation is e
    ├ note: `ranWildcard` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a computation in this position
 
-error[ImplicitUnsolved]: no equation determines the term this `_` stands for; write the term
+error[ImplicitUnsolved]: no equation determines the term this `_` stands for
    ╭▸ corpus/pathological/holes/wildcard.gandr:11:40
    │
 11 │ def loose() -> Integer { idAt(Integer, _) }
    │                                        ━ an implicit left unsolved
    │
-   ╰ note: `loose` is refused with ImplicitUnsolved, as its expectation states
+   ├ note: `loose` is refused with ImplicitUnsolved, as its expectation states
+   ╰ help: write the term in place of the `_`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/holes/wildcard.gandr:16:29

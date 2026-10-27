@@ -38,4 +38,5 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 79 │ │  }
    │ └──┘ checked against `(p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), p, p)`; while checking the body of this function; binds rewound : (a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), a, a)
    │
-   ╰ note: `rewound` is refused with RuleNotRespected, as its expectation states
+   ├ note: `rewound` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

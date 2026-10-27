@@ -1,26 +1,29 @@
-error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against; supply it as `twice[combine = …](…)`
+error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:18:33
    │
 18 │ def undetermined() -> Integer { twice(3) }
    │                                 ━━━━━━━━ an implicit left unsolved
    │
-   ╰ note: `undetermined` is refused with ImplicitUnsolved, as its expectation states
+   ├ note: `undetermined` is refused with ImplicitUnsolved, as its expectation states
+   ╰ help: supply the implicit `combine` by name, as `twice[combine = …](…)`
 
-error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against; supply it as `chosen[x = …](…)`
+error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:23:29
    │
 23 │ def unchosen() -> Integer { chosen(Integer) }
    │                             ━━━━━━━━━━━━━━━ an implicit left unsolved
    │
-   ╰ note: `unchosen` is refused with ImplicitUnsolved, as its expectation states
+   ├ note: `unchosen` is refused with ImplicitUnsolved, as its expectation states
+   ╰ help: supply the implicit `x` by name, as `chosen[x = …](…)`
 
-error[ImplicitUnsolved]: the solver cannot determine the implicit `b` this call to `konst` omits: its solution would name a binder the call does not stand under; supply it as `konst[b = …](…)`
+error[ImplicitUnsolved]: the solver cannot determine the implicit `b` this call to `konst` omits: its solution would name a binder the call does not stand under
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:29:29
    │
 29 │ def escaping() -> Integer { konst(fn (t) { fn (y) { y } }) }
    │                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
    │
-   ╰ note: `escaping` is refused with ImplicitUnsolved, as its expectation states
+   ├ note: `escaping` is refused with ImplicitUnsolved, as its expectation states
+   ╰ help: supply the implicit `b` by name, as `konst[b = …](…)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:34:29

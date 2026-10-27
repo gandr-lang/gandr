@@ -13,4 +13,5 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 19 │ │  }
    │ └──┘ checked against `(n : Nat, Vec(Integer, n)) => Integer`; while checking the body of this thunk
    │
-   ╰ note: `vheadAny` is refused with NotApart, as its expectation states
+   ├ note: `vheadAny` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal

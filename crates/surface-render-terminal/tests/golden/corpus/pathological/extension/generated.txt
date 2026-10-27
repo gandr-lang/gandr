@@ -7,4 +7,5 @@ error[RulesUncompleted]: this rule and an earlier one rewrite one term to two no
 20 │   rule leaked : outCell0(inCell(y1)) ==> y1;
    │   ───────────────────────────────────────── the rule it overlaps
    │
-   ╰ note: `Leaked` is refused with RulesUncompleted, as its expectation states
+   ├ note: `Leaked` is refused with RulesUncompleted, as its expectation states
+   ╰ help: add a rule that joins the two normal forms, or remove one of the two rules

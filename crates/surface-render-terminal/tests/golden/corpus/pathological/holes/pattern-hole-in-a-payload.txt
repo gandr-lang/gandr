@@ -13,4 +13,5 @@ error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
 17 │ │  }
    │ └──┘ checked against `Maybe => Integer`; while checking the body of this thunk
    │
-   ╰ note: `describe` is refused with UndecidedCoverage, as its expectation states
+   ├ note: `describe` is refused with UndecidedCoverage, as its expectation states
+   ╰ help: replace the pattern hole with a pattern

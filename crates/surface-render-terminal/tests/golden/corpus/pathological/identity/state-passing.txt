@@ -14,7 +14,8 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 16 │ │  }
    │ └──┘ checked against `(Stores, Integer) => Integer`; while checking the body of this function; binds storesCounted : (Stores, Integer) => Integer
    │
-   ╰ note: `storesCounted` is refused with RuleNotRespected, as its expectation states
+   ├ note: `storesCounted` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies
 
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
    ╭▸ corpus/pathological/identity/state-passing.gandr:22:3
@@ -31,4 +32,5 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 26 │ │  }
    │ └──┘ checked against `Stores => Integer`; while checking the body of this function; binds storeCount : Stores => Integer
    │
-   ╰ note: `storeCount` is refused with RuleNotRespected, as its expectation states
+   ├ note: `storeCount` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

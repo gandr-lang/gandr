@@ -54,7 +54,8 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
 39 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `readWhileLent` is refused with HeldLent, as its expectation states
+   ├ note: `readWhileLent` is refused with HeldLent, as its expectation states
+   ╰ help: use the held value only after the `access` that lends it ends
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
    ╭▸ corpus/pathological/strings/methods.gandr:46:26
@@ -70,7 +71,8 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
 47 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `pushedWhileRead` is refused with HeldLent, as its expectation states
+   ├ note: `pushedWhileRead` is refused with HeldLent, as its expectation states
+   ╰ help: use the held value only after the `access` that lends it ends
 
 error[HeldConsumed]: a method whose receiver is `consumed` takes the held value and ends its hold; the value cannot be read, accessed or consumed after that call
    ╭▸ corpus/pathological/strings/methods.gandr:59:3

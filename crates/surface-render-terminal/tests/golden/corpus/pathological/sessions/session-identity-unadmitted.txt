@@ -8,4 +8,5 @@ error[RunNotAdmitted]: the protocol does not admit this run
    │ │                                      checked against `-F Run(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the value this ride moves against the flow's source
    │ checked against `() => Run(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the body of this thunk
    │
-   ╰ note: `retired` is refused with RunNotAdmitted, as its expectation states
+   ├ note: `retired` is refused with RunNotAdmitted, as its expectation states
+   ╰ help: change the run so that each move is one that the protocol admits at that point

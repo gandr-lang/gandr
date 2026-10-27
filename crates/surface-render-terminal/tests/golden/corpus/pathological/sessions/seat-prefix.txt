@@ -4,7 +4,8 @@ error[RunNotAdmitted]: the protocol does not admit this run
 16 │ def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress"));
    │                                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a run that stops before the protocol ends
    │
-   ╰ note: `reporting` is refused with RunNotAdmitted, as its expectation states
+   ├ note: `reporting` is refused with RunNotAdmitted, as its expectation states
+   ╰ help: change the run so that each move is one that the protocol admits at that point
 
 error[RunNotAdmitted]: the protocol does not admit this run
    ╭▸ corpus/pathological/sessions/seat-prefix.gandr:21:38
@@ -12,7 +13,8 @@ error[RunNotAdmitted]: the protocol does not admit this run
 21 │ def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next));
    │                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move in the other direction
    │
-   ╰ note: `crossed` is refused with RunNotAdmitted, as its expectation states
+   ├ note: `crossed` is refused with RunNotAdmitted, as its expectation states
+   ╰ help: change the run so that each move is one that the protocol admits at that point
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/sessions/seat-prefix.gandr:28:36

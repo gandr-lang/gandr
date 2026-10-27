@@ -15,4 +15,5 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 24 │ │  }
    │ └──┘ checked against `Program => Integer`; while checking the body of this function; binds stores : Program => Integer
    │
-   ╰ note: `stores` is refused with RuleNotRespected, as its expectation states
+   ├ note: `stores` is refused with RuleNotRespected, as its expectation states
+   ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies
