@@ -8,6 +8,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Writing to the corpus](#writing-to-the-corpus)
+- [Comments](#comments)
 - [Where the detail lives](#where-the-detail-lives)
 - [References](#references)
 - [License](#license)
@@ -15,11 +16,11 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 ## Synopsis
 
-**What.** `settle` takes a `CorpusRoot`, the `CoreArena` a module was lowered into, the `LoweredModule` from `gandr-surface-lowering`, and the `ModuleReport` `gandr-core-checker` returned for it, and answers a `SettleReport`: one `DeclarationReport` per declared name, stating what the name's attributes assert (`Stated`), what the name produced (`Produced`: the checker's verdict, the lowering's refusal, or the root's own refusal), and the obligations its verdict owes; plus the module's ledger size. `SettleReport::tally` sums a run into a `Tally` — declarations and fixtures by `Settlement`, the ledger size, the surviving obligations, the refusals by failure class, the run's settlement and its `Seal` — which a driver absorbs across sources, gates on, and prints.
+**What.** `settle` takes a `CorpusRoot`, the `CoreArena` a module was lowered into, the `LoweredModule` and the checker's `ModuleReport` for it, and answers a `SettleReport`: per declared name, what its attributes state, what it produced and what its verdict owes, plus the module's ledger size. `SettleReport::tally` sums a run into a `Tally` a driver absorbs, gates on and prints.
 
 **Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its `runs` and `normalizes` refinements, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
 
-**How.** Attributes are read off the lowering's side table under each declared name's form keys; the five schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in, and one stating a run beside a refusal — `@[ runs("5"), refuses("UnboundedLoop") ]`, settled only when both hold — is run through it refused; a data block stating a normal form has its call read under its rules by `LoweredModule::normal_form`. One equality decides each declaration; the tally counts it once.
+**How.** `settle` reads each declared name's attributes off the lowering's side table and walks the declarations in admission order beside the checker's verdicts. A stated run goes through the caller's `Runner`, a stated normal form through `LoweredModule::normal_form`. One equality decides each declaration, and the tally counts it once.
 
 ## Provided features
 
@@ -62,7 +63,7 @@ The corpus is a proof library and a test suite at once, and it grows by subject,
 
 - **One subject, one directory, one base.** A subject (`identity`, `data`, `universe`, …) is one directory under `fixture/model/`; its shared declarations — `Circle`, `Int`, `Empty`, an isomorphism every file uses — live in one base source the others import (`import "./circle-base.gandr" ;`). No two sources of one subject declare a name: `gandr-surface-dispatcher`'s `no_subject_declares_a_name_twice` refuses that, and its documentation says what counts. A new directory only when no subject owns the claim.
 - **One file, one claim.** A source states one theorem family or one feature, in the order the argument runs: definitions, then laws, then what refuses. Its head says what it proves and names the source it follows — a cubical file and line, a book section — and an item that follows a named lemma keeps that name in its comment. A lemma two files need is written in the file that owns it and imported, never restated; a new item goes to the file that owns its subject before a new file is opened.
-- **Every item and block member carries its comment; every item its attribute.** `///` before the attribute block or the member, one of `checks`, `runs`, `normalizes`, `decomposes`, `owes`, `refuses`, or `runs` beside `refuses` for a refused program whose run is part of the claim. No claim means `checks`. A refused item names its issue (`#n`) in the comment and sits beside the item it blocks; there is no `declined` fixture — a refusal the record admits is a defect to file and fix. A fix's regression is an item in the subject's file.
+- **Every item and block member carries its comment; every item its attribute.** `///` before the attribute block or the member, one of `checks`, `runs`, `normalizes`, `decomposes`, `owes`, `refuses`, or `runs` beside `refuses` for a refused program whose run is part of the claim. No claim means `checks`. A refused item sits beside the item it blocks, and its issue is a `- see: #n` line in the head's references (§ Comments); there is no `declined` fixture — a refusal the record admits is a defect to file and fix. A fix's regression is an item in the subject's file.
 - **A refusal has a twin.** What a model source proves, `pathological/<subject>/` refuses by name, one refusal per item, the same subject directory on both sides.
 - **A law sits beside what it governs.** A definition with an algebraic law — a unit, associativity, a functor's composition — states it as a `rule` of its own `data` or `theory` block, oriented by the order or by a written `==>`, so the coincidence check certifies it with the block's other rules, and a `normalizes` row fires it (`model/data/map-laws.gandr`, `model/identity/group-laws.gandr`). A law is never adjoined as an axiom: one the check cannot certify yet is refused by name in the subject's twin, naming the issue that admits it — a rule over a `def` (#525), a law that joins only through a cell completion derives (#338).
 - **Size follows the sweeps.** A source stays within the per-source bounds the sweeps enforce (#416: typed when at most a kibibyte, erased within the test bound); a sweep that checks at each step measures a source by the bytes its check reads — the source laid out after its import closure — so a source over a long closure is typed nightly and erased and hovered more coarsely on the pull request (#776). Split by claim, never by count.
@@ -71,6 +72,10 @@ The corpus is a proof library and a test suite at once, and it grows by subject,
 - **The strict root is strict.** `strict/` admits only `checks` and its `runs`, `normalizes` and `decomposes` refinements.
 
 The test suite follows the same shape: one witness per behaviour, in the crate that owns it, named as the sentence it proves; a corpus-wide property is a `sweeps` module test, and nothing else walks the corpus; a setup two crates share is one function called twice; a duplicate witness is deleted when found and the survivor named in the commit.
+
+## Comments
+
+Write as ASD-STE100 writes — short sentences, one topic a paragraph, active voice, present tense — with the technical vocabulary unrestricted. A source opens on four paragraphs: what it states (the first sentence at most twenty words), why, how, and `- see: <token> — <what it settles>` references, the only place a path, `#n` or page stands. An item comment is one sentence, a second allowed. No sentence runs past twenty-five words or joins another by a semicolon, and a passive is one of `is refused`, `is admitted`, `is replayed`, `is checked`, `is normalised`. The heads of `model/higher-cells/ua-by-hand.gandr` and `model/desc/atom-occurrence.gandr` are worked examples, and [`prose`](tests/comments/prose.rs) states the check (#2918).
 
 ## Where the detail lives
 

@@ -16,7 +16,10 @@ use crate::comments::shape::Text;
 use crate::comments::shape::Yes;
 
 /// The ledger item of a source that does not open with a comment.
-const FILE_ITEM: &str = "<file>";
+pub const FILE_ITEM: &str = "<file>";
+
+/// The kind column of an uncommented item's ledger line.
+const UNCOMMENTED: &str = "uncommented";
 
 /// Tile labels that spell a declaration's name.
 const NAME_LABELS: [&str; 3] = ["identifier", "type_identifier", "constructor"];
@@ -31,10 +34,12 @@ const ITEM_BLOCKS: [&str; 2] = ["module", "rec"];
 /// ended by `;`.
 const TILE_BLOCKS: [&str; 3] = ["data", "codata", "theory"];
 
-/// One uncommented item, as the ledger and the gate name it.
+/// One finding, as the ledger and the gate name it: an uncommented item, or
+/// a comment outside the shape (`prose.rs`).
 ///
 /// # Specification
-/// - provides: the ledger line `file:name:digest` (or `file:<file>`) and the
+/// - provides: the ledger line `key kind`, the key `file:name:digest` (or
+///   `file:<file>`), the kind `uncommented` or `unshaped:<rule>`, and the
 ///   sentence that names the file and the item.
 /// - executable: none — the line is the field the witnesses compare.
 ///
@@ -44,7 +49,7 @@ const TILE_BLOCKS: [&str; 3] = ["data", "codata", "theory"];
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finding
 {
-    /// `file:name:digest`, or `file:<file>`, the ledger key.
+    /// `key kind`, the ledger line.
     line: String,
     /// The sentence the gate prints, naming the file and the item.
     detail: String,
@@ -72,6 +77,25 @@ impl Finding
     pub fn detail(&self) -> Line<'_>
     {
         Line(&self.detail)
+    }
+
+    /// The finding that the comment keyed `key` breaks the shape's `rule`,
+    /// the gate printing the key and `told`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn unshaped(
+        key: String,
+        rule: Text<'_>,
+        told: Text<'_>,
+    ) -> Self
+    {
+        let detail = format!("{key}: {told}", told = told.0);
+        let mut line = key;
+        line.push_str(" unshaped:");
+        line.push_str(rule.0);
+        Self { line, detail }
     }
 
     /// A finding whose line and sentence are both `line`.
@@ -221,7 +245,7 @@ pub fn findings_of(
     let mut found = Vec::new();
     if !opens(source.0) {
         found.push(Finding {
-            line: format!("{file}:{FILE_ITEM}", file = file.0),
+            line: format!("{file}:{FILE_ITEM} {UNCOMMENTED}", file = file.0),
             detail: format!("{file}: no leading comment", file = file.0),
         });
     }
@@ -540,7 +564,10 @@ impl Walk<'_, '_>
                 };
                 let key = digest(Text(&item_text(self.source, held, &self.quiet)));
                 found.push(Finding {
-                    line: format!("{file}:{prefix}{own}:{key}", file = self.file.0),
+                    line: format!(
+                        "{file}:{prefix}{own}:{key} {UNCOMMENTED}",
+                        file = self.file.0
+                    ),
                     detail: format!(
                         "{file}: {prefix}{own} ({key}) has no comment before its attribute block",
                         file = self.file.0
@@ -694,7 +721,7 @@ impl Walk<'_, '_>
         let key = digest(Text(&item_text(self.source, held, &self.quiet)));
         found.push(Finding {
             line: format!(
-                "{file}:{block}.{own}:{key}",
+                "{file}:{block}.{own}:{key} {UNCOMMENTED}",
                 file = self.file.0,
                 block = block.0
             ),
@@ -970,7 +997,7 @@ mod tests
         text: Text<'_>,
     ) -> String
     {
-        format!("sample.gandr:{}:{}", name.0, digest(text))
+        format!("sample.gandr:{}:{} uncommented", name.0, digest(text))
     }
 
     #[test]
@@ -1043,7 +1070,7 @@ mod tests
         assert_eq!(
             owed,
             [
-                "sample.gandr:<file>".to_owned(),
+                "sample.gandr:<file> uncommented".to_owned(),
                 key(Text("first"), Text("def first = 1;")),
             ],
             "a source that opens on an item has no leading comment, and the later item's own \
@@ -1057,7 +1084,7 @@ mod tests
         assert!(
             refused
                 .iter()
-                .any(|row| row.line().0 == "sample.gandr:<file>" && !row.is_stale().0),
+                .any(|row| row.line().0 == "sample.gandr:<file> uncommented" && !row.is_stale().0),
             "the file finding is refused by name when the ledger omits it"
         );
     }
@@ -1074,7 +1101,7 @@ mod tests
         assert_eq!(
             after,
             [
-                "sample.gandr:<file>".to_owned(),
+                "sample.gandr:<file> uncommented".to_owned(),
                 key(Text("late"), Text("def late = 1;")),
             ],
             "a comment after the attribute block is not before it, and a source that opens on an \

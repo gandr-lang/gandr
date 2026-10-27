@@ -7,10 +7,13 @@ use anodized::spec;
 use crate::comments::judge::Finding;
 
 /// The ledger's first line: the shape of every line after it.
-const HEADER: &str = "# path:name:digest, or path:block.member:digest for a block's member, the \
-                      digest the first sixteen hex digits of BLAKE3 over the item's text with \
-                      whitespace collapsed and comments and the attribute block left out; \
-                      path:<file> for a source with no leading comment";
+const HEADER: &str = "# key kind. The key is path:name:digest, or path:block.member:digest for a \
+                      block's member, the digest the first sixteen hex digits of BLAKE3 over the \
+                      item's text with whitespace collapsed and comments and the attribute block \
+                      left out; path:<file> for a source's head comment; path:comment:digest for \
+                      an item comment, the digest over its text. The kind is uncommented, or \
+                      unshaped:<rule> for a comment outside the shape \
+                      (crates/surface-corpus/README.md § Comments)";
 
 /// One way the findings and the ledger disagree.
 ///
@@ -92,7 +95,7 @@ impl core::fmt::Display for Discrepancy
             Self::Unledgered { ref line, .. } => {
                 write!(
                     f,
-                    "corpus comments FAILED: uncommented item not in the ledger: {line}"
+                    "corpus comments FAILED: finding not in the ledger: {line}"
                 )
             },
             Self::Stale { ref line } => {

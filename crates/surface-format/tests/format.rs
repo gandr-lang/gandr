@@ -151,6 +151,20 @@ fn top_level_forms_and_comments_keep_their_lines()
 }
 
 #[test]
+fn a_bulleted_head_comment_keeps_its_lines_2918()
+{
+    let grammar = grammar();
+    let source = "// Pairs sum their halves, read back by every reader of the corpus.\n//\n// Why.\n//\n// How.\n//\n// - see: #1 — not implemented: a long clause that runs past the narrow page\n//   and wraps onto an indented line\n// - see: `pathological/a.gandr` — the refusal\n\n/// The pair. Its sum.\ndef a = 1;\n";
+    for page in [NARROW, WIDE] {
+        assert_eq!(
+            text(&grammar, source, page),
+            source,
+            "a head's `- see:` lines and their indented continuations are never reflowed"
+        );
+    }
+}
+
+#[test]
 fn a_rule_s_freshness_conditions_stay_on_its_line()
 {
     let grammar = grammar();

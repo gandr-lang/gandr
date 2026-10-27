@@ -1,8 +1,15 @@
-// The loop space's equivalence, one stratum down from the book's circle
-// (Theorem 8.1.9): spinning, the fold out of the presented integers into the
-// loop's words, undoes the winding number and the winding number undoes it,
-// at closed words by conversion and at a variable by induction over each
-// presented type (`sectWords`, `retrWords`), so `Words ≃ Int`.
+// The loop space's equivalence one stratum down: the loop's words and the
+// presented integers are equivalent.
+//
+// It is the book's circle theorem at the presented stratum, where conversion
+// and induction decide each round trip.
+//
+// Spinning folds the integers into words, a successor a loop and a
+// predecessor an inverse. `sectWords` and `retrWords` prove the round trips
+// by induction over each presented type. The record `wordsWinding` nests the
+// four entries to the right, so `Words ≃ Int`.
+//
+// - see: the HoTT book, Theorem 8.1.9 — the circle's loop space
 
 // The presented integers.
 import "./circle-base.gandr";
@@ -67,16 +74,8 @@ def unaround(c : Words) -> Words {
   Unloop(c)
 }
 
-/// Spinning undoes winding at every word: the round trip at a variable, by
-/// induction over the presented words. The result type reads the word the
-/// fold descends on, so each arm answers it at its constructor and the
-/// recursive call at the field: `sectWords[<](x)` relates
-/// `spinWords(windWords(x))` to `x`, and carried along `around` it relates
-/// `Loop(spinWords(windWords(x)))`, which `spinWords(windWords(Loop(x)))`
-/// runs to, to `Loop(x)`. The case respects both rules: at `Loop(Unloop(x))`
-/// the arms compose to `cong(around, cong(unaround, p))`, whose functions
-/// compose to the identity under the rules, so the chain is `p` itself, the
-/// answer at `x`.
+/// Spinning undoes winding at every word, by induction over the presented
+/// words. Each arm carries the recursive path along its letter's function.
 def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
   case c {
     Nil => here(Nil),
@@ -85,9 +84,9 @@ def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
   }
 }
 
-/// Winding undoes spinning at every count: the other round trip, by
-/// induction over the presented integers, a successor carried along the
-/// model's `turn` and a predecessor along its `unturn`.
+/// Winding undoes spinning at every count, by induction over the presented
+/// integers. Each successor carries the path along the model's `turn`, each
+/// predecessor along its `unturn`.
 def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
   case n {
     Z => here(Z),
@@ -96,13 +95,8 @@ def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
   }
 }
 
-/// The loop's words and the presented integers are equivalent, by
-/// `windWords` and `spinWords` with the two round trips at a variable (the
-/// book's Theorem 8.1.9, one stratum down). The later entries read `to` and
-/// `back`, so the record is their dependent pairs nested to the right, and
-/// its value nests the same way: `sectWords` and `retrWords` are checked at
-/// the types the record states once `to` is `windWords` and `back` is
-/// `spinWords`.
+/// The words and the integers are equivalent by winding, spinning and the
+/// two round trips. The record nests its entries to the right.
 def wordsWinding : #{
   to : Words => Int,
   back : Int => Words,
