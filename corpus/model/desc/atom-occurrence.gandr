@@ -1,17 +1,26 @@
-// An atom named inside the abstraction that binds it (Fernández and Gabbay,
-// _Nominal rewriting_, I&C 2007, § 2; Pitts, _Nominal Sets_, CUP 2013, § 4).
-// Inside `bind a . t` the name `a` is the atom `a`, and outside it a variable.
-// Admission re-mints an atom with the abstraction that binds it, so a rule
-// naming the channel its restriction abstracts is one rule whatever the atom
-// is called: matching, the critical pairs and the kernel's replay read an
-// occurrence by the number of abstractions between it and its binder. Where
-// a port takes an atom, a term can name one, and a rule stating a freshness
-// condition, or moving a variable across an abstraction, fires only where its
-// instance names no atom it may not, counting the atoms a moved instance names
-// to their abstractions' new places. Such a rule's variable is a hole over the
-// atoms it may name, so two rules' overlap is decided under the condition it
-// composes. A rule matching a variable both under an abstraction and beside it
-// is not decided yet (#1934): `pathological/desc/atom-occurrence.gandr`.
+// An atom named inside the abstraction that binds it, read by its depth below
+// its binder.
+//
+// Admission re-mints an atom with its binder, so a rule naming the channel
+// its restriction abstracts is one rule whatever the atom is called. A rule
+// stating a freshness condition fires only where its instance names no atom
+// it may not.
+//
+// Matching, the critical pairs and the kernel's replay count the abstractions
+// between an occurrence and its binder. A rule's variable is a hole over the
+// atoms it may name, so the check decides an overlap under the condition it
+// composes. Each theory below normalizes one process its rules meet.
+//
+// - see: #1934 — not implemented: a rule matching a variable both under an
+//   abstraction and beside it
+// - see: `pathological/desc/atom-occurrence.gandr` — that rule, refused
+// - see: Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 2
+// - see: Pitts, _Nominal Sets_, CUP 2013, § 4
+// - see: Milner, _Communicating and Mobile Systems: the π-Calculus_, CUP 1999
+// - see: Mayr and Nipkow, _Higher-order rewrite systems and their
+//   confluence_, TCS 1998
+// - see: Miller, _A logic programming language with lambda-abstraction,
+//   function variables, and simple unification_, JLC 1991
 
 /// A send on a restricted channel, which no process outside the restriction
 /// can receive: the process never moves, so it is the inert one. The checker
@@ -27,10 +36,8 @@ theory Unheard {
   rule unheard : nu(bind a. out(a, p)) ==> nil();
 }
 
-/// The law below a second restriction, sending on the outer channel: the
-/// occurrence counts past one abstraction to its binder and the law's counts
-/// past none, so the law does not apply; the normal form names each atom by
-/// its depth.
+/// The law below a second restriction, sending on the outer channel. The
+/// occurrence's depth differs from the law's, so the law does not apply.
 @[ normalizes("nu(bind a . nu(bind b . out(a, nil))) ~> nu(bind a0 . nu(bind a1 . out(a0, nil)))") ]
 theory Overheard {
   sort Name : Atom;
@@ -41,7 +48,7 @@ theory Overheard {
   rule unheard : nu(bind a. out(a, p)) ==> nil();
 }
 
-/// An inner restriction of the outer one's name shadows it: the channel sent
+/// An inner restriction of the outer one's name shadows it. The channel sent
 /// on is the inner one, and the law applies below the outer restriction.
 @[ normalizes("nu(bind a . nu(bind a . out(a, nil))) ~> nu(bind a0 . nil)") ]
 theory Shadowed {
@@ -53,10 +60,9 @@ theory Shadowed {
   rule unheard : nu(bind a. out(a, p)) ==> nil();
 }
 
-/// Scope extrusion where `out` takes a channel: `q` moves under the
-/// restriction stated fresh for it, so the rule counts each channel `q` names
-/// one abstraction further, and the outer channel stays the one sent on. The
-/// kernel replays the verdict.
+/// Scope extrusion where `out` takes a channel, `q` moved under the
+/// restriction stated fresh for it. Each channel `q` names counts one
+/// abstraction further.
 @[ normalizes("nu(bind c . par(nu(bind b . out(b, nil)), out(c, nil))) ~> nu(bind a0 . nu(bind a1 . par(out(a1, nil), out(a0, nil))))") ]
 theory Extruding {
   sort Name : Atom;
@@ -69,9 +75,8 @@ theory Extruding {
 }
 
 /// Garbage collection where `out` takes a channel: a restriction whose process
-/// names none of its channel is the process. The rule fires on the inner
-/// restriction, counting the outer channel one abstraction nearer, and not on
-/// the outer one, whose process sends on it.
+/// names none of its channel is the process. It fires on the inner
+/// restriction only.
 @[ normalizes("nu(bind c . nu(bind b . out(c, nil))) ~> nu(bind a0 . out(a0, nil))") ]
 theory Collected {
   sort Name : Atom;
@@ -82,16 +87,9 @@ theory Collected {
   rule gc : nu(bind a. p) <=> p where a # p;
 }
 
-/// Scope extrusion beside garbage collection where `out` takes a channel
-/// (Milner, _Communicating and Mobile Systems: the π-Calculus_, CUP 1999).
-/// Collection rewrites the restriction extrusion matches, and the overlap is
-/// decided as a higher-order critical pair (Mayr and Nipkow, _Higher-order
-/// rewrite systems and their confluence_, TCS 1998), each variable a pattern
-/// over the channels it may name (Miller, _A logic programming language with
-/// lambda-abstraction, function variables, and simple unification_, JLC
-/// 1991): extrusion's `p` may name the restriction's channel and its `q` may
-/// not, collection's `p` may not. Composed, the peak restricts a channel
-/// neither process names, and both rewrites reach the two side by side.
+/// Scope extrusion beside garbage collection, whose overlap the check decides
+/// as a higher-order critical pair. Each variable is a pattern over the
+/// channels it may name, and both rewrites of the peak meet.
 @[ normalizes("nu(bind c . par(nu(bind b . nil), out(c, nil))) ~> nu(bind a0 . par(nil, out(a0, nil)))") ]
 theory Collecting {
   sort Name : Atom;
@@ -104,10 +102,9 @@ theory Collecting {
   rule gc : nu(bind a. p) <=> p where a # p;
 }
 
-/// Garbage collection beside the law that a restriction sending only on its
-/// own channel is inert: their left sides unify as terms, but collection's `p`
-/// may not name the channel the law's process sends on, so no instance
-/// overlaps and the pair holds without a peak.
+/// Garbage collection beside the law that an inert restriction is `nil`.
+/// Their left sides unify, but collection's `p` may not name the sent
+/// channel, so no instance overlaps.
 @[ normalizes("nu(bind c . nu(bind b . out(b, nil))) ~> nil") ]
 theory Quiet {
   sort Name : Atom;

@@ -10,8 +10,10 @@ use gandr_surface_grammar::Pbg;
 use crate::comments::error::CommentError;
 use crate::comments::judge::Finding;
 use crate::comments::judge::findings_of;
+use crate::comments::prose::unshaped;
 
-/// Every uncommented item under `fixture`, ledger keys relative to it.
+/// Every uncommented item and every comment outside the shape under
+/// `fixture`, ledger keys relative to it.
 ///
 /// Symbolic links are not followed. Only files whose name ends in `.gandr`
 /// are judged. The keys use `/` separators, so a ledger written on one host
@@ -19,8 +21,8 @@ use crate::comments::judge::findings_of;
 ///
 /// # Specification
 /// - requires: `fixture` is a directory.
-/// - ensures: the concatenated findings of every `.gandr` file under `fixture`,
-///   each keyed by its path relative to `fixture`.
+/// - ensures: the concatenated findings and shape findings of every `.gandr`
+///   file under `fixture`, each keyed by its path relative to `fixture`.
 /// - provides: the debt the gate compares with the ledger.
 /// - fails: a directory entry cannot be read, a source cannot be read, a path
 ///   is not Unicode, or a source does not commit a tree.
@@ -30,6 +32,7 @@ use crate::comments::judge::findings_of;
 /// [`CommentError::Read`] when a directory or a source cannot be read.
 /// [`CommentError::File`] when a path is not Unicode or contains a colon.
 /// [`CommentError::Parse`] and [`CommentError::Mold`] as [`findings_of`].
+/// The shape findings ([`unshaped`]) never fail.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a directory of one uncommented source and one commented
@@ -84,6 +87,10 @@ pub fn collect(
             crate::comments::shape::Text(&key),
             crate::comments::shape::Text(&text),
         )?);
+        found.extend(unshaped(
+            crate::comments::shape::Text(&key),
+            crate::comments::shape::Text(&text),
+        ));
     }
     found.sort_by(|left, right| left.line().cmp(&right.line()));
     Ok(found)
@@ -246,7 +253,7 @@ mod tests
             "the uncommented item is named"
         );
         assert!(
-            lines.contains(&"kept/bare.gandr:<file>"),
+            lines.contains(&"kept/bare.gandr:<file> uncommented"),
             "the uncommented file is named"
         );
         assert!(

@@ -1,27 +1,26 @@
-// Univalence at the corollas of a signature written by hand: `ua[1, 4]` is
-// reflexivity at the unit for the empty shape, then one `equiv` per corolla,
-// nested to the right (Shulman, _Univalence for Inverse Diagrams and
-// Homotopy Canonicity_, doi:10.1017/S0960129514000565), and its directed twin
-// is a flow of one `forward` per corolla (Gratzer, Weinberger and Buchholtz,
-// _Directed univalence in simplicial homotopy type theory_,
-// arXiv:2407.09146).
+// Univalence at the corollas of a magma's signature, written by hand and
+// checked against the derived `ua[1, 4]`.
+//
+// The hand definition shows what `ua` builds: reflexivity at the unit for
+// the empty shape, then one `equiv` per corolla, nested to the right. Its
+// directed twin is the same shape for flows, one `forward` per corolla.
+//
+// The module states the hand path beside the derived one and checks that
+// they convert. Transport and a ride along each move the binary corolla's
+// boolean. A ride that would reverse the flow is refused.
+//
+// - see: `pathological/higher-cells/ua-by-hand-unnatural.gandr` — the
+//   naturality `ua` checks beyond the hand definition
+// - see: `ua-corolla-strata.gandr` — the Segal certification from degree two
+// - see: Shulman, _Univalence for Inverse Diagrams and Homotopy Canonicity_,
+//   doi:10.1017/S0960129514000565
+// - see: Gratzer, Weinberger and Buchholtz, _Directed univalence in
+//   simplicial homotopy type theory_, arXiv:2407.09146
 
 // The magma, the swap and the unit's identity.
 import "./magma-base.gandr";
 
-/// `ua[1, 4]` written by hand: reflexivity at the unit for the empty shape,
-/// then one `equiv` per corolla in catalogue order, the constant's before the
-/// binary one's, nested to the right. What the hand definition does not state
-/// is what `ua` checks beyond it: naturality along each corolla's symmetries
-/// (`pathological/higher-cells/ua-by-hand-unnatural.gandr`), and from degree
-/// two (`ua-corolla-strata.gandr`) the Segal certification of the stages above
-/// the corollas.
-///
-/// The directed twin is a flow: `stay` at the unit, then one `forward` per
-/// corolla, nested by `flowProduct` in the same order. A term ridden along it
-/// moves forward as it moves along the path: `rides` states it, as `moves`
-/// states the transport, and `ridden` runs it. The ride that would reverse it
-/// is refused, as every symmetry of a flow is.
+/// `ua[1, 4]` and its directed twin, each derived and written by hand.
 module ByHand {
   type Tel = Unit * (+{Unit} * Bool);
 

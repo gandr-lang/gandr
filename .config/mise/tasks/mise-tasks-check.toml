@@ -752,7 +752,9 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # read through `gh`. A partial row whose exemplar is a source has its own,
 # `corpus/ledger/features/<id>.gandr` (#2635), opening with a head of `///`
 # lines: the row's `id`, a `/// Implemented:` line, and a
-# `/// Not implemented:` line naming an open issue that owes the rest; the
+# `/// Not implemented:` line naming an open issue that owes the rest, or the
+# comment shape's references line `/// - see: #n — not implemented: <what>`
+# (crates/surface-corpus/README.md § Comments, #2918); the
 # shared sources it was drawn from stay in `corpus`. Every finding is printed
 # before the gate fails.
 ["check:ledger"]
@@ -840,11 +842,11 @@ while IFS='|' read -r id exemplar; do
   fi
   [[ -f $own ]] || continue
   head=$(awk '/^\/\/\// { print; next } { exit }' "$own")
-  owed=$(grep -m1 '^/// Not implemented: ' <<< "$head" || true)
+  owed=$(grep -m1 -E '^/// (Not implemented: |- see: #[0-9]+ — not implemented: )' <<< "$head" || true)
   missing=()
   grep -qF "\`$id\`" <<< "$head" || missing+=("the row's id, \`$id\`")
   grep -q '^/// Implemented: ' <<< "$head" || missing+=('a `/// Implemented:` line')
-  [[ -n $owed ]] || missing+=('a `/// Not implemented:` line')
+  [[ -n $owed ]] || missing+=('a `/// Not implemented:` line or a `/// - see: #n — not implemented:` line')
   if [[ -n $owed ]]; then
     owing=
     for number in $(grep -oE '#[0-9]+' <<< "$owed" | tr -d '#'); do
@@ -853,7 +855,7 @@ while IFS='|' read -r id exemplar; do
       fi
       if [[ ${open_issue[$number]} == OPEN ]]; then owing=$number; break; fi
     done
-    [[ -n $owing ]] || missing+=('an open issue on its `/// Not implemented:` line that owes the rest')
+    [[ -n $owing ]] || missing+=('an open issue on its not-implemented line that owes the rest')
   fi
   for lack in "${missing[@]}"; do
     printf '%s: the head of `%s` lacks %s (#2635)\n' "$id" "$own" "$lack" >&2
