@@ -95,8 +95,10 @@ fn a_refusal_compares_the_types_it_names()
 /// level, family-argument or `over` mismatch and an amplified capability
 /// expect the checked type and found the synthesised one; a forged
 /// capability expects the type it stood at; a dependent bind or stack and a
-/// compound endpoint found the computation type their body synthesised; and
-/// each refusal naming one classifier, capability or code found that.
+/// compound endpoint found the computation type their body synthesised; each
+/// refusal naming one classifier, capability or code found that; and a
+/// refused crossing found the former that does not cross, whichever
+/// predicate it fails, while a refused mark compares nothing.
 #[test]
 fn each_refusal_naming_types_reports_them_on_its_own_sides()
 {
@@ -257,6 +259,44 @@ fn each_refusal_naming_types_reports_them_on_its_own_sides()
                 code: list,
             },
             found_list,
+        ),
+        (
+            CheckRefusal::Located {
+                at: CoreNode::Term(TermNode::Value(term)),
+                defect: crate::worlds::LocatedDefect::Immobile {
+                    crossed: crate::worlds::Crossed::Result,
+                    ty: unit,
+                    former: list,
+                    predicate: crate::worlds::Predicate::Mobile,
+                },
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::Located {
+                at: CoreNode::Term(TermNode::Value(term)),
+                defect: crate::worlds::LocatedDefect::Immobile {
+                    crossed: crate::worlds::Crossed::Constant,
+                    ty: unit,
+                    former: list,
+                    predicate: crate::worlds::Predicate::Open,
+                },
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::Located {
+                at: CoreNode::Term(TermNode::Value(term)),
+                defect: crate::worlds::LocatedDefect::MarkUnfounded {
+                    atom: ConstantIndex::from(0_usize),
+                    former: list,
+                    predicate: crate::worlds::Predicate::Open,
+                },
+            },
+            Compared {
+                expected: unnamed,
+                found: unnamed,
+            },
         ),
     ];
     for (refusal, compared) in rows {

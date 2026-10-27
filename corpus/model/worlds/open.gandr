@@ -1,0 +1,42 @@
+// What is open crosses back from a migration as bytes.
+//
+// A crossing asks two judgements. Mobility is authority: nothing the value
+// holds is meaningful only where it was made. Openness is representation:
+// the value names no location, so its bytes read the same at every world.
+// They agree on data and part at a handle, which is mobile always and open
+// when what it holds is.
+//
+// Each declaration below migrates to the seat and returns its result to the
+// operator. Data of integers is open, and so is a handle to it.
+//
+// - see: Rainey et al., "LoCalMem", PACMPL 10 (ICFP 2026), § 5.1, openness
+// - see: Murphy, Crary and Harper, "Type-Safe Distributed Programming with
+//   ML5", TGC 2007, § 3
+// - see: `pathological/worlds/open.gandr` — what is not open stays
+
+// The operator's and the seat's worlds, each declaration's entry.
+import "./seat-and-operator.gandr";
+
+/// A point the seat measures, two integers.
+data Point : Type {
+  /// The point at `x` and `y`.
+  At : (x : Integer, y : Integer) --> Point;
+}
+
+/// A record of integers comes back from the seat.
+@[ entry((operator, seat)) ]
+def counts() -> #{done : Integer, left : Integer} {
+  migrate [seat] { pure #{done = 3, left = 4} }
+}
+
+/// A datatype of integers comes back, field by field open.
+@[ entry((operator, seat)) ]
+def measured() -> Point {
+  migrate [seat] { pure At(1, 2) }
+}
+
+/// A handle to a record of integers comes back as its content.
+@[ entry((operator, seat)) ]
+def heldCounts() -> -F (#{done : Integer, left : Integer} at seat) {
+  migrate [seat] { (hold #{done = 3, left = 4}) }
+}

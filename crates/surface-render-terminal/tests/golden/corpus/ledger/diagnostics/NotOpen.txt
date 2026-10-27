@@ -1,0 +1,11 @@
+error[NotOpen]: this handle crosses to another world, but the value it holds is not open
+   ╭▸ corpus/ledger/diagnostics/NotOpen.gandr:11:3
+   │
+10 │ ┌ def heldThunk() -> -F ((() => Integer) at seat) {
+11 │ │   migrate [seat] { (hold thunk { pure 3 }) }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a handle whose held value is not open: found `() => Integer`
+12 │ │ }
+   │ └─┘ checked against `() => (() => Integer) at seat`; while checking the body of this thunk
+   │
+   ├ note: `heldThunk` is refused with NotOpen, as its expectation states
+   ╰ help: hold data in the handle, or an abstract type that its signature marks `mobile`

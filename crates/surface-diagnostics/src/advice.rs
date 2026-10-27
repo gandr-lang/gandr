@@ -26,6 +26,8 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::Predicate;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
@@ -396,6 +398,27 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::ImplicitUnsolved { .. } => {
             String::from("supply the implicit by name in brackets before the parentheses")
         },
+        CheckRefusal::Located {
+            defect:
+                LocatedDefect::Immobile {
+                    predicate: Predicate::Mobile,
+                    ..
+                },
+            ..
+        } => String::from(
+            "return data or a handle from the migration, or mark the abstract type `mobile` in \
+             its signature",
+        ),
+        CheckRefusal::Located {
+            defect:
+                LocatedDefect::Immobile {
+                    predicate: Predicate::Open,
+                    ..
+                },
+            ..
+        } => String::from(
+            "hold data in the handle, or an abstract type that its signature marks `mobile`",
+        ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
@@ -483,7 +506,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
     })
 }
 
-/// The most-seen refusal names, each worded on one line.
+/// The refusal names the procedural rewrite has worded, each on one line.
 #[cfg(test)]
 mod tests
 {
@@ -493,8 +516,9 @@ mod tests
     use super::help;
     use crate::message::tests::one_of_every_name;
 
-    /// The names the procedural rewrite has worded, most-seen first.
-    const WORDED: [&str; 20] = [
+    /// The names the procedural rewrite has worded: the most-seen first,
+    /// then the names worded as their goldens regenerated.
+    const WORDED: [&str; 22] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -515,6 +539,8 @@ mod tests
         "KeptEscaped",
         "LinearResidue",
         "RulesUncompleted",
+        "Immobile",
+        "NotOpen",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

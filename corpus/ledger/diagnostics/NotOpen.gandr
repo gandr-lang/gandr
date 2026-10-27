@@ -1,0 +1,12 @@
+/// `NotOpen`: a handle crossing to another world over a value whose bytes name a location.
+@[ checks ]
+world operator ;
+
+@[ checks ]
+world seat ;
+
+@[ refuses("NotOpen") ]
+@[ entry((operator, seat)) ]
+def heldThunk() -> -F ((() => Integer) at seat) {
+  migrate [seat] { (hold thunk { pure 3 }) }
+}

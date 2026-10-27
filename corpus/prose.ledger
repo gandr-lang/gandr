@@ -1198,7 +1198,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldShared
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HoldElsewhere.txt Procedure 1f4f6176c64090b2
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/IllFormedDescription.txt Procedure eb1b7db355fa30b3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/IllTypedPayload.txt Procedure 21920c631ffb9cde
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Immobile.txt Procedure c473a648fbc7a1a3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImplicitInParentheses.txt Procedure 12479629ce566b12
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImplicitUnsupplied.txt Procedure d73c75948dd32c9e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImportCycle.txt Procedure f639a857061553b4
@@ -1531,7 +1530,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/universe/inducti
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/v-infinity.txt Procedure 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure a755b43b32ffea91
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure ce9e9d602eb9772e
-crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/immobile-crossing.txt Procedure c473a648fbc7a1a3
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 06ba600e8a7f9408
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 1f4f6176c64090b2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d18e9b339165083

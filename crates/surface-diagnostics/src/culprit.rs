@@ -69,6 +69,7 @@ use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::Predicate;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -475,7 +476,14 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             CodataFault::Arity => "a codata type at another arity than its declaration",
         },
         CheckRefusal::Located { defect, .. } => match defect {
-            LocatedDefect::Immobile { .. } => "a value whose type does not cross",
+            LocatedDefect::Immobile {
+                predicate: Predicate::Mobile,
+                ..
+            } => "a value whose type holds a former that is not mobile",
+            LocatedDefect::Immobile {
+                predicate: Predicate::Open,
+                ..
+            } => "a handle whose held value is not open",
             LocatedDefect::CapabilityMissing { .. } => "no capability for the world",
             LocatedDefect::CapabilityCaptured { .. } => "a migration that may run other than once",
             LocatedDefect::Elsewhere { .. } => "a value bound at another world",
