@@ -53,6 +53,7 @@
 //! at.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -1485,7 +1486,8 @@ impl Laying<'_>
     ///   names.
     /// - ensures: a value the run moved out answers the object it was moved
     ///   from, so a thunk or a function keeps its identity; any other value is
-    ///   allocated as the run lays out its own: an integer a word holds as an
+    ///   allocated once, however many fields hold it, counted one owner per
+    ///   holder, as the run lays out its own: an integer a word holds as an
     ///   integer object, another literal as an object naming its new row in the
     ///   run's literal table, a tuple, an injection or a datatype's constructor
     ///   over its fields, a head the function's table holds as a head object,
@@ -1498,41 +1500,59 @@ impl Laying<'_>
     /// [`Unlaid::Run`] past the heap's limit.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — replies of an integer, the unit, the payload itself
-    ///   and a value the store does not hold, each continuing or stopping the
-    ///   run as it states.
+    /// - hypothesis: L3 — replies of an integer, the unit, the payload itself,
+    ///   a value the store does not hold and a pair holding one value twice,
+    ///   each continuing or stopping the run as it states; a second holder left
+    ///   uncounted frees the value while it is read.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
+    /// - witness: `tests::seam::a_host_reply_sharing_a_field_counts_each_holder_3170`
     fn laid(
         &mut self,
         runtime: &mut Runtime,
         reply: HeapValueId,
     ) -> Result<Word, Unlaid>
     {
+        let store = self.store;
         let mut laid: BTreeMap<HeapValueId, Word> =
             self.moved.iter().map(|(&word, &id)| (id, word)).collect();
+        // The values this laying allocates, each counted one owner by its
+        // allocation, and those of them a field already holds: each later
+        // field holding one counts one owner more.
+        let mut fresh = BTreeSet::new();
+        let mut held = BTreeSet::new();
         let mut pending = Vec::from([(reply, false)]);
         while let Some((id, entered)) = pending.pop() {
             if laid.contains_key(&id) {
                 continue;
             }
-            let value = self.store.value(id).ok_or(Unlaid::Value(id))?;
+            let value = store.value(id).ok_or(Unlaid::Value(id))?;
+            let fields: &[HeapValueId] = if let HeapValue::Constructed { ref fields, .. } = *value {
+                fields
+            }
+            else {
+                &[]
+            };
             if !entered {
                 pending.push((id, true));
-                if let HeapValue::Constructed { ref fields, .. } = *value {
-                    pending.extend(
-                        fields
-                            .iter()
-                            .rev()
-                            .filter(|field| !laid.contains_key(field))
-                            .map(|&field| (field, false)),
-                    );
-                }
+                pending.extend(
+                    fields
+                        .iter()
+                        .rev()
+                        .filter(|field| !laid.contains_key(field))
+                        .map(|&field| (field, false)),
+                );
                 continue;
             }
             let word = self.object(runtime, id, &laid)?;
+            for &field in fields {
+                if fresh.contains(&field) && !held.insert(field) {
+                    share(*laid.get(&field).ok_or(Unlaid::Value(field))?);
+                }
+            }
             laid.insert(id, word);
+            fresh.insert(id);
         }
         laid.get(&reply).copied().ok_or(Unlaid::Value(reply))
     }
