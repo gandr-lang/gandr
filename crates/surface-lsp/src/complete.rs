@@ -845,6 +845,7 @@ mod tests
                 ("Eq", Kind::FUNCTION),
                 ("PartialEq", Kind::FUNCTION),
                 ("Succ", Kind::CONSTRUCTOR),
+                ("Versioned", Kind::FUNCTION),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
                 ("eq", Kind::FUNCTION),
@@ -873,6 +874,7 @@ mod tests
                 ("Eq", Kind::FUNCTION),
                 ("PartialEq", Kind::FUNCTION),
                 ("Succ", Kind::CONSTRUCTOR),
+                ("Versioned", Kind::FUNCTION),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
                 ("eq", Kind::FUNCTION),
@@ -899,9 +901,12 @@ mod tests
                 ("Ord", Kind::ENUM),
                 ("Package", Kind::ENUM),
                 ("PartialEq", Kind::ENUM),
+                ("Versioned", Kind::ENUM),
+                ("Workspace", Kind::ENUM),
             ]),
-            "a type: the families alone, the prelude's `Eq`, `Ord`, `PartialEq` and \
-             `Gandr.Package` among them, a module's by its own name as a module's value is"
+            "a type: the families alone, the prelude's `Eq`, `Ord`, `PartialEq`, `Versioned`, \
+             `Gandr.Package` and `Gandr.Workspace` among them, a module's by its own name as a \
+             module's value is"
         );
         assert!(has(&ty, "Type") && !has(&ty, "return"), "{ty:?}");
 
@@ -1305,6 +1310,7 @@ mod tests
                 name("PartialEq"),
                 call("S", "S(${1:x})$0"),
                 call("Succ", "Succ(${1:n})$0"),
+                name("Versioned"),
                 name("Z"),
                 name("Zero"),
                 call("down", "down(${1:n})$0"),

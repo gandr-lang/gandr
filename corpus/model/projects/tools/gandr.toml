@@ -1,0 +1,7 @@
+# Written by `gandr check` from the package's `Package` model: edit the model, not this file.
+# blake3: 6acd112e83dfb223512c219f235ff557c549a25c771a4d671f417ca2071007a5
+
+[package]
+name = "tools"
+version = "0.1.0"
+modules = []

@@ -63,8 +63,10 @@
 //! (`gandr-surface-dispatcher`'s `root` module). A path inside a package — the
 //! sources beside a `lib.gandr`, rooted above it when it sits in `src` — stands
 //! for the whole package, and `check`, `test` and `fmt` given no path work on
-//! the package the working directory sits in (`gandr-surface-dispatcher`'s
-//! `package` module). After its walk, `check` reconciles each such package's
+//! the package the working directory sits in, or, in no package, on every
+//! member a `workspace.gandr` above it names, as they do given the workspace's
+//! directory (`gandr-surface-dispatcher`'s `package` and `workspace` modules).
+//! After its walk, `check` reconciles each such package's
 //! `gandr.toml` with the library's `Package` model, `manifest: <path>:
 //! written`, `rewritten` or `unchanged` on standard output; a manifest edited
 //! by hand is left as it stands and is `gandr: <path>: drifted: …` on standard
@@ -329,7 +331,7 @@ use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Unmanifested;
-use gandr_surface_dispatcher::Unpackaged;
+use gandr_surface_dispatcher::Unpathed;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
@@ -436,8 +438,9 @@ enum Command
         jobs: Jobs,
         /// Source files, and directories searched for `.gandr` sources. A
         /// path inside a package checks the whole package, and writes its
-        /// `gandr.toml`; with no path, the package the working directory sits
-        /// in.
+        /// `gandr.toml`; a workspace's directory checks each member it names;
+        /// with no path, the package the working directory sits in, or the
+        /// workspace when it sits in none.
         paths: Vec<PathBuf>,
     },
     /// Run the corpus under each path: the same pass as `check`, printing
@@ -453,8 +456,9 @@ enum Command
         #[command(flatten)]
         jobs: Jobs,
         /// Source files, and directories searched for `.gandr` sources. A
-        /// path inside a package runs the whole package; with no path, the
-        /// package the working directory sits in.
+        /// path inside a package runs the whole package, a workspace's
+        /// directory each member it names; with no path, the package the
+        /// working directory sits in, or the workspace when it sits in none.
         paths: Vec<PathBuf>,
     },
     /// Serve the Language Server Protocol over standard input and output.
@@ -625,8 +629,9 @@ enum Command
         #[command(flatten)]
         jobs: Jobs,
         /// Source files, and directories searched for `.gandr` sources. A
-        /// path inside a package lays out the whole package; with no path,
-        /// the package the working directory sits in.
+        /// path inside a package lays out the whole package, a workspace's
+        /// directory each member it names; with no path, the package the
+        /// working directory sits in, or the workspace when it sits in none.
         paths: Vec<PathBuf>,
     },
     /// Report the rewriting cells of the sources under each path, one line
@@ -978,19 +983,21 @@ enum Screen
 ///   `--version` print and exit `0`; any other argument error prints its usage
 ///   message and exits `2`. A bare invocation prints one status line and exits
 ///   `0`. `check`, `test` and `fmt` first widen each path inside a package to
-///   the whole package, and with no path take the package the working directory
-///   sits in, exiting `2` with one `gandr:` line outside every package
-///   (`gandr-surface-dispatcher`'s `packaged`). `check` and `test` walk their
-///   paths, print what [`render`] prints, and exit `0`, `1` or `2` as the run
-///   settled, was unsettled or faulted, `check` reconciling each package's
-///   manifest as [`run`] states; `run` runs its script as [`script`] states,
-///   and `fmt` lays out its paths as [`fmt`] states. `lsp` serves and `lsp
-///   --capabilities` prints as [`lsp`] and [`capabilities`] state, `repl` runs
-///   as [`repl`] states, and `tui` as [`tui`] states. Every face writes its
-///   types and values in the spelling [`spelling`] resolves; a configuration
-///   file that cannot be read is `gandr: <path>: <fault>` on standard error and
-///   exits `2` before any verb runs. Output the driver cannot write is noted on
-///   standard error, when that is writable, and exits `2`.
+///   the whole package and a workspace's directory to its source and members,
+///   and with no path take the package the working directory sits in, else the
+///   workspace it sits in, exiting `2` with one `gandr:` line outside both or
+///   for a workspace naming no packages (`gandr-surface-dispatcher`'s
+///   `packaged`). `check` and `test` walk their paths, print what [`render`]
+///   prints, and exit `0`, `1` or `2` as the run settled, was unsettled or
+///   faulted, `check` reconciling each package's manifest as [`run`] states;
+///   `run` runs its script as [`script`] states, and `fmt` lays out its paths
+///   as [`fmt`] states. `lsp` serves and `lsp --capabilities` prints as [`lsp`]
+///   and [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
+///   [`tui`] states. Every face writes its types and values in the spelling
+///   [`spelling`] resolves; a configuration file that cannot be read is `gandr:
+///   <path>: <fault>` on standard error and exits `2` before any verb runs.
+///   Output the driver cannot write is noted on standard error, when that is
+///   writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -1860,27 +1867,30 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
     ExitCode::from(FAULTED)
 }
 
-/// Refuse a verb given no path outside every package.
+/// Refuse a verb that has no paths to walk.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one line on standard error, `gandr:` and why no package was found
-///   from the working directory; exits `2`, a malformed invocation, whether or
-///   not the line could be written.
+///   from the working directory, or why the workspace the verb works on names
+///   none; exits `2`, a malformed invocation, whether or not the line could be
+///   written.
 /// - provides: the exit of `check`, `test` or `fmt` run with no path where no
-///   package is.
+///   package or workspace is, or in a workspace that names no packages.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `check` with no path in a directory with no library above
-///   it exits two before any source is read.
+///   it, and in a workspace naming a directory that roots no package, each
+///   exits two before any source is read.
 /// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
 #[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
-fn unpathed(unpackaged: &Unpackaged) -> ExitCode
+fn unpathed(unpathed: &Unpathed) -> ExitCode
 {
     let mut stderr = std::io::stderr().lock();
-    let _written = writeln!(stderr, "gandr: {unpackaged}");
+    let _written = writeln!(stderr, "gandr: {unpathed}");
     ExitCode::from(FAULTED)
 }
 
@@ -2487,8 +2497,9 @@ fn manifested(
 /// # Specification
 /// - requires: `manifests` holds one place per package, in order.
 /// - ensures: a settled source step whose canonical path is the library of a
-///   package has that package's place set to [`Manifest::of`] its program and
-///   the package; any other step changes nothing.
+///   package has that package's place set to [`Manifest::of`] its program, its
+///   report of the library's own declarations, and the package; any other step
+///   changes nothing.
 /// - provides: the manifest `run` reconciles after the walk.
 /// - fails: never; a library that states no manifest is the place's error.
 /// - panics: none.
@@ -2498,8 +2509,10 @@ fn manifested(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a package checked whole writes the manifest its library
-///   states, and one whose library is unsettled writes none.
+///   states, one whose library is unsettled writes none, and two libraries
+///   sharing an import each write their own.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
 fn read_manifest(
     step: &mut Step<'_>,
     packages: &[Package],
@@ -2509,9 +2522,12 @@ fn read_manifest(
     let Step::Source {
         path,
         standing: Standing::Settled,
-        composed: Composed::Settled {
-            ref mut program, ..
-        },
+        composed:
+            Composed::Settled {
+                ref mut program,
+                ref report,
+                ..
+            },
         ..
     } = *step
     else {
@@ -2529,7 +2545,7 @@ fn read_manifest(
         .position(|package| package.library() == canonical)
         && let (Some(package), Some(slot)) = (packages.get(place), manifests.get_mut(place))
     {
-        *slot = Some(Manifest::of(program, package));
+        *slot = Some(Manifest::of(program, report, package));
     }
 }
 

@@ -168,6 +168,7 @@ mod stage;
 mod typed;
 mod walk;
 mod width;
+mod workspace;
 
 use std::path::PathBuf;
 
@@ -294,7 +295,7 @@ pub use crate::package::ManifestFault;
 pub use crate::package::Package;
 pub use crate::package::Reconciled;
 pub use crate::package::Unmanifested;
-pub use crate::package::Unpackaged;
+pub use crate::package::Unpathed;
 pub use crate::package::package_root;
 pub use crate::package::packaged;
 pub use crate::package::reconcile;
@@ -356,6 +357,10 @@ pub use crate::walk::Walk;
 pub use crate::walk::walk_step;
 pub use crate::width::Threads;
 pub use crate::width::Width;
+pub use crate::workspace::Unmembered;
+pub use crate::workspace::WORKSPACE;
+pub use crate::workspace::Workspace;
+pub use crate::workspace::workspace_root;
 
 /// One understood driver invocation, ready to route.
 #[derive(Debug, Clone, PartialEq, Eq)]

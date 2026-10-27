@@ -1,0 +1,14 @@
+// #2687: a workspace is the packages its `workspace.gandr` names, found
+// above them. It is not a package: it states what its members share as a
+// model of `Gandr.Workspace`, which each member's library imports, and names
+// its members, each a directory below it rooting a package. `gandr check`
+// here checks this source and every member, and writes each member's
+// `gandr.toml`.
+
+/// What the members share: the version each states.
+pub module Workspace : Model(Gandr.Workspace) {
+  def version = "0.1.0";
+}
+
+/// The workspace's packages, each a directory below it.
+pub def members : List(String) = ["hello", "tools"];
