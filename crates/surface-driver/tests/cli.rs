@@ -1327,20 +1327,100 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     );
 }
 
-/// #2687: the witness project's committed `gandr.toml` is the one its model
-/// renders: checking the package leaves it unchanged.
+/// #2687: a workspace's `check` with no path, at its root or in a directory
+/// of it in no package, checks its source and each member it names and writes
+/// each member's `gandr.toml` from that member's own model, though both
+/// libraries import the workspace and declare the same paths; a member
+/// rooting no package refuses the verb before any source is read.
+#[test]
+fn a_workspace_checks_each_member_it_names_2687()
+{
+    let scratch = Scratch::new(Path::new("workspace"));
+    let stated = |members: &str| {
+        format!(
+            "pub module Workspace : Model(Gandr.Workspace) {{\n  def version = \"0.2.0\";\n}}\n\
+             pub def members : List(String) = {members};\n"
+        )
+    };
+    let workspace = scratch.file(
+        Path::new("workspace.gandr"),
+        Text::from(stated("[\"hello\", \"tools\"]").as_str()),
+    );
+    for (library, name, up) in [
+        ("hello/src/lib.gandr", "hello", "../.."),
+        ("tools/lib.gandr", "tools", ".."),
+    ] {
+        let _library = scratch.file(
+            Path::new(library),
+            Text::from(
+                format!(
+                    "import \"{up}/workspace.gandr\";\npub module Package : \
+                     Model(Gandr.Package) {{\n  def name = \"{name}\";\n  def version = \
+                     Workspace.version;\n}}\n"
+                )
+                .as_str(),
+            ),
+        );
+    }
+    let _notes = scratch.file(
+        Path::new("docs/notes.gandr"),
+        Text::from("def note = 1 ;\n"),
+    );
+    let within = |directory: &str| {
+        let mut command = gandr(&["check"]);
+        command.current_dir(scratch.0.join(directory));
+        ran(command)
+    };
+    for directory in [".", "docs"] {
+        for member in ["hello", "tools"] {
+            let _removed = std::fs::remove_file(scratch.0.join(member).join("gandr.toml"));
+        }
+        let checked = within(directory);
+        assert_eq!(code(&checked), Code(0_i32), "{}", stderr(&checked));
+        assert!(
+            stdout(&checked).contains("sources: 3 read"),
+            "`{directory}` checks the workspace and both members: {}",
+            stdout(&checked)
+        );
+        for (member, name) in [("hello", "hello"), ("tools", "tools")] {
+            let manifest = std::fs::read_to_string(scratch.0.join(member).join("gandr.toml"))
+                .expect("each member's manifest is written");
+            assert!(
+                manifest.contains(&format!("name = \"{name}\"\nversion = \"0.2.0\"\n")),
+                "`{member}`'s manifest states its own model from `{directory}`: {manifest}"
+            );
+        }
+    }
+    std::fs::write(&workspace, stated("[\"hello\", \"docs\"]")).expect("a member is misnamed");
+    let refused = within(".");
+    assert_eq!(code(&refused), Code(2_i32), "{}", stdout(&refused));
+    assert!(refused.stdout.is_empty(), "nothing is read");
+    assert!(
+        stderr(&refused).contains("the member `docs` of `workspace.gandr` roots no package"),
+        "{}",
+        stderr(&refused)
+    );
+}
+
+/// #2687: the witness workspace's committed `gandr.toml` files are the ones
+/// its members' models render: checking the workspace leaves each unchanged.
 #[test]
 fn the_witness_project_s_manifest_is_its_model_s_2687()
 {
-    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/projects/hello");
-    let output = ran(gandr(&[Path::new("check"), &project]));
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/projects");
+    let output = ran(gandr(&[Path::new("check"), &workspace]));
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    let printed = stdout(&output);
+    let reconciled: Vec<&str> = printed
+        .lines()
+        .filter(|line| line.starts_with("manifest: "))
+        .collect();
+    assert_eq!(reconciled.len(), 2, "{printed}");
     assert!(
-        stdout(&output)
-            .lines()
-            .any(|line| line.starts_with("manifest: ") && line.ends_with("gandr.toml: unchanged")),
-        "{}",
-        stdout(&output)
+        reconciled
+            .iter()
+            .all(|line| line.ends_with("gandr.toml: unchanged")),
+        "{printed}"
     );
 }
 

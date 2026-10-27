@@ -1,6 +1,6 @@
 /// `project-manifest`: A package, its root and its manifest.
-/// Implemented: a package is the sources beside its `lib.gandr`, found from any path in it, and `gandr check` writes `gandr.toml` at its root from the library's `Package` model and the modules its sources make, refusing a hand edit as drift; `import text.greet ;` names a module by its path and binds it qualified, and `import text.greet (greeting) ;` binds the names it lists by their own names as well.
-/// Not implemented: a type read through a path of three names or more without an alias, and `workspace.gandr`; #2687 owes them.
+/// Implemented: a package is the sources beside its `lib.gandr`, found from any path in it, and `gandr check` writes `gandr.toml` at its root from the library's `Package` model and the modules its sources make, refusing a hand edit as drift; `import text.greet ;` names a module by its path and binds it qualified, and `import text.greet (greeting) ;` binds the names it lists by their own names as well; a `workspace.gandr` names its member packages and states what they share as a model of `Gandr.Workspace`, and `gandr check` in it checks every member.
+/// Not implemented: a type read through a module path of three names or more without an alias; #2874 owes it.
 
 /// The model a library declares: what `gandr check` records in `gandr.toml`.
 pub module Package : Model(Gandr.Package) {

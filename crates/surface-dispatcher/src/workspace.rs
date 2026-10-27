@@ -1,0 +1,397 @@
+//! A workspace: the packages a `workspace.gandr` gathers, found above them.
+//!
+//! # A workspace names its members
+//!
+//! [`Workspace::discover`] walks up from a path to the first directory that
+//! holds `workspace.gandr`, as Cargo walks up to the `Cargo.toml` holding
+//! `[workspace]`. The workspace is not a package: its source declares no
+//! library, and the checker writes no manifest for it. It states what its
+//! members share as a model of `Gandr.Workspace`, which each member's
+//! `lib.gandr` imports and reads, and it names its members by a free-standing
+//! `pub def members : List(String)`, each a directory below the workspace
+//! that roots a package.
+//!
+//! [`Workspace::members`] reads that list by checking the workspace's source
+//! alone and running `members`, so the list is gandr and never a second
+//! manifest language. A verb given no path in a workspace but in none of its
+//! packages, or given the workspace's directory, works on every member.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a package's
+//!   metadata is written in gandr rather than in a manifest language, and a
+//!   workspace's members are named the same way.
+
+use std::path::Path;
+use std::path::PathBuf;
+
+use anodized::spec;
+use gandr_surface_corpus::CorpusRoot;
+use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::decode_escapes;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use crate::compose::Composed;
+use crate::compose::LoweringCount;
+use crate::compose::compose;
+use crate::evaluate::declaration_name;
+use crate::package::Package;
+use crate::package::package_root;
+
+/// The file name of a workspace's source, at the workspace's root.
+pub const WORKSPACE: &str = "workspace.gandr";
+
+/// The declaration of a workspace's source that names its members.
+const MEMBERS: &str = "members";
+
+/// A workspace: the directory holding its source.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Workspace
+{
+    /// The directory holding [`WORKSPACE`].
+    root: PathBuf,
+}
+
+impl Workspace
+{
+    /// The workspace `from` sits in, found by walking up from it to the first
+    /// directory holding a workspace source.
+    ///
+    /// # Specification
+    /// - requires: nothing; a relative path is read against the working
+    ///   directory.
+    /// - ensures: the first directory from `from` up — `from` itself when it is
+    ///   a directory, else the directory holding it — that holds [`WORKSPACE`]
+    ///   as a file, canonical; `Unworkspaced` when no directory up to the
+    ///   filesystem's root holds one, or `from` cannot be canonicalized.
+    /// - provides: the workspace search a verb in no package reads.
+    /// - fails: a path in no workspace is the typed absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the workspace's directory, a member's leaf and a
+    ///   directory below it in no package each find the workspace, and a
+    ///   directory with no workspace above it finds none.
+    /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref workspace) => workspace.root.join(WORKSPACE).is_file(),
+        Maybe::Absent(workspace_root::Absent::Unworkspaced) => true,
+    })]
+    #[inline]
+    pub fn discover(from: &Path) -> Maybe<Self, workspace_root::Absent>
+    {
+        let unworkspaced = Maybe::Absent(workspace_root::Absent::Unworkspaced);
+        let Ok(canonical) = from.canonicalize()
+        else {
+            return unworkspaced;
+        };
+        let start = if canonical.is_dir() {
+            canonical.as_path()
+        }
+        else {
+            match canonical.parent() {
+                Some(parent) => parent,
+                None => return unworkspaced,
+            }
+        };
+        start
+            .ancestors()
+            .find(|directory| directory.join(WORKSPACE).is_file())
+            .map_or(unworkspaced, |root| {
+                Maybe::Present(Self {
+                    root: root.to_path_buf(),
+                })
+            })
+    }
+
+    /// The directory holding the workspace's source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn root(&self) -> &Path
+    {
+        &self.root
+    }
+
+    /// The workspace's source, [`WORKSPACE`] at its root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn source(&self) -> PathBuf
+    {
+        self.root.join(WORKSPACE)
+    }
+
+    /// The packages the workspace names, in the order its `members` lists
+    /// them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the workspace's source read, checked alone and its `members`
+    ///   run; each string of the list a directory below the root, and the
+    ///   package [`Package::discover`] finds from it, which must be rooted at
+    ///   that directory.
+    /// - provides: the packages a verb works on in the workspace.
+    /// - fails: [`Unmembered::Unread`] for a source that cannot be read,
+    ///   [`Unmembered::Refused`] for one that does not compose or is refused as
+    ///   a whole, [`Unmembered::Undeclared`] for one declaring no `members`,
+    ///   [`Unmembered::Unlisted`] for `members` running to no list of strings,
+    ///   and [`Unmembered::Unpackaged`] for a member rooting no package.
+    /// - panics: none.
+    /// - executable: none — `members` is run on the program's machine, which a
+    ///   predicate could only check by running it again; the witness observes
+    ///   each outcome.
+    ///
+    /// # Errors
+    /// The first of the faults above that the workspace meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a workspace naming two members reads both in order;
+    ///   one naming a directory with no library, and one whose `members` is a
+    ///   string, are refused with what they state.
+    /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
+    #[inline]
+    pub fn members(&self) -> Result<Vec<Package>, Unmembered>
+    {
+        let source = self.source();
+        let text = std::fs::read_to_string(&source).map_err(|error| Unmembered::Unread {
+            message: error.to_string(),
+        })?;
+        let grammar = built_in().map_err(|error| Unmembered::Refused {
+            why: error.to_string(),
+        })?;
+        let mut lowerings = LoweringCount::default();
+        let composed = compose(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(text.as_str()),
+            &mut lowerings,
+        )
+        .map_err(|fault| Unmembered::Refused {
+            why: fault.to_string(),
+        })?;
+        let mut program = match composed {
+            Composed::Settled { program, .. } => program,
+            Composed::Refused(refusal) => {
+                return Err(Unmembered::Refused {
+                    why: refusal.to_string(),
+                });
+            },
+        };
+        let constant = match program.named(SurfaceName::from(MEMBERS)) {
+            Maybe::Present(constant) => constant,
+            Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                return Err(Unmembered::Undeclared);
+            },
+        };
+        let came = program.evaluate(constant).to_string();
+        let Some(named) = Spelling(&came).listed()
+        else {
+            return Err(Unmembered::Unlisted { came });
+        };
+        named
+            .into_iter()
+            .map(|member| {
+                let directory = self.root.join(&member);
+                let rooted = directory.canonicalize().ok();
+                match Package::discover(&directory) {
+                    Maybe::Present(package) if rooted.as_deref() == Some(package.root()) => {
+                        Ok(package)
+                    },
+                    Maybe::Present(_) | Maybe::Absent(package_root::Absent::Unpackaged) => {
+                        Err(Unmembered::Unpackaged { member })
+                    },
+                }
+            })
+            .collect()
+    }
+}
+
+/// A run's value as the machine spells it, read from its start.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Spelling<'text>(&'text str);
+
+impl Spelling<'_>
+{
+    /// The strings the spelling lists: `cons("a", cons("b", nil))` is `a`
+    /// then `b`, each decoded as a string literal is; none for any other
+    /// spelling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the strings of a spelling `cons(s₁, cons(s₂, … nil))`, each
+    ///   `sᵢ` a quoted string read up to its unescaped closing quote and
+    ///   decoded, in order; none when anything else stands anywhere in it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of the spelling, which a
+    ///   clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two members, none, and a string standing alone each
+    ///   read as listed or not.
+    /// - witness: `workspace::tests::a_run_s_spelling_lists_its_strings_2687`
+    #[inline]
+    fn listed(self) -> Option<Vec<String>>
+    {
+        let mut rest = self.0;
+        let mut strings = Vec::new();
+        while let Some(after) = rest.strip_prefix("cons(") {
+            let (string, Self(after)) = Self(after).quoted()?;
+            strings.push(string);
+            rest = after.strip_prefix(", ")?;
+        }
+        let closers = rest.strip_prefix("nil")?;
+        (closers.len() == strings.len() && closers.bytes().all(|byte| byte == b')'))
+            .then_some(strings)
+    }
+
+    /// The string literal the spelling opens with, decoded, and what follows
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn quoted(self) -> Option<(String, Self)>
+    {
+        let content = self.0.strip_prefix('"')?;
+        let mut escaped = false;
+        for (at, character) in content.char_indices() {
+            match character {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => {
+                    let written = content.get(.. at)?;
+                    let after = content.get(at.saturating_add(1) ..)?;
+                    return Some((decode_escapes(SourceFragment::from(written)), Self(after)));
+                },
+                _ => {},
+            }
+        }
+        None
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a path stands in no workspace.
+    pub mod workspace_root {
+        /// No directory from the path up holds a workspace source.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `workspace.gandr` stands in any directory from the path up.
+            Unworkspaced,
+        }
+    }
+}
+
+/// Why a workspace names no packages.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unmembered
+{
+    /// The workspace's source cannot be read.
+    Unread
+    {
+        /// What reading it met.
+        message: String,
+    },
+    /// The workspace's source does not compose, or is refused as a whole.
+    Refused
+    {
+        /// Why, spelled.
+        why: String,
+    },
+    /// The workspace's source declares no `members`.
+    Undeclared,
+    /// `members` runs to no list of strings.
+    Unlisted
+    {
+        /// What its run came to, spelled.
+        came: String,
+    },
+    /// A member's directory roots no package.
+    Unpackaged
+    {
+        /// The member, as `members` lists it.
+        member: String,
+    },
+}
+
+impl core::fmt::Display for Unmembered
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Unread { ref message } => write!(f, "`{WORKSPACE}` cannot be read: {message}"),
+            Self::Refused { ref why } => {
+                write!(f, "`{WORKSPACE}` is refused as a whole: {why}")
+            },
+            Self::Undeclared => write!(
+                f,
+                "`{WORKSPACE}` declares no `{MEMBERS}`: declare `pub def {MEMBERS} : \
+                 List(String)` naming its packages"
+            ),
+            Self::Unlisted { ref came } => write!(
+                f,
+                "`{MEMBERS}` of `{WORKSPACE}` runs to `{came}`, not to a list of strings"
+            ),
+            Self::Unpackaged { ref member } => write!(
+                f,
+                "the member `{member}` of `{WORKSPACE}` roots no package: no `lib.gandr` stands \
+                 in it or in its `src` directory"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for Unmembered
+{
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::Spelling;
+
+    #[test]
+    fn a_run_s_spelling_lists_its_strings_2687()
+    {
+        assert_eq!(
+            Spelling("cons(\"hello\", cons(\"tools\", nil))").listed(),
+            Some(Vec::from([String::from("hello"), String::from("tools")])),
+            "two members read in order"
+        );
+        assert_eq!(
+            Spelling("nil").listed(),
+            Some(Vec::new()),
+            "no member reads as none"
+        );
+        assert_eq!(
+            Spelling("cons(\"a \\\"b\\\"\", nil)").listed(),
+            Some(Vec::from([String::from("a \"b\"")])),
+            "a member's escapes are decoded"
+        );
+        for other in [
+            "\"hello\"",
+            "cons(\"a\", nil",
+            "cons(\"a\", nil))",
+            "cons(1, nil)",
+        ] {
+            assert_eq!(Spelling(other).listed(), None, "`{other}` lists no strings");
+        }
+    }
+}

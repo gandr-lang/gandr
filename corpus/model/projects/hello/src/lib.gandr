@@ -1,12 +1,15 @@
 // #2687: a package is the sources beside its library, `src/lib.gandr`,
 // rooted at the directory above `src`. The library declares the package's
-// model, and `gandr check` writes `gandr.toml` at the root from it.
+// model, and `gandr check` writes `gandr.toml` at the root from it; its
+// version is the one the workspace above it states.
 import text.greet (greeting);
+// The workspace above the package, whose model states its version.
+import "../../workspace.gandr";
 
 /// The package: its name and its version, as `gandr.toml` records them.
 pub module Package : Model(Gandr.Package) {
   def name = "hello";
-  def version = "0.1.0";
+  def version = Workspace.version;
 }
 
 /// The greeting, read from the module `text.greet` by its path.

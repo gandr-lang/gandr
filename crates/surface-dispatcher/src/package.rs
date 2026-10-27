@@ -38,6 +38,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::decode_escapes;
 use gandr_surface_syntax::SourceFragment;
@@ -46,6 +48,10 @@ use quenchant_shape::shape::Maybe;
 use crate::evaluate::Evaluation;
 use crate::evaluate::Program;
 use crate::evaluate::declaration_name;
+use crate::workspace::Unmembered;
+use crate::workspace::WORKSPACE;
+use crate::workspace::Workspace;
+use crate::workspace::workspace_root;
 
 /// The file name of a package's library, the source that declares the
 /// package's model.
@@ -203,85 +209,120 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The paths a verb walks, each path given inside a package widened to the
-/// whole package, and the packages they reach; with no path given, the
-/// package `working` sits in.
+/// The paths a verb walks and the packages they reach, each path inside a
+/// package or naming a workspace widened to what it stands for.
 ///
 /// # Specification
 /// - requires: `working` is the process's working directory, against which a
 ///   relative path given is read, or every path given is absolute.
 /// - ensures: with no path, the package [`Package::discover`] finds from
-///   `working`, its [`Package::sources`] the one path walked, or [`Unpackaged`]
-///   naming `working` canonically when it finds none. Otherwise each path in
-///   order: one in a package is replaced by the package's sources, and also
-///   kept when it lies outside them, under the package's root; one in no
-///   package is kept as given. A package's sources are listed once, at the
-///   first path in it, and each package once, in that order. Sources below
-///   `working` are listed relative to it, `.` for `working` itself, as a path a
-///   caller gives would be.
+///   `working`, its [`Package::sources`] the one path walked; when it finds
+///   none, the workspace [`Workspace::discover`] finds from `working`: its
+///   [`Workspace::source`], then each member's sources in the order
+///   [`Workspace::members`] reads them; and [`Unpathed::Nowhere`] naming
+///   `working` canonically when neither stands. Otherwise each path in order:
+///   one in a package is replaced by the package's sources, and also kept when
+///   it lies outside them, under the package's root; a workspace's directory,
+///   in no package, is replaced by the workspace's source and its members'
+///   sources; any other path in no package is kept as given. A package's
+///   sources are listed once, at the first path reaching it, and each package
+///   once, in that order. Paths below `working` are listed relative to it, `.`
+///   for `working` itself, as a path a caller gives would be.
 /// - provides: the paths `check`, `test` and `fmt` walk, and the packages whose
 ///   manifests `check` reconciles.
-/// - fails: [`Unpackaged`] when no path is given and `working` is in no
-///   package.
+/// - fails: [`Unpathed::Nowhere`] when no path is given and `working` is in no
+///   package and no workspace; [`Unpathed::Unmembered`] when a workspace the
+///   verb works on names no packages.
 /// - panics: none.
 ///
 /// # Errors
-/// [`Unpackaged`] when no path is given and `working` is in no package.
+/// [`Unpathed`], as above.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — no path in a package, no path outside one, a leaf of a
 ///   package beside a path in no package, two leaves of one package, and a
 ///   source under the root outside the sources directory each walk their exact
-///   paths and packages.
+///   paths and packages; no path in a workspace and its directory given each
+///   walk its members.
 /// - witness: `tests::package::a_path_in_a_package_walks_the_whole_package_2687`
+/// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
 #[spec(
     captures: [given = paths.len()],
     ensures: |ret| match ret {
         Ok((ref walked, ref packages)) => packages.iter().all(|package|
                 walked.iter().any(|path| working.join(path).canonicalize()
-                    .is_ok_and(|canonical| canonical == package.sources())))
-            && (given != 0 || packages.len() == 1),
-        Err(Unpackaged { .. }) => given == 0,
+                    .is_ok_and(|canonical| canonical == package.sources()))),
+        Err(Unpathed::Nowhere { .. }) => given == 0,
+        Err(Unpathed::Unmembered { .. }) => true,
     },
 )]
 #[inline]
 pub fn packaged(
     paths: Vec<PathBuf>,
     working: &Path,
-) -> Result<(Vec<PathBuf>, Vec<Package>), Unpackaged>
+) -> Result<(Vec<PathBuf>, Vec<Package>), Unpathed>
 {
     let base = working
         .canonicalize()
         .unwrap_or_else(|_| working.to_path_buf());
-    // A package's sources as the walk prints them: below the working
-    // directory when they are, as the paths a caller gives would be.
-    let shown = |package: &Package| match package.sources().strip_prefix(&base) {
+    // A path as the walk prints it: below the working directory when it is,
+    // as the paths a caller gives would be.
+    let shown = |path: &Path| match path.strip_prefix(&base) {
         Ok(below) if below.as_os_str().is_empty() => PathBuf::from("."),
         Ok(below) => below.to_path_buf(),
-        Err(_) => package.sources().to_path_buf(),
+        Err(_) => path.to_path_buf(),
     };
-    if paths.is_empty() {
-        return match Package::discover(working) {
-            Maybe::Present(package) => Ok((Vec::from([shown(&package)]), Vec::from([package]))),
-            Maybe::Absent(package_root::Absent::Unpackaged) => Err(Unpackaged { working: base }),
-        };
-    }
+    let members = |workspace: &Workspace| {
+        workspace.members().map_err(|why| Unpathed::Unmembered {
+            workspace: workspace.source(),
+            why,
+        })
+    };
     let mut walked: Vec<PathBuf> = Vec::new();
     let mut packages: Vec<Package> = Vec::new();
     let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut reach = |package: Package, walked: &mut Vec<PathBuf>| {
+        if seen.insert(package.library.clone()) {
+            walked.push(shown(package.sources()));
+            packages.push(package);
+        }
+    };
+    if paths.is_empty() {
+        if let Maybe::Present(package) = Package::discover(working) {
+            reach(package, &mut walked);
+        }
+        else if let Maybe::Present(workspace) = Workspace::discover(working) {
+            walked.push(shown(&workspace.source()));
+            for package in members(&workspace)? {
+                reach(package, &mut walked);
+            }
+        }
+        else {
+            return Err(Unpathed::Nowhere { working: base });
+        }
+        return Ok((walked, packages));
+    }
     for path in paths {
         let Maybe::Present(package) = Package::discover(&path)
         else {
-            walked.push(path);
+            let canonical = path.canonicalize().ok();
+            match Workspace::discover(&path) {
+                Maybe::Present(workspace) if canonical.as_deref() == Some(workspace.root()) => {
+                    walked.push(shown(&workspace.source()));
+                    for package in members(&workspace)? {
+                        reach(package, &mut walked);
+                    }
+                },
+                Maybe::Present(_) | Maybe::Absent(workspace_root::Absent::Unworkspaced) => {
+                    walked.push(path);
+                },
+            }
             continue;
         };
         let inside = path
             .canonicalize()
             .is_ok_and(|canonical| canonical.starts_with(package.sources()));
-        if seen.insert(package.library.clone()) {
-            walked.push(shown(&package));
-            packages.push(package);
-        }
+        reach(package, &mut walked);
         if !inside {
             walked.push(path);
         }
@@ -289,16 +330,28 @@ pub fn packaged(
     Ok((walked, packages))
 }
 
-/// A verb run with no path from a directory in no package.
-#[repr(transparent)]
+/// Why a verb has no paths to walk.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Unpackaged
+pub enum Unpathed
 {
-    /// The directory the search started from.
-    pub working: PathBuf,
+    /// No path was given, and the working directory stands in no package and
+    /// no workspace.
+    Nowhere
+    {
+        /// The directory the search started from.
+        working: PathBuf,
+    },
+    /// A workspace the verb works on names no packages.
+    Unmembered
+    {
+        /// The workspace's source.
+        workspace: PathBuf,
+        /// Why it names none.
+        why: Unmembered,
+    },
 }
 
-impl core::fmt::Display for Unpackaged
+impl core::fmt::Display for Unpathed
 {
     /// # Specification
     /// trivial.
@@ -308,16 +361,24 @@ impl core::fmt::Display for Unpackaged
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        write!(
-            f,
-            "no path given, and no `{LIBRARY}` stands in `{}` or a directory above it, or in a \
-             `{SOURCES}` directory of one",
-            self.working.display()
-        )
+        match *self {
+            Self::Nowhere { ref working } => write!(
+                f,
+                "no path given, and no `{LIBRARY}` stands in `{}` or a directory above it, or in \
+                 a `{SOURCES}` directory of one, and no `{WORKSPACE}` above it",
+                working.display()
+            ),
+            Self::Unmembered {
+                ref workspace,
+                ref why,
+            } => {
+                write!(f, "{}: {why}", workspace.display())
+            },
+        }
     }
 }
 
-impl core::error::Error for Unpackaged
+impl core::error::Error for Unpathed
 {
 }
 
@@ -340,13 +401,14 @@ impl Manifest
     /// `version`, each run to its string; and the modules of `package`.
     ///
     /// # Specification
-    /// - requires: `program` is the program of the package's library.
-    /// - ensures: each field read by its path, `Package.name` then
-    ///   `Package.version`, run once, and its string decoded from the value's
-    ///   spelling; the first field the program declares no such path for is
-    ///   [`Unmanifested::Undeclared`], and the first whose run is no string
-    ///   [`Unmanifested::Unstrung`] with what it came to. The modules are
-    ///   [`modules`] of `package`'s sources.
+    /// - requires: `program` is the program of the package's library, and `own`
+    ///   the report of the library's own declarations.
+    /// - ensures: each field read by its path among the declarations `own`
+    ///   reports, `Package.name` then `Package.version`, run once, and its
+    ///   string decoded from the value's spelling; the first field none of them
+    ///   declares is [`Unmanifested::Undeclared`], and the first whose run is
+    ///   no string [`Unmanifested::Unstrung`] with what it came to. The modules
+    ///   are [`modules`] of `package`'s sources.
     /// - provides: the manifest `gandr check` writes.
     /// - fails: a field undeclared, or run to no string.
     /// - panics: none.
@@ -365,12 +427,16 @@ impl Manifest
     #[inline]
     pub fn of(
         program: &mut Program<'_>,
+        own: &SettleReport<'_>,
         package: &Package,
     ) -> Result<Self, Unmanifested>
     {
         let mut field = |field: Field| {
             let path = field.path();
-            let constant = match program.named(path) {
+            let constant = match program.named_among(
+                path,
+                own.declarations().iter().map(DeclarationReport::constant),
+            ) {
                 Maybe::Present(constant) => constant,
                 Maybe::Absent(declaration_name::Absent::Undeclared) => {
                     return Err(Unmanifested::Undeclared(field));
@@ -416,8 +482,9 @@ impl Manifest
     ///   digest of the body in lowercase hexadecimal, then the body: a
     ///   `[package]` table with `name` and `version` as TOML basic strings,
     ///   each `"`, `\` and control character escaped, and `modules` an array of
-    ///   the modules' paths, one per line, in order. The same manifest renders
-    ///   the same bytes.
+    ///   the modules' paths, one per line, in order, or `[]` when there are
+    ///   none, as the tree's TOML formatter writes it. The same manifest
+    ///   renders the same bytes.
     /// - provides: the file [`reconcile`] writes.
     /// - fails: never.
     /// - panics: none.
@@ -433,7 +500,7 @@ impl Manifest
     pub fn render(&self) -> String
     {
         let body = format!(
-            "\n[package]\nname = {}\nversion = {}\nmodules = [\n{}]\n",
+            "\n[package]\nname = {}\nversion = {}\nmodules = {}\n",
             Basic(&self.name),
             Basic(&self.version),
             Listed(&self.modules)
@@ -816,8 +883,9 @@ impl core::fmt::Display for Basic<'_>
     }
 }
 
-/// Module paths written as the lines of a TOML array, each a basic string
-/// indented two spaces and followed by a comma.
+/// Module paths written as a TOML array: `[]` when there are none, else
+/// one line per path, each a basic string indented two spaces and followed
+/// by a comma, between `[` and `]` on lines of their own.
 #[repr(transparent)]
 struct Listed<'modules>(&'modules BTreeSet<String>);
 
@@ -830,9 +898,13 @@ impl core::fmt::Display for Listed<'_>
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
+        if self.0.is_empty() {
+            return f.write_str("[]");
+        }
+        f.write_str("[\n")?;
         for module in self.0 {
             writeln!(f, "  {},", Basic(module))?;
         }
-        Ok(())
+        f.write_char(']')
     }
 }

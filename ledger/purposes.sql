@@ -2010,8 +2010,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::ManifestFault','enum',
 INSERT INTO purpose VALUES('surface-dispatcher','package::Package','struct','A package: its library and the root its manifest is written at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Reconciled','enum','What reconciling a manifest did to it: written, rewritten or left unchanged.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unmanifested','enum','Why a library''s model gives no manifest: a field it does not declare, or one that runs to no string.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::Unpackaged','struct','A verb run with no path from a directory in no package.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package, and the packages they reach.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Unpathed','enum','Why a verb has no paths to walk: no path given in no package and no workspace, or a workspace naming no packages.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package and a workspace''s directory to its members, and the packages they reach.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a package''s manifest to what its model states, refusing one edited by hand.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The driver''s worker threads: one pool at one width, started on the first fork that has two items or more and reused by every later fork.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::PoolFault','struct','Why the driver''s pool could not start.','fork','fits','sound',NULL);
@@ -2064,6 +2064,9 @@ INSERT INTO purpose VALUES('surface-dispatcher','walk::Traversal','struct','Wher
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Walk','struct','A walk over the paths a verb was given, visiting its sources in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','width::Threads','struct','A number of threads, at least one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','width::Width','enum','How many threads a walk lowers its sources on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','workspace::Unmembered','enum','Why a workspace names no packages: its source unread or refused, its `members` undeclared or no list of strings, or a member rooting no package.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE','constant','The file name of a workspace''s source, at the workspace''s root.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','workspace::Workspace','struct','A workspace: the directory holding `workspace.gandr`, whose `members` names its packages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Beside','enum','What a source''s rewrites are checked beside: the source alone, or the sources its imports reach, laid out before it as one unit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Change','enum','What formatting would have changed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Form','enum','The spelling a source is laid out in.',NULL,'fits','sound',NULL);

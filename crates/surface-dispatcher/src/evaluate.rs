@@ -1151,6 +1151,54 @@ impl<'source> Program<'source>
             )
     }
 
+    /// The declaration among `among` whose path from the top level is
+    /// `path`: the last of them when several are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the highest admission position of `among` that holds a
+    ///   declaration and whose path is `path`, as [`Self::named`] reads one;
+    ///   `Undeclared` when none of them is.
+    /// - provides: the reading of a package's manifest fields among its
+    ///   library's own declarations, when its program holds another library
+    ///   declaring the same paths.
+    /// - fails: an absent path is the typed absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member's path is found among declarations holding
+    ///   it and not among ones that do not; a path among none is undeclared.
+    /// - witness: `evaluate::tests::a_path_is_named_among_the_declarations_given_2687`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(constant) => self.declarations.contains_key(&constant)
+            && self.names.get(usize::from(constant)).is_some_and(|name| name == path.as_ref()),
+        Maybe::Absent(declaration_name::Absent::Undeclared) => true,
+    })]
+    #[inline]
+    pub fn named_among<Among>(
+        &self,
+        path: SurfaceName<'_>,
+        among: Among,
+    ) -> Maybe<ConstantIndex, declaration_name::Absent>
+    where
+        Among: IntoIterator<Item = ConstantIndex>,
+    {
+        among
+            .into_iter()
+            .filter(|&constant| {
+                self.declarations.contains_key(&constant)
+                    && self
+                        .names
+                        .get(usize::from(constant))
+                        .is_some_and(|name| name == path.as_ref())
+            })
+            .max()
+            .map_or(
+                Maybe::Absent(declaration_name::Absent::Undeclared),
+                Maybe::Present,
+            )
+    }
+
     /// Each declaration whose accepted body did not focus, with the focusing's
     /// refusal, in admission order.
     ///
@@ -3258,6 +3306,47 @@ def bad : Integer ; def bad = "text" ;"#,
                 None,
             ],
             "each member by its path, the top-level name by its own"
+        );
+    }
+
+    /// #2687: a path is read among the declarations given and never outside
+    /// them, as a walk's library reads its own model when its program also
+    /// holds another library's; a path none of them holds is undeclared.
+    #[test]
+    fn a_path_is_named_among_the_declarations_given_2687()
+    {
+        let mut package = program(
+            r#"module Package { def name = "hello" ; } def name = "outer" ; def version = "0.1.0" ;"#,
+        );
+        let at = |package: &Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
+            Maybe::Present(constant) => constant,
+            Maybe::Absent(super::declaration_name::Absent::Undeclared) => {
+                panic!("`{path}` is declared")
+            },
+        };
+        let member = at(&package, "Package.name");
+        let outer = at(&package, "name");
+        let version = at(&package, "version");
+        let spelled = |package: &mut Program<'_>, path: &str, among: &[ConstantIndex]| match package
+            .named_among(SurfaceName::from(path), among.iter().copied())
+        {
+            Maybe::Present(constant) => Some(package.evaluate(constant).to_string()),
+            Maybe::Absent(super::declaration_name::Absent::Undeclared) => None,
+        };
+        assert_eq!(
+            [
+                spelled(&mut package, "Package.name", &[outer, member, version]),
+                spelled(&mut package, "Package.name", &[outer, version]),
+                spelled(&mut package, "name", &[member, outer]),
+                spelled(&mut package, "version", &[]),
+            ],
+            [
+                Some(String::from("\"hello\"")),
+                None,
+                Some(String::from("\"outer\"")),
+                None,
+            ],
+            "each path among the declarations given, none outside them"
         );
     }
 
