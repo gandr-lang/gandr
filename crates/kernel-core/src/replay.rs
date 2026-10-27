@@ -6225,7 +6225,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // under a bind or a projection observing its result, the
                         // `>` direction. Conversion unfolds only a structural
                         // fixpoint, and only at a constructor; at a partial
-                        // fixpoint's gate it declines rather than refutes.
+                        // fixpoint's gate it declines rather than refutes. A
+                        // partial fixpoint whose body never reads its own binder
+                        // is a definition: unfolding it substitutes nothing and
+                        // cannot recur, so it unfolds at that gate (#2833).
                         Some(&Computation::Fixpoint { body, evidence }) => {
                             let position = match evidence {
                                 FixpointEvidence::Staged { position } => usize::from(position),
@@ -6309,7 +6312,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 (
                                     FixpointEvidence::Partial,
                                     Gate::Constructor | Gate::Canonical | Gate::Observed,
-                                ) => return Err(Stop::PartialFixpoint),
+                                ) => {
+                                    if Reaches::<Reads>::new()
+                                        .comp_reach(self.arena, body)
+                                        .innermost()
+                                        != BinderUse::Ignored
+                                    {
+                                        return Err(Stop::PartialFixpoint);
+                                    }
+                                    let recursive = self.arena.value_thunk(focus);
+                                    focus = self.instantiate(body, recursive);
+                                    progress = Progress::Reduced;
+                                },
                                 (
                                     FixpointEvidence::StructuralDescent
                                     | FixpointEvidence::Staged { .. },

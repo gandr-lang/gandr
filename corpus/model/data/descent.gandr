@@ -97,3 +97,18 @@ def sumsSkippingZero : () => List(Integer) = pairwise(
   Cons(1, Cons(0, Cons(2, Nil))),
   Cons(10, Cons(20, Nil))
 );
+
+/// A recursive definition that makes no recursive call: nothing to descend
+/// on, so it is a definition, and a type naming it unfolds at a constructor.
+def rec isZero(n : Nat) -> Type {
+  case n {
+    Zero => return Unit,
+    Succ(_m) => return Void
+  }
+}
+
+/// `isZero(Zero)` unfolds to `Unit` in the checker and the kernel alike
+/// (#2833).
+def atZero() -> (isZero(Zero)) => Unit {
+  return fn (e) { e }
+}
