@@ -6,6 +6,7 @@
   "red": 60,
   "conflicting": 10,
   "base_blocked": 10,
+  "unfiled": 10,
   "escalate": 10,
   "repage": 10,
   "interval": 300

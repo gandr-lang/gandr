@@ -1,0 +1,122 @@
+[
+  {
+    "name": "a `no` verdict files nothing",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "## Refactoring\n\nno\n",
+        "area": "workflow"
+      },
+      "issues": []
+    },
+    "output": "{\"act\":\"none\"}"
+  },
+  {
+    "name": "a body without `## Refactoring` files nothing",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n",
+        "area": "workflow"
+      },
+      "issues": []
+    },
+    "output": "{\"act\":\"none\"}"
+  },
+  {
+    "name": "a `yes` with rows opens one issue: the first row in the title, the table verbatim, its area and `status:unsectioned`",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\n| split | `crates/c/src/z.rs` | a module doing two things |\n\n## Sources read\n",
+        "area": "workflow"
+      },
+      "issues": []
+    },
+    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): duplicate — crates/a/src/x.rs, crates/b/src/y.rs\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"area:workflow\",\"status:unsectioned\"]}"
+  },
+  {
+    "name": "an issue already carrying the pull request's `from:` line is the filing, so a retry files nothing",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\n| split | `crates/c/src/z.rs` | a module doing two things |\n\n## Sources read\n",
+        "area": "workflow"
+      },
+      "issues": [
+        {
+          "number": 20,
+          "state": "CLOSED",
+          "body": "## Observation\n\nfrom: #11\n"
+        }
+      ]
+    },
+    "output": "{\"act\":\"filed\",\"issue\":20}"
+  },
+  {
+    "name": "a `maybe` whose `Where` an open refactor issue observes updates it with the new rows and one more `from:` line",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n\n## Refactoring\n\nmaybe\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\n| split | `crates/c/src/z.rs` | a module doing two things |\n\n## Sources read\n",
+        "area": "workflow"
+      },
+      "issues": [
+        {
+          "number": 21,
+          "state": "OPEN",
+          "body": "## Observation\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/b/src/y.rs` | seen before |\n\nfrom: #7\n"
+        }
+      ]
+    },
+    "output": "{\"act\":\"update\",\"issue\":21,\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/b/src/y.rs` | seen before |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #7\\nfrom: #11\\n\"}"
+  },
+  {
+    "name": "a `maybe` whose `Where` only a closed issue observes opens a new issue",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n\n## Refactoring\n\nmaybe\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\n| split | `crates/c/src/z.rs` | a module doing two things |\n\n## Sources read\n",
+        "area": "workflow"
+      },
+      "issues": [
+        {
+          "number": 21,
+          "state": "CLOSED",
+          "body": "## Observation\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/b/src/y.rs` | seen before |\n\nfrom: #7\n"
+        }
+      ]
+    },
+    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): duplicate — crates/a/src/x.rs, crates/b/src/y.rs\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"area:workflow\",\"status:unsectioned\"]}"
+  },
+  {
+    "name": "a `yes` whose `Where` an open issue observes still opens its own issue: only a `maybe` joins one",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\n| split | `crates/c/src/z.rs` | a module doing two things |\n\n## Sources read\n",
+        "area": "workflow"
+      },
+      "issues": [
+        {
+          "number": 21,
+          "state": "OPEN",
+          "body": "## Observation\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/b/src/y.rs` | seen before |\n\nfrom: #7\n"
+        }
+      ]
+    },
+    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): duplicate — crates/a/src/x.rs, crates/b/src/y.rs\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"area:workflow\",\"status:unsectioned\"]}"
+  },
+  {
+    "name": "a pull request whose unit names no area is filed unplaced, without an `area:` label",
+    "input": {
+      "pr": {
+        "number": 11,
+        "body": "Closes #10\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\n| split | `crates/c/src/z.rs` | a module doing two things |\n\n## Sources read\n",
+        "area": null
+      },
+      "issues": []
+    },
+    "output": "{\"act\":\"open\",\"title\":\"refactor(unplaced): duplicate — crates/a/src/x.rs, crates/b/src/y.rs\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"status:unsectioned\"]}"
+  }
+]

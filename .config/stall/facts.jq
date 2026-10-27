@@ -1,8 +1,10 @@
 # The open pull requests as the stall detector reads them (#2785), from one
-# answer to `query.graphql`.
+# answer to `query.graphql`, and the latest merged ones' refactoring verdicts
+# beside the refactor issues filed for them (#2885).
 #
-# Input: the answer's `repository`.
-# Output: `{prs}`, one entry per open pull request:
+# Input: the answer's `repository`; `merged` and `refactors` absent read as
+# none.
+# Output: `{prs, merged, filed}`; `prs` one entry per open pull request:
 #   number, draft, head, base, oid  as GitHub names them;
 #   bot       an app (Dependabot) opened it: the triage lane closes it and
 #             makes its change by hand, so no stall kind reads it;
@@ -13,7 +15,13 @@
 #   checks    each check run and status on its head: `{name, verdict,
 #             conclusion, started, completed}`, the verdict `pass`, `fail` or
 #             `pending` read as `.config/pr-stack/required.jq` reads one, the
-#             conclusion GitHub's (a status's state).
+#             conclusion GitHub's (a status's state);
+# `merged` one entry per merged pull request read, `{number, head, merged,
+# verdict, rows}`: when it merged, in epoch seconds, its `## Refactoring`
+# verdict (`yes`, `maybe`, `no` or null) and how many rows its table names;
+# `filed` the pull requests a `kind:refactor` issue's `from:` line names.
+
+include "sections";
 
 def epoch: if . == null then null else fromdateiso8601 end;
 
@@ -43,4 +51,12 @@ def verdict:
     started: ((.startedAt // .createdAt) | epoch),
     completed: ((.completedAt // (if .__typename == "StatusContext" then .createdAt else null end)) | epoch)
   }]
-}]}
+}],
+ merged: [(.merged.nodes // [])[] | (.body // "" | refactoring) as $r | {
+   number,
+   head: .headRefName,
+   merged: (.mergedAt | epoch),
+   verdict: $r.verdict,
+   rows: ($r.rows // [] | length)
+ }],
+ filed: [(.refactors.nodes // [])[] | .body // "" | from_lines[]] | unique}

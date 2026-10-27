@@ -25,6 +25,13 @@
 #                  any more (merged, and the member not rebased), at the same
 #                  head, for `base_blocked` minutes since the detector first
 #                  saw it so (#2972): the member's own stall, though no root.
+#   verdict-unfiled
+#                  a merged pull request whose `## Refactoring` verdict is
+#                  `yes` or `maybe` with rows, and no `kind:refactor` issue
+#                  carries its `from:` line, `unfiled` minutes after it merged
+#                  (#2885): the seat's watch that files it died with its
+#                  session. Its fix is `mise run refactor:file <n>`; a merged
+#                  pull request is never stalled, only paged.
 # A pull request's lane is its branch's first word, `triage-2783-stack-prefix`
 # the triage lane's; `stall:watch` pages each new finding to its lane's seat
 # and to the coordinator at once (#2972). A lane outside `lanes`, when given,
@@ -45,11 +52,14 @@
 #   trunk       the default branch;
 #   required    the trunk's required contexts;
 #   thresholds  `{root_unqueued, ejections, ejection_window, depth, red,
-#               conflicting, base_blocked, escalate, repage}`, the minutes,
-#               counts and depth above;
+#               conflicting, base_blocked, unfiled, escalate, repage}`, the
+#               minutes, counts and depth above;
 #   lanes       the lanes a finding can be placed in; absent places every
 #               lane;
 #   prs         `facts.jq`'s pull requests;
+#   merged, filed
+#               `facts.jq`'s merged pull requests and the numbers refactor
+#               issues were filed from; absent reads as none;
 #   seen        when each `<number>:conflicting:<head>` and
 #               `<number>:base-blocked:<head>` was first read so, from the
 #               last reading; absent reads as none;
@@ -137,13 +147,19 @@
       | first(blocker) as $what
       | $seen_now["\(.number):base-blocked:\(.oid)"] as $since
       | select($in.now - $since >= $t.base_blocked * 60)
-      | finding("base-blocked"; $since; $what))
+      | finding("base-blocked"; $since; $what)),
+    (($in.merged // [])[]
+      | select(IN(.verdict; "yes", "maybe") and .rows > 0 and .merged != null)
+      | select(.number | IN(($in.filed // [])[]) | not)
+      | select($in.now - .merged >= $t.unfiled * 60)
+      | finding("verdict-unfiled"; .merged;
+          "merged with a `\(.verdict)` refactoring verdict and no `kind:refactor` issue carries `from: #\(.number)`; run `mise run refactor:file \(.number)`"))
   ]
 | sort_by(.number, .kind) as $findings
 | def key: "\(.number):\(.kind)";
   def escalated: $paged[key] as $p | $p != null and $in.now - $p.first >= $t.escalate * 60;
   [$findings[] | select(escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
-| [$findings[] | select(escalated and $stalled["\(.number)"] == null)] as $stalling
+| [$findings[] | select(.kind != "verdict-unfiled" and escalated and $stalled["\(.number)"] == null)] as $stalling
 | [$stalled | keys[] | tonumber as $n
     | ([$in.prs[] | select(.number == $n)] | first) as $pr
     | select($pr == null or $pr.queued or $pr.draft)

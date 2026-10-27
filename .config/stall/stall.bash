@@ -38,10 +38,10 @@ stall_reading() {
   required=$(gh api "repos/$repo/rules/branches/$trunk" \
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique') || return 1
   raw=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F query=@"$stall_dir/query.graphql") || return 1
-  jq -c '.data.repository' <<< "$raw" | jq -c -f "$stall_dir/facts.jq" \
+  jq -c '.data.repository' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \
       --argjson thresholds "$(stall_thresholds)" --argjson config "$(stall_configuration)" --argjson memory "$memory" \
-      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
+      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, merged: .merged, filed: .filed, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
     | jq -c -f "$stall_dir/detect.jq"
 }
 
