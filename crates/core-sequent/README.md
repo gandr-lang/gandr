@@ -8,6 +8,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -32,6 +33,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer. Folding preserves cell order and outer scope; each branch has its own return covariable, and the cell branch binds head then folded result. The command arena owns imported type annotations, includes them in rollback, and unfocusing closes their ambient variables rather than copying foreign ids.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures — no thunk, recursive thunk, copattern object, `μ` a negative cut binds by name, or fold cell branch names a covariable outside its own binders — and the free variables and covariables of a command read off the support minting stored at its root.
 - `NodeAddress`, `Suspension`, `Captures` and `CommandArena::captures`: the intuitionistic bindings a thunk, a fixpoint, a copattern object, a capture or a bind frame captures — exactly those its support selects, which a run moves into the store and readback pairs with an environment.
+- `ProducerNode::Closure`, `convert_step`, `convert`, `convert_all`, `beta` and `enter_all` with `ClosureRefusal`: abstract closures over an environment of values, converted one captured variable at a time and entered against a frame.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices.
 - `Definitions`, `Definition`, `Outcome` and `Stuck`: the constants a run unfolds by position, transparent or opaque, and how a run ended — halted with a value, or stuck at the command or value it names.
 - `read_back_terminal` and `read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks, recursive thunks and functions closed over their captured environments, a literal stack frame by frame, a record with its labels, a datatype's constructor at the unknown value type, a suspended capture refused with the core arena at its mark, and an environment that is not its command's support refused by name.
@@ -118,6 +120,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Paths and flows as their maps, transports and rides as the motive's action | [`identity`](src/identity.rs) |
 | Unfocusing | [`unfocus`](src/unfocus.rs) |
 | The typed-IL check | [`check`](src/check.rs) |
+| Abstract closures, their conversion and their β | [`closure`](src/closure.rs) |
 | Readback | [`readback`](src/readback.rs) |
 | The store a run's answer moves into | [`store`](src/store.rs) |
 | How a run ended | [`outcome`](src/outcome.rs) |
@@ -125,6 +128,12 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The differential against normalisation by evaluation, references | [`src/lib.rs`](src/lib.rs) |
 
 Running a command — marks, fixpoints, effects, delimited control and temporary access — is `gandr-runtime-emitter`'s, whose `src/lower.rs` states the linear form and `src/host.rs` the control.
+
+## References
+
+- `Sullivan-2023-reflections_closures` — lineage: Zachary J. Sullivan, "Reflections of Closures", PhD thesis, University of Oregon, 2023, ch. 4 — the abstract closure, its β and the one-variable conversion rule.
+- `Sullivan-2023-closure_conversion_little_pieces` — lineage: Sullivan, Downen and Ariola, "Closure Conversion in Little Pieces", PPDP 2023, `doi:10.1145/3610612.3610622` — conversion as equalities local to the IL.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 4) — abstract closures in the sequent IL.
 
 ## License
 

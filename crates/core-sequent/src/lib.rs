@@ -16,6 +16,10 @@
 //! - [`check_command`] is the typed-IL check: reference integrity, arity,
 //!   focus, polarity and second-class closures, answering a command's
 //!   [`FreeSet`].
+//! - [`convert_step`], [`convert`] and [`convert_all`] convert a closure to an
+//!   abstract closure, moving the context variables its code names into its
+//!   environment one at a time; [`beta`] and [`enter_all`] enter a closure cut
+//!   against a frame its code answers, refusing with [`ClosureRefusal`].
 //! - [`render_command`], [`render_producer`] and [`render_consumer`] write the
 //!   IL's notation.
 //! - [`Store`] holds what a run moves out of its regions: immutable
@@ -113,6 +117,7 @@ extern crate alloc;
 mod boundary;
 mod bridge;
 mod check;
+mod closure;
 mod definitions;
 mod focus;
 mod identity;
@@ -135,6 +140,12 @@ pub use crate::check::ArityHead;
 pub use crate::check::CheckRefusal;
 pub use crate::check::FreeSet;
 pub use crate::check::check_command;
+pub use crate::closure::ClosureRefusal;
+pub use crate::closure::beta;
+pub use crate::closure::convert;
+pub use crate::closure::convert_all;
+pub use crate::closure::convert_step;
+pub use crate::closure::enter_all;
 pub use crate::definitions::Definition;
 pub use crate::definitions::Definitions;
 pub use crate::focus::FocusOrigin;

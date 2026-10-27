@@ -1056,3 +1056,149 @@ fn a_closure_naming_an_outer_covariable_is_refused_2769()
         );
     }
 }
+
+/// Build `cocase {apply(x; α) ⇒ ⟨named |+ covariable⟩}`.
+///
+/// # Specification
+/// trivial.
+fn function(
+    arena: &mut CommandArena,
+    named: DeBruijnIndex,
+    covariable: CovariableIndex,
+) -> ProducerId
+{
+    let value = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: named,
+        })
+        .expect("a leaf mints");
+    let back = arena
+        .mint_consumer(ConsumerNode::Covariable(covariable))
+        .expect("a leaf mints");
+    let body = arena
+        .mint_cut(Polarity::Positive, value, back)
+        .expect("children resolve");
+    arena
+        .mint_producer(ProducerNode::Cocase {
+            arms: Box::from([CopatternArm {
+                destructor: DestructorTag::Apply,
+                body,
+            }]),
+        })
+        .expect("children resolve")
+}
+
+/// A closure's environment values bind over its code, the last innermost:
+/// a code naming the value is closed where the closure stands, and one
+/// naming past it names the context the closure stands in. The closure is
+/// cut at its code's polarity. A `μ` in its environment is no value, a code
+/// that is no closure former is refused by name, and a code naming its
+/// creator's covariable is refused at the closure.
+#[test]
+fn a_closure_holds_values_over_a_closure_former()
+{
+    let mut arena = CommandArena::new();
+    let own = CovariableIndex::from(0_u32);
+    let held = unit(&mut arena);
+    let enclosing = |arena: &mut CommandArena, code| {
+        let held = unit(arena);
+        arena
+            .mint_producer(ProducerNode::Closure {
+                environment: Box::from([held]),
+                code,
+            })
+            .expect("children resolve")
+    };
+
+    let names_the_value = function(&mut arena, DeBruijnIndex::from(1_u32), own);
+    let closure = enclosing(&mut arena, names_the_value);
+    let observer = top(&mut arena);
+    let root = arena
+        .mint_cut(Polarity::Negative, closure, observer)
+        .expect("children resolve");
+    assert_eq!(
+        Ok(FreeSet::default()),
+        check_command(&arena, root),
+        "x1 under the argument is the environment's value"
+    );
+
+    let names_past = function(&mut arena, DeBruijnIndex::from(2_u32), own);
+    let closure = enclosing(&mut arena, names_past);
+    let root = arena
+        .mint_cut(Polarity::Negative, closure, observer)
+        .expect("children resolve");
+    let free = check_command(&arena, root).expect("well formed");
+    assert!(
+        free.producers()
+            .contains(&(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))),
+        "x2 under the argument and the value is the context's x0"
+    );
+
+    let root = arena
+        .mint_cut(Polarity::Positive, closure, observer)
+        .expect("children resolve");
+    let refused = check_command(&arena, root);
+    assert!(
+        matches!(
+            refused,
+            Err(CheckRefusal::PolarityMismatch {
+                cut: Polarity::Positive,
+                observed: Polarity::Negative,
+                ..
+            })
+        ),
+        "a closure over a copattern object cut positively is refused: {refused:?}"
+    );
+
+    let inner_top = top(&mut arena);
+    let inner = arena
+        .mint_cut(Polarity::Positive, held, inner_top)
+        .expect("children resolve");
+    let capture = arena
+        .mint_producer(ProducerNode::Mu { body: inner })
+        .expect("the body resolves");
+    let code = function(&mut arena, DeBruijnIndex::from(0_u32), own);
+    let closure = arena
+        .mint_producer(ProducerNode::Closure {
+            environment: Box::from([capture]),
+            code,
+        })
+        .expect("children resolve");
+    let root = arena
+        .mint_cut(Polarity::Negative, closure, observer)
+        .expect("children resolve");
+    assert_eq!(
+        Err(CheckRefusal::NonValueArgument(capture)),
+        check_command(&arena, root),
+        "a capture in the environment is a non-value"
+    );
+
+    let closure = enclosing(&mut arena, held);
+    let root = arena
+        .mint_cut(Polarity::Positive, closure, observer)
+        .expect("children resolve");
+    assert_eq!(
+        Err(CheckRefusal::ClosureCode(closure)),
+        check_command(&arena, root),
+        "a constructor is no closure's code"
+    );
+
+    let escaping = function(
+        &mut arena,
+        DeBruijnIndex::from(0_u32),
+        CovariableIndex::from(1_u32),
+    );
+    let closure = enclosing(&mut arena, escaping);
+    let root = arena
+        .mint_cut(Polarity::Negative, closure, observer)
+        .expect("children resolve");
+    assert_eq!(
+        Err(CheckRefusal::OuterCovariable {
+            closure: NodeAddress::Producer(closure),
+            covariable: own,
+        }),
+        check_command(&arena, root),
+        "a closure whose code names its creator's α0 is refused"
+    );
+}

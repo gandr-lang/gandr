@@ -23,6 +23,7 @@ use gandr_core_nbe::ReadbackMode;
 use gandr_core_nbe::eval_computation;
 use gandr_core_nbe::readback_computation;
 use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConsumerNode;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
@@ -60,7 +61,7 @@ use crate::generate::integer;
 /// Where an evaluation stopped short of a value, named alike for both
 /// evaluators.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Stop
+pub enum Stop
 {
     /// An application met a value that is not a function.
     AppliedNonFunction,
@@ -80,7 +81,7 @@ enum Stop
 
 /// What one evaluator made of a computation.
 #[derive(Debug)]
-enum Answer
+pub enum Answer
 {
     /// A term and the arena holding it: the normaliser's normal form, or a
     /// run's terminal read back.
@@ -163,17 +164,14 @@ fn case(
     }
 }
 
-/// Run `root` of `core` on every tier this host has, check the tiers' readings
-/// agree, and answer the executor's.
+/// Focus `root` of `core` and run it on every tier this host has.
 ///
 /// # Specification
 /// - requires: a well-formed pure computation without constants whose run fits
 ///   the fixture budget and whose terminal has a pure core reading.
-/// - ensures: its terminal reading in the returned arena, or the common
-///   semantic stop for a stuck elimination or an unbound variable.
-/// - provides: the tiers' observation for differential comparison.
-/// - panics: on a focus refusal, a tier declining other than for an unbound
-///   variable, an unreadable terminal, or two tiers reading apart.
+/// - ensures: as [`run_on_tiers`] on the focused command.
+/// - provides: the tiers' observation of a core computation.
+/// - panics: on a focus refusal, and as [`run_on_tiers`].
 ///
 /// # Adequacy
 /// - hypothesis: L2 — bounded closed generated computations halt and their
@@ -200,6 +198,39 @@ fn on_tiers(
     let mut provenance = Provenance::new();
     let command = focus_computation(core, root, &mut arena, &mut provenance)
         .expect("focusing is total on the pure fragment");
+    run_on_tiers(&arena, command)
+}
+
+/// Run `command` of `arena` on every tier this host has, check the tiers'
+/// readings agree, and answer the executor's.
+///
+/// # Specification
+/// - requires: a well-formed pure command without constants whose run fits the
+///   fixture budget and whose terminal has a pure core reading.
+/// - ensures: its terminal reading in the returned arena, or the common
+///   semantic stop for a stuck elimination or an unbound variable.
+/// - provides: the tiers' observation for differential comparison, of a focused
+///   computation or of a command rewritten after focusing.
+/// - panics: on a tier declining other than for an unbound variable, an
+///   unreadable terminal, or two tiers reading apart.
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded closed generated computations halt and their
+///   settled readings agree with the independent normalizer, focused as
+///   written, with every closure converted, or with every closure redex
+///   entered.
+/// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+/// - witness: `tests::closures::converted_programs_answer_as_written`
+/// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
+#[spec(requires: arena.command(command).is_some(), ensures: |ref ret| match *ret {
+    | Answer::Term { ref core, term } => core.computation(term).is_some(),
+    | Answer::Stopped(_) => true,
+})]
+pub fn run_on_tiers(
+    arena: &CommandArena,
+    command: CommandId,
+) -> Answer
+{
     let definitions = Definitions::new();
     let tiers: &[Tier] = if PATCHER {
         &[Tier::Native, Tier::Executor]
@@ -212,17 +243,17 @@ fn on_tiers(
         .map(|&tier| {
             let mut store = Store::new();
             let fuel = gandr_runtime_emitter::Fuel::from(1_usize << 20_u32);
-            match evaluate_on(tier, &arena, &definitions, command, fuel, &mut store) {
+            match evaluate_on(tier, arena, &definitions, command, fuel, &mut store) {
                 Ok(Outcome::Halted(value)) => {
                     let mut read = CoreArena::new();
-                    let term = read_back_terminal(&arena, &store, value, &mut read)
+                    let term = read_back_terminal(arena, &store, value, &mut read)
                         .expect("a halted value of the pure fragment reads back");
                     Answer::Term {
                         core: Box::new(read),
                         term,
                     }
                 },
-                Ok(Outcome::Stuck(stuck)) => Answer::Stopped(tier_stop(&arena, &stuck)),
+                Ok(Outcome::Stuck(stuck)) => Answer::Stopped(tier_stop(arena, &stuck)),
                 Err(Declined::Lowering(Form::Unbound)) => Answer::Stopped(Stop::UnboundVariable),
                 Err(declined) => panic!("{tier:?} declined: {declined}"),
             }
@@ -466,7 +497,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | Answer::Stopped(_) => true,
     },
 })]
-fn settled(answer: &Answer) -> Answer
+pub fn settled(answer: &Answer) -> Answer
 {
     match *answer {
         Answer::Term { ref core, term } => normalised(core, term),
@@ -502,7 +533,7 @@ fn settled(answer: &Answer) -> Answer
         ret != Agreement::Same || (first.computation(first_root).is_some() && second.computation(second_root).is_some()),
     | _ => ret == Agreement::Differ,
 })]
-fn agreement(
+pub fn agreement(
     left: &Answer,
     right: &Answer,
 ) -> Agreement

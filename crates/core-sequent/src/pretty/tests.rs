@@ -990,3 +990,44 @@ fn renders_frames_primitives_folds_and_projections()
         "force(★)",
     ]);
 }
+
+/// A closure writes its environment values, outermost first, then its code
+/// after the separator; over the empty environment it writes the separator
+/// and the code alone.
+#[test]
+fn renders_abstract_closures()
+{
+    let mut arena = CommandArena::new();
+    let [outer, inner] = [1_u32, 0_u32].map(|index| {
+        arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: index.into(),
+            })
+            .expect("a leaf mints")
+    });
+    let back = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("a leaf mints");
+    let body = arena
+        .mint_cut(Polarity::Positive, inner, back)
+        .expect("children resolve");
+    let code = arena
+        .mint_producer(ProducerNode::Cocase {
+            arms: Box::from([CopatternArm {
+                destructor: DestructorTag::Apply,
+                body,
+            }]),
+        })
+        .expect("the body resolves");
+    let closures = [Box::from([]), Box::from([outer, inner])].map(|environment| {
+        let closure = arena
+            .mint_producer(ProducerNode::Closure { environment, code })
+            .expect("children resolve");
+        render_producer(&arena, closure)
+    });
+    assert_eq!(closures, [
+        "{; cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩}}",
+        "{x1, x0; cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩}}",
+    ]);
+}
