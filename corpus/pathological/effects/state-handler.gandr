@@ -123,3 +123,22 @@ def unansweredForConsole() -> Integer {
     pure 1
   }
 }
+
+/// A returner whose row fixes `S` to the implicit `a`, which a call's
+/// argument solves.
+def readGivenAt @[a : Type] (x : a) -> [st : State with sort S = a] a {
+  st.get()
+}
+
+/// The argument solves `a` as `Integer`, so the row asks `State` at
+/// `Integer`, more than the scope at `Bool` grants.
+@[ refuses("CapabilityAmplified") ]
+def amplifiedAtImplicit() -> Integer {
+  handle s : State with sort S = Bool {
+    readGivenAt(0)
+  } with {
+    pure(y) => pure y,
+    oper get(k) => k(true),
+    oper put(v, k) => k()
+  }
+}

@@ -1549,6 +1549,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-ha
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 738a7b48dc9b18fd
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 9619f730573c14e2
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure a216726a9afbb013
+crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure ec151e0249661fd9
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure f2935d6bd7f8af55
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure ff26bdab32178655
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-laws.txt Procedure 8c4d6ba4f102e9e3
