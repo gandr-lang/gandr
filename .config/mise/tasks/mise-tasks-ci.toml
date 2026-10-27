@@ -2683,6 +2683,30 @@ exit 2
 {% endraw %}
 '''
 
+# A pull request held on purpose, for a base, a ruling or a sibling, is a
+# draft with its reason (#2972): `pr:hold <n> "<reason>"` converts it and
+# comments the reason under a `<!-- hold -->` marker. A draft is no stall
+# (`stall:watch`), and neither `pr:watch` nor the `landing` workflow lands
+# it; `gh pr ready <n>` ends the hold, and the next watch lands it once green.
+["pr:hold"]
+description = "Hold a pull request on purpose: make it a draft and comment the reason"
+usage = '''
+arg "<number>" help="pull request number"
+arg "<reason>" help="why it is held: the base, ruling or sibling it waits on"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+number=${usage_number:?}
+reason=${usage_reason:?}
+[[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
+[[ -n "${reason// }" ]] || { echo 'pr:hold needs the reason it is held' >&2; exit 2; }
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+gh pr ready "$number" -R "$repo" --undo > /dev/null
+gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\n**Held** as a draft: %s\n\n`gh pr ready %s` ends the hold; its next `pr:watch` lands it once green.\n' "$reason" "$number")" > /dev/null
+echo "#$number held: $reason"
+'''
+
 # The wake-up a seat arms after `pr:land`: it polls the pull request and its
 # queue entry and exits the moment one of these holds, printing one line and
 # nothing else on stdout:
@@ -2713,8 +2737,9 @@ exit 2
 # or on a unit of its own queued below (#2046), and a landing that failed, a
 # rate-limited read among them (#2746), are tried again every 2 minutes. A
 # seat's `pr:open` and `pr:watch` land its pull request without a
-# `pr:land`. A pull request whose watch ended is read by the `landing`
-# workflow every 10 minutes (#2701): it lands it, or tells its seat.
+# `pr:land`. A draft, held on purpose (`pr:hold`), is never landed. A pull
+# request whose watch ended is read by the `landing` workflow every 10
+# minutes (#2701): it lands it, or tells its seat.
 #
 # A dequeue or a conflict with no red check anywhere in the pull request's
 # server stack needs no hand (#1264): the stack is restacked onto main, what
@@ -2762,13 +2787,14 @@ gone=0
 dirty_seen=null
 
 # State, merge state, queued, the entry's state and head, the last removal,
-# whether it carries the `landing` label, and the pull request's head.
+# whether it carries the `landing` label, the pull request's head, and
+# whether it is a draft.
 snapshot() {
   gh api graphql -f owner="$owner" -f name="$name" -F number="$number" -f query="
     query(\$owner: String!, \$name: String!, \$number: Int!) {
       repository(owner: \$owner, name: \$name) {
         pullRequest(number: \$number) {
-          state mergeStateStatus isInMergeQueue headRefOid
+          state mergeStateStatus isInMergeQueue headRefOid isDraft
           mergeQueueEntry { state headCommit { oid } }
           timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
             nodes { ... on RemovedFromMergeQueueEvent { reason } }
@@ -2776,7 +2802,7 @@ snapshot() {
           labels(first: 50) { nodes { name } }
         }
       }
-    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid] | @tsv'
+    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid, .isDraft] | @tsv'
 }
 # The first failed required check on the head of `$1`, this pull request by
 # default, if any. A cancelled check is red unless another run of its
@@ -2869,7 +2895,7 @@ red_entry() {
 while (( SECONDS < deadline )); do
   # A failed read is no event; the next poll reads again.
   if ! reading=$(snapshot) || [[ -z "$reading" ]]; then sleep 60; continue; fi
-  IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed held head <<< "$reading"
+  IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed held head draft <<< "$reading"
   if [[ "$in_queue" == true ]]; then seen_queued=true; fi
   # A `landing` label still on a queued or merged pull request was left by a
   # `pr:land` that never reached its exit (#1556): it would hold `pr:open`.
@@ -2915,7 +2941,8 @@ while (( SECONDS < deadline )); do
     echo "pr-dequeued #$number ${removed/#-/removed} $(above_word)"
     exit 1
   fi
-  if [[ "$in_queue" == false && "$head" != "$landed_head" ]] && (( SECONDS >= retry_at )) \
+  # A draft is held on purpose (`pr:hold`, #2972): the trigger never lands it.
+  if [[ "$in_queue" == false && "$draft" == false && "$head" != "$landed_head" ]] && (( SECONDS >= retry_at )) \
     && [[ $(required_state "$number" "$required") == green ]]; then
     status=0
     land_prefix "$number" >&2 || status=$?
@@ -2936,18 +2963,31 @@ exit 2
 # sees from inside its own `pr:watch`, read off the open pull requests and
 # their merge-queue removals: a green root left unqueued, a pull request
 # ejected again and again, a stack piled past a depth, a red pull request no
-# new head revises, a conflicting one left so (`.config/stall/detect.jq`,
-# its cases held by `check:stall`). It queues, revises and comments nothing:
-# a stall is the triage lane's to answer, and one it cannot place is filed as
+# new head revises, a conflicting one left so, a stacked member whose base
+# conflicts or merged under it (`.config/stall/detect.jq`, its cases held by
+# `check:stall`). It queues and revises nothing: a stall is its seat's to
+# answer and the coordinator's to decide, and one no seat holds is filed as
 # an issue whose `## Observation` is the finding's line.
 #
 # `stall:check` reads once, prints each finding's line and exits 1 on any;
 # it pages nothing and leaves the detector's memory as it found it.
 # `stall:watch` reads every `interval` seconds and pages each finding once
-# while it lasts: to the triage seat's target, and to the coordinator's as
-# well for a kind the triage lane cannot act on. The thresholds, the page
-# script and each target's arguments (its host and block) are
-# configuration, never the tree's (`.config/stall/stall.bash`).
+# while it lasts, to its lane's seat and to the coordinator at once (#2972).
+# A finding standing `escalate` minutes after its first page stalls its pull
+# request: a comment opening `<!-- stall -->` names the finding and the seat,
+# the `status:stalled` label goes on, and the coordinator is paged again
+# every `repage` minutes until the finding clears; the comment and label come
+# off once the pull request is queued, a draft (a hold, `pr:hold`) or closed.
+# A page, comment or label that failed is tried again at the next reading; a
+# seat's page that failed is told to the coordinator with the line. A seat
+# is paged by its name, never a block id: the page script resolves it at
+# page time (#2977). Each reading also asks the `check` command whether each
+# seat has a live block, and pages the coordinator once when one has had
+# none for two readings in a row. The thresholds, the page script, the check
+# and each target's arguments (the triage seat's, the coordinator's, and each
+# lane's seat's under `seats`, a lane without one paging the triage seat) are
+# configuration,
+# never the tree's (`.config/stall/stall.bash`).
 ["stall:check"]
 description = "Read the open pull requests once for stalls; exit 1 on a finding"
 quiet = true
@@ -2973,13 +3013,63 @@ run = '''
 set -euo pipefail
 source .config/stall/stall.bash
 page=$(stall_configuration | jq -c '.page // empty')
-if [[ -z "$page" ]] || ! jq -e '[.command, .triage, .coordinator] | all(type == "array" and length > 0 and all(type == "string"))' <<< "$page" > /dev/null; then
-  echo "stall:watch pages through $stall_config's \`page\`: {\"command\": [<page script>, ...], \"triage\": [<the script's arguments before the line>, ...], \"coordinator\": [...]}" >&2
+if [[ -z "$page" ]] || ! jq -e '([.command, .triage, .coordinator] | all(type == "array" and length > 0 and all(type == "string")))
+    and ((.seats // {}) | type == "object" and all(.[]; type == "array" and length > 0 and all(type == "string")))
+    and ((.check // ["-"]) | type == "array" and length > 0 and all(type == "string"))' <<< "$page" > /dev/null; then
+  echo "stall:watch pages through $stall_config's \`page\`: {\"command\": [<page script>, ...], \"triage\": [<the script's arguments before the line>, ...], \"coordinator\": [...], \"seats\": {\"<lane>\": [...], ...}, \"check\": [<the liveness command, given a seat's arguments>, ...]}" >&2
   exit 2
 fi
 mapfile -t command < <(jq -r '.command[]' <<< "$page")
-mapfile -t triage < <(jq -r '.triage[]' <<< "$page")
 mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
+mapfile -t check < <(jq -r '(.check // [])[]' <<< "$page")
+# Page lane `$1`'s seat (the triage seat for a lane without one), then the
+# coordinator unless the seat is the coordinator, with the line `$2`. A seat
+# page that fails (the page script's exit 2: no live block) is told to the
+# coordinator with the line, and fails the whole, so the next reading pages
+# again.
+page_seat() {
+  local -a seat
+  local status=0
+  mapfile -t seat < <(jq -r --arg lane "$1" '(.seats[$lane] // .triage)[]' <<< "$page")
+  "${command[@]}" "${seat[@]}" "$2" || status=1
+  if [[ "${seat[*]}" != "${coordinator[*]}" ]]; then
+    if (( status == 0 )); then
+      "${command[@]}" "${coordinator[@]}" "$2" || status=1
+    else
+      "${command[@]}" "${coordinator[@]}" "$2 (not delivered to \`${seat[*]}\`)" || :
+    fi
+  fi
+  return "$status"
+}
+# Each seat's liveness, once a reading (#2977): a seat the `check` command
+# finds without a live block for two readings in a row is paged to the
+# coordinator once, until it is live again. Reads and answers the count of
+# readings each seat has been found gone, `{"<seat's arguments>": n}`.
+sweep() {
+  local gone=$1 seat args
+  (( ${#check[@]} > 0 )) || { echo '{}'; return; }
+  while IFS= read -r seat; do
+    mapfile -t args < <(jq -r '.[]' <<< "$seat")
+    if "${check[@]}" "${args[@]}" > /dev/null 2>&1; then
+      gone=$(jq -c --arg s "${args[*]}" 'del(.[$s])' <<< "$gone")
+      continue
+    fi
+    gone=$(jq -c --arg s "${args[*]}" '.[$s] += 1' <<< "$gone")
+    if [[ $(jq --arg s "${args[*]}" '.[$s]' <<< "$gone") == 2 ]]; then
+      "${command[@]}" "${coordinator[@]}" "STALL seat-gone ${args[*]}: no live block for two readings; it must register" \
+        || gone=$(jq -c --arg s "${args[*]}" '.[$s] = 1' <<< "$gone")
+    fi
+  done < <(jq -c '[.triage, (.seats // {})[]] | unique[]' <<< "$page")
+  echo "$gone"
+}
+# Take pull request `$1`'s `<!-- stall -->` comments and its label off.
+release() {
+  local id
+  for id in $(gh api --paginate "repos/$repo/issues/$1/comments" --jq '.[] | select(.body | startswith("<!-- stall -->")) | .id'); do
+    gh api -X DELETE "repos/$repo/issues/comments/$id" > /dev/null || return 1
+  done
+  gh api -X DELETE "repos/$repo/issues/$1/labels/status:stalled" > /dev/null 2>&1 || :
+}
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 mkdir -p "$(dirname "$stall_state")"
@@ -2992,14 +3082,13 @@ while :; do
     continue
   fi
   paged=$(jq -c .paged <<< "$reading")
+  stalled=$(jq -c .stalled <<< "$reading")
   while IFS= read -r finding; do
     line=$(jq -r .line <<< "$finding")
+    key=$(jq -r '"\(.number):\(.kind)"' <<< "$finding")
     echo "$line"
     sent=true
-    "${command[@]}" "${triage[@]}" "$line" || sent=false
-    if [[ $(jq .escalate <<< "$finding") == true ]]; then
-      "${command[@]}" "${coordinator[@]}" "$line" || sent=false
-    fi
+    page_seat "$(jq -r .lane <<< "$finding")" "$line" || sent=false
     # A finding no lane places is filed once its pages are sent, its line
     # the observation, so a page sent again never files it twice.
     if [[ "$sent" == true && $(jq .placed <<< "$finding") == false ]]; then
@@ -3007,12 +3096,30 @@ while :; do
       gh issue create -R "$repo" --title "$title" --body "$(printf '## Observation\n\n%s\n' "$line")" \
         --label kind:defect --label area:workflow --label priority:high --label effort:easy --label needs:triage || sent=false
     fi
-    # A page or a filing that failed is tried again at the next reading.
-    if [[ "$sent" == false ]]; then
-      paged=$(jq -c --arg key "$(jq -r '"\(.number):\(.kind)"' <<< "$finding")" 'del(.[$key])' <<< "$paged")
-    fi
+    if [[ "$sent" == false ]]; then paged=$(jq -c --arg key "$key" 'del(.[$key])' <<< "$paged"); fi
   done < <(jq -c '.pages[]' <<< "$reading")
-  jq -c --argjson paged "$paged" '{seen, paged: $paged}' <<< "$reading" > "$stall_state.tmp"
+  while IFS= read -r finding; do
+    line=$(jq -r .line <<< "$finding")
+    echo "$line (paged again)"
+    if ! "${command[@]}" "${coordinator[@]}" "$line"; then
+      paged=$(jq -c --arg key "$(jq -r '"\(.number):\(.kind)"' <<< "$finding")" '.[$key].last = 0' <<< "$paged")
+    fi
+  done < <(jq -c '.repages[]' <<< "$reading")
+  while IFS= read -r stall; do
+    number=$(jq -r .number <<< "$stall")
+    echo "stall:watch: #$number stalled" >&2
+    if ! gh pr comment "$number" -R "$repo" --body "$(jq -r .comment <<< "$stall")" > /dev/null \
+      || ! gh pr edit "$number" -R "$repo" --add-label status:stalled > /dev/null; then
+      stalled=$(jq -c --arg n "$number" 'del(.[$n])' <<< "$stalled")
+    fi
+  done < <(jq -c '.stall[]' <<< "$reading")
+  for number in $(jq -r '.release[]' <<< "$reading"); do
+    echo "stall:watch: #$number released" >&2
+    release "$number" || stalled=$(jq -c --arg n "$number" --argjson now "$(date +%s)" '.[$n] = $now' <<< "$stalled")
+  done
+  gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
+  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" \
+    '{seen, paged: $paged, stalled: $stalled, gone: $gone}' <<< "$reading" > "$stall_state.tmp"
   mv "$stall_state.tmp" "$stall_state"
   sleep "$interval"
 done

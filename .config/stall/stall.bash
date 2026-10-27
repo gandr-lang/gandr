@@ -7,10 +7,14 @@
 # tree, under the XDG directories:
 #   $XDG_CONFIG_HOME/gandr/stall.json   `{thresholds?, lanes?, page?}`;
 #       `lanes` the lanes a finding is placed in (absent, every lane), and
-#       `page` `{command, triage, coordinator}`: the page script's argument
-#       vector, then each target's arguments before the line (its host and
-#       block);
-#   $XDG_STATE_HOME/gandr/stall.json    `{seen, paged}`, `detect.jq`'s.
+#       `page` `{command, triage, coordinator, seats?, check?}`: the page
+#       script's argument vector, then each target's arguments before the
+#       line (a seat's name, which the page script resolves, #2977), `seats`
+#       each lane's seat's by the lane (#2972), `check` the command that
+#       exits 0 when a seat, its arguments appended, has a live block;
+#   $XDG_STATE_HOME/gandr/stall.json    `{seen, paged, stalled}`, `detect.jq`'s,
+#       and `gone`, `stall:watch`'s count of readings each seat was found
+#       without a live block.
 
 stall_dir="$(git rev-parse --show-toplevel)/.config/stall"
 stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
@@ -37,7 +41,7 @@ stall_reading() {
   jq -c '.data.repository' <<< "$raw" | jq -c -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \
       --argjson thresholds "$(stall_thresholds)" --argjson config "$(stall_configuration)" --argjson memory "$memory" \
-      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, seen: $memory.seen, paged: $memory.paged}' \
+      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
     | jq -c -f "$stall_dir/detect.jq"
 }
 

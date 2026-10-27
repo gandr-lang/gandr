@@ -108,7 +108,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -134,7 +137,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"seen\":{},\"paged\":{\"2774:root-unqueued\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a green root whose last required check concluded inside the threshold is no stall yet (#2785)",
@@ -149,7 +152,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -175,7 +181,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a green root in the merge queue is no stall (#2785)",
@@ -190,7 +196,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -216,7 +225,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a root still pending on a required check is no stall (#2785)",
@@ -231,7 +240,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -257,7 +269,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a pull request removed from the queue twice in the window is ejected, from its first removal (#2785)",
@@ -272,7 +284,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -307,7 +322,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[{\"kind\":\"ejected\",\"number\":2776,\"lane\":\"corpus\",\"placed\":true,\"age\":100,\"escalate\":false,\"line\":\"STALL ejected #2776 corpus 100m: left the merge queue unmerged 2 times in 360m (CI failed, stack_invalidated)\"}],\"pages\":[{\"kind\":\"ejected\",\"number\":2776,\"lane\":\"corpus\",\"placed\":true,\"age\":100,\"escalate\":false,\"line\":\"STALL ejected #2776 corpus 100m: left the merge queue unmerged 2 times in 360m (CI failed, stack_invalidated)\"}],\"seen\":{},\"paged\":{\"2776:ejected\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"ejected\",\"number\":2776,\"lane\":\"corpus\",\"placed\":true,\"age\":100,\"line\":\"STALL ejected #2776 corpus 100m: left the merge queue unmerged 2 times in 360m (CI failed, stack_invalidated)\"}],\"pages\":[{\"kind\":\"ejected\",\"number\":2776,\"lane\":\"corpus\",\"placed\":true,\"age\":100,\"line\":\"STALL ejected #2776 corpus 100m: left the merge queue unmerged 2 times in 360m (CI failed, stack_invalidated)\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2776:ejected\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a removal its seat made by hand, or one past the window, is no ejection (#2785)",
@@ -322,7 +337,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -361,7 +379,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a stack deeper than the threshold is a pile-up at its root, aged from the member that took it past (#2785)",
@@ -376,7 +394,10 @@
         "ejection_window": 360,
         "depth": 2,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -428,7 +449,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[{\"kind\":\"pile-up\",\"number\":1,\"lane\":\"surface\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL pile-up #1 surface 40m: 3 open pull requests stacked from it, the top #3\"}],\"pages\":[{\"kind\":\"pile-up\",\"number\":1,\"lane\":\"surface\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL pile-up #1 surface 40m: 3 open pull requests stacked from it, the top #3\"}],\"seen\":{},\"paged\":{\"1:pile-up\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"pile-up\",\"number\":1,\"lane\":\"surface\",\"placed\":true,\"age\":40,\"line\":\"STALL pile-up #1 surface 40m: 3 open pull requests stacked from it, the top #3\"}],\"pages\":[{\"kind\":\"pile-up\",\"number\":1,\"lane\":\"surface\",\"placed\":true,\"age\":40,\"line\":\"STALL pile-up #1 surface 40m: 3 open pull requests stacked from it, the top #3\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"1:pile-up\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a stack as deep as the threshold is no pile-up (#2785)",
@@ -443,7 +464,10 @@
         "ejection_window": 360,
         "depth": 2,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -482,7 +506,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a required check red past the threshold with no new head is red-unrevised, escalated for another lane (#2785)",
@@ -497,7 +521,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -505,7 +532,7 @@
           "draft": false,
           "bot": false,
           "head": "core-2769-closure",
-          "base": "theory",
+          "base": "main",
           "oid": "o2780",
           "created": 92800,
           "mergeable": "MERGEABLE",
@@ -523,7 +550,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2780,\"lane\":\"core\",\"placed\":true,\"age\":90,\"escalate\":true,\"line\":\"STALL red-unrevised #2780 core 90m: `test` failure, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2780,\"lane\":\"core\",\"placed\":true,\"age\":90,\"escalate\":true,\"line\":\"STALL red-unrevised #2780 core 90m: `test` failure, no new head since\"}],\"seen\":{},\"paged\":{\"2780:red-unrevised\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2780,\"lane\":\"core\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2780 core 90m: `test` failure, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2780,\"lane\":\"core\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2780 core 90m: `test` failure, no new head since\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2780:red-unrevised\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a red pull request of the triage lane is the lane's own, not escalated (#2785)",
@@ -538,7 +565,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -546,7 +576,7 @@
           "draft": false,
           "bot": false,
           "head": "triage-2783-stack-prefix",
-          "base": "corpus-2236",
+          "base": "main",
           "oid": "o2784",
           "created": 92800,
           "mergeable": "MERGEABLE",
@@ -564,7 +594,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"escalate\":false,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"escalate\":false,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"seen\":{},\"paged\":{\"2784:red-unrevised\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2784:red-unrevised\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a check that is not required never makes a pull request red (#2785)",
@@ -579,7 +609,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -587,11 +620,11 @@
           "draft": false,
           "bot": false,
           "head": "core-2769-closure",
-          "base": "theory",
+          "base": "main",
           "oid": "o2780",
           "created": 92800,
           "mergeable": "MERGEABLE",
-          "queued": false,
+          "queued": true,
           "removals": [],
           "checks": [
             {
@@ -612,7 +645,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a conflicting pull request first read is remembered, no stall yet (#2785)",
@@ -627,7 +660,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -635,7 +671,7 @@
           "draft": false,
           "bot": false,
           "head": "core-2751",
-          "base": "corpus-2444",
+          "base": "main",
           "oid": "o2777",
           "created": 92800,
           "mergeable": "CONFLICTING",
@@ -645,7 +681,7 @@
         }
       ]
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{\"2777:conflicting:o2777\":100000},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"2777:conflicting:o2777\":100000},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a conflicting pull request read so past the threshold at the same head is conflicting (#2785)",
@@ -660,7 +696,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -668,7 +707,7 @@
           "draft": false,
           "bot": false,
           "head": "core-2751",
-          "base": "corpus-2444",
+          "base": "main",
           "oid": "o2777",
           "created": 92800,
           "mergeable": "CONFLICTING",
@@ -681,7 +720,7 @@
         "2777:conflicting:o2777": 97600
       }
     },
-    "output": "{\"findings\":[{\"kind\":\"conflicting\",\"number\":2777,\"lane\":\"core\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL conflicting #2777 core 40m: conflicts with its base at the same head\"}],\"pages\":[{\"kind\":\"conflicting\",\"number\":2777,\"lane\":\"core\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL conflicting #2777 core 40m: conflicts with its base at the same head\"}],\"seen\":{\"2777:conflicting:o2777\":97600},\"paged\":{\"2777:conflicting\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"conflicting\",\"number\":2777,\"lane\":\"core\",\"placed\":true,\"age\":40,\"line\":\"STALL conflicting #2777 core 40m: conflicts with its base at the same head\"}],\"pages\":[{\"kind\":\"conflicting\",\"number\":2777,\"lane\":\"core\",\"placed\":true,\"age\":40,\"line\":\"STALL conflicting #2777 core 40m: conflicts with its base at the same head\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"2777:conflicting:o2777\":97600},\"paged\":{\"2777:conflicting\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a new head starts the conflict's age again (#2785)",
@@ -696,7 +735,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -704,7 +746,7 @@
           "draft": false,
           "bot": false,
           "head": "core-2751",
-          "base": "corpus-2444",
+          "base": "main",
           "oid": "o2777",
           "created": 92800,
           "mergeable": "CONFLICTING",
@@ -717,7 +759,7 @@
         "2777:conflicting:old": 92800
       }
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{\"2777:conflicting:o2777\":100000},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"2777:conflicting:o2777\":100000},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a finding already paged is not paged again while it lasts (#2785)",
@@ -732,7 +774,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -758,10 +803,10 @@
         }
       ],
       "paged": {
-        "2774:root-unqueued": 99400
+        "2774:root-unqueued": 99700
       }
     },
-    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":99400}}"
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":{\"first\":99700,\"last\":99700}},\"stalled\":{}}"
   },
   {
     "name": "a stall that cleared is forgotten, so its return is paged again (#2785)",
@@ -776,7 +821,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -805,7 +853,7 @@
         "2774:root-unqueued": 99400
       }
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a finding on a lane outside the configured lanes is unplaced and escalated; one on a listed lane is placed (#2785)",
@@ -820,7 +868,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -868,7 +919,7 @@
       ],
       "lanes": ["triage", "corpus", "core"]
     },
-    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":false,\"age\":30,\"escalate\":true,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"},{\"kind\":\"root-unqueued\",\"number\":2775,\"lane\":\"corpus\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2775 corpus 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":false,\"age\":30,\"escalate\":true,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"},{\"kind\":\"root-unqueued\",\"number\":2775,\"lane\":\"corpus\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2775 corpus 30m: green and mergeable on main, out of the merge queue\"}],\"seen\":{},\"paged\":{\"2774:root-unqueued\":100000,\"2775:root-unqueued\":100000}}"
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":false,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"},{\"kind\":\"root-unqueued\",\"number\":2775,\"lane\":\"corpus\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2775 corpus 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":false,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"},{\"kind\":\"root-unqueued\",\"number\":2775,\"lane\":\"corpus\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2775 corpus 30m: green and mergeable on main, out of the merge queue\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":{\"first\":100000,\"last\":100000},\"2775:root-unqueued\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a draft and a pull request an app opened are read by no kind (#2785)",
@@ -883,7 +934,10 @@
         "ejection_window": 360,
         "depth": 6,
         "red": 60,
-        "conflicting": 30
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
       },
       "prs": [
         {
@@ -933,6 +987,372 @@
         "2791:conflicting:o2791": 91000
       }
     },
-    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
+  },
+  {
+    "name": "a finding standing `escalate` minutes after its first page stalls its pull request: the coordinator is paged again and the stall comment and label are written (#2972)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "paged": {
+        "2774:root-unqueued": {
+          "first": 99400,
+          "last": 99400
+        }
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"repages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"stall\":[{\"number\":2774,\"comment\":\"<!-- stall -->\\n**Stalled.** Paged to the `surface` lane's seat and the coordinator 10 minutes ago and still standing. The coordinator decides: queue it, order the rebase, draft the hold with its reason (`pr:hold`), or reassign it. This comment and `status:stalled` come off once it is queued, a draft or closed.\\n\\n- `STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue`\"}],\"release\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":{\"first\":99400,\"last\":100000}},\"stalled\":{\"2774\":100000}}"
+  },
+  {
+    "name": "a stalled pull request's coordinator page repeats only every `repage` minutes, and it is stalled once (#2972)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "paged": {
+        "2774:root-unqueued": {
+          "first": 98800,
+          "last": 99700
+        }
+      },
+      "stalled": {
+        "2774": 99400
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":{\"first\":98800,\"last\":99700}},\"stalled\":{\"2774\":99400}}"
+  },
+  {
+    "name": "the coordinator is paged again `repage` minutes after the last page, while the finding stands (#2972)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "paged": {
+        "2774:root-unqueued": {
+          "first": 98800,
+          "last": 99400
+        }
+      },
+      "stalled": {
+        "2774": 99400
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"repages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":{\"first\":98800,\"last\":100000}},\"stalled\":{\"2774\":99400}}"
+  },
+  {
+    "name": "a stalled pull request found queued, a draft, or no longer open is released; one still standing stays stalled (#2972)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 10,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface-2774",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2790,
+          "draft": true,
+          "bot": false,
+          "head": "theory-2790",
+          "base": "main",
+          "oid": "o2790",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2795,
+          "draft": false,
+          "bot": false,
+          "head": "core-2795",
+          "base": "main",
+          "oid": "o2795",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "paged": {
+        "2795:root-unqueued": {
+          "first": 99400,
+          "last": 99400
+        }
+      },
+      "stalled": {
+        "2774": 99000,
+        "2790": 99000,
+        "2795": 99400,
+        "2799": 99000
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2795,\"lane\":\"core\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2795 core 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"repages\":[{\"kind\":\"root-unqueued\",\"number\":2795,\"lane\":\"core\",\"placed\":true,\"age\":30,\"line\":\"STALL root-unqueued #2795 core 30m: green and mergeable on main, out of the merge queue\"}],\"stall\":[],\"release\":[2774,2790,2799],\"seen\":{},\"paged\":{\"2795:root-unqueued\":{\"first\":99400,\"last\":100000}},\"stalled\":{\"2795\":99400}}"
+  },
+  {
+    "name": "a stacked member whose base pull request conflicts, or whose base heads no open pull request, past the threshold at the same head is base-blocked, its own lane's stall; inside the threshold it is remembered (#2972)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 10,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [
+        {
+          "number": 2800,
+          "draft": false,
+          "bot": false,
+          "head": "core-2800",
+          "base": "main",
+          "oid": "o2800",
+          "created": 92800,
+          "mergeable": "CONFLICTING",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2801,
+          "draft": false,
+          "bot": false,
+          "head": "theory-2801",
+          "base": "core-2800",
+          "oid": "o2801",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2810,
+          "draft": false,
+          "bot": false,
+          "head": "surface-2810",
+          "base": "runtime-2809",
+          "oid": "o2810",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2811,
+          "draft": false,
+          "bot": false,
+          "head": "surface-2811",
+          "base": "runtime-2808",
+          "oid": "o2811",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "seen": {
+        "2800:conflicting:o2800": 99400,
+        "2801:base-blocked:o2801": 99400,
+        "2810:base-blocked:o2810": 99400
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"conflicting\",\"number\":2800,\"lane\":\"core\",\"placed\":true,\"age\":10,\"line\":\"STALL conflicting #2800 core 10m: conflicts with its base at the same head\"},{\"kind\":\"base-blocked\",\"number\":2801,\"lane\":\"theory\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2801 theory 10m: its base #2800 conflicts with its own base\"},{\"kind\":\"base-blocked\",\"number\":2810,\"lane\":\"surface\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2810 surface 10m: its base `runtime-2809` heads no open pull request (merged or closed), and #2810 is not rebased\"}],\"pages\":[{\"kind\":\"conflicting\",\"number\":2800,\"lane\":\"core\",\"placed\":true,\"age\":10,\"line\":\"STALL conflicting #2800 core 10m: conflicts with its base at the same head\"},{\"kind\":\"base-blocked\",\"number\":2801,\"lane\":\"theory\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2801 theory 10m: its base #2800 conflicts with its own base\"},{\"kind\":\"base-blocked\",\"number\":2810,\"lane\":\"surface\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2810 surface 10m: its base `runtime-2809` heads no open pull request (merged or closed), and #2810 is not rebased\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"2800:conflicting:o2800\":99400,\"2801:base-blocked:o2801\":99400,\"2810:base-blocked:o2810\":99400,\"2811:base-blocked:o2811\":100000},\"paged\":{\"2800:conflicting\":{\"first\":100000,\"last\":100000},\"2801:base-blocked\":{\"first\":100000,\"last\":100000},\"2810:base-blocked\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   }
 ]
