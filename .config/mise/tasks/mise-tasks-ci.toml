@@ -2057,6 +2057,128 @@ else
 fi
 {% endraw %}'''
 
+# The bootstrap census (#2896, rung 0 of #2895): `ledger/census.md`'s block
+# between its `census` markers, the record that picks the first crate to
+# rewrite in gandr. Each workspace crate with a library is read from its
+# rustdoc JSON as `purposes:items` builds it, without private items: its
+# public items as that task lists them, its boundary surface, clauses and
+# witnesses by `.config/census/surface.jq`. Its `#[spec]` attributes and its
+# lines are counted in its library's Rust sources, test modules left out
+# (`tests.rs` and `tests/` under `src/`); its workspace dependencies, the
+# `[dependencies]` alone, come from `cargo metadata`; it is on the hotpath
+# when a function of it carries a `hotpath::measure` attribute.
+# `.config/census/census.jq` ranks and renders them, its cases held by
+# `check:census`.
+#
+# Almost every change to a library moves the census, so no landing is held to
+# it. `census.yml` builds it weekly and runs `--check` on the result, which
+# writes nothing. A stale census is reported on one `collector` issue,
+# `report: bootstrap census`, opened by the first stale week, updated by each
+# stale week and closed by a current one; it carries the difference, and
+# whoever takes it runs the task and lands the file. `--check` files only with
+# REPORT_FILE set; without it a stale census prints its difference and exits
+# 1. `--census` takes the census an earlier run built, so the job that files
+# builds nothing. GH_REPO names the repository.
+["report:bootstrap-census"]
+description = "Write ledger/census.md's crate census, or report it stale with --check"
+tools.jq = "1.8.1"
+usage = '''
+flag "--check" help="write nothing: report a stale census, on its issue with REPORT_FILE set"
+flag "--census <file>" help="the census an earlier run of this task wrote, taken instead of building one"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+census=.config/census
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+build() {
+  mise run --quiet purposes:items > "$scratch/items.tsv"
+  jq -R -s '[split("\n")[] | select(. != "") | split("\t") | select(.[2] != "crate" and .[2] != "module") | .[0]]
+    | group_by(.) | map({key: .[0], value: length}) | from_entries' "$scratch/items.tsv" > "$scratch/items.json"
+  { git grep -l -e 'hotpath::measure' -- 'crates/*/src/**' || true; } \
+    | jq -R -s '[split("\n")[] | select(. != "") | split("/")[1]] | unique' > "$scratch/hotpath.json"
+  cargo metadata --locked --no-deps --format-version 1 | jq -c '
+    (.workspace_root + "/crates/") as $crates
+    | [.packages[] | select(.manifest_path | startswith($crates))] as $members
+    | ($members | map({key: .name, value: (.manifest_path | ltrimstr($crates) | split("/")[0])}) | from_entries) as $dir
+    | $members[]
+    | {crate: $dir[.name], deps: ([.dependencies[] | select(.kind == null) | $dir[.name] // empty] | unique)} as $member
+    | .targets[]
+    | select(any(.kind[]; . == "lib"))
+    | $member + {library: (.name | gsub("-"; "_"))}' > "$scratch/crates.jsonl"
+  : > "$scratch/rows.jsonl"
+  while IFS= read -r member; do
+    crate=$(jq -r .crate <<< "$member")
+    sources=(":(glob)crates/$crate/src/**/*.rs" ':(exclude,glob)**/tests.rs' ':(exclude,glob)**/tests/**')
+    specs=$({ git grep -h -o -e '#\[spec(' -- "${sources[@]}" || true; } | wc -l)
+    lines=$(git ls-files -z -- "${sources[@]}" | xargs -0 -r cat | wc -l)
+    jq -c -f "$census/surface.jq" "target/purposes/doc/$(jq -r .library <<< "$member").json" > "$scratch/surface.json"
+    jq -n -c --argjson member "$member" --argjson specs "$specs" --argjson lines "$lines" \
+      --slurpfile surface "$scratch/surface.json" --slurpfile items "$scratch/items.json" --slurpfile hotpath "$scratch/hotpath.json" \
+      '$member + $surface[0] + {items: ($items[0][$member.crate] // 0), specs: $specs, lines: $lines, hotpath: ($hotpath[0] | index($member.crate) != null)} | del(.library)' \
+      >> "$scratch/rows.jsonl"
+  done < "$scratch/crates.jsonl"
+  jq -s '{rows: .}' "$scratch/rows.jsonl" | jq -j --rawfile doc ledger/census.md -f "$census/census.jq"
+}
+if [[ -n ${usage_census:-} ]]; then
+  cp "$usage_census" "$scratch/census.md"
+else
+  build > "$scratch/census.md"
+fi
+if [[ ${usage_check:-false} != true ]]; then
+  cp "$scratch/census.md" ledger/census.md
+  echo "report:bootstrap-census: wrote ledger/census.md"
+  exit 0
+fi
+stale=false
+diff -u --label 'ledger/census.md, committed' --label 'ledger/census.md, taken now' ledger/census.md "$scratch/census.md" > "$scratch/difference" || stale=true
+if [[ -z ${REPORT_FILE:-} ]]; then
+  if [[ $stale == true ]]; then
+    cat "$scratch/difference"
+    echo 'report:bootstrap-census: ledger/census.md is stale; run `mise run report:bootstrap-census` and land it' >&2
+    exit 1
+  fi
+  echo "report:bootstrap-census: ledger/census.md is current"
+  exit 0
+fi
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+title='report: bootstrap census'
+gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,state,title \
+  | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
+number=$(jq -r '.number // empty' "$scratch/filed.json")
+state=$(jq -r '.state // empty' "$scratch/filed.json")
+head=$(git rev-parse --short HEAD)
+if [[ $stale == false ]]; then
+  if [[ $state == OPEN ]]; then
+    gh issue close "$number" --repo "$repo" --reason completed --comment "\`ledger/census.md\` is current at $head." > /dev/null
+    echo "closed #$number: the census is current"
+  else
+    echo "report:bootstrap-census: ledger/census.md is current"
+  fi
+  exit 0
+fi
+{
+  echo "\`ledger/census.md\` is not the census of \`main\` at $head. Run \`mise run report:bootstrap-census\` and land the file (#2896)."
+  echo
+  if (( $(wc -c < "$scratch/difference") > 60000 )); then
+    echo "The difference is $(wc -l < "$scratch/difference") lines, past an issue body's size; \`mise run report:bootstrap-census --check\` prints it."
+  else
+    echo '```diff'
+    cat "$scratch/difference"
+    echo '```'
+  fi
+} > "$scratch/body.md"
+if [[ -z $number ]]; then
+  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
+else
+  [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
+  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  echo "updated #$number: the census is stale"
+fi
+{% endraw %}'''
+
 # The pull request's title becomes the header of its merge commit on main,
 # and the PR title workflow lints it with the commit rules: a conventional
 # header of at most 72 characters, its type and scope from

@@ -1,0 +1,296 @@
+[
+  {
+    "name": "a trait implementation's items name no boundary type but keep their clauses; a nested bullet and another crate's item count nothing",
+    "program": "surface.jq",
+    "input": {
+      "format_version": 58,
+      "index": {
+        "1": {
+          "crate_id": 0,
+          "docs": "Makes one.\n\n# Specification\n- requires: the input is fresh.\n- ensures: the answer holds it.\n  - ensures: a nested bullet is not a clause.\n- witness: `tests::makes_one`",
+          "inner": {
+            "function": {
+              "sig": {
+                "inputs": [
+                  [
+                    "x",
+                    {
+                      "resolved_path": {
+                        "path": "Own",
+                        "id": 10,
+                        "args": null
+                      }
+                    }
+                  ]
+                ],
+                "output": {
+                  "resolved_path": {
+                    "path": "Vec",
+                    "id": 20,
+                    "args": {
+                      "angle_bracketed": {
+                        "args": [
+                          {
+                            "type": {
+                              "resolved_path": {
+                                "path": "Own",
+                                "id": 10,
+                                "args": null
+                              }
+                            }
+                          }
+                        ],
+                        "constraints": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "2": {
+          "crate_id": 0,
+          "docs": "- panics: when empty.",
+          "inner": {
+            "struct_field": {
+              "resolved_path": {
+                "path": "Other",
+                "id": 21,
+                "args": null
+              }
+            }
+          }
+        },
+        "3": {
+          "crate_id": 0,
+          "docs": null,
+          "inner": {
+            "impl": {
+              "trait": {
+                "path": "Display",
+                "id": 30,
+                "args": null
+              },
+              "items": [4],
+              "for": {
+                "resolved_path": {
+                  "path": "Own",
+                  "id": 10,
+                  "args": null
+                }
+              }
+            }
+          }
+        },
+        "4": {
+          "crate_id": 0,
+          "docs": "- ensures: formats the value.",
+          "inner": {
+            "function": {
+              "sig": {
+                "inputs": [
+                  [
+                    "f",
+                    {
+                      "borrowed_ref": {
+                        "lifetime": null,
+                        "is_mutable": true,
+                        "type": {
+                          "resolved_path": {
+                            "path": "Formatter",
+                            "id": 22,
+                            "args": null
+                          }
+                        }
+                      }
+                    }
+                  ]
+                ],
+                "output": null
+              }
+            }
+          }
+        },
+        "5": {
+          "crate_id": 1,
+          "docs": "- ensures: another crate's clause.\n- witness: `elsewhere`",
+          "inner": {
+            "function": {
+              "sig": {
+                "inputs": [
+                  [
+                    "y",
+                    {
+                      "resolved_path": {
+                        "path": "Elsewhere",
+                        "id": 23,
+                        "args": null
+                      }
+                    }
+                  ]
+                ],
+                "output": null
+              }
+            }
+          }
+        }
+      },
+      "paths": {
+        "10": {
+          "crate_id": 0,
+          "path": ["k", "Own"],
+          "kind": "struct"
+        },
+        "20": {
+          "crate_id": 2,
+          "path": ["alloc", "vec", "Vec"],
+          "kind": "struct"
+        },
+        "21": {
+          "crate_id": 3,
+          "path": ["other", "Other"],
+          "kind": "struct"
+        },
+        "22": {
+          "crate_id": 4,
+          "path": ["core", "fmt", "Formatter"],
+          "kind": "struct"
+        },
+        "23": {
+          "crate_id": 5,
+          "path": ["elsewhere", "Elsewhere"],
+          "kind": "struct"
+        },
+        "30": {
+          "crate_id": 4,
+          "path": ["core", "fmt", "Display"],
+          "kind": "trait"
+        }
+      }
+    },
+    "output": {
+      "types": 3,
+      "foreign": ["alloc::vec::Vec", "other::Other"],
+      "clauses": 4,
+      "witnesses": 1
+    }
+  },
+  {
+    "name": "a rustdoc JSON format other than 58 stops the program",
+    "program": "surface.jq",
+    "input": {
+      "format_version": 57,
+      "index": {},
+      "paths": {}
+    },
+    "fails": true
+  },
+  {
+    "name": "off-hotpath leaves rank first by fewest types then most specs per item, depth runs through a chain, hotpath and itemless crates last, and the block between the markers is replaced",
+    "program": "census.jq",
+    "args": {
+      "doc": "# Head\n\nProse.\n\n<!-- census:begin -->\nan old block\n<!-- census:end -->\n\n## Tail\n"
+    },
+    "input": {
+      "rows": [
+        {
+          "crate": "eta",
+          "items": 0,
+          "types": 0,
+          "foreign": [],
+          "clauses": 0,
+          "witnesses": 0,
+          "specs": 0,
+          "hotpath": false,
+          "deps": [],
+          "lines": 7
+        },
+        {
+          "crate": "delta",
+          "items": 1,
+          "types": 0,
+          "foreign": [],
+          "clauses": 1,
+          "witnesses": 0,
+          "specs": 0,
+          "hotpath": false,
+          "deps": ["epsilon"],
+          "lines": 40
+        },
+        {
+          "crate": "zeta",
+          "items": 1,
+          "types": 0,
+          "foreign": [],
+          "clauses": 0,
+          "witnesses": 0,
+          "specs": 0,
+          "hotpath": true,
+          "deps": [],
+          "lines": 30
+        },
+        {
+          "crate": "epsilon",
+          "items": 20,
+          "types": 10,
+          "foreign": [],
+          "clauses": 0,
+          "witnesses": 0,
+          "specs": 1,
+          "hotpath": false,
+          "deps": ["beta"],
+          "lines": 900
+        },
+        {
+          "crate": "gamma",
+          "items": 2,
+          "types": 1,
+          "foreign": [],
+          "clauses": 2,
+          "witnesses": 0,
+          "specs": 0,
+          "hotpath": false,
+          "deps": [],
+          "lines": 60
+        },
+        {
+          "crate": "alpha",
+          "items": 4,
+          "types": 2,
+          "foreign": ["core::option::Option"],
+          "clauses": 3,
+          "witnesses": 2,
+          "specs": 1,
+          "hotpath": false,
+          "deps": [],
+          "lines": 100
+        },
+        {
+          "crate": "beta",
+          "items": 3,
+          "types": 1,
+          "foreign": [],
+          "clauses": 0,
+          "witnesses": 0,
+          "specs": 1,
+          "hotpath": false,
+          "deps": [],
+          "lines": 50
+        }
+      ]
+    },
+    "output": "# Head\n\nProse.\n\n<!-- census:begin -->\n| Crate | Public items | Boundary types | Specs per item | Hotpath | Depth | Lines |\n| ----- | ------------ | -------------- | -------------- | ------- | ----- | ----- |\n| `alpha` | 4 | 2 | 1.50 | no | 0 | 100 |\n| `beta` | 3 | 1 | 0.33 | no | 0 | 50 |\n| `delta` | 1 | 0 | 1.00 | no | 2 | 40 |\n| `epsilon` | 20 | 10 | 0.05 | no | 1 | 900 |\n| `eta` | 0 | 0 | none | no | 0 | 7 |\n| `gamma` | 2 | 1 | 1.00 | no | 0 | 60 |\n| `zeta` | 1 | 0 | 0.00 | yes | 0 | 30 |\n\n| Rank | Crate | Why |\n| ---- | ----- | --- |\n| 1 | `beta` | leaf; 0.33 boundary types per item; 0.33 specs per item |\n| 2 | `alpha` | leaf; 0.50 boundary types per item; 1.50 specs per item |\n| 3 | `gamma` | leaf; 0.50 boundary types per item; 1.00 specs per item |\n| 4 | `delta` | depth 2; 0.00 boundary types per item; 1.00 specs per item |\n| 5 | `epsilon` | depth 1; 0.50 boundary types per item; 0.05 specs per item |\n| 6 | `zeta` | hotpath; leaf; 0.00 boundary types per item; 0.00 specs per item |\n| 7 | `eta` | no public items |\n\nThe top three's boundary types from other crates, each by the path rustdoc records for its definition:\n\n- `beta`: 1 boundary type, none from another crate\n- `alpha`: 2 boundary types, 1 from another crate: `core::option::Option`\n- `gamma`: 1 boundary type, none from another crate\n<!-- census:end -->\n\n## Tail\n"
+  },
+  {
+    "name": "a page with no census markers stops the program",
+    "program": "census.jq",
+    "args": {
+      "doc": "# Census\n"
+    },
+    "input": {
+      "rows": []
+    },
+    "fails": true
+  }
+]
