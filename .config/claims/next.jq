@@ -1,12 +1,11 @@
 # The claim order (#2533, `tracker.md` § tracker-claims): the next item a
 # seat on an area claims, as one `number<TAB>bucket<TAB>title` line, or none,
 # after one `collector: #n (k open rows)` line for each collector in the
-# area (#3111), one `unsectioned: #n` line for each candidate in the area a
-# filer marked `status:unsectioned` (#3112), one `needs sections: #n` or
-# `blocked: #n` line for each other issue ranked ahead of it that lacks a
-# unit's sections or waits on an open issue, and one `restate: `<axis>`:
-# <question>` line for each of the pick's readings still the migration's
-# `unstated` placeholder (#2955).
+# area (#3111), one `blocked: #n` line for each issue ranked ahead of it that
+# waits on an open issue, one `sections due: #n — <finding>` line for each
+# section the pick lacks (#3134), and one `restate: `<axis>`: <question>`
+# line for each of the pick's readings still the migration's `unstated`
+# placeholder (#2955).
 #
 # Input:
 #   area     the area's label, `area:<name>`
@@ -33,18 +32,16 @@
 # gaps then rank by `effort:`, cheapest first (`easy`, `medium`, `hard`,
 # `unknown`, then none): every defect is high by default, so effort is what
 # separates them (#3111). Then the oldest issue comes first. The pick is the
-# first candidate `unit:check` passes
-# (`findings.jq`, #2744) and no open issue blocks (#2902); each one ranked
-# ahead of it that fails either is named once, as blocked when it is, so the
-# coordinator sees whose sections to write and the seat why it was passed
-# over. An issue a filer marked `status:unsectioned` and still lacking its
-# sections is named as such, ranked ahead or not, so the coordinator writes
-# exactly those sections (#3112). A
-# `needs sections:` line quotes the question of each axis whose
-# reading is bare. A pick whose reading is the `unstated` placeholder is
-# claimed all the same, its axes' questions printed first: the seat restates
-# those rows on the issue as its first act, and `pr:open` refuses the landing
-# until it has (`opening.jq`).
+# first candidate no open issue blocks (#2902), sectioned or not: the seat
+# that claims an issue has its context, so sectioning is the claim's first
+# obligation (#3134, reversing #2744's pass-over and #3112's coordinator
+# lines). Each section it lacks (`findings.jq`, as `unit:check` reads it) is
+# printed as `sections due`; the seat writes them, runs `## Try first` before
+# `## The shape` is final, and pages the coordinator for `shape:signed`,
+# without which `pr:open` refuses the landing (`opening.jq`). Each candidate
+# ranked ahead of the pick that an open issue blocks is named once, so the
+# seat sees why it was passed over. A pick whose reading is the `unstated`
+# placeholder is claimed all the same, its axes' questions printed first.
 
 include "sections";
 include "findings";
@@ -59,13 +56,8 @@ def effort:
 def priority:
   ["priority:high", "priority:medium", "priority:backlog"] as $ranks
   | [.labels[] as $l | $ranks | index($l) | values] | min // 3;
-def bare: [.body // "" | marks | select(.mark != null and .reason == null) | .axis];
 def unstated_axes: [.body // "" | marks | select(.reason | unstated) | .axis];
-def ready: [.body // "" | findings] | length == 0;
 def quoted($marked): [axes[] | . as $axis | select($marked | index($axis)) | "`\($axis)`: \(questions[$axis])"];
-def needs:
-  quoted(bare) as $axes
-  | "needs sections: #\(.number)" + (if ($axes | length) > 0 then " — restate " + ($axes | join(" · ")) else "" end);
 def blocked: (.blocked // 0) > 0;
 
 # A collector's open rows (#3111): its unchecked `- [ ]` items, and its table
@@ -102,9 +94,11 @@ def open_rows:
       | .[] | [., "planned"])
   ] as $ranked
 | ([.issues[] | select(has("collector") and has($area))] | sort_by(.number) | .[] | open_rows as $k | "collector: #\(.number) (\($k) open row\(if $k == 1 then "" else "s" end))"),
-  ($open | map(select(has($area) and has("status:unsectioned") and (ready | not))) | sort_by(.number) | .[] | "unsectioned: #\(.number)"),
-  ([range(0; $ranked | length) | select($ranked[.][0] | ready and (blocked | not))] | first) as $at
+  ([range(0; $ranked | length) | select($ranked[.][0] | blocked | not)] | first) as $at
 | ($ranked[:$at // ($ranked | length)]
     | reduce .[] as $entry ([]; if any(.[]; .number == $entry[0].number) then . else . + [$entry[0]] end)
-    | .[] | select(has("status:unsectioned") and (ready | not) | not) | if blocked then "blocked: #\(.number)" else needs end),
-  ($at // empty | $ranked[.] | (.[0] | quoted(unstated_axes)[] | "restate: \(.)"), "\(.[0].number)\t\(.[1])\t\(.[0].title)")
+    | .[] | "blocked: #\(.number)"),
+  ($at // empty | $ranked[.]
+    | (.[0] | .number as $n | .body // "" | findings | "sections due: #\($n) — \(.)"),
+      (.[0] | quoted(unstated_axes)[] | "restate: \(.)"),
+      "\(.[0].number)\t\(.[1])\t\(.[0].title)")

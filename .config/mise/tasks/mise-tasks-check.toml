@@ -1417,7 +1417,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # it supersedes, the concerns ledger and the sources the change adds, and the
 # lines `pr:open` prints for them, or none (`opening.jq`): the body must work
 # the branch's issue (#2462), answer the sources (#2499) and the reading axes
-# (#2522) its issues request, and name the concerns it touches (#2523). Each
+# (#2522) its issues request, and name the concerns it touches (#2523); each
+# in `.config/claims/signed.json` the issues a body works and the lines
+# `pr:open` refuses them with until each is sectioned and carries
+# `shape:signed`, or none (`signed.jq`, #3134). Each
 # case in `.config/claims/unit.json` holds an issue body and the lines
 # `unit:check` prints for it, or none (`unit.jq`, #2532); each in
 # `.config/claims/next.json` the open issues and the claim `claim:next` takes
@@ -1459,6 +1462,7 @@ cases() {
 }
 cases claims decide.jq cases.json
 cases opening opening.jq opening.json
+cases signed signed.jq signed.json
 cases unit unit.jq unit.json
 cases next next.jq next.json
 cases ledger ledger.jq ledger.json
@@ -1497,7 +1501,7 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report"
 '''
 
 # Every `Where` of a body's `## Refactoring` names something the workspace

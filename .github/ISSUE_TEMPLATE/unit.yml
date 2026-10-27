@@ -13,7 +13,7 @@ body:
       value: >-
         Every section a unit carries is a field. The issues workflow writes them as the body's sections,
         sets the kind and areas as labels, and runs `unit:check`: a section left without content labels the
-        issue `status:unsectioned`, and `claim:next` passes it over until it is written.
+        issue `status:unsectioned`, and the seat that claims it writes the section first.
   - type: dropdown
     id: kind
     attributes:

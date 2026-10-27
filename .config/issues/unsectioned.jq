@@ -29,7 +29,7 @@ def settled: gsub("\r"; "") | sub("\\s+$"; "");
        elif $failing then
          "\(marker)\n<details><summary>unit:check: \($in.findings | length) finding\(if ($in.findings | length) == 1 then "" else "s" end); labelled <code>status:unsectioned</code> until each is written</summary>\n\n"
          + ($in.findings | map("- \(.)") | join("\n"))
-         + "\n\n</details>\n\n`claim:next` passes this issue over while the label stands (`units.md` § units-issue). This comment is rewritten on every edit.\n"
+         + "\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
        else
          "\(marker)\n**unit:check:** sections complete; `status:unsectioned` is off.\n"
        end) as $text

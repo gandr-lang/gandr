@@ -1,7 +1,8 @@
 # What a unit issue lacks before work may start on it (#2532): `findings`
 # gives one line per missing or malformed section of the body it is applied
-# to, or nothing. `unit:check` prints them (`unit.jq`); `claim:next` passes
-# over an issue that has any (`next.jq`, #2744).
+# to, or nothing. `unit:check` prints them (`unit.jq`); `claim:next` prints
+# them as the pick's sections due (`next.jq`, #3134), and `pr:open` refuses a
+# landing on an issue that has any (`signed.jq`).
 #
 # A unit issue carries, each with content (`units.md` § units-issue):
 #
