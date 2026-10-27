@@ -24,13 +24,18 @@ path = "tests/lib.rs"
 # moved into the sequent crate's store, where its readback reads it. A
 # decomposition's web comes from the session crate. The stencils are a normal
 # dependency for their layout and the executor, and a build dependency for
-# the stencil list the build script checks the object against.
+# the stencil list the build script checks the object against. A value
+# crossing between worlds commits to the value plane under the typed
+# chunker's constants, a lift's level read through the strata crate.
 [dependencies]
 gandr-core-sequent.workspace = true
 gandr-core-session.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-stencils.workspace = true
+gandr-storage-chunker.workspace = true
+gandr-storage-values.workspace = true
 gandr-theory-cell-complexes.workspace = true
 
 [build-dependencies]

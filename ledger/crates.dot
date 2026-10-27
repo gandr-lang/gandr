@@ -144,8 +144,11 @@ digraph crates {
   "runtime-emitter" -> "core-sequent";
   "runtime-emitter" -> "core-session";
   "runtime-emitter" -> "core-term";
+  "runtime-emitter" -> "kernel-strata";
   "runtime-emitter" -> "kernel-term";
   "runtime-emitter" -> "runtime-stencils";
+  "runtime-emitter" -> "storage-chunker";
+  "runtime-emitter" -> "storage-values";
   "runtime-emitter" -> "theory-cell-complexes";
   "storage-artifact" -> "kernel-term";
   "storage-artifact" -> "storage-records";
