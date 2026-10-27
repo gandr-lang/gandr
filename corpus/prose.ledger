@@ -170,7 +170,7 @@ corpus/ledger/features/rust-default-layout.gandr Passive 8f1bd0c19775b707
 corpus/ledger/features/rust-default-layout.gandr Tense 1dfbcd5f9feb2e29
 corpus/ledger/features/rust-default-layout.gandr Tense 8786b716e773287d
 corpus/ledger/features/rust-default-layout.gandr Tense 8f1bd0c19775b707
-corpus/ledger/features/rust-semantics-thir.gandr Tense 1d6327d4ddd40e0b
+corpus/ledger/features/rust-semantics-thir.gandr Tense 3d4264ca826d8fde
 corpus/ledger/features/rust-semantics-thir.gandr Tense 57709662e51e1f44
 corpus/ledger/features/rust-semantics-thir.gandr Tense a96949838de70758
 corpus/ledger/features/second-order-rules.gandr Passive 3f715cb8edb8e901
@@ -1627,6 +1627,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/include/two-join
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary/extern-form.txt Procedure a9f90cd2878c4391
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary/extern-form.txt Procedure debbb6e4a988e561
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary/function-row.txt Procedure d8336f02b0ac3488
+crates/surface-render-terminal/tests/golden/corpus/pathological/interop/thir/buddy-pop.txt Procedure a216726a9afbb013
 crates/surface-render-terminal/tests/golden/corpus/pathological/interop/thir/example.txt Procedure a216726a9afbb013
 crates/surface-render-terminal/tests/golden/corpus/pathological/layouts/ribbit-list.txt Procedure b3126045a10f5cba
 crates/surface-render-terminal/tests/golden/corpus/pathological/layouts/rust-default.txt Procedure a216726a9afbb013
