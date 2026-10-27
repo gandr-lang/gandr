@@ -1109,6 +1109,48 @@ impl<'source> Program<'source>
         )
     }
 
+    /// The declaration whose path from the top level is `path`, its segments
+    /// joined by `.`: the last one declared at it when several are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the highest admission position that holds a declaration and
+    ///   whose path is `path`, as [`constant_names`] spells it; `Undeclared`
+    ///   when none is.
+    /// - provides: the reading of a package's manifest fields by their path,
+    ///   `Package.name`.
+    /// - fails: an absent path is the typed absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's member is found by its whole path and not
+    ///   by its bare name, and a path no declaration holds is undeclared.
+    /// - witness: `evaluate::tests::a_member_is_named_by_its_whole_path_2687`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(constant) => self.declarations.contains_key(&constant)
+            && self.names.get(usize::from(constant)).is_some_and(|name| name == path.as_ref()),
+        Maybe::Absent(declaration_name::Absent::Undeclared) => true,
+    })]
+    #[inline]
+    pub fn named(
+        &self,
+        path: SurfaceName<'_>,
+    ) -> Maybe<ConstantIndex, declaration_name::Absent>
+    {
+        self.names
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(position, name)| (ConstantIndex::from(position), name))
+            .find(|&(constant, name)| {
+                name == path.as_ref() && self.declarations.contains_key(&constant)
+            })
+            .map_or(
+                Maybe::Absent(declaration_name::Absent::Undeclared),
+                |(constant, _)| Maybe::Present(constant),
+            )
+    }
+
     /// Each declaration whose accepted body did not focus, with the focusing's
     /// refusal, in admission order.
     ///
@@ -3183,6 +3225,39 @@ def bad : Integer ; def bad = "text" ;"#,
         assert!(
             program("").declarations.is_empty(),
             "empty input admits no declaration"
+        );
+    }
+
+    /// #2687: a module's member is found by its whole path, not by its bare
+    /// name, which names the top-level declaration of that name; a path no
+    /// declaration holds is undeclared.
+    #[test]
+    fn a_member_is_named_by_its_whole_path_2687()
+    {
+        let mut package = program(
+            r#"def name = "outer" ; module Package { def name = "hello" ; def version = "0.1.0" ; }"#,
+        );
+        let spelled =
+            |package: &mut Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
+                Maybe::Present(constant) => Some(package.evaluate(constant).to_string()),
+                Maybe::Absent(super::declaration_name::Absent::Undeclared) => None,
+            };
+        assert_eq!(
+            [
+                spelled(&mut package, "Package.name"),
+                spelled(&mut package, "Package.version"),
+                spelled(&mut package, "name"),
+                spelled(&mut package, "Package.license"),
+                spelled(&mut package, "version"),
+            ],
+            [
+                Some(String::from("\"hello\"")),
+                Some(String::from("\"0.1.0\"")),
+                Some(String::from("\"outer\"")),
+                None,
+                None,
+            ],
+            "each member by its path, the top-level name by its own"
         );
     }
 

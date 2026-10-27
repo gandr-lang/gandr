@@ -27,7 +27,9 @@ path = "tests/lib.rs"
 # normaliser's staging observer programs and checks them through the
 # checker's program entry, on the driver's `rayon` pool. The reader maps a
 # source above its crossover through memmap2. The `ledger` verb writes the
-# syntax ledger's machine form through serde_json.
+# syntax ledger's machine form through serde_json. A package's manifest
+# carries the BLAKE3 digest of its body, through blake3, so the checker
+# tells its own file from a hand edit.
 # A closure's judgement is held in a self_cell with the closure's lowering,
 # whose names it borrows.
 # The pinned anodized facade supplies core-only specification helpers;
@@ -35,6 +37,7 @@ path = "tests/lib.rs"
 # judgement, the prelude's among them, for the benchmark report.
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-sequent.workspace = true

@@ -10,8 +10,8 @@
 //! | Code | Meaning |
 //! | ---- | ------- |
 //! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, or every exemplar held; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
-//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
-//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's library states no manifest, or its `gandr.toml` was edited by hand; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
 //! walk continues past a faulted path, so every fault of a run is printed.
@@ -59,7 +59,15 @@
 //! A path is a source file of any name, or a directory searched for `.gandr`
 //! sources. The directories a source sits in decide its root — `strict`,
 //! `fixture`, or `fixture/pending` — and a source under none is strict
-//! (`gandr-surface-dispatcher`'s `root` module). A refusal, an unsettled
+//! (`gandr-surface-dispatcher`'s `root` module). A path inside a package — the
+//! sources beside a `lib.gandr`, rooted above it when it sits in `src` — stands
+//! for the whole package, and `check`, `test` and `fmt` given no path work on
+//! the package the working directory sits in (`gandr-surface-dispatcher`'s
+//! `package` module). After its walk, `check` reconciles each such package's
+//! `gandr.toml` with the library's `Package` model, `manifest: <path>:
+//! written`, `rewritten` or `unchanged` on standard output; a manifest edited
+//! by hand is left as it stands and is `gandr: <path>: drifted: …` on standard
+//! error. A refusal, an unsettled
 //! declaration and a goal each print as a located source snippet — the class
 //! and message, the path with line and column, the lines the report covers with
 //! their marks — followed by a blank line (`gandr-surface-diagnostics`'s
@@ -263,6 +271,7 @@ use core::ops::ControlFlow;
 use core::time::Duration;
 use std::io::IsTerminal as _;
 use std::io::Write as _;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 #[cfg(unix)]
@@ -274,6 +283,7 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Area;
 use gandr_surface_dispatcher::AuthorityError;
+use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
@@ -284,12 +294,16 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
+use gandr_surface_dispatcher::LIBRARY;
 use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Lints;
+use gandr_surface_dispatcher::Manifest;
+use gandr_surface_dispatcher::ManifestFault;
 use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
@@ -301,14 +315,19 @@ use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
+use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Unmanifested;
+use gandr_surface_dispatcher::Unpackaged;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::WorldName;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_dispatcher::packaged;
+use gandr_surface_dispatcher::reconcile;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
@@ -407,8 +426,10 @@ enum Command
         /// The threads the sources are parsed and lowered on.
         #[command(flatten)]
         jobs: Jobs,
-        /// Source files, and directories searched for `.gandr` sources.
-        #[arg(required = true)]
+        /// Source files, and directories searched for `.gandr` sources. A
+        /// path inside a package checks the whole package, and writes its
+        /// `gandr.toml`; with no path, the package the working directory sits
+        /// in.
         paths: Vec<PathBuf>,
     },
     /// Run the corpus under each path: the same pass as `check`, printing
@@ -423,8 +444,9 @@ enum Command
         /// The threads the sources are parsed and lowered on.
         #[command(flatten)]
         jobs: Jobs,
-        /// Source files, and directories searched for `.gandr` sources.
-        #[arg(required = true)]
+        /// Source files, and directories searched for `.gandr` sources. A
+        /// path inside a package runs the whole package; with no path, the
+        /// package the working directory sits in.
         paths: Vec<PathBuf>,
     },
     /// Serve the Language Server Protocol over standard input and output.
@@ -594,8 +616,9 @@ enum Command
         /// The threads the sources are laid out on.
         #[command(flatten)]
         jobs: Jobs,
-        /// Source files, and directories searched for `.gandr` sources.
-        #[arg(required = true)]
+        /// Source files, and directories searched for `.gandr` sources. A
+        /// path inside a package lays out the whole package; with no path,
+        /// the package the working directory sits in.
         paths: Vec<PathBuf>,
     },
     /// Generate a ledger of the language surface and write it, verify its
@@ -840,6 +863,19 @@ struct Printing
     spelling: Spelling,
 }
 
+/// What a walk is run as: its verb, the lints it reports, and the packages
+/// whose manifests a `check` reconciles.
+#[derive(Clone, Copy, Debug)]
+struct Pass<'packages>
+{
+    /// The verb the walk runs under.
+    verb: Verb,
+    /// The lints reported beyond their attributes.
+    lints: Lints,
+    /// The packages the walk's paths reached.
+    packages: &'packages [Package],
+}
+
 /// The spelling `flag` names, else the one the user's configuration file
 /// names, else [`Spelling::Unicode`].
 ///
@@ -919,16 +955,20 @@ enum Screen
 /// - ensures: [`Cli`] parses before anything else is written. `--help` and
 ///   `--version` print and exit `0`; any other argument error prints its usage
 ///   message and exits `2`. A bare invocation prints one status line and exits
-///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
-///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted;
-///   `run` runs its script as [`script`] states, and `fmt` lays out its paths
-///   as [`fmt`] states. `lsp` serves and `lsp --capabilities` prints as [`lsp`]
-///   and [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
-///   [`tui`] states. Every face writes its types and values in the spelling
-///   [`spelling`] resolves; a configuration file that cannot be read is `gandr:
-///   <path>: <fault>` on standard error and exits `2` before any verb runs.
-///   Output the driver cannot write is noted on standard error, when that is
-///   writable, and exits `2`.
+///   `0`. `check`, `test` and `fmt` first widen each path inside a package to
+///   the whole package, and with no path take the package the working directory
+///   sits in, exiting `2` with one `gandr:` line outside every package
+///   (`gandr-surface-dispatcher`'s `packaged`). `check` and `test` walk their
+///   paths, print what [`render`] prints, and exit `0`, `1` or `2` as the run
+///   settled, was unsettled or faulted, `check` reconciling each package's
+///   manifest as [`run`] states; `run` runs its script as [`script`] states,
+///   and `fmt` lays out its paths as [`fmt`] states. `lsp` serves and `lsp
+///   --capabilities` prints as [`lsp`] and [`capabilities`] state, `repl` runs
+///   as [`repl`] states, and `tui` as [`tui`] states. Every face writes its
+///   types and values in the spelling [`spelling`] resolves; a configuration
+///   file that cannot be read is `gandr: <path>: <fault>` on standard error and
+///   exits `2` before any verb runs. Output the driver cannot write is noted on
+///   standard error, when that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -960,6 +1000,7 @@ enum Screen
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
+/// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -989,6 +1030,8 @@ fn main() -> ExitCode
     );
     #[cfg(feature = "tracing")]
     let _span = tracing::info_span!("driver").entered();
+    // The packages a `check` reached, whose manifests it reconciles.
+    let mut packages: Vec<Package> = Vec::new();
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
         Some(Command::Check {
@@ -1008,6 +1051,13 @@ fn main() -> ExitCode
                 },
             };
             let grant = grant.entering(entry);
+            let paths = match packaged(paths, Path::new(".")) {
+                Ok((paths, reached)) => {
+                    packages = reached;
+                    paths
+                },
+                Err(unpackaged) => return unpathed(&unpackaged),
+            };
             (
                 Invocation::Check {
                     goals: if goals { Goals::Reported } else { Goals::Gated },
@@ -1025,7 +1075,10 @@ fn main() -> ExitCode
             paths,
         }) => (
             Invocation::Test {
-                paths,
+                paths: match packaged(paths, Path::new(".")) {
+                    Ok((paths, _)) => paths,
+                    Err(unpackaged) => return unpathed(&unpackaged),
+                },
                 width: Width::from(jobs),
             },
             Verbosity::from(verbosity),
@@ -1048,7 +1101,10 @@ fn main() -> ExitCode
             paths,
         }) => (
             Invocation::Format {
-                paths,
+                paths: match packaged(paths, Path::new(".")) {
+                    Ok((paths, _)) => paths,
+                    Err(unpackaged) => return unpathed(&unpackaged),
+                },
                 options: FormatOptions {
                     page: width.map_or_else(|| FormatOptions::default().page, PageWidth::from),
                     form: match form {
@@ -1172,6 +1228,7 @@ fn main() -> ExitCode
             verbosity,
             spelling,
         },
+        &packages,
         &mut stdout,
         &mut stderr,
     );
@@ -1779,6 +1836,30 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
     ExitCode::from(FAULTED)
 }
 
+/// Refuse a verb given no path outside every package.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr:` and why no package was found
+///   from the working directory; exits `2`, a malformed invocation, whether or
+///   not the line could be written.
+/// - provides: the exit of `check`, `test` or `fmt` run with no path where no
+///   package is.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `check` with no path in a directory with no library above
+///   it exits two before any source is read.
+/// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn unpathed(unpackaged: &Unpackaged) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = writeln!(stderr, "gandr: {unpackaged}");
+    ExitCode::from(FAULTED)
+}
+
 /// Render `outcome` and choose the exit code.
 ///
 /// # Specification
@@ -1790,12 +1871,13 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 ///   followed by an empty line, and each ledger line — a settled fixture or a
 ///   pending source's refusal under `test`, a pending source the lowering read
 ///   — prefixed with its path. Each path the walk cannot carry through the
-///   pipeline is a line on standard error. The run's report and its verdict
-///   close standard output, and the exit code is the verdict's. A script
-///   follows [`script`]: what it prints goes to standard output, its
-///   diagnostics to standard error and its run status chooses the exit. A
-///   staging follows [`stage`], a formatting [`fmt`], and a ledger task
-///   [`ledger`].
+///   pipeline is a line on standard error. A walk under `check` then reconciles
+///   the manifest of each of `packages`, as [`run`] does. The run's report and
+///   its verdict close standard output, and the exit code is the verdict's, or
+///   a manifest's when that is worse. A script follows [`script`]: what it
+///   prints goes to standard output, its diagnostics to standard error and its
+///   run status chooses the exit. A staging follows [`stage`], a formatting
+///   [`fmt`], and a ledger task [`ledger`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -1817,6 +1899,7 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `tests::cli::every_width_stages_the_serial_run`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 #[spec(captures: [status = matches!(outcome, Outcome::Status(_)), script = matches!(outcome, Outcome::Script(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (script || *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
@@ -1824,6 +1907,7 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 fn render(
     outcome: Outcome,
     printing: Printing,
+    packages: &[Package],
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
@@ -1841,8 +1925,11 @@ fn render(
             walk,
             width,
         } => run(
-            verb,
-            lints,
+            Pass {
+                verb,
+                lints,
+                packages,
+            },
             walk,
             &Pool::new(width),
             printing,
@@ -2104,8 +2191,9 @@ fn stage(
     })
 }
 
-/// Visit `walk` on `pool` under `verb`, printing each step at the verbosity
-/// and in the spelling `printing` names, then the report and the verdict.
+/// Visit `walk` on `pool` under the pass's verb, printing each step at the
+/// verbosity and in the spelling `printing` names, then each manifest the
+/// pass's packages reconcile, then the report and the verdict.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2116,11 +2204,18 @@ fn stage(
 ///   every type in `spelling` — below the JSON level a report as a plain
 ///   snippet followed by an empty line and a ledger line as itself, at it each
 ///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
-///   line to standard error; then the final report and verdict, at the JSON
-///   level as one object whose `level` is `summary`. The exit is zero for
-///   settled, one for unsettled and two for faulted, as the walk's final report
-///   decides under the offered verb, at every verbosity. Every byte written and
-///   the exit are the same at every width.
+///   line to standard error. Under `check`, each package of the pass whose
+///   library settled with no refusal has its manifest read from the library's
+///   program and reconciled: each written, rewritten or unchanged is the line
+///   `manifest: <path>: <what>` on standard output, at the JSON level an object
+///   whose `level` is `manifest`; a library that states no manifest, and a
+///   manifest refused as drift, are each `gandr: <path>: <why>` on standard
+///   error and unsettle the run, and one that cannot be read or written faults
+///   it. Then the final report and verdict, at the JSON level as one object
+///   whose `level` is `summary`. The exit is zero for settled, one for
+///   unsettled and two for faulted, as the walk's final report decides under
+///   the offered verb, or a manifest when that is worse, at every verbosity.
+///   Every byte written and the exit are the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -2142,11 +2237,11 @@ fn stage(
 /// - witness: `tests::cli::every_width_prints_the_serial_run`
 /// - witness: `tests::cli::verbosity_chooses_how_much_of_a_report_prints`
 /// - witness: `tests::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
-    verb: Verb,
-    lints: Lints,
+    pass: Pass<'_>,
     walk: Walk,
     pool: &Pool,
     printing: Printing,
@@ -2154,11 +2249,20 @@ fn run(
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
+    let Pass {
+        verb,
+        lints,
+        packages,
+    } = pass;
     let Printing {
         verbosity,
         spelling,
     } = printing;
-    let visited = walk.visit(pool, |step| {
+    let checking = matches!(verb, Verb::Check(_));
+    // The manifest each package's library states, by the package's place.
+    let mut manifests: Vec<Option<Result<Manifest, Unmanifested>>> =
+        packages.iter().map(|_| None).collect();
+    let visited = walk.visit(pool, |mut step| {
         match step {
             Step::Source { .. } => {
                 for diagnostic in entries(&step, verb).linting(lints).spelling(spelling) {
@@ -2186,6 +2290,9 @@ fn run(
                         return ControlFlow::Break(error);
                     }
                 }
+                if checking {
+                    read_manifest(&mut step, packages, &mut manifests);
+                }
             },
             Step::Fault { path, fault } => {
                 if let Err(error) = writeln!(stderr, "gandr: {}: {fault}", path.display()) {
@@ -2199,7 +2306,13 @@ fn run(
         ControlFlow::Continue(report) => report,
         ControlFlow::Break(error) => return Err(error),
     };
-    let verdict = report.verdict(verb);
+    let mut verdict = report.verdict(verb);
+    for (package, manifest) in packages.iter().zip(manifests) {
+        if let Some(manifest) = manifest {
+            let reached = manifested(package, manifest, verbosity, stdout, stderr)?;
+            verdict = worse(verdict, reached);
+        }
+    }
     if verbosity == Verbosity::Json {
         let summary = serde_json::json!({
             "level": "summary",
@@ -2217,6 +2330,144 @@ fn run(
         RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
         RunVerdict::Faulted => ExitCode::from(FAULTED),
     })
+}
+
+/// Reconcile `package`'s manifest with what its library states, printing what
+/// came of it, and the verdict it leaves the run at.
+///
+/// # Specification
+/// - requires: `manifest` is what `package`'s library states.
+/// - ensures: a library that states no manifest is `gandr: <library>: <why>` on
+///   standard error and unsettles the run. Otherwise the manifest is reconciled
+///   at `package`'s root: written, rewritten or unchanged is `manifest: <path>:
+///   <what>` on standard output, at the JSON level an object whose `level` is
+///   `manifest`, and settles; drift is `gandr: <path>: <why>` on standard error
+///   and unsettles; a file that cannot be read or written likewise, and faults.
+/// - provides: the manifest step `run` takes for each package.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the outcome is the file's on disk and the streams'
+///   bytes, which the CLI witnesses observe.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a manifest written, unchanged, rewritten and drifted, and
+///   a library stating no version, each print and exit as stated.
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+fn manifested(
+    package: &Package,
+    manifest: Result<Manifest, Unmanifested>,
+    verbosity: Verbosity,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let manifest = match manifest {
+        Ok(manifest) => manifest,
+        Err(unmanifested) => {
+            writeln!(
+                stderr,
+                "gandr: {}: {unmanifested}",
+                package.library().display()
+            )?;
+            return Ok(RunVerdict::Unsettled);
+        },
+    };
+    let path = package.manifest();
+    match reconcile(&path, &manifest) {
+        Ok(reconciled) => {
+            if verbosity == Verbosity::Json {
+                let line = serde_json::json!({
+                    "level": "manifest",
+                    "path": path.display().to_string(),
+                    "reconciled": reconciled.to_string(),
+                });
+                writeln!(stdout, "{line}")?;
+            }
+            else {
+                writeln!(stdout, "manifest: {}: {reconciled}", path.display())?;
+            }
+            Ok(RunVerdict::Settled)
+        },
+        Err(fault) => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            Ok(match fault {
+                ManifestFault::Drifted => RunVerdict::Unsettled,
+                ManifestFault::Io(_) => RunVerdict::Faulted,
+            })
+        },
+    }
+}
+
+/// Read the manifest a package's library states, when `step` is that library
+/// and settled, into the package's place in `manifests`.
+///
+/// # Specification
+/// - requires: `manifests` holds one place per package, in order.
+/// - ensures: a settled source step whose canonical path is the library of a
+///   package has that package's place set to [`Manifest::of`] its program; any
+///   other step changes nothing.
+/// - provides: the manifest `run` reconciles after the walk.
+/// - fails: never; a library that states no manifest is the place's error.
+/// - panics: none.
+/// - executable: none — the clause is the body's one match; the CLI witness
+///   observes the manifest written from the library and none from an unsettled
+///   one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package checked whole writes the manifest its library
+///   states, and one whose library is unsettled writes none.
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+fn read_manifest(
+    step: &mut Step<'_>,
+    packages: &[Package],
+    manifests: &mut [Option<Result<Manifest, Unmanifested>>],
+)
+{
+    let Step::Source {
+        path,
+        standing: Standing::Settled,
+        composed: Composed::Settled {
+            ref mut program, ..
+        },
+        ..
+    } = *step
+    else {
+        return;
+    };
+    if path.file_name().is_none_or(|name| name != LIBRARY) {
+        return;
+    }
+    let Ok(canonical) = path.canonicalize()
+    else {
+        return;
+    };
+    if let Some(place) = packages
+        .iter()
+        .position(|package| package.library() == canonical)
+        .and_then(|place| manifests.get_mut(place))
+    {
+        *place = Some(Manifest::of(program));
+    }
+}
+
+/// The worse of two verdicts: a fault outranks an unsettled run, which
+/// outranks a settled one.
+///
+/// # Specification
+/// trivial.
+const fn worse(
+    one: RunVerdict,
+    other: RunVerdict,
+) -> RunVerdict
+{
+    match (one, other) {
+        (RunVerdict::Faulted, _) | (_, RunVerdict::Faulted) => RunVerdict::Faulted,
+        (RunVerdict::Unsettled, _) | (_, RunVerdict::Unsettled) => RunVerdict::Unsettled,
+        (RunVerdict::Settled, RunVerdict::Settled) => RunVerdict::Settled,
+    }
 }
 
 /// Run `runnable`, its types written in `spelling`, printing what it prints on
