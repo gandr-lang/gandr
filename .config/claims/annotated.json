@@ -34,5 +34,23 @@
       "tree": "README.md\nlib.rs\nunits-notes.md\n"
     },
     "output": "Closes #2793\n\nNo sources."
+  },
+  {
+    "name": "#3092: a `§`, a `—` or an emoji before a filename leaves the line whole, each mint written right after its name",
+    "input": {
+      "body": "Closes #1\n\n## Sources read\n\n- `core-kernel-reassessment.md` § the closure-plane fence, `bicontextual-core.md` (`fusion-pass`) — read: the fence.\n- the pages — read: `core-kernel-reassessment.md`, `bicontextual-core.md`.\n- 🙂 `bicontextual-core.md` — read: after an emoji.\n\n## Readings\n\nNone.\n",
+      "pages": {
+        "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+        "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"],
+        "deep-inference.md": [
+          "01a11ef7-a774-7403-9461-2b9fa2bd804d",
+          "01a178aa-87c3-72e2-bc2c-29df16a60b06"
+        ],
+        "units.md": [null],
+        "README.md": [null, null]
+      },
+      "tree": "README.md\nlib.rs\nunits-notes.md\n"
+    },
+    "output": "Closes #1\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § the closure-plane fence, `bicontextual-core.md` `vault:01a12317-453f-7980-9c86-68f75917f3a6` (`fusion-pass`) — read: the fence.\n- the pages — read: `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec`, `bicontextual-core.md` `vault:01a12317-453f-7980-9c86-68f75917f3a6`.\n- 🙂 `bicontextual-core.md` `vault:01a12317-453f-7980-9c86-68f75917f3a6` — read: after an emoji.\n\n## Readings\n\nNone.\n"
   }
 ]

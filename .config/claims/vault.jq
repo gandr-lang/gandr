@@ -59,7 +59,10 @@ def vault_shown:
 
 # A body with `vault:<mint>` written after each resolved filename an item of
 # its `## Sources read` keys and does not already carry, so the item's head
-# holds the citation key a crate carries verbatim.
+# holds the citation key a crate carries verbatim. The line is split on the
+# name, never cut at an offset: jq 1.7 answers `index` on a string in bytes
+# and slices it in codepoints, so a `—` or `§` before a name moved the cut
+# (#3092).
 def vault_annotated($pages; $tree):
   split("\n") as $lines
   | ([range(0; $lines | length) | select($lines[.] | test("^## Sources read\\s*(:.*)?$"))] | first) as $start
@@ -72,8 +75,8 @@ def vault_annotated($pages; $tree):
             | reduce ([vault_names[] | vault_reading($pages; $tree) | select(. != null and .verdict == "resolved")][]) as $page ($line;
                 if contains("`vault:\($page.mint)`") then .
                 else "`\($page.name)`" as $span
-                | index($span) as $at
-                | .[:$at] + $span + " `vault:\($page.mint)`" + .[$at + ($span | length):]
+                | split($span) as $parts
+                | $parts[0] + $span + " `vault:\($page.mint)`" + ($parts[1:] | join($span))
                 end)
           else .
           end]
