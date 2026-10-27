@@ -1,0 +1,29 @@
+/// `rust-semantics-thir` derives the postcondition of Corten's `example` from THIR written as data.
+///
+/// Implemented: THIR's literal, parameter, conditional, return and call as data and as a theory's operations, the weakest-precondition axioms as its rules, and `example` meeting its specification given `identity`'s.
+/// Not implemented: the axioms fired by an inspected call, which #2966 owes; THIR staged by `rustc` and the buddy allocator's rung, which #327 owes.
+///
+/// The calculus is the specification monad of THIR's control effect, one postcondition for a value and one for a `return`.
+/// A function's guard is the effect's handler, so a `return` inside a call's argument skips the call.
+///
+/// - see: corpus/model/interop/thir/example.gandr
+
+// `Value`, `Item`, `Expr`, `wpFn`, `exampleBody`, `exampleSpec`, `exampleMeets`, `exampleReturnsPast` and `identitySpec`.
+import "../../model/interop/thir/example.gandr";
+
+/// `example`'s body paired with evidence that its transformer is below its specification at every value and postcondition.
+def exampleSpecified : #{
+  m : Expr,
+  meets : (b : Value, post : Value => Type, exampleSpec(b, post)) => wpFn(identitySpec, m, b, post)
+} = (exampleBody, fn (b) { fn (post) { fn (h) {
+  run meets <- exampleMeets(b, post);
+  meets(h)
+} } });
+
+/// At false the return inside `identity`'s argument answers zero, whatever a call of `identity` needs.
+def returnsPast(
+  spec : (Item, Value, Value => Type) => Type,
+  post : Value => Type
+) -> post(Int(0)) => wpFn(spec, exampleBody, False, post) {
+  exampleReturnsPast(spec, post)
+}

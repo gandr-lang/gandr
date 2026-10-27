@@ -1,0 +1,25 @@
+// The twin of `model/interop/thir/example.gandr`: where a claim on
+// `example`'s precondition is refused (#2791).
+
+// `Value`, `Item`, `wpFn`, `exampleBody` and `identitySpec`.
+import "../../../model/interop/thir/example.gandr";
+
+/// At true `example` answers one, so its claim to end at zero is refused (#2791).
+@[ refuses("TypeMismatch") ]
+def exampleAtTrueZero(post : Value => Type) -> (post(Int(0))) => wpFn(
+  identitySpec,
+  exampleBody,
+  True,
+  post
+) {
+  return fn (h) { h }
+}
+
+/// At true the call of `identity` is reached, so the table decides it, and a claim past every table is refused (#2791).
+@[ refuses("TypeMismatch") ]
+def exampleAtTrueAnyTable(
+  spec : (Item, Value, Value => Type) => Type,
+  post : Value => Type
+) -> (post(Int(1))) => wpFn(spec, exampleBody, True, post) {
+  return fn (h) { h }
+}

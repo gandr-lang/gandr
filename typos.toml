@@ -31,3 +31,6 @@ yau = "yau"
 rela = "rela"
 # Type-theory vocabulary: a function's implicit parameters, "its implicits".
 implicits = "implicits"
+# Compiler vocabulary: rustc's typed high-level IR, `THIR`, which a Rust
+# function's semantics is read at.
+thir = "thir"
