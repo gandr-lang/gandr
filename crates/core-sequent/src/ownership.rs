@@ -467,6 +467,7 @@ impl Ownership
                 | ProducerNode::Code(_)
                 | ProducerNode::Constructor { .. }
                 | ProducerNode::Reify(_)
+                | ProducerNode::Closure { .. }
                 | ProducerNode::Mu { .. } => {},
             },
             NodeAddress::Consumer(id) => match *arena.consumer(id).ok_or(dangling)? {
@@ -808,6 +809,7 @@ impl Ownership
                         ProducerNode::Thunk { .. }
                         | ProducerNode::Fixpoint { .. }
                         | ProducerNode::Cocase { .. }
+                        | ProducerNode::Closure { .. }
                         | ProducerNode::Mu { .. } => continue,
                         ProducerNode::Constructor { .. }
                         | ProducerNode::Variable { .. }

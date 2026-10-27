@@ -44,6 +44,15 @@
 //! core's structure and the types focusing erases, which the round-trip
 //! properties check node by node across the two arenas.
 //!
+//! An abstract closure `{v̄; f}` is no form focusing makes: it is what closure
+//! conversion leaves, and it decodes as its code with its environment
+//! substituted. Its code is decoded under one producer binder per
+//! environment value, the values where the closure stands, and the
+//! environment is substituted into the decoded code all at once: a closure
+//! over a thunk is a value, and one over a copattern object or a recursive
+//! thunk is a cut head. So a converted term reads back as the term it
+//! converts.
+//!
 //! The walk is a loop over an explicit task stack, and its one implementation
 //! serves both the public inverse and the store's readback, which closes a
 //! terminal's free variables from its environment: the environment binds
@@ -311,6 +320,23 @@ impl Depth
     {
         self.under_producer().under_covariable()
     }
+
+    /// The depth under `count` more producer binders: an abstract closure's
+    /// environment, over its code.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_producers(
+        self,
+        count: NodeCount,
+    ) -> Self
+    {
+        Self {
+            producers: u32::try_from(usize::from(count))
+                .map_or(u32::MAX, |count| self.producers.saturating_add(count)),
+            covariables: self.covariables,
+        }
+    }
 }
 
 /// What a decoding starts from.
@@ -541,6 +567,20 @@ enum Task
     /// Pop the cell branch, the empty branch and the scrutinee and build the
     /// list case.
     ListCase,
+    /// Pop the decoded code of an abstract closure and its environment's
+    /// values beneath it, innermost on top, and substitute the environment
+    /// into the code.
+    Enclose(NodeCount, Closed),
+}
+
+/// The family an abstract closure's code decodes to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Closed
+{
+    /// A thunk's value.
+    Value,
+    /// A copattern object's or a recursive thunk's computation at a cut head.
+    Computation,
 }
 
 /// The state of one decoding.
@@ -653,7 +693,7 @@ impl Unfocusing<'_>
             | &Task::Reify(source) => self.arena.producer(source).is_none_or(|node| match *node {
                 ProducerNode::Reify(ref frames) => self.values.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.computations.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                ProducerNode::Primitive { .. } | ProducerNode::Decompose(_) | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
+                ProducerNode::Primitive { .. } | ProducerNode::Decompose(_) | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Closure { .. } | ProducerNode::Mu { .. } => true,
             }),
             | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
                 CommandNode::Perform { route: Route::Nearest, .. } | CommandNode::Abandon { .. } => !self.values.is_empty(),
@@ -678,6 +718,8 @@ impl Unfocusing<'_>
             | &Task::Record(ref labels) => self.values.len() >= labels.len(),
             | &Task::Recorded(ref moves) => self.values.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
             | &Task::Case(branches) | &Task::DataCase(branches, _) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
+            | &Task::Enclose(count, Closed::Value) => self.values.len() > usize::from(count),
+            | &Task::Enclose(count, Closed::Computation) => self.values.len() >= usize::from(count) && !self.computations.is_empty(),
             | &Task::Value(..) | &Task::Command(..) => true,
         },
         ensures: |ret| ret.is_err() || (self.values.last().is_none_or(|id| self.core.value(*id).is_some())
@@ -875,6 +917,25 @@ impl Unfocusing<'_>
                 let body = self.pop_computation()?;
                 let fixpoint = self.core.computation_fixpoint(body, evidence);
                 self.computations.push(fixpoint);
+                Ok(())
+            },
+            Task::Enclose(count, closed) => {
+                let code = match closed {
+                    Closed::Value => gandr_core_term::hole::TermId::Value(self.pop_value()?),
+                    Closed::Computation => {
+                        gandr_core_term::hole::TermId::Computation(self.pop_computation()?)
+                    },
+                };
+                let mut environment = Vec::with_capacity(usize::from(count));
+                for _ in 0_usize .. usize::from(count) {
+                    environment.push(self.pop_value()?);
+                }
+                match gandr_core_term::substitute_environment(self.core, code, &environment) {
+                    gandr_core_term::hole::TermId::Value(value) => self.values.push(value),
+                    gandr_core_term::hole::TermId::Computation(computation) => {
+                        self.computations.push(computation);
+                    },
+                }
                 Ok(())
             },
             Task::Return => {
@@ -1311,8 +1372,9 @@ impl Unfocusing<'_>
     /// - ensures: a leaf's value is pushed, a closed variable reading its
     ///   closing value; a composite's builder and children are scheduled.
     /// - provides: the `𝓥⁻¹` rows.
-    /// - fails: a dangling address, or a `μ`, a copattern object or a head of
-    ///   the wrong arity as [`UnfocusRefusal::ProducerOutsideTheImage`].
+    /// - fails: a dangling address, or a `μ`, a copattern object, an abstract
+    ///   closure over anything but a thunk or a head of the wrong arity as
+    ///   [`UnfocusRefusal::ProducerOutsideTheImage`].
     /// - panics: none.
     ///
     /// # Errors
@@ -1453,6 +1515,21 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Thunk);
                 self.tasks
                     .push(Task::Command(body, depth.under_covariable()));
+                return Ok(());
+            },
+            ProducerNode::Closure {
+                ref environment,
+                code,
+            } => {
+                let Some(&ProducerNode::Thunk { .. }) = self.arena.producer(code)
+                else {
+                    return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
+                };
+                let count = NodeCount::from(environment.len());
+                self.tasks.push(Task::Enclose(count, Closed::Value));
+                self.tasks
+                    .push(Task::Value(code, depth.under_producers(count)));
+                self.environment(environment, depth);
                 return Ok(());
             },
             ProducerNode::Primitive { .. }
@@ -1611,22 +1688,7 @@ impl Unfocusing<'_>
                 return self.copattern_head(producer, depth);
             },
             ProducerNode::Fixpoint { body, evidence } => {
-                let observer = self
-                    .arena
-                    .consumer(consumer)
-                    .ok_or(UnfocusRefusal::DanglingConsumer(consumer))?;
-                let ConsumerNode::Destructor {
-                    tag: DestructorTag::Force,
-                    ref producers,
-                    ref consumers,
-                } = *observer
-                else {
-                    return Err(UnfocusRefusal::ProducerOutsideTheImage(producer));
-                };
-                let (&[], &[then]) = (producers.as_ref(), consumers.as_ref())
-                else {
-                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
-                };
+                let then = self.forced(producer, consumer)?;
                 self.tasks.push(Task::Spine(then, depth));
                 self.tasks.push(Task::Fixpoint(evidence));
                 self.tasks.push(Task::Command(
@@ -1634,6 +1696,50 @@ impl Unfocusing<'_>
                     depth.under_producer().under_covariable(),
                 ));
                 return Ok(());
+            },
+            ProducerNode::Closure {
+                ref environment,
+                code,
+            } => {
+                let count = NodeCount::from(environment.len());
+                let inner = depth.under_producers(count);
+                let enclose = Task::Enclose(count, Closed::Computation);
+                match self.arena.producer(code) {
+                    Some(&ProducerNode::Cocase { .. }) => {
+                        self.tasks.push(Task::Spine(consumer, depth));
+                        self.tasks.push(enclose);
+                        self.copattern_head(code, inner)?;
+                        self.environment(environment, depth);
+                        return Ok(());
+                    },
+                    Some(&ProducerNode::Fixpoint { body, evidence }) => {
+                        let then = self.forced(producer, consumer)?;
+                        self.tasks.push(Task::Spine(then, depth));
+                        self.tasks.push(enclose);
+                        self.tasks.push(Task::Fixpoint(evidence));
+                        self.tasks.push(Task::Command(
+                            body,
+                            inner.under_producer().under_covariable(),
+                        ));
+                        self.environment(environment, depth);
+                        return Ok(());
+                    },
+                    // A closure over a thunk is a value, cut as one.
+                    Some(
+                        &ProducerNode::Reify(_)
+                        | &ProducerNode::Primitive { .. }
+                        | &ProducerNode::Decompose(_)
+                        | &ProducerNode::Variable { .. }
+                        | &ProducerNode::Constant(_)
+                        | &ProducerNode::Literal(_)
+                        | &ProducerNode::Code(_)
+                        | &ProducerNode::Constructor { .. }
+                        | &ProducerNode::Thunk { .. }
+                        | &ProducerNode::Closure { .. }
+                        | &ProducerNode::Mu { .. },
+                    )
+                    | None => {},
+                }
             },
             ProducerNode::Reify(_)
             | ProducerNode::Variable { .. }
@@ -1863,6 +1969,68 @@ impl Unfocusing<'_>
             return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
         }
         Ok(())
+    }
+
+    /// The continuation a recursive thunk's force frame returns to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `then` of a `force(then)` frame.
+    /// - provides: the one frame a recursive thunk is cut against.
+    /// - fails: a dangling consumer; any other frame as
+    ///   [`UnfocusRefusal::ProducerOutsideTheImage`] naming `head`, and a force
+    ///   of the wrong arity as [`UnfocusRefusal::ConsumerOutsideTheImage`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated recursive thunks decode through it; L3 —
+    ///   the malformed heads name the refused node.
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    /// - witness: `tests::closures::converted_programs_answer_as_written`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.arena.consumer(consumer),
+        Some(&ConsumerNode::Destructor { tag: DestructorTag::Force, .. })))]
+    fn forced(
+        &self,
+        head: ProducerId,
+        consumer: ConsumerId,
+    ) -> Result<ConsumerId, UnfocusRefusal>
+    {
+        let observer = self
+            .arena
+            .consumer(consumer)
+            .ok_or(UnfocusRefusal::DanglingConsumer(consumer))?;
+        let ConsumerNode::Destructor {
+            tag: DestructorTag::Force,
+            ref producers,
+            ref consumers,
+        } = *observer
+        else {
+            return Err(UnfocusRefusal::ProducerOutsideTheImage(head));
+        };
+        let (&[], &[then]) = (producers.as_ref(), consumers.as_ref())
+        else {
+            return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+        };
+        Ok(then)
+    }
+
+    /// Schedule an abstract closure's environment values, decoded where the
+    /// closure stands, so they run first, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn environment(
+        &mut self,
+        environment: &[ProducerId],
+        depth: Depth,
+    )
+    {
+        for &value in environment.iter().rev() {
+            self.tasks.push(Task::Value(value, depth));
+        }
     }
 
     /// Extend the computation on top by a consumer's spine.

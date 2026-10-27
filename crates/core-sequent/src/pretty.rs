@@ -510,9 +510,10 @@ fn command(
 /// # Adequacy
 /// - hypothesis: L3 — literals, both variable namespaces, constructor fields,
 ///   datatype ordinals, captures, thunks, recursive thunks under both evidences
-///   and zero-, one- and two-arm copattern objects have exact rendered syntax.
-///   The depth boundary distinguishes wrong child depth; missing addresses and
-///   unequal fields expose wrong lookup.
+///   and zero-, one- and two-arm copattern objects have exact rendered syntax,
+///   and so do closures over an empty and a two-value environment. The depth
+///   boundary distinguishes wrong child depth; missing addresses and unequal
+///   fields expose wrong lookup.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::renders_lambda_cocase`
@@ -520,6 +521,7 @@ fn command(
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 /// - witness: `pretty::tests::renders_frames_primitives_folds_and_projections`
+/// - witness: `pretty::tests::renders_abstract_closures`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
     | Piece::Text(_) | Piece::Owned(_) | Piece::Name(_) => true,
@@ -541,6 +543,9 @@ fn command(
         | ProducerNode::Cocase { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("cocase {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(arms.iter().map(|arm| arm.body)),
+        | ProducerNode::Closure { ref environment, code } => matches!(ret.first(), Some(&Piece::Text(Token("{"))))
+            && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
+            && ret.iter().filter_map(|piece| match *piece { Piece::Producer(child, _) => Some(child), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Consumer(..) => None }).eq(environment.iter().copied().chain([code])),
     },
 })]
 fn producer(
@@ -647,6 +652,22 @@ fn producer(
                 pieces.push(Piece::Command(arm.body, depth));
             }
             pieces.push(text!("}"));
+            pieces
+        },
+        ProducerNode::Closure {
+            ref environment,
+            code,
+        } => {
+            let mut pieces =
+                Vec::with_capacity(environment.len().saturating_mul(2).saturating_add(4));
+            pieces.push(text!("{"));
+            for (position, &value) in environment.iter().enumerate() {
+                if position > 0 {
+                    pieces.push(text!(", "));
+                }
+                pieces.push(Piece::Producer(value, depth));
+            }
+            pieces.extend([text!("; "), Piece::Producer(code, depth), text!("}")]);
             pieces
         },
         ProducerNode::Mu { body } => alloc::vec![text!("μα. "), Piece::Command(body, depth)],

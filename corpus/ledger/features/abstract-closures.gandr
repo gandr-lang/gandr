@@ -1,0 +1,50 @@
+/// `abstract-closures` converts each closure of a program to an abstract closure over the context variables its code names.
+///
+/// Implemented: conversion adds one captured variable at a time, and every converted program runs to what it runs to as written.
+/// Not implemented: #3077 owes the closure's type summaries, linear captures, lambda sets and a run path that converts, and #2770 owes environment sharing.
+///
+/// The function `constantly` returns names its argument, so conversion moves that argument into the closure's environment.
+/// The thunk `either` returns names both arguments, and conversion moves them one at a time, the later one first.
+///
+/// - see: crates/core-sequent/src/closure.rs
+
+/// The naturals the closures return.
+data Nat : Type {
+  /// Zero.
+  Zero : Nat;
+  /// The natural after `n`.
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The constant function at `n`, a closure over `n`.
+def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) {
+  return fn (_m) { n }
+}
+
+/// Applies `g` to zero.
+def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat {
+  g(Zero)
+}
+
+/// The closure `constantly` returns, applied at zero, answers the natural it closed over.
+@[ runs("Succ(Zero)") ]
+def applied() -> -F Nat {
+  at_zero(constantly(Succ(Zero)))
+}
+
+/// A suspended choice: `b` when `a` is zero, `a` otherwise, a thunk over both.
+def either(a : Nat, b : Nat) -> -F (+U (-F Nat)) {
+  return thunk {
+    case a -> -F Nat {
+      Zero => b,
+      Succ(_p) => a
+    }
+  }
+}
+
+/// The thunk `either` returns, forced, answers the second natural when the first is zero.
+@[ runs("Succ(Zero)") ]
+def forced() -> -F Nat {
+  run k <- either(Zero, Succ(Zero));
+  force k
+}
