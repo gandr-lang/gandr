@@ -11,6 +11,10 @@
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
 #   `yes` or `no` (#2795);
 # - `## Ledger` and `## Not in this slice`;
+# - `## After`: `none`, or one `- #n — <what it waits for>` per issue the
+#   unit waits on (#2902). The section is the record; `unit:check` sets each
+#   one as the issue's GitHub `blocked by` dependency, and a dependency stated
+#   in prose, a line `after: …`, is refused;
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
@@ -51,4 +55,13 @@ def findings:
      end),
     need("Ledger"),
     need("Not in this slice"),
+    (after as $after
+     | "`none`, or one `- #n — <what it waits for>` per issue the unit waits on" as $form
+     | if $after == null then "`## After` is missing: write \($form)"
+       elif $after.empty then "`## After` is empty: write \($form)"
+       else ($after.malformed[] | "`## After` line `\(.)` is not \($form)"),
+         (if $after.none and ($after.numbers | length) > 0 then "`## After` says `none` and lists issues: keep the issues, or `none` alone" else empty end)
+       end),
+    ($body | lines[] | select(test("^after:\\s"; "i"))
+      | "the line `\(.)` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"),
     (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end);

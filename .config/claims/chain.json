@@ -1,0 +1,47 @@
+[
+  {
+    "name": "the rung before it replaces `none`",
+    "input": {
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+      "after": 41,
+      "epic": 40
+    },
+    "output": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #41 — the rung before it in #40's order"
+  },
+  {
+    "name": "the rung before it follows the last item, the next section kept",
+    "input": {
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #20 — the parser\n\n## Notes\n\nText.\n",
+      "after": 41,
+      "epic": 40
+    },
+    "output": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #20 — the parser\n- #41 — the rung before it in #40's order\n\n## Notes\n\nText."
+  },
+  {
+    "name": "a body without `## After` gains it at its end",
+    "input": {
+      "body": "Text.\n",
+      "after": 41,
+      "epic": 40
+    },
+    "output": "Text.\n\n## After\n\n- #41 — the rung before it in #40's order"
+  },
+  {
+    "name": "a body already listing the rung is unchanged",
+    "input": {
+      "body": "Text.\n\n## After\n\n- #41 — said otherwise\n",
+      "after": 41,
+      "epic": 40
+    },
+    "output": "Text.\n\n## After\n\n- #41 — said otherwise"
+  },
+  {
+    "name": "an `## After` holding only the template's comment gains the item under it",
+    "input": {
+      "body": "Text.\n## After\n\n<!-- What this unit waits on: `none`, or one line per issue, `- #n — <what it waits for>`. `mise run unit:check --fix <n>` sets each as the issue's GitHub `blocked by` dependency; a dependency is never stated in prose. -->\n\n## Notes\n\nx\n",
+      "after": 41,
+      "epic": 40
+    },
+    "output": "Text.\n## After\n\n<!-- What this unit waits on: `none`, or one line per issue, `- #n — <what it waits for>`. `mise run unit:check --fix <n>` sets each as the issue's GitHub `blocked by` dependency; a dependency is never stated in prose. -->\n- #41 — the rung before it in #40's order\n\n## Notes\n\nx"
+  }
+]
