@@ -1567,7 +1567,10 @@ fi
 # printed on stderr as `blocked: #n by #a, #b`, its open blockers read from
 # GitHub. Each `collector` in the area is printed first, on stderr, as
 # `collector: #n (k open rows)` (#3111): never a candidate, it shows the
-# carving due. It adds `status:claimed` and prints the
+# carving due. Each candidate in the area a filer marked
+# `status:unsectioned` and still lacking its sections follows, on stderr, as
+# `unsectioned: #n` (#3112), ahead of the `needs sections:` lines: the
+# sections the coordinator owes. It adds `status:claimed` and prints the
 # claim as `#n <title>`; `--dry-run` prints it without claiming. No candidate
 # prints `no claim: <area>` and exits 1.
 ["claim:next"]
@@ -1606,12 +1609,13 @@ concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger
 lines=$(jq -n --arg area "$area" --slurpfile issues "$board/issues.json" --argjson order "$order" '{area: $area, issues: $issues[0], order: $order}' \
   | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
 awk '/^collector: /' <<< "$lines" >&2
+awk '/^unsectioned: /' <<< "$lines" >&2
 awk '/^needs sections: /' <<< "$lines" >&2
 while read -r _ issue; do
   echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^restate: /' <<< "$lines"
-pick=$(awk '!/^(collector|needs sections|blocked|restate): /' <<< "$lines")
+pick=$(awk '!/^(collector|unsectioned|needs sections|blocked|restate): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $area" >&2
   exit 1
@@ -1770,14 +1774,21 @@ echo "body check OK: nothing on the private-names list in ${usage_title:+the tit
 # (`.config/claims/deps.bash`). A closing keyword in the body outside its
 # head's keyword lines (`targets.jq`'s `strays`, #2980) is noted on stderr:
 # it does nothing in an issue, but the same words in a pull request's body
-# close the issue they name on merge.
+# close the issue they name on merge. A mechanism files a unit or marks what
+# it could not (#3112, `tracker.md` § tracker-filing): `--template <filer>`
+# appends `.config/issues/templates/<filer>.md` to the body, the filer's
+# observation, each `{{field}}` filled from `--fields` (`template.jq`), and
+# a `kind:defect` that is no `collector` and fails `unit:check` is refused
+# unless it carries `status:unsectioned`, the coordinator's to section.
 ["issue:file"]
 description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
 arg "<title>" help="the issue's title"
-arg "<body>" help="the body file"
+arg "<body>" help="the body file; with --template, the observation the template follows"
 arg "[label]..." help="labels: one `kind:`, one or more `area:`, a `priority:` and an `effort:` unless the kind's default serves, any others"
 flag "--epic <n>" help="the epic to link the issue under"
+flag "--template <filer>" help="the filer's template under .config/issues/templates/ that fills the unit's sections"
+flag "--fields <json>" help="the template's fields, one JSON object of strings"
 '''
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
@@ -1791,21 +1802,50 @@ source "$claims/deps.bash"
 source "$root/.config/issues/labels.bash"
 epic=${usage_epic:-}
 [[ -z $epic || $epic =~ ^[0-9]+$ ]] || { echo "issue:file: --epic takes an issue number, not \`$epic\`" >&2; exit 2; }
+template=${usage_template:-}
+if [[ -n $template ]]; then
+  file=$root/.config/issues/templates/$template.md
+  if [[ ! -f $file ]]; then
+    echo "issue:file: no template \`$template\`; the filers': $(cd "$root/.config/issues/templates" && ls -- *.md | sed 's/\.md$//' | paste -sd ' ' -)" >&2
+    exit 2
+  fi
+  rendered=$(mktemp)
+  trap 'rm -f "$rendered"' EXIT
+  jq -R -s -r -L "$root/.config/issues" --argjson fields "${usage_fields:-{\}}" --rawfile observation "$body" \
+    'include "template"; render($fields; $observation)' "$file" > "$rendered" \
+    || { echo "issue:file: the template \`$template\` is not filled" >&2; exit 1; }
+  body=$rendered
+elif [[ -n ${usage_fields:-} ]]; then
+  echo "issue:file: --fields fills a template; name it with --template" >&2
+  exit 2
+fi
 mise run --quiet body:check --title "${usage_title:?}" "$body" >&2
 jq -R -s -r -L "$claims" 'include "targets"; strays[]
   | "issue:file: note: the line `\(.line)` carries `\(.keyword)`, a closing keyword; it does nothing here, but closes the issue it names if the words reach a pull request body"' "$body" >&2
+eval "labels=(${usage_label:-})"
+labelled() { local label; for label in "${labels[@]}"; do [[ $label != "$1" ]] || return 0; done; return 1; }
 unit=false
 if jq -R -s -e 'split("\n") | any(test("^## Sources\\s*$"))' "$body" > /dev/null; then
   unit=true
+fi
+defect=false
+if labelled kind:defect && ! labelled collector && ! labelled status:unsectioned; then
+  defect=true
+fi
+if [[ $unit == true || $defect == true ]]; then
   concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
   findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq" "$body")
   if [[ -n $findings ]]; then
-    printf 'issue:file: the body is a unit (it has `## Sources`) and lacks what a unit issue carries (units.md § units-issue):\n' >&2
+    if [[ $unit == true ]]; then
+      printf 'issue:file: the body is a unit (it has `## Sources`) and lacks what a unit issue carries (units.md § units-issue):\n' >&2
+    else
+      printf 'issue:file: a kind:defect is filed as a unit or marked (tracker.md § tracker-filing): fill its sections from its filer'"'"'s template (--template, .config/issues/templates/), or label it status:unsectioned for the coordinator; it lacks:\n' >&2
+    fi
     printf '%s\n' "$findings" | sed 's/^/  - /' >&2
     exit 1
   fi
+  unit=true
 fi
-eval "labels=(${usage_label:-})"
 plan=$(labels_plan "$(printf '%s\n' "${labels[@]}" | jq -R . | jq -s -c 'map(select(. != ""))')" "$(labels_defaults)")
 refused=$(awk -F'\t' '$1 == "refuse" { print "  - " $2 }' <<< "$plan")
 if [[ -n $refused ]]; then
@@ -3226,7 +3266,10 @@ exit 2
 # conflicts or merged under it (`.config/stall/detect.jq`, its cases held by
 # `check:stall`). It queues and revises nothing: a stall is its seat's to
 # answer and the coordinator's to decide, and one no seat holds is filed as
-# an issue whose `## Observation` is the finding's line.
+# a unit, its `## Observation` the finding's line and its other sections the
+# `stall` template's (`issue:file --template stall`, #3112). Each reading
+# closes every open stall report whose stall no finding carries any more,
+# its comment naming what cleared it (`.config/stall/reports.jq`).
 #
 # `stall:check` reads once, prints each finding's line and exits 1 on any;
 # it pages nothing and leaves the detector's memory as it found it.
@@ -3338,6 +3381,24 @@ rulings() {
   done
   jq -c --argjson open "$open" 'map(select(. as $n | $open | index($n)))' <<< "$paged"
 }
+# Close each open stall report whose event is over (#3112): `reports.jq`
+# decides from the reading's findings and each report's pull request's state,
+# and the closing comment names what cleared it. A failed read closes
+# nothing; the next reading reads again.
+reports() {
+  local open states pr state number comment
+  open=$(gh issue list -R "$repo" --state open --label kind:defect --search '"stall:" in:title' --limit 100 --json number,title) || return 0
+  states='{}'
+  for pr in $(jq -r '.[].title | capture("^stall: \\S+ on #(?<pr>[0-9]+),").pr' <<< "$open" | sort -u); do
+    state=$(gh pr view "$pr" -R "$repo" --json state --jq .state) || return 0
+    states=$(jq -c --arg pr "$pr" --arg state "$state" '.[$pr] = $state' <<< "$states")
+  done
+  while IFS=$'\t' read -r number comment; do
+    echo "stall:watch: stall report #$number closed" >&2
+    gh issue close "$number" -R "$repo" --comment "$comment" > /dev/null || :
+  done < <(jq -c --argjson reports "$open" --argjson states "$states" '{reports: $reports, states: $states, findings}' <<< "$reading" \
+    | jq -r -f "$stall_dir/reports.jq" | jq -r '.[] | "\(.number)\t\(.comment)"')
+}
 # Take pull request `$1`'s `<!-- stall -->` comments and its label off.
 release() {
   local id
@@ -3366,11 +3427,15 @@ while :; do
     sent=true
     page_seat "$(jq -r .lane <<< "$finding")" "$line" || sent=false
     # A finding no lane places is filed once its pages are sent, its line
-    # the observation, so a page sent again never files it twice.
+    # the observation and its sections the `stall` template's (#3112), so a
+    # page sent again never files it twice.
     if [[ "$sent" == true && $(jq .placed <<< "$finding") == false ]]; then
       title=$(jq -r '"stall: \(.kind) on #\(.number), whose lane `\(.lane)` no seat holds"' <<< "$finding")
-      gh issue create -R "$repo" --title "$title" --body "$(printf '## Observation\n\n%s\n' "$line")" \
-        --label kind:defect --label area:workflow --label priority:high --label effort:easy --label needs:triage || sent=false
+      observation=$(mktemp)
+      printf '## Observation\n\n%s\n' "$line" > "$observation"
+      mise run --quiet issue:file "$title" "$observation" kind:defect area:workflow priority:high effort:easy \
+        --template stall --fields "$(jq -c '{pr: "\(.number)", kind, lane}' <<< "$finding")" || sent=false
+      rm -f "$observation"
     fi
     if [[ "$sent" == false ]]; then paged=$(jq -c --arg key "$key" 'del(.[$key])' <<< "$paged"); fi
   done < <(jq -c '.pages[]' <<< "$reading")
@@ -3394,6 +3459,7 @@ while :; do
     release "$number" || stalled=$(jq -c --arg n "$number" --argjson now "$(date +%s)" '.[$n] = $now' <<< "$stalled")
   done
   gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
+  reports
   ruled=$(rulings "$(stall_memory | jq -c '.rulings // []')")
   jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson rulings "$ruled" \
     '{seen, paged: $paged, stalled: $stalled, gone: $gone, rulings: $rulings}' <<< "$reading" > "$stall_state.tmp"

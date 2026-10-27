@@ -1358,5 +1358,57 @@
       ]
     },
     "output": "collector: #20 (3 open rows)\n22\tdefect\tthe defect"
+  },
+  {
+    "name": "#3112: each candidate in the area marked status:unsectioned is named so, ranked ahead of the pick or not, before the needs-sections lines; one sectioned since is a plain candidate, another area's is not named",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 5,
+          "title": "a filed defect",
+          "labels": ["kind:defect", "area:workflow", "status:unsectioned"],
+          "parent": null,
+          "body": "## Observation\n\nSeen on main.\n"
+        },
+        {
+          "number": 6,
+          "title": "a sectionless defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Seen on main."
+        },
+        {
+          "number": 7,
+          "title": "a unit defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 8,
+          "title": "a defect sectioned since it was filed",
+          "labels": ["kind:defect", "area:workflow", "status:unsectioned"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 9,
+          "title": "a filed refactor",
+          "labels": ["kind:refactor", "area:workflow", "status:unsectioned"],
+          "parent": null,
+          "body": "## Observation\n\nTwo copies.\n"
+        },
+        {
+          "number": 10,
+          "title": "another area's filed defect",
+          "labels": ["kind:defect", "area:core", "status:unsectioned"],
+          "parent": null,
+          "body": "## Observation\n\nSeen.\n"
+        }
+      ]
+    },
+    "output": "unsectioned: #5\nunsectioned: #9\nneeds sections: #6\n7\tdefect\ta unit defect"
   }
 ]

@@ -1548,5 +1548,97 @@
       }
     },
     "output": "{\"findings\":[{\"kind\":\"verdict-unfiled\",\"number\":3031,\"lane\":\"triage\",\"placed\":true,\"age\":10,\"line\":\"STALL verdict-unfiled #3031 triage 10m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #3031`; run `mise run refactor:file 3031`\"}],\"pages\":[],\"repages\":[{\"kind\":\"verdict-unfiled\",\"number\":3031,\"lane\":\"triage\",\"placed\":true,\"age\":10,\"line\":\"STALL verdict-unfiled #3031 triage 10m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #3031`; run `mise run refactor:file 3031`\"}],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"3031:verdict-unfiled\":{\"first\":99400,\"last\":100000}},\"stalled\":{}}"
+  },
+  {
+    "name": "#3112: a stall report closes once no finding carries its stall, its comment naming what cleared it: a merge, a close, a filed verdict, or the stall itself",
+    "program": "reports.jq",
+    "input": {
+      "reports": [
+        {
+          "number": 101,
+          "title": "stall: conflicting on #51, whose lane `x` no seat holds"
+        },
+        {
+          "number": 102,
+          "title": "stall: red-unrevised on #52, whose lane `x` no seat holds"
+        },
+        {
+          "number": 103,
+          "title": "stall: ejected on #53, whose lane `x` no seat holds"
+        },
+        {
+          "number": 104,
+          "title": "stall: verdict-unfiled on #54, whose lane `x` no seat holds"
+        }
+      ],
+      "states": {
+        "51": "MERGED",
+        "52": "OPEN",
+        "53": "CLOSED",
+        "54": "MERGED"
+      },
+      "findings": [
+        {
+          "kind": "conflicting",
+          "number": 52,
+          "lane": "x",
+          "placed": false,
+          "age": 90,
+          "line": "STALL conflicting #52 x 90m: …"
+        }
+      ]
+    },
+    "output": [
+      {
+        "number": 101,
+        "comment": "Closed by `stall:watch` (#3112): #51 merged; the event this report observed is over."
+      },
+      {
+        "number": 102,
+        "comment": "Closed by `stall:watch` (#3112): no reading finds the `red-unrevised` stall on #52 any more; the event this report observed is over."
+      },
+      {
+        "number": 103,
+        "comment": "Closed by `stall:watch` (#3112): #53 closed unmerged; the event this report observed is over."
+      },
+      {
+        "number": 104,
+        "comment": "Closed by `stall:watch` (#3112): #54's refactoring verdict is filed; the event this report observed is over."
+      }
+    ]
+  },
+  {
+    "name": "#3112: a stall report whose stall a finding still carries, whose pull request was not read, or whose title is no report's stays open",
+    "program": "reports.jq",
+    "input": {
+      "reports": [
+        {
+          "number": 100,
+          "title": "stall: conflicting on #50, whose lane `x` no seat holds"
+        },
+        {
+          "number": 105,
+          "title": "stall: base-blocked on #55, whose lane `x` no seat holds"
+        },
+        {
+          "number": 106,
+          "title": "stall: the watch died on a host"
+        }
+      ],
+      "states": {
+        "50": "OPEN"
+      },
+      "findings": [
+        {
+          "kind": "conflicting",
+          "number": 50,
+          "lane": "x",
+          "placed": false,
+          "age": 90,
+          "line": "STALL conflicting #50 x 90m: …"
+        }
+      ]
+    },
+    "output": []
   }
 ]
