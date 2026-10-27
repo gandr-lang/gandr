@@ -1,0 +1,12 @@
+/// `UnstatedComponent.Computation`: a model component the derivation cannot state: a sort indexed by a computation sort, or an operation with a port at one.
+///
+/// Counter: a computation carrier, started and stepped.
+@[ checks ]
+theory Counter {
+  sort C : Type[-];
+  oper start : () --> C;
+  oper step : (c : C) --> C;
+}
+
+@[ refuses("UnstatedComponent.Computation") ]
+def counterModel : Model(Counter) ;

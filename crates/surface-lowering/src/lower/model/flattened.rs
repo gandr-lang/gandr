@@ -505,7 +505,7 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .enumerate()
                 .find(|&(_, component)| {
-                    matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty())
+                    matches!(component.form, Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty())
                 })
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
@@ -634,7 +634,7 @@ impl<'source> Lowerer<'_, 'source>
             components.push(FlatComponent {
                 name: component.name.clone(),
                 frame: bound,
-                sort: matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty()),
+                sort: matches!(component.form, Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty()),
             });
             frame = Frame::Inner(bound);
         }

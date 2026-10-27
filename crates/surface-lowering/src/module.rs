@@ -393,6 +393,7 @@ pub use self::model::FamilyParameter;
 pub use self::model::ModelIndex;
 pub use self::model::ModelPart;
 pub use self::model::ParameterList;
+pub use self::model::SortCheck;
 pub use self::model::derived;
 pub use self::model::spine_domains;
 pub use self::model::ungrouped;
@@ -1534,6 +1535,9 @@ pub struct Collected<'source>
     /// Each family component's check slot — the witness checking a written
     /// kind, or the held slot of a derived sort — with what it compares.
     pub family_checks: BTreeMap<SlotIndex, FamilyCheck>,
+    /// Each sort a model derives, indexed or not, by the slot of the member
+    /// answering it, with what it checks of the member.
+    pub sort_checks: BTreeMap<SlotIndex, SortCheck>,
     /// The functors, in source order: each a template its applications
     /// rename.
     pub functors: Vec<Functor<'source>>,
@@ -3030,6 +3034,7 @@ pub fn begin_collection<'source>(
         models: Vec::new(),
         model_theories: BTreeMap::new(),
         family_checks: BTreeMap::new(),
+        sort_checks: BTreeMap::new(),
         functors: Vec::new(),
         instances: Vec::new(),
         theory: Maybe::Absent(theory_slot::Absent::Unminted),

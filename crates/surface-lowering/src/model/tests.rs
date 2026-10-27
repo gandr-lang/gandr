@@ -7,6 +7,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Write as _;
 
+use gandr_kernel_term::GroundSort;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_levitation::ConstructorTag;
@@ -137,8 +138,15 @@ where
         .find(|component| component.name.as_ref() == name)
         .unwrap_or_else(|| panic!("`{name}` is a component"));
     match component.form {
-        Ok(ModelForm::Sort { ref indices }) => {
-            format!("type {name} : {} => Type", telescope(indices))
+        Ok(ModelForm::Sort {
+            ref indices,
+            ground,
+        }) => {
+            let universe = match ground {
+                GroundSort::Value => "Type",
+                GroundSort::Computation => "Type[-]",
+            };
+            format!("type {name} : {} => {universe}", telescope(indices))
         },
         Ok(ModelForm::Operation {
             telescope: ref binders,
@@ -236,6 +244,47 @@ fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
         "same : (a : Type, x : T(a)) => T(a)",
         "the index the port's sort names is bound at `Type` first"
     );
+}
+
+/// A `Type[-]` sort derives a type or a family into the computation types,
+/// beside a `Type` sort's family into the value types; a sort indexed by a
+/// computation sort, and an operation with a port at one, keep their fault.
+#[test]
+fn a_computation_sort_derives_a_family_into_computation_types()
+{
+    let model = derived(
+        r"theory Carrier {
+  sort C : Type[-];
+  sort T(A : Type) : Type[-];
+  sort V(A : Type) : Type;
+  sort Over(c : C) : Type;
+  oper start : C;
+  oper read : (c : C) --> Integer;
+}",
+    );
+
+    assert_eq!(
+        spelled(&model, "C"),
+        "type C : () => Type[-]",
+        "an unindexed computation sort is a computation type"
+    );
+    assert_eq!(
+        spelled(&model, "T"),
+        "type T : (A : Type) => Type[-]",
+        "an indexed one is a family into the computation types"
+    );
+    assert_eq!(
+        spelled(&model, "V"),
+        "type V : (A : Type) => Type",
+        "a `Type` sort stays a family into the value types"
+    );
+    for name in ["Over", "start", "read"] {
+        assert_eq!(
+            spelled(&model, name),
+            format!("{name} refused: Computation"),
+            "no binder of a model ranges over a computation type"
+        );
+    }
 }
 
 /// A theory's stated laws derive the components a model proves, after its
@@ -464,6 +513,8 @@ fn each_model_fault_reads_as_its_own_clause()
         ModelFault::Inherited,
         ModelFault::Binding,
         ModelFault::Abstraction,
+        ModelFault::Unbound,
+        ModelFault::Computation,
     ]
     .iter()
     .map(ToString::to_string)

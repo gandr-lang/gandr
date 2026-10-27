@@ -293,8 +293,9 @@ impl Scope
 #[derive(Clone, Copy, Debug)]
 enum Codomain<'form>
 {
-    /// The universe `Type`: a sort's kind.
-    Universe,
+    /// The universe of the ground sort a sort's family lands in: a sort's
+    /// kind.
+    Universe(GroundSort),
     /// An operation's results, their product when there are several.
     Results(&'form [SortTerm]),
     /// A law's path between its endpoints.
@@ -897,7 +898,9 @@ impl Typer<'_>
             scope.push(&binder.name, binds);
         }
         let result = match codomain {
-            Codomain::Universe => self.universe(Level::zero()),
+            Codomain::Universe(ground) => self
+                .arena
+                .value_type_universe(Sort::Ground(ground), Level::zero()),
             Codomain::Results(results) => {
                 let mut sorts = Vec::with_capacity(results.len());
                 for result in results {
@@ -982,7 +985,8 @@ impl Typer<'_>
     }
 
     /// Record a written sort at the universe its sorts are coded in, when its
-    /// head is one of `sorts` or a builtin type.
+    /// head is one of `sorts` or a builtin type, or at the universe above the
+    /// host's types when it is `Type`, an index over the host's types.
     ///
     /// # Specification
     /// trivial.
@@ -997,9 +1001,15 @@ impl Typer<'_>
             type_atom(SurfaceName::from(head.as_ref())),
             Maybe::Present(_)
         );
+        let closed = self.context(&Scope::default());
         if sorts.contains(head) || builtin {
             let universe = self.universe(Level::zero());
-            let closed = self.context(&Scope::default());
+            self.emit(written.span, DescribedRole::Type, universe, closed);
+        }
+        else if head.as_ref() == crate::form::TileName::UNIVERSE.as_ref()
+            && let Ok(level) = Level::zero().succ()
+        {
+            let universe = self.universe(level);
             self.emit(written.span, DescribedRole::Type, universe, closed);
         }
         // The head is the sort's name, written first: `M`, or `Hom` in
@@ -1429,13 +1439,20 @@ impl Typer<'_>
                 let universe = self.universe(level);
                 self.emit(member.classifier, DescribedRole::Type, universe, closed);
             }
-            if let Some(&Ok(ModelForm::Sort { ref indices })) = forms.next() {
+            if let Some(&Ok(ModelForm::Sort {
+                ref indices,
+                ground,
+            })) = forms.next()
+            {
                 let tail = Tail::Results(&[]);
                 let kind = if indices.is_empty() {
-                    Some(self.universe(Level::zero()))
+                    Some(
+                        self.arena
+                            .value_type_universe(Sort::Ground(ground), Level::zero()),
+                    )
                 }
                 else {
-                    self.telescope(&mut scope, indices, tail, Codomain::Universe)
+                    self.telescope(&mut scope, indices, tail, Codomain::Universe(ground))
                 };
                 if let Some(kind) = kind {
                     let context = self.context(&scope);

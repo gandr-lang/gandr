@@ -101,6 +101,7 @@ use super::Half;
 use super::Operand;
 use super::Role;
 use super::SlotIndex;
+use super::SortCheck;
 use super::StructureIndex;
 use super::TypeComponent;
 use super::WrittenAttribute;
@@ -679,13 +680,14 @@ impl<'source> Collector<'_, 'source>
     ///   reads as its atom; under a transparent one the component reads as the
     ///   member's type, and a witness slot owning the kind checks that type at
     ///   it, unless the component is a sort a model derives, which states no
-    ///   kind to check. A component no member supplies, or a family member
-    ///   supplies, files its refusal on the abstract slot, so a later component
-    ///   and a client reading it inherit the refusal, or on a held slot under a
-    ///   transparent ascription. An opaque ascription's component at a static
-    ///   arrow refuses its abstract slot as a kinded form whatever the member:
-    ///   an abstract operator is an atom at a kind no universe is, which the
-    ///   kernel does not admit.
+    ///   kind to check and files the check of the ground sort its member's type
+    ///   lands in under the member's slot. A component no member supplies, or a
+    ///   family member supplies, files its refusal on the abstract slot, so a
+    ///   later component and a client reading it inherit the refusal, or on a
+    ///   held slot under a transparent ascription. An opaque ascription's
+    ///   component at a static arrow refuses its abstract slot as a kinded form
+    ///   whatever the member: an abstract operator is an atom at a kind no
+    ///   universe is, which the kernel does not admit.
     /// - provides: the abstract-component half of [`Self::match_signature`].
     /// - fails: never.
     /// - panics: none.
@@ -694,12 +696,14 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a sealed component, a strengthened one, a component
     ///   no member supplies, a sealed operator and a sealed component whose
     ///   member states an identity, each asserted as the exact slot and
-    ///   reading.
+    ///   reading; a computation sort's member of the other ground sort is
+    ///   refused by the check it files.
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
     /// - witness: `tests::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
     /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
     /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
+    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -835,6 +839,14 @@ impl<'source> Collector<'_, 'source>
             held: represented.held,
         });
         if kind == Maybe::Absent(component_kind::Absent::Derived) {
+            let _fresh = self
+                .collected
+                .sort_checks
+                .insert(represented.held, SortCheck {
+                    structure,
+                    component: ordinal,
+                    defined: represented.defined,
+                });
             return;
         }
         let (expectation, attributes) = self.member_expectation(represented.held);

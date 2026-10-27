@@ -1,9 +1,25 @@
 error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping terms, one of them applies a variable a binding port binds, and the overlap rewrites to two different normal forms, so the block's rules are refused
-   ╭▸ corpus/pathological/desc/relative-monad.gandr:14:3
+   ╭▸ corpus/pathological/desc/relative-monad.gandr:15:3
    │
-13 │   rule unitL : ext(ret(a), k) <=> k(a);
+14 │   rule unitL : ext(ret(a), k) <=> k(a);
    │   ──────────────────────────────────── the rule it overlaps
-14 │   rule lossy : ext(ext(m, k), l) <=> ext(m, l);
+15 │   rule lossy : ext(ext(m, k), l) <=> ext(m, l);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
    │
    ╰ note: `MonadLossy` is refused with RulesOverlapSecondOrder, as its expectation states
+
+error[FamilyTelescope]: the type member `T` lands in value types where its component states computation types
+   ╭▸ corpus/pathological/desc/relative-monad.gandr:29:8
+   │
+29 │   type T(a : Type) = List(a);
+   │        ━ types its sort does not land in
+   │
+   ╰ note: `T` is refused with FamilyTelescope, as its expectation states
+
+error[FamilyTelescope]: the type member `T` lands in computation types where its component states value types
+   ╭▸ corpus/pathological/desc/relative-monad.gandr:43:8
+   │
+43 │   type T(a : Type) = -F List(a);
+   │        ━ types its sort does not land in
+   │
+   ╰ note: `T` is refused with FamilyTelescope, as its expectation states

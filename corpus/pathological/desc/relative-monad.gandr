@@ -1,5 +1,6 @@
 // The twin of `model/desc/relative-monad.gandr`: an associativity that drops
-// the inner continuation, whose overlap with the left unit law parts.
+// the inner continuation, whose overlap with the left unit law parts. Its
+// carriers answer their sorts in the other ground sort.
 
 /// Extending an extension by `l` is extending by `l` alone: the inner
 /// continuation `k` is lost. Against the left unit law at `ext(ext(ret(a), k),
@@ -12,4 +13,32 @@ theory MonadLossy {
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitL : ext(ret(a), k) <=> k(a);
   rule lossy : ext(ext(m, k), l) <=> ext(m, l);
+}
+
+/// The carrier into the computation types.
+theory Carrier {
+  /// A family from the host's types into the computation types.
+  sort T(A : Type) : Type[-];
+}
+
+/// Lists answer it as a family into the value types, which `Type[-]` does
+/// not classify.
+module ValueCarrier : Model(Carrier) {
+  /// The lists at each type, a value type.
+  @[ refuses("FamilyTelescope") ]
+  type T(a : Type) = List(a);
+}
+
+/// A carrier into the value types.
+theory ValueSort {
+  /// A family from the host's types into the value types.
+  sort T(A : Type) : Type;
+}
+
+/// Returned lists answer it as a family into the computation types, which
+/// `Type` does not classify.
+module ComputationCarrier : Model(ValueSort) {
+  /// A computation returning a list at each type.
+  @[ refuses("FamilyTelescope") ]
+  type T(a : Type) = -F List(a);
 }

@@ -105,6 +105,10 @@
 //! - Richard Mayr and Tobias Nipkow. "Higher-Order Rewrite Systems and their
 //!   Confluence." _Theoretical Computer Science_ 192(1), 1998 — critical pairs
 //!   of pattern rewrite systems.
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a presentation may declare
+//!   a sort classified `Type[-]`, which the presentation code admits under its
+//!   own tag.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -155,7 +159,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 31] = [
+pub const PRESENTATION_CODE: [(usize, usize); 32] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -187,6 +191,7 @@ pub const PRESENTATION_CODE: [(usize, usize); 31] = [
     (1, 0),
     (1, 1),
     (0, 1),
+    (1, 2),
 ];
 
 /// The presentation code's constructor tags this module reads.
@@ -252,6 +257,8 @@ mod tag
     pub(super) const UNDER: usize = 29;
     /// The row the written rule before it fires under may hold others.
     pub(super) const OPEN: usize = 30;
+    /// A computation sort.
+    pub(super) const COMPUTATION: usize = 31;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -3424,7 +3431,7 @@ impl<'arena> Reader<'arena>
                     let _new = nameable.insert(self.text(name)?);
                     rest
                 },
-                (tag::SORT | tag::REPRESENTABLE, &[_, _, rest])
+                (tag::SORT | tag::REPRESENTABLE | tag::COMPUTATION, &[_, _, rest])
                 | (tag::SHAPE, &[_, _, _, rest]) => rest,
                 _ => return None,
             };

@@ -138,6 +138,7 @@ corpus/ledger/features/implicit-arguments.gandr Tense 4ecf479cfbfe105e
 corpus/ledger/features/implicit-arguments.gandr Tense 8432207b085b122a
 corpus/ledger/features/implicit-arguments.gandr Tense 9dd4a82be3a4ae21
 corpus/ledger/features/indexed-data.gandr Tense e2e49454b338544c
+corpus/ledger/features/indexed-sorts.gandr Tense 45720986ee126271
 corpus/ledger/features/indexed-sorts.gandr Tense a8801bb6141675f7
 corpus/ledger/features/inert-fields.gandr Passive 043a50d62f5e763a
 corpus/ledger/features/inert-fields.gandr Tense 4362c9f11e50da5b
@@ -161,8 +162,8 @@ corpus/ledger/features/places.gandr Tense c34709c8e80af67c
 corpus/ledger/features/places.gandr Tense d787ccb6b2d253a7
 corpus/ledger/features/record-width-subtyping.gandr Passive c79f259f9faa0958
 corpus/ledger/features/relative-monads.gandr Passive 384ae6543d573ac2
+corpus/ledger/features/relative-monads.gandr Tense 5b8c054a2d70422b
 corpus/ledger/features/relative-monads.gandr Tense 7e3793b0d4e8b328
-corpus/ledger/features/relative-monads.gandr Tense 97e11e6c19949354
 corpus/ledger/features/rule-conditions.gandr Passive 2e10cabdfe8bec37
 corpus/ledger/features/rule-conditions.gandr Tense 18b8c056298769e7
 corpus/ledger/features/rule-conditions.gandr NounStack 8cf1698e4f619068
@@ -1434,7 +1435,9 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/freshness.t
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/function-field.txt Procedure d24f92963d0c837c
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/member-attribute.txt Procedure 48f06a5430a88a06
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/occurrence-count.txt Procedure 48f06a5430a88a06
+crates/surface-render-terminal/tests/golden/corpus/pathological/desc/relative-monad.txt Procedure 0eab40fd4e5364b2
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/relative-monad.txt Procedure b13d83b535eb81d0
+crates/surface-render-terminal/tests/golden/corpus/pathological/desc/relative-monad.txt Procedure eb5744b75969af8c
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-diverge-below-the-root.txt Procedure cc177a90de9170b3
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-diverge.txt Procedure cc177a90de9170b3
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-never-complete.txt Procedure b403161dcd34cb87

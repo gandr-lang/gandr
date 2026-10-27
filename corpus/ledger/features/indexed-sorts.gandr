@@ -1,5 +1,5 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
-/// Implemented: sorts that other sorts or the host's types index, in a `theory` block and in `Model(S)`, each sort a function from its indices into the universe.
+/// Implemented: sorts that other sorts or the host's types index, in a `theory` block and in `Model(S)`, each sort a function from its indices into the universe its classifier names: the value types at `Type`, the computation types at `Type[-]`.
 /// Not implemented: rules over indexed sorts; #522 owes it.
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
@@ -69,4 +69,16 @@ module Lists : Model(Carrier) {
 
   /// The list unchanged.
   def same(a : Type, x : List(a)) -> List(a) { x }
+}
+
+/// A carrier into the computation types: `Type[-]` classifies the sort, so a
+/// model answers it with a family into the computation types.
+theory Computing {
+  sort T(A : Type) : Type[-];
+}
+
+/// Lists, returned: `T` is a family from the host's types into the
+/// computation types.
+module Returning : Model(Computing) {
+  type T(a : Type) = -F List(a);
 }

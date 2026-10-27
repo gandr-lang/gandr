@@ -4336,6 +4336,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_models(sink);
         self.match_signatures(sink);
         self.check_families(sink);
+        self.check_sorts();
         self.mint_data(sink);
         self.mint_descriptions(sink)?;
         self.mint_presentations(sink)?;

@@ -1,0 +1,8 @@
+error[UnstatedComponent.Computation]: the model signature cannot state `start`, which has a port at a computation sort, which a model does not read yet
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Computation.gandr:12:26
+   │
+12 │ def counterModel : Model(Counter) ;
+   │                          ━━━━━━━ the signature this model derives
+   │
+   ├ note: `counterModel` is refused with UnstatedComponent.Computation, as its expectation states
+   ╰ note: tracked by #2899 <https://github.com/gandr-lang/gandr/issues/2899>

@@ -73,6 +73,7 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -764,6 +765,35 @@ impl<'source> Lowerer<'_, 'source>
                 Produced::CompType
             },
             Some(_) | None => Produced::ValueType,
+        }
+    }
+
+    /// The ground sort the type, or the family, a member defines at `defined`
+    /// lands in: the computation types for a computation type, and the value
+    /// types for any other.
+    ///
+    /// # Specification
+    /// - requires: the read sweep has read the member's definition.
+    /// - ensures: the computation types exactly when `defined` is among the
+    ///   lowerer's computation members; the value types otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member landing in another ground sort than its
+    ///   component states is refused, and one landing in the stated one checks.
+    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+    #[spec(ensures: |ret| (ret == GroundSort::Computation) == self.computation_members.contains(&defined.node))]
+    fn member_ground(
+        &self,
+        defined: Placed,
+    ) -> GroundSort
+    {
+        if self.computation_members.contains(&defined.node) {
+            GroundSort::Computation
+        }
+        else {
+            GroundSort::Value
         }
     }
 
@@ -1971,7 +2001,7 @@ impl<'source> Lowerer<'_, 'source>
                 .and_then(|at| components.get(at))
                 .map(|component| &component.form)
             {
-                Some(&Ok(ModelForm::Sort { ref indices })) if indices.is_empty() => {},
+                Some(&Ok(ModelForm::Sort { ref indices, .. })) if indices.is_empty() => {},
                 Some(&Ok(ModelForm::Sort { .. })) => {
                     return Err(LoweringRefusal::UnreadAscription {
                         span: sort.span,
@@ -2197,7 +2227,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         if !matches!(
             components.get(index).map(|component| &component.form),
-            Some(&Ok(ModelForm::Sort { ref indices })) if indices.is_empty()
+            Some(&Ok(ModelForm::Sort { ref indices, .. })) if indices.is_empty()
         ) {
             return Err(site.out(FragmentBoundary::WrongSort));
         }
@@ -2999,7 +3029,7 @@ impl<'source> Lowerer<'_, 'source>
                             *given = inner;
                         }
                     },
-                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                    Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty() => {
                         match self.member_type(holder, member) {
                             Maybe::Present(
                                 TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. },
@@ -3292,7 +3322,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let name = self.name_at(component.named);
         match component.form {
-            Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+            Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty() => {
                 self.packed_sort(module, name, sink, origin)
             },
             Ok(
@@ -3491,7 +3521,10 @@ impl<'source> Lowerer<'_, 'source>
                 origin: below,
             };
             let field = match component.form {
-                Ok(ModelForm::Sort { ref indices }) => self.sort_field(indices, &minting, sink)?,
+                Ok(ModelForm::Sort {
+                    ref indices,
+                    ground,
+                }) => self.sort_field(indices, ground, &minting, sink)?,
                 Ok(ModelForm::Nested(_)) => *nested.next().ok_or(Missing::Unlowered)?,
                 Ok(ref form) => self.mint_form(form, &minting, sink)?,
                 Err(_) => return Err(Missing::Unlowered),
@@ -3502,15 +3535,17 @@ impl<'source> Lowerer<'_, 'source>
         Ok(fields)
     }
 
-    /// The field a sort over the index telescope `indices` states.
+    /// The field a sort over the index telescope `indices`, landing in
+    /// `ground`, states.
     ///
     /// # Specification
     /// - requires: `minting` reads the fields before the sort's.
-    /// - ensures: the fuss-free universe for an unindexed sort; for an indexed
-    ///   one, the function from its indices into that universe, `+U` over one
-    ///   binder per index, dependent exactly where a later index's sort names
-    ///   it, into the universe's returner — as the written `(a : A, …) => Type`
-    ///   lowers; every node carrying the minting's origin.
+    /// - ensures: the universe of `ground` at the fuss-free level for an
+    ///   unindexed sort; for an indexed one, the function from its indices into
+    ///   that universe, `+U` over one binder per index, dependent exactly where
+    ///   a later index's sort names it, into the universe's returner — as the
+    ///   written `(a : A, …) => Type` lowers, or `=> Type[-]` for the
+    ///   computation types; every node carrying the minting's origin.
     /// - fails: an index whose sort does not mint, as [`Self::sort_type`].
     /// - panics: none.
     ///
@@ -3519,20 +3554,23 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the toggle's carrier and a graph's edges over two
-    ///   vertices.
+    ///   vertices; a carrier into the computation types is not one into the
+    ///   value types.
     /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
+    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_field(
         &self,
         indices: &[Binder],
+        ground: GroundSort,
         minting: &Minting<'source, '_>,
         sink: &mut Sink<'_>,
     ) -> Result<ValueTypeId, Missing<'source>>
     {
         let origin = minting.origin;
         let universe = sink.arena.value_type_universe(
-            Sort::Ground(Universe::FUSS_FREE.sort),
+            Sort::Ground(ground),
             Level::constant(Universe::FUSS_FREE.level),
         );
         sink.origins.record_value_type(universe, origin);
@@ -3634,14 +3672,14 @@ impl<'source> Lowerer<'_, 'source>
             if parameters.len() != family.parameters.len() {
                 continue;
             }
-            let indices = match check.stated {
+            let read = match check.stated {
                 FamilyForm::Written(kind) => self.written_indices(kind, sink, origin),
                 FamilyForm::Derived => {
                     self.derived_indices(check.structure, check.component, sink, origin)
                 },
             };
-            let indices = match indices {
-                Ok(indices) => indices,
+            let indices = match read {
+                Ok(read) => read,
                 Err(missing) => {
                     let refusal = match missing {
                         Missing::Refused(refusal) => refusal,
@@ -3655,6 +3693,11 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 },
             };
+            let span = self
+                .collected
+                .slots
+                .get(usize::from(family.held))
+                .map_or(declared.named.span, |held| held.named.span);
             let disagreeing = indices
                 .iter()
                 .zip(&parameters)
@@ -3663,11 +3706,6 @@ impl<'source> Lowerer<'_, 'source>
                         != CertificateEquality::Equal
                 });
             if let Some(place) = disagreeing {
-                let span = self
-                    .collected
-                    .slots
-                    .get(usize::from(family.held))
-                    .map_or(declared.named.span, |held| held.named.span);
                 let _first = faults.insert(slot, LoweringRefusal::FamilyTelescope {
                     span,
                     name: declared.name,
@@ -3689,6 +3727,62 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.faults.extend(faults);
         self.kind_checks.extend(checks);
+    }
+
+    /// Check every sort a model derives against the member answering it: the
+    /// member's type, or its family's, lands in the ground sort the sort
+    /// states.
+    ///
+    /// # Specification
+    /// - requires: the read sweep has read every member's definition.
+    /// - ensures: a member of this source whose type or family lands in another
+    ///   ground sort than the derived sort it answers holds
+    ///   [`LoweringRefusal::FamilyTelescope`] naming both ground sorts at its
+    ///   name, unless it holds a refusal already; no other slot changes.
+    /// - provides: the ground half of a derived sort's check, beside the index
+    ///   half [`Self::check_families`] makes of a family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each member's ground sort is the lowerer's reading
+    ///   of its definition, which a predicate would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value type or family at a `Type[-]` sort and a
+    ///   computation type or family at a `Type` sort are each refused at the
+    ///   member, and computation types at `Type[-]` sorts check.
+    /// - witness: `tests::modules::models::a_computation_sort_is_a_family_into_computation_types_3050`
+    pub(super) fn check_sorts(&mut self)
+    {
+        let mut faults = BTreeMap::new();
+        for (&slot, check) in self
+            .collected
+            .sort_checks
+            .range(SlotIndex::from(self.current.slots) ..)
+        {
+            let Some(declared) = self.collected.slots.get(usize::from(slot))
+            else {
+                continue;
+            };
+            if let Maybe::Present(_) = declared.refusal {
+                continue;
+            }
+            let Some(&ModelForm::Sort { ground: stated, .. }) =
+                self.derived_form(check.structure, check.component)
+            else {
+                continue;
+            };
+            let written = self.member_ground(check.defined);
+            if stated != written {
+                let _first = faults.insert(slot, LoweringRefusal::FamilyTelescope {
+                    span: declared.named.span,
+                    name: declared.name,
+                    fault: TelescopeFault::Ground { stated, written },
+                });
+            }
+        }
+        for (slot, refusal) in faults {
+            let _held = self.faults.entry(slot).or_insert(refusal);
+        }
     }
 
     /// Each index type the written kind `kind` states, read with the indices
@@ -3819,26 +3913,10 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Result<Vec<ValueTypeId>, Missing<'source>>
     {
-        let Some(Maybe::Present(model)) = self
-            .collected
-            .structures
-            .get(usize::from(structure))
-            .map(|entry| entry.model)
-        else {
-            return Err(Missing::Unlowered);
-        };
-        let Some(Ok(form)) = self
-            .collected
-            .models
-            .get(model.0)
-            .and_then(|signature| signature.components.get(component.0))
-            .map(|derived| derived.form.as_ref())
-        else {
-            return Err(Missing::Unlowered);
-        };
-        let ModelForm::Sort {
+        let Some(&ModelForm::Sort {
             indices: ref binders,
-        } = *form
+            ..
+        }) = self.derived_form(structure, component)
         else {
             return Err(Missing::Unlowered);
         };
@@ -3860,6 +3938,32 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(indices)
+    }
+
+    /// The form the model signature the module at `structure` is ascribed
+    /// derives at `component`; none for a module ascribed no model, an absent
+    /// place, or a component the derivation could not state.
+    ///
+    /// # Specification
+    /// trivial.
+    fn derived_form(
+        &self,
+        structure: StructureIndex,
+        component: crate::module::ComponentPlace,
+    ) -> Option<&ModelForm>
+    {
+        let Maybe::Present(model) = self.collected.structures.get(usize::from(structure))?.model
+        else {
+            return None;
+        };
+        self.collected
+            .models
+            .get(model.0)?
+            .components
+            .get(component.0)?
+            .form
+            .as_ref()
+            .ok()
     }
 
     /// The check of the family whose type is at `defined`, over `arity`
@@ -4037,7 +4141,7 @@ fn component_reads<'form>(
 )
 {
     match component.form {
-        Ok(ModelForm::Sort { ref indices }) => {
+        Ok(ModelForm::Sort { ref indices, .. }) => {
             for binder in indices {
                 sort_reads(&binder.sort, into);
             }

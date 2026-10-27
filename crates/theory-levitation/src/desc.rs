@@ -13,7 +13,8 @@
 //!
 //! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
 //!   effect-modalities design (§ The declaration) — a sort's index ranges over
-//!   the host's types, `Type`, beside the signature's own sorts.
+//!   the host's types, `Type`, beside the signature's own sorts, and a sort
+//!   classified `Type[-]` lives among the computation types.
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -136,7 +137,8 @@ pub enum DeclPolarity
 }
 
 /// Where a sort lives: the representable sub-universe `U⁺ ⊆ U`, whose bit
-/// admits a sort as the domain of a π⁺ binder, the rest of `U`, or the atoms.
+/// admits a sort as the domain of a π⁺ binder, the rest of `U`, the atoms, or
+/// the computation types.
 ///
 /// A representable sort is one a context can be extended by, so an operation
 /// may bind a variable of it; in the first-order model it generates context
@@ -144,7 +146,9 @@ pub enum DeclPolarity
 /// An ordinary sort generates only its substitution action. An atom sort is
 /// orbit-infinite, with equality and swapping its only structure (Pitts,
 /// _Nominal Sets_, CUP 2013): an operation may take an atom, and none returns
-/// one.
+/// one. A computation sort, `Type[-]`, is one a model answers with a
+/// computation type, a relative monad's carrier `T : Type -> Type[-]` among
+/// them, where every other sort's model is a value type.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Representability
 {
@@ -155,6 +159,8 @@ pub enum Representability
     Representable,
     /// An atom sort: never a π⁺ domain and never an operation's result.
     Atom,
+    /// A computation sort: never a π⁺ domain, its model a computation type.
+    Computation,
 }
 
 /// A declared sort of a signature (a 0-cell), with the fixpoint its

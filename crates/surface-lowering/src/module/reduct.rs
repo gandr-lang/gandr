@@ -398,7 +398,7 @@ impl<'source> Collector<'_, 'source>
             .components
             .iter()
             .filter(|component| {
-                matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty())
+                matches!(component.form, Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty())
             })
             .map(|component| (component.name.as_ref(), &component.name))
             .collect();

@@ -108,14 +108,14 @@ impl LoweringRefusal<'_>
     ///   on no endpoint, an operator declaration or an extern block where a
     ///   declaration is read, a graded bridge, an unread ascription, an
     ///   implicit telescope out of shape, a model component that relates a
-    ///   many-out operation's results, states a circuit rule or binds a
-    ///   variable, and a member the description route or its cell layer has not
-    ///   built a reading for are unimplemented, each naming its issue; the
-    ///   exhausted allowance, the grammar mismatch, the unknown mold, an
-    ///   undecided coincidence check, an unminted declaration, a host table in
-    ///   conflict and a circuit redex off its own boundary are engine faults;
-    ///   every other refusal, a misplaced form and a stray root child among
-    ///   them, is malformed source.
+    ///   many-out operation's results, states a circuit rule, binds a variable
+    ///   or reads a computation sort, and a member the description route or its
+    ///   cell layer has not built a reading for are unimplemented, each naming
+    ///   its issue; the exhausted allowance, the grammar mismatch, the unknown
+    ///   mold, an undecided coincidence check, an unminted declaration, a host
+    ///   table in conflict and a circuit redex off its own boundary are engine
+    ///   faults; every other refusal, a misplaced form and a stray root child
+    ///   among them, is malformed source.
     /// - provides: the fact a report groups by, and the issue every face of an
     ///   unimplemented refusal names.
     /// - fails: never.
@@ -152,7 +152,8 @@ impl LoweringRefusal<'_>
                 fault: ModelFault::ManyOut
                     | ModelFault::Circuit
                     | ModelFault::Binding
-                    | ModelFault::Abstraction,
+                    | ModelFault::Abstraction
+                    | ModelFault::Computation,
                 ..
             }
             | Self::UndescribedMember {
@@ -177,7 +178,8 @@ impl LoweringRefusal<'_>
                         ModelFault::ManyOut
                             | ModelFault::Circuit
                             | ModelFault::Binding
-                            | ModelFault::Abstraction,
+                            | ModelFault::Abstraction
+                            | ModelFault::Computation,
                     ),
                 ..
             }
@@ -562,11 +564,11 @@ impl FragmentFeature
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a component relating a many-out operation's results, a circuit
-///   rule, a law at a binding port and an abstracting operation are
-///   unimplemented, each naming its issue; an unknown head, a wrong arity, an
-///   ill-sorted term, an unsorted variable, a constructor term, a component
-///   inheriting another's failure and a stated law's unbound variable are
-///   malformed source.
+///   rule, a law at a binding port, an abstracting operation and a port at a
+///   computation sort are unimplemented, each naming its issue; an unknown
+///   head, a wrong arity, an ill-sorted term, an unsorted variable, a
+///   constructor term, a component inheriting another's failure and a stated
+///   law's unbound variable are malformed source.
 /// - provides: the lowering classifier's arm for `UnstatedComponent`.
 /// - fails: never.
 /// - panics: none.
@@ -576,7 +578,7 @@ impl FragmentFeature
 /// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
 #[spec(
     ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
-        == matches!(fault, ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding | ModelFault::Abstraction)
+        == matches!(fault, ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding | ModelFault::Abstraction | ModelFault::Computation)
         && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
 )]
 #[must_use]
@@ -587,6 +589,7 @@ fn unstated(fault: ModelFault) -> FailureClass
         ModelFault::Circuit => FailureClass::Unimplemented(TrackingIssue::MODEL_CIRCUIT),
         ModelFault::Binding => FailureClass::Unimplemented(TrackingIssue::MODEL_BINDING),
         ModelFault::Abstraction => FailureClass::Unimplemented(TrackingIssue::MODEL_ABSTRACTION),
+        ModelFault::Computation => FailureClass::Unimplemented(TrackingIssue::MODEL_COMPUTATION),
         ModelFault::UnknownHead
         | ModelFault::Arity
         | ModelFault::IllSorted

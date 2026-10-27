@@ -166,7 +166,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut ordered = Vec::with_capacity(written.len());
         if let Some(outermost) = theories.first() {
             for component in &outermost.signature.components {
-                if matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty())
+                if matches!(component.form, Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty())
                     && let Some((_, carrier)) = by_sort.remove(component.name.as_ref())
                 {
                     ordered.push(carrier.node);
@@ -322,7 +322,7 @@ impl<'source> Lowerer<'_, 'source>
             let manifest = plan.fixed.contains(&component.name)
                 && matches!(
                     component.form,
-                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty()
+                    Ok(ModelForm::Sort { ref indices, .. }) if indices.is_empty()
                 );
             if manifest {
                 fixed.push(component.name.clone());
