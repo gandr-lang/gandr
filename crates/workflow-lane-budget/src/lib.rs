@@ -11,6 +11,8 @@
 //!   a summary of its lanes and its verdict.
 //! - [`github`] samples the runs and jobs through `gh` and keeps the one issue
 //!   in step with the report.
+//! - [`workflows`] times each workflow's runs whole, wall time and job time
+//!   summed, and holds a workflow given a summed budget to it and its ceiling.
 //!
 //! # Boundaries
 //!
@@ -36,6 +38,12 @@
 //! while any lane is over and closes once all are within, so the repository
 //! holds one record of the current drift.
 //!
+//! The hosted budget is a workflow's summed job time per run, the nightly's
+//! within 15 minutes and never past 20. A `--summed NAME=BUDGET/CEILING`
+//! argument holds a workflow to the two and adds a table of every active
+//! workflow's wall and summed times with the cache's usage; a budgeted
+//! workflow over keeps the issue open as an over lane does.
+//!
 //! # References
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-lane-budget/README.md).
@@ -45,6 +53,7 @@ pub mod cone;
 pub mod error;
 pub mod github;
 pub mod report;
+pub mod workflows;
 
 pub use crate::budget::Budget;
 pub use crate::budget::RunCount;
@@ -55,3 +64,5 @@ pub use crate::github::IssueTitle;
 pub use crate::github::Window;
 pub use crate::report::Report;
 pub use crate::report::Standing;
+pub use crate::workflows::Summed;
+pub use crate::workflows::Workflows;

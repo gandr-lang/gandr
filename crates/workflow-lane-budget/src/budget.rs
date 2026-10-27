@@ -100,6 +100,47 @@ impl FromStr for Seconds
     }
 }
 
+impl Seconds
+{
+    /// The two times together, saturating at the largest.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run's summed time is its jobs' times together, so a
+    ///   sum that keeps one operand changes the summed column.
+    /// - witness: `workflows::tests::a_budgeted_workflow_is_held_by_its_summed_median`
+    #[inline]
+    #[must_use]
+    pub const fn plus(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_add(other.0))
+    }
+
+    /// How far `self` passes `other`: zero when it does not.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the job named as having grown is the one furthest
+    ///   past its median, so a difference taken the other way names another.
+    /// - witness: `workflows::tests::a_run_over_the_ceiling_names_the_job_that_grew`
+    #[inline]
+    #[must_use]
+    pub const fn past(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_sub(other.0))
+    }
+}
+
 impl fmt::Display for Seconds
 {
     /// Writes the time as minutes and seconds: `9m 41s`, `0m 7s`.
