@@ -12,12 +12,16 @@
 //! λy. case y { … }`, is read as the fixpoint itself: the obligation is the
 //! fixpoint applied to each side, so a recursive call at a field of `l`
 //! unfolds again where the field is a constructor, and stops at a variable,
-//! where both sides meet the same stuck call. Any other case is read as
-//! itself at each side: its scrutinee replaced by `l` and by `r`. The
-//! conversion is δ-free, [`crate::code::CodeDefinitions::convert_rigidly`],
-//! every constant compared by name and a presented type's terms by their
-//! normal forms, which is what the kernel re-derives on readmission with no
-//! trace to replay.
+//! where both sides meet the same stuck call. The unfolding goes as deep as
+//! the rule's sides hold constructors. A fixpoint taking parameters after
+//! the one it recurses on, `fix f. λy. λs. case y { … }`, is read the same
+//! way, its two sides compared as functions of those parameters: a state
+//! each call passes on is compared from one fresh state at both sides. Any
+//! other case is read as itself at each side: its scrutinee replaced by `l`
+//! and by `r`. The conversion is δ-free,
+//! [`crate::code::CodeDefinitions::convert_rigidly`], every constant compared
+//! by name and a presented type's terms by their normal forms, which is what
+//! the kernel re-derives on readmission with no trace to replay.
 //!
 //! A body holding a computation written where a value is read is judged
 //! twice (`nested`), and the obligation is judged on the second run only,
@@ -143,7 +147,8 @@ quenchant_shape::reason_enum! {
             /// was met.
             Unmarked,
             /// The fixpoint's type has no domain, or its body is not a lambda
-            /// over a case on the lambda's argument.
+            /// over a case on the lambda's argument, past any lambdas between
+            /// them.
             NotOverCase,
         }
     }
@@ -309,7 +314,8 @@ pub fn respected(
             continue;
         }
         // A law and a set's parallel paths speak of a fold at its first
-        // binder; a fold past leading arguments rests on conversion alone.
+        // binder into a returner; a fold past leading arguments, or into a
+        // function of trailing ones, rests on conversion alone.
         if leading == 0
             && let Reading::Fold { arrow, .. } = reading
             && parallel_in_a_set(context, (arrow, amount), (left, right)) == Related::Related

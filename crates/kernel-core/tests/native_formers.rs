@@ -692,6 +692,83 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
     }
 }
 
+#[test]
+fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
+{
+    use gandr_kernel_term::PresentedRule;
+    let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
+    let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
+    // `Succ(Succ(x)) ~> x`: the naturals modulo two.
+    let modulo = Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let naturals = staging
+        .data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![], vec![own]],
+            kind,
+        )
+        .presented(modulo);
+    let nominal = environment
+        .add_decl(naturals)
+        .expect("the naturals modulo two admit")
+        .position();
+    // `fix f. λn. λs. case n { Zero ⇒ return s; Succ(x) ⇒ f(x, t) }` at
+    // `N → N → F N`, the case beneath the state's binder. With `t` the
+    // state's successor the state winds as the rule winds `n`, and
+    // `Succ(Succ(s))` is `s`; with `t` zero, `Succ(Succ(x))` resets the state
+    // where `x` keeps it.
+    let refused = Err(KernelError::RuleNotRespected(
+        gandr_kernel_term::RuleIndex::from(0_usize),
+    ));
+    for (wound, admitted) in [(true, Ok(())), (false, refused)] {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let datatype = arena.value_type_data(nominal, vec![]);
+        let motive = arena.comp_type_returner(datatype);
+        let state = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let ended = arena.computation_return(state);
+        // In the arm, under the self binder, the number, the state and the
+        // field: `f` is three out and the state one.
+        let recursive = arena.value_variable(DeBruijnIndex::from(3_u32));
+        let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let passed = if wound {
+            let state = arena.value_variable(DeBruijnIndex::from(1_u32));
+            arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![state])
+        }
+        else {
+            arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![])
+        };
+        let forced = arena.computation_force(recursive);
+        let called = arena.computation_application(forced, field);
+        let passing = arena.computation_application(called, passed);
+        let descending = arena.computation_lambda(passing);
+        let number = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let case = arena.computation_data_case(number, motive, vec![ended, descending]);
+        let stated = arena.computation_lambda(case);
+        let lambda = arena.computation_lambda(stated);
+        let fixpoint = arena.computation_fixpoint(
+            lambda,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let body = arena.value_thunk(fixpoint);
+        let stepped = arena.comp_type_arrow(datatype, motive);
+        let arrow = arena.comp_type_arrow(datatype, stepped);
+        let declared = arena.value_type_thunk(arrow);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert_eq!(
+            environment.add_decl(declaration).map(|_admitted| ()),
+            admitted,
+            "a fold past its state admits where the state winds as the number does, and is \
+             refused at the rule where it resets: wound {wound}"
+        );
+    }
+}
+
 /// Admit `declared` as an axiom.
 ///
 /// # Specification

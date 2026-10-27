@@ -1,0 +1,26 @@
+// Folds over the programs that only store that tell put-put's two sides apart
+// (#2510): read as their fixpoints, their arms send `Store(s, Store(u, k))`
+// and `Store(u, k)` to different numbers, so each case is refused at the law.
+
+// Programs that only store, quotiented by put-put, and the state-passing fold.
+import "../../model/identity/state-passing.gandr";
+
+/// The count of stores past an accumulator: at `Store(s, Store(u, k))` it
+/// counts two onto the accumulator and at `Store(u, k)` one.
+@[ refuses("RuleNotRespected") ]
+def rec storesCounted(p : Stores, n : Integer) -> Integer {
+  case p {
+    End(_x) => n,
+    Store(_t, k) => storesCounted[<](k, n + 1)
+  }
+}
+
+/// The count of stores with no accumulator, one more at the law's left side
+/// than at its right.
+@[ refuses("RuleNotRespected") ]
+def rec storeCount(p : Stores) -> Integer {
+  case p {
+    End(_x) => 0,
+    Store(_t, k) => storeCount[<](k) + 1
+  }
+}

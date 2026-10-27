@@ -633,6 +633,84 @@ fn a_fold_nesting_its_call_is_judged_on_the_bind_it_elaborates_to()
 }
 
 #[test]
+fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
+{
+    let (looped, unlooped) = (ConstructorTag::from(1_usize), ConstructorTag::from(2_usize));
+    // `fix f. λw. λs. case w { Base ⇒ return s; Loop(x) ⇒ f(x, Loop(s));
+    // Unloop(x) ⇒ f(x, L(s)) }` at `Circle → Circle → F Circle`, the case
+    // beneath the state's binder: the word wound onto the state. With `L`
+    // the inverse letter the state cancels as the word does; with `L` the
+    // loop again, `Loop(Unloop(x))` winds the state twice where `x` leaves it.
+    for (inverse, respected) in [(unlooped, true), (looped, false)] {
+        let mut arena = CoreArena::new();
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let motive = arena.comp_type_returner(own);
+        let state = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let ended = arena.computation_return(state);
+        let mut arm = |letter: ConstructorTag| {
+            // Under the self binder, the word, the state and the field: `f`
+            // is three out and the state one.
+            let recursive = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+            let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let state = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            let wound = arena.value_constructor(own, letter, vec![state]);
+            let forced = arena.computation_force(recursive);
+            let called = arena.computation_application(forced, field);
+            let passed = arena.computation_application(called, wound);
+            arena.computation_lambda(passed)
+        };
+        let (lettered, inverted) = (arm(looped), arm(inverse));
+        let word = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let case = arena.computation_data_case(
+            word,
+            motive,
+            vec![ended, lettered, inverted],
+            [0_usize, 1, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
+        let stated = arena.computation_lambda(case);
+        let lambda = arena.computation_lambda(stated);
+        let fixpoint = arena.computation_fixpoint(
+            lambda,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let fold = arena.value_thunk(fixpoint);
+        let passing = arena.comp_type_arrow(own, motive);
+        let arrow = arena.comp_type_arrow(own, passing);
+        let fold_type = arena.value_type_thunk(arrow);
+        let declarations = vec![
+            circle(&mut arena, cancellations()),
+            definition(ConstantIndex::from(1_usize), fold_type, fold),
+        ];
+        let (report, crossed) = run(&mut arena, &declarations);
+        if respected {
+            assert!(
+                matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+                "the fold meets itself at the cancelled word from one fresh state: {:?}",
+                report.judged()[1].verdict()
+            );
+            assert!(
+                matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
+                "and the kernel re-derives the respect: {:?}",
+                crossed.readmitted()[1].outcome()
+            );
+        }
+        else {
+            assert!(
+                matches!(
+                    report.judged()[1].verdict(),
+                    Verdict::Refused(CheckRefusal::RuleNotRespected { at, rule, .. })
+                        if at == case && rule == gandr_kernel_term::RuleIndex::from(0_usize)
+                ),
+                "a state wound twice is told apart from the state at the first rule: {:?}",
+                report.judged()[1].verdict()
+            );
+        }
+    }
+}
+
+#[test]
 fn a_loop_is_a_word_at_its_path_in_both_checkers()
 {
     use gandr_kernel_term::FreeCell;
