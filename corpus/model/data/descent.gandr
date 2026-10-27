@@ -109,6 +109,6 @@ def rec isZero(n : Nat) -> Type {
 
 /// `isZero(Zero)` unfolds to `Unit` in the checker and the kernel alike
 /// (#2833).
-def atZero() -> (isZero(Zero)) => Unit {
+def isZeroAtZero() -> (isZero(Zero)) => Unit {
   return fn (e) { e }
 }
