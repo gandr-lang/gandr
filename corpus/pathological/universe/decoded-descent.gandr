@@ -1,0 +1,43 @@
+// What a recursion over decoded values refuses (#2862). A fixpoint stages
+// the code, so a tail call that keeps the code and descends only on the
+// value it decodes stands at the code's own stage; and a stage marks only a
+// data type, so the decoder's result, a function's, carries none. Agda's
+// sized types stop at the same place: a size sits on a constructor, never on
+// what a decoder returns. The model hands the value's own descent to a
+// function staged on the decoded family, in
+// `../../model/universe/decoded-descent.gandr`.
+
+// The naturals, their addition and the lists.
+import "../../model/data/data-base.gandr";
+
+// The universe and its decoder.
+import "../../model/universe/decoded-descent.gandr";
+
+/// A list's entries and its tail summed at once: an entry's sum descends on
+/// the element code, the list code's field, but the tail's stands at the list
+/// code `ListL(a)` itself. The tail is below the value, and the value is no
+/// parameter the fixpoint stages (#2862).
+@[ refuses("StageNotBelow") ]
+def rec totalDirect(c : UL) -> elL(c) => Nat {
+  case c {
+    NatL => thunk { fn (v) { v } },
+    ListL(a) => thunk { fn (v) {
+      case v -> -F Nat {
+        Nil => Zero,
+        Cons(h, t) => {
+          run each <- totalDirect[<](a);
+          run rest <- totalDirect[<](ListL(a));
+          plus(each(h), rest(t))
+        }
+      }
+    } },
+    PiL(a, b) => thunk { fn (f) { Zero } }
+  }
+}
+
+/// A stage on a decode: `elL(c)` is the decoder's result, no data type, so
+/// the signature's mark places nothing (#2862).
+@[ refuses("OutOfFragment.Stage") ]
+def decodedAt @[i : Size] (c : UL, v : elL(c)[i]) -> Nat {
+  Zero
+}
