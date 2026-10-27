@@ -373,6 +373,100 @@ fn a_binding_port_answers_at_the_function_from_its_variables_765()
     );
 }
 
+/// #2969: an operation whose index applies a binding port, which `Model(S)`
+/// cannot elaborate, reads its ports as written: each binder's sort at its
+/// universe, each index term at its sort, `k(x)` at `k`'s sort and its head at
+/// the function `k` binds.
+#[test]
+fn an_unelaborated_operation_s_ports_answer_as_written_2969()
+{
+    let source = SourceText::from(
+        "theory Spec {\n  sort V : Type+;\n  sort C : Type;\n  sort Below(w : C, v : C) : \
+         Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  oper mono : (m : C, n : C, k \
+         : pi+ (x : V). C, l : pi+ (x : V). C, p : Below(m, n), q : pi+ (x : V). Below(k(x), \
+         l(x))) --> Below(ext(m, k), ext(n, l));\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+    // The code a sort's element decodes, read in its entry's context: the
+    // arena keeps each minting, so two entries agree by code, not by id.
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+
+    let sort = entry(&types, span("q : pi+ (x : V)", "V"), DescribedRole::Type);
+    assert!(
+        matches!(ty(sort), Some(ValueType::Universe { .. })),
+        "a binder's sort at its universe"
+    );
+    let binder = entry(&types, span("q : pi+ (x", "x"), DescribedRole::Name);
+    let variable = entry(&types, span("Below(k(x)", "x"), DescribedRole::Term);
+    assert!(
+        code(variable).is_some(),
+        "a variable in the port's sort answers"
+    );
+    assert_eq!(
+        code(variable),
+        code(binder),
+        "a variable in the port's sort at its binder's sort"
+    );
+    let index = entry(&types, span("p : Below(m, n)", "m"), DescribedRole::Term);
+    assert!(
+        matches!(ty(index), Some(ValueType::Element { .. })),
+        "an index naming a port at the port's sort"
+    );
+    let called = entry(
+        &types,
+        span("Below(k(x), l(x))", "k(x)"),
+        DescribedRole::Term,
+    );
+    let other = entry(
+        &types,
+        span("Below(k(x), l(x))", "l(x)"),
+        DescribedRole::Term,
+    );
+    assert!(code(called).is_some(), "a binding port's call answers");
+    assert_eq!(
+        code(called),
+        code(other),
+        "both calls at the ports' one sort"
+    );
+    assert_ne!(
+        code(called),
+        code(variable),
+        "a call at its port's sort, not its variable's"
+    );
+    let result = entry(
+        &types,
+        span("--> Below(ext(m, k)", "ext(m, k)"),
+        DescribedRole::Term,
+    );
+    let again = entry(
+        &types,
+        span("--> Below(ext(m, k)", "ext(n, l)"),
+        DescribedRole::Term,
+    );
+    assert!(
+        code(result).is_some(),
+        "an applied index at its operation's result"
+    );
+    assert_eq!(
+        code(result),
+        code(again),
+        "both results at `ext`'s one sort"
+    );
+    let head = entry(&types, span("Below(k(x)", "k"), DescribedRole::Term);
+    assert!(
+        matches!(ty(head), Some(ValueType::Thunk(_))),
+        "a binding port's head at the function it binds: {:?}",
+        ty(head)
+    );
+}
+
 /// #668: a constant applied in a law, `pt()`, answers at its sort as every
 /// other application there does.
 #[test]

@@ -216,9 +216,8 @@ const KINDS: &[(&str, Standing)] = &[
         "Type sort",
         Standing::Design("a manifest sort's binding: the type it fixes the sort to answers"),
     ),
-    // #2969: a theory operation's binder sorts and index terms.
-    ("Type type_identifier", Standing::Owed(3)),
-    ("Type type_variable", Standing::Owed(12)),
+    ("Type type_identifier", Standing::Owed(0)),
+    ("Type type_variable", Standing::Owed(0)),
     ("Type u32", Standing::Owed(0)),
     ("Type u64", Standing::Owed(0)),
     (
