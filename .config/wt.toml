@@ -15,6 +15,10 @@ sweep = "mise run wt:sweep --guard"
 # with the worktree that produced it. The copy is stamped after the checkout,
 # so cargo judges freshness by source content, not mtime
 # (`.cargo/config.toml`): an artifact of another revision is rebuilt.
+# The probe asking whether the filesystem clones is written outside both
+# trees, in the clone's git directory and beside the worktree, so no
+# `git add -A` stages it while the copy runs (#3222); its name is ignored
+# and refused as residue besides, for a hook killed before its cleanup.
 [post-start]
 copy = "mise run wt:warm"
 

@@ -961,7 +961,8 @@ run = [
 # line, where a formatter that reflows the block joins it (#3217); nor a file
 # named as residue, a driver's `.orig` backup or a `.rej` hunk, or the
 # `_BACKUP_`, `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool`
-# writes, which hold clean text no marker scan sees (#1642). The line
+# writes, which hold clean text no marker scan sees (#1642), or `wt:warm`'s
+# clone probe, `.wt-warm-probe`, a tool's leftover (#3222). The line
 # patterns live in
 # `.config/merge-residue/patterns` and the path patterns in `names` beside
 # it, one extended regular expression per line; each case in `cases.json`
