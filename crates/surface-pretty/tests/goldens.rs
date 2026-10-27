@@ -2393,6 +2393,36 @@ fn a_dependent_record_spells_its_written_labels_1613()
     }
 }
 
+/// A dependent record's second field the source records no label for is
+/// labelled by the first generated name no binder around it holds, never by
+/// what a binder inside the record left at the position past the record's
+/// own: here a static redex's binder, which takes no name.
+#[test]
+fn an_unlabelled_second_field_takes_a_generated_name_3278()
+{
+    let names = [Name::from("t")];
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let integer = core.value_type_base(BaseType::Integer);
+    let integer_code = core.value_quote(integer);
+    let element = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let squared = core.value_type_product(&[element, element]);
+    let squared_code = core.value_quote(squared);
+    let squaring = core.value_static_lambda(squared_code);
+    let squares = core.value_static_application(squaring, integer_code);
+    let decoded = core.value_type_element(squares, Level::zero());
+    let over = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let second = core.value_type_product(&[over, decoded]);
+    let record = core.value_type_sigma(universe, second);
+    assert_eq!(
+        spelled(
+            &CoreSource::new(&core, &names),
+            Root::Type(CoreNode::ValueType(record))
+        ),
+        faithful(Written("#{a : Type, b : #{a, #{Integer, Integer}}}")),
+    );
+}
+
 /// The static formers spell as the grammar writes them: a static Pi as an
 /// arrow between value types, a static abstraction as `\a. v` with its
 /// binder named as a dependent arrow's is, and a spine of static
