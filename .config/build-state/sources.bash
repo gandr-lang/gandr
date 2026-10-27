@@ -10,14 +10,16 @@
 # `sources_record` writes the tracked files' blobs into a state's target
 # directory when the state is archived. `sources_restamp`, after a state is
 # unpacked, dates every tracked file whose blob every record holds, and every
-# directory with no changed file beneath it, to `SOURCES_EPOCH`: before any
+# directory with no changed file beneath it, to `SOURCES_STAMP`: before any
 # build output, so an unchanged input reads as fresh. A file that changed, was
 # added or was removed keeps the checkout's date, and so does every directory
 # above it, so a build script watching it reruns. With no record nothing is
-# dated, and every input reads as changed, as before.
+# dated, and every input reads as changed, as before. Only options macOS's
+# `xargs` and `touch` share with GNU's are used (#3244).
 
-# The date unchanged sources take: 2000-01-01T00:00:00Z.
-SOURCES_EPOCH=946684800
+# The date unchanged sources take, 2000-01-01T00:00:00Z, as `touch -t` reads
+# it in UTC.
+SOURCES_STAMP=200001010000.00
 
 # The record's name inside a state's target directory.
 SOURCES_RECORD=sources.stage
@@ -35,10 +37,14 @@ sources_record() {
 
 # sources_restamp RECORD...: date each tracked file whose stage line every
 # record holds, and each directory with no changed file beneath it, to
-# SOURCES_EPOCH. A changed file marks every directory above it.
+# SOURCES_STAMP. A changed file marks every directory above it. The paths go
+# to `touch` NUL-separated, and not at all when there are none: macOS's
+# `xargs` has neither `-d` nor `-r`, and GNU's runs `touch` once on empty
+# input.
 sources_restamp() {
   (( $# )) || return 0
-  awk -F '\t' -v records="$#" '
+  local paths
+  paths=$(awk -F '\t' -v records="$#" '
     FILENAME == ARGV[1] { current[$0] = $2; next }
     { held[$0]++ }
     END {
@@ -58,6 +64,7 @@ sources_restamp() {
     }
     function mark(path,    dir) { for (dir = parent(path); dir != ""; dir = parent(dir)) changed[dir] = 1 }
     function parent(path,    at) { at = match(path, /\/[^\/]*$/); return at ? substr(path, 1, at - 1) : "" }
-  ' <(git ls-files --stage) "$@" |
-    xargs -r -d '\n' touch -h -d "@$SOURCES_EPOCH" --
+  ' <(git ls-files --stage) "$@")
+  [[ -n $paths ]] || return 0
+  tr '\n' '\0' <<< "$paths" | TZ=UTC0 xargs -0 touch -h -t "$SOURCES_STAMP" --
 }

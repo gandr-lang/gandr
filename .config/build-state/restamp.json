@@ -28,5 +28,17 @@
     "name": "a state with no record dates nothing",
     "change": "unrecorded",
     "output": ["a", "a/x", "a/y", "b", "b/c", "b/c/z"]
+  },
+  {
+    "name": "#3244: under macOS's xargs, touch and find, a checkout of the recorded sources dates every one before the build",
+    "change": "none",
+    "tools": "bsd",
+    "output": []
+  },
+  {
+    "name": "under macOS's tools, a changed file keeps its date, and so does its directory",
+    "change": "modify",
+    "tools": "bsd",
+    "output": ["a", "a/x"]
   }
 ]
