@@ -654,13 +654,13 @@ run = "typos"
 # specification detail live. The first command refuses tracked markdown
 # outside the allowlist, matched by Git's glob pathspec so `*` stays within
 # one directory, which sizelint's patterns cannot express. The ledger's
-# README and its generated syntax ledger are on it, a library's README (its
-# module map, `library/std/README.md`), and the issue and pull request
-# templates, which GitHub reads as markdown. The second holds every
-# tracked markdown file to its budget in `sizelint.toml`; treefmt's sizelint
-# pass leaves markdown to this gate. The syntax ledger is exempt: it is
-# generated, one row per grammar rule, and `check:syntax-ledger` owns its
-# bytes.
+# README, its generated syntax ledger and its bootstrap census (#2896) are on
+# it, a library's README (its module map, `library/std/README.md`), and the
+# issue and pull request templates, which GitHub reads as markdown. The
+# second holds every tracked markdown file to its budget in `sizelint.toml`;
+# treefmt's sizelint pass leaves markdown to this gate. The syntax ledger is
+# exempt: it is generated, one row per grammar rule, and
+# `check:syntax-ledger` owns its bytes.
 ["check:markdown"]
 description = "Tracked markdown on the README allowlist and within its budgets"
 run = [
@@ -674,6 +674,7 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)library/*/README.md' \
   ':(exclude,glob)ledger/README.md' \
   ':(exclude,glob)ledger/syntax.md' \
+  ':(exclude,glob)ledger/census.md' \
   ':(exclude,glob).github/ISSUE_TEMPLATE/*.md' \
   ':(exclude,glob).github/pull_request_template.md')
 if [ -n "$outside" ]; then
@@ -1104,6 +1105,42 @@ if (( failed )); then
   exit 1
 fi
 echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, $(concerns 'SELECT count(*) FROM concern;') concerns on $(concerns 'SELECT count(*) FROM site;') sites, the map current"
+'''
+
+# The bootstrap census's programs (#2896): each case in
+# `.config/census/cases.json` names its program, `surface.jq` or `census.jq`,
+# and holds its arguments, an input and the output it must give, raw where
+# that is text and compact where it is JSON, or `fails` where the program must
+# refuse. The census itself moves with the tree and is never held here:
+# `census.yml` reports it stale (`report:bootstrap-census`).
+["check:census"]
+description = "The bootstrap census's programs give each recorded case its output"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  mapfile -t args < <(jq -r '(.args // {}) | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
+  if got=$(jq .input <<< "$case" | jq -j -c "${args[@]}" -f ".config/census/$(jq -r .program <<< "$case")" 2>&1); then
+    if [[ $(jq .fails <<< "$case") == true ]]; then
+      printf 'census case FAILED: %s\n  gave: %s\n  wanted: a refusal\n' "$name" "$got" >&2
+      failed=1
+    elif [[ "$got" != "$(jq -j -c .output <<< "$case")" ]]; then
+      printf 'census case FAILED: %s\n  gave: %s\n' "$name" "$got" >&2
+      failed=1
+    fi
+  elif [[ $(jq .fails <<< "$case") != true ]]; then
+    printf 'census case FAILED: %s\n  refused: %s\n' "$name" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/census/cases.json)
+if (( failed )); then
+  echo 'census check FAILED' >&2
+  exit 1
+fi
+echo "census check OK: $(jq length .config/census/cases.json) cases give their recorded output"
 '''
 
 # The purposes ledger (`ledger/purposes.sql`): the dump builds with every

@@ -1,0 +1,147 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: Census
+
+# The bootstrap census (#2896): weekly, `ledger/census.md` against the census
+# of main (`mise run report:bootstrap-census`). Report-only, never a gate: a
+# stale census opens or updates the one `report: bootstrap census` issue with
+# the difference, and a current one closes it. A workflow of its own because
+# the census builds every library's rustdoc JSON cold, which the nightly's
+# fifteen minutes do not hold (#3013). Only the scheduled run files; a
+# dispatch prints the difference and fails while the census is stale.
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One run at a time; a dispatch during the scheduled run replaces it.
+concurrency:
+  group: census-main
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
+  MISE_CARGO_BINSTALL_NATIVE: "true"
+  # Must match ci.yml and the image. The image checks the list at build time.
+  MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  # Empty selects the bare runner. A set value selects the pin-file tag,
+  # and only a published tag is used: this workflow does not publish.
+  GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+
+jobs:
+  # Definitions only: aliases run in each consuming job's context. The
+  # `needs` is what lets the aliases below name `needs.ci-image-ref`: a
+  # job that declares no needs has no `needs` context, and the workflow
+  # fails validation before any job starts.
+  template:
+    if: false
+    needs: ci-image-ref
+    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: &linux ubuntu-24.04-arm
+    permissions: &image-read-permissions
+      contents: read
+      packages: read
+    steps:
+      - &git-checkout
+        name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - &trust-workspace
+        name: trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - &find-image
+        id: image
+        name: find the published image
+        uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
+        with:
+          enabled: ${{ env.GANDR_CI_IMAGE != '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - &install-policy-tools
+        name: install mise-managed policy tools
+        if: ${{ needs.ci-image-ref.outputs.ref == '' }}
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+      - &setup-rust
+        name: setup rust
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          install-toolchain: ${{ needs.ci-image-ref.outputs.ref == '' }}
+          cache-save: false
+
+  # A missing tag selects the bare runner; this workflow does not build the
+  # image.
+  ci-image-ref:
+    name: resolve the CI image reference
+    runs-on: *linux
+    permissions: *image-read-permissions
+    outputs:
+      ref: ${{ steps.image.outputs.ref }}
+    steps:
+      - *git-checkout
+      - *find-image
+
+  # The census of main, built cold: every library's public rustdoc JSON, the
+  # sources and the manifests. It holds no write token; the census goes to
+  # `census-file`.
+  census:
+    name: take the bootstrap census
+    needs: ci-image-ref
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: take the census
+        run: mise run report:bootstrap-census
+      - name: upload the census
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: census
+          path: ledger/census.md
+          retention-days: 7
+
+  # The census against the committed one (`report:bootstrap-census --check
+  # --census`), filed. Its own job, so `issues: write` never reaches the job
+  # that builds; it builds nothing.
+  census-file:
+    name: report a stale bootstrap census
+    needs: [ci-image-ref, census]
+    if: ${{ !cancelled() && needs.census.result == 'success' }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      REPORT_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the census
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: census
+          path: census.out
+      - name: compare and file
+        run: mise run report:bootstrap-census --check --census census.out/census.md
