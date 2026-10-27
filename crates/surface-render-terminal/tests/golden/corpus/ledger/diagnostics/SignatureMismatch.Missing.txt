@@ -1,0 +1,21 @@
+error[SignatureMismatch.Missing]: this import is written at `Wider`, whose `extra` its source exports no `pub` declaration of, so this source's declarations are not read
+  ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Missing.gandr:9:56
+  │
+3 │ theory Wider {
+  │        ───── declared here
+  ‡
+9 │ import "../syntax/pub-declaration.gandr" as declared : Wider;
+  │                                                        ━━━━━ states a member the source does not export
+  │
+  ╰ note: `Wider` is refused with SignatureMismatch.Missing, as its expectation states
+
+error[SignatureMismatch.Missing]: this import is written at `Wider`, whose `extra` its source exports no `pub` declaration of, so this source's declarations are not read
+   ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Missing.gandr:9:56
+   │
+ 9 │ import "../syntax/pub-declaration.gandr" as declared : Wider;
+   │                                                        ━━━━━ states a member the source does not export
+   ‡
+12 │ def relayed = declared.answer;
+   │     ─────── declared here
+   │
+   ╰ note: `relayed` is refused with SignatureMismatch.Missing, as its expectation states

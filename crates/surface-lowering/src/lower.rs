@@ -4334,6 +4334,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_joints(sink);
         self.mint_abstracts(sink);
         self.mint_models(sink);
+        self.match_signatures(sink);
         self.check_families(sink);
         self.mint_data(sink);
         self.mint_descriptions(sink)?;
@@ -7720,8 +7721,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   does not parse.
     /// - provides: the qualified reading of an aliased or qualified import.
     /// - fails: [`LoweringRefusal::UnknownMember`] for a name the imported
-    ///   source does not declare; [`LoweringRefusal::UnexportedName`] for one
-    ///   it keeps private or declares without a definition;
+    ///   source does not declare, or that the signature the import is written
+    ///   at does not state; [`LoweringRefusal::UnexportedName`] for one it
+    ///   keeps private or declares without a definition;
     ///   [`LoweringRefusal::UnlockedDependency`] at the alias for any name read
     ///   through an import resolved to [`ImportTarget::Unlocked`].
     /// - panics: none.
@@ -7735,10 +7737,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   imported source, an undeclared member refused by name, a pending
     ///   member refused at the member, and a name read through an unlocked
     ///   alias refused at the alias while its source's other declarations
-    ///   stand.
+    ///   stand; a member the source exports beyond the import's signature
+    ///   refused by name.
     /// - witness: `tests::namespace::an_aliased_import_qualifies_its_source_s_names`
     /// - witness: `tests::namespace::a_pending_member_read_through_an_alias_is_refused_at_the_member`
     /// - witness: `tests::namespace::a_name_read_through_an_unlocked_alias_is_refused_at_it_3072`
+    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     #[spec(ensures: |ref ret| matches!(
         *ret,
         Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. }
@@ -7779,6 +7783,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             module,
             member,
         };
+        if !import.states(member).0 {
+            return Err(unknown);
+        }
         let Some(&slot) = self
             .collected
             .by_name

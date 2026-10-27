@@ -101,6 +101,7 @@ use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::Unbuilt;
 use gandr_surface_lowering::description::MemberFault;
@@ -821,6 +822,9 @@ pub enum RefusalName
     /// A name read through a module path that names no module of the package
     /// and no dependency its lock records.
     UnlockedDependency,
+    /// A declaration of a source whose import is written at a signature its
+    /// source's `pub` interface does not hold, qualified by how.
+    SignatureMismatch(Tag),
     /// A name an import binds and another binding of the source binds too.
     ImportShadows,
     /// A name an import answers with a declaration its source does not export.
@@ -1433,6 +1437,7 @@ impl RefusalName
             .chain(MODEL_FAULTS.map(|fault| Self::UnstatedComponent(model_tag(fault))))
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
+            .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
             .chain([
                 Self::UnprovenLaw(LawProof::Admitted),
                 Self::GenericUncovered(GenericCoverage::Dependent),
@@ -1467,7 +1472,7 @@ impl RefusalName
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
         b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::UnlockedDependency,
-        b"UnlockedDependency") | (Self::ImportShadows,
+        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
         (Self::BareFeedback, b"BareFeedback") |
@@ -1665,7 +1670,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent))
         == ret.qualifier.is_some()
 },
     )]
@@ -1717,6 +1722,7 @@ impl RefusalName
             Self::ImportUnresolved => "ImportUnresolved",
             Self::ImportCycle => "ImportCycle",
             Self::UnlockedDependency => "UnlockedDependency",
+            Self::SignatureMismatch(_) => "SignatureMismatch",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
             Self::PathCode => "PathCode",
@@ -1905,7 +1911,8 @@ impl RefusalName
         }
         else if let Self::UnstatedComponent(fault)
         | Self::UndescribedMember(fault)
-        | Self::BoundaryUnrealised(fault) = self
+        | Self::BoundaryUnrealised(fault)
+        | Self::SignatureMismatch(fault) = self
         {
             Some(Qualifier::Named(fault))
         }
@@ -1979,6 +1986,9 @@ impl RefusalName
                 "UndescribedMember" => {
                     tagged(&MEMBER_FAULTS.map(member_tag)).map(Self::UndescribedMember)
                 },
+                "SignatureMismatch" => {
+                    tagged(&SIGNATURE_FAULTS.map(signature_tag)).map(Self::SignatureMismatch)
+                },
                 "UnprovenLaw" => {
                     (rest == ADMITTED.0).then_some(Self::UnprovenLaw(LawProof::Admitted))
                 },
@@ -2050,6 +2060,10 @@ const MODEL_FAULTS: [ModelFault; 11_usize] = [
     ModelFault::Abstraction,
     ModelFault::Unbound,
 ];
+
+/// Every fault an import's signature match carries.
+const SIGNATURE_FAULTS: [MatchFault; 3_usize] =
+    [MatchFault::Missing, MatchFault::Sort, MatchFault::Unstated];
 
 /// Every fault a member the description does not read carries.
 const MEMBER_FAULTS: [MemberFault; 19_usize] = [
@@ -2275,6 +2289,27 @@ const fn model_tag(fault: ModelFault) -> Tag
     })
 }
 
+/// The tag a signature match's fault is named by: its variant.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the fault's variant name.
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate; the witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `SignatureMismatch.Sort` is minted by its fault's tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+const fn signature_tag(fault: MatchFault) -> Tag
+{
+    Tag(match fault {
+        MatchFault::Missing => "Missing",
+        MatchFault::Sort => "Sort",
+        MatchFault::Unstated => "Unstated",
+    })
+}
+
 /// The tag a description member's fault is named by: its variant.
 ///
 /// # Specification
@@ -2452,6 +2487,8 @@ impl Refusal<'_>
         .. }), RefusalName::UnreadAscription) |
         (Self::Lowering(LoweringRefusal::UnstatedComponent { .. }),
         RefusalName::UnstatedComponent(_)) |
+        (Self::Lowering(LoweringRefusal::SignatureMismatch { .. }),
+        RefusalName::SignatureMismatch(_)) |
         (Self::Lowering(LoweringRefusal::UndescribedMember { .. }),
         RefusalName::UndescribedMember(_)) |
         (Self::Lowering(LoweringRefusal::FamilyTelescope { .. }),
@@ -2744,7 +2781,8 @@ impl Refusal<'_>
         RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
-        RefusalName::UnstatedComponent(_)) | (LoweringRefusal::UndescribedMember { .. },
+        RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
+        RefusalName::SignatureMismatch(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::UninterfacedMember { .. },
         RefusalName::UninterfacedMember) | (LoweringRefusal::LowercaseModuleName { .. },
@@ -2796,6 +2834,8 @@ impl Refusal<'_>
         ret == RefusalName::UnstatedComponent(model_tag(fault))
     } else if let LoweringRefusal::UndescribedMember { fault, .. } = refusal {
         ret == RefusalName::UndescribedMember(member_tag(fault))
+    } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
+        ret == RefusalName::SignatureMismatch(signature_tag(fault))
     } else if let LoweringRefusal::UnprovenLaw { .. } = refusal {
         ret == RefusalName::UnprovenLaw(LawProof::Missing)
     } else if let LoweringRefusal::GenericUncovered { fault, .. } = refusal {
@@ -2848,6 +2888,9 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
         LoweringRefusal::UnstatedComponent { fault, .. } => {
             RefusalName::UnstatedComponent(model_tag(fault))
+        },
+        LoweringRefusal::SignatureMismatch { fault, .. } => {
+            RefusalName::SignatureMismatch(signature_tag(fault))
         },
         LoweringRefusal::UndescribedMember { fault, .. } => {
             RefusalName::UndescribedMember(member_tag(fault))
@@ -3425,12 +3468,14 @@ mod tests
         use super::MODEL_FAULTS;
         use super::Qualifier;
         use super::Refusal;
+        use super::SIGNATURE_FAULTS;
         use super::STRAY;
         use super::boundary_tag;
         use super::crossed;
         use super::former_tag;
         use super::member_tag;
         use super::model_tag;
+        use super::signature_tag;
 
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let sorts = [
@@ -3480,6 +3525,9 @@ mod tests
             .into_iter()
             .chain(MODEL_FAULTS.map(|fault| RefusalName::UnstatedComponent(model_tag(fault))))
             .chain(MEMBER_FAULTS.map(|fault| RefusalName::UndescribedMember(member_tag(fault))))
+            .chain(
+                SIGNATURE_FAULTS.map(|fault| RefusalName::SignatureMismatch(signature_tag(fault))),
+            )
             .chain(
                 crossed()
                     .into_iter()

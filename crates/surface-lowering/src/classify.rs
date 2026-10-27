@@ -236,6 +236,7 @@ impl LoweringRefusal<'_>
             | Self::ImportUnresolved { .. }
             | Self::ImportCycle { .. }
             | Self::UnlockedDependency { .. }
+            | Self::SignatureMismatch { .. }
             | Self::ImportShadows { .. }
             | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
@@ -308,6 +309,7 @@ impl LoweringRefusal<'_>
             | Self::ImportUnresolved { .. }
             | Self::ImportCycle { .. }
             | Self::UnlockedDependency { .. }
+            | Self::SignatureMismatch { .. }
             | Self::ImportShadows { .. }
             | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
@@ -754,6 +756,7 @@ mod tests
     use crate::error::FragmentBoundary;
     use crate::error::FragmentSort;
     use crate::error::LoweringRefusal;
+    use crate::error::MatchFault;
     use crate::error::Unexported;
     use crate::fixture::registered;
     use crate::fixture::span;
@@ -790,7 +793,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 76_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 77_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1100,6 +1103,13 @@ mod tests
                 span: empty,
                 alias: SurfaceName::from("hello"),
             },
+            LoweringRefusal::SignatureMismatch {
+                span: empty,
+                signature: SurfaceName::from("Greeting"),
+                member: SurfaceName::from("welcome"),
+                fault: MatchFault::Sort,
+                refused: empty,
+            },
         ]
     }
 
@@ -1182,6 +1192,7 @@ mod tests
             FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 

@@ -311,6 +311,7 @@ use crate::import::ImportBinding;
 use crate::import::ImportDeclaration;
 use crate::import::ImportIndex;
 use crate::import::ImportResolution;
+use crate::import::ImportSignature;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::import::Opens;
@@ -2270,7 +2271,8 @@ impl<'source> Collected<'source>
     /// - ensures: as [`Self::imported_slot`], `lookup` standing for the table
     ///   read in each imported source and deciding what it keeps private; an
     ///   import is read only where it opens `name` ([`ImportDeclaration`]'s
-    ///   opening: every export, or the names its list lists).
+    ///   opening: every export, or the names its list lists, and of those only
+    ///   the names its signature states when it is written at one).
     /// - fails: [`Ambiguity`] for two imports answering two values.
     /// - panics: none.
     ///
@@ -3308,6 +3310,7 @@ pub fn collect_source<'source>(
         collector.collected.slots.len(),
         collector.collected.structures.len(),
     );
+    let imports_before = ImportIndex::from(collector.collected.imports.declarations().len());
     let mut strays: Vec<Stray<'source>> = Vec::new();
     // A stray is filed before the child after it is collected, so its slot
     // stands where it is written and its refusal is reported in source order,
@@ -3628,6 +3631,9 @@ pub fn collect_source<'source>(
         return Err(refusal);
     }
     collector.stray_expectations();
+    // A signature's theory is read once the source is collected, so each
+    // import written at one binds what it states from the lowering on.
+    collector.collected.state_signatures(imports_before);
 
     Ok(())
 }
@@ -3858,6 +3864,10 @@ pub struct WrittenImport
     /// The names the import's list binds by their own names, in the order
     /// written; empty when no list is written.
     pub listed: Vec<Placed>,
+    /// The signature the import is written at, `: Gandr.Package`: the
+    /// segments of its path, the theory's name last; empty when none is
+    /// written.
+    pub signature: Vec<Placed>,
     /// The bytes the import covers.
     pub span: ByteSpan,
     /// The bytes between the address's quotes, as written, escapes included;
@@ -3886,12 +3896,14 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - requires: `pieces` is the reading of the import `import`.
-/// - ensures: the import the tiles `import " … " (as name)? (( names ))? ;`
-///   spell, in that order with nothing after them, its address read between the
-///   quotes; or the tiles `import name (. name)* (as name)? (( names ))? ;`,
-///   its address the module path's file, as [`module_file`] names it, and bound
-///   under the path when no alias is written. `names` is one name or more,
-///   separated by commas, a trailing one admitted, each kept in `listed`.
+/// - ensures: the import the tiles `import " … " (as name)? (: Path)? (( names
+///   ))? ;` spell, in that order with nothing after them, its address read
+///   between the quotes; or the tiles `import name (. name)* (as name)? (:
+///   Path)? (( names ))? ;`, its address the module path's file, as
+///   [`module_file`] names it, and bound under the path when no alias is
+///   written. `Path` is a type name then any number of dotted names of either
+///   case, each kept in `signature`. `names` is one name or more, separated by
+///   commas, a trailing one admitted, each kept in `listed`.
 /// - provides: the reading the collection and [`written_imports`] share.
 /// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
 ///   inside the import that holds it or else `form`, as
@@ -3975,6 +3987,23 @@ fn read_import<'source>(
         Maybe::Absent(_) if address == Address::Module => Maybe::Absent(unaliased::Absent::Pathed),
         Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
     };
+    let mut signature = Vec::new();
+    if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Err(out_of_place(&cursor));
+        };
+        signature.push(head);
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            match cursor.tile(TileName::TYPE_IDENTIFIER) {
+                Maybe::Present(segment) => signature.push(segment),
+                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                    Maybe::Present(segment) => signature.push(segment),
+                    Maybe::Absent(_) => return Err(out_of_place(&cursor)),
+                },
+            }
+        }
+    }
     let mut listed = Vec::new();
     if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
         loop {
@@ -4007,6 +4036,7 @@ fn read_import<'source>(
         uri,
         alias,
         listed,
+        signature,
         span: import.span,
         addressed,
         address,
@@ -5494,11 +5524,12 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `import` is an import form named `form`.
     /// - ensures: the import's address — the text between its quotes with its
-    ///   escapes decoded — its binding, its bytes, its source and what its
-    ///   address came to are kept after every earlier import, and its alias,
-    ///   when it has one, is bound in its source's scope. An address with a
-    ///   scheme is [`ImportResolution::Foreign`]; a path is the unit's target
-    ///   for the source's next path import.
+    ///   escapes decoded — its binding, the signature it is written at, its
+    ///   bytes, its source and what its address came to are kept after every
+    ///   earlier import, and its alias, when it has one, is bound in its
+    ///   source's scope. An address with a scheme is
+    ///   [`ImportResolution::Foreign`]; a path is the unit's target for the
+    ///   source's next path import.
     /// - provides: the import half of [`collect_source`].
     /// - fails: [`LoweringRefusal::MalformedForm`] for a repair or a tile out
     ///   of place, and [`LoweringRefusal::DuplicateImportAlias`] for an alias
@@ -5583,6 +5614,18 @@ impl<'source> Collector<'_, 'source>
                     .map(|&listed| (self.name_of(listed), listed.span))
                     .collect(),
             )
+        };
+        let declaration = match written.signature.split_last() {
+            Some((&named, prefix)) => declaration.signed(ImportSignature {
+                prefix: prefix
+                    .iter()
+                    .map(|&segment| (segment.span, self.name_of(segment)))
+                    .collect(),
+                named,
+                name: self.name_of(named),
+                stated: Maybe::Absent(crate::import::unread::Absent::Collecting),
+            }),
+            None => declaration,
         };
         self.collected.imports.bind(declaration)
     }

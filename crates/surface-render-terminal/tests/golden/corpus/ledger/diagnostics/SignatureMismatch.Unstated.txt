@@ -1,0 +1,21 @@
+error[SignatureMismatch.Unstated]: this import is written at `Greeted`, whose `greeting` the match reads no type for: give the source's declaration a signature, or state only operations
+  ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:9:59
+  │
+3 │ theory Greeted {
+  │        ─────── declared here
+  ‡
+9 │ import "../features/package-address.gandr" as addressed : Greeted;
+  │                                                           ━━━━━━━ states a member the match reads no type for
+  │
+  ╰ note: `Greeted` is refused with SignatureMismatch.Unstated, as its expectation states
+
+error[SignatureMismatch.Unstated]: this import is written at `Greeted`, whose `greeting` the match reads no type for: give the source's declaration a signature, or state only operations
+   ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:9:59
+   │
+ 9 │ import "../features/package-address.gandr" as addressed : Greeted;
+   │                                                           ━━━━━━━ states a member the match reads no type for
+   ‡
+12 │ def relayed = addressed.greeting;
+   │     ─────── declared here
+   │
+   ╰ note: `relayed` is refused with SignatureMismatch.Unstated, as its expectation states

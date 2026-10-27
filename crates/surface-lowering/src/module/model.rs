@@ -105,6 +105,8 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::import::ImportIndex;
+use crate::import::ImportSignature;
 use crate::model::ModelForm;
 use crate::model::ModelSignature;
 use crate::model::Presentation;
@@ -464,6 +466,92 @@ impl<'source> Collected<'source>
                 name,
                 arity: HeadArity::Nullary,
             })
+    }
+
+    /// Record, for each import from the `from`th on, the names the signature
+    /// it is written at states, so it binds those and no other (#3098).
+    ///
+    /// A signature's theory is read once its source is collected, through
+    /// the imports as they stand: an import whose own names are not read yet
+    /// narrows nothing, so the reading recurses into no other.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every import at `from` or after it written at a signature
+    ///   holds [`Self::stated`]'s names; the imports' count is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name the signature states answers through the
+    ///   import and one its source exports beyond it does not.
+    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    #[spec(
+        captures: before = self.imports.declarations().len(),
+        ensures: self.imports.declarations().len() == before,
+    )]
+    pub(crate) fn state_signatures(
+        &mut self,
+        from: ImportIndex,
+    )
+    {
+        let stated: Vec<(ImportIndex, Vec<Name>)> = self
+            .imports
+            .declarations()
+            .iter()
+            .enumerate()
+            .skip(usize::from(from))
+            .filter_map(|(position, import)| match *import.signature() {
+                Maybe::Present(ref signature) => {
+                    Some((ImportIndex::from(position), self.stated(signature)))
+                },
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        for (position, names) in stated {
+            self.imports.state(position, names);
+        }
+    }
+
+    /// The names of the components the model signature of the theory
+    /// `signature` names derives.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each component's name, in the derived order, when the theory
+    ///   resolves where the signature is written and its model signature
+    ///   derives; none otherwise.
+    /// - fails: never; a signature naming no theory states nothing, and the
+    ///   match refuses its importer by the lookup's refusal.
+    /// - panics: none.
+    /// - executable: none — the names are the derived signature's, which a
+    ///   clause would derive again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::state_signatures`].
+    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    fn stated(
+        &self,
+        signature: &ImportSignature<'source>,
+    ) -> Vec<Name>
+    {
+        let named = signature.named;
+        self.presented_theory_in(
+            named.span.start(),
+            &signature.prefix,
+            named.span,
+            signature.name,
+        )
+        .ok()
+        .and_then(|(_, presentation)| crate::model::derive(presentation).ok())
+        .map(|derived| {
+            derived
+                .components
+                .into_iter()
+                .map(|component| component.name)
+                .collect()
+        })
+        .unwrap_or_default()
     }
 
     /// The slot `position` and the presentation it holds, when a `theory`

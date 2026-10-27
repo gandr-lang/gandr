@@ -1,9 +1,17 @@
 // #2687: a workspace's second member, its library alone at its root, its
 // version read from the workspace it sits in.
 import "../workspace.gandr";
+
+/// What this package reads of `hello`: its greeting, a string.
+pub theory Greeting {
+  /// The greeting `hello` exports.
+  oper welcome : String;
+}
+
 // The sibling package this one depends on, read through `gandr.lock` by its
-// alias (#3072).
-import hello;
+// alias (#3072), at the signature above: its `welcome` and no other member
+// (#3098).
+import hello : Greeting;
 // The manifest theories, from `std.package` by its path (#533 p3).
 import "../../../../library/std/src/package.gandr";
 

@@ -25,10 +25,11 @@ pub module Package : Model(Gandr.Package) {
   def endpoint = "https://github.com/gandr-lang/gandr";
 }
 
-/// The greeting, read from the module `text.greet` by its path.
+/// The greeting, read from the module `text.greet` by its path, at the type
+/// an import at a signature matches it by.
 @[ runs("\"hello, world\"") ]
-pub def welcome = text.greet.greeting;
+pub def welcome : String = text.greet.greeting;
 
 /// The greeting again, by the name the import lists.
 @[ runs("\"hello, world\"") ]
-pub def hello = greeting;
+pub def hello : String = greeting;
