@@ -4,6 +4,9 @@
   "ejection_window": 360,
   "depth": 6,
   "red": 60,
-  "conflicting": 30,
+  "conflicting": 10,
+  "base_blocked": 10,
+  "escalate": 10,
+  "repage": 10,
   "interval": 300
 }
