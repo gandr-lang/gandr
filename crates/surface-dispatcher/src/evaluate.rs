@@ -3800,4 +3800,92 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             "a match bound by a statement with no exit continues through a frame: {bound:?}"
         );
     }
+
+    /// A tree sum in two halves, each building and summing a complete tree of
+    /// depth ten: `both` cuts one half against the other, and `left` and
+    /// `right` are the halves alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tree_sum() -> String
+    {
+        let depth =
+            (0_u32 .. 10_u32).fold(String::from("Zero"), |inner, _| format!("Succ({inner})"));
+        format!(
+            "data Depth : Type {{\n  Zero : Depth;\n  Succ : (p : Depth) --> Depth;\n}}\n\
+             data Tree : Type {{\n  Leaf : (n : Integer) --> Tree;\n  Node : (l : Tree, r : Tree) --> Tree;\n}}\n\
+             def rec full(d : Depth) -> Tree {{ case d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
+             def rec sum(t : Tree) -> Integer {{ case t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
+             def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\
+             def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
+             def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\
+             def both : +U (-F Integer) ;\ndef both = thunk {{ run a <- half({depth}); run b <- half({depth}); a + b }} ;\n"
+        )
+    }
+
+    #[test]
+    fn two_cuts_on_two_threads_answer_as_the_sequential_schedule()
+    {
+        let source = tree_sum();
+        let mut program = program(source.as_str());
+        let mut forced = |name| {
+            let position = program
+                .declarations
+                .iter()
+                .find(|&(_, declared)| declared.name == SurfaceName::from(name))
+                .map(|(&constant, _)| constant)
+                .expect("the program declares the name");
+            program
+                .entries(position, Reach::Value)
+                .expect("the declaration focuses")
+                .1
+        };
+        let (both, left, right) = (forced("both"), forced("left"), forced("right"));
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let run = |root| {
+                let mut store = Store::new();
+                let outcome = gandr_runtime_emitter::evaluate_on(
+                    tier,
+                    &program.arena,
+                    &program.definitions,
+                    root,
+                    Fuel::from(super::RUN_BUDGET),
+                    &mut store,
+                )
+                .expect("the run starts");
+                let super::Outcome::Halted(value) = outcome
+                else {
+                    return None;
+                };
+                let gandr_core_sequent::HeapValue::Literal(gandr_kernel_term::Literal::Integer(
+                    ref integer,
+                )) = *store.value(value)?
+                else {
+                    return None;
+                };
+                integer.magnitude().as_ref().parse::<u64>().ok()
+            };
+            let sequential = run(both);
+            assert_eq!(
+                sequential,
+                Some(2048_u64),
+                "the sequential schedule sums both halves on {tier:?}"
+            );
+            let (written, read) = std::thread::scope(|scope| {
+                let writer = scope.spawn(|| run(left));
+                let read = run(right);
+                (writer.join().expect("the writer's thread joins"), read)
+            });
+            assert_eq!(
+                written
+                    .zip(read)
+                    .and_then(|(written, read)| written.checked_add(read)),
+                sequential,
+                "the writer on its own thread and the reader on this one answer as the sequential schedule on {tier:?}"
+            );
+        }
+    }
 }

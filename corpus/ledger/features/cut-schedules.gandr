@@ -1,0 +1,52 @@
+/// `cut-schedules` sums a complete tree with every recursive call under a cut.
+///
+/// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does.
+/// Not implemented: the concurrent schedule as a rule of the emitter, a writer spawned at each independent cut, which #2790 owes.
+///
+/// The sequential schedule runs each cut's writer and then its reader, so `sum` answers as under call by value.
+/// On two threads at depth 18 a half, the two cuts finish 2.41 times faster on the executor and 2.23 times natively.
+/// The measuring machine has a 16-core Ryzen 9 9950X3D at load 39 on 32 hardware threads.
+///
+/// - see: crates/surface-dispatcher/src/evaluate.rs
+
+/// The depth of a complete tree.
+data Depth : Type {
+  /// The depth of a single leaf.
+  Zero : Depth;
+  /// One level deeper than `p`.
+  Succ : (p : Depth) --> Depth;
+}
+
+/// A binary tree with an integer at each leaf.
+data Tree : Type {
+  /// A leaf holding `n`.
+  Leaf : (n : Integer) --> Tree;
+  /// A node over the subtrees `l` and `r`.
+  Node : (l : Tree, r : Tree) --> Tree;
+}
+
+/// The complete tree of depth `d` with a one at every leaf, each subtree built under a cut.
+def rec full(d : Depth) -> Tree {
+  case d {
+    Zero => Leaf(1),
+    Succ(p) => Node(full[<](p), full[<](p))
+  }
+}
+
+/// The sum of the leaves of `t`, each half summed under its own cut.
+def rec sum(t : Tree) -> Integer {
+  case t {
+    Leaf(n) => n,
+    Node(l, r) => {
+      run a <- sum[<](l);
+      run b <- sum[<](r);
+      a + b
+    }
+  }
+}
+
+/// The sum over the complete tree of depth three, eight leaves of one each.
+@[ runs("8") ]
+def small() -> Integer {
+  sum(full(Succ(Succ(Succ(Zero)))))
+}
