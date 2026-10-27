@@ -4060,6 +4060,7 @@ INSERT INTO purpose VALUES('workflow-lane-budget','report::lower_median','functi
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::CacheUsage','struct','What the cache usage route reports: the active caches'' bytes and count.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::Limits','struct','What a budgeted workflow''s runs are held to: the summed budget and the ceiling.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::NotAUsage','enum','Why a line is not a cache usage.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-lane-budget','workflows::PastCeiling','struct','A budgeted workflow whose newest completed run passed its ceiling: what `lane-budget` refuses after reporting.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::Summed','struct','One `--summed` argument: a workflow and its limits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::Timed','struct','One completed run of a workflow, timed: its wall time and the jobs its summed time adds up.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','workflows::Unbudgeted','enum','Why a workflow''s row is held to nothing.',NULL,'fits','sound',NULL);

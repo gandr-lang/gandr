@@ -319,10 +319,12 @@ jobs:
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
   # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,
-  # never a gate: nothing waits on this job. A budget changes with its lane's
-  # shape, in the same commit; the name is the job's display name. Each budget
-  # is about 1.5 times the lane's median once build state was pruned, the
-  # toolchain installed once and Clippy given its own state.
+  # never a gate: nothing waits on this job. The one refusal is the nightly's
+  # sum: the job reports past 900 s, its budget, and fails when the newest
+  # completed nightly passed 1200 s, its ceiling (#3013). A budget changes
+  # with its lane's shape, in the same commit; the name is the job's display
+  # name. Each budget is about 1.5 times the lane's median once build state
+  # was pruned, the toolchain installed once and Clippy given its own state.
   #
   # The enforcing lanes are held by the cone a landing touched: deep when it
   # changed a file under crates/kernel-* or crates/core-*, Cargo.lock,

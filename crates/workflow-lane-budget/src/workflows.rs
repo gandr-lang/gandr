@@ -8,6 +8,13 @@
 //! the lower median of its runs' summed times passes the budget, or when any
 //! run passes the ceiling; each such run is a line naming the job furthest past
 //! its own median over the window, the job that grew.
+//!
+//! Over is a report. The refusal is narrower: a workflow whose newest
+//! completed run passed its ceiling ([`Workflows::past_ceiling`]).
+//! The window keeps a run past the ceiling for ten nights, so refusing on
+//! "over" would hold a workflow red for ten nights after it came back within.
+//! The newest run alone turns the next run red, and the next night within
+//! clears it.
 
 extern crate alloc;
 
@@ -512,6 +519,49 @@ impl fmt::Display for Grown<'_>
     }
 }
 
+/// A budgeted workflow whose newest completed run passed its ceiling: what
+/// `lane-budget` refuses after reporting.
+///
+/// # Specification
+/// - provides: one clause of [`BudgetError::Ceiling`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PastCeiling
+{
+    /// The workflow.
+    workflow: WorkflowName,
+    /// Its newest completed run.
+    run: RunId,
+    /// That run's summed time.
+    summed: Seconds,
+    /// The ceiling it passed.
+    ceiling: Seconds,
+}
+
+impl fmt::Display for PastCeiling
+{
+    /// Writes the workflow, the run, its summed time and the ceiling.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the line of a newest run past its ceiling is asserted
+    ///   whole, so a dropped or swapped field changes it.
+    /// - witness: `workflows::tests::only_the_newest_run_past_the_ceiling_refuses`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{} run {}: {} summed, past its {} ceiling",
+            self.workflow, self.run, self.summed, self.ceiling
+        )
+    }
+}
+
 /// The workflow table: every listed workflow's runs timed, each budgeted one
 /// held to its limits, and the cache's usage.
 ///
@@ -603,6 +653,46 @@ impl Workflows
         else {
             Standing::Within
         }
+    }
+
+    /// Each budgeted workflow whose newest completed run passed its ceiling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per budgeted row, in the table's order, whose
+    ///   newest run's summed time passes the ceiling; an older run past the
+    ///   ceiling, an unbudgeted row and a row without runs give none.
+    /// - provides: what `lane-budget` refuses after its report, so a night past
+    ///   the ceiling turns the next run red and a night within clears it, where
+    ///   [`Workflows::standing`] stays over for the whole window.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the selection is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a newest run past the ceiling, an older one past it
+    ///   under a newest within, and an unbudgeted workflow past every limit;
+    ///   reading any run instead of the newest, or holding an unbudgeted row,
+    ///   changes the entries.
+    /// - witness: `workflows::tests::only_the_newest_run_past_the_ceiling_refuses`
+    #[inline]
+    #[must_use]
+    pub fn past_ceiling(&self) -> Vec<PastCeiling>
+    {
+        self.rows
+            .iter()
+            .filter_map(|row| match (row.limits, row.runs.first()) {
+                (Maybe::Present(limits), Some(newest)) if newest.summed() > limits.ceiling => {
+                    Some(PastCeiling {
+                        workflow: row.workflow.clone(),
+                        run: newest.run,
+                        summed: newest.summed(),
+                        ceiling: limits.ceiling,
+                    })
+                },
+                (Maybe::Present(_) | Maybe::Absent(Unbudgeted::NoSummedBudget), _) => None,
+            })
+            .collect()
     }
 }
 
@@ -882,5 +972,40 @@ mod tests
             ),
             "{text}"
         );
+    }
+
+    #[test]
+    fn only_the_newest_run_past_the_ceiling_refuses()
+    {
+        let budgets = [
+            "Nightly=900/1200".parse::<Summed>().unwrap(),
+            "Weekly=900/1200".parse::<Summed>().unwrap(),
+        ];
+        let runs = |newest: u64| {
+            vec![
+                timed!("9", 900, [(newest, "sweep"), (200, "test")]),
+                timed!("8", 900, [(1300, "sweep"), (200, "test")]),
+            ]
+        };
+        // Nightly's newest run passes the ceiling; Weekly's only an older one
+        // does; Release, unbudgeted, passes every limit.
+        let table = Workflows::new(
+            &budgets,
+            "2".parse::<RunCount>().unwrap(),
+            vec![
+                (WorkflowName::from("Nightly"), runs(1100)),
+                (WorkflowName::from("Weekly"), runs(500)),
+                (WorkflowName::from("Release"), runs(5000)),
+            ],
+            cache!(),
+        );
+        let past: Vec<String> = table
+            .past_ceiling()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(past, [
+            "Nightly run 9: 21m 40s summed, past its 20m 0s ceiling"
+        ]);
     }
 }
