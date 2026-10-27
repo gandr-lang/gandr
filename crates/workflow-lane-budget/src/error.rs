@@ -45,6 +45,14 @@ pub enum BudgetError
         /// The writer's description of the failure.
         message: String,
     },
+    /// A budgeted workflow's newest completed run passed its ceiling:
+    /// the report and the filing are made, then the job refuses, so a night
+    /// past the ceiling turns the next run red.
+    Ceiling
+    {
+        /// Each such run, as the report's line for it.
+        runs: String,
+    },
 }
 
 impl fmt::Display for BudgetError
@@ -90,6 +98,7 @@ impl fmt::Display for BudgetError
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Ceiling { ref runs } => write!(f, "the newest run passed its ceiling: {runs}"),
         }
     }
 }
@@ -140,6 +149,13 @@ mod tests
                     message: "broken pipe".into(),
                 },
                 "standard output: broken pipe",
+            ),
+            (
+                BudgetError::Ceiling {
+                    runs: "Nightly run 7: 24m 28s summed, past its 20m 0s ceiling".into(),
+                },
+                "the newest run passed its ceiling: Nightly run 7: 24m 28s summed, past its 20m \
+                 0s ceiling",
             ),
         ];
         for (error, expected) in cases {

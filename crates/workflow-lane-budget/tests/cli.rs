@@ -443,8 +443,14 @@ fn a_summed_budget_tables_every_workflow()
         "",
         "all"
     );
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    assert!(output.status.success());
+    // The nightly's newest run, 6, passed its ceiling: the report is printed
+    // and filed whole, then the command refuses (#3013).
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "lane-budget: the newest run passed its ceiling: Nightly run 6: 11m 5s summed, past its \
+         10m 0s ceiling\n"
+    );
+    assert_eq!(output.status.code(), Some(2_i32));
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Every lane is within; the nightly's summed times, 665 s and 555 s, put
     // its median past the budget and run 6 past the ceiling, so the report
