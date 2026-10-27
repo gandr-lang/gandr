@@ -486,6 +486,19 @@ fn walked(
                             stack.push(Visit::Command(arm.body, under));
                         }
                     },
+                    ProducerNode::Closure {
+                        ref environment,
+                        code,
+                    } => {
+                        for &value in environment {
+                            stack.push(Visit::Producer(value, depth));
+                        }
+                        stack.push(Visit::Producer(
+                            code,
+                            depth
+                                .under(ProducerArity::from(environment.len()), ConsumerArity::ZERO),
+                        ));
+                    },
                     ProducerNode::Decompose(dialogue) => {
                         stack.push(Visit::Producer(dialogue, depth));
                     },

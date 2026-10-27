@@ -6,6 +6,8 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod closures;
+#[cfg(test)]
 mod compare;
 #[cfg(test)]
 mod differential;

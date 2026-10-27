@@ -7,24 +7,26 @@
 //! - **reference integrity** — an address the arena does not hold, and an
 //!   annotation its annotation arena does not hold;
 //! - **arity** — a constructor or destructor whose producer or consumer
-//!   children contradict the counts its head declares, and a match or copattern
-//!   object answering one head twice;
-//! - **focus** — a `μ` standing as a constructor field or a frame argument,
-//!   where only a value may stand;
+//!   children contradict the counts its head declares, a match or copattern
+//!   object answering one head twice, and an abstract closure whose code is no
+//!   thunk, recursive thunk or copattern object;
+//! - **focus** — a `μ` standing as a constructor field, a frame argument or a
+//!   closure's environment value, where only a value may stand;
 //! - **polarity** — a cut whose producer or consumer observes the other
 //!   polarity: constructors, literals, thunks, recursive thunks, matches,
 //!   nominal matches, selections and force frames are positive; copattern
-//!   objects and application frames are negative; variables, constants, `μ`,
-//!   covariables, `μ̃` and `★` take the cut's polarity;
+//!   objects and application frames are negative; an abstract closure observes
+//!   its code's; variables, constants, `μ`, covariables, `μ̃` and `★` take the
+//!   cut's polarity;
 //! - **second-class continuations** — a closure naming a covariable outside its
 //!   own binders. A closure is a thunk, a recursive thunk, a copattern object,
-//!   a `μ` a negative cut hands its binder by name, or a fold's cell branch:
-//!   what the machine allocates over the slots its support selects. A
-//!   covariable is a mark in the frame region and delivering to it shrinks the
-//!   region to the mark, so a closure holding one past its frame resumes
-//!   whatever frame took that place. No value refers to a stack variable
-//!   (Caspar and Munch-Maccagnoni 2026, Lemma 3.1); the IL carries no types to
-//!   state that, so the check states its syntactic form.
+//!   an abstract closure, a `μ` a negative cut hands its binder by name, or a
+//!   fold's cell branch: what the machine allocates over the slots its support
+//!   selects. A covariable is a mark in the frame region and delivering to it
+//!   shrinks the region to the mark, so a closure holding one past its frame
+//!   resumes whatever frame took that place. No value refers to a stack
+//!   variable (Caspar and Munch-Maccagnoni 2026, Lemma 3.1); the IL carries no
+//!   types to state that, so the check states its syntactic form.
 //!
 //! Scope is carried, not walked (`il` § Scope is carried): minting alone
 //! writes a node's support, the union of what the node names and its
@@ -136,6 +138,9 @@ pub enum CheckRefusal
         /// The innermost covariable it names, counted where it stands.
         covariable: CovariableIndex,
     },
+    /// A closure whose code is no closure former: neither a thunk, a
+    /// recursive thunk nor a copattern object.
+    ClosureCode(ProducerId),
 }
 
 impl fmt::Display for CheckRefusal
@@ -188,6 +193,12 @@ impl fmt::Display for CheckRefusal
                     f,
                     "{closure} is a closure naming the covariable {covariable} outside its own \
                      binders"
+                )
+            },
+            Self::ClosureCode(id) => {
+                write!(
+                    f,
+                    "producer {id} is a closure whose code is no closure former"
                 )
             },
         }
@@ -407,7 +418,16 @@ impl Walk<'_>
             let received = arena
                 .consumer(consumer)
                 .ok_or_else(|| dangling(NodeAddress::Consumer(consumer)))?;
-            for observed in [producer_polarity(sent), consumer_polarity(received)]
+            // A closure observes the polarity of its code.
+            let observes = if let ProducerNode::Closure { code, .. } = *sent {
+                arena
+                    .producer(code)
+                    .ok_or_else(|| dangling(NodeAddress::Producer(code)))?
+            }
+            else {
+                sent
+            };
+            for observed in [producer_polarity(observes), consumer_polarity(received)]
                 .into_iter()
                 .flatten()
             {
@@ -448,7 +468,8 @@ impl Walk<'_>
     ///   order, the first on top.
     /// - provides: the arity, focus and second-class rules for producers.
     /// - fails: a dangling address, an arity or duplicate-arm violation, a `μ`
-    ///   field, or a thunk, recursive thunk or copattern object naming a
+    ///   field or environment value, a closure whose code is no closure former,
+    ///   or a thunk, recursive thunk, copattern object or closure naming a
     ///   covariable outside its own binders.
     /// - panics: none.
     ///
@@ -467,6 +488,7 @@ impl Walk<'_>
     /// - witness: `check::tests::a_closure_naming_an_outer_covariable_is_refused_2769`
     /// - witness: `check::tests::child_refusals_follow_declared_precedence`
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
+    /// - witness: `check::tests::a_closure_holds_values_over_a_closure_former`
     #[spec(
         captures: [work = self.stack.len()],
         ensures: |ref ret| ret.is_err() || self.arena.producer(id).is_some_and(|node| {
@@ -515,6 +537,32 @@ impl Walk<'_>
                 self.second_class(closure, closure, ConsumerArity::ZERO)?;
             },
             ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => {
+                let closure = NodeAddress::Producer(id);
+                self.second_class(closure, closure, ConsumerArity::ZERO)?;
+            },
+            ProducerNode::Closure {
+                ref environment,
+                code,
+            } => {
+                for &value in environment {
+                    let held = arena
+                        .producer(value)
+                        .ok_or_else(|| dangling(NodeAddress::Producer(value)))?;
+                    if let ProducerNode::Mu { .. } = *held {
+                        return Err(CheckRefusal::NonValueArgument(value));
+                    }
+                }
+                let former = arena
+                    .producer(code)
+                    .ok_or_else(|| dangling(NodeAddress::Producer(code)))?;
+                if !matches!(
+                    *former,
+                    ProducerNode::Thunk { .. }
+                        | ProducerNode::Fixpoint { .. }
+                        | ProducerNode::Cocase { .. }
+                ) {
+                    return Err(CheckRefusal::ClosureCode(id));
+                }
                 let closure = NodeAddress::Producer(id);
                 self.second_class(closure, closure, ConsumerArity::ZERO)?;
             },
@@ -855,12 +903,13 @@ const fn dangling(node: NodeAddress) -> CheckRefusal
     }
 }
 
-/// The polarity a producer observes, or `None` when it takes the cut's.
+/// The polarity a producer observes, or `None` when it takes the cut's or,
+/// for a closure, its code's.
 ///
 /// # Specification
 /// - ensures: positive for literals, operations, decompositions, constructors
 ///   and thunks; negative for copattern objects; `None` for variables,
-///   constants and `μ`.
+///   constants, `μ` and closures.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every producer node kind is assigned its exact intrinsic
@@ -870,9 +919,9 @@ const fn dangling(node: NodeAddress) -> CheckRefusal
 #[spec(ensures: |ret| ret == match *node {
     | ProducerNode::Reify(_) | ProducerNode::Primitive { .. } | ProducerNode::Decompose(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
-    | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
+    | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } | ProducerNode::Closure { .. } => None,
 })]
-fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
+pub fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 {
     match *node {
         ProducerNode::Reify(_)
@@ -884,7 +933,10 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
         | ProducerNode::Thunk { .. }
         | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
         ProducerNode::Cocase { .. } => Some(Polarity::Negative),
-        ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
+        ProducerNode::Variable { .. }
+        | ProducerNode::Constant(_)
+        | ProducerNode::Mu { .. }
+        | ProducerNode::Closure { .. } => None,
     }
 }
 
@@ -904,7 +956,7 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
     | ConsumerNode::Destructor { tag: DestructorTag::Apply | DestructorTag::Project(_), .. } => Some(Polarity::Negative),
     | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
 })]
-fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
+pub fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
 {
     match *node {
         ConsumerNode::ListFold { .. }

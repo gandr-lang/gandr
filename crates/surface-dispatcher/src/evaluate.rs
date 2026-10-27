@@ -2793,10 +2793,20 @@ fn references(
 #[cfg(test)]
 mod tests
 {
+    use core::convert::Infallible;
+    use core::fmt::Write as _;
+    use core::ops::ControlFlow;
+
     use anodized::spec;
+    use gandr_core_sequent::CommandArena;
+    use gandr_core_sequent::CommandId;
+    use gandr_core_sequent::Definition;
+    use gandr_core_sequent::Definitions;
     use gandr_core_sequent::FocusRefusal;
+    use gandr_core_sequent::NodeAddress;
     use gandr_core_sequent::Store;
     use gandr_core_sequent::Stuck;
+    use gandr_core_sequent::convert_all;
     use gandr_kernel_term::ConstantIndex;
     use gandr_runtime_emitter::Declined;
     use gandr_runtime_emitter::Fuel;
@@ -2804,12 +2814,15 @@ mod tests
     use gandr_runtime_emitter::Status;
     use gandr_runtime_emitter::Tier;
     use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_corpus::Outcome;
+    use gandr_surface_corpus::Stated;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
     use super::Captured;
+    use super::Choice;
     use super::Engine;
     use super::Evaluation;
     use super::Program;
@@ -2817,6 +2830,7 @@ mod tests
     use super::RunStatus;
     use super::SealedRun;
     use super::Spelling;
+    use super::Start;
     use super::Unfinished;
     use super::Unrunnable;
     use super::last_declared;
@@ -3992,6 +4006,225 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     .and_then(|(written, read)| written.checked_add(read)),
                 sequential,
                 "the writer on its own thread and the reader on this one answer as the sequential schedule on {tier:?}"
+            );
+        }
+    }
+
+    /// The command a sweep answered for a command.
+    ///
+    /// # Specification
+    /// trivial.
+    fn command_of(swept: NodeAddress) -> CommandId
+    {
+        match swept {
+            NodeAddress::Command(command) => command,
+            NodeAddress::Producer(_) | NodeAddress::Consumer(_) => {
+                panic!("a sweep answers a command for a command")
+            },
+        }
+    }
+
+    /// `definitions` with every closure of every body converted, at the
+    /// positions they stood at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn converted(
+        arena: &mut CommandArena,
+        definitions: &Definitions,
+    ) -> Definitions
+    {
+        let mut rebuilt = Definitions::new();
+        for position in 0 .. usize::from(definitions.len()) {
+            let definition = match definitions.get(ConstantIndex::from(position)) {
+                Some(Definition::Transparent(body)) => {
+                    match convert_all(arena, NodeAddress::Producer(body))
+                        .expect("every corpus body converts")
+                    {
+                        NodeAddress::Producer(converted) => Definition::Transparent(converted),
+                        NodeAddress::Command(_) | NodeAddress::Consumer(_) => {
+                            panic!("a sweep answers a producer for a producer")
+                        },
+                    }
+                },
+                Some(Definition::Opaque) | None => Definition::Opaque,
+            };
+            let _pushed = rebuilt.push(definition);
+        }
+        rebuilt
+    }
+
+    /// Whether conversion rewrote the run's commands or its program's
+    /// definitions.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Change
+    {
+        /// A command the run starts from, or a definition of its program,
+        /// came out rewritten.
+        Rewritten,
+        /// No command or definition holds a closure naming a context
+        /// variable.
+        Unchanged,
+    }
+
+    /// One declaration run on the portable executor as written and with
+    /// every closure of its program converted.
+    struct Converted<'source>
+    {
+        /// The run as written.
+        written: Result<Evaluation<'source>, Declined>,
+        /// The run converted.
+        ran: Result<Evaluation<'source>, Declined>,
+        /// Whether conversion rewrote the commands or the definitions.
+        change: Change,
+    }
+
+    /// Run the declaration at `constant` of `program`, prepared to return
+    /// through `returned` and force through `forced`, on the portable executor
+    /// as written, then with those commands and every definition it unfolds
+    /// converted to abstract closures, the written definitions put back after.
+    ///
+    /// # Specification
+    /// - requires: `returned` and `forced` are what `program.prepare` answered
+    ///   for `constant`.
+    /// - ensures: the two runs and whether conversion rewrote a command or a
+    ///   definition; `program`'s definitions are the ones it held on entry.
+    /// - panics: on a conversion refusal.
+    /// - executable: none — the two runs are what the witness compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the witness.
+    /// - witness: `evaluate::tests::the_corpus_runs_items_run_converted_as_written`
+    fn run_converted<'source>(
+        program: &mut Program<'source>,
+        constant: ConstantIndex,
+        returned: CommandId,
+        forced: CommandId,
+    ) -> Converted<'source>
+    {
+        let executor = Choice::Tier(Tier::Executor);
+        let written = program.tiered(constant, returned, forced, executor, None);
+        let converted_returned = command_of(
+            convert_all(&mut program.arena, NodeAddress::Command(returned))
+                .expect("a returning command converts"),
+        );
+        let converted_forced = command_of(
+            convert_all(&mut program.arena, NodeAddress::Command(forced))
+                .expect("a forcing command converts"),
+        );
+        let rebuilt = converted(&mut program.arena, &program.definitions);
+        let change = if (converted_returned, converted_forced) == (returned, forced)
+            && rebuilt == program.definitions
+        {
+            Change::Unchanged
+        }
+        else {
+            Change::Rewritten
+        };
+        let written_definitions = core::mem::replace(&mut program.definitions, rebuilt);
+        let ran = program.tiered(
+            constant,
+            converted_returned,
+            converted_forced,
+            executor,
+            None,
+        );
+        program.definitions = written_definitions;
+        Converted {
+            written,
+            ran,
+            change,
+        }
+    }
+
+    /// Every `runs` item of the corpus runs on the portable executor, every
+    /// closure of its program converted to an abstract closure, to the
+    /// evaluation it runs to as written; conversion rewrites the programs of
+    /// the `abstract-closures` exemplar, a closure a call returns and a thunk
+    /// over two arguments.
+    #[test]
+    fn the_corpus_runs_items_run_converted_as_written()
+    {
+        let corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let walk = crate::Walk::new(
+            [
+                "crates/surface-corpus/strict",
+                "corpus/classifier",
+                "corpus/fragment",
+                "corpus/ledger",
+                "corpus/model",
+                "corpus/pathological",
+                "corpus/pending",
+                "corpus/surface",
+            ]
+            .into_iter()
+            .map(|root| corpus.join(root))
+            .collect(),
+        );
+        let mut differing = alloc::string::String::new();
+        let mut rewritten = alloc::vec::Vec::new();
+        let ControlFlow::Continue(_report) = walk.visit(
+            &crate::Pool::new(crate::Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let crate::Step::Source {
+                    path,
+                    composed:
+                        Composed::Settled {
+                            report,
+                            mut program,
+                            ..
+                        },
+                    ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let item = path.strip_prefix(&corpus).unwrap_or(path).display();
+                let spelled = |run: &Result<Evaluation<'_>, Declined>| match *run {
+                    Ok(ref evaluation) => alloc::format!("{evaluation}"),
+                    Err(declined) => alloc::format!("{declined}"),
+                };
+                for declaration in report.declarations() {
+                    if !matches!(*declaration.stated(), Stated::Verdict(Outcome::Runs(_))) {
+                        continue;
+                    }
+                    let constant = declaration.constant();
+                    let Ok((returned, forced)) =
+                        program.prepare(constant, Start::Accepted, Reach::Value)
+                    else {
+                        continue;
+                    };
+                    let Converted {
+                        written,
+                        ran,
+                        change,
+                    } = run_converted(&mut program, constant, returned, forced);
+                    if change == Change::Rewritten {
+                        rewritten.push(alloc::format!("{item} {}", declaration.name()));
+                    }
+                    if written != ran {
+                        writeln!(
+                            differing,
+                            "{item} {}\n    written:   {}\n    converted: {}",
+                            declaration.name(),
+                            spelled(&written),
+                            spelled(&ran),
+                        )
+                        .expect("a string writes");
+                    }
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        assert!(
+            differing.is_empty(),
+            "converted programs ran apart from their written forms:\n{differing}"
+        );
+        for name in ["applied", "forced"] {
+            let exemplar = alloc::format!("corpus/ledger/features/abstract-closures.gandr {name}");
+            assert!(
+                rewritten.contains(&exemplar),
+                "conversion rewrote the program of `{exemplar}`"
             );
         }
     }

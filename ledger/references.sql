@@ -27,6 +27,8 @@ CREATE TABLE reference(
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','bcd5208d8b0414d4706e2afdb774c208bf266495');
+INSERT INTO reference VALUES('Sullivan-2023-closure_conversion_little_pieces','core-sequent','closure','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Sullivan-2023-reflections_closures','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0906.4931','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0907.4553','theory-sites','','background',NULL,NULL,NULL);
@@ -88,7 +90,7 @@ INSERT INTO reference VALUES('arXiv:2508.16848','surface-syntax','','background'
 INSERT INTO reference VALUES('arXiv:2508.16848','theory-graphs','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2512.07511','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2512.09464','kernel-core','identity_recursion','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2601.08071','core-sequent','','background','66cbc25bfce14f56fb70ecba36ab78d735b45ea7','2026-10-26','c9bbc76ca417449be987a639d299f9b0eb1ea17a');
+INSERT INTO reference VALUES('arXiv:2601.08071','core-sequent','','background','ca44d28f9b7c0cfd9a0baf26f1821940af5cabac','2026-10-27','8f22b4e06a8fd8ad4eef663d177d5be321c6696e');
 INSERT INTO reference VALUES('arXiv:2601.08071','runtime-stencils','','background','66cbc25bfce14f56fb70ecba36ab78d735b45ea7','2026-10-26','24b6c43aecf1cda8f417f5238cc1b69900e9febb');
 INSERT INTO reference VALUES('arXiv:2603.24468','theory-nominal-automata','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09383','core-checker','capability','background',NULL,NULL,NULL);
@@ -313,6 +315,7 @@ INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surfa
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','encoding','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-checker','capability','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-incremental','typing','lineage',NULL,NULL,NULL);

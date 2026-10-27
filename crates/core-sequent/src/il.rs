@@ -603,6 +603,21 @@ pub enum ProducerNode
         /// The arms, one per destructor head the object answers.
         arms: Box<[CopatternArm]>,
     },
+    /// An abstract closure `{v̄; f}`: the closure former `f` — a thunk, a
+    /// recursive thunk or a copattern object — under a delayed substitution,
+    /// its environment `v̄`. Each value stands where the closure does and
+    /// binds one intuitionistic producer variable over `f`, the last value
+    /// index `0`, as a pattern arm binds its fields; `f` reads the
+    /// environment by those indices and the closure's context past them.
+    /// The closure has `f`'s polarity and answers what `f` answers: entering
+    /// it substitutes the environment and the arguments together.
+    Closure
+    {
+        /// The values, first to last.
+        environment: Box<[ProducerId]>,
+        /// The closure former, under one producer binder per value.
+        code: ProducerId,
+    },
     /// A context capture `μα. s`.
     Mu
     {
@@ -1609,6 +1624,8 @@ impl CommandArena
                             && consumers.iter().all(|child| self.consumer(*child).is_some()),
                     | ProducerNode::Thunk { body } | ProducerNode::Mu { body } | ProducerNode::Fixpoint { body, .. } => self.command(body).is_some(),
                     | ProducerNode::Cocase { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
+                    | ProducerNode::Closure { ref environment, code } =>
+                        environment.iter().all(|child| self.producer(*child).is_some()) && self.producer(code).is_some(),
                 }),
             | Err(_) => self.watermark() == entry,
         },
@@ -1850,8 +1867,9 @@ impl CommandArena
 ///   its consumer fields; a thunk's or a capture's body under one covariable; a
 ///   fixpoint's body under one producer binder and one covariable; a copattern
 ///   object's arms in order, each under its head's producer and consumer
-///   arities; nothing for a variable, a constant or a literal. `each`'s first
-///   refusal is answered and no later child visited.
+///   arities; a closure's environment in order under nothing, then its code
+///   under one producer binder per value; nothing for a variable, a constant or
+///   a literal. `each`'s first refusal is answered and no later child visited.
 /// - panics: none.
 /// - intension: allocates nothing, so a mint and a check visit a node's
 ///   children at the cost of the visit.
@@ -1930,6 +1948,18 @@ where
                     ),
                 )?;
             }
+        },
+        ProducerNode::Closure {
+            ref environment,
+            code,
+        } => {
+            for &value in environment {
+                each(NodeAddress::Producer(value), at)?;
+            }
+            each(
+                NodeAddress::Producer(code),
+                Opens::binding(ProducerArity::from(environment.len()), ConsumerArity::ZERO),
+            )?;
         },
     }
     Ok(())
@@ -2190,6 +2220,7 @@ pub fn producer_named(node: &ProducerNode) -> core::option::IntoIter<(Zone, DeBr
         | ProducerNode::Thunk { .. }
         | ProducerNode::Fixpoint { .. }
         | ProducerNode::Cocase { .. }
+        | ProducerNode::Closure { .. }
         | ProducerNode::Mu { .. } => None,
     }
     .into_iter()

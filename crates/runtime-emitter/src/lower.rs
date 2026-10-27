@@ -2795,6 +2795,7 @@ impl Lowering<'_>
             | ProducerNode::Thunk { .. }
             | ProducerNode::Fixpoint { .. }
             | ProducerNode::Cocase { .. }
+            | ProducerNode::Closure { .. }
             | ProducerNode::Primitive { .. }
             | ProducerNode::Decompose(_)
             | ProducerNode::Reify(_) => {
@@ -2989,6 +2990,30 @@ impl Lowering<'_>
                     self.closure(id, scope, Entry::Force(arm.body), Flavour::Force)?;
                 },
                 _ => self.object(id, scope)?,
+            },
+            ProducerNode::Closure {
+                ref environment,
+                code,
+            } => {
+                // Each value is evaluated where the closure stands, in a scope
+                // whose temporaries lie past the slots the values take, and
+                // bound to its slot; the code then closes over those slots as
+                // over any binder's.
+                let mut evaluated = scope;
+                let mut bound = scope;
+                let mut slots = Vec::with_capacity(environment.len());
+                for _ in environment {
+                    (evaluated, _) = self.bind(evaluated, Binding::Temporary);
+                    let slot;
+                    (bound, slot) = self.bind(bound, Binding::Producer);
+                    slots.push(slot);
+                }
+                self.tasks.push(Task::Producer(code, bound));
+                for (&value, slot) in environment.iter().zip(slots).rev() {
+                    self.tasks
+                        .push(Task::Emit(StencilId::Bind, slot.operand(), Operand::Unused));
+                    self.tasks.push(Task::Producer(value, evaluated));
+                }
             },
             ProducerNode::Constant(constant) => match self.definitions.get(constant) {
                 Some(Definition::Transparent(definition)) => {
@@ -3970,6 +3995,7 @@ fn survey(
                     | ProducerNode::Thunk { .. }
                     | ProducerNode::Fixpoint { .. }
                     | ProducerNode::Cocase { .. }
+                    | ProducerNode::Closure { .. }
                     | ProducerNode::Reify(_) => {},
                 },
                 NodeAddress::Command(id) => {
