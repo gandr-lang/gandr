@@ -16,9 +16,11 @@ const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus");
 /// The fixture root, at the repository's top.
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus");
 
-/// A source's path below the corpus crate, `/`-separated:
-/// `strict/values.gandr`, `fixture/model/identity/circle.gandr`. The name a
-/// sample ranks, a change lists and a failure prints.
+/// A source's name: its root's prefix, then its path below that root.
+///
+/// The parts are `/`-separated: `strict/values.gandr`,
+/// `fixture/model/identity/circle.gandr`. The name a sample ranks, a change
+/// lists and a failure prints.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CorpusName(String);
@@ -38,7 +40,7 @@ impl AsRef<str> for CorpusName
 
 impl From<&str> for CorpusName
 {
-    /// The name spelled `name`, `/`-separated below the corpus crate.
+    /// The name spelled `name`, its root's prefix first.
     ///
     /// # Specification
     /// trivial.
@@ -135,49 +137,127 @@ pub struct Source
 {
     /// The canonical path of the source.
     pub path: PathBuf,
-    /// Its name below the corpus crate.
+    /// Its name, its root's prefix first.
     pub name: CorpusName,
     /// Its class.
     pub class: Class,
 }
 
-/// The corpus crate's directory, canonical.
+/// One root a sweep draws sources from.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the canonical path of `crates/surface-corpus` in the workspace
-///   this crate was built in.
-/// - provides: the directory the walk starts from and `git` runs in.
-/// - fails: [`SweepError::Walk`] when the directory cannot be resolved.
-/// - panics: none.
-/// - executable: none — the outcome is the file system's.
-///
-/// # Errors
-/// As `fails` lists.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the walk below starts here; a wrong directory reaches no
-///   strict source and fails its witness.
-/// - witness: `corpus::tests::the_walk_reaches_every_class_in_name_order`
-#[inline]
-pub fn directory() -> Result<PathBuf, SweepError>
+/// - provides: where a source lies on disk and the name it is listed by: its
+///   path below `directory`, prefixed by `prefix`; a directory `held_out` names
+///   directly below `directory` holds no source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Root
 {
-    Path::new(CORPUS)
-        .canonicalize()
-        .map_err(|error| SweepError::Walk {
-            path: PathBuf::from(CORPUS),
-            detail: error.to_string(),
+    /// The first component of each of the root's names.
+    pub prefix: &'static str,
+    /// The root's directory.
+    pub directory: PathBuf,
+    /// The directory below the root that holds no source, if any.
+    pub held_out: Option<&'static str>,
+}
+
+impl Root
+{
+    /// The name of the source at `below`, a path below the root: the prefix,
+    /// then each component of `below`, `/`-separated.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn name(
+        &self,
+        below: &Path,
+    ) -> CorpusName
+    {
+        let mut name = String::from(self.prefix);
+        for part in below.components() {
+            name.push('/');
+            name.push_str(&part.as_os_str().to_string_lossy());
+        }
+        CorpusName(name)
+    }
+}
+
+/// The corpus's two roots: the strict root in the corpus crate, and the
+/// fixture root at the repository's top, its `ledger/` held out.
+///
+/// # Specification
+/// - provides: the one statement of where the corpus lies and how its sources
+///   are named, read by the walk and by a change alike.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Roots
+{
+    /// The gating root, named `strict/…`.
+    pub strict: Root,
+    /// The fixture root, named `fixture/…`.
+    pub fixture: Root,
+}
+
+impl Roots
+{
+    /// The roots of the workspace this crate was built in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the strict root `crates/surface-corpus/strict`, prefixed
+    ///   `strict`, and the fixture root `corpus`, prefixed `fixture` with
+    ///   `ledger` held out, each canonical.
+    /// - provides: the roots the walk starts from and `git` runs in.
+    /// - fails: [`SweepError::Walk`] when a root cannot be resolved.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the walk below starts here; a wrong directory reaches
+    ///   no source of its root and fails its witness.
+    /// - witness: `corpus::tests::the_walk_reaches_every_class_in_name_order`
+    #[inline]
+    pub fn asked() -> Result<Self, SweepError>
+    {
+        let canonical = |path: &Path| {
+            path.canonicalize().map_err(|error| SweepError::Walk {
+                path: path.to_path_buf(),
+                detail: error.to_string(),
+            })
+        };
+        Ok(Self {
+            strict: Root {
+                prefix: "strict",
+                directory: canonical(&Path::new(CORPUS).join("strict"))?,
+                held_out: None,
+            },
+            fixture: Root {
+                prefix: "fixture",
+                directory: canonical(Path::new(FIXTURE))?,
+                held_out: Some("ledger"),
+            },
         })
+    }
+
+    /// Both roots, strict first.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn each(&self) -> [&Root; 2]
+    {
+        [&self.strict, &self.fixture]
+    }
 }
 
 /// Every source under the corpus's strict and fixture roots, in name order.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one source per `.gandr` file under `strict/` and `fixture/`,
-///   reached without following a symbolic link — the dispatcher walk's rule —
-///   each named by its path below its root, `strict/…` or `fixture/…`, sorted
-///   by name.
+/// - ensures: one source per `.gandr` file under the [`Roots::asked`] roots,
+///   outside each root's held-out directory, reached without following a
+///   symbolic link — the dispatcher walk's rule — each named by [`Root::name`],
+///   sorted by name.
 /// - provides: the candidates a sweep samples.
 /// - fails: [`SweepError::Walk`] when a root, one of its directories or one of
 ///   their entries cannot be read.
@@ -195,21 +275,10 @@ pub fn directory() -> Result<PathBuf, SweepError>
 #[inline]
 pub fn sources() -> Result<Vec<Source>, SweepError>
 {
-    let strict = Path::new(CORPUS)
-        .join("strict")
-        .canonicalize()
-        .map_err(|error| SweepError::Walk {
-            path: PathBuf::from(CORPUS),
-            detail: error.to_string(),
-        })?;
-    let fixture = Path::new(FIXTURE)
-        .canonicalize()
-        .map_err(|error| SweepError::Walk {
-            path: PathBuf::from(FIXTURE),
-            detail: error.to_string(),
-        })?;
+    let roots = Roots::asked()?;
     let mut found = Vec::new();
-    for (root, base) in [("strict", &strict), ("fixture", &fixture)] {
+    for root in roots.each() {
+        let base = &root.directory;
         let mut pending = vec![base.clone()];
         while let Some(at) = pending.pop() {
             let unreadable = |error: std::io::Error| SweepError::Walk {
@@ -221,7 +290,7 @@ pub fn sources() -> Result<Vec<Source>, SweepError>
                 let kind = entry.file_type().map_err(unreadable)?;
                 let path = entry.path();
                 if kind.is_dir() {
-                    if at == fixture && path.ends_with("ledger") {
+                    if at == *base && root.held_out.is_some_and(|held| path.ends_with(held)) {
                         continue;
                     }
                     pending.push(path);
@@ -235,13 +304,7 @@ pub fn sources() -> Result<Vec<Source>, SweepError>
                         path: path.clone(),
                         detail: error.to_string(),
                     })?;
-                    let mut name = String::new();
-                    name.push_str(root);
-                    for part in below.components() {
-                        name.push('/');
-                        name.push_str(&part.as_os_str().to_string_lossy());
-                    }
-                    let name = CorpusName(name);
+                    let name = root.name(below);
                     let class = Class::of(&name);
                     found.push(Source { path, name, class });
                 }

@@ -29,6 +29,7 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 
 use crate::corpus::CorpusName;
+use crate::corpus::Roots;
 use crate::error::SweepError;
 
 /// The variable naming the revision a change is measured against.
@@ -128,13 +129,14 @@ impl Changed
     /// checkout's `HEAD` left `origin/main`.
     ///
     /// # Specification
-    /// - requires: `git` on the path; `corpus` is the corpus crate's directory
-    ///   inside a Git work tree holding the base revision.
-    /// - ensures: every `.gandr` file below `corpus` that the working tree adds
-    ///   or modifies against the base, and every untracked one Git does not
-    ///   ignore, named below `corpus` — less every modified source the
-    ///   formatter lays out to the text it lays the base's out to — keyed by
-    ///   the commit `HEAD` names.
+    /// - requires: `git` on the path; each of `roots` is a directory inside one
+    ///   Git work tree holding the base revision.
+    /// - ensures: every `.gandr` file below a root, outside its held-out
+    ///   directory, that the working tree adds or modifies against the base,
+    ///   and every untracked one Git does not ignore, named as
+    ///   [`crate::corpus::Root::name`] names it — less every modified source
+    ///   the formatter lays out to the text it lays the base's out to — keyed
+    ///   by the commit `HEAD` names.
     /// - provides: a sample's changed-files rule; the working tree, not `HEAD`,
     ///   is compared, so an uncommitted edit counts.
     /// - fails: [`SweepError::Git`] when an invocation cannot run, exits
@@ -149,24 +151,30 @@ impl Changed
     /// # Adequacy
     /// - hypothesis: L3 — the base's own resolution is Git's; against a
     ///   committed corpus, an uncommitted edit and an untracked source are
-    ///   listed by their names below the corpus and an edited non-source is
-    ///   not, the key is the commit `HEAD` names, and a base that does not
-    ///   exist is refused naming the command. Reading `HEAD` instead of the
-    ///   working tree, dropping untracked files, keying by the base, or
-    ///   treating a failed command as an empty change fails the witness.
+    ///   listed by their names and an edited non-source is not, a source under
+    ///   either root is named by that root's prefix and one in the held-out
+    ///   directory is not listed, the key is the commit `HEAD` names, and a
+    ///   base that does not exist is refused naming the command. Reading `HEAD`
+    ///   instead of the working tree, dropping untracked files, listing one
+    ///   root, keying by the base, or treating a failed command as an empty
+    ///   change fails a witness.
     /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
     /// - witness: `changed::tests::a_layout_alone_is_no_change_492`
     /// - witness: `changed::tests::an_added_source_is_a_change_683`
+    /// - witness: `changed::tests::a_change_names_each_root_s_sources_by_its_prefix_2949`
     #[inline]
-    pub fn asked(corpus: &Path) -> Result<Self, SweepError>
+    pub fn asked(roots: &Roots) -> Result<Self, SweepError>
     {
         let base = match std::env::var(BASE) {
             Ok(base) if !base.is_empty() => base,
-            Ok(_) | Err(_) => git(corpus, GitArgs(&["merge-base", "origin/main", "HEAD"]))?
-                .trim()
-                .to_owned(),
+            Ok(_) | Err(_) => git(
+                &roots.strict.directory,
+                GitArgs(&["merge-base", "origin/main", "HEAD"]),
+            )?
+            .trim()
+            .to_owned(),
         };
-        Self::against(corpus, Revision::from(base.as_str()))
+        Self::against(roots, Revision::from(base.as_str()))
     }
 
     /// The changed sources against `base`.
@@ -187,42 +195,13 @@ impl Changed
     /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
     /// - witness: `changed::tests::a_layout_alone_is_no_change_492`
     /// - witness: `changed::tests::an_added_source_is_a_change_683`
+    /// - witness: `changed::tests::a_change_names_each_root_s_sources_by_its_prefix_2949`
     #[inline]
     pub fn against(
-        corpus: &Path,
+        roots: &Roots,
         base: Revision<'_>,
     ) -> Result<Self, SweepError>
     {
-        let added = git(
-            corpus,
-            GitArgs(&[
-                "diff",
-                "--name-only",
-                "--no-renames",
-                "--diff-filter=A",
-                "--relative",
-                base.0,
-                "--",
-                ".",
-            ]),
-        )?;
-        let modified = git(
-            corpus,
-            GitArgs(&[
-                "diff",
-                "--name-only",
-                "--no-renames",
-                "--diff-filter=M",
-                "--relative",
-                base.0,
-                "--",
-                ".",
-            ]),
-        )?;
-        let untracked = git(
-            corpus,
-            GitArgs(&["ls-files", "--others", "--exclude-standard"]),
-        )?;
         let grammar = built_in().map_err(|error| SweepError::Grammar {
             detail: error.to_string(),
         })?;
@@ -231,25 +210,68 @@ impl Changed
                 .extension()
                 .is_some_and(|extension| extension == "gandr")
         };
-        let mut names: BTreeSet<CorpusName> =
-            added.lines().filter(source).map(CorpusName::from).collect();
+        let mut names = BTreeSet::new();
         let mut shown = String::new();
-        for name in modified.lines().filter(source) {
-            shown.clear();
-            shown.push_str(base.0);
-            shown.push_str(":./");
-            shown.push_str(name);
-            let before = git(corpus, GitArgs(&["show", &shown]))?;
-            let after = std::fs::read_to_string(corpus.join(name)).ok();
-            let before = laid_out(&grammar, SourceText::from(before.as_str()));
-            let after =
-                after.and_then(|after| laid_out(&grammar, SourceText::from(after.as_str())));
-            if before.is_none() || before != after {
-                names.insert(CorpusName::from(name));
+        let mut excluded = String::new();
+        for root in roots.each() {
+            let directory = root.directory.as_path();
+            excluded.clear();
+            if let Some(held) = root.held_out {
+                excluded.push_str(":(exclude)");
+                excluded.push_str(held);
             }
+            let within: &[&str] = if excluded.is_empty() {
+                &["."]
+            }
+            else {
+                &[".", excluded.as_str()]
+            };
+            let listed = |filter: &str| {
+                let mut args = vec![
+                    "diff",
+                    "--name-only",
+                    "--no-renames",
+                    filter,
+                    "--relative",
+                    base.0,
+                    "--",
+                ];
+                args.extend_from_slice(within);
+                git(directory, GitArgs(&args))
+            };
+            let added = listed("--diff-filter=A")?;
+            let modified = listed("--diff-filter=M")?;
+            let mut untracked_args = vec!["ls-files", "--others", "--exclude-standard", "--"];
+            untracked_args.extend_from_slice(within);
+            let untracked = git(directory, GitArgs(&untracked_args))?;
+            names.extend(
+                added
+                    .lines()
+                    .filter(source)
+                    .map(|below| root.name(Path::new(below))),
+            );
+            for below in modified.lines().filter(source) {
+                shown.clear();
+                shown.push_str(base.0);
+                shown.push_str(":./");
+                shown.push_str(below);
+                let before = git(directory, GitArgs(&["show", &shown]))?;
+                let after = std::fs::read_to_string(directory.join(below)).ok();
+                let before = laid_out(&grammar, SourceText::from(before.as_str()));
+                let after =
+                    after.and_then(|after| laid_out(&grammar, SourceText::from(after.as_str())));
+                if before.is_none() || before != after {
+                    names.insert(root.name(Path::new(below)));
+                }
+            }
+            names.extend(
+                untracked
+                    .lines()
+                    .filter(source)
+                    .map(|below| root.name(Path::new(below))),
+            );
         }
-        names.extend(untracked.lines().filter(source).map(CorpusName::from));
-        let head = git(corpus, GitArgs(&["rev-parse", "HEAD"]))?;
+        let head = git(&roots.strict.directory, GitArgs(&["rev-parse", "HEAD"]))?;
         Ok(Self {
             names,
             head: Head(head.trim().to_owned()),
@@ -401,6 +423,8 @@ mod tests
     use super::GitArgs;
     use super::Revision;
     use crate::corpus::CorpusName;
+    use crate::corpus::Root;
+    use crate::corpus::Roots;
     use crate::error::SweepError;
 
     /// Run `git args` in `directory`, which must succeed.
@@ -423,31 +447,53 @@ mod tests
         assert!(status.success(), "git {args:?}");
     }
 
+    /// The corpus's two roots laid out under `scratch` as the workspace lays
+    /// them out, each directory made.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scratch_roots(scratch: &Path) -> Roots
+    {
+        let strict = scratch.join("crates").join("surface-corpus").join("strict");
+        let fixture = scratch.join("corpus");
+        std::fs::create_dir_all(&strict).expect("the scratch strict root is made");
+        std::fs::create_dir_all(fixture.join("model")).expect("the scratch fixture root is made");
+        std::fs::create_dir_all(fixture.join("ledger")).expect("the scratch ledger is made");
+        Roots {
+            strict: Root {
+                prefix: "strict",
+                directory: strict,
+                held_out: None,
+            },
+            fixture: Root {
+                prefix: "fixture",
+                directory: fixture,
+                held_out: Some("ledger"),
+            },
+        }
+    }
+
     #[test]
     fn a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused()
     {
         let scratch =
             std::env::temp_dir().join(format!("gandr-sweep-changed-{}", std::process::id()));
-        let corpus = scratch.join("crates").join("surface-corpus");
-        std::fs::create_dir_all(corpus.join("fixture/model")).expect("the scratch corpus is made");
+        let roots = scratch_roots(&scratch);
+        let fixture = &roots.fixture.directory;
         run(&scratch, GitArgs(&["init", "--quiet"]));
-        for name in [
-            "fixture/model/kept.gandr",
-            "fixture/model/edited.gandr",
-            "notes.txt",
-        ] {
-            std::fs::write(corpus.join(name), "def a = 1 ;\n").expect("a file is written");
+        for name in ["model/kept.gandr", "model/edited.gandr", "notes.txt"] {
+            std::fs::write(fixture.join(name), "def a = 1 ;\n").expect("a file is written");
         }
         run(&scratch, GitArgs(&["add", "."]));
         run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
-        std::fs::write(corpus.join("fixture/model/edited.gandr"), "def a = 2 ;\n")
+        std::fs::write(fixture.join("model/edited.gandr"), "def a = 2 ;\n")
             .expect("an edit is written");
-        std::fs::write(corpus.join("fixture/model/added.gandr"), "def b = 1 ;\n")
+        std::fs::write(fixture.join("model/added.gandr"), "def b = 1 ;\n")
             .expect("a new source is written");
-        std::fs::write(corpus.join("notes.txt"), "edited\n").expect("a non-source is edited");
-        let changed = Changed::against(&corpus, Revision::from("HEAD"));
+        std::fs::write(fixture.join("notes.txt"), "edited\n").expect("a non-source is edited");
+        let changed = Changed::against(&roots, Revision::from("HEAD"));
         let missing = Changed::against(
-            &corpus,
+            &roots,
             Revision::from("refs/heads/no-such-branch-for-a-sweep"),
         );
         std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
@@ -457,7 +503,7 @@ mod tests
                 &CorpusName::from("fixture/model/added.gandr"),
                 &CorpusName::from("fixture/model/edited.gandr"),
             ],
-            "the uncommitted edit and the untracked source, named below the corpus"
+            "the uncommitted edit and the untracked source, named below their root"
         );
         assert!(
             matches!(
@@ -475,26 +521,23 @@ mod tests
     {
         let scratch =
             std::env::temp_dir().join(format!("gandr-sweep-layout-{}", std::process::id()));
-        let corpus = scratch.join("crates").join("surface-corpus");
-        std::fs::create_dir_all(corpus.join("fixture/model")).expect("the scratch corpus is made");
+        let roots = scratch_roots(&scratch);
+        let fixture = &roots.fixture.directory;
         run(&scratch, GitArgs(&["init", "--quiet"]));
         let base = "// One.\ndef  one =   1 ;\n";
-        for name in ["fixture/model/laid.gandr", "fixture/model/edited.gandr"] {
-            std::fs::write(corpus.join(name), base).expect("a source is written");
+        for name in ["model/laid.gandr", "model/edited.gandr"] {
+            std::fs::write(fixture.join(name), base).expect("a source is written");
         }
         run(&scratch, GitArgs(&["add", "."]));
         run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
+        std::fs::write(fixture.join("model/laid.gandr"), "// One.\ndef one = 1 ;\n")
+            .expect("a layout is written");
         std::fs::write(
-            corpus.join("fixture/model/laid.gandr"),
-            "// One.\ndef one = 1 ;\n",
-        )
-        .expect("a layout is written");
-        std::fs::write(
-            corpus.join("fixture/model/edited.gandr"),
+            fixture.join("model/edited.gandr"),
             "// One.\ndef  one =   2 ;\n",
         )
         .expect("an edit is written");
-        let changed = Changed::against(&corpus, Revision::from("HEAD"));
+        let changed = Changed::against(&roots, Revision::from("HEAD"));
         std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
         assert_eq!(
             changed.expect("HEAD resolves").names().collect::<Vec<_>>(),
@@ -511,22 +554,22 @@ mod tests
     {
         let scratch =
             std::env::temp_dir().join(format!("gandr-sweep-added-{}", std::process::id()));
-        let corpus = scratch.join("crates").join("surface-corpus");
-        std::fs::create_dir_all(corpus.join("fixture/model")).expect("the scratch corpus is made");
+        let roots = scratch_roots(&scratch);
+        let fixture = &roots.fixture.directory;
         run(&scratch, GitArgs(&["init", "--quiet"]));
-        std::fs::write(corpus.join("fixture/model/kept.gandr"), "def a = 1 ;\n")
+        std::fs::write(fixture.join("model/kept.gandr"), "def a = 1 ;\n")
             .expect("a source is written");
         run(&scratch, GitArgs(&["add", "."]));
         run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
-        std::fs::write(corpus.join("fixture/model/added.gandr"), "def b = 1 ;\n")
+        std::fs::write(fixture.join("model/added.gandr"), "def b = 1 ;\n")
             .expect("a new source is written");
         run(&scratch, GitArgs(&["add", "."]));
         run(
             &scratch,
             GitArgs(&["commit", "--quiet", "-m", "adds a source"]),
         );
-        let changed = Changed::against(&corpus, Revision::from("HEAD^"));
-        let head = super::git(&corpus, GitArgs(&["rev-parse", "HEAD"]));
+        let changed = Changed::against(&roots, Revision::from("HEAD^"));
+        let head = super::git(&scratch, GitArgs(&["rev-parse", "HEAD"]));
         std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
         let changed = changed.expect("the base resolves");
         assert_eq!(
@@ -538,6 +581,44 @@ mod tests
             changed.head.0,
             head.expect("HEAD resolves").trim(),
             "the change is keyed by HEAD"
+        );
+    }
+
+    /// #2949: the change lists both roots, the strict root in the corpus crate
+    /// and the fixture root at the repository's top, and names each source by
+    /// its root's prefix; a source in the fixture root's ledger is none.
+    #[test]
+    fn a_change_names_each_root_s_sources_by_its_prefix_2949()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-sweep-roots-{}", std::process::id()));
+        let roots = scratch_roots(&scratch);
+        let strict = &roots.strict.directory;
+        let fixture = &roots.fixture.directory;
+        run(&scratch, GitArgs(&["init", "--quiet"]));
+        std::fs::write(strict.join("kept.gandr"), "def a = 1 ;\n").expect("a source is written");
+        run(&scratch, GitArgs(&["add", "."]));
+        run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
+        for (directory, name) in [
+            (strict, "added.gandr"),
+            (fixture, "model/staged.gandr"),
+            (fixture, "ledger/entry.gandr"),
+        ] {
+            std::fs::write(directory.join(name), "def b = 1 ;\n").expect("a new source is written");
+        }
+        run(&scratch, GitArgs(&["add", "corpus/model/staged.gandr"]));
+        std::fs::write(fixture.join("loose.gandr"), "def c = 1 ;\n")
+            .expect("an untracked source is written");
+        let changed = Changed::against(&roots, Revision::from("HEAD"));
+        std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
+        assert_eq!(
+            changed.expect("HEAD resolves").names().collect::<Vec<_>>(),
+            [
+                &CorpusName::from("fixture/loose.gandr"),
+                &CorpusName::from("fixture/model/staged.gandr"),
+                &CorpusName::from("strict/added.gandr"),
+            ],
+            "each root's sources by its prefix, the ledger held out"
         );
     }
 }

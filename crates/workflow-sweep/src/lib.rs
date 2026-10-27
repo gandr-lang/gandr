@@ -188,12 +188,12 @@ impl Sweep
     /// # Specification
     /// - requires: when sampled, as [`Changed::asked`].
     /// - ensures: the coverage [`Coverage::asked`] reads; when sampled, the
-    ///   change [`Changed::asked`] lists against the corpus directory and the
+    ///   change [`Changed::asked`] lists against the corpus's roots and the
     ///   whole rotation; when full, no change and the rotation
     ///   [`Rotation::asked`] reads.
     /// - provides: what a sweep test reads once before choosing its inputs.
-    /// - fails: [`SweepError::Walk`] when the corpus directory cannot be
-    ///   resolved, [`SweepError::Git`] when the change cannot be listed, and
+    /// - fails: [`SweepError::Walk`] when a corpus root cannot be resolved,
+    ///   [`SweepError::Git`] when the change cannot be listed, and
     ///   [`SweepError::Night`] when the night cannot be read.
     /// - panics: none.
     /// - executable: none — the outcome is the environment's and Git's.
@@ -212,7 +212,7 @@ impl Sweep
         let (changed, rotation) = match coverage {
             Coverage::Full => (Changed::default(), Rotation::asked()?),
             Coverage::Sampled => {
-                let changed = Changed::asked(&corpus::directory()?)?;
+                let changed = Changed::asked(&corpus::Roots::asked()?)?;
                 (changed, Rotation::Whole)
             },
         };
