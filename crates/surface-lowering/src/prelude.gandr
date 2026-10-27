@@ -97,28 +97,3 @@ pub def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b)
 
 /// At least, through the operands' model of `Ord`: what `a >= b` calls.
 pub def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
-
-/// What a package and a workspace both state: the version they release at.
-/// `Gandr.Package` and `Gandr.Workspace` include it, so a member reads its
-/// version from its workspace's model.
-pub theory Versioned {
-  /// The version, as a package's manifest records it.
-  oper version : String;
-}
-
-/// A package: the project a `lib.gandr` roots, described by the model its
-/// `module Package : Model(Gandr.Package)` is, from which the checker writes
-/// the project's `gandr.toml`.
-pub theory Gandr.Package {
-  include Versioned;
-  /// The package's name, which the manifest records it by.
-  oper name : String;
-}
-
-/// A workspace: the packages a `workspace.gandr` gathers, described by the
-/// model its `module Workspace : Model(Gandr.Workspace)` is, beside the
-/// `members` it names. Its members' libraries import it and read what it
-/// states.
-pub theory Gandr.Workspace {
-  include Versioned;
-}

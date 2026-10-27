@@ -4,6 +4,9 @@
 // its members, each a directory below it rooting a package. `gandr check`
 // here checks this source and every member, and writes each member's
 // `gandr.toml`.
+// The manifest theories, from the standard library's `std.package` by its
+// path until a project imports a package by name (#533 p3).
+import "../../../library/std/src/package.gandr";
 
 /// What the members share: the version each states.
 pub module Workspace : Model(Gandr.Workspace) {

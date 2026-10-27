@@ -1,6 +1,8 @@
 // #2687: a workspace's second member, its library alone at its root, its
 // version read from the workspace it sits in.
 import "../workspace.gandr";
+// The manifest theories, from `std.package` by its path (#533 p3).
+import "../../../../library/std/src/package.gandr";
 
 /// The package: its name, and the version its workspace states.
 pub module Package : Model(Gandr.Package) {

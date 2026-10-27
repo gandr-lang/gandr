@@ -1548,19 +1548,25 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     );
 }
 
-/// #2687: the prelude's `theory Gandr.Package`, declared in the module its
-/// dotted name opens, is read by its path from a source writing no import: a
-/// model of it stands, and one missing a member is refused at the member.
+/// #2767: `std.package`'s `theory Gandr.Package`, declared in the module its
+/// dotted name opens, is read by its path from a source importing it: a model
+/// of it stands, and one missing a member is refused at the member.
 #[test]
-fn the_prelude_s_package_theory_is_read_by_its_path_2687()
+fn the_standard_package_theory_is_read_by_its_path_2767()
 {
     let pbg = grammar();
-    let source = "module Package : Model(Gandr.Package) {\n  def name : String = \"probe\";\n  def \
-                  version : String = \"0.1.0\";\n}\nmodule Partial : Model(Gandr.Package) {\n  \
-                  def name : String = \"partial\";\n}\n";
-    let (text, unit) =
-        gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
-            .expect("a unit of one source lays after the prelude");
+    let source = "import \"./package.gandr\" ;\nmodule Package : Model(Gandr.Package) {\n  def \
+                  name : String = \"probe\";\n  def version : String = \"0.1.0\";\n}\nmodule \
+                  Partial : Model(Gandr.Package) {\n  def name : String = \"partial\";\n}\n";
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(include_str!("../../../library/std/src/package.gandr")),
+            &[],
+        ),
+        (SourceText::from(source), &[ImportTarget::Source(
+            SourceIndex::from(0_usize),
+        )]),
+    ]);
     let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
         .expect("the unit lowers");
     let partial = text.rfind("Package)").expect("`Partial` names the theory");
@@ -1572,7 +1578,7 @@ fn the_prelude_s_package_theory_is_read_by_its_path_2687()
             module: SurfaceName::from("Partial"),
             member: SurfaceName::from("version"),
         })]),
-        "`Package` models the prelude's theory, and `Partial` lacks its `version`"
+        "`Package` models the library's theory, and `Partial` lacks its `version`"
     );
 }
 

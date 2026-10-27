@@ -648,8 +648,8 @@ impl core::fmt::Display for Unmanifested
         match *self {
             Self::Undeclared(field) => write!(
                 f,
-                "the library declares no `{}`, so no `{MANIFEST}` is written: declare `module \
-                 Package : Model(Gandr.Package)` in it",
+                "the library declares no `{}`, so no `{MANIFEST}` is written: import `std.package` \
+                 and declare `module Package : Model(Gandr.Package)` in it",
                 field.path()
             ),
             Self::Unstrung { field, ref came } => write!(

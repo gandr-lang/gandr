@@ -34,12 +34,16 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::HostGrant;
+use crate::component::lay_out;
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
-use crate::compose::compose;
+use crate::compose::judge_lowering;
+use crate::compose::lower_unit_source;
 use crate::evaluate::declaration_name;
 use crate::package::Package;
 use crate::package::package_root;
+use crate::root::classify;
 
 /// The file name of a workspace's source, at the workspace's root.
 pub const WORKSPACE: &str = "workspace.gandr";
@@ -135,10 +139,11 @@ impl Workspace
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the workspace's source read, checked alone and its `members`
-    ///   run; each string of the list a directory below the root, and the
-    ///   package [`Package::discover`] finds from it, which must be rooted at
-    ///   that directory.
+    /// - ensures: the workspace's source read, checked over the sources it
+    ///   imports, as the walk lays them out, and its `members` run; each string
+    ///   of the list a directory below the root, and the package
+    ///   [`Package::discover`] finds from it, which must be rooted at that
+    ///   directory.
     /// - provides: the packages a verb works on in the workspace.
     /// - fails: [`Unmembered::Unread`] for a source that cannot be read,
     ///   [`Unmembered::Refused`] for one that does not compose or is refused as
@@ -168,16 +173,26 @@ impl Workspace
         let grammar = built_in().map_err(|error| Unmembered::Refused {
             why: error.to_string(),
         })?;
-        let mut lowerings = LoweringCount::default();
-        let composed = compose(
+        let laid = lay_out(
             &grammar,
-            CorpusRoot::Strict,
+            &source,
+            classify(&source),
             SourceText::from(text.as_str()),
-            &mut lowerings,
-        )
-        .map_err(|fault| Unmembered::Refused {
-            why: fault.to_string(),
-        })?;
+        );
+        let laid_text = SourceText::from(laid.text.as_str());
+        let mut lowerings = LoweringCount::default();
+        let composed = lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings)
+            .and_then(|lowering| {
+                judge_lowering(
+                    CorpusRoot::Strict,
+                    (lowering, laid_text),
+                    &HostGrant::UNBOUNDED,
+                    laid.base,
+                )
+            })
+            .map_err(|fault| Unmembered::Refused {
+                why: fault.to_string(),
+            })?;
         let mut program = match composed {
             Composed::Settled { program, .. } => program,
             Composed::Refused(refusal) => {
