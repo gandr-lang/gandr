@@ -1,5 +1,5 @@
 /// `second-order-rules`: Second-order rules.
-/// Implemented: a rule over a binding operation, instantiation `t(u)`, the abstraction `bind x . t` at a port, sorted at its binders, oriented by HORPO's metavariable case and its critical pairs joined in the second-order reading.
+/// Implemented: a rule over a binding operation, instantiation `t(u)`, the abstraction `bind x . t` at a port, sorted at its binders, oriented by HORPO's metavariable case, its critical pairs joined in the second-order reading, and an inspected call fired in that reading.
 /// Not implemented: two binders at one port, which waits on the grammar; completing a parting pair (#2361); a law relating a term at its port (#1324); #2347 owes it.
 // Second-order rules. A rule whose right side applies a variable that a
 // binding port of its left side binds instantiates it: `t(u)` substitutes `u`
@@ -46,9 +46,10 @@ theory LetBeside {
 }
 
 /// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
-/// the root, the pair is found by pattern unification, and both reducts are
-/// `t(zero())` (#2328).
-@[ checks ]
+/// the root, both reducts are `t(zero())` (#2328), and an inspected call
+/// fires both by substitution, the inner `let` at `x` and the outer at
+/// `zero()` (#2966).
+@[ normalizes("let(zero, bind x . let(x, bind y . y)) ~> zero") ]
 theory LetOverlap {
   sort Tm : Type+;
   oper zero : () --> Tm;

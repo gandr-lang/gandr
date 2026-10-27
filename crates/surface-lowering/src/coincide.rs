@@ -159,6 +159,8 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::TrackingIssue;
+use gandr_kernel_term::Exhausted;
+use gandr_kernel_term::RewriteFuel;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
@@ -209,6 +211,7 @@ use gandr_theory_levitation::path_greater;
 use quenchant_shape::shape::Maybe;
 
 use crate::LoweringRefusal;
+use crate::certify::second_order_normal_form;
 use crate::certify::second_order_parts;
 use crate::desc_cells::CellDiagnosticIndex;
 use crate::desc_cells::CircuitCell;
@@ -1458,7 +1461,7 @@ pub struct NormalForm
     /// The call, as read.
     pub call: FreeTerm,
     /// The steps from the call to its normal form, replayed before the normal
-    /// form is returned.
+    /// form is returned where the reading keeps them.
     pub path: NormalPath,
     /// The normal form, read back as a term: a constructor term for one
     /// output, the results tuple for several, or the call that no rule
@@ -1474,6 +1477,10 @@ pub enum NormalPath
     Commands(Vec<CellApp>),
     /// Steps of a presented type's reading, from the call as a term.
     Terms(Vec<CellApp<TermAlphabet>>),
+    /// No steps: the kernel's second-order reading fired the block's rules,
+    /// matching each pattern and substituting its instance, and keeps no path
+    /// of cells to replay (#2966).
+    SecondOrder,
 }
 
 /// Why a normal form writes no term.
@@ -1518,12 +1525,16 @@ pub enum NormalFormFault
     UnknownSymbol,
     /// The term is no call the block's operations elaborate.
     NotACall(ElaborateError),
-    /// The normalization took every step it was allowed.
+    /// The normalization took every step it was allowed: a rewrite, or in the
+    /// second-order reading a rule tried at a position.
     Exhausted,
     /// The recorded path does not replay to the normal form.
     Uncertified,
     /// The normal form writes no term.
     Unwritable(Unwriting),
+    /// The kernel's second-order reading reads the call as no closed term, or
+    /// a rule's instance as ill formed.
+    IllFormed,
     /// The call's operations sort it no one way: two sorts asked of one
     /// argument do not unify, or an index no argument fixes is left.
     Unsorted(Unsorted),
@@ -1589,6 +1600,10 @@ impl fmt::Display for NormalFormFault
             Self::Exhausted => write!(f, "no normal form within {NORMAL_FORM_STEPS} steps"),
             Self::Uncertified => f.write_str("no normal form: the path does not replay"),
             Self::Unwritable(_) => f.write_str("no normal form: it writes no term"),
+            Self::IllFormed => f.write_str(
+                "no normal form: the second-order reading forms no term of the call or of a \
+                 rule's instance",
+            ),
             Self::Unsorted(_) => f.write_str(
                 "no normal form: the call is ill sorted, its operations asking one argument at \
                  two sorts or leaving an index no argument fixes",
@@ -1603,16 +1618,21 @@ impl fmt::Display for NormalFormFault
 /// # Specification
 /// - requires: `cells` is the cell gate's elaboration of `description`.
 /// - ensures: the call read in the inspection notation against the block's
-///   constructors and operations; for a presented type, read as a term and
-///   normalized under its term store with its conditioned cells after the rest
-///   ([`PresentedRules::firing`]); otherwise elaborated to the command its
-///   faces match and normalized under [`DeclarationCells::rewriting`], or,
-///   where the call holds an operation in a value's place, read as a term and
-///   normalized under the block's oriented rules read over terms
-///   ([`oriented_terms`]); within [`NORMAL_FORM_STEPS`] steps, its path
-///   replayed to the normal form, and the normal form read back as a term.
+///   constructors and operations; where an oriented rule instantiates a
+///   variable, normalized in the kernel's second-order reading under the
+///   oriented and the derived rules ([`second_order_normal_form`]); otherwise,
+///   for a presented type, read as a term and normalized under its term store
+///   with its conditioned cells after the rest ([`PresentedRules::firing`]);
+///   otherwise elaborated to the command its faces match and normalized under
+///   [`DeclarationCells::rewriting`], or, where the call holds an operation in
+///   a value's place, read as a term and normalized under the block's oriented
+///   rules read over terms ([`oriented_terms`]); within [`NORMAL_FORM_STEPS`]
+///   steps, its path replayed to the normal form where the reading keeps one,
+///   and the normal form read back as a term.
 /// - fails: [`NormalFormFault::Incoherent`] for a block the coincidence check
-///   did not admit; otherwise the first step that fails, in that order.
+///   did not admit; otherwise the first step that fails, in that order,
+///   [`NormalFormFault::IllFormed`] where the second-order reading forms no
+///   term.
 /// - panics: none.
 ///
 /// # Errors
@@ -1624,15 +1644,20 @@ impl fmt::Display for NormalFormFault
 ///   a call into a refused block is incoherent before it is read, and an
 ///   unknown symbol and an unreadable text are told apart; reading the normal
 ///   form before the replay, normalizing under the store with its congruences,
-///   or reading the circle's word in the sequent store changes one of them.
+///   or reading the circle's word in the sequent store changes one of them; a
+///   rule instantiating a variable fires by substitution, not as an operation
+///   named by the variable (#2966).
 /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
 /// - witness: `coincide::tests::an_overlap_that_joins_is_certified_and_runs_either_way`
 /// - witness: `coincide::tests::the_circles_cancellations_join_below_the_root`
+/// - witness: `coincide::tests::an_instantiating_rule_fires_at_an_inspected_call_2966`
 #[spec(ensures: |ret| {
     let admitted = matches!(cells.coincidence, Coincidence::Orthogonal | Coincidence::Joined(_));
+    let instantiates = cells.oriented.iter().any(|face| bool::from(face.instantiates()));
     match ret.as_ref() {
         Ok(normal) => admitted && read_call(description, call).as_ref() == Ok(&normal.call)
-            && (matches!(cells.presented, Maybe::Absent(_)) || matches!(normal.path, NormalPath::Terms(_))),
+            && matches!(normal.path, NormalPath::SecondOrder) == instantiates
+            && (matches!(cells.presented, Maybe::Absent(_)) || matches!(normal.path, NormalPath::Terms(_) | NormalPath::SecondOrder)),
         Err(&NormalFormFault::Incoherent) => !admitted,
         Err(&NormalFormFault::Undescribed) => false,
         Err(_) => admitted,
@@ -1652,6 +1677,21 @@ pub fn normal_form<G>(
         return Err(NormalFormFault::Incoherent);
     }
     let call = read_call(description, call)?;
+    if cells
+        .oriented
+        .iter()
+        .any(|face| bool::from(face.instantiates()))
+    {
+        let mut fuel = RewriteFuel::from(u64::try_from(NORMAL_FORM_STEPS).unwrap_or(u64::MAX));
+        let normal = second_order_normal_form(description, cells, &call, &mut fuel)
+            .map_err(|Exhausted| NormalFormFault::Exhausted)?
+            .ok_or(NormalFormFault::IllFormed)?;
+        return Ok(NormalForm {
+            call,
+            path: NormalPath::SecondOrder,
+            normal,
+        });
+    }
     let (path, normal) = match cells.presented {
         Maybe::Present(ref presented) => over_terms(presented, &call)?,
         Maybe::Absent(presented_reading::Absent::NoTermFace) => {
@@ -1820,13 +1860,16 @@ fn oriented_terms<G>(
 /// symbols: a name, a name applied to terms in parentheses separated by
 /// commas, each name a constructor or an operation the description declares,
 /// or `bind a . t`, the atom `a` abstracted over `t`, inside which the name
-/// `a` is that atom's occurrence.
+/// `a` is that atom's occurrence; an abstraction standing at a port that binds
+/// a variable is that port's binding field and the name its variable, as a
+/// rule's side reads it ([`FreeTerm::bind_fields`]).
 ///
 /// # Specification
 /// - ensures: the term whose every application is the declared symbol of its
 ///   name, constructors and operations told apart by the declaration, every
-///   abstraction the atom it names over its body, and every name an enclosing
-///   abstraction names that atom's occurrence.
+///   abstraction the atom it names over its body, or the field it is at a port
+///   binding a variable, and every name an enclosing abstraction names that
+///   binder's occurrence.
 /// - fails: [`NormalFormFault::Unread`] when the text is not a whole term of
 ///   the notation; [`NormalFormFault::UnknownSymbol`] when a name is declared
 ///   as neither and no enclosing abstraction names it.
@@ -1853,6 +1896,14 @@ fn read_call<G>(
     let word = |rest: &str| -> usize {
         rest.find(|character: char| !(character.is_alphanumeric() || "_'′".contains(character)))
             .unwrap_or(rest.len())
+    };
+    let ports = |name: &Name, index: usize| {
+        description
+            .opers
+            .iter()
+            .find(|operation| operation.name == *name)
+            .and_then(|operation| operation.arity.inputs.get(index))
+            .map(|port| (port.abstractions.len(), port.bindings.len()))
     };
     let mut open: Vec<Open<'_, '_>> = Vec::new();
     let mut rest = text.0.trim_start();
@@ -1891,7 +1942,7 @@ fn read_call<G>(
             match open.pop() {
                 None => {
                     return if rest.is_empty() {
-                        Ok(done)
+                        Ok(done.bind_fields(ports))
                     }
                     else {
                         Err(NormalFormFault::Unread)

@@ -1337,3 +1337,84 @@ fn a_call_nesting_operations_reads_over_terms_1510()
         "an ill-sorted call reads apart from one that does not elaborate"
     );
 }
+
+/// #2966: a block holding a rule that instantiates a variable reads a call in
+/// the kernel's second-order reading. β fires at a binding field and answers
+/// `post(z)`, not the instance `k(z)` the term cells wrote, below a binder
+/// too; a rule instantiating a continuation fires beside its block's
+/// first-order rule; a binder the normal form keeps reads back at its depth.
+#[test]
+fn an_instantiating_rule_fires_at_an_inspected_call_2966()
+{
+    let beta = SourceText::from(
+        r#"theory Beta {
+  sort V : Type+;
+  sort C : Type;
+  oper z : () --> V;
+  oper post : (v : V) --> C;
+  oper app : (k : pi+ (x : V). C, a : V) --> C;
+  rule beta : app(k, a) ==> k(a);
+}"#,
+    );
+    let continued = SourceText::from(
+        r#"theory Continued {
+  sort N : Type;
+  sort V : Type+;
+  sort E : Type;
+  sort C : Type;
+  oper z : () --> N;
+  oper int : (n : N) --> V;
+  oper lit : (n : N) --> E;
+  oper ret : (e : E) --> E;
+  oper hole : () --> E;
+  oper post : (v : V) --> C;
+  oper wp : (e : E, k : pi+ (v : V). C, r : pi+ (v : V). C) --> C;
+  rule literal : wp(lit(n), k, r) ==> k(int(n));
+  rule returned : wp(ret(e), k, r) ==> wp(e, r, r);
+}"#,
+    );
+    for (source, calls) in [
+        (
+            beta,
+            &[
+                ("app(bind v . post(v), z)", "post(z)"),
+                ("app(bind v . app(bind u . post(u), v), z)", "post(z)"),
+            ][..],
+        ),
+        (
+            continued,
+            &[
+                (
+                    "wp(lit(z), bind v . post(v), bind w . post(w))",
+                    "post(int(z))",
+                ),
+                (
+                    "wp(ret(lit(z)), bind v . post(v), bind w . post(w))",
+                    "post(int(z))",
+                ),
+                (
+                    "wp(ret(hole), bind v . post(v), bind w . post(w))",
+                    "wp(hole, bind a0 . post(a0), bind a0 . post(a0))",
+                ),
+            ][..],
+        ),
+    ] {
+        lowered(source, |module| {
+            let [ref theory, ..] = *module.declarations()
+            else {
+                panic!("the theory")
+            };
+            for &(call, normal) in calls {
+                let reached = module
+                    .normal_form(theory, CallText::from(call))
+                    .unwrap_or_else(|fault| panic!("{call}: {fault}"));
+                assert_eq!(reached.spelling(), normal, "{call}");
+                assert_eq!(
+                    reached.path,
+                    NormalPath::SecondOrder,
+                    "{call}: the kernel's second-order reading fired the rules"
+                );
+            }
+        });
+    }
+}
