@@ -28,7 +28,10 @@
 //! of leading declarations, the prelude's among them, share its chunks.
 //! [`Export::artifact`] reassembles one artifact's bytes. Whether they are an
 //! artifact is the kernel's decoder's to say, and admitting them is the
-//! consumer's.
+//! consumer's: [`Export::readmit`] decodes each artifact and replays it into
+//! an environment of its own, the admission a dependent's `check` runs over
+//! each dependency's export. One environment per artifact, since the atoms an
+//! artifact mints are fresh only within it.
 //!
 //! # References
 //!
@@ -38,12 +41,20 @@
 //! - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: the storage
 //!   tier is the one store the lock, the build layer and the verdict cache
 //!   share.
+//! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a dependency
+//!   hydrates from the persistent store, and a minted atom is fresh only within
+//!   the artifact that mints it.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_kernel_core::ArtifactRefusal;
+use gandr_kernel_core::Environment;
+use gandr_kernel_term::DecodeError;
+use gandr_kernel_term::decode;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::ReassembledArtifact;
@@ -62,6 +73,7 @@ use gandr_storage_values::TokenBytes;
 use gandr_storage_values::TokenReader;
 use gandr_storage_values::TokenSink;
 use gandr_storage_values::ValueError;
+use gandr_surface_lowering::DeclarationCount;
 use quenchant_shape::shape::Maybe;
 
 use super::PackageAddress;
@@ -217,6 +229,67 @@ impl Export
                 Maybe::Absent(exported_source::Absent::Unexported),
                 |admitted| Maybe::Present(admitted.artifact.reassemble()),
             )
+    }
+
+    /// Re-admit each artifact of the export through the kernel: decoded by
+    /// its bounded decoder, then replayed into a fresh environment of its own.
+    ///
+    /// # Specification
+    /// - requires: nothing; the export may hold any bytes.
+    /// - ensures: the count of declarations the kernel re-admitted across the
+    ///   artifacts, when every one decodes and replays. Otherwise
+    ///   [`Unreadmitted::Undecoded`] for the first artifact the decoder refuses
+    ///   and [`Unreadmitted::Refused`] for the first one whose replay rejects a
+    ///   declaration, each naming the first source the artifact was admitted
+    ///   for. No environment outlives its artifact's replay, so the atoms one
+    ///   artifact mints never meet another's.
+    /// - provides: the admission of a stored export by its consumer, the inner
+    ///   wall a pointer to it never stands for.
+    /// - fails: [`Unreadmitted`], as above.
+    /// - panics: none.
+    /// - executable: none — the answer is the kernel's replay, which a
+    ///   predicate could only run again.
+    ///
+    /// # Errors
+    /// [`Unreadmitted`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a committed export, read back by its root, re-admits
+    ///   every declaration of each artifact its walk admitted, each artifact
+    ///   once; one whose last declaration was rewritten after admission to a
+    ///   body no binder holds is refused at that declaration, naming its
+    ///   source. The decoder's refusal is excluded: an export's records were
+    ///   cut by the decoder, so within one format version they reassemble to
+    ///   bytes it reads.
+    /// - witness: `tests::package::a_dependency_s_export_is_re_admitted_through_the_kernel_3285`
+    #[inline]
+    pub fn readmit(&self) -> Result<DeclarationCount, Unreadmitted>
+    {
+        let mut declarations = 0_usize;
+        for admitted in &self.0 {
+            let source = || {
+                admitted
+                    .sources
+                    .first()
+                    .map_or_else(String::new, |spelling| {
+                        String::from_utf8_lossy(&spelling.0).into_owned()
+                    })
+            };
+            let image = admitted.artifact.reassemble();
+            let (arena, marked) = decode(image.as_image())
+                .map_err(|refusal| Unreadmitted::Undecoded {
+                    source: source(),
+                    refusal,
+                })?
+                .into_parts();
+            let _replayed =
+                Environment::replay(arena, &marked).map_err(|refusal| Unreadmitted::Refused {
+                    source: source(),
+                    refusal,
+                })?;
+            declarations = declarations.saturating_add(marked.len());
+        }
+        Ok(DeclarationCount::from(declarations))
     }
 }
 
@@ -523,6 +596,59 @@ impl core::fmt::Display for Unexported
                 f,
                 "{}: no export: its artifact does not cut: {fault}",
                 source.display()
+            ),
+        }
+    }
+}
+
+/// Why a stored export does not re-admit: the first artifact refused, by the
+/// first source it was admitted for.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unreadmitted
+{
+    /// The kernel's decoder refused the artifact's bytes.
+    Undecoded
+    {
+        /// The source, from the package's root.
+        source: String,
+        /// Why.
+        refusal: DecodeError,
+    },
+    /// The kernel's replay rejected a declaration of the artifact.
+    Refused
+    {
+        /// The source, from the package's root.
+        source: String,
+        /// The declaration rejected, and why.
+        refusal: ArtifactRefusal,
+    },
+}
+
+impl core::fmt::Display for Unreadmitted
+{
+    /// The source, then why its artifact does not re-admit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Undecoded {
+                ref source,
+                ref refusal,
+            } => write!(f, "{source}: the artifact does not decode: {refusal}"),
+            Self::Refused {
+                ref source,
+                ref refusal,
+            } => write!(
+                f,
+                "{source}: the kernel refuses declaration {}: {}",
+                usize::from(refusal.position()),
+                refusal.error()
             ),
         }
     }

@@ -27,6 +27,14 @@
 //! provenance truth. Structural expansion bounds are not bounds on evaluation
 //! or all inline-payload work. Graph handling is iterative, while normalization
 //! and ordered-map operations contribute their own costs.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: an atom is
+//!   fresh within its artifact alone (§ module-sealing-landed-sealing-rung):
+//!   the header's minted-atom table is re-derived from the declarations, and a
+//!   decoded artifact goes whole to one replay
+//!   ([`DecodedArtifact::into_parts`]).
 
 pub mod session;
 
@@ -511,6 +519,18 @@ impl DecodedArtifact
     pub const fn segments(&self) -> &SegmentLayout
     {
         &self.segments
+    }
+
+    /// The arena and the declarations, given up whole: what a replay of the
+    /// artifact takes, with nothing copied.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (TermArena, Vec<MarkedDeclaration>)
+    {
+        (self.arena, self.declarations)
     }
 }
 

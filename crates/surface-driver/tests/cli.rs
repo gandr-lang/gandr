@@ -19,6 +19,8 @@ use anodized::spec;
 use gandr_storage_store::RootName;
 use gandr_storage_store::Store;
 use gandr_surface_dispatcher::Export;
+use gandr_surface_dispatcher::Lock;
+use gandr_surface_dispatcher::Package;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::write_frame;
@@ -1858,6 +1860,127 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
             .names()
             .all(|name| !name.as_ref().starts_with("export/")),
         "a package with an unsettled source names no export"
+    );
+}
+
+/// #3285: `check` of a dependent beside its path dependency re-admits the
+/// dependency's export through the kernel, read from the store by the root
+/// the dependency's address names once every export of the run is committed:
+/// the detailed level prints the declarations re-admitted, which are the
+/// export's, and the default level prints nothing of it; the dependent
+/// checked alone against a fresh store notes the export it finds none of and
+/// settles; and a root that names what is no export faults the run.
+#[test]
+fn a_dependent_re_admits_its_dependency_s_export_3285()
+{
+    let scratch = Scratch::new(Path::new("readmit"));
+    let _hello = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
+    );
+    let _sibling = scratch.file(
+        Path::new("sibling/src/lib.gandr"),
+        Text::from(
+            format!(
+                "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
+                 alias = \"hello\", coordinate = Path(\"../hello\") }}];\npub def greeting = \
+                 hello.welcome;\n",
+                LIBRARY.replace("\"hello\"", "\"sibling\"")
+            )
+            .as_str(),
+        ),
+    );
+    let check = |level: &str, data: &Path, packages: &[&str]| {
+        let mut command = gandr(&["check", "--verbosity", level]);
+        let _configured = command
+            .args(packages)
+            .current_dir(&scratch.0)
+            .env("XDG_DATA_HOME", data);
+        ran(command)
+    };
+    let data = scratch.0.join("data");
+    let base = scratch
+        .0
+        .canonicalize()
+        .expect("the scratch directory canonicalizes");
+    let (hello, sibling) = (base.join("hello"), base.join("sibling"));
+    let both = check("detailed", &data, &["hello", "sibling"]);
+    assert_eq!(code(&both), Code(0_i32), "{}", stderr(&both));
+    let Some(address) = stdout(&both)
+        .lines()
+        .filter_map(|line| line.strip_prefix("manifest: "))
+        .find(|line| line.starts_with(hello.to_string_lossy().as_ref()))
+        .and_then(|line| line.strip_suffix(')'))
+        .and_then(|line| line.split_once(" (address "))
+        .map(|(_, address)| String::from(address))
+    else {
+        panic!("hello's manifest line names its address: {}", stdout(&both));
+    };
+    let root = format!("export/{address}");
+    let store = Store::open(&data.join("gandr/store")).expect("the run's store opens");
+    let Maybe::Present(pointer) = store.roots().root(&RootName::new(root.clone()))
+    else {
+        panic!("hello's address names its export: {}", stdout(&both));
+    };
+    let export: Export = store.deref(pointer).expect("hello's export reads back");
+    let declarations = usize::from(export.readmit().expect("hello's export re-admits"));
+    let readmitted: Vec<String> = stdout(&both)
+        .lines()
+        .filter(|line| line.starts_with("export: "))
+        .map(String::from)
+        .collect();
+    assert_eq!(
+        readmitted,
+        [format!(
+            "export: {}: hello: {declarations} declarations re-admitted from {root}",
+            sibling.display()
+        )],
+        "the dependent re-admits each declaration of its dependency's export"
+    );
+    let quiet = check("user", &data, &["hello", "sibling"]);
+    assert_eq!(code(&quiet), Code(0_i32), "{}", stderr(&quiet));
+    assert!(
+        !stdout(&quiet).contains("re-admitted") && stderr(&quiet).is_empty(),
+        "the default level prints nothing of a re-admission: {}{}",
+        stdout(&quiet),
+        stderr(&quiet)
+    );
+    let fresh = check("user", &scratch.0.join("fresh"), &["sibling"]);
+    assert_eq!(code(&fresh), Code(0_i32), "{}", stderr(&fresh));
+    assert_eq!(
+        stderr(&fresh),
+        format!(
+            "gandr: {}: hello: no export at {root}; check {} first\n",
+            sibling.display(),
+            hello.display()
+        ),
+        "a dependent checked alone against a fresh store notes the missing export"
+    );
+    let Maybe::Present(package) = Package::discover(&sibling)
+    else {
+        panic!("sibling roots a package");
+    };
+    let Maybe::Present(lock) = Lock::read(&package)
+    else {
+        panic!("sibling's check wrote its lock");
+    };
+    let Some(identity) = lock
+        .aliases()
+        .find_map(|alias| lock.locked(alias))
+        .map(|locked| locked.pointer)
+    else {
+        panic!("sibling's lock locks hello");
+    };
+    let mut store = store;
+    store
+        .set_root(RootName::new(root.clone()), identity)
+        .expect("the root is repointed");
+    let faulted = check("user", &data, &["sibling"]);
+    assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
+    assert!(
+        stderr(&faulted).starts_with(&format!("gandr: {}: hello: {root}: ", sibling.display())),
+        "a root naming what is no export faults the run: {}",
+        stderr(&faulted)
     );
 }
 

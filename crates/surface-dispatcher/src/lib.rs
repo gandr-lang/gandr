@@ -307,6 +307,7 @@ pub use crate::package::Unpathed;
 pub use crate::package::export::Export;
 pub use crate::package::export::Exporting;
 pub use crate::package::export::Unexported;
+pub use crate::package::export::Unreadmitted;
 pub use crate::package::export::exported_source;
 pub use crate::package::lock::Alias;
 pub use crate::package::lock::Coordinate;

@@ -5,6 +5,7 @@
 //! them as test code rather than as shipping code.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::convert::Infallible;
 use core::ops::ControlFlow;
 use std::path::Path;
@@ -14,7 +15,13 @@ use anodized::spec;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::content_keys;
+use gandr_kernel_term::AdmissionMark;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::DeclarationBuilder;
+use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::MarkedDeclaration;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
 use gandr_storage_values::ValueError;
@@ -47,6 +54,7 @@ use gandr_surface_dispatcher::Unexported;
 use gandr_surface_dispatcher::Unmanifested;
 use gandr_surface_dispatcher::Unmembered;
 use gandr_surface_dispatcher::Unpathed;
+use gandr_surface_dispatcher::Unreadmitted;
 use gandr_surface_dispatcher::Unresolved;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
@@ -66,6 +74,7 @@ use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -1626,14 +1635,16 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 
-/// The export a walk of `sources` under `root` builds, beside the artifact
-/// each source was admitted with, by its path from `root`.
+/// The export a walk of `sources` under `root` builds, each settled source's
+/// artifact passed through `alter` before the export takes it, beside the
+/// artifact each source was admitted with, by its path from `root`.
 ///
 /// # Specification
 /// trivial.
 fn exported_walk(
     root: &Path,
     sources: &Path,
+    alter: &dyn Fn(&Path, EncodedArtifact) -> EncodedArtifact,
 ) -> (
     Result<Export, Unexported>,
     BTreeMap<PathBuf, EncodedArtifact>,
@@ -1643,7 +1654,7 @@ fn exported_walk(
     let mut admitted = BTreeMap::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![sources.to_path_buf()]).visit(
         &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
+        |mut step| -> ControlFlow<Infallible> {
             let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
             let from = path
                 .canonicalize()
@@ -1654,19 +1665,57 @@ fn exported_walk(
             if let Step::Source {
                 composed:
                     Composed::Settled {
-                        kernel: Maybe::Present(ref kernel),
+                        kernel: Maybe::Present(ref mut kernel),
                         ..
                     },
                 ..
             } = step
             {
                 let _first = admitted.insert(from.clone(), kernel.clone());
+                *kernel = alter(&from, core::mem::take(kernel));
             }
             exporting.take(&from, &step);
             ControlFlow::Continue(())
         },
     );
     (exporting.finish(), admitted)
+}
+
+/// `kernel`, unaltered.
+///
+/// # Specification
+/// trivial.
+fn kept(
+    _source: &Path,
+    kernel: EncodedArtifact,
+) -> EncodedArtifact
+{
+    kernel
+}
+
+/// `kernel` with its last declaration, a definition, rewritten after
+/// admission to a definition at the same type whose body is a variable no
+/// binder holds.
+///
+/// # Specification
+/// trivial.
+fn unbound(kernel: &EncodedArtifact) -> EncodedArtifact
+{
+    let (mut arena, mut declarations) = gandr_kernel_term::decode(kernel.as_image())
+        .expect("the artifact decodes")
+        .into_parts();
+    let Some(&DeclarationContent::Def { declared, .. }) =
+        declarations.last().map(|last| last.declaration().content())
+    else {
+        panic!("the artifact ends with a definition");
+    };
+    let body = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let rewritten =
+        DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), declared, body);
+    if let Some(last) = declarations.last_mut() {
+        *last = MarkedDeclaration::new(AdmissionMark::Checked, rewritten);
+    }
+    gandr_kernel_term::encode(&arena, &declarations)
 }
 
 /// #3225: a package's export holds each artifact its walk admitted, filed
@@ -1699,7 +1748,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
             .expect("the source's directory is made");
         std::fs::write(&path, text).expect("the source is written");
     }
-    let (export, admitted) = exported_walk(&directory, &directory.join("src"));
+    let (export, admitted) = exported_walk(&directory, &directory.join("src"), &kept);
     let export = export.expect("every source settles");
     let mut store = stored(Path::new("export"));
     let grammar = built_in().expect("the built-in grammar builds");
@@ -1765,11 +1814,116 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
     )
     .expect("the source is rewritten");
     assert_eq!(
-        exported_walk(&directory, &directory.join("src")).0,
+        exported_walk(&directory, &directory.join("src"), &kept).0,
         Err(Unexported::Unsettled {
             source: PathBuf::from("src/shapes/here.gandr")
         }),
         "a package with an unsettled source has no export"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+/// #3285: a package's export, read back by its address's root, re-admits
+/// through the kernel every declaration its walk admitted, each artifact once
+/// and alone; an export holding an artifact whose last declaration was
+/// rewritten after admission is refused at that declaration, by the source the
+/// artifact was admitted for.
+#[test]
+fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
+{
+    let directory = scratch(Path::new("readmit"), &[]);
+    for (source, text) in [
+        (
+            "src/lib.gandr",
+            "def answer : Integer ;\ndef answer = 42 ;\n",
+        ),
+        (
+            "src/shapes/point.gandr",
+            "pub data Point : Type {\n  Here : Point;\n}\n",
+        ),
+        (
+            "src/shapes/here.gandr",
+            "import \"./point.gandr\" ;\n\ndef here : Point ;\ndef here = Here ;\n",
+        ),
+    ] {
+        let path = directory.join(source);
+        std::fs::create_dir_all(path.parent().expect("a source has a directory"))
+            .expect("the source's directory is made");
+        std::fs::write(&path, text).expect("the source is written");
+    }
+    let (export, admitted) = exported_walk(&directory, &directory.join("src"), &kept);
+    let export = export.expect("every source settles");
+    let mut store = stored(Path::new("readmit"));
+    let grammar = built_in().expect("the built-in grammar builds");
+    let address = rooted(&directory)
+        .identity(&grammar, &Held::default(), &Lock::default(), &store)
+        .expect("the package addresses")
+        .address;
+    let _pointer = export
+        .commit(&mut store, &address)
+        .expect("the export commits");
+    let Maybe::Present(pointer) = store.roots().root(&Export::root(&address))
+    else {
+        panic!("the address's root names the export");
+    };
+    let back: Export = store.deref(pointer).expect("the export reads back");
+    let mut seen = BTreeSet::new();
+    let declarations = admitted
+        .values()
+        .filter(|image| seen.insert(image.as_ref().to_vec()))
+        .fold(0_usize, |count, image| {
+            count.saturating_add(
+                gandr_kernel_term::decode(image.as_image())
+                    .expect("the admitted artifact decodes")
+                    .declarations()
+                    .len(),
+            )
+        });
+    assert_eq!(
+        seen.len(),
+        2_usize,
+        "two artifacts: one alone, one an import joins"
+    );
+    assert_eq!(
+        back.readmit(),
+        Ok(DeclarationCount::from(declarations)),
+        "the kernel re-admits every declaration of each artifact, once"
+    );
+    let library = Path::new("src/lib.gandr");
+    let (tampered, _admitted) =
+        exported_walk(&directory, &directory.join("src"), &|source, kernel| {
+            if source == library {
+                unbound(&kernel)
+            }
+            else {
+                kernel
+            }
+        });
+    let rewritten = gandr_kernel_term::decode(
+        admitted
+            .get(library)
+            .expect("the library was admitted")
+            .as_image(),
+    )
+    .expect("the library's artifact decodes")
+    .declarations()
+    .len()
+    .checked_sub(1_usize)
+    .expect("the library's artifact holds a declaration");
+    let Err(Unreadmitted::Refused {
+        ref source,
+        ref refusal,
+    }) = tampered
+        .expect("the rewritten artifact still cuts")
+        .readmit()
+    else {
+        panic!("the rewritten declaration is refused by the kernel's replay");
+    };
+    assert_eq!(source, "src/lib.gandr", "the refusal names the source");
+    assert_eq!(
+        usize::from(refusal.position()),
+        rewritten,
+        "the replay stops at the rewritten declaration"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
