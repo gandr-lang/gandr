@@ -2579,6 +2579,7 @@ INSERT INTO purpose VALUES('surface-lowering','origin::OriginToken','struct','Ho
 INSERT INTO purpose VALUES('surface-lowering','origin::PatternReading','enum','Names a pattern''s reading, so the reading''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::PatternSpan','struct','Holds a pattern''s span, so the span''s bytes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::Provenance','enum','Names a node''s provenance, so the provenance''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','origin::RowTheory','struct','Holds a row''s entry over a theory as the source writes it, so the region it labels and the sorts it fixes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::ScopeAnswer','enum','Names what answers a capability scope as the source writes it, so a scope a model answers is spelled `with N` or with no `with`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::SplitComponent','struct','Holds a split''s component, so the component''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::WrittenModel','struct','Holds a model type as the source writes it, so the theory and the sorts a `with sort` fixes are read.',NULL,'fits','sound',NULL);
@@ -2893,6 +2894,7 @@ INSERT INTO purpose VALUES('surface-pretty','former::Elided','enum','Names a for
 INSERT INTO purpose VALUES('surface-pretty','former::ForgetCall','struct','Holds a forgetting''s call, so the call''s sorts are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Forgotten','struct','Holds a forgotten component, so the component''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Former','enum','Names the former a node carries, so the node''s spelling is chosen.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','former::Manifest','struct','Holds a row''s entry over a theory as written, so the row spells `T with sort C = A` and a label''s entry by its label.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::ModelSlot','struct','Holds a model''s slot, so the slot''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Move','struct','Holds one move of a recorded run or a dialogue, so the move''s action is spelled.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Moves','trait','Names the moves a recorded run or a dialogue carries, so the moves'' actions are spelled.',NULL,'fits','sound',NULL);

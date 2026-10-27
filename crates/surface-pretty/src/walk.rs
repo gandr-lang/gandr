@@ -232,6 +232,7 @@ use crate::former::Component;
 use crate::former::Elided;
 use crate::former::Forgotten;
 use crate::former::Former;
+use crate::former::Manifest;
 use crate::former::ModelSlot;
 use crate::former::Name;
 use crate::former::Notation;
@@ -1122,7 +1123,7 @@ where
     },
     | Former::Model { sorts, .. } => ret.len() == sorts.len()
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::EffectfulReturner { tail, .. } => ret.len() == usize::from(tail.is_some()).saturating_add(1_usize)
+    | Former::EffectfulReturner { tail, manifests, .. } => ret.len() == manifests.iter().map(|manifest| manifest.sorts.len()).sum::<usize>().saturating_add(usize::from(tail.is_some())).saturating_add(1_usize)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
     | Former::Row { tail, .. } => ret.len() == usize::from(tail.is_some())
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
@@ -1296,10 +1297,22 @@ where
             .map(|&(_, carrier)| value_type(carrier))
             .collect(),
         Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
-        // An open row's tail is visited before what follows it: `-F [I | t] A`.
-        Former::EffectfulReturner { result, tail, .. } => {
-            tail.into_iter().chain([result]).map(value_type).collect()
-        },
+        // An open row's tail is visited before what follows it: `-F [I | t] A`;
+        // each type a theory's entry fixes a sort to is visited before both,
+        // in row order, `-F [T with sort C = A | t] B`.
+        Former::EffectfulReturner {
+            result,
+            tail,
+            effects,
+            manifests,
+        } => manifested(effects, manifests)
+            .into_iter()
+            .flatten()
+            .flat_map(|manifest| manifest.sorts.iter().map(|&(_, carrier)| carrier))
+            .chain(tail)
+            .chain([result])
+            .map(value_type)
+            .collect(),
         Former::Row { tail, .. } => tail.into_iter().map(value_type).collect(),
         Former::List(child)
         | Former::Returner(child)
@@ -4287,6 +4300,37 @@ where
         Maybe::Present(()) => Maybe::Present(names),
         Maybe::Absent(absent) => Maybe::Absent(absent),
     }
+}
+
+/// Each instance `effects` holds, in row order, beside the entry over a
+/// theory `manifests` records for it: the one naming its theory at its region.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one answer per instance of `effects`, in the order
+///   [`Authority::interfaces`] lists them, the first manifest naming the
+///   instance's interface at its region, none where no manifest does.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a row over a theory fixed at a sort beside a host
+///   interface finds the manifest at the theory and none at the interface.
+/// - witness: `tests::goldens::a_row_over_a_theory_spells_its_manifest_3230`
+#[spec(ensures: |ret| ret.len() == effects.interfaces().len())]
+fn manifested<'manifest, Node>(
+    effects: &dyn Authority,
+    manifests: &'manifest [Manifest<'manifest, Node>],
+) -> Vec<Option<&'manifest Manifest<'manifest, Node>>>
+{
+    effects
+        .interfaces()
+        .iter()
+        .map(|&(interface, region)| {
+            manifests.iter().find(|manifest| {
+                manifest.theory.as_ref() == interface.as_ref() && manifest.region == region
+            })
+        })
+        .collect()
 }
 
 /// The region binders a definition over `roots` abstracts: every ordinal up to
@@ -7690,6 +7734,13 @@ impl Walk<'_, '_>
             // `-F [I | t] A`, and one writing none is its tail alone,
             // `-F [t] A`; a row naming an instance by its label is the
             // labelled form's.
+            // A row an entry of which fixes a theory's sorts writes each type
+            // it fixes as a piece of its own, `-F [T with sort C = A] B`.
+            Former::EffectfulReturner { manifests, .. }
+                if manifests.iter().any(|manifest| !manifest.sorts.is_empty()) =>
+            {
+                Some(self.form(source, node, &former, admits))
+            },
             Former::EffectfulReturner { effects, tail, .. } => {
                 let mut annotation = String::from("-F [");
                 let listed = self.list_interfaces(source, effects, &mut annotation);
@@ -9162,30 +9213,53 @@ impl Walk<'_, '_>
             }
             if region != Region::Held {
                 listed = Listed::Labelled;
-                let named = self
-                    .region(source, region)
-                    .filter(|name| !name.0.is_empty() && !name.0.contains(char::is_whitespace));
-                #[cfg_attr(
-                    dylint_lib = "quenchant_dylints",
-                    expect(
-                        answer_totality,
-                        reason = "an instance at a region past the scopes the source names has no \
-                                  label to write before its interface"
-                    )
-                )]
-                let label = named.map_or_else(
-                    || {
-                        self.note(Unspelled::Elided(Elided::Region));
-                        String::from("?")
-                    },
-                    |name| name.0,
-                );
-                text.push_str(&label);
+                text.push_str(&self.instance_label(source, region));
                 text.push_str(" : ");
             }
             text.push_str(interface.as_ref());
         }
         listed
+    }
+
+    /// The label a row writes before the instance at `region`: the name of
+    /// the scope or the region binder it lives in, or `?` for a region with
+    /// no name to write, the presentation approximate.
+    ///
+    /// # Specification
+    /// - ensures: the region's name where it has one holding no whitespace; `?`
+    ///   otherwise, the region's elision noted.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the choice.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::list_interfaces`].
+    /// - witness: `tests::goldens::a_row_writes_each_instance_by_its_label_2271`
+    fn instance_label<S>(
+        &mut self,
+        source: &S,
+        region: Region,
+    ) -> String
+    where
+        S: Source + ?Sized,
+    {
+        let named = self
+            .region(source, region)
+            .filter(|name| !name.0.is_empty() && !name.0.contains(char::is_whitespace));
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "an instance at a region past the scopes the source names has no label \
+                          to write before its interface"
+            )
+        )]
+        named.map_or_else(
+            || {
+                self.note(Unspelled::Elided(Elided::Region));
+                String::from("?")
+            },
+            |name| name.0,
+        )
     }
 
     /// `name` as a part's text, or `?` for a name a line or the walk's
@@ -9257,19 +9331,22 @@ impl Walk<'_, '_>
     ///   over a theory `handle c : T with sort C = A …` with the sorts its
     ///   manifest fixes, in the order written, its pieces the scope's last, and
     ///   a scope a model answers `{ c } with N`, or `{ c }` for the one in
-    ///   scope, in place of its clauses; `c.op(v)`; `send(e, v)`, `recv(e)`,
-    ///   `select(e, l)`, `offer(e) { l => c }`, `close(e)` and `fork (a : S) {
-    ///   t } as a ; u`, each endpoint named by its binder; a resumption of a
-    ///   continuation binder with a returned value as the continuation's call,
-    ///   `k(v)`; a return ascribed its returner as the annotated value `(v :
-    ///   T)`, under a `pure` unless a body ends there, its two pieces the value
-    ///   and the type the visit shaped; a value ascription as `(v : T)`, a
-    ///   truth value ascribed `Bool` as its word, `(true : Bool)`, its one
-    ///   piece the type. The forms the grammar does not write — native
-    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
-    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
-    ///   …}` and its observation `c.0`, and a positional projection off
-    ///   anything but a name, `(v.1).0` — make the presentation approximate.
+    ///   scope, in place of its clauses; a returner whose row's theory entries
+    ///   fix sorts, `-F [a : T with sort C = A, I | t] B`, each fixed type a
+    ///   piece, then the tail's and the result's; `c.op(v)`; `send(e, v)`,
+    ///   `recv(e)`, `select(e, l)`, `offer(e) { l => c }`, `close(e)` and `fork
+    ///   (a : S) { t } as a ; u`, each endpoint named by its binder; a
+    ///   resumption of a continuation binder with a returned value as the
+    ///   continuation's call, `k(v)`; a return ascribed its returner as the
+    ///   annotated value `(v : T)`, under a `pure` unless a body ends there,
+    ///   its two pieces the value and the type the visit shaped; a value
+    ///   ascription as `(v : T)`, a truth value ascribed `Bool` as its word,
+    ///   `(true : Bool)`, its one piece the type. The forms the grammar does
+    ///   not write — native transport, a fixpoint `rec f { c }`, a fold, any
+    ///   other resumption `resume(k, c)`, `reset { c }`, `shift k { c }`, a
+    ///   lazy product `&{c, …}` and its observation `c.0`, and a positional
+    ///   projection off anything but a name, `(v.1).0` — make the presentation
+    ///   approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -9836,6 +9913,50 @@ impl Walk<'_, '_>
                     .part(Part::Close);
                 Binding::Prefix
             },
+            // A row whose theory entries fix sorts writes each after its
+            // entry's name, `-F [st : T with sort C = A, I | t] B`, as the
+            // lowering reads a row entry's manifest back.
+            Former::EffectfulReturner {
+                effects,
+                tail,
+                manifests,
+                ..
+            } => {
+                let _ = parts.text("-F [");
+                let mut labelled = false;
+                let entries = effects.interfaces();
+                for (index, (&(interface, region), manifest)) in entries
+                    .iter()
+                    .zip(manifested(effects, manifests))
+                    .enumerate()
+                {
+                    if index != 0 {
+                        let _ = parts.text(", ");
+                    }
+                    if region != Region::Held {
+                        labelled = true;
+                        let label = self.instance_label(source, region);
+                        let _ = parts.text(label).text(" : ");
+                    }
+                    let _ = parts.text(String::from(interface.as_ref()));
+                    for &(sort, _) in manifest.map_or(&[][..], |manifest| manifest.sorts.as_slice())
+                    {
+                        let _ = parts
+                            .text(format!(" with sort {} = ", sort.as_ref()))
+                            .piece(Binding::Sum);
+                    }
+                }
+                if tail.is_some() {
+                    let _ = parts.text(" | ").piece(Binding::Atom);
+                }
+                let _ = parts.text("] ").piece(Binding::Atom);
+                if labelled {
+                    writes(Production("f_type.row.labelled"), Binding::Prefix)
+                }
+                else {
+                    writes(Production("f_type.row"), Binding::Prefix)
+                }
+            },
             Former::Handle { clauses: count, .. } => {
                 let _ = parts.text("handle {").body();
                 clauses(self, &mut parts, count);
@@ -10148,7 +10269,6 @@ impl Walk<'_, '_>
             | Former::Capability { .. }
             | Former::Session { .. }
             | Former::Returner(_)
-            | Former::EffectfulReturner { .. }
             | Former::Arrow { .. }
             | Former::Pi { .. }
             | Former::ComputationElement(_)

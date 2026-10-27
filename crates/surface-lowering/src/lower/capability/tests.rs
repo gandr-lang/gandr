@@ -13,6 +13,7 @@ use gandr_core_checker::body;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -1467,6 +1468,91 @@ fn a_row_names_a_theory_at_the_sorts_it_fixes_2844()
             verdict_of(&module, &report, name.into())
         );
     }
+}
+
+/// A row's theory entry as recorded: its returner, whether its region is
+/// held, its theory, and each sort it fixes beside the fixed type.
+type Recorded<'arena> = (
+    CompTypeId,
+    bool,
+    &'arena str,
+    Vec<(&'arena str, Option<&'arena ValueType>)>,
+);
+
+/// A returner's row records each entry over a theory as written, at the
+/// returner: the theory, each sort the entry fixes beside its type, and the
+/// instance's region, held for an entry naming the theory whole and a region
+/// binder for a labelled one. A host interface's entry records nothing, so a
+/// printer writes `State with sort S = Integer` and the interface's name
+/// alone (#3230).
+#[test]
+fn a_row_records_the_theory_and_sorts_each_entry_fixes_3230()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}",
+            "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get() }}\n",
+            "def whole() -> -F [State with sort S = Integer, Console] Unit {{ Console.print(\"x\") }}\n",
+            "def hosted() -> -F [Console] Unit {{ Console.print(\"x\") }}\n",
+        ),
+        state = STATE,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let returner = |name: &str| {
+        let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, name.into())
+        else {
+            panic!("{name}: the function lowers");
+        };
+        let mut at = match arena.value_type(declared_type) {
+            Some(&ValueType::Thunk(at)) => at,
+            other => panic!("{name}: a function's type is a thunk: {other:?}"),
+        };
+        while let Some(&(CompType::Pi { codomain, .. } | CompType::Arrow { codomain, .. })) =
+            arena.comp_type(at)
+        {
+            at = codomain;
+        }
+        at
+    };
+    let recorded: Vec<Recorded<'_>> = module
+        .origins()
+        .row_theories()
+        .iter()
+        .map(|&(at, ref entry)| {
+            (
+                at,
+                entry.region == Region::Held,
+                entry.model.theory.as_ref(),
+                entry
+                    .model
+                    .sorts
+                    .iter()
+                    .map(|&(ref sort, ty)| (sort.as_ref(), arena.value_type(ty)))
+                    .collect(),
+            )
+        })
+        .collect();
+    let integer = Some(&ValueType::Base(BaseType::Integer));
+    assert_eq!(
+        recorded,
+        [
+            (
+                returner("labelled"),
+                false,
+                "State",
+                Vec::from([("S", integer)])
+            ),
+            (
+                returner("whole"),
+                true,
+                "State",
+                Vec::from([("S", integer)])
+            ),
+        ],
+        "the labelled entry at its binder and the whole one held, `Console` none at {:?}",
+        returner("hosted")
+    );
 }
 
 /// A scope whose manifest fixes `S` to a parameter reads the parameter where

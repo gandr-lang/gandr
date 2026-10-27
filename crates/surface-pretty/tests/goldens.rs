@@ -79,6 +79,7 @@ use gandr_surface_pretty::ForgetMap;
 use gandr_surface_pretty::Forgetting;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Former;
+use gandr_surface_pretty::Manifest;
 use gandr_surface_pretty::ModelSlot;
 use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
@@ -5669,6 +5670,123 @@ fn a_row_writes_each_instance_by_its_label_2271()
         spelled(&source, Root::Type(CoreNode::CompType(returner))),
         approximate(Written("-F [? : Console, ? : Console] Unit")),
         "a row spelled alone names no binder"
+    );
+}
+
+/// A row's entry over a theory writes the sorts it fixes after the theory's
+/// name, `-F [State with sort S = Integer] B`, as the lowering reads them
+/// back: the row's signature holds only their types substituted (#3230).
+#[test]
+fn a_row_over_a_theory_spells_its_manifest_3230()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::Region;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let integer = core.value_type_base(BaseType::Integer);
+    let state = EffectSig::new(EffectName::from("State"), [EffectOp {
+        name: "get".into(),
+        payload: unit,
+        reply: integer,
+    }])
+    .expect("one operation is a signature");
+    let console = EffectSig::new(EffectName::from("Console"), [EffectOp {
+        name: "print".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let row = EffectRow::from_placed([(state, Region::Held), (console, Region::Held)])
+        .expect("two interfaces are apart");
+    let returner = core.comp_type_returner_with_effects(unit, row);
+    let rows = [(returner, vec![Manifest {
+        theory: Name::from("State"),
+        region: Region::Held,
+        sorts: vec![(Name::from("S"), CoreNode::ValueType(integer))],
+    }])];
+    let manifested = CoreSource::new(&core, &[]).manifesting(&rows);
+    assert_eq!(
+        spelled(&manifested, Root::Type(CoreNode::CompType(returner))),
+        faithful(Written("-F [Console, State with sort S = Integer] Unit")),
+        "the theory's entry writes its sort, the interface's nothing"
+    );
+    assert_eq!(
+        spelled(
+            &CoreSource::new(&core, &[]),
+            Root::Type(CoreNode::CompType(returner))
+        ),
+        faithful(Written("-F [Console, State] Unit")),
+        "a row with no manifest recorded writes the names alone"
+    );
+}
+
+/// A definition whose row labels a theory's instance writes the label as the
+/// source does, `[a : State with sort S = Integer]`, its capability and its
+/// region binder unwritten: `Cap {…}` names a host interface's operations
+/// alone, so the elaborated header would not read back. With no manifest
+/// recorded the header is the elaborated one, as an interface's is (#3230).
+#[test]
+fn a_labelled_theory_entry_spells_its_label_3230()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionBinder;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let integer = core.value_type_base(BaseType::Integer);
+    let state = EffectSig::new(EffectName::from("State"), [EffectOp {
+        name: "get".into(),
+        payload: unit,
+        reply: integer,
+    }])
+    .expect("one operation is a signature");
+    let bound = Region::Bound(RegionBinder::from(0_u32));
+    let row = EffectRow::from_placed([(state.clone(), bound)]).expect("one instance");
+    let returner = core.comp_type_returner_with_effects(unit, row);
+    let capability =
+        core.value_type_capability(EffectRow::singleton(state), CapabilityGrade::Durable, bound);
+    let function = core.comp_type_arrow(capability, returner);
+    let ty = core.value_type_thunk(function);
+    let done = core.value_unit();
+    let returned = core.computation_return(done);
+    let lambda = core.computation_lambda(returned);
+    let body = core.value_thunk(lambda);
+    let rows = [(returner, vec![Manifest {
+        theory: Name::from("State"),
+        region: bound,
+        sorts: vec![(Name::from("S"), CoreNode::ValueType(integer))],
+    }])];
+    let wide = PageWidth::from(120_u32);
+    assert_eq!(
+        declared_whole(
+            &CoreSource::new(&core, &[]).manifesting(&rows),
+            (ty, body),
+            wide
+        ),
+        Maybe::Present((
+            String::from("def down() -> [a : State with sort S = Integer] Unit {\n  unit\n}"),
+            Fidelity::Faithful
+        )),
+        "the label names the capability, its binder and type unwritten"
+    );
+    assert_eq!(
+        declared_whole(&CoreSource::new(&core, &[]), (ty, body), wide),
+        Maybe::Present((
+            String::from(
+                "def down @[r : Region] (a : Cap {get} at r) -> [r : State] Unit {\n  unit\n}"
+            ),
+            Fidelity::Faithful
+        )),
+        "with no manifest the header is the elaborated one"
     );
 }
 
