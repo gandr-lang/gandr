@@ -744,7 +744,8 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # partial row outside the areas `exempt` lists, whose evidence is crate tests,
 # names an exemplar; and every implemented or partial row naming neither a
 # `corpus` witness nor an `exemplar` names in `issue` an open `kind:gap`
-# issue, the issue stating what the witness still needs (#2526), its state
+# issue, or a `kind:epic` of its steps (#2902), the issue stating what the
+# witness still needs (#2526), its state
 # read through `gh`. A partial row whose exemplar is a source has its own,
 # `corpus/ledger/features/<id>.gandr` (#2635), opening with a head of `///`
 # lines: the row's `id`, a `/// Implemented:` line, and a
@@ -809,15 +810,17 @@ if [ -s "$tmp/unshown" ]; then
   cat "$tmp/unshown" >&2
   failed=1
 fi
+# A row with no witness rests on an open issue that builds it: a `kind:gap`,
+# or a `kind:epic` of the steps, an epic being `kind:epic` alone (#2902).
 while IFS='|' read -r id issues; do
   gap=
   for number in $(grep -oE '(^| )#[0-9]+' <<< "$issues" | tr -d ' #'); do
-    state=$(gh issue view "$number" --json state,labels --jq '[.state, ([.labels[].name] | index("kind:gap") != null)] | @tsv') \
+    state=$(gh issue view "$number" --json state,labels --jq '[.state, ([.labels[].name] | any(. == "kind:gap" or . == "kind:epic"))] | @tsv') \
       || { echo "$id: the state of #$number could not be read through gh" >&2; failed=1; continue; }
     if [[ $state == $'OPEN\ttrue' ]]; then gap=$number; fi
   done
   if [[ -z $gap ]]; then
-    echo "$id: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap issue (issue: ${issues:-none}); name a witness, or file the gap stating what it needs" >&2
+    echo "$id: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap or kind:epic issue (issue: ${issues:-none}); name a witness, or file the gap stating what it needs" >&2
     failed=1
   fi
 done < <(sqlite3 -separator '|' "$db" "
@@ -1410,9 +1413,15 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # tree's filenames, and the lines `unit:check` reads for the vault pages the
 # body names (`shown.jq`, #2793); each in `.config/claims/annotated.json` a
 # body and the body `pr:open` writes back with each page's mint beside its
-# filename (`annotated.jq`).
+# filename (`annotated.jq`). Each case in `.config/claims/deps.json` holds an
+# issue, the issues GitHub has it blocked by and its sub-issues, and the
+# dependencies `unit:check` sets or notes for them (`deps.jq`, #2902); each
+# in `.config/claims/chain.json` a rung's body and the body `epic:order
+# --chain` writes back (`chain.jq`); each in `.config/claims/report.json`
+# the open issues, their dependencies and the last report, and the report
+# `report:deps` writes (`report.jq`).
 ["check:claims"]
-description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings, claim:next each board its claim, ledger:patched each landing its refusals and ledger:reserved each lowered reserved rule its refusal"
+description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and dependencies, claim:next each board its claim, ledger:patched each landing its refusals, ledger:reserved each lowered reserved rule its refusal and report:deps each board its report"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -1422,7 +1431,7 @@ cases() {
   local kind=$1 program=$2 file=$3 case name got want
   while IFS= read -r case; do
     name=$(jq -r .name <<< "$case")
-    got=$(jq .input <<< "$case" | jq -r -L .config/claims -f ".config/claims/$program")
+    got=$(jq .input <<< "$case" | jq -r -L .config/claims -L .config/issues -f ".config/claims/$program")
     want=$(jq -r .output <<< "$case")
     if [[ "$got" != "$want" ]]; then
       printf '%s case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$kind" "$name" "$got" "$want" >&2
@@ -1438,6 +1447,9 @@ cases ledger ledger.jq ledger.json
 cases reserved reserved.jq reserved.json
 cases shown shown.jq shown.json
 cases annotated annotated.jq annotated.json
+cases deps deps.jq deps.json
+cases chain chain.jq chain.json
+cases report report.jq report.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -1465,7 +1477,7 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report"
 '''
 
 # The issue automations' decisions. An epic closes when its last sub-issue
@@ -1474,10 +1486,16 @@ echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their r
 # sub-issues and the decision it must give. An issue is filed with a `kind:`
 # and an `area:` label (#2538): `.config/triage/triage.jq` decides whether
 # `needs:triage` is added, removed or kept, each case in
-# `.config/triage/cases.json` an issue's labels and that decision.
+# `.config/triage/cases.json` an issue's labels and that decision. An issue
+# carries exactly one `kind:`, `area:`, `priority:` and `effort:` (#2902):
+# `.config/issues/labels.jq` gives the defaults `issue:file` and
+# `issue:labels` add and the problems they refuse, each case in
+# `.config/issues/cases.json` an issue's labels, the defaults table and those
+# lines; the table read is `.config/issues/defaults.toml` itself.
 ["check:issues"]
 description = "The issue automations give each recorded case its decision"
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1486,7 +1504,7 @@ cases() {
   local kind=$1 program=$2 file=$3 case name got want
   while IFS= read -r case; do
     name=$(jq -r .name <<< "$case")
-    got=$(jq .input <<< "$case" | jq -r -f "$program")
+    got=$(jq .input <<< "$case" | jq -r -L "$(dirname "$program")" -f "$program")
     want=$(jq -r .output <<< "$case")
     if [[ "$got" != "$want" ]]; then
       printf '%s case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$kind" "$name" "$got" "$want" >&2
@@ -1496,8 +1514,12 @@ cases() {
 }
 cases epics .config/epics/close.jq .config/epics/cases.json
 cases triage .config/triage/triage.jq .config/triage/cases.json
+labelled=$(mktemp)
+trap 'rm -f "$labelled"' EXIT
+jq -c --argjson defaults "$(yq -p toml -o json -I0 '.' .config/issues/defaults.toml)" 'map(.input.defaults = $defaults)' .config/issues/cases.json > "$labelled"
+cases labels .config/issues/filed.jq "$labelled"
 (( failed == 0 )) || exit 1
-echo "issues check OK: $(jq length .config/epics/cases.json) parents gave their decisions, $(jq length .config/triage/cases.json) label sets theirs"
+echo "issues check OK: $(jq length .config/epics/cases.json) parents gave their decisions, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each

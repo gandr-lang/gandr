@@ -1,0 +1,90 @@
+[
+  {
+    "name": "each `## After` issue GitHub lacks is set; one already set is not",
+    "input": {
+      "number": 10,
+      "labels": ["kind:gap"],
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #20 — the parser it extends\n- #30 — the rows it reads\n",
+      "blocked_by": [
+        {
+          "number": 20,
+          "state": "open"
+        }
+      ],
+      "sub_issues": []
+    },
+    "output": "set\t30\t`## After` lists it"
+  },
+  {
+    "name": "`none` owes nothing, and a dependency set on GitHub that the section does not list is extra, never removed",
+    "input": {
+      "number": 10,
+      "labels": ["kind:gap"],
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+      "blocked_by": [
+        {
+          "number": 40,
+          "state": "closed"
+        }
+      ],
+      "sub_issues": []
+    },
+    "output": "extra\t40"
+  },
+  {
+    "name": "an epic is owed each open sub-issue, a closed one not, besides its `## After`",
+    "input": {
+      "number": 100,
+      "labels": ["kind:epic", "area:workflow"],
+      "body": "The ladder.\n\n## After\n\n- #90 — the epic before it\n",
+      "blocked_by": [
+        {
+          "number": 101,
+          "state": "open"
+        }
+      ],
+      "sub_issues": [
+        {
+          "number": 101,
+          "state": "open"
+        },
+        {
+          "number": 102,
+          "state": "open"
+        },
+        {
+          "number": 103,
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "set\t90\t`## After` lists it\nset\t102\tan open sub-issue of the epic"
+  },
+  {
+    "name": "sub-issues owe nothing to an issue that is not an epic, and an issue never waits on itself",
+    "input": {
+      "number": 10,
+      "labels": ["kind:gap"],
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #10 — itself, written by mistake\n",
+      "blocked_by": [],
+      "sub_issues": [
+        {
+          "number": 11,
+          "state": "open"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "a body without `## After` owes nothing here: unit:check refuses the section itself",
+    "input": {
+      "number": 10,
+      "labels": [],
+      "body": "Text.\n",
+      "blocked_by": [],
+      "sub_issues": []
+    },
+    "output": ""
+  }
+]
