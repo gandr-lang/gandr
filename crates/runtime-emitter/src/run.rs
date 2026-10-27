@@ -20,11 +20,63 @@
 //! `HeapValueId` in the store, inside one process; they are never committed by
 //! content.
 //!
+//! # Boundaries
+//!
+//! A run's regions are its LAM, the location-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`
+//! § 4, and the value representation is what of LAM's judgements they
+//! realise:
+//!
+//! - **Materialisation** is a read: a match reads a header and its fields at
+//!   the value's address and allocates nothing.
+//! - **Duplication** copies the address and counts one owner more on the word
+//!   before the header. Every value is an object, an integer included, so every
+//!   field is an address and a copy is one word at any type.
+//! - **Evacuation** moves an outcome into the caller's [`Store`], children
+//!   before parents, each object once however many hold it, so sharing survives
+//!   as LAM's forwarding map keeps it. A store's values enter a run the same
+//!   way, laid out once each, and a value the run moved out answers its own
+//!   object.
+//!
+//! It departs from LAM in three places. A location is recycled: a block freed
+//! at its last owner joins its size's free list, and the thread's next run
+//! reuses the regions whole, so no collector evacuates within a run. Nothing
+//! is laid inline, so there is no wrapping constructor and nothing to splice.
+//! And a block is written after its allocation: a match whose scrutinee has
+//! one owner hands its block to the constructor its arm rebuilds.
+//!
+//! # Witnesses
+//!
+//! The rebuild in place rests on `storage-conjecture-exclusivity`, a named
+//! target rather than a fact: a write into a block whose count is one is
+//! deep-equal to the copy LAM's store would extend by, since no other holder
+//! reads the block. That is value independence as
+//! `Racordon-2020-formal_definition_swifts_value_semantics` states it, an
+//! assignment through a path being the copy with the path substituted.
+//! `gandr-runtime-stencils`' `a_unique_scrutinee_is_rebuilt_in_its_own_block`
+//! and `a_shared_scrutinee_is_rebuilt_in_a_fresh_block` witness the rebuild,
+//! and `corpus/model/runtime/exclusive-update.gandr` holds an update through
+//! an exclusive view to the copy's answer on both tiers. Measured, that update
+//! rebuilds in a fresh block at either grade: the held cell keeps its owner
+//! while the view is out, so the match meets two. A pair the match alone
+//! holds is rebuilt in its own block.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: a cut's writer is
 //!   its producer run on its own, the cut's concurrent schedule beside the
 //!   sequential one (§ futures-in-gandr item 1, § futures-try-first).
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
+//!   LAM whose materialisation, duplication and evacuation the regions
+//!   realise, and the immutable append-only store they depart from (§ 4).
+//! - `Racordon-2020-formal_definition_swifts_value_semantics` — background: the
+//!   independence value semantics states, which a rebuild in place must keep:
+//!   an assignment through a path is the copy with the path substituted.
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage
+//!   programme, § storage-programme-memory-model-reading: LAM as the value
+//!   representation's specification, and `storage-conjecture-exclusivity`.
+//! - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled
+//!   runtime's representation question (§ runtime-question-what-runtime-means).
 
 #[cfg(gandr_patcher)]
 use alloc::sync::Arc;

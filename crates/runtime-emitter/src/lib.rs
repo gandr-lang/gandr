@@ -3,9 +3,11 @@
 //! location-addressable memory of
 //! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`:
 //! a value stands at a location in its thread's regions, meaningful to that
-//! run alone, and the thread's next run reuses them. What leaves a run moves
-//! into the caller's store. Its wall is validity, upstream: it runs only a
-//! command the checker admitted.
+//! run alone, and the thread's next run reuses them. They realise LAM's
+//! materialisation, duplication and evacuation, and depart from it where a
+//! freed block is reused and a block one owner holds is rebuilt in place, as
+//! the run module states. What leaves a run moves into the caller's store. Its
+//! wall is validity, upstream: it runs only a command the checker admitted.
 //!
 //! A command the checker admitted is lowered to a straight list of stencil
 //! instructions ([`lower()`]), and that one list runs on either of two tiers

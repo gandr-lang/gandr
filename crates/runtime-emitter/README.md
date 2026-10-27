@@ -27,6 +27,9 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - [`object`](https://docs.rs/object/0.40.0/object/): the relocation view over ELF and Mach-O the build script reads the stencil object through.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — the LAM, a regioned location-addressable store, that a run's regions are.
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut's writer is its producer run on its own, which `evaluate_closed_on` runs apart from its reader's heap.
+- `Racordon-2020-formal_definition_swifts_value_semantics` — background: Dimitri Racordon, "A Formal Definition of Swift's Value Semantics", 2020 — value semantics as copies, the independence a rebuild in place must keep.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — LAM as the value representation's specification, and `storage-conjecture-exclusivity`.
+- `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime's representation question (§ runtime-question-what-runtime-means).
 
 ## Provided features
 
@@ -56,7 +59,7 @@ GANDR_NATIVE=never cargo run -p gandr-lang -- test corpus/model
 
 ## Where the detail lives
 
-`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/fuse.rs` the superinstructions, their replay and their cost; `src/run.rs` the regions and their bounds; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `build.rs` the stencil table and every refusal it makes.
+`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/fuse.rs` the superinstructions, their replay and their cost; `src/run.rs` the regions, their bounds, the value representation against the LAM and the exclusivity conjecture's witnesses; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `build.rs` the stencil table and every refusal it makes.
 
 ## Mutation backlog
 

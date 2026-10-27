@@ -8,15 +8,38 @@
 //! value. A literal stack is held as the core writes one, innermost frame
 //! first, each bind frame a [`ClosedCommand`].
 //!
-//! # The run keeps its own regions
+//! # Boundaries
 //!
-//! `gandr-runtime-emitter` runs a command over regions of its own and moves
-//! into the store only what leaves the run: a host request's payload, the
-//! answer, and the values a stuck run names. Readback reads the store. The
-//! alternative was readback over the run's words, which no caller can hold
-//! past the run: the regions are the thread's, reused by its next run. The
-//! choice reverses if a run's regions come to outlive it, when readback can
-//! read them in place and the move disappears.
+//! - **The LAM it is.** The store is the location-addressable memory of
+//!   `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`
+//!   § 4.1, appending its only update: each family grows at its end, so a
+//!   [`HeapValueId`] is stable once allocated and never recycled, a value never
+//!   changes at its address, and an address means something in this store
+//!   alone.
+//! - **Where it departs.** Two regions, one per family, rather than one per
+//!   allocation. Every field is an address, so nothing is laid inline and there
+//!   is no wrapping constructor to splice. A value allocated twice stays two
+//!   values, and nothing collects: the store lives as long as its holder. A
+//!   thunk, a fixpoint and a closure name their code in the command arena,
+//!   which the store does not hold, so such a value is read only beside that
+//!   arena.
+//! - **The run keeps its own regions.** `gandr-runtime-emitter` runs a command
+//!   over regions of its own and moves into the store only what leaves the run:
+//!   a host request's payload, the answer, and the values a stuck run names.
+//!   Readback reads the store. The alternative was readback over the run's
+//!   words, which no caller can hold past the run: the regions are the
+//!   thread's, reused by its next run. The choice reverses if a run's regions
+//!   come to outlive it, when readback can read them in place and the move
+//!   disappears.
+//!
+//! # References
+//!
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage
+//!   programme, § storage-programme-memory-model-reading: the store as the LAM
+//!   the runtime's value representation is specified against.
+//! - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled
+//!   runtime programme, § runtime-question-what-runtime-means: the runtime's
+//!   representation, which this store and the emitter's regions state.
 
 use alloc::boxed::Box;
 use core::fmt;

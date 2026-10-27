@@ -166,6 +166,7 @@ corpus/ledger/features/relative-monads.gandr Tense 7e3793b0d4e8b328
 corpus/ledger/features/rule-conditions.gandr Passive 2e10cabdfe8bec37
 corpus/ledger/features/rule-conditions.gandr Tense 18b8c056298769e7
 corpus/ledger/features/rule-conditions.gandr NounStack 8cf1698e4f619068
+corpus/ledger/features/runtime-lam.gandr Tense 172c2d19001cb579
 corpus/ledger/features/rust-default-layout.gandr Passive 8f1bd0c19775b707
 corpus/ledger/features/rust-default-layout.gandr Tense 1dfbcd5f9feb2e29
 corpus/ledger/features/rust-default-layout.gandr Tense 8786b716e773287d
@@ -1095,7 +1096,7 @@ crates/kernel-conversion-trace/README.md Glossary cc0350c3e408f96b
 crates/kernel-core/README.md Glossary af19150085c869b1
 crates/kernel-strata/README.md Passive 8c2b0a95ba7378ac
 crates/runtime-emitter/README.md Passive cd729b6735dc73f2
-crates/runtime-emitter/README.md Glossary 8182ab952b761ff6
+crates/runtime-emitter/README.md Glossary 491ab7b5c9d5ba1c
 crates/runtime-stencils/README.md Passive cd729b6735dc73f2
 crates/runtime-stencils/README.md Tense dc52fe438a7b83d2
 crates/storage-artifact/README.md Passive a8aa6973b86d8037
