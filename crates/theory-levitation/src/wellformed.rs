@@ -25,12 +25,14 @@
 //!   linearity of a rule face are derived ([`derive_cell_var_meta`]), so an
 //!   attribute Σ that names them is declined.
 //!
-//! A higher-order field has no decline here because [`Code`] cannot encode
-//! one: that decline lands at elaboration, before a description exists. The π⁺
-//! binder of an operation port is object-language binding; the atom
-//! abstraction of a constructor code is a separate, nominal former.
+//! A function former ([`Code::fun`]) has no decline here: its domains are
+//! symbolic value types and its body a code whose recursive sorts are checked
+//! as any other's, and no operation's port holds one, since a theory's port
+//! written `=>` is refused at elaboration. The π⁺ binder of an operation port
+//! is object-language binding; the atom abstraction of a constructor code is
+//! a separate, nominal former.
 //!
-//! [`Code`]: crate::Code
+//! [`Code::fun`]: crate::Code::fun
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

@@ -10,6 +10,7 @@ use gandr_theory_levitation::SortDesc;
 
 use super::*;
 use crate::CertificateEquality;
+use crate::CompType;
 use crate::Sort;
 use crate::Value;
 use crate::ValueType;
@@ -113,6 +114,73 @@ fn decode_interprets_the_first_order_fragment()
     };
     assert_eq!(arena.value_type(unit), Some(&ValueType::unit()));
     assert_eq!(recursive, carrier);
+}
+
+#[test]
+fn a_function_former_decodes_to_the_thunked_arrow()
+{
+    let mut arena = CoreArena::new();
+    let carrier = arena.value_type_data(ConstantIndex::from(7_usize), Vec::new());
+    let types = BTreeMap::new();
+    let context = context(carrier, &types);
+    // `(Integer, String) => Self`: the domains curry left to right under one
+    // thunk, into the returner of the recursive position.
+    let reads = Code::<()>::fun(
+        vec![
+            ValueTypeRef::prim(PrimTy::Integer),
+            ValueTypeRef::prim(PrimTy::StringTy),
+        ],
+        Code::var("Self"),
+    );
+    let decoded = decode(&mut arena, &reads, context).unwrap();
+    let Some(&ValueType::Thunk(function)) = arena.value_type(decoded)
+    else {
+        panic!("a thunk");
+    };
+    let Some(&CompType::Arrow {
+        domain: first,
+        codomain: rest,
+    }) = arena.comp_type(function)
+    else {
+        panic!("an arrow from the first domain");
+    };
+    let Some(&CompType::Arrow {
+        domain: second,
+        codomain: returner,
+    }) = arena.comp_type(rest)
+    else {
+        panic!("an arrow from the second domain");
+    };
+    assert_eq!(
+        [arena.value_type(first), arena.value_type(second)],
+        [
+            Some(&ValueType::Base(BaseType::Integer)),
+            Some(&ValueType::Base(BaseType::String))
+        ],
+        "the domains stay in written order"
+    );
+    assert!(
+        matches!(arena.comp_type(returner), Some(&CompType::Returner { result, .. }) if result == carrier),
+        "the body is returned, the recursive position at the carrier"
+    );
+    // In a signature the former is one field, never flattened like a product.
+    let signature = decode_signature(
+        &mut arena,
+        &description(vec![Code::prod(field(PrimTy::Integer), reads)]),
+        context,
+        Vec::new(),
+        carrier,
+    )
+    .unwrap();
+    let [ref fields] = *signature.constructors()
+    else {
+        panic!("one constructor");
+    };
+    assert_eq!(fields.len(), 2, "a primitive field and one function field");
+    assert!(matches!(
+        fields.get(1).and_then(|&field| arena.value_type(field)),
+        Some(&ValueType::Thunk(_))
+    ));
 }
 
 #[test]

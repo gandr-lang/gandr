@@ -1,0 +1,34 @@
+/// `higher-order-fields`: Function fields in described families.
+/// Implemented: a constructor field `A => T` is the description code's function former, decoded to the thunked arrow, so a presented type holds a continuation and a fold reaches its rest by applying it.
+/// Not implemented: an observation taking an argument, `step : (a : Integer) -> -F Integer`, has no code and is refused, and #2859 owes it; a rule applying a continuation, put-get's `Put(s, Get(k)) <=> Put(s, k(s))`, is refused, and #2861 owes it.
+// Programs over a state, quotiented by put-put (Plotkin and Power, _Notions
+// of computation determine monads_, 2002, doi:10.1007/3-540-45931-6_24): a
+// read's continuation is a function-valued field, the higher-order
+// descriptions' `Π` (Chapman, Dagand, McBride and Morris, _The Gentle Art of
+// Levitation_, ICFP 2010, doi:10.1145/1863543.1863547).
+
+/// Programs over an integer state: a read hands the state to its
+/// continuation, and a store the next store overwrites is no store.
+data Program : Type {
+  Done : (x : Integer) --> Program;
+  Get : (k : Integer => Program) --> Program;
+  Put : (s : Integer, k : Program) --> Program;
+  rule Put(s, Put(u, k)) <=> Put(u, k);
+}
+
+/// The state-passing handler, reaching a read's rest through its
+/// continuation.
+def rec final(p : Program, s : Integer) -> Integer {
+  case p {
+    Done(x) => x,
+    Get(k) => final[<](k(s), s),
+    Put(t, k) => final[<](k, t)
+  }
+}
+
+/// Answers the state it reads.
+def answered(x : Integer) -> Program { Done(x) }
+
+/// A store, then a read of it.
+@[ runs("5") ]
+def readBack : () => Integer = final(Put(5, Get(answered)), 0);

@@ -585,11 +585,11 @@ impl<G> CtorDesc<G>
     ///
     /// The payload code denotes a polynomial over sorts and symbolic types:
     /// products multiply factors into a monomial, inline sums contribute one
-    /// monomial per summand, an atom-abstraction contributes its body's
-    /// factors, and every leaf becomes one input port — a [`Code::var`] at its
-    /// sort, a [`Code::field`] at its symbolic type's head, a [`Code::unit`]
-    /// contributing no port. Every monomial feeds the one output port, which
-    /// reads at the result sort.
+    /// monomial per summand, an atom-abstraction and a function former
+    /// contribute their body's factors, and every leaf becomes one input port
+    /// — a [`Code::var`] at its sort, a [`Code::field`] at its symbolic type's
+    /// head, a [`Code::unit`] contributing no port. Every monomial feeds the
+    /// one output port, which reads at the result sort.
     ///
     /// # Specification
     /// - ensures: the returned arity composes — every `source` index lies in
@@ -603,10 +603,10 @@ impl<G> CtorDesc<G>
     ///   union for an inline sum.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — unit, product, sum and abstraction payloads are
-    ///   observed through exact ports and maps, including a product of sums; a
-    ///   missing nullary monomial, swapped factors, omitted Cartesian pairs or
-    ///   leaking a binder changes those records.
+    /// - hypothesis: L3 — unit, product, sum, abstraction and function payloads
+    ///   are observed through exact ports and maps, including a product of
+    ///   sums; a missing nullary monomial, swapped factors, omitted Cartesian
+    ///   pairs or leaking a binder or a domain changes those records.
     /// - witness: `wellformed::tests::the_constructor_layer_agrees_with_the_bridge_shape`
     /// - witness: `desc::tests::constructor_arities_distribute_products_over_sums_and_erase_binders`
     #[inline]
@@ -650,7 +650,7 @@ impl<G> CtorDesc<G>
                         let summands: Vec<CodeNode<'_, G>> = summands.collect();
                         stack.extend(summands.into_iter().rev().map(MonomialFrame::Walk));
                     },
-                    CodeView::Bind { body, .. } => {
+                    CodeView::Bind { body, .. } | CodeView::Fun { body, .. } => {
                         stack.extend(body.map(MonomialFrame::Walk));
                     },
                 },
@@ -928,6 +928,8 @@ mod tests
     use super::*;
     use crate::builtin::bool_desc;
     use crate::code::AtomSort;
+    use crate::code::PrimTy;
+    use crate::code::ValueTypeRef;
     use crate::test_support::Grade;
 
     #[test]
@@ -962,6 +964,29 @@ mod tests
                 [0, 0, 0, 0],
                 [SortRef::new("result", "Result")],
             )
+        );
+        let get = Code::prod(
+            Code::field(
+                ValueTypeRef::prim(PrimTy::StringTy),
+                Grade::One,
+                Attrs::empty(),
+            ),
+            Code::fun(
+                vec![ValueTypeRef::prim(PrimTy::Integer)],
+                Code::var("Result"),
+            ),
+        );
+        let ctor = CtorDesc::<Grade>::new("Get", get, "Result", Attrs::empty());
+        assert_eq!(
+            ctor.arity(),
+            BridgeArity::new(
+                [SortRef::new("x0", "String"), SortRef::new("x1", "Result")],
+                [2],
+                [0, 1],
+                [0],
+                [SortRef::new("result", "Result")],
+            ),
+            "a function former is one port at its body's sort, its domain erased"
         );
     }
 

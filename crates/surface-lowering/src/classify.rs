@@ -672,7 +672,7 @@ fn uncovered(fault: Uncovered) -> FailureClass
 /// - requires: nothing.
 /// - ensures: an operation filler, a higher cell, the reversible glyph, a
 ///   nested operation, two redexes in one circuit rule, a field past the
-///   first-order code, an undecodable description, an aggregated output and an
+///   description code, an undecodable description, an aggregated output and an
 ///   operation the cell frame cannot hold are unimplemented, each naming its
 ///   issue; a circuit redex off its own derived boundary is an engine fault;
 ///   every other fault — a rule from no operation, from an empty one, of the

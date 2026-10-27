@@ -516,8 +516,9 @@
 //!
 //! **Choice.** Induction-recursion read as a mutual block of nominal
 //! declarations over the stage order: a universe with Π over decoded
-//! positions, which the levitated codes cannot express — their code is
-//! first order, takes no σ over a decoded position and no function field.
+//! positions, which the levitated codes cannot express — their function
+//! former ranges over symbolic value types, never a decoded position, and
+//! they take no σ over one.
 //! **Alternatives.** Induction-recursion as a kernel notion of its own,
 //! with an eliminator over the pair, which the recorded design declines;
 //! the levitated codes alone, which leave the three gaps above.

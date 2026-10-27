@@ -1,17 +1,17 @@
-//! First-order descriptions interpreted in the native core arena.
+//! Descriptions interpreted in the native core arena.
 //!
 //! Description syntax stays in the theory tier. This module supplies its
 //! core interpretation, retaining nominal heads and explicit value arguments.
 //!
 //! # Description decoding
 //!
-//! `description::decode` interprets first-order description codes in a
-//! `DecodeContext`. Unit, products, coproducts, parameters and a selected
-//! recursive sort have core readings. `decode_desc` selects a positive,
-//! inhabited, single-sorted description; negative descriptions, empty
-//! coproducts, foreign recursive sorts and unsupported leaves return typed
-//! `DecodeError` values instead of substitute types. Grades and descriptive
-//! attributes do not change the decoded type.
+//! `description::decode` interprets description codes in a `DecodeContext`.
+//! Unit, products, coproducts, parameters, a selected recursive sort and the
+//! function former, as the thunked arrow `U (Ā → F B)`, have core readings.
+//! `decode_desc` selects a positive, inhabited, single-sorted description;
+//! negative descriptions, empty coproducts, foreign recursive sorts and
+//! unsupported leaves return typed `DecodeError` values instead of substitute
+//! types. Grades and descriptive attributes do not change the decoded type.
 //!
 //! `decode_signature` instead retains a family as a native `DataSignature`:
 //! constructor order fixes tags, parameter classifiers retain their telescope
@@ -252,7 +252,15 @@ enum Frame<'code, G>
     Sum,
     /// Apply a resolved nominal head to the last interpreted arguments.
     Apply(ConstantIndex, TypeArity),
+    /// Close the last interpreted body over the domains interpreted before
+    /// it, as the thunked arrow `U (Ā → F body)`.
+    Function(DomainCount),
 }
+
+/// How many domains a function former's frame closes over.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct DomainCount(usize);
 
 /// Interpret a code, erasing its grades and attributes but preserving shape.
 ///
@@ -260,7 +268,9 @@ enum Frame<'code, G>
 /// - requires: supplied type ids belong to `arena` and have the intended scope.
 /// - ensures: unit, product and sum retain their constructors and order; the
 ///   bound recursive sort denotes `context.self_type`; named applications
-///   become native nominal heads over quoted explicit arguments.
+///   become native nominal heads over quoted explicit arguments; a function
+///   former over domains `Ā` and body `B` is the thunked arrow `U (Ā → F B)`,
+///   the type `Ā => B` spells.
 /// - fails: returns the named unsupported leaf, unresolved binding, foreign
 ///   sort or application-arity refusal; malformed code never fabricates a type.
 /// - panics: none.
@@ -271,9 +281,11 @@ enum Frame<'code, G>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — exact decoded shapes separate products from sums, order,
-///   leaf resolution, unsupported formers and nominal application arguments.
+///   leaf resolution, unsupported formers and nominal application arguments,
+///   and a function former's domains, their order and its body.
 /// - witness: `description::tests::decode_interprets_the_first_order_fragment`
 /// - witness: `description::tests::decode_declines_the_deferred_leaves`
+/// - witness: `description::tests::a_function_former_decodes_to_the_thunked_arrow`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value_type(*id).is_some()))]
 pub fn decode<G>(
@@ -365,9 +377,9 @@ pub fn decode_desc<G>(
 ///   scopes; `kind` is the positive universe intended to bound constructor
 ///   fields.
 /// - ensures: parameters and kind are retained; tags follow declaration order;
-///   nullary codes produce no fields, products flatten in field order, and
-///   recursive leaves retain the native self application. Empty data is
-///   admitted.
+///   nullary codes produce no fields, products flatten in field order,
+///   recursive leaves retain the native self application, and a function former
+///   is one field, the thunked arrow into its body. Empty data is admitted.
 /// - fails: non-data or multi-sort descriptions, mismatched parameter arity,
 ///   and unreadable field codes are declined explicitly.
 /// - panics: none.
@@ -377,8 +389,10 @@ pub fn decode_desc<G>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — native signatures distinguish empty data from an empty
-///   payload coproduct and retain recursive heads and constructor tag order.
+///   payload coproduct and retain recursive heads and constructor tag order; a
+///   function former stays one field rather than flattening.
 /// - witness: `description::tests::native_signatures_keep_nominality_and_empty_data`
+/// - witness: `description::tests::a_function_former_decodes_to_the_thunked_arrow`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.constructors().len() == description.ctors.len() && signature.parameters().len() == description.params.len() && signature.kind() == kind))]
 pub fn decode_signature<G>(
@@ -411,7 +425,8 @@ pub fn decode_signature<G>(
                 CodeView::Var(_)
                 | CodeView::Sum(_)
                 | CodeView::Field { .. }
-                | CodeView::Bind { .. } => {
+                | CodeView::Bind { .. }
+                | CodeView::Fun { .. } => {
                     let field = interpret(arena, vec![Frame::Code(node)], context)?;
                     fields.push(field);
                 },
@@ -476,7 +491,11 @@ pub fn decode_codata<G>(
                 let field = interpret(arena, vec![Frame::Code(node)], context)?;
                 arena.comp_type_returner(field)
             },
-            CodeView::Unit | CodeView::Prod(_) | CodeView::Sum(_) | CodeView::Bind { .. } => {
+            CodeView::Unit
+            | CodeView::Prod(_)
+            | CodeView::Sum(_)
+            | CodeView::Bind { .. }
+            | CodeView::Fun { .. } => {
                 return Err(DecodeError::MalformedCode);
             },
         };
@@ -563,6 +582,17 @@ fn interpret<G>(
                 },
                 CodeView::Field { ty, .. } => pending.push(Frame::Type(ty.to_node())),
                 CodeView::Bind { .. } => return Err(DecodeError::AtomAbstraction),
+                CodeView::Fun { domains, mut body } => {
+                    let body = body.next().ok_or(DecodeError::MalformedCode)?;
+                    pending.push(Frame::Function(DomainCount(domains.len())));
+                    pending.push(Frame::Code(body));
+                    pending.extend(
+                        domains
+                            .iter()
+                            .rev()
+                            .map(|domain| Frame::Type(domain.to_node())),
+                    );
+                },
             },
             Frame::Type(node) => match node.view() {
                 ValueTypeView::Prim(primitive) => {
@@ -627,6 +657,20 @@ fn interpret<G>(
                     .ok_or(DecodeError::MalformedCode)?;
                 let applied = arguments.drain(start ..).collect();
                 values.push(arena.value_type_data(declaration, applied));
+            },
+            Frame::Function(DomainCount(count)) => {
+                let body = values.pop().ok_or(DecodeError::MalformedCode)?;
+                let start = values
+                    .len()
+                    .checked_sub(count)
+                    .ok_or(DecodeError::MalformedCode)?;
+                // The arrow binds nothing, so every domain and the body stay
+                // in the field's own scope, as `Ā => B` lowers.
+                let mut function = arena.comp_type_returner(body);
+                for domain in values.drain(start ..).rev() {
+                    function = arena.comp_type_arrow(domain, function);
+                }
+                values.push(arena.value_type_thunk(function));
             },
         }
     }

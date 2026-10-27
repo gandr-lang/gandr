@@ -832,6 +832,14 @@ impl<'source> Lowerer<'_, 'source>
                         };
                         fields.push(decode_ref(arena, ty, context).map_err(|_unread| uncoded)?);
                     },
+                    // A function has no equality, as the native reading
+                    // answers for the same field.
+                    CodeView::Fun { .. } => {
+                        return Err(Uncovered::Field(position, OccurrenceSite::Field {
+                            tag: ConstructorTag::from(tag),
+                            field: FieldPosition::from(fields.len()),
+                        }));
+                    },
                     CodeView::Var(_) | CodeView::Sum(_) | CodeView::Bind { .. } => {
                         return Err(uncoded);
                     },

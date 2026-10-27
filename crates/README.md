@@ -108,7 +108,7 @@ crates/
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
-├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
+├── theory-levitation/             the code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays

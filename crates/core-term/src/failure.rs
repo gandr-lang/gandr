@@ -198,9 +198,10 @@ impl TrackingIssue
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);
-    /// A function-valued field, which the first-order description code does
+    /// A function-valued member other than a value function space, such as
+    /// an observation taking an argument, which the description code does
     /// not hold.
-    pub const HIGHER_ORDER_FIELD: Self = Self(2511);
+    pub const HIGHER_ORDER_FIELD: Self = Self(2859);
     /// A field whose type names a field before it.
     pub const DEPENDENT_FIELD: Self = Self(2663);
     /// A type with no first-order description reference.

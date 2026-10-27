@@ -160,7 +160,8 @@ pub enum DescriptionFault
     FamilyHead,
     /// Constructor result must apply its own family uniformly.
     NonUniformResult,
-    /// Function-valued fields have no first-order description code.
+    /// A function-valued member other than a value function space `Ā => B`,
+    /// such as an observation taking an argument, has no description code.
     HigherOrderField,
     /// A field whose type names a field before it has no first-order
     /// description code: the code's fields are independent.
@@ -202,7 +203,8 @@ pub enum DescriptionFault
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MemberFault
 {
-    /// A function-valued field, which the first-order code does not hold.
+    /// A function-valued member other than a value function space, which the
+    /// description code does not hold.
     HigherOrderField,
     /// A field whose type names a field before it, which the first-order
     /// code does not hold.
@@ -255,7 +257,8 @@ impl fmt::Display for MemberFault
     {
         f.write_str(match *self {
             Self::HigherOrderField => {
-                "has a function-valued field, which the first-order description code does not hold"
+                "has a function-valued member the description code does not hold: only a value \
+                 function space `A => B` has a code"
             },
             Self::DependentField => {
                 "has a field whose type names a field before it, which the first-order \
@@ -299,7 +302,7 @@ impl fmt::Display for MemberFault
     }
 }
 
-/// The field refusals that mark the first-order code's limit rather than a
+/// The field refusals that mark the description code's limit rather than a
 /// fault of the source: the native reading admits each such field.
 const UNCODED: [DescriptionFault; 3] = [
     DescriptionFault::HigherOrderField,
@@ -319,8 +322,8 @@ enum Read
 /// A generator judgment as read.
 struct Generator
 {
-    /// The constructor's description, or the first field its first-order code
-    /// cannot carry.
+    /// The constructor's description, or the first field its description
+    /// code cannot carry.
     ctor: Result<CtorDesc<DescriptionGrade>, DescriptionDiagnostic>,
     /// Where the judgment's name, fields and result are written.
     written: written::WrittenConstructor,
@@ -328,7 +331,7 @@ struct Generator
 
 /// A data family the native reading owns whole.
 ///
-/// A generator of it the first-order code cannot carry, and it writes no
+/// A generator of it the description code cannot carry, and it writes no
 /// operation or rule for a description to carry, so the route keeps only
 /// where its members are written.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -342,7 +345,7 @@ pub struct NativeFamily
     pub parameters: Vec<FamilyParameter>,
     /// Where each of its constructors is written, in declaration order.
     pub written: written::WrittenMembers,
-    /// The first field of each constructor its first-order code cannot
+    /// The first field of each constructor its description code cannot
     /// carry, in declaration order.
     pub uncoded: Vec<DescriptionDiagnostic>,
 }
@@ -365,7 +368,7 @@ impl DescriptionDiagnostic
     ///
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
-    ///   site; a field past the first-order code, an undecodable description,
+    ///   site; a field past the description code, an undecodable description,
     ///   an operation filler, a fillerless higher cell and the reserved glyph
     ///   are an undescribed member carrying their own fault, a feed no
     ///   observation guards its own refusal, a description the description
@@ -1170,10 +1173,11 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: preserves typed parameters, constructor order and polarity; a
-    ///   data family a generator of which the first-order code cannot carry — a
-    ///   universe, a function or a field naming one before it — is read as a
-    ///   [`NativeFamily`], every generator's written form kept, when it writes
-    ///   no operation and no rule, and keeps the generator's refusal otherwise.
+    ///   data family a generator of which the description code cannot carry — a
+    ///   universe, a function other than a value function space `Ā => B`, or a
+    ///   field naming one before it — is read as a [`NativeFamily`], every
+    ///   generator's written form kept, when it writes no operation and no
+    ///   rule, and keeps the generator's refusal otherwise.
     /// - fails: malformed family heads decline the declaration; malformed
     ///   members append local refusals without deleting siblings.
     /// - panics: none.
@@ -1233,7 +1237,7 @@ impl Reader<'_, '_>
         let mut operation_spans = Vec::new();
         let mut rules = Vec::new();
         let mut written = written::WrittenMembers::default();
-        // A generator the first-order code cannot carry, held until the
+        // A generator the description code cannot carry, held until the
         // members are read: it refuses only a family whose operations or
         // rules the description must carry.
         let mut uncoded = Vec::new();
@@ -1400,7 +1404,7 @@ impl Reader<'_, '_>
         }
         let mut fields = Vec::new();
         let mut ports = Vec::new();
-        // The first field the first-order code cannot carry.
+        // The first field the description code cannot carry.
         let mut uncoded = None;
         let port = |named: Maybe<ByteSpan, written::port_name::Absent>, sort: Placed| {
             written::WrittenPort {
@@ -1622,16 +1626,19 @@ impl Reader<'_, '_>
         Ok(DescriptionGrade::Finite(Multiplicity::from(1_u64)))
     }
 
-    /// Interpret a first-order field, recognizing the recursive family head,
-    /// and keep where each node of its type is written.
+    /// Interpret a field, recognizing the recursive family head and the value
+    /// function space, and keep where each node of its type is written.
     ///
     /// # Specification
     /// - requires: `bound` holds the binders of the fields before this one.
     /// - ensures: self references become recursive code, whatever their indices
-    ///   name, and other fields retain symbolic types; the written term is the
-    ///   type's, as [`Self::type_reference`] keeps it.
+    ///   name, and other fields retain symbolic types; a field `Ā => B` is the
+    ///   function former over `Ā` and `B`'s own reading, each `=>` to the right
+    ///   one former more; the written term is the innermost result's, as
+    ///   [`Self::type_reference`] keeps it.
     /// - fails: unreadable type forms return their located refusal, and a
-    ///   symbolic type naming a binder of `bound` refuses as dependent.
+    ///   symbolic type or domain naming a binder of `bound` refuses as
+    ///   dependent.
     /// - panics: none.
     ///
     /// # Errors
@@ -1639,24 +1646,20 @@ impl Reader<'_, '_>
     /// `Malformed`.
     ///
     /// # Termination
-    /// - reason: the dependency walk is a `while let` loop over an explicit
-    ///   stack, not recursion.
-    /// - measure: the reference's nodes not yet popped.
+    /// - reason: the function spaces are peeled by a `loop` over the field's
+    ///   written operands, each pass one `=>` to the right, not recursion.
+    /// - measure: the `=>` tiles written to the right of `at`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — recursive and primitive fields distinguish var from
     ///   field, and a field naming the one before it is told from one naming a
-    ///   parameter.
+    ///   parameter; a function field over one domain, over a list of two and
+    ///   nested to the right reads its domains in order and its result as a
+    ///   field would be read.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    /// - witness: `description::tests::a_value_function_field_is_the_function_former`
     #[spec(ensures: |result| result.as_ref().map_or(true, |&(ref code, _)| code.recursive_sorts().all(|sort| sort == family)))]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `bound` holds the binders written before one field"
-        )
-    )]
     fn field(
         &self,
         at: Placed,
@@ -1665,10 +1668,169 @@ impl Reader<'_, '_>
         bound: &[Placed],
     ) -> Result<(Code<DescriptionGrade>, written::WrittenTerm), DescriptionDiagnostic>
     {
-        let (reference, written) = self.type_reference(at)?;
-        if &reference.head_name() == family {
-            return Ok((Code::var(family.clone()), written));
+        let mut layers = Vec::new();
+        let mut result = at;
+        let pieces = loop {
+            let pieces = self.pieces(result)?;
+            let [
+                Piece::Operand(domain),
+                Piece::Tile { ref label, .. },
+                Piece::Operand(codomain),
+            ] = *pieces.as_slice()
+            else {
+                break pieces;
+            };
+            if label.as_ref() != "=>" {
+                break pieces;
+            }
+            layers.push(self.domains(domain, bound)?);
+            result = codomain;
+        };
+        let (reference, written) = self.type_reference_read(result, pieces)?;
+        let body = if &reference.head_name() == family {
+            Code::var(family.clone())
         }
+        else {
+            self.independent(&reference, result, bound)?;
+            Code::field(reference, grade, Attrs::empty())
+        };
+        let code = layers
+            .into_iter()
+            .rev()
+            .fold(body, |body, domains| Code::fun(domains, body));
+        Ok((code, written))
+    }
+
+    /// The domains a value function space's domain operand writes, left to
+    /// right, each a first-order type.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before `=>`, and `bound`
+    ///   holds the binders of the fields before its field.
+    /// - ensures: none for `()`, each member of a parenthesised list in order,
+    ///   and else the one type `domain` writes.
+    /// - fails: a member that is not a first-order type returns its located
+    ///   refusal, and one naming a binder of `bound` refuses as dependent.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// `Malformed`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one domain and a list of two read in written order.
+    /// - witness: `description::tests::a_value_function_field_is_the_function_former`
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
+    fn domains(
+        &self,
+        domain: Placed,
+        bound: &[Placed],
+    ) -> Result<Vec<ValueTypeRef>, DescriptionDiagnostic>
+    {
+        let pieces = self.pieces(domain)?;
+        let [
+            Piece::Tile {
+                label: ref open, ..
+            },
+            ref inner @ ..,
+            Piece::Tile {
+                label: ref close, ..
+            },
+        ] = *pieces.as_slice()
+        else {
+            return self
+                .domain(domain, pieces, bound)
+                .map(|reference| vec![reference]);
+        };
+        if open.as_ref() != "(" || close.as_ref() != ")" {
+            return self
+                .domain(domain, pieces, bound)
+                .map(|reference| vec![reference]);
+        }
+        let mut domains = Vec::new();
+        for piece in inner {
+            match *piece {
+                Piece::Operand(member) => {
+                    domains.push(self.domain(member, self.pieces(member)?, bound)?);
+                },
+                Piece::Tile { ref label, .. } if label.as_ref() == "," => {},
+                Piece::Tile { .. } => {
+                    return Err(DescriptionDiagnostic {
+                        span: domain.span,
+                        fault: DescriptionFault::TypeShape,
+                    });
+                },
+            }
+        }
+        Ok(domains)
+    }
+
+    /// One domain of a value function space, read from its pieces.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the pieces written at `at`, and `bound` holds
+    ///   the binders of the fields before its field.
+    /// - ensures: the type `at` writes.
+    /// - fails: a type that is not first-order returns its located refusal, and
+    ///   one naming a binder of `bound` refuses as dependent.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// `Malformed`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a domain is read as a field's type is.
+    /// - witness: `description::tests::a_value_function_field_is_the_function_former`
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
+    fn domain(
+        &self,
+        at: Placed,
+        pieces: Vec<Piece>,
+        bound: &[Placed],
+    ) -> Result<ValueTypeRef, DescriptionDiagnostic>
+    {
+        let (reference, _written) = self.type_reference_read(at, pieces)?;
+        self.independent(&reference, at, bound)?;
+        Ok(reference)
+    }
+
+    /// Refuse a type, written at `at`, that names a binder of `bound`: the
+    /// code's fields are independent.
+    ///
+    /// # Specification
+    /// - ensures: success exactly when no parameter node of `reference` is
+    ///   spelled as a binder of `bound`.
+    /// - fails: `DependentField` at `at`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `DependentField`.
+    ///
+    /// # Termination
+    /// - reason: the walk is a `while let` loop over an explicit stack, not
+    ///   recursion.
+    /// - measure: the reference's nodes not yet popped.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field naming the one before it is told from one
+    ///   naming a parameter.
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `bound` holds the binders written before one field"
+        )
+    )]
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| refusal.span == at.span && refusal.fault == DescriptionFault::DependentField, |&()| true))]
+    fn independent(
+        &self,
+        reference: &ValueTypeRef,
+        at: Placed,
+        bound: &[Placed],
+    ) -> Result<(), DescriptionDiagnostic>
+    {
         let mut pending = Vec::from([reference.to_node()]);
         while let Some(node) = pending.pop() {
             match node.view() {
@@ -1686,7 +1848,7 @@ impl Reader<'_, '_>
                 ValueTypeView::Ctor { args, .. } => pending.extend(args),
             }
         }
-        Ok((Code::field(reference, grade, Attrs::empty()), written))
+        Ok(())
     }
 
     /// Read symbolic first-order types with an explicit postorder stack, and
@@ -1716,13 +1878,49 @@ impl Reader<'_, '_>
         at: Placed,
     ) -> Result<(ValueTypeRef, written::WrittenTerm), DescriptionDiagnostic>
     {
+        self.type_reference_read(at, self.pieces(at)?)
+    }
+
+    /// [`Self::type_reference`] over the pieces already read at `at`, so a
+    /// caller that looked at them first reads them once.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the pieces written at `at`.
+    /// - ensures: what [`Self::type_reference`] answers at `at`.
+    /// - fails: as [`Self::type_reference`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `HigherOrderField`, `TypeShape` or `Malformed`.
+    ///
+    /// # Termination
+    /// - reason: the read is a `while let` loop over an explicit stack, not
+    ///   recursion.
+    /// - measure: the frames not yet popped, each written node read once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the root's pieces as given and every argument's as
+    ///   read separate supported shapes and order.
+    /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+    /// - witness: `description::tests::a_value_function_field_is_the_function_former`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |&(_, ref written)| written.nodes.first().is_some_and(|node| node.span == at.span)))]
+    fn type_reference_read(
+        &self,
+        at: Placed,
+        pieces: Vec<Piece>,
+    ) -> Result<(ValueTypeRef, written::WrittenTerm), DescriptionDiagnostic>
+    {
+        let mut root = Some(pieces);
         let mut pending = vec![TypeFrame::Read(at)];
         let mut values = Vec::new();
         let mut written = written::WrittenTerm::default();
         while let Some(frame) = pending.pop() {
             match frame {
                 TypeFrame::Read(at) => {
-                    let pieces = self.pieces(at)?;
+                    let pieces = match root.take() {
+                        Some(pieces) => pieces,
+                        None => self.pieces(at)?,
+                    };
                     if let [Piece::Tile { label, .. }] = *pieces.as_slice() {
                         let text = self.text(at).0;
                         let ty = match (label.as_ref(), text) {
