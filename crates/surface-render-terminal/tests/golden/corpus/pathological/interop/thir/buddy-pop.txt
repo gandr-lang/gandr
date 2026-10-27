@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:47:25
    │
 25 │ ┌  def popShared(
@@ -31,9 +31,10 @@ error[TypeMismatch]: mismatched types
 49 │ │  }
    │ └──┘ checked; while checking the body of this thunk
    │
-   ╰ note: `popShared` is refused with TypeMismatch, as its expectation states
+   ├ note: `popShared` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:75:25
    │
 53 │ ┌  def popListedAsEmpty(
@@ -66,4 +67,5 @@ error[TypeMismatch]: mismatched types
 77 │ │  }
    │ └──┘ checked; while checking the body of this thunk
    │
-   ╰ note: `popListedAsEmpty` is refused with TypeMismatch, as its expectation states
+   ├ note: `popListedAsEmpty` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -6,9 +6,10 @@ error[DuplicateDefinition]: `Fs` is defined twice
    │                         │
    │                         first written here
    │
-   ╰ note: `namedTwice` is refused with DuplicateDefinition, as its expectation states
+   ├ note: `namedTwice` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `Fs` its own name, or delete one of them
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/effect-rows.gandr:19:3
    │
 18 │   def narrowedRow(c : Cap { read }) -> [Div] Integer {
@@ -22,4 +23,5 @@ error[TypeMismatch]: mismatched types
 21 │ │ }
    │ └─┘ checked against `+U (Cap {read} -> -F [Div] Integer)`; while checking the body of this thunk
    │
-   ╰ note: `narrowedRow` is refused with TypeMismatch, as its expectation states
+   ├ note: `narrowedRow` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -12,4 +12,5 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 5 │ │ }
   │ └─┘ checked against `(e : Integer * Integer) => Path(Integer * Integer, (e.1, e.0), e)`; while checking the body of this thunk
   │
-  ╰ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
+  ├ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
+  ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

@@ -58,7 +58,6 @@ use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
-use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
@@ -145,14 +144,16 @@ impl fmt::Display for Plain<'_>
 }
 
 /// A form's name in the words a user reads: the grammar's kind with its
-/// underscores spaced.
+/// underscores spaced, and a word of one letter, which names a type former
+/// (`F`, `U`), in capitals.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct Spoken(FormName);
+pub struct Spoken(pub FormName);
 
 impl fmt::Display for Spoken
 {
-    /// Writes the form's kind with each underscore a space.
+    /// Writes the form's kind with each underscore a space, and each word of
+    /// one letter in capitals.
     ///
     /// # Specification
     /// trivial.
@@ -166,7 +167,12 @@ impl fmt::Display for Spoken
             if word.0 > 0_usize {
                 f.write_str(" ")?;
             }
-            f.write_str(word.1)?;
+            if word.1.len() == 1_usize {
+                f.write_str(&word.1.to_ascii_uppercase())?;
+            }
+            else {
+                f.write_str(word.1)?;
+            }
         }
         Ok(())
     }
@@ -180,14 +186,15 @@ struct Indefinite(FormName);
 
 impl fmt::Display for Indefinite
 {
-    /// Writes `an ` before a name whose first letter is a vowel spoken as
-    /// one, `a ` before any other, then the name as [`Spoken`] writes it.
+    /// Writes `an ` before a name that opens on a vowel sound, `a ` before any
+    /// other, then the name as [`Spoken`] writes it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the article is `an` exactly when the name opens with a vowel
     ///   letter and not with `uni` or `use`, which open on a `y` sound (`a
-    ///   unit`, `an unpack statement`).
+    ///   unit`, `an unpack statement`), or with a word of one letter whose name
+    ///   opens on a vowel sound (`an F type`, `a U type`).
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
     /// - executable: none — the formatter exposes no output buffer.
@@ -197,7 +204,8 @@ impl fmt::Display for Indefinite
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the wrong-sort refusal writes `an identifier`, `an
-    ///   instantiation expression`, `a unit` and `a hole`.
+    ///   instantiation expression`, `a unit`, `a hole`, `an F type` and `a U
+    ///   type`.
     /// - witness: `message::tests::a_form_takes_the_article_its_name_is_spoken_with_417`
     #[inline]
     fn fmt(
@@ -206,9 +214,15 @@ impl fmt::Display for Indefinite
     ) -> fmt::Result
     {
         let name = self.0.as_ref();
-        let vowel = name.starts_with(['a', 'e', 'i', 'o', 'u'])
-            && !name.starts_with("uni")
-            && !name.starts_with("use");
+        let first = name.split('_').next().unwrap_or(name);
+        let vowel = if first.len() == 1_usize {
+            first.starts_with(['a', 'e', 'f', 'h', 'i', 'l', 'm', 'n', 'o', 'r', 's', 'x'])
+        }
+        else {
+            name.starts_with(['a', 'e', 'i', 'o', 'u'])
+                && !name.starts_with("uni")
+                && !name.starts_with("use")
+        };
         let article = if vowel { "an" } else { "a" };
         write!(f, "{article} {}", Spoken(self.0))
     }
@@ -434,20 +448,11 @@ fn lowered(
                 FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => {
                     write!(f, "an operator is missing in this {form}")
                 },
-                FormFault::Repaired(Repair::Keyword(stray)) => match stray.offer {
-                    Offer::Capitalised(offer) => write!(
-                        f,
-                        "`{}` is a keyword and cannot stand here in this {form}; did you mean \
-                         `{}`?",
-                        stray.written.as_ref(),
-                        offer.as_ref()
-                    ),
-                    Offer::Unspelled => write!(
-                        f,
-                        "`{}` is a keyword and cannot stand here in this {form}",
-                        stray.written.as_ref()
-                    ),
-                },
+                FormFault::Repaired(Repair::Keyword(stray)) => write!(
+                    f,
+                    "`{}` is a keyword and cannot stand here in this {form}",
+                    stray.written.as_ref()
+                ),
                 FormFault::Repaired(Repair::GhostClose(close)) => {
                     write!(f, "this {form} is missing its closing `{}`", match close {
                         ClosingClass::Paren => ")",
@@ -487,11 +492,10 @@ fn lowered(
                         ClosingClass::Brace => "{",
                     })
                 },
-                FormFault::Misspelt(keyword) => write!(
+                FormFault::Misspelt(_) => write!(
                     f,
                     "this word reads as a name, and this {form} then holds an operand it does not \
-                     take; did you mean `{}`?",
-                    keyword.as_ref()
+                     take"
                 ),
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
@@ -1062,7 +1066,9 @@ fn checked(
         CheckRefusal::Boundary { .. } => {
             f.write_str("this boundary flow runs against the variance of its position")
         },
-        CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
+        CheckRefusal::TypeMismatch(_) => {
+            f.write_str("the type of this term does not match the type it is checked against")
+        },
         CheckRefusal::ShapeMismatch {
             wanted: ExpectedShape::EmptySum,
             ..
@@ -1438,7 +1444,7 @@ pub const fn unsolved(reason: gandr_core_checker::Unsolved) -> Maybe<Undetermine
 
 /// Every refusal name's message, read through one constructed refusal each.
 #[cfg(test)]
-mod tests
+pub mod tests
 {
     use gandr_core_checker::ArgumentPosition;
     use gandr_core_checker::CheckBudget;
@@ -1514,8 +1520,21 @@ mod tests
 
     use super::Plain;
 
-    #[test]
-    fn every_refusal_name_has_a_plain_message()
+    /// One refusal of every vocabulary name, the corpus's last.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every name of [`RefusalName::VOCABULARY`] names one of them.
+    /// - provides: the refusals each name's template is read through.
+    /// - fails: never.
+    /// - panics: on a vocabulary name no refusal here names.
+    /// - executable: none — the builder's own assertion checks the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name added to the vocabulary with no refusal here
+    ///   fails every test that reads them.
+    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+    pub fn one_of_every_name() -> Vec<Refusal<'static>>
     {
         let mut arena = CoreArena::new();
         let value = arena.value_unit();
@@ -2400,8 +2419,14 @@ mod tests
             .filter(|vocabulary| !named.contains(vocabulary))
             .collect();
         assert!(missing.is_empty(), "every name is exercised: {missing:?}");
+        refusals
+    }
+
+    #[test]
+    fn every_refusal_name_has_a_plain_message()
+    {
         let mut message = String::new();
-        for refusal in refusals {
+        for refusal in one_of_every_name() {
             message.clear();
             core::fmt::Write::write_fmt(&mut message, format_args!("{}", Plain(refusal)))
                 .expect("a message writes");
@@ -2442,6 +2467,14 @@ mod tests
             (FormName::UNPACK_STATEMENT, "an unpack statement "),
             (FormName::UNIT, "a unit "),
             (FormName::HOLE, "a hole "),
+            (
+                FormName::from(gandr_surface_grammar::NamedKind("f_type")),
+                "an F type ",
+            ),
+            (
+                FormName::from(gandr_surface_grammar::NamedKind("u_type")),
+                "a U type ",
+            ),
         ] {
             for boundary in [FragmentBoundary::WrongSort, FragmentBoundary::NotInTail] {
                 let message = refused(form, boundary);

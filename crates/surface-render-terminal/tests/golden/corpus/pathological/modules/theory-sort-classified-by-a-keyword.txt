@@ -1,7 +1,8 @@
-error[MalformedForm]: `type` is a keyword and cannot stand here in this theory declaration; did you mean `Type`?
+error[MalformedForm]: `type` is a keyword and cannot stand here in this theory declaration
   ╭▸ corpus/pathological/modules/theory-sort-classified-by-a-keyword.gandr:3:12
   │
 3 │   sort M : type;
   │            ━━━━ a keyword where a term belongs
   │
-  ╰ note: `Magma` is refused with MalformedForm, as its expectation states
+  ├ note: `Magma` is refused with MalformedForm, as its expectation states
+  ╰ help: write `Type` instead

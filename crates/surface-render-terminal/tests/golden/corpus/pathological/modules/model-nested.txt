@@ -4,9 +4,10 @@ error[OutOfFragment.WrongSort]: a module declaration cannot stand where a module
 14 │ module Unascribed : Model(Faceted) {
    │                           ━━━━━━━ a form of another sort than this position takes
    │
-   ╰ note: `inner` is refused with OutOfFragment.WrongSort, as its expectation states
+   ├ note: `inner` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a module in this position
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/model-nested.gandr:27:24
    │
 27 │ def leaked : Integer = Sealed.inner.zero;
@@ -14,4 +15,5 @@ error[TypeMismatch]: mismatched types
    │              │
    │              the type it is checked against
    │
-   ╰ note: `leaked` is refused with TypeMismatch, as its expectation states
+   ├ note: `leaked` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

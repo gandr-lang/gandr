@@ -13,4 +13,5 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 5 │ │ }
   │ └─┘ checked against `Integer => Integer`; while checking the body of this function; binds fact : Integer => Integer
   │
-  ╰ note: `fact` is refused with StageNotBelow, as its expectation states
+  ├ note: `fact` is refused with StageNotBelow, as its expectation states
+  ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/regions/natural.gandr:21:67
    │
 14 │ ┌    def backwards() -> Integer {
@@ -37,7 +37,8 @@ error[TypeMismatch]: mismatched types
 33 │ │    }
    │ └────┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `backwards` is refused with TypeMismatch, as its expectation states
+   ├ note: `backwards` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/regions/natural.gandr:47:17
@@ -72,4 +73,5 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 57 │ │   }
    │ └───┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `unequal` is refused with EndpointMismatch, as its expectation states
+   ├ note: `unequal` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

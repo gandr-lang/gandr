@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/include/reduct.gandr:20:35
    │
 11 │ def absorbs(z : Model(LeftZero)) -> Integer {
@@ -11,4 +11,5 @@ error[TypeMismatch]: mismatched types
    │ │                         checked against `-F Integer`; while checking the argument of this application
    │ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `noZero` is refused with TypeMismatch, as its expectation states
+   ├ note: `noZero` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

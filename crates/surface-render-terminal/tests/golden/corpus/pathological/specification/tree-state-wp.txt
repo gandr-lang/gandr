@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/specification/tree-state-wp.gandr:16:34
    │
 16 │ } = (incrTree, fn (s) { fn (h) { h } });
@@ -8,9 +8,10 @@ error[TypeMismatch]: mismatched types
    │                │        checked against `isOne(unit, s) -> -F wp(incrTree, isOne, s)`; while checking the body of this function; binds h : isOne(unit, s)
    │                checked against `(a : Integer, isOne(unit, a)) => wp(incrTree, isOne, a)`; while checking the body of this function; binds s : Integer
    │
-   ╰ note: `incrMissesOne` is refused with TypeMismatch, as its expectation states
+   ├ note: `incrMissesOne` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/specification/tree-state-wp.gandr:28:30
    │
 24 │ ┌ def incrMissesTwo(
@@ -25,4 +26,5 @@ error[TypeMismatch]: mismatched types
    │                                │
    │                                its type does not convert: expected `wp(incrTree, post, s)`, found `incrByTwoSpec(post, s)`
    │
-   ╰ note: `incrMissesTwo` is refused with TypeMismatch, as its expectation states
+   ├ note: `incrMissesTwo` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

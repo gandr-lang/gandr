@@ -4,4 +4,5 @@ error[MalformedForm]: this string is missing its closing `"`
 2 │ def s = "abc ;
   │               ━ its closing tile belongs here
   │
-  ╰ note: `s` is expected to check, and this refusal leaves it unsettled
+  ├ note: `s` is expected to check, and this refusal leaves it unsettled
+  ╰ help: add the closing `"`

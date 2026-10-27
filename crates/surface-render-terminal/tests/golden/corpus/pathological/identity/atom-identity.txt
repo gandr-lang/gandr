@@ -6,7 +6,7 @@ error[AtomTransport]: this abstract type's identity attribute names no transport
    │
    ╰ note: `lawlessOriginOther` is refused with AtomTransport, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/atom-identity.gandr:36:5
    │
 32 │    def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
@@ -25,4 +25,5 @@ error[TypeMismatch]: mismatched types
    │ └──┤   its type does not convert: expected `Path(#{y : Unit, s : pathRelated(a, y)}, (b, r), (a, pathReflexivity(a)))`, found `Unit`
    │    the type it is checked against
    │
-   ╰ note: `unpairedContraction` is refused with TypeMismatch, as its expectation states
+   ├ note: `unpairedContraction` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

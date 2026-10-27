@@ -4,7 +4,8 @@ error[UnresolvedName]: `c` is not defined
 4 │ def b = c ;
   │         ━ not found in this scope
   │
-  ╰ note: `b` is refused with UnresolvedName, as its expectation states
+  ├ note: `b` is refused with UnresolvedName, as its expectation states
+  ╰ help: define `c`, or import the module that exports it
 
 error[UnknownConstant]: this names a declaration whose type is not known
   ╭▸ corpus/ledger/diagnostics/UnknownConstant.gandr:7:9

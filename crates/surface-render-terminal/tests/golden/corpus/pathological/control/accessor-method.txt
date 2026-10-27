@@ -22,7 +22,7 @@ error[ViewNotPlace]: a method whose receiver's mode is a variable answers a plac
    │
    ╰ note: `crossed` is refused with ViewNotPlace, as its expectation states
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/accessor-method.gandr:26:79
    │
 25 │ ┌   @[ refuses("TypeMismatch") ]
@@ -34,7 +34,8 @@ error[TypeMismatch]: mismatched types
    │                                 │             the type it synthesises
    │                                 checked against `List(Integer) -> -F Integer`; while checking the body of this function; binds self : List(Integer)
    │
-   ╰ note: `mistyped` is refused with TypeMismatch, as its expectation states
+   ├ note: `mistyped` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ViewOfNoPlace]: `as w { … }` lends a view only after a call of a method that answers a place of its receiver
    ╭▸ corpus/pathological/control/accessor-method.gandr:36:6

@@ -13,6 +13,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use expect_test::expect_file;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::TermNode;
 use gandr_surface_corpus::Refusal;
@@ -356,11 +357,7 @@ fn a_type_mismatch_renders_as_a_located_report()
         rendered.contains("mismatch.gandr:2:13"),
         "the diagnostic names its source at the term: {rendered}"
     );
-    assert_eq!(
-        rendered,
-        include_str!("golden/type-mismatch.txt"),
-        "the terminal layout is a public surface"
-    );
+    expect_file!["golden/type-mismatch.txt"].assert_eq(&rendered);
 }
 
 #[test]
@@ -372,11 +369,7 @@ fn an_unimplemented_refusal_closes_with_its_tracking_issue()
         SourceText::from("def half = 0.5f32 ;\n"),
         Verb::Check(Goals::Gated),
     );
-    assert_eq!(
-        plain(&diagnostic, Verbosity::User),
-        include_str!("golden/unimplemented.txt"),
-        "the issue tracking what the refusal is missing closes it at the user level"
-    );
+    expect_file!["golden/unimplemented.txt"].assert_eq(&plain(&diagnostic, Verbosity::User));
 }
 
 #[test]
@@ -391,7 +384,7 @@ fn each_causal_shape_renders_as_its_golden()
                 SourceText::from(FORCE),
                 check,
             ),
-            include_str!("golden/nested-force.txt"),
+            expect_file!["golden/nested-force.txt"],
         ),
         (
             only(
@@ -400,7 +393,7 @@ fn each_causal_shape_renders_as_its_golden()
                 SourceText::from(APPLICATION),
                 check,
             ),
-            include_str!("golden/nested-application.txt"),
+            expect_file!["golden/nested-application.txt"],
         ),
         (
             only(
@@ -409,15 +402,11 @@ fn each_causal_shape_renders_as_its_golden()
                 SourceText::from(BOUND),
                 check,
             ),
-            include_str!("golden/run-binder.txt"),
+            expect_file!["golden/run-binder.txt"],
         ),
-        (unlocated_rules(), include_str!("golden/unlocated-rule.txt")),
+        (unlocated_rules(), expect_file!["golden/unlocated-rule.txt"]),
     ] {
-        assert_eq!(
-            plain(&diagnostic, Verbosity::User),
-            golden,
-            "each context reads as its judgement, its rule's sentence and its binders"
-        );
+        golden.assert_eq(&plain(&diagnostic, Verbosity::User));
     }
 }
 
@@ -429,12 +418,12 @@ fn an_unended_form_renders_what_is_missing_where()
         (
             "semicolon.gandr",
             "def a : Integer ;\ndef a = 1\ndef b : Integer ;\ndef b = 2 ;\n",
-            include_str!("golden/missing-semicolon.txt"),
+            expect_file!["golden/missing-semicolon.txt"],
         ),
         (
             "string.gandr",
             "def s : String ;\ndef s = \"abc ;\n",
-            include_str!("golden/unclosed-string.txt"),
+            expect_file!["golden/unclosed-string.txt"],
         ),
     ] {
         let step = unsettled(
@@ -445,10 +434,7 @@ fn an_unended_form_renders_what_is_missing_where()
         let rendered: String = entries(&step, check)
             .map(|diagnostic| plain(&diagnostic, Verbosity::User))
             .collect();
-        assert_eq!(
-            rendered, golden,
-            "the message names the missing tile; the mark sits where it belongs"
-        );
+        golden.assert_eq(&rendered);
     }
 }
 
@@ -462,19 +448,14 @@ fn one_refusal_renders_at_every_verbosity()
         Verb::Check(Goals::Gated),
     );
     for (verbosity, golden) in [
-        (Verbosity::User, include_str!("golden/nested-force.txt")),
-        (
-            Verbosity::Detailed,
-            include_str!("golden/verbosity-detailed.txt"),
-        ),
-        (Verbosity::Debug, include_str!("golden/verbosity-debug.txt")),
-        (Verbosity::Json, include_str!("golden/verbosity-json.txt")),
+        (Verbosity::User, expect_file!["golden/nested-force.txt"]),
+        (Verbosity::Detailed, expect_file![
+            "golden/verbosity-detailed.txt"
+        ]),
+        (Verbosity::Debug, expect_file!["golden/verbosity-debug.txt"]),
+        (Verbosity::Json, expect_file!["golden/verbosity-json.txt"]),
     ] {
-        assert_eq!(
-            plain(&diagnostic, verbosity),
-            golden,
-            "each level's layout is a public surface: {verbosity:?}"
-        );
+        golden.assert_eq(&plain(&diagnostic, verbosity));
     }
     let styled = render(&diagnostic, RenderStyle::Styled, Verbosity::Json);
     assert_eq!(
@@ -495,7 +476,7 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from("def add : Integer ;\ndef add = 1 ;\n"),
                 Verb::Check(Goals::Gated),
             ),
-            include_str!("golden/shadowed-builtin.txt"),
+            expect_file!["golden/shadowed-builtin.txt"],
         ),
         (
             only(
@@ -504,7 +485,7 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from("@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n"),
                 Verb::Check(Goals::Gated),
             ),
-            include_str!("golden/unsettled.txt"),
+            expect_file!["golden/unsettled.txt"],
         ),
         (
             only(
@@ -513,7 +494,7 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from("def hole : Integer ;\n"),
                 Verb::Check(Goals::Reported),
             ),
-            include_str!("golden/goal.txt"),
+            expect_file!["golden/goal.txt"],
         ),
         (
             only(
@@ -522,14 +503,10 @@ fn the_other_kinds_render_as_their_goldens()
                 SourceText::from("@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { n }\n"),
                 Verb::Check(Goals::Gated),
             ),
-            include_str!("golden/explicit-exits.txt"),
+            expect_file!["golden/explicit-exits.txt"],
         ),
     ] {
-        assert_eq!(
-            plain(&diagnostic, Verbosity::User),
-            golden,
-            "the terminal layout is a public surface"
-        );
+        golden.assert_eq(&plain(&diagnostic, Verbosity::User));
     }
 }
 

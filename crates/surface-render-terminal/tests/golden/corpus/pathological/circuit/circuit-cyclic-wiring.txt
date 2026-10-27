@@ -7,4 +7,5 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 10 │ ┃   };
    │ ┗━━━┛ out of place
    │
-   ╰ note: `Loop` is refused with MalformedForm, as its expectation states
+   ├ note: `Loop` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value

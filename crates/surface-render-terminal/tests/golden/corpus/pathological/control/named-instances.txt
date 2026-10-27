@@ -22,9 +22,10 @@ error[DuplicateDefinition]: `o` is defined twice
    │                 │
    │                 first written here
    │
-   ╰ note: `twice` is refused with DuplicateDefinition, as its expectation states
+   ├ note: `twice` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `o` its own name, or delete one of them
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/named-instances.gandr:40:41
    │
 40 │ def defaulted() -> [o : Console] Unit { Console.print("defaulted") }
@@ -35,7 +36,8 @@ error[TypeMismatch]: mismatched types
    │ │                  the type it is checked against
    │ checked against `+U (Cap {print} at o -> -F [o : Console] Unit)`; while checking the body of this thunk
    │
-   ╰ note: `defaulted` is refused with TypeMismatch, as its expectation states
+   ├ note: `defaulted` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[CapabilityAmplified]: this capability grants less than the one expected here
    ╭▸ corpus/pathological/control/named-instances.gandr:47:15
@@ -64,4 +66,5 @@ error[UnresolvedName]: `z` is not defined
 58 │ def lost(body : +U (-F [z : Console] Unit)) -> Unit { pure unit }
    │                         ━ not found in this scope
    │
-   ╰ note: `lost` is refused with UnresolvedName, as its expectation states
+   ├ note: `lost` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `z`, or import the module that exports it

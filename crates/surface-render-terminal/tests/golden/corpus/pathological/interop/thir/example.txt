@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/interop/thir/example.gandr:15:19
    │
  9 │   def exampleAtTrueZero(post : Value => Type) -> (post(Int(0))) => wpFn(
@@ -18,9 +18,10 @@ error[TypeMismatch]: mismatched types
 16 │ │ }
    │ └─┘ checked against `(post : Value => Type) => post(Int(0)) => wpFn(identitySpec, exampleBody, True, post)`; while checking the body of this thunk
    │
-   ╰ note: `exampleAtTrueZero` is refused with TypeMismatch, as its expectation states
+   ├ note: `exampleAtTrueZero` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/interop/thir/example.gandr:24:19
    │
 20 │ ┌ def exampleAtTrueAnyTable(
@@ -38,4 +39,5 @@ error[TypeMismatch]: mismatched types
 25 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `exampleAtTrueAnyTable` is refused with TypeMismatch, as its expectation states
+   ├ note: `exampleAtTrueAnyTable` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ corpus/pathological/basics/trailing-statement.gandr:8:3
   │
 7 │   def unitAnswered() -> Integer {
@@ -10,4 +10,5 @@ error[TypeMismatch]: mismatched types
 9 │ │ }
   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
   │
-  ╰ note: `unitAnswered` is refused with TypeMismatch, as its expectation states
+  ├ note: `unitAnswered` is refused with TypeMismatch, as its expectation states
+  ╰ help: change the term or the type it is checked against, so that the two types agree

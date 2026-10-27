@@ -4,4 +4,5 @@ error[IllFormedDescription]: a rule abstracts names where no operation's port ab
 16 │   rule leak : par(bind a. nil(), nil()) ==> nil();
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
-   ╰ note: `Escape` is refused with IllFormedDescription, as its expectation states
+   ├ note: `Escape` is refused with IllFormedDescription, as its expectation states
+   ╰ help: abstract names only in an argument at a port that binds as many

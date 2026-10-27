@@ -4,4 +4,5 @@ error[UnresolvedName]: `k` is not defined
 4 │     k(unit)
   │     ━ not found in this scope
   │
-  ╰ note: `stray` is refused with UnresolvedName, as its expectation states
+  ├ note: `stray` is refused with UnresolvedName, as its expectation states
+  ╰ help: define `k`, or import the module that exports it

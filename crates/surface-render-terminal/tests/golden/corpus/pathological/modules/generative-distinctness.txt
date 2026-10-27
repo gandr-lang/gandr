@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/generative-distinctness.gandr:23:19
    │
 20 │ module B = MkCounter(Seed);
@@ -9,7 +9,8 @@ error[TypeMismatch]: mismatched types
    │             │
    │             the type it is checked against
    │
-   ╰ note: `mixed` is refused with TypeMismatch, as its expectation states
+   ├ note: `mixed` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ProjectionFromApplication]: an application of `MkCounter` is read before it is bound; bind it with `module A = MkCounter(…) ;` and read `A`
    ╭▸ corpus/pathological/modules/generative-distinctness.gandr:27:17

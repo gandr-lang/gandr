@@ -21,4 +21,5 @@ error[UnresolvedName]: `sub` is not defined
 48 │ def less(x : u32) -> [Boundary] u32 { Boundary.sub(x, x) }
    │                                                ━━━ not found in this scope
    │
-   ╰ note: `less` is refused with UnresolvedName, as its expectation states
+   ├ note: `less` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `sub`, or import the module that exports it

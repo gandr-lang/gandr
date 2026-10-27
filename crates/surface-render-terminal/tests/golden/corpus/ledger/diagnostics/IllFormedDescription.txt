@@ -7,4 +7,5 @@ error[IllFormedDescription]: the face `far` holds a point outside the shape `Squ
 6 │ ┃ }
   │ ┗━┛ what the description check refuses
   │
-  ╰ note: `Past` is refused with IllFormedDescription, as its expectation states
+  ├ note: `Past` is refused with IllFormedDescription, as its expectation states
+  ╰ help: put in the face only points that the shape holds

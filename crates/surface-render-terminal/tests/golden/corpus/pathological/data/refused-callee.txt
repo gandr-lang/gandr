@@ -4,7 +4,8 @@ error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a 
 14 │   run held <- (Cons(1, xs) : List(Integer));
    │               ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form of another sort than this position takes
    │
-   ╰ note: `refused` is refused with OutOfFragment.WrongSort, as its expectation states
+   ├ note: `refused` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
 
 error[OutOfFragment.Unannotated]: the constructor needs a type annotation
    ╭▸ corpus/pathological/data/refused-callee.gandr:21:43

@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/model-ascription.gandr:24:41
    │
 14 │ module Sealed :> Model(Counter) {
@@ -11,9 +11,10 @@ error[TypeMismatch]: mismatched types
    │ │                           checked against `-F Sealed.C`; while checking the argument of this application
    │ checked against `() => Sealed.C`; while checking the body of this thunk
    │
-   ╰ note: `stepOne` is refused with TypeMismatch, as its expectation states
+   ├ note: `stepOne` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/model-ascription.gandr:28:27
    │
 14 │ module Sealed :> Model(Counter) {
@@ -26,4 +27,5 @@ error[TypeMismatch]: mismatched types
    │ │               the type it is checked against
    │ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `leaked` is refused with TypeMismatch, as its expectation states
+   ├ note: `leaked` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -7,4 +7,5 @@ error[DuplicateDefinition]: `x` is defined twice
 4 │     def x = 2;
   │     ━━━━━━━━━━ written again here
   │
-  ╰ note: `x` is refused with DuplicateDefinition, as its expectation states
+  ├ note: `x` is refused with DuplicateDefinition, as its expectation states
+  ╰ help: give each definition of `x` its own name, or delete one of them

@@ -16,7 +16,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 29 │ │  }
    │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
    │
-   ╰ note: `bad` is refused with StageNotBelow, as its expectation states
+   ├ note: `bad` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/data/curry.gandr:36:23
@@ -36,4 +37,5 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 38 │ │  }
    │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
    │
-   ╰ note: `smuggled` is refused with StageNotBelow, as its expectation states
+   ├ note: `smuggled` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

@@ -7,7 +7,8 @@ error[OutOfFragment.extern_block]: an extern block cannot stand where a declarat
   │ ┗━┛ a form of another sort than this position takes
   │
   ├ note: `extern` is refused with OutOfFragment.extern_block, as its expectation states
-  ╰ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
+  ├ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
+  ╰ help: write a declaration in this position
 
 error[OutOfFragment.projection_expression]: the projection expression is not supported yet
    ╭▸ corpus/pathological/ffi/wrong-arity.gandr:14:15

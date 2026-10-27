@@ -14,4 +14,5 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 7 │ │ }
   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
   │
-  ╰ note: `leak` is refused with ViewEscaped, as its expectation states
+  ├ note: `leak` is refused with ViewEscaped, as its expectation states
+  ╰ help: use the view outside a thunk, or open the `access` inside it

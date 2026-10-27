@@ -4,7 +4,8 @@ error[MalformedForm]: an operand is missing in this lazy record expression
 48 │   &{.x => return n, .y => return n}
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an operand is missing here
    │
-   ╰ note: `shallow` is refused with MalformedForm, as its expectation states
+   ├ note: `shallow` is refused with MalformedForm, as its expectation states
+   ╰ help: write the missing operand
 
 error[CodataKindNotUniverse]: a codata declaration's kind must be a computation universe
    ╭▸ corpus/pathological/codata/streams.gandr:17:16
@@ -36,7 +37,8 @@ error[UnresolvedName]: `z` is not defined
 54 │   &{.x => return n, .y => return n, .z => return n}
    │                                      ━ not found in this scope
    │
-   ╰ note: `stray` is refused with UnresolvedName, as its expectation states
+   ├ note: `stray` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `z`, or import the module that exports it
 
 error[UnguardedCorecursion]: `fibs[>](…)` must be the whole arm of a copattern block, so each observation yields before `fibs` runs again
    ╭▸ corpus/pathological/codata/streams.gandr:82:27

@@ -4,7 +4,8 @@ error[OutOfFragment.WrongSort]: a splice expression cannot stand where a computa
 27 │   run y <- ~assumption;
    │            ━━━━━━━━━━━ a form of another sort than this position takes
    │
-   ╰ note: `ranSplice` is refused with OutOfFragment.WrongSort, as its expectation states
+   ├ note: `ranSplice` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
 
 error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binder in scope has
   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:8:33

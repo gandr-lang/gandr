@@ -50,9 +50,10 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 55 │ │  }
    │ └──┘ checked against `(x : Circle) => Path(Circle, Base, x)`; while checking the body of this thunk
    │
-   ╰ note: `misjoined` is refused with EndpointMismatch, as its expectation states
+   ├ note: `misjoined` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/circle-elim.gandr:69:54
    │
 58 │ ┌ data Marked : Type {
@@ -68,9 +69,10 @@ error[TypeMismatch]: mismatched types
    │                                                        its type does not convert: expected `Path(Marked, Mark, Elsewhere)`, found `Path(Marked, Mark, Mark)`
    │                                                        checked against `Path(Marked, Mark, Elsewhere)`; while checking the operand of this transport
    │
-   ╰ note: `misjoined_then` is refused with TypeMismatch, as its expectation states
+   ├ note: `misjoined_then` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/circle-elim.gandr:85:74
    │
 85 │ def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) = here(Mark);
@@ -80,7 +82,8 @@ error[TypeMismatch]: mismatched types
    │                         │                                                the type it synthesises
    │                         the type it is checked against
    │
-   ╰ note: `elsewhereComputed` is refused with TypeMismatch, as its expectation states
+   ├ note: `elsewhereComputed` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[OutOfFragment.NotAFunction]: `cong` maps a path by a function, and a constructor is not one; write a function definition that applies it
    ╭▸ corpus/pathological/identity/circle-elim.gandr:91:21

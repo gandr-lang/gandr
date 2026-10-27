@@ -304,11 +304,14 @@ pub struct Golden
 /// - requires: nothing.
 /// - ensures: for each line `error[NAME]: MESSAGE`, `warning[NAME]: MESSAGE` or
 ///   the same without `[NAME]`, in order, a golden whose what is `MESSAGE` at
-///   that line; labelled when a line before the next headline holds `│`, then a
-///   run of `─` or `━`, a space and text; the first `help:` line's text there
-///   as its advice, else tracked when a `note:` line there names an issue as
-///   `#` and digits, else missing. A file whose first line is no headline, such
-///   as a JSON rendering, gives an empty vector.
+///   that line; labelled when a line before the next headline holds `│` after a
+///   blank gutter, where no source line is quoted, then the drawing of the
+///   margin, the marks and their connectors (`│`, `┃`, corners, `─`, `━`, `┬`,
+///   `┯`, spaces), a space last, then text; the first `help:` line's text
+///   there, at the start of the line or after the group's rule (`╰ help:`), as
+///   its advice, else tracked when a `note:` line there names an issue as `#`
+///   and digits, else missing. A file whose first line is no headline, such as
+///   a JSON rendering, gives an empty vector.
 /// - provides: the diagnostics the procedural rule reads.
 /// - fails: never.
 /// - panics: none.
@@ -316,10 +319,14 @@ pub struct Golden
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a golden with a help line, one tracked by a note, one
-///   with neither and no label, a JSON rendering, and a file of two
-///   diagnostics, the first labelled and helped and the second neither; a
-///   missed label, a note read as help, a JSON line read as a headline, or a
-///   second diagnostic missed or read into the first changes the goldens.
+///   with neither and no label, a JSON rendering, a file of two diagnostics,
+///   the first labelled and helped inside its group and the second neither, one
+///   labelled only under a span's nested margin (`│ └─┘ label`), one labelled
+///   only from a mark's connector, and one whose quoted line holds text after
+///   `│` with no label; a missed label, a quoted line read as one, a help
+///   missed after the group's rule, a note read as help, a JSON line read as a
+///   headline, or a second diagnostic missed or read into the first changes the
+///   goldens.
 /// - witness: `passage::tests::a_golden_reads_its_what_where_and_advice`
 #[inline]
 #[must_use]
@@ -377,15 +384,23 @@ pub fn golden(
             .take(end)
             .skip(start.saturating_add(1))
         {
-            if let Some((_, after)) = line.split_once('│') {
-                let after = after.trim_start();
-                let marks = after.trim_start_matches(['─', '━', '┬', '┯']);
-                if marks.len() < after.len() && marks.starts_with(' ') && !marks.trim().is_empty() {
+            if let Some((gutter, after)) = line.split_once('│')
+                && gutter.trim().is_empty()
+            {
+                let text = after.trim_start_matches([
+                    ' ', '│', '┃', '┌', '┏', '└', '┗', '┘', '┛', '─', '━', '┬', '┯',
+                ]);
+                let drawn = after
+                    .get(.. after.len().saturating_sub(text.len()))
+                    .unwrap_or("");
+                if drawn.ends_with(' ') && !text.trim().is_empty() {
                     placed = Placed::Labelled;
                 }
             }
             if help.is_none()
-                && let Some(advice) = line.trim_start().strip_prefix("help: ")
+                && let Some(advice) = line
+                    .trim_start_matches([' ', '╰', '├', '│', '='])
+                    .strip_prefix("help: ")
             {
                 help = Some(passage(index.saturating_add(1), advice, Source::Diagnostic));
             }
@@ -656,7 +671,7 @@ mod tests
             "{read:?}"
         );
         assert!(golden(Text("g/json.txt"), Text("{\"severity\":\"error\"}\n")).is_empty());
-        let two = "error[A]: first\n  │\n1 │ def a\n  │ ━━━━━ the first\nhelp: write it\n\nerror[B]: \
+        let two = "error[A]: first\n  │\n1 │ def a\n  │ ━━━━━ the first\n  ╰ help: write it\n\nerror[B]: \
                    second\n  ╰ note: `b` is expected to check\n";
         let read = golden(Text("g/two.txt"), Text(two));
         let [ref first, ref second] = read[..]
@@ -667,7 +682,11 @@ mod tests
             (first.what.text.as_str(), first.placed),
             ("first", Placed::Labelled)
         );
-        assert!(matches!(first.advice, Advice::Help(ref help) if help.line == Line(5)));
+        assert!(
+            matches!(first.advice, Advice::Help(ref help) if help.text == "write it" && help.line == Line(5)),
+            "a help inside the group is read after its rule: {:?}",
+            first.advice
+        );
         assert_eq!(
             (
                 second.what.text.as_str(),
@@ -678,6 +697,24 @@ mod tests
             ("second", Line(7), Placed::Unlabelled, &Advice::Missing),
             "the second reads nothing of the first"
         );
+        let nested = "error[C]: third\n  │\n7 │   def f() -> Integer {\n  │ ┌─┘\n8 │ │   pure \
+                      unit;\n9 │ │ }\n  │ └─┘ checked against `() => Integer`\n";
+        let hung = "error[D]: fourth\n   │\n17 │ def m = (f : g);\n   │         ┬───┯━\n   │      \
+                    \x20  │   │\n   │         │   its type does not convert\n   │         the type \
+                    it synthesises\n";
+        let unlabelled = "error[E]: fifth\n  │\n3 │ │ def a = b;\n  │ ━━━━\n";
+        for (path, text, placed) in [
+            ("g/nested.txt", nested, Placed::Labelled),
+            ("g/hung.txt", hung, Placed::Labelled),
+            ("g/unlabelled.txt", unlabelled, Placed::Unlabelled),
+        ] {
+            let read = golden(Text(path), Text(text));
+            assert!(
+                matches!(read[..], [ref one] if one.placed == placed),
+                "a label under a nested margin or hung from a connector places the span, and a \
+                 quoted line does not: {path} {read:?}"
+            );
+        }
     }
 
     #[test]

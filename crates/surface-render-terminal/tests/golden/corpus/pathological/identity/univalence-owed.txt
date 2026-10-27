@@ -12,7 +12,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 20 │ │ }
    │ └─┘ checked against `(a : Type) => Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a))`; while checking the body of this thunk
    │
-   ╰ note: `uaEtaRefl` is refused with EndpointMismatch, as its expectation states
+   ├ note: `uaEtaRefl` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/univalence-owed.gandr:30:3
@@ -29,7 +30,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
 31 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `uaEtaStratum` is refused with EndpointMismatch, as its expectation states
+   ├ note: `uaEtaStratum` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[FunextUnsupported]: `funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
    ╭▸ corpus/pathological/identity/univalence-owed.gandr:43:3

@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ mismatch.gandr:2:13
   │
 1 │ def wrong : Integer ;
@@ -6,4 +6,5 @@ error[TypeMismatch]: mismatched types
 2 │ def wrong = "text" ;
   │             ━━━━━━ its type does not convert: expected `Integer`, found `String`
   │
-  ╰ note: `wrong` is expected to check, and this refusal leaves it unsettled
+  ├ note: `wrong` is expected to check, and this refusal leaves it unsettled
+  ╰ help: change the term or the type it is checked against, so that the two types agree

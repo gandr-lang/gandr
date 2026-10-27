@@ -14,7 +14,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 18 │ │ }
    │ └─┘ checked against `() => Repr`; while checking the body of this thunk
    │
-   ╰ note: `escaped` is refused with ViewEscaped, as its expectation states
+   ├ note: `escaped` is refused with ViewEscaped, as its expectation states
+   ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewSpent]: the view is used after its `resume` or `abort`
    ╭▸ corpus/pathological/strings/views.gandr:25:33

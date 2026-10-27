@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/circle-section.gandr:62:17
    │
 55 │    def rec forged(p : Path(Circle, Base, Base)) -> Path(
@@ -19,7 +19,8 @@ error[TypeMismatch]: mismatched types
 65 │ │  }
    │ └──┘ checked against `(p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(p)), p)`; while checking the body of this function; binds forged : (a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)), a)
    │
-   ╰ note: `forged` is refused with TypeMismatch, as its expectation states
+   ├ note: `forged` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
    ╭▸ corpus/pathological/identity/circle-section.gandr:74:3

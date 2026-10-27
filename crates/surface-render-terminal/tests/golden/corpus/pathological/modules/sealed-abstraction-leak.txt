@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ corpus/pathological/modules/sealed-abstraction-leak.gandr:8:24
   │
 1 │ module Counter :> #{ type T, zero : T } {
@@ -9,9 +9,10 @@ error[TypeMismatch]: mismatched types
   │              │
   │              the type it is checked against
   │
-  ╰ note: `leaked` is refused with TypeMismatch, as its expectation states
+  ├ note: `leaked` is refused with TypeMismatch, as its expectation states
+  ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/sealed-abstraction-leak.gandr:11:26
    │
 11 │ def forged : Counter.T = 7;
@@ -19,4 +20,5 @@ error[TypeMismatch]: mismatched types
    │              │
    │              the type it is checked against
    │
-   ╰ note: `forged` is refused with TypeMismatch, as its expectation states
+   ├ note: `forged` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

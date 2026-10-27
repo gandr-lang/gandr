@@ -18,7 +18,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 28 │ │  }
    │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds applied_again : Nat => Nat
    │
-   ╰ note: `applied_again` is refused with StageNotBelow, as its expectation states
+   ├ note: `applied_again` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
    ╭▸ corpus/pathological/data/sized-higher-order.gandr:37:50
@@ -40,7 +41,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 39 │ │  }
    │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds applied_at_again : Nat => Nat
    │
-   ╰ note: `applied_at_again` is refused with StageNotBelow, as its expectation states
+   ├ note: `applied_at_again` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
    ╭▸ corpus/pathological/data/sized-higher-order.gandr:44:32
@@ -79,7 +81,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 69 │ │  }
    │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds plainly_helped : Nat => Nat
    │
-   ╰ note: `plainly_helped` is refused with StageNotBelow, as its expectation states
+   ├ note: `plainly_helped` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/data/sized-higher-order.gandr:88:64
@@ -102,7 +105,8 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
 90 │ │  }
    │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds halved_through_pred : Nat => Nat
    │
-   ╰ note: `halved_through_pred` is refused with StageNotBelow, as its expectation states
+   ├ note: `halved_through_pred` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:101:40
@@ -125,7 +129,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 103 │ │  }
     │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds looping_through_bound : Nat => Nat
     │
-    ╰ note: `looping_through_bound` is refused with StageNotBelow, as its expectation states
+    ├ note: `looping_through_bound` is refused with StageNotBelow, as its expectation states
+    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:114:28

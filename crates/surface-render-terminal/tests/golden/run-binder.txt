@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ bound.gandr:2:58
   │
 1 │ def id(x: Integer) -> -F Integer { return x }
@@ -13,4 +13,5 @@ error[TypeMismatch]: mismatched types
   │ │     checked against `Integer -> -F String`; while checking the body of this function; binds n : Integer
   │ checked against `Integer => String`; while checking the body of this thunk
   │
-  ╰ note: `f` is expected to check, and this refusal leaves it unsettled
+  ├ note: `f` is expected to check, and this refusal leaves it unsettled
+  ╰ help: change the term or the type it is checked against, so that the two types agree

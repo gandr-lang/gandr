@@ -40,6 +40,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::advice::help;
 use crate::frame::Sentence;
 use crate::lint::Lint;
 use crate::report::Class;
@@ -767,6 +768,8 @@ pub struct Diagnostic
     pub hypotheses: Vec<Binding>,
     /// The note it closes with.
     pub note: Maybe<String, report_note::Absent>,
+    /// What its reader does about it: one imperative sentence.
+    pub help: Maybe<String, help::Absent>,
     /// The source text of its primary span, when that is one line.
     pub expression: Maybe<String, expression::Absent>,
     /// The lines its loci cover.
@@ -1179,6 +1182,10 @@ impl Diagnostic
                 Maybe::Present(ref note) => Some(note.clone()),
                 Maybe::Absent(_) => None,
             },
+            help: match self.help {
+                Maybe::Present(ref help) => Some(help.clone()),
+                Maybe::Absent(_) => None,
+            },
             fix: match self.fix {
                 Maybe::Present(ref fix) => Some(JsonFix {
                     start: usize::from(fix.span.start()),
@@ -1234,6 +1241,8 @@ struct JsonDiagnostic
     hypotheses: Vec<String>,
     /// The note it closes with.
     note: Option<String>,
+    /// What its reader does about it.
+    help: Option<String>,
     /// The fix it proposes: the bytes it replaces and their replacement.
     fix: Option<JsonFix>,
 }

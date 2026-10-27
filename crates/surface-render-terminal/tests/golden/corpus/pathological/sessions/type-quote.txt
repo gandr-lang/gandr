@@ -7,7 +7,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
   │                                 │             an endpoint the point does not convert to
   │                                 an endpoint the point does not convert to
   │
-  ╰ note: `quoted_receive` is refused with EndpointMismatch, as its expectation states
+  ├ note: `quoted_receive` is refused with EndpointMismatch, as its expectation states
+  ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
    ╭▸ corpus/pathological/sessions/type-quote.gandr:14:43

@@ -4,4 +4,5 @@ error[MalformedForm]: this def value is missing its closing `;`
 2 │ def a = 1
   │          ━ its closing tile belongs here
   │
-  ╰ note: `a` is expected to check, and this refusal leaves it unsettled
+  ├ note: `a` is expected to check, and this refusal leaves it unsettled
+  ╰ help: add the closing `;`

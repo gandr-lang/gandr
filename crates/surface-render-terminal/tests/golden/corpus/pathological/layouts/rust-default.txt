@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/layouts/rust-default.gandr:12:46
    │
 11 │ ┌ def nested() -> Layout {
@@ -13,4 +13,5 @@ error[TypeMismatch]: mismatched types
 13 │ │ }
    │ └─┘ checked against `() => Layout`; while checking the body of this thunk
    │
-   ╰ note: `nested` is refused with TypeMismatch, as its expectation states
+   ├ note: `nested` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

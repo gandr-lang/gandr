@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/regions/outlived.gandr:14:33
    │
 10 │ ┌  def outlived() -> Integer {
@@ -20,4 +20,5 @@ error[TypeMismatch]: mismatched types
 20 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `outlived` is refused with TypeMismatch, as its expectation states
+   ├ note: `outlived` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

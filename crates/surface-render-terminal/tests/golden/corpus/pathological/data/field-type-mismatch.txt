@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/field-type-mismatch.gandr:12:18
    │
 12 │ def held = (Some("hello") : Maybe(Integer));
@@ -7,4 +7,5 @@ error[TypeMismatch]: mismatched types
    │             │    its type does not convert: expected `Integer`, found `String`
    │             checked against `Maybe(Integer)`; while finishing the type of this
    │
-   ╰ note: `held` is refused with TypeMismatch, as its expectation states
+   ├ note: `held` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

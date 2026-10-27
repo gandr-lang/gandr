@@ -34,4 +34,5 @@ error[DuplicateDefinition]: `Sink` is defined twice
    │                                       │
    │                                       first written here
    │
-   ╰ note: `Twice` is refused with DuplicateDefinition, as its expectation states
+   ├ note: `Twice` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `Sink` its own name, or delete one of them

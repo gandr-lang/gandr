@@ -1,4 +1,4 @@
-error[TypeMismatch]: mismatched types
+error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/dependent-instantiation-capture-accepts.gandr:22:25
    │
 14 │ ┌ def captured(
@@ -24,4 +24,5 @@ error[TypeMismatch]: mismatched types
 23 │ │ }
    │ └─┘ checked against `(a : Type, Type, Type, d : Type, a => d, d => d) => a => d`; while checking the body of this thunk
    │
-   ╰ note: `captured` is refused with TypeMismatch, as its expectation states
+   ├ note: `captured` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
