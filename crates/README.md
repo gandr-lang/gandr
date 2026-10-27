@@ -42,7 +42,7 @@ flowchart BT
   runtime -->|1| theory
   runtime -->|2| kernel
   runtime -->|3| core
-  runtime -->|2| storage
+  runtime -->|3| storage
   surface -->|11| theory
   surface -->|12| kernel
   surface -->|23| core
@@ -162,7 +162,7 @@ flowchart LR
   emitter -->|moves out| sequent
   world -->|mobile, Open| sequent
   emitter -->|a Net operation| net
-  net -.->|a commit's chunks| values
+  net -->|a commit's chunks| values
   sequent -->|crossing::commit| values
   values -->|crossing::deref| sequent
   chunker --> values
@@ -180,7 +180,7 @@ flowchart LR
 | `storage-artifact` | CAM | none | a kernel artifact as records | integrity, then validity |
 | `storage-store` | CAM | one host's directory; its roots never cross | chunks, nodes and named roots, a file each | integrity |
 | `runtime-emitter` | LAM | its thread | a run's regions | validity |
-| `runtime-net` | LAM | its process | a stream's frames | integrity |
+| `runtime-net` | LAM | its process | a stream's frames; served chunks | integrity |
 | `core-sequent` | LAM | its run | the `Store`, append-only | none |
 | `core-term::world` | world | `⊢_w`, `A at w` | — | validity |
 | `core-term::memory` | LAM | a hold's world | a held cell lent to a view | validity |

@@ -1,15 +1,20 @@
 //! The endpoint's thread: a single-threaded runtime that binds the iroh
 //! endpoint, then answers each request in the order it arrives, holding every
-//! stream the endpoint opened or accepted until it is closed.
+//! stream the endpoint opened or accepted until it is closed. Beside the
+//! requests, a task accepts every connection the endpoint is offered: a
+//! dialer's stream waits for the owner's `accept`, and a fetch is answered
+//! from the endpoint's chunks at once, whatever the owner is waiting on.
 
 use alloc::collections::BTreeMap;
 use core::net::SocketAddr;
 use core::time::Duration;
 use std::sync::mpsc;
 
+use gandr_storage_values::ValueManifest;
 use iroh::endpoint::ApplicationClose;
 use iroh::endpoint::Connection;
 use iroh::endpoint::ConnectionError;
+use iroh::endpoint::Incoming;
 use iroh::endpoint::ReadError;
 use iroh::endpoint::ReadExactError;
 use iroh::endpoint::RecvStream;
@@ -24,6 +29,10 @@ use super::Frame;
 use super::Lookup;
 use super::MAX_FRAME;
 use super::StreamId;
+use crate::chunks::CHUNKS_ALPN;
+use crate::chunks::Chunks;
+use crate::chunks::Fetched;
+use crate::chunks::Framed;
 use crate::peer::NodeId;
 
 /// The code a connection closes with once both ends closed their stream.
@@ -35,8 +44,20 @@ const REFUSED: u32 = 1;
 /// How long a dropped endpoint waits for its connections to close.
 const GRACE: Duration = Duration::from_secs(2);
 
+/// The most bytes a fetch's request holds: a frame's 16 MiB.
+const MAX_REQUEST: usize = 0x0100_0000_usize;
+
+/// The most bytes a fetch's answer holds: 256 MiB.
+const MAX_ANSWER: usize = 0x1000_0000_usize;
+
 /// Where the thread answers one request.
 pub(super) type Reply<Answered> = mpsc::SyncSender<Result<Answered, Fault>>;
+
+/// Where the accepting task hands a dialer's stream, with the key it proved.
+type Arriving = tokio::sync::mpsc::UnboundedSender<(NodeId, Held)>;
+
+/// Where the owner's `accept` takes the next dialer's stream.
+type Arrivals = tokio::sync::mpsc::UnboundedReceiver<(NodeId, Held)>;
 
 /// What the endpoint's owner asks of its thread.
 #[derive(Debug)]
@@ -52,6 +73,14 @@ pub(super) enum Request
     Recv(StreamId, Reply<Frame>),
     /// Close a stream.
     Close(StreamId, Reply<()>),
+    /// Fetch a value's chunks from a peer: the value, and the request naming
+    /// it and the values held.
+    Fetch(
+        NodeId,
+        iroh::EndpointAddr,
+        (ValueManifest, Framed),
+        Reply<Fetched>,
+    ),
     /// Close the endpoint and end the thread.
     Shutdown,
 }
@@ -68,14 +97,17 @@ struct Held
     recv: RecvStream,
 }
 
-/// The streams the endpoint holds, and the next name it mints.
-#[derive(Debug, Default)]
+/// The streams the endpoint holds, the next name it mints, and the dialers'
+/// streams not yet accepted.
+#[derive(Debug)]
 struct Streams
 {
     /// The next name.
     next: u64,
     /// Each held stream, by name.
     held: BTreeMap<StreamId, Held>,
+    /// The dialers' streams, in the order their first bytes arrived.
+    arrivals: Arrivals,
 }
 
 /// Run the endpoint `binding` describes on this thread: answer `ready` with
@@ -122,21 +154,37 @@ async fn serve(
         },
     };
     answer(ready, Ok(endpoint.bound_sockets()));
-    let mut streams = Streams::default();
+    let (arriving, arrivals) = tokio::sync::mpsc::unbounded_channel();
+    let accepting = tokio::spawn(admit(endpoint.clone(), arriving, binding.chunks.clone()));
+    let mut streams = Streams {
+        next: 0,
+        held: BTreeMap::new(),
+        arrivals,
+    };
     while let Some(request) = inbox.recv().await {
         match request {
             Request::Connect(peer, dialed, reply) => {
                 answer(&reply, streams.connect(&endpoint, peer, dialed).await);
             },
-            Request::Accept(reply) => answer(&reply, streams.accept(&endpoint).await),
+            Request::Accept(reply) => answer(&reply, streams.accept().await),
             Request::Send(stream, frame, reply) => {
                 answer(&reply, streams.send(stream, &frame).await);
             },
             Request::Recv(stream, reply) => answer(&reply, streams.recv(stream).await),
             Request::Close(stream, reply) => answer(&reply, streams.close(stream).await),
+            Request::Fetch(peer, dialed, (wanted, request), reply) => {
+                let fetched = fetch(
+                    &endpoint,
+                    &binding.chunks,
+                    (peer, dialed),
+                    (&wanted, &request),
+                );
+                answer(&reply, fetched.await);
+            },
             Request::Shutdown => break,
         }
     }
+    accepting.abort();
     tokio::time::timeout(GRACE, endpoint.close())
         .await
         .unwrap_or_default();
@@ -151,7 +199,7 @@ async fn bind(binding: &Binding) -> Result<iroh::Endpoint, Fault>
     let refused = |reason: String| Fault::Bind { reason };
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
         .secret_key(binding.secret.key())
-        .alpns(Vec::from([ALPN.to_vec()]))
+        .alpns(Vec::from([ALPN.to_vec(), CHUNKS_ALPN.to_vec()]))
         .relay_mode(iroh::RelayMode::Disabled);
     for &socket in &binding.sockets {
         builder = builder
@@ -179,6 +227,128 @@ fn answer<Answered>(
     match reply.send(answered) {
         Ok(()) | Err(mpsc::SendError(_)) => {},
     }
+}
+
+/// Accept every connection the endpoint is offered until it closes, each
+/// handshake on a task of its own.
+///
+/// # Specification
+/// trivial.
+async fn admit(
+    endpoint: iroh::Endpoint,
+    arriving: Arriving,
+    chunks: Chunks,
+)
+{
+    while let Some(incoming) = endpoint.accept().await {
+        tokio::spawn(handshake(incoming, arriving.clone(), chunks.clone()));
+    }
+}
+
+/// Finish the handshake `incoming` began: answer a fetch from `chunks`, or
+/// hand a dialer's stream to `arriving` once its first bytes arrive. A
+/// handshake that fails is dropped unanswered.
+///
+/// # Specification
+/// trivial.
+async fn handshake(
+    incoming: Incoming,
+    arriving: Arriving,
+    chunks: Chunks,
+)
+{
+    let Ok(connection) = incoming.await
+    else {
+        return;
+    };
+    if connection.alpn() == CHUNKS_ALPN {
+        serve_chunks(&connection, &chunks).await;
+        return;
+    }
+    let Ok((send, recv)) = connection.accept_bi().await
+    else {
+        return;
+    };
+    let peer = NodeId::from(connection.remote_id());
+    // An owner gone has dropped its arrivals; the stream goes with the
+    // endpoint.
+    match arriving.send((peer, Held {
+        connection,
+        send,
+        recv,
+    })) {
+        Ok(()) | Err(_) => {},
+    }
+}
+
+/// Answer the fetch `connection` carries from `chunks`: read the request to
+/// its end, write the answer and finish, then wait until the asker holds
+/// every byte. A request that does not read or is refused closes the
+/// connection refused, unanswered.
+///
+/// # Specification
+/// trivial.
+async fn serve_chunks(
+    connection: &Connection,
+    chunks: &Chunks,
+)
+{
+    let Ok((mut send, mut recv)) = connection.accept_bi().await
+    else {
+        return;
+    };
+    let answered = recv
+        .read_to_end(MAX_REQUEST)
+        .await
+        .ok()
+        .and_then(|request| chunks.answer(&Framed::from(request)).ok());
+    let Some(answered) = answered
+    else {
+        connection.close(VarInt::from_u32(REFUSED), b"refused");
+        return;
+    };
+    if send.write_all(answered.as_ref()).await.is_err() || send.finish().is_err() {
+        return;
+    }
+    // The asker closes the connection once it holds every byte.
+    match send.stopped().await {
+        Ok(Some(_) | None) | Err(_) => {},
+    }
+}
+
+/// Fetch `wanted` from `peer` at `dialed` into `chunks` with `request`, on a
+/// connection of its own closed before this returns.
+///
+/// # Specification
+/// trivial.
+async fn fetch(
+    endpoint: &iroh::Endpoint,
+    chunks: &Chunks,
+    (peer, dialed): (NodeId, iroh::EndpointAddr),
+    (wanted, request): (&ValueManifest, &Framed),
+) -> Result<Fetched, Fault>
+{
+    let failed = |reason: String| Fault::Fetch { peer, reason };
+    let connection = endpoint
+        .connect(dialed, CHUNKS_ALPN)
+        .await
+        .map_err(|unreached| failed(unreached.to_string()))?;
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|unopened| failed(unopened.to_string()))?;
+    send.write_all(request.as_ref())
+        .await
+        .map_err(|unwritten| failed(unwritten.to_string()))?;
+    send.finish()
+        .map_err(|unfinished| failed(unfinished.to_string()))?;
+    let answer = recv
+        .read_to_end(MAX_ANSWER)
+        .await
+        .map_err(|unread| failed(unread.to_string()));
+    connection.close(VarInt::from_u32(CLOSED), b"fetched");
+    let answer = answer?;
+    chunks.admit(peer, wanted, &Framed::from(answer))
 }
 
 /// Whether a connection was lost to the peer closing after its own close,
@@ -254,33 +424,15 @@ impl Streams
         })
     }
 
-    /// Wait for a dialer's stream, skipping any handshake that fails.
+    /// Take the next dialer's stream, waiting for one.
     ///
     /// # Specification
     /// trivial.
-    async fn accept(
-        &mut self,
-        endpoint: &iroh::Endpoint,
-    ) -> Result<(NodeId, StreamId), Fault>
+    async fn accept(&mut self) -> Result<(NodeId, StreamId), Fault>
     {
-        loop {
-            let incoming = endpoint.accept().await.ok_or(Fault::Accept)?;
-            let Ok(connection) = incoming.await
-            else {
-                continue;
-            };
-            let Ok((send, recv)) = connection.accept_bi().await
-            else {
-                continue;
-            };
-            let peer = NodeId::from(connection.remote_id());
-            let stream = self.hold(Held {
-                connection,
-                send,
-                recv,
-            })?;
-            return Ok((peer, stream));
-        }
+        let (peer, held) = self.arrivals.recv().await.ok_or(Fault::Accept)?;
+        let stream = self.hold(held)?;
+        Ok((peer, stream))
     }
 
     /// Send `frame` on `stream`, its length first.

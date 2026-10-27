@@ -53,8 +53,14 @@ use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::crossing::CrossingRefusal;
 use gandr_runtime_emitter::evaluate_on_with_host;
 use gandr_runtime_emitter::evaluate_with_host;
+use gandr_storage_chunker::Kappa;
+use gandr_storage_chunker::TokenCap;
+use gandr_storage_chunker::TypedChunkerParams;
+use gandr_storage_values::ChunkCount;
+use gandr_storage_values::InMemoryChunkStore;
 
 /// The decimal digits of a test literal.
 #[repr(transparent)]
@@ -83,6 +89,18 @@ fn tiers() -> &'static [Tier]
     else {
         &[Tier::Executor]
     }
+}
+
+/// The chunker's constants a crossing host commits and reads under.
+///
+/// # Specification
+/// trivial.
+fn params() -> TypedChunkerParams
+{
+    TypedChunkerParams::new(
+        Kappa::try_from(4_u64).expect("nonzero kappa"),
+        TokenCap::try_from(64_u64).expect("nonzero cap"),
+    )
 }
 
 /// The non-negative integer literal `digits` in `core`.
@@ -174,6 +192,9 @@ enum Answer
     Copy,
     /// Leave the operation unhandled.
     Decline,
+    /// Resume with the payload committed by content and read back at fresh
+    /// addresses; a payload that does not cross is declined.
+    Crossed,
     /// Resume with a value the host builds itself.
     Built(Built),
 }
@@ -283,6 +304,27 @@ impl HostHandler for ScriptedHost<'_>
                 HostReply::Resume(values.allocate(copy).expect("the reply fits"))
             },
             Answer::Decline => HostReply::Decline,
+            Answer::Crossed => {
+                let mut chunks = InMemoryChunkStore::new();
+                match values.commit(request.payload, params(), &mut chunks) {
+                    Ok(manifest) => {
+                        let reply = values
+                            .deref(&manifest, params(), &chunks)
+                            .expect("a committed value derefs");
+                        assert_ne!(request.payload, reply, "the reply is a fresh copy");
+                        HostReply::Resume(reply)
+                    },
+                    Err(CrossingRefusal::Uncrossable { .. }) => {
+                        assert_eq!(
+                            ChunkCount::from(0_usize),
+                            chunks.chunk_count(),
+                            "a refused value writes nothing"
+                        );
+                        HostReply::Decline
+                    },
+                    Err(refused) => panic!("neither crossed nor refused by name: {refused:?}"),
+                }
+            },
             Answer::Built(built) => {
                 let value = match built {
                     Built::Text => {
@@ -651,6 +693,55 @@ fn a_host_reads_first_order_payloads_back_identically()
                 answer: Answer::Unit,
             }],
             Expected::Value(unit),
+        );
+    }
+}
+
+/// A host moves a payload across by content and resumes with what it reads
+/// back at fresh addresses: a pair and a list come back equal. A thunk does
+/// not cross: the host's commit is refused by name, writes nothing, and the
+/// host declines.
+#[test]
+fn a_host_crosses_a_payload_by_content_and_resumes_with_its_copy()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Digits("1"));
+    let two = integer(&mut core, Digits("2"));
+    let three = integer(&mut core, Digits("3"));
+    let pair = core.value_tuple(&[one, two]);
+    let nil = core.value_list_nil();
+    let tail = core.value_list_cons(three, nil);
+    let tail = core.value_list_cons(two, tail);
+    let list = core.value_list_cons(one, tail);
+    let body = core.computation_return(three);
+    let thunk = core.value_thunk(body);
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let pair_type = core.value_type_product(&[integer_type, integer_type]);
+    let list_type = core.value_type_list(integer_type);
+    let returner = core.comp_type_returner(integer_type);
+    let thunk_type = core.value_type_thunk(returner);
+    for (payload, payload_type, expected) in [
+        (pair, pair_type, Expected::Value(pair)),
+        (list, list_type, Expected::Value(list)),
+        (thunk, thunk_type, Expected::Perform("Cross", "cross")),
+    ] {
+        let signature = EffectSig::new("Cross".into(), [EffectOp {
+            name: "cross".into(),
+            payload: payload_type,
+            reply: payload_type,
+        }])
+        .expect("one operation");
+        let program = core.computation_perform(signature, "cross".into(), payload);
+        assert_host(
+            &mut core,
+            program,
+            &[Offer {
+                signature: "Cross",
+                operation: "cross",
+                payload,
+                answer: Answer::Crossed,
+            }],
+            expected,
         );
     }
 }

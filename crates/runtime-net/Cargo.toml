@@ -19,13 +19,25 @@ name = "tests"
 path = "tests/lib.rs"
 
 # iroh dials and accepts; the mDNS lookup finds peers on the local network
-# when a binding asks for it; tokio runs the endpoint's thread. The pinned
-# anodized facade supplies the specification attribute.
+# when a binding asks for it; tokio runs the endpoint's thread. The value
+# plane holds the chunks an endpoint serves and fetches, and verifies each
+# on receipt. The pinned anodized facade supplies the specification
+# attribute.
 [dependencies]
 anodized.workspace = true
+gandr-storage-values.workspace = true
 iroh.workspace = true
 iroh-mdns-address-lookup.workspace = true
 tokio.workspace = true
+
+# The chunk wire's witnesses commit a run's values through the emitter's
+# crossing: the sequent crate's store holds them, the kernel's term crate
+# spells their literals, and the chunker's constants cut them.
+[dev-dependencies]
+gandr-core-sequent.workspace = true
+gandr-kernel-term.workspace = true
+gandr-runtime-emitter.workspace = true
+gandr-storage-chunker.workspace = true
 
 [lints]
 workspace = true
