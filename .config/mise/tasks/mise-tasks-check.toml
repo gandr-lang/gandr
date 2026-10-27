@@ -1484,7 +1484,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # the merged pull requests of a period with their units, and the report
 # `report:obligations` writes (`obligations.jq`, #2886); each in
 # `.config/claims/terms.json` a unit's title and body, term map rows, and the
-# findings `unit:check` prints for its vocabulary (`terms.jq`, #3158). The
+# findings `unit:check` prints for its vocabulary (`terms.jq`, #3158); each in
+# `.config/claims/absorbing.json` a body, its issues and the vault's
+# absorption statuses, and the line `pr:open` and `pr:land` refuse a design
+# page left unanswered in its `## Vault` with (`absorbing.jq`, #3161). The
 # term map itself, `.config/references/terms.toml`, is read whole: every row
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
@@ -1514,6 +1517,7 @@ cases report report.jq report.json
 cases filing filing.jq filing.json --mode c
 cases obligations obligations.jq obligations.json
 cases terms terms.jq terms.json
+cases absorbing absorbing.jq absorbing.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT

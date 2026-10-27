@@ -35,3 +35,13 @@ vault_pages() {
       | map({key: .[0].name, value: map(.mint)})
       | from_entries'
 }
+
+# The vault's programme and plan pages' absorption statuses by filename
+# (#3161), as the vault's `report:absorption` writes them beside the
+# references file: `{"<filename>": [{path, status}]}`. Prints `null` where
+# the file has not been written, as in CI, so the pairing check
+# (`absorbing.jq`) reads nothing to pair.
+vault_absorption() {
+  local file=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/absorption.json
+  if [[ -f $file ]]; then jq -c . "$file"; else echo null; fi
+}

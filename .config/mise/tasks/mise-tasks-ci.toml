@@ -2637,6 +2637,11 @@ findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$i
 signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
   | jq -r -L "$claims" --argjson concerns "$(jq -c .ids <<< "$concerns")" -f "$claims/signed.jq")
 if [[ -n $signed ]]; then findings=${findings:+$findings$'\n'}$signed; fi
+# A design page an issue builds on is absorbed in the same pair, or the body
+# says why it stays design (#3161, `absorbing.jq`).
+absorbing=$(jq -n --rawfile body "$body" --argjson issues "$issues" --argjson absorption "$(vault_absorption)" \
+  '{body: $body, issues: $issues, absorption: $absorption}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
+if [[ -n $absorbing ]]; then findings=${findings:+$findings$'\n'}$absorbing; fi
 rm -rf "$vaultdir"
 if [[ -n "$findings" ]]; then
   echo "$findings" >&2
@@ -2917,6 +2922,16 @@ gh pr view "$number" -R "$repo" --json body --jq .body > "$ledger_body"
 status=0
 ledger=$(mise run --quiet ledger:patched "$ledger_body" "$(git merge-base "origin/$ledger_base" "origin/$ledger_head")" \
   --head "origin/$ledger_head" --pr "$number" 2> /dev/null) || status=$?
+# Nor does it land while a design page its issues build on is still owed in
+# its `## Vault` (#3161, `absorbing.jq`): the page's status may have moved
+# since `pr:open` read it.
+source "$(git rev-parse --show-toplevel)/.config/references/vault.bash"
+claims=$(git rev-parse --show-toplevel)/.config/claims
+land_issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$ledger_body" \
+  | while IFS= read -r issue; do gh api "repos/$repo/issues/$issue" --jq '{number, body: (.body // "")}'; done \
+  | jq -s .)
+absorbing=$(jq -n --rawfile body "$ledger_body" --argjson issues "$land_issues" --argjson absorption "$(vault_absorption)" \
+  '{body: $body, issues: $issues, absorption: $absorption}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
 rm -f "$ledger_body"
 if (( status != 0 )); then
   printf 'PR #%s:\n%s\n' "$number" "${ledger:-ledger:patched failed to read the ledger}" | sed '2,$s/^/  /' >&2
@@ -2929,6 +2944,10 @@ reserved=$(mise run --quiet ledger:reserved "$(git merge-base "origin/$ledger_ba
   --head "origin/$ledger_head" 2> /dev/null) || status=$?
 if (( status != 0 )); then
   printf 'PR #%s:\n%s\n' "$number" "${reserved:-ledger:reserved failed to read the ledger}" | sed '2,$s/^/  /' >&2
+  exit 2
+fi
+if [[ -n $absorbing ]]; then
+  printf 'PR #%s:\n%s\n' "$number" "$absorbing" | sed '2,$s/^/  /' >&2
   exit 2
 fi
 
