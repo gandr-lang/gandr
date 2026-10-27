@@ -2573,6 +2573,7 @@ INSERT INTO purpose VALUES('surface-lowering','origin::OriginToken','struct','Ho
 INSERT INTO purpose VALUES('surface-lowering','origin::PatternReading','enum','Names a pattern''s reading, so the reading''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::PatternSpan','struct','Holds a pattern''s span, so the span''s bytes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::Provenance','enum','Names a node''s provenance, so the provenance''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','origin::ScopeAnswer','enum','Names what answers a capability scope as the source writes it, so a scope a model answers is spelled `with N` or with no `with`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::SplitComponent','struct','Holds a split''s component, so the component''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::WrittenModel','struct','Holds a model type as the source writes it, so the theory and the sorts a `with sort` fixes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::origin::Absent','enum','Names why the origin table answers no origin, so the absence''s kind is read.',NULL,'fits','sound',NULL);
@@ -2878,6 +2879,7 @@ INSERT INTO purpose VALUES('surface-pretty','core_source::Forgetting','struct','
 INSERT INTO purpose VALUES('surface-pretty','core_source::Modelled','struct','Holds a modelled component, so the component''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::Restoration','struct','Holds the nodes an elaboration rebuilt, so an elaborated body is read as the body the checker read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','error::PresentationError','enum','Names why a node could not be laid out, so the layout engine''s refusal is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','former::Answered','enum','Names the model answering a capability scope as written, so the scope is spelled `with N` or with no `with` in place of its derived clauses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Arity','struct','Names the arity a former''s spelling takes, so the former''s arity is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Authority','trait','Names the authority an effect row carries, so a capability''s operations are spelled.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Component','struct','Holds a former''s component, so the component''s type is read.',NULL,'fits','sound',NULL);

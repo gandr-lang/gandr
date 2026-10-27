@@ -38,6 +38,7 @@ use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::ScopeAnswer;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::WrittenModel;
 use gandr_surface_lowering::lower_unit;
@@ -45,6 +46,7 @@ use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
+use gandr_surface_pretty::Answered;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Elided;
@@ -922,8 +924,9 @@ fn read(
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming();
-    // Each model type, and each capability scope over a theory, as the source
-    // writes it, which the record or the signature it lowers to does not hold.
+    // Each model type, and each capability scope over a theory and the model
+    // answering it, as the source writes it, which the record or the signature
+    // it lowers to does not hold.
     let mut models: Vec<(ValueTypeId, Modelled<'_>)> = module
         .origins()
         .models()
@@ -938,6 +941,18 @@ fn read(
         .map(|&(scope, ref model)| (scope, modelled(model)))
         .collect();
     scopes.sort_by_key(|&(scope, _)| scope);
+    let mut answers: Vec<(ComputationId, Answered<'_>)> = module
+        .origins()
+        .scope_answers()
+        .iter()
+        .map(|&(scope, ref answer)| {
+            (scope, match *answer {
+                ScopeAnswer::Named(ref model) => Answered::Named(Name::from(model.as_ref())),
+                ScopeAnswer::InScope => Answered::InScope,
+            })
+        })
+        .collect();
+    answers.sort_by_key(|&(scope, _)| scope);
     // Each forgetting map onto its own theory, whose written call the explicit
     // form writes as the map's form, as the formatter keeps it.
     let mut maps: Vec<(ConstantIndex, ForgetMap<'_>)> = module
@@ -965,6 +980,7 @@ fn read(
         .forgetting_maps(&maps)
         .modeling(&models)
         .scoping(&scopes)
+        .answering(&answers)
         .naming_implicits(&implicits)
         .flattening(&slots);
     // A body leaves each written reduct's or forgetting map's call to the

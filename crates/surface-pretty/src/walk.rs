@@ -226,6 +226,7 @@ use crate::compose::Compose;
 use crate::compose::Doc;
 use crate::compose::Glyphs;
 use crate::error::PresentationError;
+use crate::former::Answered;
 use crate::former::Authority;
 use crate::former::Component;
 use crate::former::Elided;
@@ -1055,7 +1056,9 @@ where
 ///   their parameters state the type of, and a constructor's classifier is a
 ///   child only where bodies are spelled and its position states no type; a
 ///   model type's children are the carriers of the sorts it fixes, each a type,
-///   none for a bare one; every leaf former has none.
+///   none for a bare one; a scope a model answers has its subject and its
+///   manifest's carriers alone, no return or operation clause; every leaf
+///   former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -1503,15 +1506,20 @@ where
             clauses: count,
         } => clauses(ends(subject, Binds::NONE), on_return, count),
         // A manifest's carriers are written before the subject but stand
-        // after the clauses, so the subject stays the first child.
+        // after the clauses, so the subject stays the first child. A scope a
+        // model answers writes no clauses: the lowering derives them.
         Former::Scope {
             subject,
             on_return,
             clauses: count,
             sorts,
+            answered,
             ..
         } => {
-            let mut slots = clauses(ends(subject, Binds::ONE), on_return, count);
+            let mut slots = match answered {
+                Some(_) => Vec::from([ends(subject, Binds::ONE)]),
+                None => clauses(ends(subject, Binds::ONE), on_return, count),
+            };
             slots.extend(sorts.iter().map(|&(_, carrier)| value_type(carrier)));
             slots
         },
@@ -9247,20 +9255,21 @@ impl Walk<'_, '_>
     ///   `?` for a constructor the source cannot name; `handle { c } with {
     ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`,
     ///   over a theory `handle c : T with sort C = A …` with the sorts its
-    ///   manifest fixes, in the order written, its pieces the scope's last;
-    ///   `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`, `offer(e) { l => c
-    ///   }`, `close(e)` and `fork (a : S) { t } as a ; u`, each endpoint named
-    ///   by its binder; a resumption of a continuation binder with a returned
-    ///   value as the continuation's call, `k(v)`; a return ascribed its
-    ///   returner as the annotated value `(v : T)`, under a `pure` unless a
-    ///   body ends there, its two pieces the value and the type the visit
-    ///   shaped; a value ascription as `(v : T)`, a truth value ascribed `Bool`
-    ///   as its word, `(true : Bool)`, its one piece the type. The forms the
-    ///   grammar does not write — native transport, a fixpoint `rec f { c }`, a
-    ///   fold, any other resumption `resume(k, c)`, `reset { c }`, `shift k { c
-    ///   }`, a lazy product `&{c, …}` and its observation `c.0`, and a
-    ///   positional projection off anything but a name, `(v.1).0` — make the
-    ///   presentation approximate.
+    ///   manifest fixes, in the order written, its pieces the scope's last, and
+    ///   a scope a model answers `{ c } with N`, or `{ c }` for the one in
+    ///   scope, in place of its clauses; `c.op(v)`; `send(e, v)`, `recv(e)`,
+    ///   `select(e, l)`, `offer(e) { l => c }`, `close(e)` and `fork (a : S) {
+    ///   t } as a ; u`, each endpoint named by its binder; a resumption of a
+    ///   continuation binder with a returned value as the continuation's call,
+    ///   `k(v)`; a return ascribed its returner as the annotated value `(v :
+    ///   T)`, under a `pure` unless a body ends there, its two pieces the value
+    ///   and the type the visit shaped; a value ascription as `(v : T)`, a
+    ///   truth value ascribed `Bool` as its word, `(true : Bool)`, its one
+    ///   piece the type. The forms the grammar does not write — native
+    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
+    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
+    ///   …}` and its observation `c.0`, and a positional projection off
+    ///   anything but a name, `(v.1).0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -9836,6 +9845,7 @@ impl Walk<'_, '_>
                 interface,
                 clauses: count,
                 sorts,
+                answered,
                 ..
             } => {
                 let interface = self.spelled(Some(interface), Unspelled::Missing);
@@ -9854,7 +9864,14 @@ impl Walk<'_, '_>
                     );
                 }
                 let _ = parts.text(" {").body();
-                clauses(self, &mut parts, count);
+                match answered {
+                    Some(Answered::Named(model)) => {
+                        let model = self.spelled(Some(model), Unspelled::Missing);
+                        let _ = parts.text(" with ").text(model);
+                    },
+                    Some(Answered::InScope) => {},
+                    None => clauses(self, &mut parts, count),
+                }
                 writes(Production("handle_expression"), Binding::Prefix)
             },
             Former::Exercise { operation, .. } => {

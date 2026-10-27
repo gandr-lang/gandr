@@ -65,6 +65,7 @@ use gandr_kernel_term::Sign;
 use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
+use gandr_surface_pretty::Answered;
 use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Component;
 use gandr_surface_pretty::Constructors;
@@ -6226,6 +6227,82 @@ fn a_scope_over_a_theory_spells_its_manifest_2382()
             ),
             "the manifest in the order written, {form:?}"
         );
+    }
+}
+
+/// A capability scope a model answers writes it as the source does, `with N`
+/// or no `with`, in place of the clauses the lowering derives from the model;
+/// a scope with no answer recorded writes its clauses (#3196).
+#[test]
+fn a_scope_a_model_answers_spells_the_model_3196()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let signature = EffectSig::new(EffectName::from("Labelled"), [EffectOp {
+        name: "label".into(),
+        payload: integer,
+        reply: integer,
+    }])
+    .expect("one operation is a signature");
+    let capability = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let subject = core.computation_return(capability);
+    let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = core.computation_return(answer);
+    let payload = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let body = core.computation_return(payload);
+    let scoped = core.computation_scope(
+        signature,
+        subject,
+        on_return,
+        Arc::from([EffectClause {
+            operation: "label".into(),
+            body,
+        }]),
+    );
+    let scopes = [(scoped, Modelled {
+        theory: Name::from("Labelled"),
+        sorts: vec![(Name::from("K"), CoreNode::ValueType(integer))],
+    })];
+    for (answered, expected) in [
+        (
+            Some(Answered::Named(Name::from("Tagger"))),
+            "handle a : Labelled with sort K = Integer { a } with Tagger",
+        ),
+        (
+            Some(Answered::InScope),
+            "handle a : Labelled with sort K = Integer { a }",
+        ),
+        (
+            None,
+            "handle a : Labelled with sort K = Integer { a } with { pure(a) => a, oper label(a, \
+             b) => a }",
+        ),
+    ] {
+        let answers: Vec<_> = answered
+            .into_iter()
+            .map(|answered| (scoped, answered))
+            .collect();
+        let source = CoreSource::new(&core, &[])
+            .scoping(&scopes)
+            .answering(&answers);
+        for form in [Form::Sugared, Form::Explicit] {
+            let presented = presented_in(
+                &source,
+                Root::Computation(CoreNode::Computation(scoped)),
+                wide(),
+                form,
+            );
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{answered:?}, {form:?}"
+            );
+        }
     }
 }
 

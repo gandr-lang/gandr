@@ -49,6 +49,7 @@ use crate::origin::ClauseBinder;
 use crate::origin::ClausePlace;
 use crate::origin::Labelled;
 use crate::origin::Omitted;
+use crate::origin::ScopeAnswer;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
 
@@ -1885,6 +1886,43 @@ fn a_scope_names_a_model_of_its_theory_2272()
         ),
         "{:?}",
         outcome_of(&module, "hosted".into())
+    );
+}
+
+/// A scope a model answers records, at the scope, the answer as written: the
+/// module it names, `with Passing`, or the one model in scope, for a scope
+/// writing no `with`. A scope writing its clauses records none, so a printer
+/// spells it by its clauses and the others as written, not by the clauses the
+/// lowering derives from the model (#3196).
+#[test]
+fn a_scope_records_the_model_answering_it_3196()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}{put_put}{passing}",
+            "def named() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fn (s) {{ pure s }} }} with Passing }}\n",
+            "def inScope() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fn (s) {{ pure s }} }} }}\n",
+            "def written() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
+        ),
+        state = STATE,
+        put_put = PUT_PUT,
+        passing = PASSING,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let named = tail_of(&module, &arena, "named".into());
+    let in_scope = tail_of(&module, &arena, "inScope".into());
+    let written = tail_of(&module, &arena, "written".into());
+    let mut answers: Vec<(ComputationId, ScopeAnswer)> = module.origins().scope_answers().to_vec();
+    answers.sort_by_key(|&(scope, _)| scope);
+    let mut expected = [
+        (named, ScopeAnswer::Named("Passing".into())),
+        (in_scope, ScopeAnswer::InScope),
+    ];
+    expected.sort_by_key(|&(scope, _)| scope);
+    assert_eq!(
+        answers, expected,
+        "the named and the in-scope answers, none for the written scope at {written:?}"
     );
 }
 
