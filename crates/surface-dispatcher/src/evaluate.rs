@@ -915,7 +915,7 @@ impl<'source> Program<'source>
             let reaching = reaching(&declarations, &hidden);
             let printed: Vec<Name<'_>> =
                 names.iter().map(|name| Name::from(name.as_str())).collect();
-            let constructors = families.naming(&printed);
+            let constructors = families.naming();
             let source = CoreSource::new(core, &printed).naming(&constructors);
             // A leading declaration's references, and the members it can
             // reach, are the leading module's, so its type was spelled
@@ -2316,7 +2316,7 @@ impl<'source> Program<'source>
             .iter()
             .map(|name| Name::from(name.as_str()))
             .collect();
-        let constructors = self.families.naming(&names);
+        let constructors = self.families.naming();
         let source = CoreSource::new(core, &names).naming(&constructors);
         present_computation_line(&source, CoreNode::Computation(read), Style {
             form: Form::Sugared,

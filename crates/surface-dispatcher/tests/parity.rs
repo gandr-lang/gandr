@@ -921,7 +921,7 @@ fn read(
     let owned = constant_names(&module);
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
-    let constructors = families.naming(&names);
+    let constructors = families.naming();
     // Each model type, and each capability scope over a theory, as the source
     // writes it, which the record or the signature it lowers to does not hold.
     let mut models: Vec<(ValueTypeId, Modelled<'_>)> = module

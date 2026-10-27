@@ -355,7 +355,7 @@ fn forgets(
     let owned = constant_names(module);
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(module);
-    let constructors = families.naming(&names);
+    let constructors = families.naming();
     let style = Style {
         form: Form::Explicit,
         spelling: gandr_surface_pretty::Spelling::Ascii,

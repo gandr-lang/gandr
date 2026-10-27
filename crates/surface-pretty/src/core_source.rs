@@ -146,14 +146,31 @@ impl Restoration
 /// The restoration that restores nothing.
 const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 
+/// The key a [`Constructors`] table holds a family under.
+///
+/// A source that reads a data type's declaration keys its family by that
+/// declaration, so two families of one name stay apart. A source that knows a
+/// family by its name alone, as a content source does, keys it by the name.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FamilyKey<'text>
+{
+    /// The family the declaration at this admission position declares.
+    Declared(ConstantIndex),
+    /// The family a source knows by this name alone.
+    Named(Name<'text>),
+}
+
 /// The constructor names of the data families a presentation meets, and the
 /// family each data case eliminates.
 ///
 /// The core names a constructor by its family and its tag, and a data case
 /// matches by tag alone, so neither holds a constructor's name. A source
-/// reads them here: a family's constructors by the family's name, in tag
+/// reads them here: a family's constructors by its [`FamilyKey`], in tag
 /// order with each one's field count, and a data case's family by the case.
-/// Two families of one name keep the first one recorded. A family of words
+/// Two families under one key keep the first one recorded. A family of words
 /// is recorded consed: each of its one-field constructors is a letter, written
 /// before the rest of the word, and its nullary constructor, the empty word,
 /// is written as a value at its point, `here(a)`, and as a pattern bare. A
@@ -162,8 +179,8 @@ const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 /// written under the loop's name.
 ///
 /// # Specification
-/// - requires: the families are named as the source names a family and the
-///   cases are computations of the source's arena.
+/// - requires: the families are keyed as the source keys a family and the cases
+///   are computations of the source's arena.
 /// - ensures: a recorded family answers its constructors by tag, and its loops
 ///   past them; a recorded case answers its family; everything else answers
 ///   nothing.
@@ -181,21 +198,21 @@ const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 pub struct Constructors<'text>
 {
     /// Each family's constructors in tag order, with their field counts.
-    families: BTreeMap<Name<'text>, Vec<(Name<'text>, Arity)>>,
+    families: BTreeMap<FamilyKey<'text>, Vec<(Name<'text>, Arity)>>,
     /// The families whose one-field constructors are letters of a word, each
     /// with its empty word as a value is written.
-    consed: BTreeMap<Name<'text>, Name<'text>>,
+    consed: BTreeMap<FamilyKey<'text>, Name<'text>>,
     /// The family each data case eliminates.
-    cases: BTreeMap<ComputationId, Name<'text>>,
+    cases: BTreeMap<ComputationId, FamilyKey<'text>>,
     /// Each family's loops, in the order a data case's branches take them
     /// after the constructors'.
-    loops: BTreeMap<Name<'text>, Vec<Name<'text>>>,
+    loops: BTreeMap<FamilyKey<'text>, Vec<Name<'text>>>,
 }
 
 impl<'text> Constructors<'text>
 {
     /// The family `family`'s constructors, in tag order with their field
-    /// counts, recorded unless a family of that name already is.
+    /// counts, recorded unless a family under that key already is.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -211,7 +228,7 @@ impl<'text> Constructors<'text>
     #[inline]
     pub fn family<I>(
         &mut self,
-        family: Name<'text>,
+        family: FamilyKey<'text>,
         constructors: I,
     ) where
         I: IntoIterator<Item = (Name<'text>, Arity)>,
@@ -243,7 +260,7 @@ impl<'text> Constructors<'text>
     #[inline]
     pub fn words<I>(
         &mut self,
-        family: Name<'text>,
+        family: FamilyKey<'text>,
         constructors: I,
         empty: Name<'text>,
     ) where
@@ -270,7 +287,7 @@ impl<'text> Constructors<'text>
     pub fn case(
         &mut self,
         case: ComputationId,
-        family: Name<'text>,
+        family: FamilyKey<'text>,
     )
     {
         let _first = self.cases.entry(case).or_insert(family);
@@ -294,7 +311,7 @@ impl<'text> Constructors<'text>
     #[inline]
     pub fn loops<I>(
         &mut self,
-        family: Name<'text>,
+        family: FamilyKey<'text>,
         loops: I,
     ) where
         I: IntoIterator<Item = Name<'text>>,
@@ -314,12 +331,12 @@ impl<'text> Constructors<'text>
     #[must_use]
     pub fn constructor(
         &self,
-        family: Name<'_>,
+        family: FamilyKey<'text>,
         tag: Component,
     ) -> Option<(Name<'text>, Arity)>
     {
         let (name, arity) = self.pattern(family, tag)?;
-        match self.consed.get(family.as_ref()) {
+        match self.consed.get(&family) {
             Some(&empty) if usize::from(arity) == 0_usize => Some((empty, arity)),
             Some(_) | None => Some((name, arity)),
         }
@@ -334,14 +351,11 @@ impl<'text> Constructors<'text>
     #[must_use]
     pub fn pattern(
         &self,
-        family: Name<'_>,
+        family: FamilyKey<'text>,
         tag: Component,
     ) -> Option<(Name<'text>, Arity)>
     {
-        self.families
-            .get(family.as_ref())?
-            .get(usize::from(tag))
-            .copied()
+        self.families.get(&family)?.get(usize::from(tag)).copied()
     }
 
     /// The pattern a data case over `family` writes its branch at `index`
@@ -354,16 +368,16 @@ impl<'text> Constructors<'text>
     #[must_use]
     pub fn arm(
         &self,
-        family: Name<'_>,
+        family: FamilyKey<'text>,
         index: Component,
     ) -> Option<(Name<'text>, Arity)>
     {
-        let constructors = self.families.get(family.as_ref())?;
+        let constructors = self.families.get(&family)?;
         if let Some(&constructor) = constructors.get(usize::from(index)) {
             return Some(constructor);
         }
         let looped = usize::from(index).checked_sub(constructors.len())?;
-        let &name = self.loops.get(family.as_ref())?.get(looped)?;
+        let &name = self.loops.get(&family)?.get(looped)?;
         Some((name, Arity::from(0_usize)))
     }
 
@@ -377,11 +391,11 @@ impl<'text> Constructors<'text>
     #[must_use]
     pub fn placement(
         &self,
-        family: Name<'_>,
+        family: FamilyKey<'text>,
         arity: Arity,
     ) -> crate::Placement
     {
-        if usize::from(arity) == 1 && self.consed.contains_key(family.as_ref()) {
+        if usize::from(arity) == 1 && self.consed.contains_key(&family) {
             crate::Placement::Consed
         }
         else {
@@ -937,28 +951,40 @@ impl<'arena> CoreSource<'arena>
         }
     }
 
-    /// The name the family `datatype` names, a data type of the arena.
+    /// The key the family `datatype` names is held under, a data type of the
+    /// arena.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a data type's declaration name, read through any stage over
-    ///   it; nothing for every other former, a prefix type and a run type among
-    ///   them, and for a node the arena does not hold.
+    /// - ensures: a data type's declaration, read through any stage over it,
+    ///   where the constructor table holds a family under it, and otherwise its
+    ///   declaration name; nothing for every other former, a prefix type and a
+    ///   run type among them, and for a node the arena does not hold.
     /// - provides: the family a constructor is looked up in.
     /// - panics: none.
     /// - executable: none — a clause would restate the match arm by arm.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a constructor spells by the name its family's
-    ///   declaration gives it, which no unnamed or misnamed family finds.
+    /// - hypothesis: L3 — a constructor spells by its own family's declaration,
+    ///   which no unnamed or misnamed family finds, and no other family of the
+    ///   same name shadows.
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    /// - witness: `tests::goldens::a_family_spells_by_its_declaration_past_a_namesake_3125`
     fn family(
         &self,
         datatype: ValueTypeId,
-    ) -> Option<Name<'arena>>
+    ) -> Option<FamilyKey<'arena>>
     {
         match *self.arena.value_type(self.unstaged(datatype))? {
-            ValueType::Data { declaration, .. } => self.name(declaration),
+            ValueType::Data { declaration, .. } => {
+                let declared = FamilyKey::Declared(declaration);
+                if self.constructors.families.contains_key(&declared) {
+                    Some(declared)
+                }
+                else {
+                    self.name(declaration).map(FamilyKey::Named)
+                }
+            },
             ValueType::Record(_)
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }

@@ -3739,7 +3739,7 @@ impl TypeTable
             })
             .collect();
         models.sort_by_key(|&(modelled, _)| modelled);
-        let constructors = self.families.naming(&names);
+        let constructors = self.families.naming();
         // A call supplies its callee's implicits by name, `f[x = a](b)`, and a
         // model implicit by the path its components read under, `f[s = M]`:
         // the core applies every argument in place.
@@ -4822,7 +4822,7 @@ impl TypeTable
             .collect();
         // The cases are this lowering's own: the table's are another arena's.
         let families = Families::of(&module);
-        let constructors = families.naming(&names);
+        let constructors = families.naming();
         let printer = CoreSource::new(&arena, &names).naming(&constructors);
         present_computation_line(
             &printer,

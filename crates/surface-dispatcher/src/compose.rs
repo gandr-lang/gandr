@@ -6330,7 +6330,7 @@ def delivered() -> -F Unit {
             .map(|name| Name::from(name.as_str()))
             .collect();
         let families = gandr_surface_diagnostics::Families::of(&module);
-        let constructors = families.naming(&names);
+        let constructors = families.naming();
         let restoration = verdicts
             .nested_elaborations()
             .get(&constant("dbl"))
