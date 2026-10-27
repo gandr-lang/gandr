@@ -24,4 +24,6 @@ pub module Package : Model(Gandr.Package) {
   def features = "";
   /// The systems `std` is built on: any.
   def systems = "";
+  /// The spelling `std` asks for: the reader's own.
+  def spelling = "";
 }

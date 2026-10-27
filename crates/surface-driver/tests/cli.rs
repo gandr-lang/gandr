@@ -1228,7 +1228,8 @@ macro_rules! fields {
     () => {
         "  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation = \
          \"https://d.example\";\n  def endpoint = \"https://e.example\";\n  def gandr = \">= \
-         0.0\";\n  def features = \"project-manifest\";\n  def systems = \"\";\n"
+         0.0\";\n  def features = \"project-manifest\";\n  def systems = \"\";\n  def spelling = \
+         \"\";\n"
     };
 }
 

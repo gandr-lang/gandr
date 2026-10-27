@@ -37,6 +37,9 @@ pub module Package : Model(Gandr.Package) {
   def features = "project-manifest, package-lock, package-signature";
   /// The systems the package builds on, the workspace's.
   def systems = Workspace.systems;
+  /// The spelling the package asks an editor to show its sources in, over
+  /// the user's own: ASCII.
+  def spelling = "ascii";
 }
 
 /// The packages this one depends on: `hello`, found at its sibling's root.

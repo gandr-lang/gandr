@@ -1560,8 +1560,9 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
                   name : String = \"probe\";\n  def version : String = \"0.1.0\";\n  def authors \
                   : String = \"Ada\";\n  def licence : String = \"MIT\";\n  def documentation : \
                   String = \"d\";\n  def endpoint : String = \"e\";\n  def gandr : String = \
-                  \"\";\n  def features : String = \"\";\n  def systems : String = \"\";\n}\nmodule \
-                  Partial : Model(Gandr.Package) {\n  def name : String = \"partial\";\n}\n";
+                  \"\";\n  def features : String = \"\";\n  def systems : String = \"\";\n  def \
+                  spelling : String = \"\";\n}\nmodule Partial : Model(Gandr.Package) {\n  def \
+                  name : String = \"partial\";\n}\n";
     let (text, unit) = laid(&[
         (
             SourceText::from(include_str!("../../../library/std/src/package.gandr")),
@@ -1581,6 +1582,7 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
             "gandr",
             "features",
             "systems",
+            "spelling",
             "authors",
             "licence",
             "documentation",

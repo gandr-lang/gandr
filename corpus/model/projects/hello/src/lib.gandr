@@ -29,6 +29,8 @@ pub module Package : Model(Gandr.Package) {
   def features = Workspace.features;
   /// The systems the package builds on, the workspace's.
   def systems = Workspace.systems;
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
 }
 
 /// The greeting, read from the module `text.greet` by its path, at the type

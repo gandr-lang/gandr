@@ -36,6 +36,27 @@
 //! `gandr check` refuses a package whose constraints the running toolchain
 //! does not meet (#533 p5).
 //!
+//! # A manifest's fields have identity roles
+//!
+//! A package's metadata is its library's `Package` model, a model of
+//! `std.package`'s `Gandr.Package`, not a manifest language, and each field
+//! has one role in the package's address:
+//!
+//! | Role | Fields | Address |
+//! | --- | --- | --- |
+//! | inert | `name`, `version`, `authors`, `licence`, `documentation`, `endpoint`, `spelling` | left out: an edit leaves it |
+//! | resolution | `dependencies` | each dependency's address enters through `gandr.lock`, never its alias or its coordinate |
+//! | syntax | an import's signature, `import <address> : S ;` | written in the importer's source, not in the model |
+//! | toolchain | `gandr`, `features`, `systems` | content: an edit moves it |
+//!
+//! The manifest's own bytes enter no address: `gandr.toml` is the checker's
+//! output, so identity enters through the items, the lock and the
+//! constraints, never through the file. A reference is an address and a
+//! coordinate kept apart: the address says what the package is, and a resolve
+//! that finds another is refused `LockDrift.<alias>`; the coordinate says
+//! where it is found and is never part of identity. The capabilities a package
+//! requires join the syntax role with #533 p6.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a package's
@@ -438,6 +459,8 @@ pub struct Manifest
     modules: Vec<String>,
     /// `Package.gandr`, `Package.features` and `Package.systems`.
     toolchain: Toolchain,
+    /// `Package.spelling`: a spelling's name, or empty for the reader's own.
+    spelling: String,
     /// Each dependency the library's `dependencies` lists, in order.
     dependencies: Vec<lock::Dependency>,
 }
@@ -457,15 +480,17 @@ impl Manifest
     ///   [`Unmanifested::Undeclared`], and the first whose run is no string
     ///   [`Unmanifested::Unstrung`] with what it came to. The toolchain is
     ///   [`Toolchain::read`] of `gandr`, `features` and `systems`, and a
-    ///   `gandr` it cannot read is [`Unmanifested::Unconstrained`]. The modules
-    ///   are [`modules`] of `package`'s sources, in order. The dependencies are
-    ///   `dependencies` among the same declarations, run once, each element its
-    ///   alias and path; none when none declares it, and
-    ///   [`Unmanifested::Undepended`] with what it came to when it runs to no
-    ///   list of dependencies.
+    ///   `gandr` it cannot read is [`Unmanifested::Unconstrained`]. `spelling`
+    ///   is empty or a name [`gandr_surface_grammar::Spelling`] reads, and any
+    ///   other is [`Unmanifested::Unspelled`]. The modules are [`modules`] of
+    ///   `package`'s sources, in order. The dependencies are `dependencies`
+    ///   among the same declarations, run once, each element its alias and
+    ///   path; none when none declares it, and [`Unmanifested::Undepended`]
+    ///   with what it came to when it runs to no list of dependencies.
     /// - provides: the manifest `gandr check` writes.
     /// - fails: a field undeclared, or run to no string; a `gandr` stating no
-    ///   constraint; `dependencies` run to no list of them.
+    ///   constraint; a `spelling` naming none; `dependencies` run to no list of
+    ///   them.
     /// - panics: none.
     /// - executable: none — each field is run on the program's machine, which a
     ///   predicate could only check by running it again; the witness observes
@@ -473,17 +498,19 @@ impl Manifest
     ///
     /// # Errors
     /// The first field that is undeclared, or does not run to a string; a
-    /// `gandr` stating no constraint; then `dependencies`, when it runs to no
-    /// list of dependencies.
+    /// `gandr` stating no constraint; a `spelling` naming none; then
+    /// `dependencies`, when it runs to no list of dependencies.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a model holding every field, one of them escaped,
     ///   reads each; one missing `version` and one whose name is an integer are
-    ///   refused at that field; a `gandr` with no `>=` is refused; a library
-    ///   listing a dependency renders its table.
+    ///   refused at that field; a `gandr` with no `>=` and a `spelling` naming
+    ///   no spelling are refused; a library listing a dependency renders its
+    ///   table.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
     /// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
     /// - witness: `tests::package::a_manifest_renders_the_toolchain_its_model_asks_for_3135`
+    /// - witness: `tests::package::a_manifest_renders_the_presentation_its_model_names_3135`
     #[inline]
     pub fn of(
         program: &mut Program<'_>,
@@ -502,6 +529,10 @@ impl Manifest
         let systems = strung(program, own, Field::Systems)?;
         let toolchain = Toolchain::read(gandr.clone(), Separated(&features), Separated(&systems))
             .map_err(|_unconstrained| Unmanifested::Unconstrained { came: gandr })?;
+        let spelling = strung(program, own, Field::Spelling)?;
+        if !spelling.is_empty() && spelling.parse::<gandr_surface_grammar::Spelling>().is_err() {
+            return Err(Unmanifested::Unspelled { came: spelling });
+        }
         Ok(Self {
             name,
             version,
@@ -511,6 +542,7 @@ impl Manifest
             endpoint,
             modules: modules(package.sources()).into_keys().collect(),
             toolchain,
+            spelling,
             dependencies: depended(program, own)?,
         })
     }
@@ -538,7 +570,9 @@ impl Manifest
     ///   paths, one per line, in order, or `[]` when there are none, as the
     ///   tree's TOML formatter writes it; then a `[toolchain]` table with
     ///   `gandr` as written and `features` and `systems` arrays of their
-    ///   entries, written as `modules` is; then, when the library lists any, a
+    ///   entries, written as `modules` is; then, when `spelling` names one, a
+    ///   `[presentation]` table with `spelling`, the table the user's
+    ///   configuration file writes; then, when the library lists any, a
     ///   `[dependencies]` table, one line per dependency in order, `alias = {
     ///   path = "…" }`, the alias bare when it is a TOML bare key and a basic
     ///   string otherwise. The same manifest renders the same bytes.
@@ -568,6 +602,13 @@ impl Manifest
             Listed(&self.modules)
         );
         let _written = write!(body, "{}", self.toolchain);
+        if !self.spelling.is_empty() {
+            let _written = write!(
+                body,
+                "\n[presentation]\nspelling = {}\n",
+                Basic(&self.spelling)
+            );
+        }
         if !self.dependencies.is_empty() {
             body.push_str("\n[dependencies]\n");
         }
@@ -1098,6 +1139,8 @@ pub enum Field
     Features,
     /// `Package.systems`.
     Systems,
+    /// `Package.spelling`.
+    Spelling,
 }
 
 impl Field
@@ -1118,6 +1161,7 @@ impl Field
             Self::Gandr => "Package.gandr",
             Self::Features => "Package.features",
             Self::Systems => "Package.systems",
+            Self::Spelling => "Package.spelling",
         })
     }
 }
@@ -1144,6 +1188,12 @@ pub enum Unmanifested
     },
     /// The library's `Package.gandr` states no constraint the check reads.
     Unconstrained
+    {
+        /// What it runs to.
+        came: String,
+    },
+    /// The library's `Package.spelling` names no spelling.
+    Unspelled
     {
         /// What it runs to.
         came: String,
@@ -1183,6 +1233,12 @@ impl core::fmt::Display for Unmanifested
                 "`{}` is `{came}`, which states no constraint, so no `{MANIFEST}` is written: \
                  write `>= <major>.<minor>`, or nothing for any version",
                 Field::Gandr.path()
+            ),
+            Self::Unspelled { ref came } => write!(
+                f,
+                "`{}` is `{came}`, which names no spelling, so no `{MANIFEST}` is written: \
+                 write `unicode` or `ascii`, or nothing for the reader's own",
+                Field::Spelling.path()
             ),
         }
     }

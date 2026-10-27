@@ -433,7 +433,7 @@ macro_rules! rest {
     () => {
         "def authors = \"Ada, Grace\" ; def licence = \"MIT\" ; def documentation = \
          \"https://d.example\" ; def endpoint = \"https://e.example\" ; def gandr = \">= 0.1\" ; \
-         def features = \"a, b\" ; def systems = \"\" ;"
+         def features = \"a, b\" ; def systems = \"\" ; def spelling = \"\" ;"
     };
 }
 
@@ -604,7 +604,7 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
             manifest_of(SourceText::from(concat!(
                 "module Package { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
                  \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
-                 ; ",
+                 ; def spelling = \"\" ; ",
                 $toolchain,
                 " }"
             )))
@@ -634,6 +634,46 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
         model!("def gandr = \"\" ; def systems = \"\" ;"),
         Err(Unmanifested::Undeclared(Field::Features)),
         "a missing `features`"
+    );
+}
+
+/// #3135: a manifest renders the spelling its model names as its
+/// `[presentation]` table, the table the user's configuration file writes,
+/// and none for an empty one; a name no spelling has is refused.
+#[test]
+fn a_manifest_renders_the_presentation_its_model_names_3135()
+{
+    /// The model of a package `p` stating `$spelling` beside its other fields.
+    macro_rules! model {
+        ($spelling:literal) => {
+            manifest_of(SourceText::from(concat!(
+                "module Package { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
+                 \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
+                 ; def gandr = \">= 0.1\" ; def features = \"a, b\" ; def systems = \"\" ; def \
+                 spelling = ",
+                $spelling,
+                " ; }"
+            )))
+        };
+    }
+    let ascii = model!("\"ascii\"").expect("the spelling reads").render();
+    assert!(
+        ascii.ends_with(&format!(
+            "modules = []\n{TOOLCHAIN}\n[presentation]\nspelling = \"ascii\"\n"
+        )),
+        "the table follows the toolchain's: {ascii}"
+    );
+    let unnamed = model!("\"\"").expect("an empty spelling reads").render();
+    assert!(
+        !unnamed.contains("[presentation]"),
+        "an empty spelling leaves the reader's own: {unnamed}"
+    );
+    assert_eq!(
+        model!("\"latin\""),
+        Err(Unmanifested::Unspelled {
+            came: String::from("latin"),
+        }),
+        "a name no spelling has"
     );
 }
 
@@ -854,7 +894,7 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
              Model(Gandr.Package) {{\n  def name : String = \"{name}\";\n  def version = \
              \"0.1.0\";\n  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation \
              = \"d\";\n  def endpoint = \"e\";\n  def gandr = \"{gandr}\";\n  def features = \
-             \"\";\n  def systems = \"\";\n}}\npub def welcome = greeting;\n"
+             \"\";\n  def systems = \"\";\n  def spelling = \"\";\n}}\npub def welcome = greeting;\n"
         )
     };
     std::fs::write(&library, stated("hello", ">= 0.0")).expect("the library is written");
@@ -950,8 +990,8 @@ fn moved(
 /// - requires: `std.package` writes each operation as `oper <name> : <type>;`
 ///   on one line, an `@[ inert ]` mark on the line before it, and each theory
 ///   as `pub theory <name> {` closed by a line `}`.
-/// - ensures: the operations of `Versioned` and `Gandr.Package` marked inert,
-///   in the order the source states them.
+/// - ensures: the operations of `Versioned`, `Presentation` and `Gandr.Package`
+///   marked inert, in the order the source states them.
 /// - fails: never on the admitted domain.
 /// - panics: a source that cannot be read.
 /// - executable: none — the fields are the source's, which the sweep reads.
@@ -983,7 +1023,7 @@ fn inert_fields() -> Vec<String>
             .strip_prefix("oper ")
             .and_then(|rest| rest.split_once(" : "))
             && marked
-            && matches!(theory, "Versioned" | "Gandr.Package")
+            && matches!(theory, "Versioned" | "Presentation" | "Gandr.Package")
         {
             fields.push(String::from(name));
         }
@@ -1158,7 +1198,8 @@ impl Library<'_>
             "{imports}{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name : \
              String = \"p\";\n  def version = \"{version}\";\n  def authors = \"Ada\";\n  def \
              licence = \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n  def \
-             gandr = \"\";\n  def features = \"\";\n  def systems = \"\";\n}}\n{rest}"
+             gandr = \"\";\n  def features = \"\";\n  def systems = \"\";\n  def spelling = \
+             \"\";\n}}\n{rest}"
         )
     }
 }

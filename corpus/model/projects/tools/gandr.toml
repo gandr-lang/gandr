@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: b5152aef6575c708a3bb14af3bd3da06d978b35ac76da58ef8d0c1ab4e382cc2
+# blake3: 04111a7ffd6acbee3f1d4a23dac81428c63e33ab233ee289d47f921fac8b39bf
 
 [package]
 name = "tools"
@@ -18,6 +18,9 @@ features = [
   "package-signature",
 ]
 systems = []
+
+[presentation]
+spelling = "ascii"
 
 [dependencies]
 hello = { path = "../hello" }

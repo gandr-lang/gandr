@@ -27,4 +27,6 @@ pub module Package : Model(Gandr.Package) {
   def features = "project-manifest, package-lock";
   /// The systems the package builds on: any.
   def systems = "";
+  /// The spelling the package asks for: the reader's own.
+  def spelling = "";
 }

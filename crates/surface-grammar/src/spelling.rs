@@ -48,6 +48,43 @@ pub enum Spelling
     Ascii,
 }
 
+/// A name no spelling has: neither `unicode` nor `ascii`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Unspelled;
+
+impl core::str::FromStr for Spelling
+{
+    type Err = Unspelled;
+
+    /// The spelling `name` names, as a `[presentation]` table and an editor's
+    /// `gandr.presentation.spelling` setting write it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `unicode` is [`Spelling::Unicode`] and `ascii` is
+    ///   [`Spelling::Ascii`].
+    /// - fails: [`Unspelled`] for any other name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Unspelled`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both names read, and a capitalised one, an empty one
+    ///   and another word are refused.
+    /// - witness: `tests::spelling::a_spelling_reads_from_its_name_3135`
+    #[spec(ensures: |ref ret| ret.is_ok() == matches!(name, "unicode" | "ascii"))]
+    #[inline]
+    fn from_str(name: &str) -> Result<Self, Self::Err>
+    {
+        match name {
+            "unicode" => Ok(Self::Unicode),
+            "ascii" => Ok(Self::Ascii),
+            _ => Err(Unspelled),
+        }
+    }
+}
+
 /// How a glyph tile is written in ASCII.
 ///
 /// # Specification

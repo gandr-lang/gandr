@@ -26,6 +26,8 @@ pub module Package : Model(Gandr.Package) {
   def features = "project-manifest";
   /// The systems the package builds on, content as `gandr` is.
   def systems = "";
+  /// The spelling the package asks for, inert as its name is.
+  def spelling = "";
 }
 
 /// The package's content: an edit to it moves the address.

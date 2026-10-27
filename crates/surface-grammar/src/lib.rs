@@ -192,6 +192,7 @@ pub use crate::spelling::SPELLED;
 pub use crate::spelling::Spelled;
 pub use crate::spelling::Spelling;
 pub use crate::spelling::UNRESTRICTED;
+pub use crate::spelling::Unspelled;
 pub use crate::spelling::aliased;
 pub use crate::spelling::spelled;
 pub use crate::surface::PBG_ONLY_KINDS;

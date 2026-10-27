@@ -32,7 +32,8 @@ path = "tests/lib.rs"
 # tells its own file from a hand edit; its address is the BLAKE3 digest of
 # its items' content keys, which the incremental checker's program states.
 # A closure's judgement is held in a self_cell with the closure's lowering,
-# whose names it borrows.
+# whose names it borrows. A `[presentation]` table, the user's configuration
+# file's and a package manifest's alike, is read through toml.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a closure's lowering and
 # judgement, the prelude's among them, for the benchmark report.
@@ -62,6 +63,7 @@ quenchant-shape.workspace = true
 rayon.workspace = true
 self_cell.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 tracing = { workspace = true, optional = true }
 
 # The corpus sweeps draw their samples through the sweep crate; the

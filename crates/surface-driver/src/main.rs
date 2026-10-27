@@ -1072,13 +1072,15 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
 ///   system.
 ///
 /// # Errors
-/// The [`config::Fault`] reading the file met.
+/// The [`gandr_surface_dispatcher::PresentationFault`] reading the file met.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a configured spelling prints, a flag outranks it, and a
 ///   malformed file stops the run, through the binary.
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
-fn spelling(flag: Option<SpellingName>) -> Result<Spelling, config::Fault>
+fn spelling(
+    flag: Option<SpellingName>
+) -> Result<Spelling, gandr_surface_dispatcher::PresentationFault>
 {
     match flag {
         Some(name) => Ok(Spelling::from(name)),

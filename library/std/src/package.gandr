@@ -47,13 +47,25 @@ pub theory Project {
   include Toolchain;
 }
 
+/// How a package's sources are shown: the `[presentation]` table of its
+/// `gandr.toml`, the table the user's configuration file writes, which a
+/// language server opened on the package reads over the user's. Each field
+/// is inert: how a source is shown is not what it is.
+pub theory Presentation {
+  /// The spelling a construct with a glyph is written in, `unicode` or
+  /// `ascii`, or empty to leave the reader's own.
+  @[ inert ]
+  oper spelling : String;
+}
+
 /// A package: the project a `lib.gandr` roots, described by the model its
 /// `module Package : Model(Gandr.Package)` is, from which the checker writes
 /// the project's `gandr.toml`. Its own fields are inert: what a package is
-/// called, who wrote it and where it is documented leave its address alone
-/// (#3030). What it asks of the toolchain is not.
+/// called, who wrote it, where it is documented and how it is shown leave its
+/// address alone (#3030). What it asks of the toolchain is not.
 pub theory Gandr.Package {
   include Project;
+  include Presentation;
   /// The package's name, which the manifest records it by.
   @[ inert ]
   oper name : String;
