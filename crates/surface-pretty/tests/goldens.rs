@@ -3100,6 +3100,52 @@ fn a_quoted_telescope_type_is_quoted_1514()
     }
 }
 
+/// #3279: an expression reads a path type's carrier as an expression, so a
+/// quoted path type over a family applied to its arguments is written
+/// `type(Path(…))` where an expression stands, alone and as an argument:
+/// bare, `Maybe(Nat)` is a call where a value type is expected. A path type
+/// over a bare name, a nullary family or a base type, stays bare.
+#[test]
+fn a_path_type_over_a_family_application_is_quoted_3279()
+{
+    let names = [
+        Name::from("Maybe"),
+        Name::from("Nat"),
+        Name::from("a"),
+        Name::from("c"),
+    ];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let nat_code = core.value_quote(nat);
+    let maybe_nat = core.value_type_data(ConstantIndex::from(0_usize), vec![nat_code]);
+    let left = core.value_constant(ConstantIndex::from(2_usize));
+    let right = core.value_constant(ConstantIndex::from(3_usize));
+    let over_application = core.value_type_path(maybe_nat, left, right);
+    let over_application = core.value_quote(over_application);
+    let argument = core.value_stay(over_application);
+    let over_nullary = core.value_type_path(nat, left, right);
+    let over_nullary = core.value_quote(over_nullary);
+    let over_base = core.value_type_path(integer, left, right);
+    let over_base = core.value_quote(over_base);
+    let source = CoreSource::new(&core, &names);
+    for (root, spelling) in [
+        (over_application, "type(Path(Maybe(Nat), a, c))"),
+        (argument, "stay(type(Path(Maybe(Nat), a, c)))"),
+        (over_nullary, "Path(Nat, a, c)"),
+        (over_base, "Path(Integer, a, c)"),
+    ] {
+        for form in [Form::Sugared, Form::Explicit] {
+            let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (spelling, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// #1127: an expression reads a sugared chain's `*`, `+` and `&` as
 /// operators over the components, so a quoted product, sum or lazy product
 /// of two or more components is written `type(T)` where an expression
