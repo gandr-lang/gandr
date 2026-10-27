@@ -608,6 +608,36 @@ impl From<gandr_core_unify::Reason> for Unsolved
     }
 }
 
+/// Why reflexivity's point is not shown to convert to an endpoint.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum EndpointMiss
+{
+    /// The conversion refuted the pair, declined it for a reason other than
+    /// its step budget, or could not run on it.
+    Unshown,
+    /// The conversion spent its step budget before deciding: the point and
+    /// the endpoint may still convert, by a longer run than the budget allows.
+    Budget,
+}
+
+impl From<gandr_core_nbe::DeclineReason> for EndpointMiss
+{
+    /// The miss a decline of the machine's is.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(reason: gandr_core_nbe::DeclineReason) -> Self
+    {
+        match reason {
+            gandr_core_nbe::DeclineReason::Budget => Self::Budget,
+            gandr_core_nbe::DeclineReason::Cycle
+            | gandr_core_nbe::DeclineReason::UndecidedCodes
+            | gandr_core_nbe::DeclineReason::Indeterminate => Self::Unshown,
+        }
+    }
+}
+
 /// Why the judgement refused a term, a type or a declaration.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckRefusal
@@ -792,7 +822,7 @@ pub enum CheckRefusal
     /// A native path endpoint was not a quoted closed first-order code.
     PathCode(ValueId),
     /// Reflexivity was checked against a path type whose endpoints its point
-    /// does not both convert to.
+    /// is not shown to both convert to.
     EndpointMismatch
     {
         /// The reflexivity.
@@ -801,6 +831,8 @@ pub enum CheckRefusal
         left: ValueId,
         /// The path type's right endpoint.
         right: ValueId,
+        /// Why the first endpoint that failed is not shown to convert.
+        miss: EndpointMiss,
     },
     /// A compound endpoint stands for a computation that returns no pure
     /// value: its type is no returner, or its returner performs effects.

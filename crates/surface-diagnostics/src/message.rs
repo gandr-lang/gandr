@@ -1998,6 +1998,7 @@ pub mod tests
                 at: value,
                 left: value,
                 right: value,
+                miss: gandr_core_checker::EndpointMiss::Unshown,
             },
             CheckRefusal::CompoundEndpoint {
                 at: value,

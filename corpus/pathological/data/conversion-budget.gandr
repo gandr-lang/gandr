@@ -1,0 +1,44 @@
+// A true path the conversion cannot settle within its step budget is refused.
+//
+// The refusal must say the budget ran out, never that the endpoints are apart.
+// The point and the endpoints do convert, by a run longer than the budget.
+//
+// Fibonacci's doubly recursive definition at nineteen spends the budget before
+// it meets the iterative one. So the machine declines, and the label names the
+// budget.
+//
+// - see: #3139
+
+// The naturals, their addition and three.
+import "../../model/data/data-base.gandr";
+
+/// Fibonacci, the doubly recursive definition.
+def rec fib(n : Nat) -> Nat {
+  case n {
+    Zero => Zero,
+    Succ(m) => case m {
+      Zero => Succ(Zero),
+      Succ(k) => plus(fib[<](m), fib[<](k))
+    }
+  }
+}
+
+/// Fibonacci by iteration over a pair of accumulators.
+def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
+  case n {
+    Zero => a,
+    Succ(m) => fibFrom[<](m, b, plus(a, b))
+  }
+}
+
+/// Nineteen: one more than three sixes.
+def nineteen() -> Nat {
+  Succ(plus(plus(three, three), plus(plus(three, three), plus(three, three))))
+}
+
+/// The two definitions agree at nineteen, but the conversion spends its
+/// step budget before it shows it.
+@[ refuses("EndpointMismatch") ]
+def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), Zero, Succ(Zero))) {
+  here(fib(nineteen()))
+}

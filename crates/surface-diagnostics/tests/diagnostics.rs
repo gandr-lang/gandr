@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::FrameRole;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
@@ -95,6 +96,25 @@ const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pu
 /// A mismatch under a `run` binder.
 const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Integer) -> -F \
                          String { run m <- id(n) ; return m }\n";
+
+/// Unary naturals, addition, Fibonacci both ways and two closed points.
+const FIBONACCI: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
+                         plus(a : Nat, b : Nat) -> Nat {\n  case a {\n    Zero => b,\n    \
+                         Succ(m) => Succ(plus[<](m, b))\n  }\n}\ndef rec fib(n : Nat) -> Nat {\n  \
+                         case n {\n    Zero => Zero,\n    Succ(m) => case m {\n      Zero => \
+                         Succ(Zero),\n      Succ(k) => plus(fib[<](m), fib[<](k))\n    }\n  }\n}\n\
+                         def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {\n  case n {\n    \
+                         Zero => a,\n    Succ(m) => fibFrom[<](m, b, plus(a, b))\n  }\n}\ndef \
+                         five() -> Nat {\n  Succ(Succ(Succ(Succ(Succ(Zero)))))\n}\ndef nineteen() \
+                         -> Nat {\n  Succ(Succ(Succ(Succ(plus(five(), plus(five(), five()))))))\n}\n";
+
+/// Both definitions at nineteen: equal, but past the conversion's step budget.
+const FIBONACCI_AGREE: &str = "def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), \
+                               Zero, Succ(Zero))) {\n  here(fib(nineteen()))\n}\n";
+
+/// Fibonacci at five against the iteration started one step on: apart.
+const FIBONACCI_APART: &str = "def apart() -> Path(Nat, fib(five()), fibFrom(five(), Succ(Zero), \
+                               Succ(Zero))) {\n  here(fib(five()))\n}\n";
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
@@ -406,6 +426,49 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(upstream::Absent::Own),
     })
+}
+
+#[test]
+fn a_conversion_past_its_step_budget_is_a_budget_miss_not_endpoints_apart_3139()
+{
+    let miss = |claim: &str| {
+        let text = format!("{FIBONACCI}{claim}");
+        let step = unsettled(
+            Path::new("fibonacci.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(text.as_str()),
+        );
+        let Step::Source {
+            composed: Composed::Settled { ref report, .. },
+            ..
+        } = step
+        else {
+            panic!("the Fibonacci source settles");
+        };
+        let refusals: Vec<Refusal<'_>> = report
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.produced().refusal() {
+                Maybe::Present(refusal) => Some(refusal),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let [Refusal::Checking(CheckRefusal::EndpointMismatch { miss, .. })] = *refusals.as_slice()
+        else {
+            panic!("the claim alone is refused, as an endpoint mismatch: {refusals:?}");
+        };
+        miss
+    };
+    assert_eq!(
+        miss(FIBONACCI_AGREE),
+        EndpointMiss::Budget,
+        "equal endpoints whose conversion outruns the budget are a budget miss"
+    );
+    assert_eq!(
+        miss(FIBONACCI_APART),
+        EndpointMiss::Unshown,
+        "endpoints the conversion finds apart are no budget miss"
+    );
 }
 
 #[test]

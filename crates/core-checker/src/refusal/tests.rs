@@ -80,6 +80,7 @@ fn a_refusal_compares_the_types_it_names()
             at: term,
             left: term,
             right: term,
+            miss: crate::EndpointMiss::Unshown,
         }
         .compared(),
         Compared {
