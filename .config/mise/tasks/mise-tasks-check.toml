@@ -1449,10 +1449,16 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # merged pull request, the refactor issues, and what `refactor:file` files
 # for them (`filing.jq`, #2885); each in `.config/claims/obligations.json`
 # the merged pull requests of a period with their units, and the report
-# `report:obligations` writes (`obligations.jq`, #2886).
+# `report:obligations` writes (`obligations.jq`, #2886); each in
+# `.config/claims/terms.json` a unit's title and body, term map rows, and the
+# findings `unit:check` prints for its vocabulary (`terms.jq`, #3158). The
+# term map itself, `.config/references/terms.toml`, is read whole: every row
+# carries a name, a match that compiles, an owner and a reason, and every
+# owner that is a tree path exists.
 ["check:claims"]
 description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and dependencies, claim:next each board its claim, ledger:patched each landing its refusals, ledger:reserved each lowered reserved rule its refusal, report:deps each board its report, refactor:file each merged verdict its filing and report:obligations each period its report"
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1474,6 +1480,7 @@ cases chain chain.jq chain.json
 cases report report.jq report.json
 cases filing filing.jq filing.json --mode c
 cases obligations obligations.jq obligations.json
+cases terms terms.jq terms.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -1501,7 +1508,20 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report"
+terms=$(yq -o json '.term' .config/references/terms.toml)
+map=$(jq -r '.[] | (.name // "?") as $name
+  | if (.name | type) != "string" or (.match | type) != "string" or (.owns | type) != "array" or (.owns | length) == 0 or (.reason | type) != "string"
+    then "terms.toml: row `\($name)` lacks a name, a match, an owner or a reason"
+    else .match as $match | (try ("" | test($match) | empty) catch "terms.toml: row `\($name)`: its match does not compile")
+    end' <<< "$terms")
+while IFS= read -r owner; do
+  [[ -e $owner ]] || map=$(printf '%s\n%s' "$map" "terms.toml: the owner \`$owner\` is no path in the tree")
+done < <(jq -r '.[].owns[]? | sub("\\s*§.*$"; "") | select(contains("/"))' <<< "$terms")
+if [[ -n ${map//[[:space:]]/} ]]; then
+  printf 'claims check FAILED: the term map is malformed:\n%s\n' "$map" >&2
+  exit 1
+fi
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/terms.json) units their vocabulary, and the term map's $(jq length <<< "$terms") rows read whole"
 '''
 
 # Every `Where` of a body's `## Refactoring` names something the workspace

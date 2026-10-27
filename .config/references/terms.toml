@@ -1,0 +1,51 @@
+# The term map (#3158): the vocabulary that names a design, routed to the
+# vault pages and tree locations that own it. `unit:check` reads a unit's
+# title and body, its `## Sources`, `## Readings` and `## Concerns` left
+# out, and refuses one that matches a row's `match` while its `## Sources`
+# names none of the row's `owns`: a design is never rediscovered because a
+# seat searched on other words. A `## Sources` line `- <owner> — not read:
+# <why>` names the owner, so a seat may decline a page with its reason.
+#
+# `match` is a regular expression, read case-insensitively; a row pins the
+# case where the spelling is the term, `(?-i:Open)\(` the judgement, not
+# `open` the verb. `owns` holds a vault page's filename, a tree path or
+# `#<issue>`; a `§` after a
+# page names the section to read and is not part of the key. An absorbed
+# page's row points at the tree location that now states it, edited in the
+# same pull request that absorbs the page.
+
+[[term]]
+name = "storage"
+match = '\b(stores?|heaps?|regions?|allocate\w*|seriali[sz]\w*|chunk\w*|content.address\w*|cam_commit|cam_deref|ContentPtr|migrate \[|migrat\w* (between|across) worlds|session send|checkpoints?|world crossing|mobile|(?-i:Open)\()'
+owns = ["storage-metatheory-programme.md", "crates/storage-values", "crates/README.md", "#317"]
+reason = "the storage tier is a content-addressable memory and the runtime's heaps a location-addressable one (#317 § the picture)"
+
+[[term]]
+name = "package"
+match = '\b(lockfiles?|package lock|package address\w*|coordinates?)\b'
+owns = ["module-and-package-design.md", "crates/surface-dispatcher/src/package"]
+reason = "the package layer, its lock and its coordinates"
+
+[[term]]
+name = "build"
+match = '\b(recipes?|sandbox\w*|nixpkgs|Nix derivations?|build layer)\b'
+owns = ["build-layer-owned.md", "#2765"]
+reason = "the build layer gandr owns"
+
+[[term]]
+name = "verdict"
+match = '\b(verdict cache|attest\w*|receipts?|verdict reuse|reused verdict)\b'
+owns = ["integrity-never-substitutes-validity.md", "#2799"]
+reason = "a hash never admits; a reused verdict is attested (§ kernel-verdict-reuse)"
+
+[[term]]
+name = "grade"
+match = '\b(quantales?|tropical|grade carrier|graded? (costs?|quantity|quantities))\b'
+owns = ["quantities-count-cost-and-distance.md", "crates/core-term"]
+reason = "grades as counts, costs and distances, and their carrier"
+
+[[term]]
+name = "closure"
+match = '\b(thunks?|closure environment|closure.s environment|closure type)\b'
+owns = ["core-kernel-reassessment.md", "#317"]
+reason = "a closure's three axes, region, grade and located mode (§ 4)"
