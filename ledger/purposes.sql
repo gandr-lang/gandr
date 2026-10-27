@@ -1466,7 +1466,7 @@ INSERT INTO purpose VALUES('kernel-term','theory_rules::TheoryNode','enum','One 
 INSERT INTO purpose VALUES('kernel-term','theory_rules::TheoryRule','struct','One oriented rule: its left side rewrites to its right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','theory_rules::TheoryRuleFault','enum','Why a presentation''s rules are refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','theory_rules::TheoryRuleRefusal','struct','The first rule a presentation''s rules are refused at, and why.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','theory_rules::TheoryRules','struct','A presentation''s rules as the decision reads them: the symbol table, the written rules oriented, and the derived rules with their peaks.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','theory_rules::TheoryRules','struct','A presentation''s rules as the decision reads them: the symbol table, the written rules oriented, the derived rules with their peaks, and over an indexed sort those rules read with the indices their sorting fixes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','theory_rules::TheorySymbol','struct','One symbol of a presentation''s rule terms, by its place in the symbol table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','theory_rules::presentation_code','function','Whether a data declaration''s constructor table is the presentation code''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','theory_rules::row::RowExtent','enum','How a rule''s row holds the theories it names.',NULL,'fits','sound',NULL);

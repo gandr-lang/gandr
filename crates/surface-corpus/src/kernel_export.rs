@@ -2850,6 +2850,30 @@ mod kernel_presentation_readmission
         Environment::replay(arena, &declarations)
             .unwrap_or_else(|refusal| panic!("`Group` readmits: {refusal:?}"));
     }
+
+    /// #1510: a completion over an indexed sort states its derived rule
+    /// without the indices and names the peak among the rules read with
+    /// them, which is where the kernel replays it.
+    #[test]
+    fn an_indexed_completion_readmits_from_the_peaks_its_value_names_1510()
+    {
+        let (arena, declarations, views) = exported(
+            Path::new("ledger/features/nested-operation-laws.gandr"),
+            &named("EditedViews"),
+        );
+        let DeclarationContent::Def { body, .. } =
+            *declarations[usize::from(views)].declaration().content()
+        else {
+            panic!("`EditedViews` is a definition");
+        };
+        let rules = TheoryRules::read(&arena, body).expect("`EditedViews`'s rule chain reads");
+        assert!(
+            !rules.peaks().is_empty() && rules.decided() != rules.rules(),
+            "`EditedViews` crosses with a derived rule, and the kernel reads its rules indexed"
+        );
+        Environment::replay(arena, &declarations)
+            .unwrap_or_else(|refusal| panic!("`EditedViews` readmits: {refusal:?}"));
+    }
 }
 
 /// Effects as data readmit whole, and a program's row is a claim the kernel

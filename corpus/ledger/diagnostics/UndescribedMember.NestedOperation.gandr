@@ -1,13 +1,14 @@
 /// `UndescribedMember.NestedOperation`: a member the description does not read: a rule with an operation nested in producer position.
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory CatShape {
-  sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+theory GradedChoice {
+  sort Grade : Type;
+  sort M(g : Grade) : Type;
 
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper bot : () --> Grade;
+  oper meet : (a : Grade, b : Grade) --> Grade;
+  oper cut : () --> M(bot());
+  oper or : (x : M(d), y : M(e)) --> M(meet(d, e));
 
-  rule unitL : comp(id(a), f) ==> f;
-  rule unitR : comp(f, id(b)) ==> f;
-  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+  rule meetBot : meet(bot(), e) ==> bot();
+  rule cutLeft : or(cut(), y) ==> cut();
 }

@@ -3,9 +3,9 @@
 // composition with the unit and associativity laws as rules. Its coherence
 // cells are in `coherence.gandr`.
 
-/// The category shape. Its laws over the dependent sort nest an operation
-/// the cell layer does not read there (#1510).
-@[ refuses("UndescribedMember.NestedOperation") ]
+/// The category shape. Its laws over the dependent sort are read with the
+/// objects each composite stands at, so the unit laws agree at `comp(id(a),
+/// id(a))` (#1510).
 theory CatShape {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;

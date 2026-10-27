@@ -1609,3 +1609,123 @@ fn rules_under_rows_join_under_the_row_their_overlap_composes_2448()
         );
     }
 }
+
+/// The `Arg` chain over `terms`, in order.
+///
+/// # Specification
+/// trivial.
+fn chain(
+    code: &mut Code,
+    terms: &[ValueId],
+) -> ValueId
+{
+    let mut chain = code.end();
+    for &term in terms.iter().rev() {
+        chain = code.node(ConstructorTag::from(super::tag::ARG), vec![term, chain]);
+    }
+    chain
+}
+
+/// #1510: a category's laws over `Hom(dom, cod)` read with the objects each
+/// application's sorting fixes, so the unit laws' overlap is one well-sorted
+/// term and joins; written as they are, without the indices, the same laws
+/// part at `comp(id(a), id(b))`.
+#[test]
+fn a_categorys_laws_join_over_their_objects_1510()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let (sort, oper, port, rule_tag) = (
+        tag(super::tag::SORT),
+        tag(super::tag::OPER),
+        tag(super::tag::PORT),
+        tag(super::tag::RULE),
+    );
+    let mut code = Code::new();
+    let names = [
+        "Ob", "Hom", "dom", "cod", "id", "comp", "", "unitL", "unitR", "assoc",
+    ]
+    .map(|name| code.text(literal(name)));
+    let [
+        ob,
+        hom,
+        dom,
+        cod,
+        id,
+        comp,
+        unnamed,
+        unit_left,
+        unit_right,
+        assoc,
+    ] = names;
+    let [source, middle, target] = ["a", "b", "c"].map(|name| code.var(literal(name)));
+    let [first, second, third] = ["f", "g", "h"].map(|name| code.var(literal(name)));
+    let [a_name, f_name, g_name] = ["a", "f", "g"].map(|name| code.text(literal(name)));
+    let end = code.end();
+    // The signature: `id : (a : Ob) --> Hom(a, a)` and `comp : (f : Hom(a,
+    // b), g : Hom(b, c)) --> Hom(a, c)`, over `Hom` indexed or not.
+    let signature = |code: &mut Code, indexed: bool| {
+        let cod_port = code.node(port, vec![cod, ob, end, end]);
+        let dom_port = code.node(port, vec![dom, ob, end, cod_port]);
+        let indices = if indexed { dom_port } else { end };
+        let hom_sort = code.node(sort, vec![hom, indices, end]);
+        let sorts = code.node(sort, vec![ob, end, hom_sort]);
+        let [aa, ab, bc, ac] = [[source, source], [source, middle], [middle, target], [
+            source, target,
+        ]]
+        .map(|terms| chain(code, &terms));
+        let comp_output = code.node(port, vec![unnamed, hom, ac, end]);
+        let g_port = code.node(port, vec![g_name, hom, bc, end]);
+        let f_port = code.node(port, vec![f_name, hom, ab, g_port]);
+        let composition = code.node(oper, vec![comp, f_port, comp_output, end]);
+        let id_output = code.node(port, vec![unnamed, hom, aa, end]);
+        let a_port = code.node(port, vec![a_name, ob, end, end]);
+        let operations = code.node(oper, vec![id, a_port, id_output, composition]);
+        (sorts, operations)
+    };
+    let (at_source, at_middle) = (
+        code.app(literal("id"), &[source]),
+        code.app(literal("id"), &[middle]),
+    );
+    let left_unit = code.app(literal("comp"), &[at_source, first]);
+    let right_unit = code.app(literal("comp"), &[first, at_middle]);
+    let first_second = code.app(literal("comp"), &[first, second]);
+    let second_third = code.app(literal("comp"), &[second, third]);
+    let left_nested = code.app(literal("comp"), &[first_second, third]);
+    let right_nested = code.app(literal("comp"), &[first, second_third]);
+    let members = vec![
+        (rule_tag, vec![unit_left, left_unit, first]),
+        (rule_tag, vec![unit_right, right_unit, first]),
+        (rule_tag, vec![assoc, left_nested, right_nested]),
+    ];
+    let (sorts, operations) = signature(&mut code, true);
+    let category = code.presenting(sorts, operations, members.clone());
+    let read = TheoryRules::read(&code.arena, category).expect("the category reads");
+    // comp = 0, id = 1, and comp at its two ports and three objects = 2.
+    assert_eq!(
+        read.decided().first(),
+        Some(&rule(
+            &[s!(2), v!(0), v!(0), v!(1), s!(1), v!(0), v!(2)],
+            &[v!(2)]
+        )),
+        "the left unit law carries the objects `id(a)` and `f` fix"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        Ok(()),
+        "over the objects the unit laws' overlap is `id(a)` both ways"
+    );
+    let (sorts, operations) = signature(&mut code, false);
+    let written = code.presenting(sorts, operations, members);
+    let read = TheoryRules::read(&code.arena, written).expect("the laws read");
+    assert_eq!(
+        read.decided(),
+        read.rules(),
+        "no sort is indexed, so the laws are decided as written"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "written as they are, the unit laws part at `comp(id(a), id(b))`"
+    );
+}

@@ -73,8 +73,9 @@ fn a_derived_signature_states_what_the_written_one_does()
     assert!(
         judgements
             .iter()
-            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked)),
-        "and the setoid category checks at both, each law by computation: {judgements:?}"
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and the setoid category checks at both, each law by computation, the `Theory` code \
+         declared: {judgements:?}"
     );
 }
 
@@ -772,9 +773,9 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
     let (law, stated, judgements) = judged(&left_zero("comp(a, a, b, id(a), f), f"));
     assert!(
         judgements.contains(&(law, Judgement::Refused))
-            && judgements
-                .iter()
-                .all(|&(constant, judgement)| constant == law || judgement == Judgement::Checked),
+            && judgements.iter().all(|&(constant, judgement)| {
+                constant == law || matches!(judgement, Judgement::Checked | Judgement::Declared)
+            }),
         "the law the instance's composite does not reach is refused at its own name, its \
          siblings and its statement checking beside it ({stated:?}): {judgements:?}"
     );
@@ -784,7 +785,9 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
         judgements.contains(&(law, Judgement::Refused))
             && judgements.contains(&(stated, Judgement::Mismatched))
             && judgements.iter().all(|&(constant, judgement)| {
-                constant == law || constant == stated || judgement == Judgement::Checked
+                constant == law
+                    || constant == stated
+                    || matches!(judgement, Judgement::Checked | Judgement::Declared)
             }),
         "a member stating another endpoint than the law's is refused at the law's name: \
          {judgements:?}"
