@@ -1,0 +1,355 @@
+// The Rust extern `f(x: Option<&u32>, n: u32) -> u32` as a function row of
+// the foreign boundary, admitted against its witness records.
+//
+// A function type means a Hoare triple over its arguments' and result's
+// realisers. `Option<&u32>` is realised by the null niche, so `f`'s triple is
+// `deref_or`'s at `u32`. Each argument's and the result's witness record
+// summarises its realisers, read off its code by Rust's default layout.
+//
+// `admit(declared, row)` compares rustc's printed layouts with the records
+// clause by clause, answering `Admitted` or `Unrealised` with the first clause
+// that fails. Each extern below differs from the row in one clause. The
+// checker holds the layout program's integer comparisons as neutrals, so
+// admission is a run here.
+//
+// - see: #2901 — not implemented: the check-time refusal of an extern
+//   declaration, `BoundaryUnrealised.<clause>`
+// - see: `pathological/interop/boundary/function-row.gandr` — the predicate
+//   chosen through the layout, refused `Undecided`
+// - see: `model/specification/niche-realizability.gandr` — `deref_or`'s
+//   triple and the tagged layout's equivalence
+// - see: `model/layouts/rust-default.gandr` — Rust's default layout
+// - see: Wagner, Eisbach and Ahmed, _Realistic Realizability: Specifying ABIs
+//   You Can Count On_, OOPSLA 2024, doi:10.1145/3689755, § 3.1 and § 4.2
+
+// The Rust side, built by rustc 1.98.0-nightly (f28ac764c 2026-06-23) for
+// x86_64-unknown-linux-gnu. Its layouts are from `rustc --edition 2024
+// --crate-type=lib -Zprint-type-sizes` over the eight externs, with
+// `size_of`, `align_of` and `needs_drop` for each type:
+//
+//     #[unsafe(no_mangle)]
+//     pub extern "C" fn f(x: Option<&u32>, n: u32) -> u32 {
+//         match x { Some(r) => *r, None => n }
+//     }
+//
+//     type              size  alignment  discriminant   needs drop
+//     Option<&u32>      8     8          none (niche)   no
+//     u32               4     4          -              no
+//     u64               8     8          -              no
+//     &u32              8     8          -              no
+//     Tagged            16    8          -              no
+//     Option<Box<u32>>  8     8          none (niche)   yes
+//     Packed            4     1          -              no
+//
+// `Tagged` is `#[repr(C)] struct Tagged { tag: usize, ptr: *const u32 }`, the
+// tagged layout of `Option<&u32>` written out, and `Packed` is
+// `#[repr(C, packed)] struct Packed { v: u32 }`. The externs other than `f`
+// each differ from the row in one clause: `g` takes `n: u64`, `a` takes
+// `n: Packed`, `h` takes `x: &u32`, `t` takes `x: Tagged`, `b` takes
+// `x: Option<Box<u32>>`, `w` answers a `u64`, and `k` takes no `n`.
+
+// `Nat`.
+import "../../data/data-base.gandr";
+
+// `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout`.
+import "../../layouts/rust-default.gandr";
+
+// `Heap`, `vOpt`, `vInt`, `keptOpt`, `derefOrWp`, `derefOrMeets`.
+import "../../specification/niche-realizability.gandr";
+
+/// A type at the row, as Rust's default layout codes it.
+pub data Code : Type {
+  /// A scalar.
+  Plain : (s : Scalar) --> Code;
+  /// An enum.
+  Sum : (vs : Variants) --> Code;
+}
+
+/// How a value is copied, moved, destroyed and relocated.
+pub data Handling : Type {
+  /// As its bytes: copied, moved and relocated by copying them, destroyed by
+  /// nothing.
+  Bitwise : Handling;
+}
+
+/// The witness record: size, stride, alignment, and how the value is handled.
+pub data Witness : Type {
+  /// The record.
+  Witness : (size : Integer, stride : Integer, align : Integer, handling : Handling) --> Witness;
+}
+
+/// A size rounded up to an alignment.
+def strideOf(size : Integer, align : Integer) -> Integer {
+  run q <- int.div(size + align - 1, align);
+  q * align
+}
+
+/// The record read off a code's layout. Every code here is a scalar, a
+/// reference or an enum of them, so every value is handled bitwise.
+pub def summary(c : Code) -> Witness {
+  case c {
+    Plain(s) => case structLayout(Field("0", s, Done)) {
+      Layout(size, align, _p) => Witness(size, strideOf(size, align), align, Bitwise)
+    },
+    Sum(vs) => case enumLayout(vs) {
+      EnumLayout(size, align, _d, _a) => Witness(size, strideOf(size, align), align, Bitwise)
+    }
+  }
+}
+
+/// Whether a code's layout keeps its discriminant in a niche.
+pub def niched(c : Code) -> Bool {
+  case c {
+    Plain(_s) => false,
+    Sum(vs) => case enumLayout(vs) {
+      EnumLayout(_size, _align, d, _a) => case d {
+        InNiche(_o) => true,
+        _ => false
+      }
+    }
+  }
+}
+
+/// `Option<&u32>`.
+pub def optRef : Code = Sum(Variant("Some", Field("0", Ref, Done), Variant("None", Done, NoVariant)));
+
+/// `u32`.
+pub def u32 : Code = Plain(U32);
+
+/// `Option<&u32>`'s record: one word, as rustc prints it.
+@[ runs("Witness(8, 8, 8, Bitwise)") ]
+def optRefSummary() -> Witness { summary(optRef) }
+
+/// `u32`'s record.
+@[ runs("Witness(4, 4, 4, Bitwise)") ]
+def u32Summary() -> Witness { summary(u32) }
+
+/// `Option<&u32>`'s discriminant is the reference's null, so its realisers
+/// are the null niche's.
+@[ runs("+{.0 = unit}") ]
+def optRefNiched() -> Bool { niched(optRef) }
+
+/// Argument codes in order.
+pub data Codes : Type {
+  /// No more arguments.
+  NoCode : Codes;
+  /// An argument's code, then the rest.
+  Arg : (c : Code, rest : Codes) --> Codes;
+}
+
+/// A function row: its arguments' codes and its result's.
+pub data Row : Type {
+  /// The row.
+  Row : (args : Codes, result : Code) --> Row;
+}
+
+/// A type's layout as rustc printed it: size, alignment, a niche, and whether
+/// it needs drop.
+pub data Printed : Type {
+  /// The printed layout.
+  Printed : (size : Integer, align : Integer, niched : Bool, drops : Bool) --> Printed;
+}
+
+/// An extern's parameters in order, each named, as rustc built them.
+pub data Params : Type {
+  /// No more parameters.
+  NoParam : Params;
+  /// A parameter's name and printed layout, then the rest.
+  Param : (name : String, p : Printed, rest : Params) --> Params;
+}
+
+/// An extern's declared signature: its parameters and its result.
+pub data Declared : Type {
+  /// The signature.
+  Declared : (params : Params, result : Printed) --> Declared;
+}
+
+/// Where a clause stands in the row.
+pub data Position : Type {
+  /// The argument at an index, from zero.
+  Argument : (index : Integer) --> Position;
+  /// The result.
+  Result : Position;
+}
+
+/// The clause of the row a declared signature breaks.
+pub data Clause : Type {
+  /// The extern takes a different number of arguments.
+  Arity : Clause;
+  /// A size differs.
+  Size : (place : Position) --> Clause;
+  /// An alignment differs.
+  Align : (place : Position) --> Clause;
+  /// One keeps its discriminant in a niche and the other does not.
+  Niche : (place : Position) --> Clause;
+  /// The declared type needs drop, and the row's value is handled bitwise.
+  Destroy : (place : Position) --> Clause;
+}
+
+/// What admission answers.
+pub data Admission : Type {
+  /// The declared signature realises the row.
+  Admitted : Admission;
+  /// It does not, by the first clause that fails.
+  Unrealised : (c : Clause) --> Admission;
+}
+
+/// Whether two booleans are equal.
+def agree(a : Bool, b : Bool) -> Bool {
+  case a {
+    true => b,
+    false => case b {
+      true => false,
+      false => true
+    }
+  }
+}
+
+/// One position of the row: the printed layout against the code's record,
+/// size, then alignment, then the niche, then the handling.
+pub def check(p : Printed, c : Code, place : Position) -> Admission {
+  case p {
+    Printed(size, align, inNiche, drops) => case summary(c) {
+      Witness(s, _stride, a, h) => case size == s {
+        false => Unrealised(Size(place)),
+        true => case align == a {
+          false => Unrealised(Align(place)),
+          true => case agree(inNiche, niched(c)) {
+            false => Unrealised(Niche(place)),
+            true => case h {
+              Bitwise => case drops {
+                true => Unrealised(Destroy(place)),
+                false => Admitted
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// The arguments from an index, in order, as many on each side.
+def rec admitArgs(ps : Params, cs : Codes, i : Integer) -> Admission {
+  case ps {
+    NoParam => case cs {
+      NoCode => Admitted,
+      Arg(_c, _rest) => Unrealised(Arity)
+    },
+    Param(_n, p, rest) => case cs {
+      NoCode => Unrealised(Arity),
+      Arg(c, more) => case check(p, c, Argument(i)) {
+        Admitted => admitArgs[<](rest, more, i + 1),
+        Unrealised(cl) => Unrealised(cl)
+      }
+    }
+  }
+}
+
+/// A declared signature against a row: the arguments, then the result.
+pub def admit(d : Declared, r : Row) -> Admission {
+  case d {
+    Declared(ps, res) => case r {
+      Row(cs, rc) => case admitArgs(ps, cs, 0) {
+        Admitted => check(res, rc, Result),
+        Unrealised(cl) => Unrealised(cl)
+      }
+    }
+  }
+}
+
+/// `f`'s row: `Option<&u32>` and `u32` to `u32`.
+pub def fRow : Row = Row(Arg(optRef, Arg(u32, NoCode)), u32);
+
+/// `Option<&u32>` as rustc printed it: one word, its discriminant in the
+/// reference's niche.
+def printedOptRef : Printed = Printed(8, 8, true, false);
+
+/// `u32` as rustc lays it out.
+def printedU32 : Printed = Printed(4, 4, false, false);
+
+/// `f` as rustc built it.
+@[ runs("Admitted") ]
+def fAdmitted() -> Admission {
+  admit(Declared(Param("x", printedOptRef, Param("n", printedU32, NoParam)), printedU32), fRow)
+}
+
+/// `g` takes `n: u64`, eight bytes where the row's `u32` is four.
+@[ runs("Unrealised(Size(Argument(1)))") ]
+def gUnrealised() -> Admission {
+  admit(
+    Declared(
+      Param("x", printedOptRef, Param("n", Printed(8, 8, false, false), NoParam)),
+      printedU32
+    ),
+    fRow
+  )
+}
+
+/// `h` takes `x: &u32`: one word, but never null, where the row's null
+/// stands for `None`.
+@[ runs("Unrealised(Niche(Argument(0)))") ]
+def hUnrealised() -> Admission {
+  admit(
+    Declared(Param("x", Printed(8, 8, false, false), Param("n", printedU32, NoParam)), printedU32),
+    fRow
+  )
+}
+
+/// `t` takes `x: Tagged`, two words where the row's is one. Its realisers are
+/// the niche's (`nicheTaggedEquiv`), so a call across marshals with `fromOpt`.
+@[ runs("Unrealised(Size(Argument(0)))") ]
+def tUnrealised() -> Admission {
+  admit(
+    Declared(Param("x", Printed(16, 8, false, false), Param("n", printedU32, NoParam)), printedU32),
+    fRow
+  )
+}
+
+/// `b` takes `x: Option<Box<u32>>`, one word with the same niche. It owns its
+/// cell, which the callee frees, where the row's reference is borrowed.
+@[ runs("Unrealised(Destroy(Argument(0)))") ]
+def bUnrealised() -> Admission {
+  admit(
+    Declared(Param("x", Printed(8, 8, true, true), Param("n", printedU32, NoParam)), printedU32),
+    fRow
+  )
+}
+
+/// `a` takes `n: Packed`: four bytes, as the row's `u32`, but aligned to one
+/// where the row's is four.
+@[ runs("Unrealised(Align(Argument(1)))") ]
+def aUnrealised() -> Admission {
+  admit(
+    Declared(
+      Param("x", printedOptRef, Param("n", Printed(4, 1, false, false), NoParam)),
+      printedU32
+    ),
+    fRow
+  )
+}
+
+/// `w` answers a `u64` where the row answers a `u32`.
+@[ runs("Unrealised(Size(Result))") ]
+def wUnrealised() -> Admission {
+  admit(
+    Declared(
+      Param("x", printedOptRef, Param("n", printedU32, NoParam)),
+      Printed(8, 8, false, false)
+    ),
+    fRow
+  )
+}
+
+/// `k` takes no `n`.
+@[ runs("Unrealised(Arity)") ]
+def kUnrealised() -> Admission {
+  admit(Declared(Param("x", printedOptRef, NoParam), printedU32), fRow)
+}
+
+/// `f`'s triple, `{V_opt(x)} f(x, n) {V_opt(x)}`, needs the reference's cells
+/// alone, the integer and the result owning nothing. That `f`'s body meets it
+/// is assumed, since nothing here reads its body.
+pub def fMeets(x : Nat, n : Nat, h : Heap) -> vOpt(vInt, x, h) => derefOrWp(x, n, keptOpt, h) {
+  derefOrMeets(x, n, h)
+}

@@ -1,0 +1,39 @@
+// A function row's precondition chosen through the layout program, refused by
+// the checker.
+//
+// `Option<&u32>`'s realisers are picked by whether its layout keeps the
+// discriminant in a niche. The program runs to the niche, so the row is
+// admitted by a run.
+//
+// The normaliser holds a native integer operation as a neutral, the
+// `native-primitives` row. So `niched(optRef)` does not convert to `true`, and
+// the chosen predicate does not unfold.
+//
+// - see: #2901 — not implemented: the check-time refusal of an extern
+//   declaration
+// - see: `model/interop/boundary/function-row.gandr` — `optRefNiched`, the run
+//   to the niche
+
+// `Nat`.
+import "../../../model/data/data-base.gandr";
+
+// `Heap`, `vOpt`, `vInt`.
+import "../../../model/specification/niche-realizability.gandr";
+
+// `Code`, `niched`, `optRef`.
+import "../../../model/interop/boundary/function-row.gandr";
+
+/// A code's realisers, chosen by its layout: a niched enum's are the null
+/// niche over `u32`, any other code's an unboxed integer.
+def realiser(c : Code, w : Nat, h : Heap) -> Type {
+  case niched(c) {
+    true => vOpt(vInt, w, h),
+    false => vInt(w, h)
+  }
+}
+
+/// The first argument's realisers read through the layout: the niche's by the
+/// run, undecided by the checker. It holds the layout program's integer
+/// comparisons as neutrals (`native-primitives`).
+@[ refuses("Undecided") ]
+def throughLayout(x : Nat, h : Heap, r : realiser(optRef, x, h)) -> vOpt(vInt, x, h) { r }

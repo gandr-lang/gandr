@@ -1,6 +1,6 @@
 /// `abi-realizability`: Layouts as realizability predicates.
-/// Implemented: `Option<&T>`'s null niche as a realizability predicate over heaps written as data, equivalent at every heap to the two-word tagged layout with its marshallers meeting their triples, and a C `deref_or` specified by hand met by it, its `_Nonnull` neighbour refused.
-/// Not implemented: the logic as a theory with heaps its model, with the frame rule, the later modality and objects behind a reference count, which #2835 owes; the C side read from its source rather than specified by hand, which #327 owes.
+/// Implemented: `Option<&T>`'s null niche as a realizability predicate over heaps written as data, equivalent at every heap to the two-word tagged layout with its marshallers meeting their triples, and a C `deref_or` specified by hand met by it, its `_Nonnull` neighbour refused; a Rust extern's function row, each argument's and the result's witness record read off its code by Rust's default layout, admitted against the signature rustc printed by a run that names the clause a differing signature breaks.
+/// Not implemented: the logic as a theory with heaps its model, with the frame rule, the later modality and objects behind a reference count, which #2835 owes; the C side read from its source rather than specified by hand, which #327 owes; an extern declaration admitted or refused at check time, which #2901 owes.
 // A type's realisers are a predicate on a word and a heap, `V⟦T⟧ : (Nat,
 // Heap) => Type`, and a layout optimisation is another predicate, a
 // marshaller between two of them a proof (Wagner, Eisbach and Ahmed,
@@ -14,9 +14,11 @@ import "../../model/data/data-base.gandr";
 // `Heap`, the realisers, the equivalence and `deref_or`'s triple.
 import "../../model/specification/niche-realizability.gandr";
 
+// `Row`, `admit` and the printed layouts.
+import "../../model/interop/boundary/function-row.gandr";
+
 /// The niche at a reference to an int and the tagged layout: equivalent at
 /// every heap.
-@[ checks ]
 def intLayouts(h : Heap) -> #{w : Nat, ok : vOpt(vInt, w, h)} ≃ #{
   r : Tagged,
   ok : vTag(vInt, r, h)
@@ -26,7 +28,24 @@ def intLayouts(h : Heap) -> #{w : Nat, ok : vOpt(vInt, w, h)} ≃ #{
 
 /// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
 /// {V_opt(w)}`.
-@[ checks ]
-def passed(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefOrWp(w, d, keptOpt, h) {
+def passed(w : Nat, d : Nat, h : Heap) -> vOpt(vInt, w, h) => derefOrWp(w, d, keptOpt, h) {
   derefOrMeets(w, d, h)
+}
+
+/// `fn f(x: Option<&u32>, n: u32) -> u32` as rustc built it, admitted
+/// against its row.
+@[ runs("Admitted") ]
+def rowAdmitted() -> Admission {
+  admit(
+    Declared(
+      Param("x", Printed(8, 8, true, false), Param("n", Printed(4, 4, false, false), NoParam)),
+      Printed(
+        4,
+        4,
+        false,
+        false
+      )
+    ),
+    fRow
+  )
 }
