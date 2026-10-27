@@ -131,7 +131,8 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression forget", Standing::Owed(0)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
-    ("Expression identifier", Standing::Owed(0)),
+    // #2968: the instance name in a call a theory scope's laws rewrite.
+    ("Expression identifier", Standing::Owed(4)),
     ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),
@@ -158,6 +159,7 @@ const KINDS: &[(&str, Standing)] = &[
         "Expression {",
         Standing::Design("a block: the computation it holds answers"),
     ),
+    ("Expression ~", Standing::Owed(0)),
     ("Expression ∷", Standing::Owed(0)),
     ("Pattern #{", Standing::Owed(0)),
     ("Pattern (", Standing::Owed(0)),
@@ -215,8 +217,9 @@ const KINDS: &[(&str, Standing)] = &[
         "Type sort",
         Standing::Design("a manifest sort's binding: the type it fixes the sort to answers"),
     ),
-    ("Type type_identifier", Standing::Owed(0)),
-    ("Type type_variable", Standing::Owed(0)),
+    // #2969: a theory operation's binder sorts and index terms.
+    ("Type type_identifier", Standing::Owed(3)),
+    ("Type type_variable", Standing::Owed(12)),
     ("Type u32", Standing::Owed(0)),
     ("Type u64", Standing::Owed(0)),
     (
@@ -350,8 +353,9 @@ fn kind(
 /// family's kind, as the sort of a stage binder or the binder a call
 /// supplies, as the sort of a region binder, as the theory a model type
 /// names, as the module and the model type a pack names, as a variable a
-/// binding port binds or an abstracting operation in a theory's rule, or as
-/// the head or the type of an `Eq.generic(T)` or of one of its laws.
+/// binding port binds or an abstracting operation in a theory's rule, as
+/// the head or the type of an `Eq.generic(T)` or of one of its laws, or as a
+/// node of the tactic a splice runs.
 ///
 /// # Specification
 /// trivial.
@@ -373,11 +377,12 @@ enum Placed
     /// the annotation heads answers (#298).
     Stratum,
     /// The module or the builtin namespace a path selects from, `M` in `M.x`
-    /// or `M.T`, `M.N` in `M.N.x`, and `int` in `int.div(c, 64)`: a
-    /// namespace, neither a term nor a type, so the path answers (#1170).
-    /// Or the model implicit a path reads a component of, `s` in `s.x` or
-    /// `s.C` (#2364): the model is its components, never a value, so the
-    /// path, the component's variable, answers.
+    /// or `M.T`, `M.N` in `M.N.x`, `limits.hard` in `limits.hard.note`, and
+    /// `int` in `int.div(c, 64)`: a namespace, neither a term nor a type, so
+    /// the path answers (#1170). Or the model implicit a path reads a
+    /// component of, `s` in `s.x` or `s.C` (#2364): the model is its
+    /// components, never a value, so the path, the component's variable,
+    /// answers.
     Qualifier,
     /// A move of a run literal, its head, or the label it names: read by
     /// its shape, never resolved, so the run answers.
@@ -446,11 +451,17 @@ enum Placed
     /// neither the prelude's member nor the data type is a core node of the
     /// definition, and the call, located at the derived body, answers.
     Generic,
+    /// A node of the tactic a splice runs, `intro(assumption)` in
+    /// `~intro(assumption)` (#2762): the checker runs the tactic at the
+    /// splice's goal and judges the term it answers, so the tactic is no
+    /// core term of its own, and the splice, located at the answered term,
+    /// answers.
+    Tactic,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
 /// declaration's telescope writes, by the bytes the declaration covers, and
-/// the name of each module the source declares.
+/// every name along the path of each module the source's lowering holds.
 ///
 /// # Specification
 /// trivial.
@@ -459,7 +470,8 @@ struct Models
 {
     /// Each model implicit's name, beside the bytes its declaration covers.
     implicits: Vec<((usize, usize), String)>,
-    /// Each module's own name.
+    /// Every name along each module's path, `limits` and `hard` for
+    /// `limits.hard`.
     modules: BTreeSet<String>,
 }
 
@@ -484,6 +496,29 @@ fn gated(
             name.match_indices('.')
                 .filter_map(move |(at, _)| name.get(.. at))
         })
+        .collect();
+    // The module names a path can select from: every name along the path of
+    // each module the lowering holds, and of each module an import names,
+    // `text` and `greet` in `import text.greet (greeting);`.
+    let modules: BTreeSet<&str> = models
+        .modules
+        .iter()
+        .map(String::as_str)
+        .chain(
+            source
+                .match_indices("import ")
+                .filter_map(|(at, _)| {
+                    let after = source.get(at.saturating_add(7) ..)?;
+                    let end = after
+                        .find(|letter: char| {
+                            !(letter.is_alphanumeric() || letter == '_' || letter == '.')
+                        })
+                        .unwrap_or(after.len());
+                    after.get(.. end)
+                })
+                .flat_map(|path| path.split('.')),
+        )
+        .filter(|name| !name.is_empty())
         .collect();
     // The stage binders the source declares, `j` in `@[j : Size]`, by name.
     let stages: BTreeSet<&str> = source
@@ -787,6 +822,9 @@ fn gated(
                         if deriving {
                             placed.or(Some(Placed::Generic))
                         }
+                        else if melded && def.label == "~" && def.sort == Sort::Expression {
+                            placed.or(Some(Placed::Tactic))
+                        }
                         else if modelled && opener != Some(child) {
                             placed.or(Some(Placed::Theory))
                         }
@@ -838,16 +876,16 @@ fn gated(
         let qualifier = parent.is_some_and(|(_, _, _, qualifying, _)| qualifying)
             && if melded {
                 def.label == "."
-                    && (text
-                        .split('.')
-                        .next()
-                        .is_some_and(|head| head.trim_start().starts_with(char::is_uppercase))
-                        || namespaces.contains(text.trim()))
+                    && (text.split('.').next().is_some_and(|head| {
+                        let head = head.trim();
+                        head.starts_with(char::is_uppercase) || modules.contains(head)
+                    }) || namespaces.contains(text.trim()))
             }
             else {
                 def.label == "constructor"
                     || def.label == "type_identifier"
-                    || (def.label == "identifier" && namespaces.contains(text))
+                    || (def.label == "identifier"
+                        && (namespaces.contains(text) || modules.contains(text.trim())))
                     || ((def.label == "identifier" || def.label == "type_variable") && modelled)
             };
         // A module or a model implicit a call supplies a model implicit by,
@@ -943,6 +981,54 @@ fn gated(
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated
+}
+
+/// A splice's tactic and a lowercase module path, nested or imported, stand
+/// placed, so the census reads only the nodes the program holds, while the
+/// splice and the path themselves answer (#2959).
+#[test]
+fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let source = "import text.greet (greeting);\ndef id : Integer => Integer = \
+                  ~intro(assumption);\ndef note = limits.hard.note;\ndef welcome = \
+                  text.greet.greeting;\n";
+    let tree = parse(&grammar, SourceText::from(source))
+        .expect("the source parses")
+        .into_tree();
+    let models = Models {
+        implicits: Vec::new(),
+        modules: BTreeSet::from([String::from("limits"), String::from("hard")]),
+    };
+    let gated: Vec<(&str, Option<Placed>)> = gated(&grammar, &tree, &BTreeSet::new(), &models)
+        .into_iter()
+        .filter_map(|(_, span, placed)| {
+            source
+                .get(usize::from(span.start()) .. usize::from(span.end()))
+                .map(|text| (text, placed))
+        })
+        .collect();
+    let stands = |text: &str, placed: Option<Placed>| {
+        gated
+            .iter()
+            .any(|&(written, held)| written == text && held == placed)
+    };
+    for (text, placed) in [
+        ("~intro(assumption)", None),
+        ("intro(assumption)", Some(Placed::Tactic)),
+        ("assumption", Some(Placed::Tactic)),
+        ("limits.hard.note", None),
+        ("limits.hard", Some(Placed::Qualifier)),
+        ("limits", Some(Placed::Qualifier)),
+        ("text.greet.greeting", None),
+        ("text.greet", Some(Placed::Qualifier)),
+        ("text", Some(Placed::Qualifier)),
+    ] {
+        assert!(
+            stands(text, placed),
+            "`{text}` stands {placed:?}: {gated:?}"
+        );
+    }
 }
 
 /// The entry sweep: the gate over the corpus's sources.
@@ -1093,7 +1179,7 @@ mod sweeps
                         module
                             .structures()
                             .iter()
-                            .filter_map(|structure| structure.path().last())
+                            .flat_map(gandr_surface_lowering::LoweredStructure::path)
                             .map(|name| String::from(name.as_ref())),
                     );
                 }
