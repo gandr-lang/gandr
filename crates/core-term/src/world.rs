@@ -2,6 +2,14 @@
 //! value held at one, the capability to move to one, and the three forms that
 //! hold, open and migrate.
 //!
+//! In the storage picture each world runs its own LAMs and every world
+//! reaches one CAM, the location- and content-addressable memories of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`:
+//! a location means something at its own world alone, and a value crosses to
+//! another by content. A crossing asks `mobile`, the authority, which the
+//! checker decides, and `Open`, no location inside, which nothing decides
+//! yet. Its wall is validity: a judgement decides a crossing, never a digest.
+//!
 //! # A world is a locus, never a host
 //!
 //! A world is the place a judgement is meaningful at: typing is located,
@@ -51,6 +59,12 @@
 //! A `leta`'s body stands under one intuitionistic binder; every other child
 //! stands where the form stands. No case binds in the linear zone, so a
 //! rewrite of the linear indices passes through a world form unchanged.
+//!
+//! # References
+//!
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
+//!   per-world LAMs and the one CAM a crossing passes through, and `Open`,
+//!   the representation half of a crossing.
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;

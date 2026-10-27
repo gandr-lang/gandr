@@ -4,6 +4,7 @@ Kernel artifacts on the authenticated record plane: one record per declaration s
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -18,6 +19,10 @@ Kernel artifacts on the authenticated record plane: one record per declaration s
 **Why.** An artifact is a sorted unique keyed record set by construction: admission order keys each declaration, and the format is declaration-segmented. Storing it as records gives it a content identity, structural sharing between artifacts that share declarations, and the record plane's membership and range proofs, with no reshaping of the bytes. A session or a corpus run that persists its kernel environment needs exactly that, and needs the read back to stay as strict as a fresh decode.
 
 **How.** `ArtifactRecordSet::from_artifact` decodes the image and cuts it where the decoder's `SegmentLayout` says each segment ends. `build` builds a `RecordTree` over the header and the declaration records under the caller's `TreeParams`, writes its nodes, and returns a manifest binding the kernel format version, the boundary commitment, the record count and the root node identity; the manifest's identity is BLAKE3 over its domain-separated image. `read_under` refuses a foreign kernel format or boundary commitment before touching the store, loads the root and its leaves through the store's verified load, rebuilds the tree from the loaded records and refuses any disagreement with the manifest, checks the keys, reassembles the image, hands it to `decode` under `MAX_ARTIFACT_EXPANDED_WORK` and the other decode budgets, and refuses records not cut at the decode's segment boundaries.
+
+## References
+
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688); [mechanization artifact, doi:10.5281/zenodo.20315616](https://doi.org/10.5281/zenodo.20315616) — the CAM a keyed artifact instantiates, and the token-bound lemmas whose scope the crate root states.
 
 ## Provided features
 

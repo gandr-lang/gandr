@@ -51,5 +51,6 @@ INSERT INTO site VALUES('sharing','kernel-check-memo','','implements','increment
 INSERT INTO site VALUES('sharing','kernel-core','admission','implements','superposition','Guarded-superposition admission: one schema check for a family of members.');
 INSERT INTO site VALUES('sharing','kernel-core','encoding','implements','incremental-memo','The memo key, naming a plain definition''s reference by its content.');
 INSERT INTO site VALUES('sharing','runtime-emitter','lower','implements','heap-reuse','The reuse token: a scrutinee whose fields an arm took is rebuilt in place by the constructor the ownership reading pairs with it.');
+INSERT INTO site VALUES('sharing','storage-chunker','typed','implements','content-chunks','The typed scanner: a value''s chunk cut where a residue divides kappa or the cap fires, at a boundary constructor''s exit.');
 INSERT INTO site VALUES('sharing','storage-values','commit','defines','content-chunks','`cam_commit`: a value cut at its boundary constructors into chunks named by digest, the boundary and alias classification deciding where a cut falls.');
 COMMIT;

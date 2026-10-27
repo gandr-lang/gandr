@@ -1,4 +1,6 @@
 //! Graph-preserving imports of type annotations into a different core arena.
+//!
+//! The source and the destination use the same binder context.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

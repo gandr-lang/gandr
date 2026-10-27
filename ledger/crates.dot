@@ -315,5 +315,6 @@ digraph crates {
   "core-nbe" -> "kernel-check-memo" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "kernel-check-memo" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "kernel-core" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
-  "runtime-emitter" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "runtime-emitter" -> "storage-chunker" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "storage-chunker" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
 }

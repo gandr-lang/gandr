@@ -18,7 +18,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 **Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit as a cut whose two sides say what is sent where. The L machine's transitions step that structure directly, cell rules reify into it, and effect handlers walk its frames without inspecting opaque host closures.
 
-**How.** Every node is minted only over children the arena already holds, so the arena is acyclic by construction, and a `SequentWatermark` with `CommandArena::truncate_to` drops exactly what a refused build minted. Binders count outward, producers and covariables in separate index spaces, so equal inputs build identical nodes and no translation keeps a name supply. Minting also builds each node's scope from its children's carried scopes — its support in the co-de Bruijn carrier of `gandr-core-term`, covariables in a zone of their own, stored beside the node and no edge stored — so scope is read off a node, never walked. The store's values are immutable and shared by address, each naming only values allocated before it, so readback is a loop in address order.
+**How.** Every node is minted only over children the arena already holds, so the arena is acyclic by construction, and a `SequentWatermark` with `CommandArena::truncate_to` drops exactly what a refused build minted. Binders count outward, producers and covariables in separate index spaces, so equal inputs build identical nodes and no translation keeps a name supply. Each node's scope, its co-de Bruijn support, is built at mint and stored beside it, never walked (`src/il.rs`); readback reads the store in address order (`src/readback.rs`).
 
 ## Provided features
 
@@ -134,6 +134,7 @@ Running a command — marks, fixpoints, effects, delimited control and temporary
 - `Sullivan-2023-reflections_closures` — lineage: Zachary J. Sullivan, "Reflections of Closures", PhD thesis, University of Oregon, 2023, ch. 4 — the abstract closure, its β and the one-variable conversion rule.
 - `Sullivan-2023-closure_conversion_little_pieces` — lineage: Sullivan, Downen and Ariola, "Closure Conversion in Little Pieces", PPDP 2023, `doi:10.1145/3610612.3610622` — conversion as equalities local to the IL.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 4) — abstract closures in the sequent IL.
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
 
 ## License
 

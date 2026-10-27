@@ -128,21 +128,46 @@ crates/
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins, and the `check:dylint` task states which of its lints deny and why, `spec_clause_traversal`'s cost rule among them.
 
-## Crate README shape
+A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
 
-A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants and specification detail live and `check:doc` builds them; a decision's choice, alternatives and reversal live in its pull request and issue. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside its README allowlist, and a README over its budget in `sizelint.toml`.
+## Storage and distribution
 
-Every crate README follows one order. A section is present when the crate has content for it.
+The storage crates are one content-addressable memory, _the CAM_, and the runtime's stores location-addressable memories, _the LAMs_ (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Each world runs its own LAMs; all reach one logical CAM, addressed by digests of canonical bytes, one key space. A value crosses a world by `cam_commit` at the source and `cam_deref` at the destination when its type is `mobile`, the authority, and `Open`, holding no location. A digest proves integrity; validity is the checker's and the kernel's. Dashed: not built yet.
 
-1. `# <package>`, followed by one sentence stating what the crate is.
-2. A table of contents linking every section below.
-3. `## Synopsis`: three paragraphs, each opening with a bold word. **What.** names the thing the crate is, **Why.** the need it answers, and **How.** the mechanism, named concretely. The prose is dense, technical and in the present tense, and carries no history.
-4. `## References`: one entry per key the crate's modules cite, `` - `<key>` — <role>: `` then the full title, the authors, the venue, the date, a stable identifier (DOI, ISBN, arXiv, HAL) and one clause on what the crate takes from it.
-5. `## Provided features`: what the crate provides, as items.
-6. `## Expected features`: what the crate requires of its consumer or its environment to be useful, such as a digest function, a store implementation, a spawner, a target requirement or a specification facade's `cfg`. Absent or planned work is not listed here.
-7. `## Examples`: runnable usage and the command that runs the crate's tests.
-8. `## Where the detail lives`: the modules whose rustdoc states each mechanism and decision, as a table or one sentence.
-9. `## License`: `Apache-2.0 WITH LLVM-exception`, the workspace licence, whose text is at the repository root.
+```mermaid
+flowchart LR
+  subgraph LAMs["a world's LAMs"]
+    world[core-term::world]
+    memory[core-term::memory]
+    emitter[runtime-emitter]
+    sequent[core-sequent]
+  end
+  subgraph CAM["the CAM"]
+    chunker[storage-chunker]
+    values[storage-values]
+    records[storage-records]
+    artifact[storage-artifact]
+  end
+  memory -->|hold: a cell| emitter
+  emitter -->|moves out| sequent
+  world -.->|mobile, Open| sequent
+  sequent -.->|cam_commit| values
+  values -.->|cam_deref| sequent
+  chunker --> values
+  chunker --> records
+  records --> artifact
+```
+
+| Crate | Layer | Located | Resident | Wall |
+| ----- | ----- | ------- | -------- | ---- |
+| `storage-chunker` | CAM | none | cut points, κ and cap committed | integrity |
+| `storage-values` | CAM | none | a typed chunk DAG of `ContentPtr`s | integrity |
+| `storage-records` | CAM | none | records under a `TreeRoot` | integrity |
+| `storage-artifact` | CAM | none | a kernel artifact as records | integrity, then validity |
+| `runtime-emitter` | LAM | its thread | a run's regions | validity |
+| `core-sequent` | LAM | its run | the `Store`, append-only | none |
+| `core-term::world` | world | `⊢_w`, `A at w` | — | validity |
+| `core-term::memory` | LAM | a hold's world | a held cell lent to a view | validity |
 
 ## Divergences
 

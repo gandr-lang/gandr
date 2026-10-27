@@ -1981,6 +1981,8 @@ jobs:
         run: mise run check:publish
       - name: check the crate map
         run: mise run check:crate-map
+      - name: check the crate leads
+        run: mise run check:crate-lead
       # The purposes ledger documents only the crates it rows, so its rustdoc
       # build grows with the ledger rather than with the workspace.
       - name: check the purposes ledger

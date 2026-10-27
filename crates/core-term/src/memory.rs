@@ -2,6 +2,13 @@
 //! view in a mode, the view's two eliminators, and the hold's end at a
 //! consuming read.
 //!
+//! In the storage picture a hold names a location in its world's LAM, a
+//! location-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`:
+//! the emitter runs a hold as a cell of the run's heap, and an access lends
+//! a place of that cell to a view. Its wall is validity: the checker decides
+//! each access's mode, and no digest does.
+//!
 //! # The forms
 //!
 //! |form|written|binds|
@@ -50,6 +57,11 @@
 //! them, stands where the form stands. No case binds in the intuitionistic
 //! zone, so a rewrite of the intuitionistic indices passes through a memory
 //! form unchanged.
+//!
+//! # References
+//!
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
+//!   LAM whose locations a hold names and an access lends.
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;

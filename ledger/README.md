@@ -50,3 +50,19 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 | `mise run check:ledger` | fails while `features.sql` breaks a constraint or is not its own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |
 
 `mise run check` runs every gate and CI runs them on every change. A change to the grammar or to the attribute registry regenerates the ledger and updates the exemplars in the same commit; a change that lands, changes or retires a feature edits its row of `features.sql` in the same commit.
+
+## Crate READMEs
+
+A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants and specification detail live and `check:doc` builds them; a decision's choice, alternatives and reversal live in its pull request and issue. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside its README allowlist, and a README over its budget in `sizelint.toml`.
+
+Every crate README follows one order. A section is present when the crate has content for it.
+
+1. `# <package>`, followed by one sentence stating what the crate is.
+2. A table of contents linking every section below.
+3. `## Synopsis`: three paragraphs, each opening with a bold word. **What.** names the thing the crate is, **Why.** the need it answers, and **How.** the mechanism, named concretely. The prose is dense, technical and in the present tense, and carries no history.
+4. `## References`: one entry per key the crate's modules cite, `` - `<key>` — <role>: `` then the full title, the authors, the venue, the date, a stable identifier (DOI, ISBN, arXiv, HAL) and one clause on what the crate takes from it.
+5. `## Provided features`: what the crate provides, as items.
+6. `## Expected features`: what the crate requires of its consumer or its environment to be useful, such as a digest function, a store implementation, a spawner, a target requirement or a specification facade's `cfg`. Absent or planned work is not listed here.
+7. `## Examples`: runnable usage and the command that runs the crate's tests.
+8. `## Where the detail lives`: the modules whose rustdoc states each mechanism and decision, as a table or one sentence.
+9. `## License`: `Apache-2.0 WITH LLVM-exception`, the workspace licence, whose text is at the repository root.

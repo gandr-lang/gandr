@@ -1,6 +1,12 @@
 //! **Content-defined chunking** for the storage tier: where a stream of
 //! canonical units is cut into chunks, decided by the content rather than by a
-//! position counter, under parameters a downstream root commits.
+//! position counter, under parameters a downstream root commits. In the
+//! storage picture this crate is the chunk grain of the CAM, the
+//! content-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`.
+//! Its wall is integrity: the commitment it writes binds its parameters,
+//! kappa and the cap among them, into every root cut under them, and it
+//! decides nothing about validity.
 //!
 //! # What the crate is for
 //!
@@ -35,6 +41,12 @@
 //!
 //! See the [profiles and commitments](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#two-profiles)
 //! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#references).
+//!
+//! # References
+//!
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: the
+//!   typed profile's cut rule, a residue divisible by kappa or the cap, at the
+//!   boundary events a caller reports.
 
 // Module documentation that predates the shape lint: 10 headings outside the
 // vocabulary. Each allow leaves with the rewrite that clears its count.

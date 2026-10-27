@@ -4,6 +4,7 @@ A content-addressed value plane with typed chunk DAGs, content pointers and flat
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -18,6 +19,10 @@ A content-addressed value plane with typed chunk DAGs, content pointers and flat
 **Why.** Large values need content identities and structural sharing at their own constructor boundaries. Chunking by those boundaries lets unchanged subtrees share storage across values and edits. A decoder consumes one logical token stream regardless of the seams between chunks, keeping storage layout outside the codec.
 
 **How.** A `CanonicalValue` emits a balanced stream of constructor, word and byte records. The typed scanner in `gandr-storage-chunker` selects constructor exits using a Merkle-derived residue and a token cap. Selected subtrees become domain-separated BLAKE3 chunks, replaced in their parents by digest-and-offset pointers. The reader verifies chunks, splices their token streams and charges decoding to a total work budget; heap-held traversal stacks avoid recursion in the storage paths.
+
+## References
+
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — the CAM this crate is: constructor-directed cuts, content pointers, the representation lemmas its laws stand in for and the locality bound.
 
 ## Provided features
 
