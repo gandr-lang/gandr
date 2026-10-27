@@ -1595,10 +1595,12 @@ impl fmt::Display for Checked
                     crossed, predicate, ..
                 } => write!(
                     f,
-                    "{} crosses to another world, but its type {}",
+                    "{}, but its type {}",
                     match crossed {
-                        | Crossed::Result => "the migration's result",
-                        | Crossed::Constant => "the declaration named here",
+                        | Crossed::Result => "the migration's result crosses to another world",
+                        | Crossed::Constant => "the declaration named here crosses to another world",
+                        | Crossed::Capture => "a thunk crossing to another world captures this",
+                        | Crossed::Homed => "a thunk crossing to another world reads this declaration away from its home",
                     },
                     match predicate {
                         | Predicate::Mobile => "has a former that is not mobile",

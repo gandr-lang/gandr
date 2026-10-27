@@ -1,0 +1,19 @@
+/// `Immobile.Homed`: a thunk crossing to another world over a call of a declaration homed where the thunk is formed.
+@[ checks ]
+world operator;
+
+@[ checks ]
+world seat;
+
+/// The seat's own work, homed at the seat.
+@[ checks ]
+@[ entry(seat) ]
+def pending() -> Integer {
+  pure 3
+}
+
+@[ refuses("Immobile.Homed") ]
+@[ entry((operator, seat)) ]
+def homed() -> () => Integer {
+  migrate [seat] { pure thunk { pending() } }
+}

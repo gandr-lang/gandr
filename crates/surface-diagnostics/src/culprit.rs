@@ -68,6 +68,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
 use gandr_surface_corpus::CorpusRefusal;
@@ -477,13 +478,35 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         },
         CheckRefusal::Located { defect, .. } => match defect {
             LocatedDefect::Immobile {
+                crossed: Crossed::Result | Crossed::Constant,
                 predicate: Predicate::Mobile,
                 ..
             } => "a value whose type holds a former that is not mobile",
             LocatedDefect::Immobile {
+                crossed: Crossed::Result | Crossed::Constant,
                 predicate: Predicate::Open,
                 ..
             } => "a handle whose held value is not open",
+            LocatedDefect::Immobile {
+                crossed: Crossed::Capture,
+                predicate: Predicate::Mobile,
+                ..
+            } => "a capture whose type holds a former that is not mobile",
+            LocatedDefect::Immobile {
+                crossed: Crossed::Capture,
+                predicate: Predicate::Open,
+                ..
+            } => "a capture whose type holds a former that is not open",
+            LocatedDefect::Immobile {
+                crossed: Crossed::Homed,
+                predicate: Predicate::Mobile,
+                ..
+            } => "a declaration homed where the thunk is formed, whose type is not mobile",
+            LocatedDefect::Immobile {
+                crossed: Crossed::Homed,
+                predicate: Predicate::Open,
+                ..
+            } => "a declaration homed where the thunk is formed, whose type is not open",
             LocatedDefect::CapabilityMissing { .. } => "no capability for the world",
             LocatedDefect::CapabilityCaptured { .. } => "a migration that may run other than once",
             LocatedDefect::Elsewhere { .. } => "a value bound at another world",

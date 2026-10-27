@@ -1176,7 +1176,12 @@ fn located_refusals_round_trip_with_their_worlds()
     let integer =
         || crate::fixture::type_content(&[ContentNode::Base(gandr_kernel_term::BaseType::Integer)]);
     let mut defects = Vec::new();
-    for crossed in [Crossed::Result, Crossed::Constant] {
+    for crossed in [
+        Crossed::Result,
+        Crossed::Constant,
+        Crossed::Capture,
+        Crossed::Homed,
+    ] {
         for predicate in [Predicate::Mobile, Predicate::Open] {
             defects.push(Located::Immobile {
                 crossed,

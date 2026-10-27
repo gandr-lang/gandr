@@ -1,8 +1,7 @@
 // What does not cross, refused where it would. A migration's result comes
-// back to the world the migration left, and only what is mobile and open
-// comes back: an unmarked abstract type stays with its seal, a handle stays
-// when what it holds is not open, and a suspended computation stays where it
-// would run.
+// back to the world it left, and only what is mobile and open comes back: an
+// unmarked abstract type stays with its seal, a handle stays when what it
+// holds is not open, and a thunk stays when what it captures does.
 
 // The operator's and the seat's worlds, and the seat's sealed side of the
 // exchange, its report alone marked mobile.
@@ -25,10 +24,13 @@ def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
   migrate [seat] { (hold Seat.task) }
 }
 
-/// A suspended computation taken back from the seat, refused: a thunk runs
-/// where it is forced, and what it closes over is the seat's.
-@[ refuses("Immobile") ]
+/// A thunk over the dispatch taken back from the seat, refused at the
+/// capture: the dispatch stays with its seal, so the thunk does.
+@[ refuses("Immobile.Capture") ]
 @[ entry((operator, seat)) ]
-def suspendedBack() -> () => Seat.Report {
-  migrate [seat] { pure thunk { pure Seat.progress } }
+def suspendedBack() -> () => Seat.Dispatch {
+  migrate [seat] {
+    run task <- pure Seat.task;
+    pure thunk { pure task }
+  }
 }

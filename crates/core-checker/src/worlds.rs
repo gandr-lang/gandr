@@ -53,7 +53,8 @@
 //! |`A at w`|yes|when `A` is|
 //! |abstract atom|when its signature marks it `mobile`|as mobile|
 //! |the unknown type|yes|yes|
-//! |thunk, stack|no|no|
+//! |thunk|by its image, where it is formed|by its image|
+//! |stack|no|no|
 //! |endpoint, `Cap E`, `cap_w`|no|no|
 //! |universe, static Pi, path, flow, run|no|no|
 //! |decode of a code the judgement cannot read|no|no|
@@ -73,6 +74,39 @@
 //!   makes their carriers' crossing the decision.
 //! - **The unknown type** crosses: a hole's type is consistent with every type,
 //!   and the hole owes the rest.
+//!
+//! # A closure crosses by its image
+//!
+//! A thunk has no crossing of its own: it is mobile when every hypothesis
+//! it captures is, and open when every one is open. Its image is read where
+//! it is formed: a thunk formed while a migration's body is judged records
+//! the first capture, or constant homed at its world, that its body reads
+//! and whose type does not cross. A thunk literal the migration returns —
+//! bare, in a tuple, a record or a sum, or held — crosses when it recorded
+//! none, and is refused as [`LocatedDefect::Immobile`] at that read
+//! otherwise, naming [`Crossed::Capture`] or [`Crossed::Homed`]. Each of the
+//! image's three axes is a capture rule that stands before any crossing:
+//!
+//! - **The region index** is
+//!   [`AccessDefect::KeptEscaped`](crate::access::AccessDefect::KeptEscaped): a
+//!   thunk naming a value kept in a region is kept there too, and never leaves
+//!   it.
+//! - **The grade and access mode** are
+//!   [`AccessDefect::HeldCaptured`](crate::access::AccessDefect::HeldCaptured):
+//!   a thunk captures no held value at either grade, and a shared view only
+//!   where a region keeps the thunk, so a thunk that leaves its region captures
+//!   at ω.
+//! - **The located mode** is [`LocatedDefect::Elsewhere`] and
+//!   [`LocatedDefect::CapabilityCaptured`]: a thunk names no hypothesis bound
+//!   at another world and holds no capability, so every capture stands where
+//!   the thunk is formed.
+//!
+//! **The limit.** A thunk reached through a variable, a call's result or a
+//! branch carries no image, so it does not cross: the image does not travel
+//! with `U C`. Reversal: the summaries recorded on the closure's type,
+//! designed after #3216. `Send` and `Sync` are a fourth axis, thread
+//! portability inside one world, which crosses by location and is #2952's to
+//! decide, not this judgement's.
 //!
 //! # The mark is the signature's
 //!
@@ -409,6 +443,13 @@ pub enum Crossed
     /// A constant, the refusal's node, read at a world other than its
     /// declaration's home.
     Constant,
+    /// A hypothesis a thunk the migration returns captures, the refusal's
+    /// node its occurrence in the thunk's body.
+    Capture,
+    /// A constant homed at the world a thunk the migration returns is formed
+    /// at, the refusal's node its occurrence in the thunk's body: forcing the
+    /// thunk where it crosses to reads the constant away from its home.
+    Homed,
 }
 
 /// How a located judgement breaks.

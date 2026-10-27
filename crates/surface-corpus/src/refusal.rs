@@ -97,6 +97,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::FailureClass;
@@ -634,6 +635,52 @@ impl GenericCoverage
     }
 }
 
+/// What a refused crossing read, the qualifier of [`RefusalName::Immobile`]
+/// and [`RefusalName::NotOpen`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the crossing value's own type — a migration's result, or a
+///   constant read away from its home — is bare; a hypothesis a thunk the
+///   migration returns captures is qualified `Capture`; a constant homed where
+///   that thunk is formed, which its body reads, is qualified `Homed`.
+/// - provides: the checker's [`Crossed`] as the vocabulary names it.
+/// - panics: none.
+/// - executable: none — the qualifier holds neither the value nor its type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thunk capturing an unmarked payload, one capturing a
+///   handle to it and one reading a seat-homed function settle the fixtures
+///   naming each.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CrossingRead
+{
+    /// The crossing value's own type: bare.
+    Value,
+    /// A hypothesis a thunk the migration returns captures.
+    Capture,
+    /// A constant homed where a thunk the migration returns is formed.
+    Homed,
+}
+
+impl CrossingRead
+{
+    /// What a crossing refused at `crossed` read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn of(crossed: Crossed) -> Self
+    {
+        match crossed {
+            Crossed::Result | Crossed::Constant => Self::Value,
+            Crossed::Capture => Self::Capture,
+            Crossed::Homed => Self::Homed,
+        }
+    }
+}
+
 /// One name of the closed refusal vocabulary: every refusal the lowering, the
 /// checker and this crate raise, named by its variant.
 ///
@@ -1141,11 +1188,14 @@ pub enum RefusalName
     /// telescope.
     CodataArity,
     /// A value crossing to a world its type is not mobile at: a former
-    /// carries authority meaningful only where it was made.
-    Immobile,
+    /// carries authority meaningful only where it was made. Bare for the
+    /// value's own type; qualified `Capture` or `Homed` for what a thunk the
+    /// migration returns reads.
+    Immobile(CrossingRead),
     /// A handle crossing to another world over a value whose representation
-    /// is not open: it names a location the far world cannot read.
-    NotOpen,
+    /// is not open: it names a location the far world cannot read. Qualified
+    /// as [`Self::Immobile`] is.
+    NotOpen(CrossingRead),
     /// A migration with no capability for its world.
     CapabilityMissing,
     /// A migration under a former that may run it other than once.
@@ -1399,8 +1449,8 @@ impl RefusalName
         Self::CodataOccurrence,
         Self::CodataObservationLevel,
         Self::CodataArity,
-        Self::Immobile,
-        Self::NotOpen,
+        Self::Immobile(CrossingRead::Value),
+        Self::NotOpen(CrossingRead::Value),
         Self::CapabilityMissing,
         Self::CapabilityCaptured,
         Self::Elsewhere,
@@ -1450,6 +1500,10 @@ impl RefusalName
             .chain([
                 Self::UnprovenLaw(LawProof::Admitted),
                 Self::GenericUncovered(GenericCoverage::Dependent),
+                Self::Immobile(CrossingRead::Capture),
+                Self::Immobile(CrossingRead::Homed),
+                Self::NotOpen(CrossingRead::Capture),
+                Self::NotOpen(CrossingRead::Homed),
             ])
             .collect()
     }
@@ -1649,8 +1703,8 @@ impl RefusalName
         | (Self::CodataOccurrence, b"CodataOccurrence")
         | (Self::CodataObservationLevel, b"CodataObservationLevel")
         | (Self::CodataArity, b"CodataArity")
-        | (Self::Immobile, b"Immobile")
-        | (Self::NotOpen, b"NotOpen")
+        | (Self::Immobile(_), b"Immobile")
+        | (Self::NotOpen(_), b"NotOpen")
         | (Self::CapabilityMissing, b"CapabilityMissing")
         | (Self::CapabilityCaptured, b"CapabilityCaptured")
         | (Self::Elsewhere, b"Elsewhere")
@@ -1680,7 +1734,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1795,8 +1849,8 @@ impl RefusalName
             Self::CodataOccurrence => "CodataOccurrence",
             Self::CodataObservationLevel => "CodataObservationLevel",
             Self::CodataArity => "CodataArity",
-            Self::Immobile => "Immobile",
-            Self::NotOpen => "NotOpen",
+            Self::Immobile(_) => "Immobile",
+            Self::NotOpen(_) => "NotOpen",
             Self::CapabilityMissing => "CapabilityMissing",
             Self::CapabilityCaptured => "CapabilityCaptured",
             Self::Elsewhere => "Elsewhere",
@@ -1933,6 +1987,16 @@ impl RefusalName
         else if matches!(self, Self::GenericUncovered(GenericCoverage::Dependent)) {
             Some(Qualifier::Named(DEPENDENT))
         }
+        else if let Self::Immobile(CrossingRead::Capture) | Self::NotOpen(CrossingRead::Capture) =
+            self
+        {
+            Some(Qualifier::Named(CAPTURE))
+        }
+        else if let Self::Immobile(CrossingRead::Homed) | Self::NotOpen(CrossingRead::Homed) =
+            self
+        {
+            Some(Qualifier::Named(HOMED))
+        }
         else {
             None
         };
@@ -1981,6 +2045,11 @@ impl RefusalName
         let qualified = || {
             let (head, rest) = written.split_once('.')?;
             let tagged = |tags: &[Tag]| tags.iter().copied().find(|tag| tag.0 == rest);
+            let crossing = || {
+                CROSSING_READS
+                    .into_iter()
+                    .find_map(|(tag, read)| (tag.0 == rest).then_some(read))
+            };
             match head {
                 "OutOfFragment" => tagged(&readings())
                     .map(Qualifier::Named)
@@ -2005,6 +2074,8 @@ impl RefusalName
                 },
                 "GenericUncovered" => (rest == DEPENDENT.0)
                     .then_some(Self::GenericUncovered(GenericCoverage::Dependent)),
+                "Immobile" => crossing().map(Self::Immobile),
+                "NotOpen" => crossing().map(Self::NotOpen),
                 "BoundaryUnrealised" => {
                     tagged(&BOUNDARY_CLAUSES.map(BoundaryClause::tag)).map(Self::BoundaryUnrealised)
                 },
@@ -2028,6 +2099,19 @@ const ADMITTED: Tag = Tag("Admitted");
 
 /// The tag a law whose proof cases on a field under a motive is qualified by.
 const DEPENDENT: Tag = Tag("Dependent");
+
+/// The tag a refused crossing of a thunk's capture is qualified by.
+const CAPTURE: Tag = Tag("Capture");
+
+/// The tag a refused crossing of a constant a thunk reads at its home is
+/// qualified by.
+const HOMED: Tag = Tag("Homed");
+
+/// The readings a crossing's refusal is qualified by, each with its tag.
+const CROSSING_READS: [(Tag, CrossingRead); 2] = [
+    (CAPTURE, CrossingRead::Capture),
+    (HOMED, CrossingRead::Homed),
+];
 
 /// Every former the checker's judgement has no rule for.
 const FORMERS: [UnadmittedFormer; 24_usize] = [
@@ -2663,7 +2747,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
-        | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::NotOpen | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
+        | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile(_) | RefusalName::NotOpen(_) | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
         | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
         | (Self::Checking(CheckRefusal::CapabilityOutsideAuthority { .. }), RefusalName::CapabilityOutsideAuthority)
@@ -3091,8 +3175,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Codata { fault: CodataFault::Occurrence, .. }, RefusalName::CodataOccurrence)
         | (CheckRefusal::Codata { fault: CodataFault::ObservationLevel, .. }, RefusalName::CodataObservationLevel)
         | (CheckRefusal::Codata { fault: CodataFault::Arity, .. }, RefusalName::CodataArity)
-        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Mobile, .. }, .. }, RefusalName::Immobile)
-        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Open, .. }, .. }, RefusalName::NotOpen)
+        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Mobile, .. }, .. }, RefusalName::Immobile(_))
+        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Open, .. }, .. }, RefusalName::NotOpen(_))
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityMissing { .. }, .. }, RefusalName::CapabilityMissing)
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
         | (CheckRefusal::Located { defect: LocatedDefect::Elsewhere { .. }, .. }, RefusalName::Elsewhere)
@@ -3126,6 +3210,9 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
     ) && (!matches!(refusal, CheckRefusal::OutOfFragment { .. })
         || matches!((refusal, ret), (CheckRefusal::OutOfFragment { former, .. },
             RefusalName::OutOfFragment(Qualifier::Named(tag))) if tag.0 == former_tag(former).0))
+    && (!matches!(refusal, CheckRefusal::Located { defect: LocatedDefect::Immobile { .. }, .. })
+        || matches!((refusal, ret), (CheckRefusal::Located { defect: LocatedDefect::Immobile { crossed, .. }, .. },
+            RefusalName::Immobile(read) | RefusalName::NotOpen(read)) if read == CrossingRead::of(crossed)))
 },
 )]
 fn checking_name(refusal: CheckRefusal) -> RefusalName
@@ -3240,12 +3327,14 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::Located { defect, .. } => match defect {
             LocatedDefect::Immobile {
                 predicate: Predicate::Mobile,
+                crossed,
                 ..
-            } => RefusalName::Immobile,
+            } => RefusalName::Immobile(CrossingRead::of(crossed)),
             LocatedDefect::Immobile {
                 predicate: Predicate::Open,
+                crossed,
                 ..
-            } => RefusalName::NotOpen,
+            } => RefusalName::NotOpen(CrossingRead::of(crossed)),
             LocatedDefect::CapabilityMissing { .. } => RefusalName::CapabilityMissing,
             LocatedDefect::CapabilityCaptured { .. } => RefusalName::CapabilityCaptured,
             LocatedDefect::Elsewhere { .. } => RefusalName::Elsewhere,

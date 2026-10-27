@@ -1,0 +1,19 @@
+/// `NotOpen.Homed`: a handle crossing to another world over a thunk that calls a declaration homed where it is formed.
+@[ checks ]
+world operator;
+
+@[ checks ]
+world seat;
+
+/// The seat's own work, homed at the seat.
+@[ checks ]
+@[ entry(seat) ]
+def pending() -> Integer {
+  pure 3
+}
+
+@[ refuses("NotOpen.Homed") ]
+@[ entry((operator, seat)) ]
+def heldHomed() -> -F ((() => Integer) at seat) {
+  migrate [seat] { (hold thunk { pending() }) }
+}

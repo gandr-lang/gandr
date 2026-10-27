@@ -26,6 +26,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
 use gandr_surface_corpus::Refusal;
@@ -401,6 +402,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::Located {
             defect:
                 LocatedDefect::Immobile {
+                    crossed: Crossed::Result | Crossed::Constant,
                     predicate: Predicate::Mobile,
                     ..
                 },
@@ -412,12 +414,34 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::Located {
             defect:
                 LocatedDefect::Immobile {
+                    crossed: Crossed::Result | Crossed::Constant,
                     predicate: Predicate::Open,
                     ..
                 },
             ..
         } => String::from(
             "hold data in the handle, or an abstract type that its signature marks `mobile`",
+        ),
+        CheckRefusal::Located {
+            defect:
+                LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    ..
+                },
+            ..
+        } => String::from(
+            "capture only data in a thunk the migration returns, or mark the abstract type \
+             `mobile` in its signature",
+        ),
+        CheckRefusal::Located {
+            defect:
+                LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
+                    ..
+                },
+            ..
+        } => String::from(
+            "call the declaration before the migration returns, and return what it answers",
         ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
@@ -518,7 +542,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 22] = [
+    const WORDED: [&str; 26] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -541,6 +565,10 @@ mod tests
         "RulesUncompleted",
         "Immobile",
         "NotOpen",
+        "Immobile.Capture",
+        "Immobile.Homed",
+        "NotOpen.Capture",
+        "NotOpen.Homed",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

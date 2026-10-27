@@ -1,0 +1,15 @@
+error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
+   ╭▸ corpus/ledger/diagnostics/NotOpen.Capture.gandr:23:23
+   │
+20 │ ┌  def pointing() -> () => (Seat.Dispatch at seat) {
+21 │ │┌   migrate [seat] {
+22 │ ││     run held : Seat.Dispatch at seat <- (hold Seat.task);
+23 │ ││     pure thunk { pure held }
+   │ ││                       ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
+24 │ ││   }
+   │ │└───┘ checked against `-F (() => Seat.Dispatch at seat)`; while checking the body of this migration at its world
+25 │ │  }
+   │ └──┘ checked against `() => () => Seat.Dispatch at seat`; while checking the body of this thunk
+   │
+   ├ note: `pointing` is refused with NotOpen.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature

@@ -3247,9 +3247,11 @@ const PREDICATES: [gandr_core_checker::worlds::Predicate; 2] = [
 ];
 
 /// What crosses at a refused crossing, in stable wire order.
-const CROSSINGS: [gandr_core_checker::worlds::Crossed; 2] = [
+const CROSSINGS: [gandr_core_checker::worlds::Crossed; 4] = [
     gandr_core_checker::worlds::Crossed::Result,
     gandr_core_checker::worlds::Crossed::Constant,
+    gandr_core_checker::worlds::Crossed::Capture,
+    gandr_core_checker::worlds::Crossed::Homed,
 ];
 
 /// Write how a located judgement broke: the kind's tag, then its payloads in

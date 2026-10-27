@@ -1,0 +1,15 @@
+error[Immobile.Capture]: a thunk crossing to another world captures this, but its type is not mobile
+   ╭▸ corpus/ledger/diagnostics/Immobile.Capture.gandr:23:23
+   │
+20 │ ┌  def dispatched() -> () => Seat.Dispatch {
+21 │ │┌   migrate [seat] {
+22 │ ││     run task <- pure Seat.task;
+23 │ ││     pure thunk { pure task }
+   │ ││                       ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
+24 │ ││   }
+   │ │└───┘ checked against `-F (() => Seat.Dispatch)`; while checking the body of this migration at its world
+25 │ │  }
+   │ └──┘ checked against `() => () => Seat.Dispatch`; while checking the body of this thunk
+   │
+   ├ note: `dispatched` is refused with Immobile.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
