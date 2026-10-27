@@ -48,6 +48,7 @@ use anodized::spec;
 use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
+use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::RunFault;
 use gandr_core_checker::RunStep;
@@ -6837,8 +6838,16 @@ where
             writer.tag(Tag(18));
             write_site(writer, site)?;
         },
-        Refusal::EndpointMismatch { at, left, right } => {
-            writer.tag(Tag(40));
+        Refusal::EndpointMismatch {
+            at,
+            left,
+            right,
+            miss,
+        } => {
+            writer.tag(Tag(match miss {
+                EndpointMiss::Unshown => 40,
+                EndpointMiss::Budget => 95,
+            }));
             write_site(writer, at)?;
             write_site(writer, left)?;
             write_site(writer, right)?;
@@ -7435,7 +7444,8 @@ where
                     | Refusal::ShiftWithoutReset { .. } => 37,
                     | Refusal::DependentStack { .. } => 38,
                     | Refusal::AbsentTupleComponent(_) => 39,
-                    | Refusal::EndpointMismatch { .. } => 40,
+                    | Refusal::EndpointMismatch { miss: EndpointMiss::Unshown, .. } => 40,
+                    | Refusal::EndpointMismatch { miss: EndpointMiss::Budget, .. } => 95,
                     | Refusal::CompoundEndpoint { .. } => 42,
                     | Refusal::FunextUnsupported { .. } => 43,
                     | Refusal::PointwiseDistinct(_) => 44,
@@ -7711,6 +7721,13 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             left: read_site(reader)?,
             right: read_site(reader)?,
+            miss: EndpointMiss::Unshown,
+        },
+        95 => Refusal::EndpointMismatch {
+            at: read_site(reader)?,
+            left: read_site(reader)?,
+            right: read_site(reader)?,
+            miss: EndpointMiss::Budget,
         },
         42 => Refusal::CompoundEndpoint {
             at: read_site(reader)?,

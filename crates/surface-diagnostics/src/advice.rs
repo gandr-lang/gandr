@@ -23,6 +23,7 @@ use alloc::format;
 use alloc::string::String;
 
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::access::AccessDefect;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -334,8 +335,18 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::TypeMismatch(_) => String::from(
             "change the term or the type it is checked against, so that the two types agree",
         ),
-        CheckRefusal::EndpointMismatch { .. } => String::from(
+        CheckRefusal::EndpointMismatch {
+            miss: EndpointMiss::Unshown,
+            ..
+        } => String::from(
             "give `here` a point that both endpoints convert to, or change the endpoints",
+        ),
+        CheckRefusal::EndpointMismatch {
+            miss: EndpointMiss::Budget,
+            ..
+        } => String::from(
+            "state the equation through lemmas that each unfold less, or split the computation \
+             into steps the conversion settles one at a time",
         ),
         CheckRefusal::StageNotBelow { .. } => String::from(
             "recurse on a field of the parameter, which a match takes apart, and not on the \

@@ -2816,6 +2816,13 @@ fn every_refusal() -> Vec<Refusal>
             at,
             left: Site::Unreached,
             right: other,
+            miss: gandr_core_checker::EndpointMiss::Unshown,
+        },
+        Refusal::EndpointMismatch {
+            at,
+            left: Site::Unreached,
+            right: other,
+            miss: gandr_core_checker::EndpointMiss::Budget,
         },
         Refusal::CompoundEndpoint {
             at,

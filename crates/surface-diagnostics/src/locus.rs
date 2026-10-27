@@ -37,6 +37,7 @@ use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::CoreNode;
+use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::RunFault;
@@ -117,8 +118,9 @@ pub enum Label
     Synthesised,
     /// The type a rule met where it required a former of another shape.
     Met(ExpectedShape),
-    /// An endpoint of the path type a reflexivity was checked against.
-    Endpoint,
+    /// An endpoint of the path type a reflexivity was checked against, and
+    /// why its point is not shown to convert to it.
+    Endpoint(EndpointMiss),
     /// A declared name or a binder over a builtin: the primary locus of a
     /// shadowing warning.
     Shadows,
@@ -183,7 +185,13 @@ impl fmt::Display for Label
             Self::Expected => f.write_str("the type it is checked against"),
             Self::Synthesised => f.write_str("the type it synthesises"),
             Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
-            Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
+            Self::Endpoint(EndpointMiss::Unshown) => {
+                f.write_str("an endpoint the point does not convert to")
+            },
+            Self::Endpoint(EndpointMiss::Budget) => f.write_str(
+                "an endpoint the point is not shown to convert to within the conversion's step \
+                 budget",
+            ),
             Self::Shadows => f.write_str("shadows a builtin"),
             Self::Inferred(exit) => write!(f, "exits by an inferred `{exit}`"),
             Self::Ran(Purity::Pure) => f.write_str("runs by an inferred `run`"),
@@ -784,8 +792,8 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
-        CheckRefusal::EndpointMismatch { .. } => role(&ret.context[0_usize], Label::Endpoint)
-            && role(&ret.context[1_usize], Label::Endpoint),
+        CheckRefusal::EndpointMismatch { miss, .. } => role(&ret.context[0_usize], Label::Endpoint(miss))
+            && role(&ret.context[1_usize], Label::Endpoint(miss)),
         CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. } | LinearityDefect::Closed { .. }
                 | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. } =>
@@ -845,9 +853,14 @@ fn checked(
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        CheckRefusal::EndpointMismatch { at, left, right } => (spanned(origins.value(at)), [
-            annotated(spanned(origins.value(left)), Label::Endpoint),
-            annotated(spanned(origins.value(right)), Label::Endpoint),
+        CheckRefusal::EndpointMismatch {
+            at,
+            left,
+            right,
+            miss,
+        } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.value(left)), Label::Endpoint(miss)),
+            annotated(spanned(origins.value(right)), Label::Endpoint(miss)),
         ]),
         CheckRefusal::FunextUnsupported { at, classifier }
         | CheckRefusal::EquivUnsupported { at, classifier }
@@ -2073,6 +2086,7 @@ mod tests
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingForm;
     use gandr_core_checker::CoreNode;
+    use gandr_core_checker::EndpointMiss;
     use gandr_core_checker::ExpectedShape;
     use gandr_core_checker::Mismatch;
     use gandr_core_checker::TermNode;
@@ -2746,6 +2760,7 @@ mod tests
                 at: value,
                 left: value,
                 right: value,
+                miss: EndpointMiss::Unshown,
             },
             CheckRefusal::FunextUnsupported {
                 at: value,
@@ -3575,15 +3590,16 @@ mod tests
                 at: value,
                 left: value,
                 right: value,
+                miss: EndpointMiss::Budget,
             }),
             [
                 Maybe::Present(Annotation {
                     span: spans[0_usize],
-                    label: Label::Endpoint,
+                    label: Label::Endpoint(EndpointMiss::Budget),
                 }),
                 Maybe::Present(Annotation {
                     span: spans[0_usize],
-                    label: Label::Endpoint,
+                    label: Label::Endpoint(EndpointMiss::Budget),
                 }),
             ]
         );
@@ -4446,7 +4462,7 @@ mod tests
             Label::Declared.to_string(),
             Label::Expected.to_string(),
             Label::Synthesised.to_string(),
-            Label::Endpoint.to_string(),
+            Label::Endpoint(EndpointMiss::Unshown).to_string(),
             Label::Shadows.to_string(),
             Label::Reported.to_string(),
             Label::Forked.to_string(),
@@ -4459,6 +4475,7 @@ mod tests
             Label::Ran(gandr_core_term::effect::Purity::Effectful).to_string(),
             Label::Copied.to_string(),
             Label::Deprecated.to_string(),
+            Label::Endpoint(EndpointMiss::Budget).to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

@@ -2991,6 +2991,7 @@ fn reflexivity_checks_by_endpoint_conversion()
             at: here_five,
             left: five,
             right: six,
+            miss: crate::EndpointMiss::Unshown,
         }),
         "a point apart from one endpoint is refused naming both endpoints"
     );
@@ -3007,6 +3008,7 @@ fn reflexivity_checks_by_endpoint_conversion()
             at: here_bound,
             left: stuck,
             right: bound,
+            miss: crate::EndpointMiss::Unshown,
         }),
         "native addition does not reduce on a variable, so `y + 0` is not `y`"
     );
@@ -3015,6 +3017,7 @@ fn reflexivity_checks_by_endpoint_conversion()
             at: here_bound,
             left: stuck,
             right: bound,
+            miss: crate::EndpointMiss::Unshown,
         }
         .classify(),
         FailureClass::MalformedSource,

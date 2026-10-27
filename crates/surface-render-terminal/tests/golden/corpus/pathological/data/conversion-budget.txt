@@ -1,0 +1,15 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/conversion-budget.gandr:43:3
+   │
+42 │   def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), Zero, Succ(Zero))) {
+   │   │                        ┬──────────────  ───────────────────────────────────── an endpoint the point is not shown to convert to within the conversion's step budget
+   │   │                        │
+   │ ┌─┘                        an endpoint the point is not shown to convert to within the conversion's step budget
+   │ │
+43 │ │   here(fib(nineteen()))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+44 │ │ }
+   │ └─┘ checked against `() => Path(Nat, fib(force nineteen), fibFrom(force nineteen, Zero, Succ(Zero)))`; while checking the body of this thunk
+   │
+   ├ note: `agree` is refused with EndpointMismatch, as its expectation states
+   ╰ help: state the equation through lemmas that each unfold less, or split the computation into steps the conversion settles one at a time

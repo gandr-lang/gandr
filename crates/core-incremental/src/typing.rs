@@ -531,8 +531,8 @@ pub enum Refusal
     },
     /// A native path endpoint is not a closed first-order code.
     PathCode(Site),
-    /// Reflexivity met a path type whose endpoints its point does not both
-    /// convert to.
+    /// Reflexivity met a path type whose endpoints its point is not shown to
+    /// both convert to.
     EndpointMismatch
     {
         /// The reflexivity.
@@ -541,6 +541,8 @@ pub enum Refusal
         left: Site,
         /// The path type's right endpoint.
         right: Site,
+        /// Why the first endpoint that failed is not shown to convert.
+        miss: gandr_core_checker::EndpointMiss,
     },
     /// A compound endpoint whose computation returns no pure value.
     CompoundEndpoint
@@ -1463,7 +1465,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::HandlerUnlawful { at, rule, .. } = matched_left_value && let Refusal::HandlerUnlawful { at: projected, rule: stored } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == rule }
  else if let CheckRefusal::ShiftWithoutReset { at } = matched_left_value && let Refusal::ShiftWithoutReset { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
- else if let CheckRefusal::EndpointMismatch { at, left, right } = matched_left_value && let Refusal::EndpointMismatch { at: projected, left: projected_left, right: projected_right } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) }
+ else if let CheckRefusal::EndpointMismatch { at, left, right, miss } = matched_left_value && let Refusal::EndpointMismatch { at: projected, left: projected_left, right: projected_right, miss: projected_miss } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) && projected_miss == miss }
  else if let CheckRefusal::CompoundEndpoint { at, .. } = matched_left_value && let Refusal::CompoundEndpoint { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::FunextUnsupported { at, .. } = matched_left_value && let Refusal::FunextUnsupported { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::PointwiseDistinct { at }, &Refusal::PointwiseDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
@@ -1709,10 +1711,16 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 }
             },
             CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
-            CheckRefusal::EndpointMismatch { at, left, right } => Refusal::EndpointMismatch {
+            CheckRefusal::EndpointMismatch {
+                at,
+                left,
+                right,
+                miss,
+            } => Refusal::EndpointMismatch {
                 at: self.site(ArenaNode::Value(at)),
                 left: self.site(ArenaNode::Value(left)),
                 right: self.site(ArenaNode::Value(right)),
+                miss,
             },
             CheckRefusal::CompoundEndpoint { at, synthesised } => Refusal::CompoundEndpoint {
                 at: self.site(ArenaNode::Value(at)),

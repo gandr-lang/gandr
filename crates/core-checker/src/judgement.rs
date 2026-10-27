@@ -341,7 +341,10 @@
 //! variables. Anything else is [`CheckRefusal::EndpointMismatch`], naming the
 //! point and both endpoints. A conversion the machine cannot decide — a
 //! native operation over a variable, `0 + x` against `x` — is a mismatch too:
-//! the rule admits what it shows and refutes nothing it cannot.
+//! the rule admits what it shows and refutes nothing it cannot. The refusal
+//! carries whether the machine spent its step budget before deciding
+//! ([`crate::EndpointMiss`]), so a computation too long for the budget is not
+//! reported as endpoints apart.
 //!
 //! The conversion runs with a compound endpoint held at the definition it
 //! calls, so the machine unfolds it as a recorded decision rather than inside
@@ -10155,8 +10158,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
     ///   endpoints when either conversion is refuted, declined without waiting
-    ///   for a fill, or undecided; a dangling node or a machine invariant as
-    ///   the conversion raises it.
+    ///   for a fill, or undecided, at the first endpoint that fails: its miss
+    ///   is [`crate::EndpointMiss::Budget`] when the machine spent its step
+    ///   budget, and [`crate::EndpointMiss::Unshown`] otherwise; a dangling
+    ///   node or a machine invariant as the conversion raises it.
     /// - panics: none.
     ///
     /// # Errors
@@ -10175,7 +10180,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
     /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
     #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right }) => site == at && named_left == left && named_right == right,
+        | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right, .. }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),
         | Err(_) => true,
     })]
@@ -10204,7 +10209,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if self.context.unify_values(point, endpoint)?
                     == crate::elaboration::Unified::Refuted
                 {
-                    return Err(CheckRefusal::EndpointMismatch { at, left, right });
+                    return Err(CheckRefusal::EndpointMismatch {
+                        at,
+                        left,
+                        right,
+                        miss: crate::EndpointMiss::Unshown,
+                    });
                 }
                 continue;
             }
@@ -10225,13 +10235,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 // the pair again.
                 Ok((verdict, _))
                     if self.context.awaits_fill(verdict) == crate::elaboration::Deferred::Yes => {},
-                Ok((
-                    gandr_core_nbe::MachineVerdict::NotConvertible
-                    | gandr_core_nbe::MachineVerdict::Declined(_),
-                    _,
-                ))
+                Ok((gandr_core_nbe::MachineVerdict::Declined(reason), _)) => {
+                    return Err(CheckRefusal::EndpointMismatch {
+                        at,
+                        left,
+                        right,
+                        miss: crate::EndpointMiss::from(reason),
+                    });
+                },
+                Ok((gandr_core_nbe::MachineVerdict::NotConvertible, _))
                 | Err(CheckRefusal::Undecided { .. }) => {
-                    return Err(CheckRefusal::EndpointMismatch { at, left, right });
+                    return Err(CheckRefusal::EndpointMismatch {
+                        at,
+                        left,
+                        right,
+                        miss: crate::EndpointMiss::Unshown,
+                    });
                 },
                 Err(fault) => return Err(fault),
             }

@@ -160,6 +160,7 @@ INSERT INTO purpose VALUES('core-checker','refusal::CheckRefusal','enum','Why th
 INSERT INTO purpose VALUES('core-checker','refusal::CheckingForm','enum','A checking-only form, met where a type had to be synthesised.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::Compared','struct','The types a refusal compares: the expected and the found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::CoreNode','enum','Any node of the core arena: a term or a type.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','refusal::EndpointMiss','enum','Why reflexivity''s point is not shown to convert to an endpoint: the conversion''s step budget spent, or not shown otherwise.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::ExpectedShape','enum','The former a rule required of the type it met.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::LoopRespect','enum','Why a case over a looped sort is not shown to respect one of its loops.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::Mismatch','enum','A synthesised type that does not convert to the type it was checked against.',NULL,'fits','sound',NULL);
