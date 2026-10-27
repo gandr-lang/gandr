@@ -44,7 +44,7 @@ The small English model misreads some technical sentences. A misreading is debt 
 
 ## Expected features
 
-A Python interpreter that imports spaCy and `en_core_web_sm`. The `check:prose` task pins Python, `uv`, spaCy and the model wheel by URL and hash, and passes the venv's interpreter. No crate links Python, and no CI image carries it: the check runs in the local gate.
+A Python interpreter that imports spaCy and `en_core_web_sm`. The `check:prose` task pins Python, `uv`, spaCy and the model wheel by URL and hash, and passes the venv's interpreter. No crate links Python. The local gate runs the check, and so does the merge group: the CI lane installs the same pins and caches them.
 
 ## Examples
 
