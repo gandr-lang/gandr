@@ -4,9 +4,11 @@
 //!
 //! Every source is lowered exactly once per run, under one strictness, and
 //! every declaration gets one verdict: the checker's, settled against what the
-//! declaration states. The one call into the lowering sits in a private module
-//! that counts each source it lowers, and [`LoweringCount`] is the projection
-//! through which a run shows it lowered each source once.
+//! declaration states. [`compose()`] is [`lower_source`] then
+//! [`judge_module`], two short functions, and [`judge_module`] is [`judge`]
+//! then [`Judged::admit`]. The one call into the lowering sits in a private
+//! module that counts each source it lowers, and [`LoweringCount`] is the
+//! projection through which a run shows it lowered each source once.
 //!
 //! # A component is composed once
 //!

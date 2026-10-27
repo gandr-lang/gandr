@@ -767,6 +767,50 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     );
 }
 
+/// `gandr cells` prints each cell of the occurrence-count exemplar on its
+/// rule's line, each hole with how many times the cell's right-hand side
+/// writes it; a path that names no source is a fault on standard error and
+/// exits two once the census has read every other path.
+#[test]
+fn cells_reports_each_hole_s_count()
+{
+    let exemplar = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/desc/occurrence-count.gandr");
+    let scratch = Scratch::new(Path::new("cells"));
+    let absent = scratch.0.join("absent.gandr");
+    let cells = Path::new("cells");
+
+    let read = ran(gandr(&[cells, &exemplar]));
+    assert_eq!(code(&read), Code(0_i32), "{}", stderr(&read));
+    let shown = exemplar.display();
+    assert_eq!(
+        stdout(&read),
+        format!(
+            "{shown}:12:1: cell 0 frame, strictly linear: v 1, beta 1\n\
+             {shown}:12:1: cell 1 frame, strictly linear: v 1, beta 1\n\
+             {shown}:19:21: cell 2 rule, strictly linear: $ret 1\n\
+             {shown}:20:27: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
+             {shown}:21:19: cell 4 rule, strictly linear: $ret 1\n\
+             {shown}:22:25: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
+             {shown}:23:17: cell 6 rule, duplicating 2: t 2, $ret 1\n\
+             {shown}:24:18: cell 7 rule, duplicating 3: t 3, $ret 1\n"
+        )
+    );
+
+    let faulted = ran(gandr(&[cells, &absent, &exemplar]));
+    assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
+    assert!(
+        stderr(&faulted).starts_with(&format!("gandr: {}: ", absent.display())),
+        "{}",
+        stderr(&faulted)
+    );
+    assert_eq!(
+        stdout(&faulted),
+        stdout(&read),
+        "the census continued past the fault"
+    );
+}
+
 #[test]
 fn the_syntax_ledger_is_written_and_reproduced()
 {

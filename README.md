@@ -16,6 +16,7 @@ gandr check --goals my-sources/               # owed signatures printed as goals
 gandr test corpus                          # every fixture and pending source printed
 gandr run my-program.gandr a b               # check, then run `main` with the arguments, exiting with its code
 gandr fmt --check my-sources/                 # list the sources out of layout
+gandr cells my-sources/                       # each rewriting cell, with how many times it writes each hole
 ```
 
 `gandr check` exits `0` when every declaration settles, `1` when one does not, and `2` on an engine fault, an unreadable path or a malformed invocation.

@@ -66,6 +66,9 @@
 //!   `doi:10.1016/0022-4049(76)90013-X` — computads: the generators of a
 //!   2-category, a 2-cell between composites of 1-cells, the reading a
 //!   description's rules take once elaborated.
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
+//!   — the cells this crate elaborates carry each hole's occurrence count in
+//!   their contractum use.
 //! - Albert Burroni. "Higher-Dimensional Word Problems with Applications to
 //!   Equational Logic." _Theoretical Computer Science_ 115, 1 (1993), pages
 //!   43–62. `doi:10.1016/0304-3975(93)90054-W` — polygraphs, and equational

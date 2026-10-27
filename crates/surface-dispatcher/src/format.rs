@@ -72,6 +72,7 @@ use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -190,11 +191,41 @@ impl Kept
         text: SourceText<'_>,
     ) -> Self
     {
-        let before = text
-            .as_ref()
-            .get(.. usize::from(withdrawal.span.start()))
-            .unwrap_or_default();
-        let line_start = before.rfind('\n').map_or(0, |at| at.saturating_add(1));
+        let LineColumn { line, column } = LineColumn::of(text, withdrawal.span.start());
+        Self {
+            withdrawal,
+            line,
+            column,
+        }
+    }
+}
+
+/// Where a byte of a source's text sits, as an author counts it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LineColumn
+{
+    /// The one-based line.
+    pub line: usize,
+    /// The one-based column, in characters.
+    pub column: usize,
+}
+
+impl LineColumn
+{
+    /// Where the byte at `at` sits in `text`; an offset past the text or
+    /// inside a character reads as the text's first byte.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn of(
+        text: SourceText<'_>,
+        at: ByteOffset,
+    ) -> Self
+    {
+        let before = text.as_ref().get(.. usize::from(at)).unwrap_or_default();
+        let line_start = before
+            .rfind('\n')
+            .map_or(0, |newline| newline.saturating_add(1));
         Self {
             line: before.matches('\n').count().saturating_add(1),
             column: before
@@ -203,7 +234,6 @@ impl Kept
                 .chars()
                 .count()
                 .saturating_add(1),
-            withdrawal,
         }
     }
 }

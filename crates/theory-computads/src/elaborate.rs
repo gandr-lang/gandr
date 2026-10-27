@@ -2628,6 +2628,7 @@ mod tests
     use gandr_theory_cell_complexes::CellCount;
     use gandr_theory_cell_complexes::ConvexityDischarge;
     use gandr_theory_cell_complexes::MetaVar;
+    use gandr_theory_cell_complexes::Multiplicity;
     use gandr_theory_cell_complexes::SequentAlphabet;
     use gandr_theory_cell_complexes::StepGrowth;
     use gandr_theory_levitation::Attrs;
@@ -3456,7 +3457,8 @@ mod tests
     {
         // The admission seam governs the redex side alone, so a rule whose
         // right-hand side duplicates one hole and drops another is admitted,
-        // and its growth is reported by the cell's derived metadata.
+        // and its growth, the duplicated hole's count with it, is reported by
+        // the cell's derived metadata.
         let desc = nat_with(
             [
                 op("f", [SortRef::new("x", "Nat"), SortRef::new("y", "Nat")]),
@@ -3478,8 +3480,9 @@ mod tests
             .map(|(_, cell)| cell)
             .find(|cell| cell.provenance() == CellProvenance::SurfaceRule)
             .expect("the rule cell is in the store");
+        let twice = Multiplicity::from(2_u64);
         assert_eq!(
-            StepGrowth::Duplicating,
+            StepGrowth::Duplicating { count: twice },
             rule_cell.meta().step_growth(),
             "and its growth is reported"
         );
@@ -3492,9 +3495,9 @@ mod tests
                 .map(gandr_theory_cell_complexes::CellVarMeta::contractum)
         };
         assert_eq!(
-            Some(CellContractumUse::Repeated),
+            Some(CellContractumUse::Repeated { count: twice }),
             use_of("x"),
-            "the duplicated hole is named"
+            "the duplicated hole is named, with how many times it is written"
         );
         assert_eq!(
             Some(CellContractumUse::Erased),

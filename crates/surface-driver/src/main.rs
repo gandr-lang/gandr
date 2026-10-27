@@ -9,9 +9,9 @@
 //!
 //! | Code | Meaning |
 //! | ---- | ------- |
-//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, or every exemplar held; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
+//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, every exemplar held, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
 //! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's library states no manifest, or its `gandr.toml` was edited by hand; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
-//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed, or a source a census could not parse or lower, or that the lowering refused whole |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
 //! walk continues past a faulted path, so every fault of a run is printed.
@@ -37,6 +37,7 @@
 //! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
+//! | `gandr cells <paths>` | one line per rewriting cell of each declaration a source writes, `<path>:<line>:<column>: cell <n> <provenance>, <growth>: <hole> <count>, …`, each hole with how many times the cell's right-hand side writes it (`gandr-surface-dispatcher`'s `cells` module); nothing is checked | a path that cannot be read or names no source, or a source that does not parse or lower, or that the lowering refuses whole |
 //! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
 //! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
 //! | `gandr ledger recovery <directory>` | the near-miss table, one line per literal tile the syntax exemplars write, then each mutant whose first error marks other bytes than its mutation, `<path>:<byte>: <tile> <mutation>: <error> at <span>, not at <site>`, then the count swept (`gandr-surface-dispatcher`'s `ledger::recovery` module) | a mutant marked elsewhere, or a directory that cannot be listed |
@@ -176,6 +177,12 @@
 //! none. A fault that stops the face is `gandr: <fault>`, and a terminal that
 //! fails `gandr: the terminal failed: <error>`, on standard error.
 //!
+//! # References
+//!
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
+//!   and § quant-try-first — a hole's occurrence count under a cell's step is
+//!   reported per cell by `gandr cells`, never refused.
+//!
 //! # Output the driver cannot write is a fault
 //!
 //! `main` returns its exit code rather than a `Result`, so a write or flush
@@ -283,6 +290,8 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Area;
 use gandr_surface_dispatcher::AuthorityError;
+use gandr_surface_dispatcher::Census;
+use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
@@ -337,7 +346,6 @@ use gandr_surface_lsp::Served;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::TerminalCapability;
 use gandr_surface_repl::Ended;
-#[cfg(unix)]
 use quenchant_shape::shape::Maybe;
 
 mod allocator;
@@ -619,6 +627,20 @@ enum Command
         /// Source files, and directories searched for `.gandr` sources. A
         /// path inside a package lays out the whole package; with no path,
         /// the package the working directory sits in.
+        paths: Vec<PathBuf>,
+    },
+    /// Report the rewriting cells of the sources under each path, one line
+    /// per cell, each hole with how many times the cell's right-hand side
+    /// writes it.
+    ///
+    /// A hole's count is its Lipschitz constant under the step: 0 for a
+    /// dropped hole, 1 for a kept one, more for a duplicated one. Nothing is
+    /// checked. Exits 0 when every path was read, and 2 when a path cannot be
+    /// read, names no source, or holds a source the lowering cannot read.
+    Cells
+    {
+        /// Source files, and directories searched for `.gandr` sources.
+        #[arg(required = true)]
         paths: Vec<PathBuf>,
     },
     /// Generate a ledger of the language surface and write it, verify its
@@ -1124,6 +1146,7 @@ fn main() -> ExitCode
             },
             Verbosity::User,
         ),
+        Some(Command::Cells { paths }) => (Invocation::Cells { paths }, Verbosity::User),
         Some(Command::Ledger {
             ledger: LedgerName::Syntax { write, exemplars },
         }) => (
@@ -1580,9 +1603,10 @@ fn reach_hub(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the hub runs as `gandr_surface_lsp::run_hub` states, with this
-///   crate's Model Context Protocol face (`gandr_surface_mcp::serve`), its
-///   timing lines on standard error, and exits `0` when it lingers out; a
+/// - ensures: the hub binds `socket` through `gandr_surface_lsp::bind` and runs
+///   as `gandr_surface_lsp::run_hub` states, with this crate's Model Context
+///   Protocol face (`gandr_surface_mcp::serve`) for connections speaking lines,
+///   its timing lines on standard error, and exits `0` when it lingers out; a
 ///   socket another hub serves exits `0` at once, noted on standard error. A
 ///   socket that cannot be bound or served is noted and exits `2`.
 /// - provides: `gandr serve`.
@@ -1877,7 +1901,7 @@ fn unpathed(unpackaged: &Unpackaged) -> ExitCode
 ///   a manifest's when that is worse. A script follows [`script`]: what it
 ///   prints goes to standard output, its diagnostics to standard error and its
 ///   run status chooses the exit. A staging follows [`stage`], a formatting
-///   [`fmt`], and a ledger task [`ledger`].
+///   [`fmt`], a ledger task [`ledger`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -1900,6 +1924,7 @@ fn unpathed(unpackaged: &Unpackaged) -> ExitCode
 /// - witness: `tests::cli::every_width_stages_the_serial_run`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::cells_reports_each_hole_s_count`
 #[spec(captures: [status = matches!(outcome, Outcome::Status(_)), script = matches!(outcome, Outcome::Script(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (script || *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
@@ -1946,6 +1971,7 @@ fn render(
             fmt(formatting, &pool, stdout, stderr)
         },
         Outcome::Ledger(task) => ledger(&task, stdout, stderr),
+        Outcome::Cells(census) => cells(census, stdout, stderr),
     }
 }
 
@@ -2132,6 +2158,60 @@ fn kept(
         writeln!(stderr, "gandr: {}:{declaration}", path.display())?;
     }
     Ok(())
+}
+
+/// Step `census`, printing each cell of each source on a line, and choose the
+/// exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each cell of each source the census reads is `<path>:<row>` on
+///   standard output, the row rendered as the dispatcher's `CellRow` renders
+///   it, sources in walk order and each source's cells in the census's. Each
+///   path the census cannot read is `gandr: <path>: <fault>` on standard error,
+///   and the census continues past it. The exit is two when any path faulted,
+///   and zero otherwise.
+/// - provides: `gandr cells`.
+/// - fails: the first write error on either stream, printing nothing after it
+///   and reading no source after it.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus exemplar beside a missing path observes every
+///   line on both streams and the exit; dropping a row, a fault, or the fault's
+///   exit changes the observation.
+/// - witness: `tests::cli::cells_reports_each_hole_s_count`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)))]
+fn cells(
+    mut census: Census,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let mut faulted = false;
+    while let Maybe::Present(step) = census.step() {
+        match step {
+            CensusStep::Source { path, cells } => {
+                for row in &cells {
+                    writeln!(stdout, "{}:{row}", path.display())?;
+                }
+            },
+            CensusStep::Fault { path, fault } => {
+                faulted = true;
+                writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            },
+        }
+    }
+    Ok(if faulted {
+        ExitCode::from(FAULTED)
+    }
+    else {
+        ExitCode::SUCCESS
+    })
 }
 
 /// Check `staging`'s programs, printing one line per program, then the run's

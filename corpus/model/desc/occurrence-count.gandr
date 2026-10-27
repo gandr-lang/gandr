@@ -1,0 +1,29 @@
+// Each rule's cell counts how many times its right side writes each hole its
+// left side binds: the hole's Lipschitz constant under the step, the factor by
+// which one step can stretch a distance between two instances of the hole
+// (Gavazzo and Di Florio, _Quantitative and Metric Rewriting_, 2022, § 8.2).
+// `gandr cells` reports the counts of every cell (#2788). `mirror` writes each
+// subshrub once and is strictly linear; `left` drops `r`, a constant of zero;
+// `twice` and `thrice` write `t` two and three times, so their steps are
+// duplicating. A count is reported, never refused.
+
+/// Binary shrubs, with operations writing a subshrub zero to three times.
+@[ normalizes("thrice(Leaf) ~> Node(Leaf, Node(Leaf, Leaf))") ]
+data Shrub : Type {
+  Leaf : Shrub;
+  Node : (l : Shrub, r : Shrub) --> Shrub;
+  oper mirror(t : Shrub) -> Shrub;
+  oper left(t : Shrub) -> Shrub;
+  oper twice(t : Shrub) -> Shrub;
+  oper thrice(t : Shrub) -> Shrub;
+  rule mirror(Leaf) ==> Leaf;
+  rule mirror(Node(l, r)) ==> Node(r, l);
+  rule left(Leaf) ==> Leaf;
+  rule left(Node(l, r)) ==> l;
+  rule twice(t) ==> Node(t, t);
+  rule thrice(t) ==> Node(t, Node(t, t));
+}
+
+/// A leaf written twice.
+@[ runs("Node(Leaf, Leaf)") ]
+def twice_leaf() -> Shrub { twice(Leaf) }
