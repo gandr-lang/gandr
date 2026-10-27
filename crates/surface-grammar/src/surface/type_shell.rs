@@ -27,6 +27,18 @@
 //! The respelling moved the pinned shape from 2364 molds and the fingerprint
 //! `0x6a74_f2ef_1d8a_5c07`: the two formers' keyword tiles became the compound
 //! tiles, and the universe rule added seven molds.
+//!
+//! # References
+//!
+//! - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§
+//!   rows-rule-one-kind): a row is one kind with `Model(T) with sort`'s
+//!   refinement, so a row entry takes the manifest tail (`row_entry`).
+//! - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories
+//!   design (§ theories-models-manifest-sorts): the tail `with sort x = A`,
+//!   written after the theory it fixes the sorts of.
+//! - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — lineage: the syntax
+//!   bikeshed (row "An effect whose sort is fixed at a type"): the row entry's
+//!   spelling, `T with sort x = A`, chained for several sorts.
 
 use alloc::vec::Vec;
 
@@ -1345,27 +1357,39 @@ fn entry_shape(sort: Sort) -> Regex
 }
 
 /// A labelled row's entry: an interface's name, standing for its default
-/// instance, or `a : I`, the instance of `I` named `a`. The label is an
-/// operand, as a telescope's binder is.
+/// instance, or `a : I`, the instance of `I` named `a`, then the sorts it
+/// fixes, `State with sort S = Integer`. The label is an operand, as a
+/// telescope's binder is. The manifest tail is the capability scope's, the
+/// same tiles in the same order: its `with` follows the name's tile and
+/// `sort` follows the `with`, so it is decided at its keyword.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: optionally a hole of the supplied sort and a colon, then an
-///   interface's name.
+///   interface's name, then any number of `with sort x = A`, each ending in a
+///   hole of the supplied sort.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: For the built-in labelled rows, L3 grammar identity and corpus
-///   roles catch a changed label, colon or name. The predicate observes the
-///   stated shape; source programs outside the finite corpus are not exhausted.
+///   roles catch a changed label, colon, name or manifest tail. The predicate
+///   observes the stated shape; source programs outside the finite corpus are
+///   not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))]
 fn row_entry(ty: Sort) -> Regex
 {
     Regex::seq([
         Regex::optional(Regex::seq([Regex::sort(ty), tile(TileLabel(":"))])),
         tile(TileLabel("type_identifier")),
+        Regex::repeat(Regex::seq([
+            tile(TileLabel("with")),
+            tile(TileLabel("sort")),
+            tile(TileLabel("type_identifier")),
+            tile(TileLabel("=")),
+            Regex::sort(ty),
+        ])),
     ])
 }
 

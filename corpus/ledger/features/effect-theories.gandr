@@ -1,6 +1,5 @@
 /// `effect-theories`: Effects as theories with laws.
-/// Implemented: an effect as a theory of its operations whose laws the path order orients, a capability scope taking a theory as its interface and checked as a model of it, a scope answered by a module that models the theory, and a scope's subject normalised by the theory's laws before it runs.
-/// Not implemented: the row's form, `-F [State with sort S = Integer] A`; #2844 owes it.
+/// Implemented: an effect as a theory of its operations whose laws the path order orients, a capability scope taking a theory as its interface and checked as a model of it, a scope answered by a module that models the theory, a scope's subject normalised by the theory's laws before it runs, and a returner's row naming the theory at the sorts it fixes, `-F [st : State with sort S = Integer] A`, discharged by a scope at those sorts.
 // State as a theory: `get` passes the state to what runs after it, and `put`
 // replaces the state before what runs after it. The laws are the rules of
 // global state in Cooper, "The marriage of effects and rewrites" (2023),
@@ -81,5 +80,26 @@ def readTwice() -> Integer {
   } with {
     pure(x) => pure x,
     oper get(k) => k(4)
+  }
+}
+
+/// A returner whose row names the theory at its sort: `st` is its instance,
+/// a capability over `get` and `put` with the state an `Integer`.
+@[ checks ]
+def readState() -> [st : State with sort S = Integer] Integer {
+  st.get()
+}
+
+/// A scope over `State` at the same sort discharges the row: the call's
+/// instance is the scope's capability, and the handler answers the read
+/// with seven.
+@[ runs("7") ]
+def readUnderScope() -> Integer {
+  handle s : State with sort S = Integer {
+    readState()
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(7),
+    oper put(v, k) => k()
   }
 }

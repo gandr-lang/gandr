@@ -47,15 +47,15 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the list of names an import binds unqualified, `import text.greet (greeting)
-/// ;`.
-const BUILT_IN_FINGERPRINT: u64 = 0xf4b6_637b_4780_d609;
+/// the manifest tail a row entry takes, `-F [st : State with sort S = Integer]
+/// A`.
+const BUILT_IN_FINGERPRINT: u64 = 0x26e3_af07_9188_f3d9;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3227);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3243);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
@@ -96,7 +96,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 29),
     ("<>", 1),
-    ("=", 138),
+    ("=", 142),
     ("==", 1),
     ("==>", 29),
     ("=>", 23),
@@ -217,7 +217,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("shared", 21),
     ("shell_word", 1),
     ("single_quoted_content", 1),
-    ("sort", 8),
+    ("sort", 12),
     ("string_fragment", 6),
     ("subshell_close", 1),
     ("subshell_open", 1),
@@ -228,7 +228,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 2),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 109),
+    ("type_identifier", 113),
     ("type_variable", 62),
     ("typed_number", 2),
     ("u32", 1),
@@ -241,7 +241,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("variable_name", 5),
     ("where", 1),
     ("while", 1),
-    ("with", 9),
+    ("with", 13),
     ("world", 1),
     ("{", 46),
     ("|", 15),
