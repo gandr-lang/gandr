@@ -107,7 +107,7 @@
 //!   LAM the [`Store`] is, a regioned append-only store addressed by
 //!   location.
 
-// Module documentation that predates the shape lint: 18 headings outside the
+// Module documentation that predates the shape lint: 17 headings outside the
 // vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with
 // the rewrite that clears its count.
 #![cfg_attr(

@@ -105,8 +105,6 @@ cargo nextest run -p gandr-core-sequent
 
 Set `RUSTFLAGS="--cfg anodized_panic"` on that command to exercise the predicates throughout the dependency graph. Const arity and rendering contracts retain their compile-time calling context.
 
-Checked address allocation and lookup live in a crate-private trait rather than identifier macro templates. The default methods keep each executable contract visible as an ordinary Rust item and specialize for each transparent identifier without allocation. The ceiling and truncation witnesses exercise those methods through the identifiers.
-
 The opaque binding iterator keeps its public signature; the [`Store::bound_values` contract](src/store.rs) records the postcondition-instrumentation limit and the independent sequence witnesses.
 
 ## Where the detail lives
@@ -122,7 +120,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The typed-IL check | [`check`](src/check.rs) |
 | Abstract closures, their conversion and their β | [`closure`](src/closure.rs) |
 | Readback | [`readback`](src/readback.rs) |
-| The store a run's answer moves into | [`store`](src/store.rs) |
+| The store a run's answer moves into, and the LAM it is | [`store`](src/store.rs) |
 | How a run ended | [`outcome`](src/outcome.rs) |
 | The bridge from cells and its polarity | [`bridge`](src/bridge.rs) |
 | The differential against normalisation by evaluation, references | [`src/lib.rs`](src/lib.rs) |
@@ -135,6 +133,8 @@ Running a command — marks, fixpoints, effects, delimited control and temporary
 - `Sullivan-2023-closure_conversion_little_pieces` — lineage: Sullivan, Downen and Ariola, "Closure Conversion in Little Pieces", PPDP 2023, `doi:10.1145/3610612.3610622` — conversion as equalities local to the IL.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 4) — abstract closures in the sequent IL.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — the store as the LAM the runtime's value representation is specified against.
+- `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime programme — the representation this store states.
 
 ## License
 

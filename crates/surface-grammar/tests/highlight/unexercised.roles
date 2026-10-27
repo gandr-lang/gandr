@@ -512,7 +512,6 @@
 914 TypeVariable module_declaration type_variable L[(] R[) , :]
 915 Type module_declaration type_identifier L[(] R[) , :]
 917 Other module_declaration shared L[:] R[<type>]
-918 Other module_declaration consumed L[:] R[<type>]
 921 TypeVariable module_declaration type_variable L[,] R[) , :]
 922 Type module_declaration type_identifier L[,] R[) , :]
 924 Other module_declaration shared L[:] R[<type>]

@@ -131,6 +131,11 @@ macro_rules! address_wrapper {
 }
 
 /// Checked family operations for the crate's transparent `u32` addresses.
+///
+/// The operations are this trait's default methods rather than templates in
+/// the identifier macros, so each executable contract is an ordinary Rust
+/// item, specialised for each transparent identifier without allocation. The
+/// ceiling and truncation witnesses exercise them through the identifiers.
 pub trait FamilyAddress: Copy + From<u32> + Into<u32>
 {
     /// The address the next node appended to `family` takes, or `None`

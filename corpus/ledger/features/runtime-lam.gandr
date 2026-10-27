@@ -1,0 +1,21 @@
+/// `runtime-lam` updates a pair held once through two exclusive views in turn.
+///
+/// Implemented: a run's regions realise LAM's materialisation, duplication and evacuation, and an update through an exclusive view answers as the copy it stands for on both tiers.
+/// Not implemented: the update rebuilt in the held value's own block, which takes a fresh block because the held cell keeps its owner while the view is out (#3205).
+///
+/// The regions depart from LAM where an allocation takes a freed block and where a match rebuilds in place a block one owner holds.
+/// The exclusivity conjecture says that rebuild answers as the copy, and the items here fix the answers it must keep.
+///
+/// - see: crates/runtime-emitter/src/run.rs
+/// - see: corpus/model/runtime/exclusive-update.gandr
+
+import "../../model/runtime/exclusive-update.gandr";
+
+/// The second view reads what the first wrote back.
+@[ runs("Pair(3, 2)") ]
+def bumpedTwice() -> Pair {
+  hold[1] p = Pair(1, 2);
+  access p as v { run q <- bump(v); resume(v, q) };
+  access p as v { run q <- bump(v); resume(v, q) };
+  p.take()
+}

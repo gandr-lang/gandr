@@ -1,0 +1,69 @@
+// An update through an exclusive view of a held pair, answering as the copy
+// it stands for.
+//
+// The view lends the held value, the body builds the new one, and `resume`
+// writes it back. The exclusivity conjecture says a runtime may build the new
+// value in the held value's own block when nothing else holds it. No program
+// can tell the difference, and these answers are what such a rebuild keeps.
+//
+// Each item runs on both tiers. Normalisation by evaluation runs no memory
+// form, so the stated answers are the reference. A copy taken before the
+// update keeps its value, the independence the conjecture rests on.
+//
+// - see: #3205 — not implemented: the rebuild in the held value's own block
+// - see: `crates/runtime-emitter/src/run.rs` — where the rebuild lands today
+// - see: Racordon, _A Formal Definition of Swift's Value Semantics_, 2020
+
+/// A pair of integers.
+pub data Pair : Type {
+  /// The pair of `a` and `b`.
+  Pair : (a : Integer, b : Integer) --> Pair;
+}
+
+/// A pair's methods.
+pub module Pairs {
+  /// The pair, taken out of its hold.
+  @[ checks ]
+  def take(self : consumed Pair) -> Pair { pure self }
+}
+
+/// The pair `q` with its first component one more.
+pub def bump(q : Pair) -> Pair {
+  case q {
+    Pair(a, b) => Pair(a + 1, b)
+  }
+}
+
+/// The first component of `q`.
+pub def first(q : Pair) -> Integer {
+  case q {
+    Pair(a, b) => a
+  }
+}
+
+/// A pair held once, its first component bumped through the exclusive view.
+@[ runs("Pair(2, 2)") ]
+def heldOnce() -> Pair {
+  hold[1] p = Pair(1, 2);
+  access p as v { run q <- bump(v); resume(v, q) };
+  p.take()
+}
+
+/// The same update at the default grade answers the same.
+@[ runs("Pair(2, 2)") ]
+def heldMany() -> Pair {
+  hold p = Pair(1, 2);
+  access p as v { run q <- bump(v); resume(v, q) };
+  p.take()
+}
+
+/// A copy taken before the update keeps its value: the copy's first component
+/// is still one where the held pair's is two.
+@[ runs("Pair(1, 2)") ]
+def copyKept() -> Pair {
+  hold p = Pair(1, 2);
+  run keep <- pure p;
+  access p as v { run q <- bump(v); resume(v, q) };
+  run q <- p.take();
+  pure Pair(first(keep), first(q))
+}
