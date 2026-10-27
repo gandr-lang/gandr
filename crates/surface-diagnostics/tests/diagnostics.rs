@@ -680,7 +680,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
         .map(|name| Name::from(name.as_str()))
         .collect();
     let families = Families::of(&module);
-    let constructors = families.naming(&names);
+    let constructors = families.naming();
     let source = CoreSource::new(&arena, &names).naming(&constructors);
     let presentation = present_computation(
         &source,
@@ -750,7 +750,7 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
         .map(|name| Name::from(name.as_str()))
         .collect();
     let families = Families::of(&module);
-    let constructors = families.naming(&names);
+    let constructors = families.naming();
     let source = CoreSource::new(&arena, &names).naming(&constructors);
     let printed = present_computation(
         &source,
@@ -1043,7 +1043,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
         .map(|name| Name::from(name.as_str()))
         .collect();
     let families = Families::of(&module);
-    let constructors = families.naming(&names);
+    let constructors = families.naming();
     let source = CoreSource::new(&arena, &names).naming(&constructors);
     let presentation = present_computation(
         &source,

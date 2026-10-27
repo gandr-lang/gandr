@@ -16,6 +16,7 @@ use gandr_core_term::session::SessionAction;
 use quenchant_shape::shape::Maybe;
 
 use crate::Constructors;
+use crate::FamilyKey;
 use crate::Name;
 use crate::Source;
 use crate::former::Arity;
@@ -312,14 +313,18 @@ impl Source for ContentSource<'_>
                 Former::Constructor {
                     name: family.and_then(|(family, constructors)| {
                         constructors
-                            .constructor(family, Component::from(usize::from(tag)))
+                            .constructor(
+                                FamilyKey::Named(family),
+                                Component::from(usize::from(tag)),
+                            )
                             .map(|(name, _)| name)
                     }),
                     arity: Arity::from(fields.len()),
                     placement: family.map_or(
                         crate::Placement::Applied,
                         |(family, constructors)| {
-                            constructors.placement(family, Arity::from(fields.len()))
+                            constructors
+                                .placement(FamilyKey::Named(family), Arity::from(fields.len()))
                         },
                     ),
                     classifier: matches!(

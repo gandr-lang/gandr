@@ -318,6 +318,7 @@ pub use crate::content_source::ContentSource;
 pub use crate::core_source::Constructors;
 pub use crate::core_source::CoreNode;
 pub use crate::core_source::CoreSource;
+pub use crate::core_source::FamilyKey;
 pub use crate::core_source::ForgetMap;
 pub use crate::core_source::Forgetting;
 pub use crate::core_source::Modelled;

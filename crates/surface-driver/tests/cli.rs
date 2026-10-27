@@ -405,6 +405,37 @@ fn an_unsettled_run_exits_one()
     }
 }
 
+/// Two sources of one run that each declare `P` and share an import settle in
+/// either order: each run spells its value by its own `P`'s constructors, not
+/// by the first `P` the run declares (#3125).
+#[test]
+fn a_run_spells_its_value_by_its_own_type_past_a_namesake_3125()
+{
+    let scratch = Scratch::new(Path::new("namesake"));
+    let _shared = scratch.file(
+        Path::new("d.gandr"),
+        Text::from("pub data U : Type {\n  One : U;\n}\n"),
+    );
+    let other = scratch.file(
+        Path::new("b.gandr"),
+        Text::from(
+            "import \"./d.gandr\";\npub data P : Type {\n  Deref : P;\n  Field : P;\n}\n@[ \
+             runs(\"Field\") ]\ndef first() -> P {\n  Field\n}\n",
+        ),
+    );
+    let own = scratch.file(
+        Path::new("a.gandr"),
+        Text::from(
+            "import \"./d.gandr\";\npub data P : Type {\n  Inside : P;\n  OnHeap : P;\n}\n@[ \
+             runs(\"OnHeap\") ]\ndef second() -> P {\n  OnHeap\n}\n",
+        ),
+    );
+    for (before, after) in [(&other, &own), (&own, &other)] {
+        let output = ran(gandr(&[Path::new("test"), before, after]));
+        assert_eq!(code(&output), Code(0_i32), "{}", stdout(&output));
+    }
+}
+
 #[test]
 fn verbosity_chooses_how_much_of_a_report_prints()
 {

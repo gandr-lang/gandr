@@ -92,6 +92,7 @@ use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::FamilyKey;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::ModelSlot;
 use gandr_surface_pretty::Modelled;
@@ -561,7 +562,7 @@ fn spell<'failure>(
     let paths = constant_names(module);
     let names: Vec<Name<'_>> = paths.iter().map(|path| Name::from(path.as_str())).collect();
     let families = Families::of(module);
-    let constructors = families.naming(&names);
+    let constructors = families.naming();
     let contexts = printed_names(&scopes);
     let enclosing = printed_names(&regions);
     let arrows: Vec<(CompTypeId, Name<'_>)> = written_names(origins.arrows(), text);
@@ -1000,9 +1001,8 @@ pub struct Families
 {
     /// Each data declaration's constructors.
     families: Vec<Family>,
-    /// Each data case, with the admission position of the constant of the
-    /// family it eliminates.
-    cases: Vec<(ComputationId, usize)>,
+    /// Each data case, with the constant of the family it eliminates.
+    cases: Vec<(ComputationId, ConstantIndex)>,
 }
 
 /// One data declaration's constructors, as [`Families`] keeps them.
@@ -1012,8 +1012,8 @@ pub struct Families
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Family
 {
-    /// The admission position of the family's constant.
-    constant: usize,
+    /// The family's constant.
+    constant: ConstantIndex,
     /// Each constructor's name and field count, in tag order.
     constructors: Vec<(String, usize)>,
     /// The empty word as a value is written, `here(a)`, when the family is
@@ -1053,11 +1053,7 @@ impl Families
     #[must_use]
     pub fn of(module: &LoweredModule<'_>) -> Self
     {
-        let cases = module
-            .origins()
-            .eliminations()
-            .map(|(case, family)| (case, usize::from(family)))
-            .collect();
+        let cases = module.origins().eliminations().collect();
         Self {
             cases,
             ..Self::declared(module)
@@ -1095,7 +1091,7 @@ impl Families
     #[must_use]
     pub fn declared(module: &LoweredModule<'_>) -> Self
     {
-        let mut looped: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+        let mut looped: BTreeMap<ConstantIndex, Vec<String>> = BTreeMap::new();
         for declaration in module.declarations() {
             if declaration.role() != Role::Words {
                 continue;
@@ -1119,10 +1115,7 @@ impl Families
                 .step_by(2)
                 .take(cells.cells().len())
                 .cloned();
-            looped
-                .entry(usize::from(cells.sort()))
-                .or_default()
-                .extend(letters);
+            looped.entry(cells.sort()).or_default().extend(letters);
         }
         let mut qualifier = alloc::string::String::new();
         let families = module
@@ -1171,12 +1164,11 @@ impl Families
                     },
                     Maybe::Absent(_) => None,
                 };
-                let constant = usize::from(declaration.constant());
                 Some(Family {
-                    constant,
+                    constant: family,
                     constructors,
                     empty,
-                    loops: looped.remove(&constant).unwrap_or_default(),
+                    loops: looped.remove(&family).unwrap_or_default(),
                 })
             })
             .collect();
@@ -1186,58 +1178,53 @@ impl Families
         }
     }
 
-    /// The constructor table these families make, each family under the
-    /// name `names` gives its constant, and each data case answering it.
+    /// The constructor table these families make, each family and each data
+    /// case over it under the family's declaration.
     ///
     /// # Specification
-    /// - requires: `names` are the module's constant names by admission
-    ///   position, as [`constant_names`] spells them.
-    /// - ensures: each family whose constant `names` holds answers its
-    ///   constructors by tag, the first family under a name winning; each case
-    ///   of such a family answers the family's name.
+    /// - requires: nothing.
+    /// - ensures: each family answers its constructors by tag under its
+    ///   declaration, whichever other family shares its name; each case answers
+    ///   its family's declaration.
     /// - provides: the [`Constructors`] a [`CoreSource`] names through.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the table keeps the first family under a name and
-    ///   lists none, so a predicate over every family would re-derive the
-    ///   shadowing the table itself defines.
+    /// - executable: none — a clause would traverse every family the receiver
+    ///   holds, which `spec_clause_traversal` refuses.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::of`].
+    /// - hypothesis: L3 — as [`Self::of`]; a family keyed by its name instead
+    ///   answers a namesake's constructors, which the driver's
+    ///   `cli::a_run_spells_its_value_by_its_own_type_past_a_namesake_3125`
+    ///   fails on.
     /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
     /// - witness: `tests::diagnostics::a_body_names_its_match_arms_by_their_constructors_809`
     #[inline]
     #[must_use]
-    pub fn naming<'names>(
-        &'names self,
-        names: &[Name<'names>],
-    ) -> Constructors<'names>
+    pub fn naming(&self) -> Constructors<'_>
     {
         let mut constructors = Constructors::default();
         for family in &self.families {
-            if let Some(&named) = names.get(family.constant) {
-                let members = family
-                    .constructors
-                    .iter()
-                    .map(|&(ref name, fields)| (Name::from(name.as_str()), Arity::from(fields)));
-                match family.empty {
-                    Some(ref empty) => {
-                        constructors.words(named, members, Name::from(empty.as_str()));
-                    },
-                    None => constructors.family(named, members),
-                }
-                if !family.loops.is_empty() {
-                    constructors.loops(
-                        named,
-                        family.loops.iter().map(|name| Name::from(name.as_str())),
-                    );
-                }
+            let declared = FamilyKey::Declared(family.constant);
+            let members = family
+                .constructors
+                .iter()
+                .map(|&(ref name, fields)| (Name::from(name.as_str()), Arity::from(fields)));
+            match family.empty {
+                Some(ref empty) => {
+                    constructors.words(declared, members, Name::from(empty.as_str()));
+                },
+                None => constructors.family(declared, members),
+            }
+            if !family.loops.is_empty() {
+                constructors.loops(
+                    declared,
+                    family.loops.iter().map(|name| Name::from(name.as_str())),
+                );
             }
         }
         for &(case, family) in &self.cases {
-            if let Some(&named) = names.get(family) {
-                constructors.case(case, named);
-            }
+            constructors.case(case, FamilyKey::Declared(family));
         }
         constructors
     }

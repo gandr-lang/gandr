@@ -2837,6 +2837,7 @@ INSERT INTO purpose VALUES('surface-pretty','content_source::ContentSource','str
 INSERT INTO purpose VALUES('surface-pretty','core_source::Constructors','struct','Holds the constructors'' names, so a parameterised constructor is written against its family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::CoreNode','enum','Names a node of a core arena, so the node''s family is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::CoreSource','struct','Holds the core arena as a source, so checked types and values are laid out in the one spelling every face shows.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','core_source::FamilyKey','enum','Keys a family of the constructor table by its declaration or by its name, so two families of one name stay apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::ForgetMap','struct','Holds a forgetting''s map, so a forgotten sort''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::Forgetting','struct','Holds a forgetting, so a forgotten sort''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::Modelled','struct','Holds a modelled component, so the component''s type is read.',NULL,'fits','sound',NULL);

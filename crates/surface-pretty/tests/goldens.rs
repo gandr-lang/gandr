@@ -72,6 +72,7 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::DEPTH_LIMIT;
 use gandr_surface_pretty::Elided;
+use gandr_surface_pretty::FamilyKey;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::ForgetMap;
 use gandr_surface_pretty::Forgetting;
@@ -1825,7 +1826,7 @@ fn each_glyph_former_is_written_in_the_spelling_asked_782()
     let word = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![once]);
     let mut constructors = Constructors::default();
     constructors.words(
-        Name::from("Loops"),
+        FamilyKey::Named(Name::from("Loops")),
         [
             (Name::from("base"), Arity::from(0_usize)),
             (Name::from("loop"), Arity::from(1_usize)),
@@ -3311,12 +3312,12 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
     let word = core.value_constructor(loops, ConstructorTag::from(2_usize), vec![once]);
     let counted = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![word]);
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Nat"), [
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
     constructors.words(
-        Name::from("Loops"),
+        FamilyKey::Named(Name::from("Loops")),
         [
             (Name::from("here"), Arity::from(0_usize)),
             (Name::from("loop"), Arity::from(1_usize)),
@@ -3800,7 +3801,7 @@ fn a_composite_of_flows_spells_infix()
     ];
     let mut constructors = Constructors::default();
     constructors.words(
-        Name::from("Loops"),
+        FamilyKey::Named(Name::from("Loops")),
         [
             (Name::from("base"), Arity::from(0_usize)),
             (Name::from("loop"), Arity::from(1_usize)),
@@ -4074,11 +4075,11 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     let empty = core.computation_with(&[]);
     let names = [Name::from("kept"), Name::from("Nat")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Nat"), [
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
-    constructors.case(data_case, Name::from("Nat"));
+    constructors.case(data_case, FamilyKey::Named(Name::from("Nat")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     for id in [
         identity,
@@ -4251,11 +4252,11 @@ fn a_pruned_arm_is_left_unwritten_1314()
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("kept"), Name::from("Vec")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Vec"), [
+    constructors.family(FamilyKey::Named(Name::from("Vec")), [
         (Name::from("VNil"), Arity::from(0_usize)),
         (Name::from("VCons"), Arity::from(3_usize)),
     ]);
-    constructors.case(data_case, Name::from("Vec"));
+    constructors.case(data_case, FamilyKey::Named(Name::from("Vec")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     agrees(&core, &names, CoreNode::Computation(matched));
     assert_eq!(
@@ -4590,12 +4591,12 @@ fn a_recursive_definition_spells_as_written_941()
     });
     let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Nat"), [
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
     for case in [case, partial_case, first_case, staged_case] {
-        constructors.case(case, Name::from("Nat"));
+        constructors.case(case, FamilyKey::Named(Name::from("Nat")));
     }
     let source = CoreSource::new(&core, &names).naming(&constructors);
     let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
@@ -4664,12 +4665,12 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
     );
     let (plain, quiet) = descent(&mut core, None, FixpointEvidence::StructuralDescent);
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Nat"), [
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
-    constructors.case(case, Name::from("Nat"));
-    constructors.case(plain, Name::from("Nat"));
+    constructors.case(case, FamilyKey::Named(Name::from("Nat")));
+    constructors.case(plain, FamilyKey::Named(Name::from("Nat")));
     let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
     let wide = PageWidth::from(100_u32);
     let source = CoreSource::new(&core, &names).naming(&constructors);
@@ -4726,12 +4727,12 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     let outer = core.computation_lambda(inner);
     let exhausted = core.value_thunk(outer);
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Nat"), [
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
-    constructors.case(one_case, Name::from("Nat"));
-    constructors.case(two_case, Name::from("Nat"));
+    constructors.case(one_case, FamilyKey::Named(Name::from("Nat")));
+    constructors.case(two_case, FamilyKey::Named(Name::from("Nat")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
     let wide = PageWidth::from(100_u32);
@@ -5229,12 +5230,12 @@ fn a_case_nothing_types_writes_its_motive_815()
     let depending = core.computation_lambda(dependent_run);
     let names = [Name::from("Nat")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Nat"), [
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
-    constructors.case(case, Name::from("Nat"));
-    constructors.case(dependent, Name::from("Nat"));
+    constructors.case(case, FamilyKey::Named(Name::from("Nat")));
+    constructors.case(dependent, FamilyKey::Named(Name::from("Nat")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     let body = |id| Root::Computation(CoreNode::Computation(id));
     for (root, expected) in [
@@ -5286,11 +5287,11 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Wide")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Wide"), [(
+    constructors.family(FamilyKey::Named(Name::from("Wide")), [(
         Name::from("Wide"),
         Arity::from(limit),
     )]);
-    constructors.case(data_case, Name::from("Wide"));
+    constructors.case(data_case, FamilyKey::Named(Name::from("Wide")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
@@ -5298,6 +5299,57 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
         text.contains("case a {\n    Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
         "the branch binds its fields under the constructor: {text}"
     );
+}
+
+/// Two families of one name each spell their constructors by their own
+/// declaration, as values and as a data case's patterns. A run composing two
+/// sources that each declare `P` named one's constructors by the other's
+/// (#3125).
+#[test]
+fn a_family_spells_by_its_declaration_past_a_namesake_3125()
+{
+    let mut core = CoreArena::new();
+    let first = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let second = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let field = core.value_constructor(first, ConstructorTag::from(1_usize), Vec::new());
+    let inside = core.value_constructor(second, ConstructorTag::from(0_usize), Vec::new());
+    let on_heap = core.value_constructor(second, ConstructorTag::from(1_usize), Vec::new());
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_second = core.comp_type_returner(second);
+    let swapped = [on_heap, inside].map(|value| core.computation_return(value));
+    let data_case = core.computation_data_case(
+        bound,
+        returns_second,
+        swapped.to_vec(),
+        [0_usize, 0]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let matched = core.computation_lambda(data_case);
+    let names = [Name::from("P"), Name::from("P")];
+    let mut constructors = Constructors::default();
+    for (declaration, members) in [(0_usize, ["Deref", "Field"]), (1, ["Inside", "OnHeap"])] {
+        constructors.family(
+            FamilyKey::Declared(ConstantIndex::from(declaration)),
+            members.map(|member| (Name::from(member), Arity::from(0_usize))),
+        );
+    }
+    constructors.case(data_case, FamilyKey::Declared(ConstantIndex::from(1_usize)));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    for (root, expected) in [
+        (Root::Value(CoreNode::Value(field)), "Field"),
+        (Root::Value(CoreNode::Value(on_heap)), "OnHeap"),
+        (
+            Root::Computation(CoreNode::Computation(matched)),
+            "fn (a) { case a { Inside => OnHeap, OnHeap => Inside } }",
+        ),
+    ] {
+        assert_eq!(
+            spelled(&source, root),
+            faithful(Written(expected)),
+            "{expected}"
+        );
+    }
 }
 
 /// A hole is written `?` faithfully, as a value and as a computation: it
@@ -5356,11 +5408,11 @@ fn arms_sharing_a_body_bind_distinct_fields_815()
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Theory")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Theory"), [
+    constructors.family(FamilyKey::Named(Name::from("Theory")), [
         (Name::from("Bound"), Arity::from(5_usize)),
         (Name::from("Sort"), Arity::from(3_usize)),
     ]);
-    constructors.case(data_case, Name::from("Theory"));
+    constructors.case(data_case, FamilyKey::Named(Name::from("Theory")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
@@ -5396,7 +5448,7 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
     let names = [Name::from("Loops")];
     let mut constructors = Constructors::default();
     constructors.words(
-        Name::from("Loops"),
+        FamilyKey::Named(Name::from("Loops")),
         [
             (Name::from("here"), Arity::from(0_usize)),
             (Name::from("loop"), Arity::from(1_usize)),
@@ -5404,7 +5456,7 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
         ],
         Name::from("here(Base)"),
     );
-    constructors.case(data_case, Name::from("Loops"));
+    constructors.case(data_case, FamilyKey::Named(Name::from("Loops")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
@@ -5439,12 +5491,12 @@ fn a_loop_arm_is_written_under_its_loop_813()
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Circle")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Circle"), [(
+    constructors.family(FamilyKey::Named(Name::from("Circle")), [(
         Name::from("Base"),
         Arity::from(0_usize),
     )]);
-    constructors.loops(Name::from("Circle"), [Name::from("loop")]);
-    constructors.case(data_case, Name::from("Circle"));
+    constructors.loops(FamilyKey::Named(Name::from("Circle")), [Name::from("loop")]);
+    constructors.case(data_case, FamilyKey::Named(Name::from("Circle")));
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
@@ -5636,7 +5688,7 @@ fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_
     let returns_code = core.computation_return(quoted);
     let names = [Name::from("Ix"), Name::from("Vec")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Ix"), [(
+    constructors.family(FamilyKey::Named(Name::from("Ix")), [(
         Name::from("MkIx"),
         Arity::from(0_usize),
     )]);
@@ -5675,7 +5727,7 @@ fn a_definition_writes_its_constructors_against_their_family_815()
     let pair = core.value_tuple(&[made, thunked]);
     let names = [Name::from("Ix")];
     let mut constructors = Constructors::default();
-    constructors.family(Name::from("Ix"), [(
+    constructors.family(FamilyKey::Named(Name::from("Ix")), [(
         Name::from("MkIx"),
         Arity::from(0_usize),
     )]);
