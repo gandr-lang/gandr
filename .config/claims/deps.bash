@@ -39,7 +39,8 @@ deps_block() {
 
 # Make $3 a sub-issue of the epic $2 unless it is, and the epic blocked by it
 # while it is open (#2902): the epic's page shows its open work, and an epic
-# cannot close over it.
+# cannot close over it. An open sub-issue answers an epic's close ruling
+# (#2973): its `needs:close-ruling` comes off.
 deps_link() {
   local repo=$1 epic=$2 child=$3 parent state
   IFS='|' read -r parent state < <(gh api "repos/$repo/issues/$child" --jq '"\(.parent_issue_url // "" | sub(".*/"; ""))|\(.state)"')
@@ -49,5 +50,9 @@ deps_link() {
   fi
   if [[ $state == open ]]; then
     deps_block "$repo" "$epic" "$child"
+    if [[ $(gh api "repos/$repo/issues/$epic" --jq '[.labels[].name] | index("needs:close-ruling") != null') == true ]]; then
+      gh api -X DELETE "repos/$repo/issues/$epic/labels/needs:close-ruling" > /dev/null
+      printf '#%s no longer awaits its close ruling: #%s is open under it\n' "$epic" "$child"
+    fi
   fi
 }

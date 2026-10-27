@@ -1,6 +1,6 @@
 [
   {
-    "name": "the last sub-issue to close closes its epic, naming itself",
+    "name": "the last sub-issue to close asks for its epic's close ruling, naming itself, and closes nothing (#2973)",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
@@ -23,7 +23,7 @@
         }
       ]
     },
-    "output": "close\tClosed by its last sub-issue #12."
+    "output": "ask\tEvery filed sub-issue is closed, the last #12. Close this epic with its ruling, or file its next unit under it (`mise run issue:file <title> <body> --epic 10`, which takes `needs:close-ruling` off)."
   },
   {
     "name": "an open sibling keeps the epic open, named, in this repository or another",
@@ -99,7 +99,7 @@
     "output": "keep\tthe parent is closed"
   },
   {
-    "name": "an epic in another repository is listed, not closed",
+    "name": "an epic in another repository is listed, not labelled",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
@@ -118,5 +118,26 @@
       ]
     },
     "output": "list\texample-org/plans#400 is in another repository"
+  },
+  {
+    "name": "#628's case: the one filed sub-issue of a ladder mostly unfiled closing asks for the ruling, never closes the epic (#2973)",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 2767,
+      "parent": {
+        "number": 628,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:std"]
+      },
+      "sub_issues": [
+        {
+          "number": 2767,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "ask\tEvery filed sub-issue is closed, the last #2767. Close this epic with its ruling, or file its next unit under it (`mise run issue:file <title> <body> --epic 628`, which takes `needs:close-ruling` off)."
   }
 ]
