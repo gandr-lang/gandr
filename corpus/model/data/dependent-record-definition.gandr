@@ -1,0 +1,58 @@
+/// This source checks a pair against a definition that returns a dependent record type.
+///
+/// It pins the kernel's replay of that definition's unfolding. Before the fix, the kernel declined the unfolding, and the whole source faulted.
+///
+/// The record's second field is a call stuck on the first field, and one of its arms calls another definition. The checker reads the unfolding to its normal form, and the kernel converts the two sides with definitions unfolding.
+///
+/// - see: #2831
+/// - see: #2555
+import "./data-base.gandr";
+
+// The heaps and `emp`, the type of evidence that a heap is empty.
+import "./stuck-arm-call.gandr";
+
+/// A tagged natural.
+data T : Type {
+  /// The tag over a natural.
+  Tg : (t : Nat) --> T;
+}
+
+/// What a tag owes of a heap: emptiness at zero, by a call of `emp`, and nothing else.
+def p(r : T, h : Heap) -> Type {
+  case r {
+    Tg(t) => case t {
+      Zero => emp(h),
+      Succ(_s) => return Void
+    }
+  }
+}
+
+/// The tags paired with what each owes of `h`, a dependent record named by a definition.
+def repr(h : Heap) -> Type {
+  return type(#{r : T, ok : p(r, h)})
+}
+
+/// The zero tag and its evidence check against the definition's record type.
+def zeroTagged(e : p(Tg(Zero), Emp)) -> repr(Emp) {
+  (Tg(Zero), e)
+}
+
+/// What a tag owes of the empty heap, the arm's call closed: `emp(Emp)`.
+def owedClosed(r : T) -> Type {
+  case r {
+    Tg(t) => case t {
+      Zero => emp(Emp),
+      Succ(_s) => return Void
+    }
+  }
+}
+
+/// The tags paired with what each owes of the empty heap.
+def reprClosed(_h : Heap) -> Type {
+  return type(#{r : T, ok : owedClosed(r)})
+}
+
+/// The zero tag and its evidence check against the closed form too.
+def zeroTaggedClosed(e : owedClosed(Tg(Zero))) -> reprClosed(Emp) {
+  (Tg(Zero), e)
+}
