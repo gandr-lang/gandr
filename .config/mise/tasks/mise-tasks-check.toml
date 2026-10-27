@@ -957,10 +957,13 @@ run = [
 
 # Merge residue never lands: a conflict marker, or what a merge driver writes
 # as a comment, its resolution trailer or the `// refused_by:` line it puts
-# atop each side of a block it could not resolve (#1560); nor a file named as
-# residue, a driver's `.orig` backup or a `.rej` hunk, or the `_BACKUP_`,
-# `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool` writes, which
-# hold clean text no marker scan sees (#1642). The line patterns live in
+# atop each side of a block it could not resolve (#1560), read at a line's
+# start and, whole as `// refused_by: <name> · collision:`, anywhere on a
+# line, where a formatter that reflows the block joins it (#3217); nor a file
+# named as residue, a driver's `.orig` backup or a `.rej` hunk, or the
+# `_BACKUP_`, `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool`
+# writes, which hold clean text no marker scan sees (#1642). The line
+# patterns live in
 # `.config/merge-residue/patterns` and the path patterns in `names` beside
 # it, one extended regular expression per line; each case in `cases.json`
 # holds a `line` or a `path` and whether the patterns read it as residue;
