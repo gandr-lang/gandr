@@ -1,0 +1,136 @@
+# The web's one way to file a unit (#3113, `units.md` § units-issue). GitHub
+# writes each field under a `### <label>` heading; the issues workflow
+# (`.github/workflows/issues.yml`) turns a body this form wrote into a unit's
+# `## ` sections and its kind and areas into labels (`.config/issues/form.jq`),
+# then runs `unit:check`'s reading over it. A form binds only the web: an
+# issue filed through the API is checked by the same workflow.
+name: Unit
+description: One slice of work that lands as one pull request, or a short stack
+title: "<area>: <what the unit lands>"
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Every section a unit carries is a field. The issues workflow writes them as the body's sections,
+        sets the kind and areas as labels, and runs `unit:check`: a section left without content labels the
+        issue `status:unsectioned`, and `claim:next` passes it over until it is written.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - kind:defect
+        - kind:gap
+        - kind:feature
+        - kind:performance
+        - kind:refactor
+        - kind:specification
+        - kind:documentation
+        - kind:ci
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: One or more; an issue may span areas.
+      multiple: true
+      options:
+        - area:kernel
+        - area:theory
+        - area:core
+        - area:storage
+        - area:runtime
+        - area:surface
+        - area:workflow
+        - area:interop
+        - area:analysis
+        - area:ci
+        - area:ux
+        - area:editor
+        - area:lsp
+        - area:mcp
+    validations:
+      required: true
+  - type: textarea
+    id: brief
+    attributes:
+      label: Brief
+      description: What the unit lands and why.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: >-
+        One line per source, marked primary (read whole, or the cited sections) or secondary. Include the
+        vault's two listings.
+      placeholder: "- `<library stem or design page>` — **primary**: <what it decides for this unit>"
+    validations:
+      required: true
+  - type: textarea
+    id: readings
+    attributes:
+      label: Readings
+      description: >-
+        Answer every axis with a reason on both marks: `yes — <what the axis gives this unit>` or
+        `no — <why it does not reach it>`. A bare `yes` or `no` is refused.
+      value: |
+        | Family | Axis | Question | Selected |
+        | ------ | ---- | -------- | -------- |
+        | Identity | `univalent` | what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence | |
+        | Locality | `oracle` | which part is decided by certificate replay and which is computed; which modality or dominance classifies it | |
+        | Locality | `descent` | the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left | |
+        | Place | `located` | at which world a judgement or value is meaningful; what crosses worlds, and by what | |
+        | Place | `resident` | representation, sharing, persistence; where integrity stops and replay decides | |
+        | Dimension | `rewriting` | rules and normal forms; rewrites between rewrites; which coherence tier settles them | |
+    validations:
+      required: true
+  - type: textarea
+    id: concerns
+    attributes:
+      label: Concerns
+      description: "Mark each concern of `ledger/concerns.sql` yes or no; a yes carries how: `yes — <how>`."
+      value: |
+        | Concern | Touched |
+        | ------- | ------- |
+        | `fork` | |
+        | `oracle` | |
+        | `sharing` | |
+    validations:
+      required: true
+  - type: textarea
+    id: ledger
+    attributes:
+      label: Ledger
+      description: The features-ledger rows the unit lands, changes or retires, by id, or none.
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: The shape
+      description: "New territory only: the surface spelling, the obligation stated exactly, the fallback."
+  - type: textarea
+    id: try-first
+    attributes:
+      label: Try first
+      description: "New territory only: the probe that settles the open question."
+  - type: textarea
+    id: not-in-this-slice
+    attributes:
+      label: Not in this slice
+      description: The next unit on the lane.
+    validations:
+      required: true
+  - type: textarea
+    id: after
+    attributes:
+      label: After
+      description: >-
+        What this unit waits on: `none`, or one line per issue, `- #n — <what it waits for>`. Each is set as
+        the issue's GitHub `blocked by` dependency; a dependency is never stated in prose.
+      value: none
+    validations:
+      required: true

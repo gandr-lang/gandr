@@ -1,0 +1,53 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: issues
+
+# Every issue is a unit or is flagged (#3113, `tracker.md` § tracker-filing).
+# The unit form binds only the web, so on every opened, edited, labelled or
+# unlabelled issue, `.config/issues/unsectioned.sh` writes a form's fields as
+# the body's sections and its kind and areas as labels, then reads the body
+# as `unit:check` reads it: `status:unsectioned` stands while a section is
+# missing, with one `<!-- unit:check -->` comment listing what, rewritten in
+# place, and comes off once the body passes. An epic or a `collector` is not
+# read. The workflow's own edits, made with its token, start no run.
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+# One group per issue: a newer event replaces a pending run, and every run
+# reads the issue as it stands, so the last run settles the label.
+concurrency:
+  group: issues-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  unsectioned:
+    name: flag an issue missing a unit's sections
+    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # The script and the reading run from the default branch.
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: ${{ github.event.repository.default_branch }}
+      - name: add or remove status:unsectioned
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: .config/issues/unsectioned.sh "$ISSUE"
