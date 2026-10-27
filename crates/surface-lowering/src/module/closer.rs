@@ -45,9 +45,11 @@ use crate::error::LoweringRefusal;
 use crate::form::FormName;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Repaired;
 use crate::form::Shape;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::form::stop_of;
 use crate::form::tile_label;
 use crate::layout::Nesting;
 use crate::layout::bracket_form;
@@ -457,7 +459,10 @@ impl<'source> Collector<'_, 'source>
     /// form of the wrong sort, and the first is its head, which was written
     /// right. Where it broke is the first repair the parser made after the
     /// last of those tiles, when that repair is on a line holding one: a
-    /// repair on a line of its own belongs to a member, broken on its own.
+    /// repair on a line of its own belongs to a member, broken on its own. A
+    /// repair off those lines that a form inside an operand made gives way to
+    /// where the operand itself stopped, when that is on them: the inner form
+    /// read only what the torn one could not.
     ///
     /// # Specification
     /// - requires: `pieces` are the root pieces of one source, in order, and
@@ -466,16 +471,19 @@ impl<'source> Collector<'_, 'source>
     ///   attribute block, whose next piece is another tile of its form, up to
     ///   the next piece beginning a line; a run no piece of which is in
     ///   `tearings` is entered, led by its first piece and followed by the
-    ///   rest, when a piece from its form's last tile on holds a repair on a
-    ///   line holding a tile of its form, refused as the first such repair in
-    ///   that form.
+    ///   rest, when the first piece from its form's last tile on that holds a
+    ///   repair holds one on a line holding a tile of its form, or stopped on
+    ///   such a line, refused as that repair, else as that stop, in that form.
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the pieces.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a theory whose rule's `==>` is written `=>=` refuses
-    ///   at the arrow, not at `theory`.
+    ///   at the arrow, not at `theory`; a codata declaration whose universe
+    ///   lost its polarity refuses past the `[`, not at the close minted after
+    ///   the body the universe captured.
     /// - witness: `module::tests::a_torn_declaration_is_refused_where_it_broke_2110`
+    /// - witness: `module::tests::a_torn_declaration_is_refused_where_it_stopped_2877`
     pub(super) fn torn_forms(
         &self,
         pieces: &[Placed],
@@ -536,12 +544,12 @@ impl<'source> Collector<'_, 'source>
                 .iter()
                 .rposition(|placed| tile_form(placed).is_some_and(|(_, name)| name == form))
                 .unwrap_or(0);
-            let repaired = run.get(last_tile ..).and_then(|after| {
+            let found = run.get(last_tile ..).and_then(|after| {
                 after.iter().find_map(|placed| {
                     let mut read = Pieces::new();
                     read_pieces(self.pbg, self.tree, placed.node, &mut read).ok()?;
                     match read.repair {
-                        Maybe::Present(repaired) => Some(repaired),
+                        Maybe::Present(repaired) => Some((repaired, placed.node)),
                         Maybe::Absent(_) => None,
                     }
                 })
@@ -554,17 +562,30 @@ impl<'source> Collector<'_, 'source>
                     .and_then(|before| before.rfind('\n'))
                     .map_or(0, |newline| newline.saturating_add(1))
             };
-            let (Some(repaired), Some(rest)) = (repaired, run.get(1 ..))
+            let (Some((repaired, holder)), Some(rest)) = (found, run.get(1 ..))
             else {
                 continue;
             };
-            let on_its_line = run.iter().any(|placed| {
-                tile_form(placed).is_some_and(|(_, name)| name == form)
-                    && line_of(placed.span.start()) == line_of(repaired.span.start())
-            });
-            if !on_its_line {
-                continue;
+            let on_its_line = |at: &Repaired| {
+                run.iter().any(|placed| {
+                    tile_form(placed).is_some_and(|(_, name)| name == form)
+                        && line_of(placed.span.start()) == line_of(at.span.start())
+                })
+            };
+            // A repair off the torn form's lines was made by a form inside
+            // the operand, which read what the torn form could not; where the
+            // operand itself stopped, on those lines, is where it broke.
+            let repaired = if on_its_line(&repaired) {
+                repaired
             }
+            else if let Maybe::Present(stop) = stop_of(self.pbg, self.tree, holder)
+                && on_its_line(&stop)
+            {
+                stop
+            }
+            else {
+                continue;
+            };
             let _led = tearings.insert(lead.node, Tearing::Leads {
                 refusal: repaired.refusal(form),
                 torn: rest.to_vec(),

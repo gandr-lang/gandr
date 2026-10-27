@@ -13342,6 +13342,41 @@ mod tests
         );
     }
 
+    /// A declaration torn into its tiles because it stopped inside an operand
+    /// is refused where it stopped. A universe missing its polarity is marked
+    /// just past its `[`, not at the close minted after the capture (#2877).
+    #[test]
+    fn a_torn_declaration_is_refused_where_it_stopped_2877()
+    {
+        let pbg = grammar();
+        let text = "codata Stream : Type[] {\n  head : Integer;\n}\n";
+        let tree = repaired(&pbg, SourceText::from(text));
+        let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
+            Ok(collected) => collected
+                .slots
+                .iter()
+                .filter_map(|slot| match slot.refusal {
+                    Maybe::Present((_at, refusal)) => Some(refusal),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>(),
+            Err(refusal) => alloc::vec![refusal],
+        };
+        let stop = text.find("[]").unwrap().saturating_add(1);
+        assert!(
+            matches!(
+                refused.as_slice(),
+                [LoweringRefusal::MalformedForm {
+                    span,
+                    form,
+                    fault: FormFault::Repaired(_),
+                }] if usize::from(span.start()) == stop
+                    && *form == FormName::from(NamedKind("codata_declaration"))
+            ),
+            "the codata declaration is refused once, past its universe's `[`: {refused:?}"
+        );
+    }
+
     /// A closer written twice on one line tears the form it closes early into
     /// pieces of that line, each a form of the wrong sort at its own bytes:
     /// the line is refused once, at the second closer, as the form its first
