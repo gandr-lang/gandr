@@ -1,19 +1,34 @@
-// Definitions a Rust caller runs on values of its own, through the runtime as
-// a library.
+// Definitions a Rust caller runs on its own values, and a Rust function they
+// call.
 //
-// This is the boundary's first direction: Rust holds the composed program and
-// calls a definition by name. Nothing crosses by layout yet. Each argument
-// and answer is a value the runtime holds as itself.
+// The first direction: Rust holds the composed program and calls a definition
+// by name. The second: the `extern` block declares the Rust caller's `add` as
+// an operation of the interface `Boundary`, and `quadrupled` performs it. No
+// handler here answers it, so the run offers it to the Rust caller's host,
+// which calls its own `add`. Nothing crosses by layout yet: each argument and
+// answer is a value the runtime holds as itself, a `u32` as a `u32`.
 //
 // The Rust test composes this source, names each definition and calls it on
-// integers it builds, then reads the answer back. Each `runs` item below makes
-// the same call from gandr, so both sides state one answer.
+// values it builds, then reads the answer back. Each `runs` item below makes
+// the same call from gandr, so both sides state one answer. `quadrupled` has
+// none, since only the Rust caller answers `Boundary`.
 //
 // - see: #2901 — not implemented: values crossing by Rust's default layout,
-//   and the `extern` form calling Rust from gandr
+//   and the block's function row admitted when it is declared
 // - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
 // - see: `model/interop/boundary/function-row.gandr` — the function row an
 //   `extern` is admitted against
+
+/// The Rust caller's adder, `add(x: u32, n: u32) -> u32`.
+extern "rust" from "boundary" as Boundary {
+  def add(x : u32, n : u32) -> u32;
+}
+
+/// Four times its argument: Rust adds it to itself, then the sum to itself.
+pub def quadrupled(x : u32) -> [Boundary] u32 {
+  run y <- Boundary.add(x, x);
+  Boundary.add(y, y)
+}
 
 /// Twice its argument.
 pub def double(x : Integer) -> Integer { x + x }

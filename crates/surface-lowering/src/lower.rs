@@ -3794,6 +3794,9 @@ struct Sink<'run>
     /// scope's node and where the signature stands, minted at the first form
     /// naming it there.
     theories: BTreeMap<(NodeIndex, capability::Standing), EffectSig>,
+    /// The signature of each extern block's interface, by where the block
+    /// names it, minted at the first form reading it.
+    foreign: BTreeMap<ByteOffset, EffectSig>,
     /// Every fixpoint a loop minted, and each copy a match leaf made of one:
     /// the commuting walks into its body.
     loops: BTreeSet<ComputationId>,
@@ -4168,6 +4171,8 @@ struct SinkTables
     host: capability::Host,
     /// [`Sink::theories`].
     theories: BTreeMap<(NodeIndex, capability::Standing), EffectSig>,
+    /// [`Sink::foreign`].
+    foreign: BTreeMap<ByteOffset, EffectSig>,
     /// [`Sink::loops`].
     loops: BTreeSet<ComputationId>,
     /// [`Sink::breaks`].
@@ -4192,6 +4197,7 @@ impl SinkTables
             distributed: BTreeMap::new(),
             host: capability::Host::Unminted,
             theories: BTreeMap::new(),
+            foreign: BTreeMap::new(),
             loops: BTreeSet::new(),
             breaks: BTreeSet::new(),
             reholds: BTreeSet::new(),
@@ -4217,6 +4223,7 @@ impl<'run> Sink<'run>
             distributed,
             host,
             theories,
+            foreign,
             loops,
             breaks,
             reholds,
@@ -4229,6 +4236,7 @@ impl<'run> Sink<'run>
             distributed,
             host,
             theories,
+            foreign,
             loops,
             breaks,
             reholds,
@@ -4247,6 +4255,7 @@ impl<'run> Sink<'run>
             distributed,
             host,
             theories,
+            foreign,
             loops,
             breaks,
             reholds,
@@ -4258,6 +4267,7 @@ impl<'run> Sink<'run>
             distributed,
             host,
             theories,
+            foreign,
             loops,
             breaks,
             reholds,
@@ -4310,6 +4320,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.propagate_manifests();
         }
         self.unjoin_refused();
+        self.mint_foreign(sink);
         self.mint(sink)?;
         self.mint_joints(sink);
         self.mint_abstracts(sink);
@@ -19817,7 +19828,8 @@ impl Sink<'_>
                 | Insertion::Method
                 | Insertion::Parameter
                 | Insertion::Derived
-                | Insertion::Implicit,
+                | Insertion::Implicit
+                | Insertion::Foreign,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -23154,6 +23166,7 @@ mod tests
             reholds: super::BTreeSet::new(),
             identities: super::BTreeMap::new(),
             theories: super::BTreeMap::new(),
+            foreign: super::BTreeMap::new(),
         };
         lowerer.mint(&mut sink).unwrap();
         let [ref slot] = *lowerer.collected.slots

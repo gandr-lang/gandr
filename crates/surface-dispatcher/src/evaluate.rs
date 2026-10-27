@@ -161,6 +161,7 @@ use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
@@ -1573,7 +1574,7 @@ impl<'source> Program<'source>
     }
 
     /// Call the definition at `constant` on `arguments`, values its caller
-    /// built in `into`, and read the answer back into `into`.
+    /// built in `into`, under `host`, and read the answer back into `into`.
     ///
     /// # Specification
     /// - requires: each of `arguments` is a closed value of `into`.
@@ -1581,25 +1582,35 @@ impl<'source> Program<'source>
     ///   [`Terminal::Ended`], before any command is added. Otherwise the
     ///   definition is forced and applied to `arguments`, the first applied
     ///   first as a surface call applies its own, and run under the process's
-    ///   policy. The terminal value is read back as the computation returning
-    ///   it into `into`, a suspension answered as itself. A run that blames or
-    ///   sticks, and a terminal that does not read back, end as
+    ///   policy, each operation no handler of the run claims offered to `host`:
+    ///   a reply continues the run at the operation, and a decline leaves it
+    ///   stuck there. The terminal value is read back as the computation
+    ///   returning it into `into`, a suspension answered as itself. A run that
+    ///   blames or sticks, and a terminal that does not read back, end as
     ///   [`Self::read_on`] ends them.
-    /// - provides: the boundary's call into gandr: a Rust caller holding a
-    ///   composed program runs one of its definitions on values of its own.
-    /// - fails: never; every failure is an outcome.
+    /// - provides: the boundary's two calls: a Rust caller holding a composed
+    ///   program runs one of its definitions on values of its own, and answers
+    ///   the operations the run performs that no handler of the program does,
+    ///   an extern block's among them.
+    /// - fails: the abort `host` ends the run with.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// The host's abort.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a definition of one parameter answers the double of a
     ///   positive, a negative and a zero integer; one of two parameters answers
     ///   each order of its arguments apart, the first applied first; one
     ///   answering a function answers it unforced; a refused definition ends
-    ///   unrunnable before a run.
+    ///   unrunnable before a run; an extern block's operation is answered by
+    ///   the host, and sticks the run where the host declines it.
     /// - witness: `tests::boundary::a_definition_answers_the_integer_rust_passes`
     /// - witness: `tests::boundary::the_arguments_apply_in_the_order_passed`
     /// - witness: `tests::boundary::a_function_answered_is_not_forced`
     /// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
+    /// - witness: `tests::boundary::an_extern_operation_is_answered_by_the_rust_caller`
+    /// - witness: `tests::boundary::an_extern_operation_no_host_answers_sticks_the_run`
     #[spec(
         captures: [watermark = self.arena.watermark(), blocked = match self.declarations.get(&constant) {
             None => Some(Unrunnable::Undeclared(constant)),
@@ -1610,18 +1621,21 @@ impl<'source> Program<'source>
             Some(&Declared { slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed), .. }) => None,
         }],
         ensures: |ref ret| blocked.is_none_or(|reason| self.arena.watermark() == watermark
-            && matches!(*ret, Terminal::Ended(Evaluation::Unrunnable(actual)) if actual == reason)),
+            && matches!(*ret, Ok(Terminal::Ended(Evaluation::Unrunnable(actual))) if actual == reason)),
     )]
     #[inline]
-    pub fn call(
+    pub fn call<Host>(
         &mut self,
         constant: ConstantIndex,
         arguments: &[ValueId],
         into: &mut CoreArena,
-    ) -> Terminal<'source>
+        host: &mut Host,
+    ) -> Result<Terminal<'source>, Host::Abort>
+    where
+        Host: HostHandler,
     {
         if let Maybe::Present(unrunnable) = self.unrunnable(constant, Start::Accepted) {
-            return Terminal::Ended(Evaluation::Unrunnable(unrunnable));
+            return Ok(Terminal::Ended(Evaluation::Unrunnable(unrunnable)));
         }
         let value = into.value_constant(constant);
         let forced = into.computation_force(value);
@@ -1632,26 +1646,31 @@ impl<'source> Program<'source>
         let command = match focus_computation(into, root, &mut self.arena, &mut provenance) {
             Ok(command) => command,
             Err(refusal) => {
-                return Terminal::Ended(Evaluation::Unrunnable(self.unfocused(constant, refusal)));
+                return Ok(Terminal::Ended(Evaluation::Unrunnable(
+                    self.unfocused(constant, refusal),
+                )));
             },
         };
         let mut store = Store::new();
-        let outcome = match gandr_runtime_emitter::evaluate(
+        let outcome = match evaluate_with_host(
             &self.arena,
             &self.definitions,
             command,
-            Fuel::from(RUN_BUDGET),
-            &mut store,
+            (Fuel::from(RUN_BUDGET), &mut store),
+            host,
         ) {
-            Ok(outcome) => outcome,
+            Ok(HostOutcome::Completed(outcome)) => outcome,
+            Ok(HostOutcome::Aborted(abort)) => return Err(abort),
             Err(declined) => {
-                return Terminal::Ended(Evaluation::Unfinished(Unfinished::Declined(declined)));
+                return Ok(Terminal::Ended(Evaluation::Unfinished(
+                    Unfinished::Declined(declined),
+                )));
             },
         };
-        match self.halted(&store, outcome) {
+        Ok(match self.halted(&store, outcome) {
             Ok(terminal) => self.read_back(&store, terminal, into),
             Err(evaluation) => Terminal::Ended(evaluation),
-        }
+        })
     }
 
     /// The two commands that run the declaration at `constant` to `reach`,

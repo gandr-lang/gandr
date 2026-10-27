@@ -1415,7 +1415,12 @@ fn attributes_parameters_externs(
             dq_string(),
             t(TileLabel("from")),
             dq_string(),
-            opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
+            // The alias names the block's interface: a type identifier as a
+            // row names one, `[Boundary]`, or an identifier.
+            opt(seq([
+                t(TileLabel("as")),
+                alt([t(TileLabel("identifier")), t(TileLabel("type_identifier"))]),
+            ])),
             t(TileLabel("{")),
             repeat(alt([extern_type_inline(), extern_function_inline()])),
             t(TileLabel("}")),

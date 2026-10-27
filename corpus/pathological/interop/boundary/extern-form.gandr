@@ -1,0 +1,30 @@
+// An `extern "rust"` block beyond the form, and a call its block does not
+// declare, each refused where it stands.
+//
+// A member's types are the four fixed-width atoms, which cross as the values
+// the runtime holds. A wider type needs a layout to cross by, and the lowering
+// reads none yet.
+//
+// The first block's member takes an `Integer` and is refused at that type. The
+// second block declares only `add`, so `less` performs an operation it does
+// not declare.
+//
+// - see: #327 — not implemented: a member's type beyond the fixed-width atoms
+// - see: `model/interop/boundary/round-trip.gandr` — the form, called from
+//   Rust
+
+/// A member that takes an arbitrary-precision integer, which no fixed width
+/// carries.
+@[ refuses("OutOfFragment.extern_block") ]
+extern "rust" from "wide" as Wide {
+  def widen(x : Integer) -> u64;
+}
+
+/// The Rust caller's adder.
+extern "rust" from "boundary" as Boundary {
+  def add(x : u32, n : u32) -> u32;
+}
+
+/// `Boundary` declares no `sub`.
+@[ refuses("UnresolvedName") ]
+def less(x : u32) -> [Boundary] u32 { Boundary.sub(x, x) }
