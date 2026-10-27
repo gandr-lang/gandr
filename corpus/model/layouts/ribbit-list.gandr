@@ -134,7 +134,7 @@ pub def taggedPath : Path(Type, Ints, Tagged) = ua(taggedLayout);
 /// The list is its packed layout, as types.
 pub def packedPath : Path(Type, Ints, Packed) = ua(packedLayout);
 
-/// A tagged list moved to the packed layout along one admission's reverse and the other, a composite formed at the transport, not named, until #2995.
+/// A tagged list moved to the packed layout along one admission's reverse and the other.
 pub def relayout(p : Path(Type, Ints, Tagged), q : Path(Type, Ints, Packed), l : Tagged) -> Packed {
   transport(\X. X, back(p) then q, l)
 }
@@ -145,6 +145,13 @@ pub def oneTwoThree : Tagged = TagCons(1i32, TagCons(2i32, TagCons(3i32, TagNil)
 /// One, two and three move to the packed layout as one pointer to two elements and the third inline.
 @[ runs("Many(1i32, 2i32, One(3i32))") ]
 def moved() -> Packed { relayout(taggedPath, packedPath, oneTwoThree) }
+
+/// The tagged layout is the packed one, as types, through the list.
+pub def taggedIsPacked : Path(Type, Tagged, Packed) = back(taggedPath) then packedPath;
+
+/// One, two and three move along the named composite as along the two admissions.
+@[ runs("Many(1i32, 2i32, One(3i32))") ]
+def movedNamed() -> Packed { transport(\X. X, taggedIsPacked, oneTwoThree) }
 
 /// The length of a list, written once over the list.
 pub def rec length(l : Ints) -> Integer {
