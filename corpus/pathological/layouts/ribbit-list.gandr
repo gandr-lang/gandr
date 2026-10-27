@@ -1,0 +1,45 @@
+// The twin of `model/layouts/ribbit-list.gandr`: a layout is admitted only
+// by an equivalence with the list (vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576,
+// § layouts-ribbit), so a layout that loses elements is refused at its round
+// trip, and `equiv` decides no round trip over a type that holds itself
+// (#1316).
+
+// `Ints`, `Packed`, `pack` and `unpack`.
+import "../../model/layouts/ribbit-list.gandr";
+
+/// A tag without its payloads, Ribbit's Example 3.15: it tells the empty list from the rest and keeps nothing else.
+data Tags : Type {
+  /// The empty list's tag.
+  Bare : Tags;
+  /// Any other list's tag.
+  Held : Tags;
+}
+
+/// A list's tag.
+def tagsOf(l : Ints) -> Tags {
+  case l {
+    Nil => Bare,
+    Cons(x, rest) => Held
+  }
+}
+
+/// A tag read back as a list, a zero standing for what the tag never kept.
+def listOf(t : Tags) -> Ints {
+  case t {
+    Bare => Nil,
+    Held => Cons(0i32, Nil)
+  }
+}
+
+/// The tag loses the list's elements, so reading it back is refused as undoing it (vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576, § layouts-ribbit).
+@[ refuses("EndpointMismatch") ]
+def restored(l : Ints) -> Path(Ints, listOf(tagsOf(l)), l) {
+  case l {
+    Nil => here(Nil),
+    Cons(x, rest) => here(Cons(x, rest))
+  }
+}
+
+/// `equiv` decides round trips over types that do not hold themselves, so the packed layout's is refused (#1316).
+@[ refuses("EquivUnsupported") ]
+def decided : Path(Type, Ints, Packed) = equiv(pack, unpack);

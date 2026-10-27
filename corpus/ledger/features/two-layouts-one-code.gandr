@@ -1,0 +1,26 @@
+/// `two-layouts-one-code` lays one list out two ways, admits each by an equivalence with the list, and runs one function on both.
+///
+/// Implemented: Ribbit's pointer-tagged and packed layouts of a list of `i32` as data, each admitted by an equivalence whose round trips the kernel replays, a value moved between them along their composite, and `length` written once and transported to both.
+/// Not implemented: Rust's default layout as a generic program, which #2804 owes; the `fip` check, which #2805 owes; `equiv` deciding a layout's round trips, which #1316 owes.
+///
+/// A layout is a second data type over the list's code; what is checked is its equivalence with the list, not its bytes.
+/// Code emitted from a layout stands outside the trust boundary.
+///
+/// - see: corpus/model/layouts/ribbit-list.gandr
+
+// `Ints`, `Tagged`, `Packed`, `tag`, `taggedPath`, `packedPath`, `relayout` and `length`.
+import "../../model/layouts/ribbit-list.gandr";
+
+/// Two and five, laid out tagged, move to the packed layout as one pointer to both and nothing after.
+@[ runs("Many(2i32, 5i32, Empty)") ]
+def twoFivePacked() -> Packed {
+  run twoFive <- tag(Cons(2i32, Cons(5i32, Nil)));
+  relayout(taggedPath, packedPath, twoFive)
+}
+
+/// The length, written once over the list, counts two on the packed layout.
+@[ runs("2") ]
+def twoFiveLength() -> Integer {
+  run f <- transport(\X. X => Integer, packedPath, fn (l) { length(l) });
+  f(Many(2i32, 5i32, Empty))
+}
