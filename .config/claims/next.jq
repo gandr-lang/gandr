@@ -1,7 +1,9 @@
 # The claim order (#2533, `tracker.md` § tracker-claims): the next item a
 # seat on an area claims, as one `number<TAB>bucket<TAB>title` line, or none,
 # after one `needs sections: #n` or `blocked: #n` line for each issue ranked
-# ahead of it that lacks a unit's sections or waits on an open issue.
+# ahead of it that lacks a unit's sections or waits on an open issue, and one
+# `restate: `<axis>`: <question>` line for each of the pick's readings still
+# the migration's `unstated` placeholder (#2955).
 #
 # Input:
 #   area     the area's label, `area:<name>`
@@ -26,8 +28,13 @@
 # (`findings.jq`, #2744) and no open issue blocks (#2902); each one ranked
 # ahead of it that fails either is named once, as blocked when it is, so the
 # coordinator sees whose sections to write and the seat why it was passed
-# over.
+# over. A `needs sections:` line quotes the question of each axis whose
+# reading is bare. A pick whose reading is the `unstated` placeholder is
+# claimed all the same, its axes' questions printed first: the seat restates
+# those rows on the issue as its first act, and `pr:open` refuses the landing
+# until it has (`opening.jq`).
 
+include "sections";
 include "findings";
 
 def has($label): .labels | index($label) != null;
@@ -40,7 +47,13 @@ def effort:
 def priority:
   ["priority:high", "priority:medium", "priority:backlog"] as $ranks
   | [.labels[] as $l | $ranks | index($l) | values] | min // 3;
+def bare: [.body // "" | marks | select(.mark != null and .reason == null) | .axis];
+def unstated_axes: [.body // "" | marks | select(.reason | unstated) | .axis];
 def ready: [.body // "" | findings] | length == 0;
+def quoted($marked): [axes[] | . as $axis | select($marked | index($axis)) | "`\($axis)`: \(questions[$axis])"];
+def needs:
+  quoted(bare) as $axes
+  | "needs sections: #\(.number)" + (if ($axes | length) > 0 then " — restate " + ($axes | join(" · ")) else "" end);
 def blocked: (.blocked // 0) > 0;
 
 .area as $area
@@ -61,5 +74,5 @@ def blocked: (.blocked // 0) > 0;
 | ([range(0; $ranked | length) | select($ranked[.][0] | ready and (blocked | not))] | first) as $at
 | ($ranked[:$at // ($ranked | length)]
     | reduce .[] as $entry ([]; if any(.[]; .number == $entry[0].number) then . else . + [$entry[0]] end)
-    | .[] | if blocked then "blocked: #\(.number)" else "needs sections: #\(.number)" end),
-  ($at // empty | $ranked[.] | "\(.[0].number)\t\(.[1])\t\(.[0].title)")
+    | .[] | if blocked then "blocked: #\(.number)" else needs end),
+  ($at // empty | $ranked[.] | (.[0] | quoted(unstated_axes)[] | "restate: \(.)"), "\(.[0].number)\t\(.[1])\t\(.[0].title)")

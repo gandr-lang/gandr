@@ -655,8 +655,8 @@ run = "typos"
 # outside the allowlist, matched by Git's glob pathspec so `*` stays within
 # one directory, which sizelint's patterns cannot express. The ledger's
 # README and its generated syntax ledger are on it, a library's README (its
-# module map, `library/std/README.md`), and the issue templates,
-# which GitHub reads as markdown. The second holds every
+# module map, `library/std/README.md`), and the issue and pull request
+# templates, which GitHub reads as markdown. The second holds every
 # tracked markdown file to its budget in `sizelint.toml`; treefmt's sizelint
 # pass leaves markdown to this gate. The syntax ledger is exempt: it is
 # generated, one row per grammar rule, and `check:syntax-ledger` owns its
@@ -674,7 +674,8 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)library/*/README.md' \
   ':(exclude,glob)ledger/README.md' \
   ':(exclude,glob)ledger/syntax.md' \
-  ':(exclude,glob).github/ISSUE_TEMPLATE/*.md')
+  ':(exclude,glob).github/ISSUE_TEMPLATE/*.md' \
+  ':(exclude,glob).github/pull_request_template.md')
 if [ -n "$outside" ]; then
   printf '%s\n' "$outside" >&2
   echo 'markdown check FAILED: tracked markdown outside the README allowlist; move its prose into rustdoc' >&2

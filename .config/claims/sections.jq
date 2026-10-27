@@ -62,15 +62,31 @@ def rows:
 # The six reading axes (`units.md` § units-readings).
 def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting"];
 
+# The question each axis asks of a unit (`units.md` § units-readings), quoted
+# where a reading is refused so the writer has it in front of them (#2955).
+def questions:
+  {univalent: "what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence",
+   oracle: "which part is decided by certificate replay and which is computed; which modality or dominance classifies it",
+   descent: "the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left",
+   located: "at which world a judgement or value is meaningful; what crosses worlds, and by what",
+   resident: "representation, sharing, persistence; where integrity stops and replay decides",
+   rewriting: "rules and normal forms; rewrites between rewrites; which coherence tier settles them"};
+
 # The marks of an issue's `## Readings` table, read before its subsections:
-# per row naming an axis, {axis, mark}, the mark `yes` or `no` from a cell
-# reading it alone or before its reason (`yes — <why>`), or null.
+# per row naming an axis, {axis, mark, reason}, the mark `yes` or `no` from
+# the first cell opening with it, or null, and the reason the clause after
+# its dash (`no — <why>`), or null when the cell gives none (#2955).
 def marks:
   (section("Readings") // [] | lead)
   | rows
   | .cells as $cells
   | first($cells[] | select(IN(axes[]))) as $axis
-  | {axis: $axis, mark: (first($cells[] | ascii_downcase | capture("^(?<mark>yes|no)\\b").mark) // null)};
+  | (first($cells[] | capture("^(?<mark>[Yy][Ee][Ss]|[Nn][Oo])\\b\\s*(?:—\\s*(?<reason>.*\\S))?")) // {mark: null, reason: null}) as $read
+  | {axis: $axis, mark: ($read.mark | if . == null then null else ascii_downcase end), reason: $read.reason};
+
+# Whether a reading's reason is the migration's placeholder (#2955): the row
+# was a bare mark before reasons were required, and is restated at claim.
+def unstated: . != null and test("^unstated\\b");
 
 # The axes an issue's `## Readings` selects: a row marked `yes`, or an item
 # naming the axis.

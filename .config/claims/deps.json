@@ -4,7 +4,7 @@
     "input": {
       "number": 10,
       "labels": ["kind:gap"],
-      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #20 — the parser it extends\n- #30 — the rows it reads\n",
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #20 — the parser it extends\n- #30 — the rows it reads\n",
       "blocked_by": [
         {
           "number": 20,
@@ -20,7 +20,7 @@
     "input": {
       "number": 10,
       "labels": ["kind:gap"],
-      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
       "blocked_by": [
         {
           "number": 40,
@@ -65,7 +65,7 @@
     "input": {
       "number": 10,
       "labels": ["kind:gap"],
-      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #10 — itself, written by mistake\n",
+      "body": "The brief.\n\n## Sources\n\n- `units.md` § units-issue — **primary**: the sections\n- `docs/agents/units.md`, `docs/agents/tracker.md` — the vault's 21-day listing (secondary)\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\n- #10 — itself, written by mistake\n",
       "blocked_by": [],
       "sub_issues": [
         {
