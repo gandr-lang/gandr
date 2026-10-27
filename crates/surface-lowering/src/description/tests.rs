@@ -638,6 +638,69 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
 }
 
 #[test]
+fn a_value_function_field_is_the_function_former()
+{
+    let source = "data Prog : Type { Done : (x : Integer) --> Prog; Get : (k : Integer => Prog) \
+                  --> Prog; Both : (k : (Integer, String) => Prog) --> Prog; Twice : (k : \
+                  Integer => Integer => Prog) --> Prog; Pure : (f : Integer => Integer) --> \
+                  Prog; Put : (s : Integer, k : Prog) --> Prog; rule Put(s, Put(u, k)) <=> \
+                  Put(u, k); }";
+    let report = elaborated(SourceText::from(source));
+    assert_eq!(report.diagnostics, [], "every field is carried");
+    assert!(
+        report.natives.is_empty(),
+        "so no native reading owns the family"
+    );
+    let [ref entry] = *report.declarations.as_slice()
+    else {
+        panic!("one description")
+    };
+    let integer = || ValueTypeRef::prim(PrimTy::Integer);
+    let one = DescriptionGrade::Finite(Multiplicity::from(1_u64));
+    let itself = || Code::var("Prog");
+    let codes: Vec<_> = entry
+        .description
+        .ctors
+        .iter()
+        .map(|ctor| &ctor.code)
+        .collect();
+    assert_eq!(
+        codes.get(1_usize).copied(),
+        Some(&Code::fun(vec![integer()], itself())),
+        "`Integer => Prog` is the function former into the recursive position"
+    );
+    assert_eq!(
+        codes.get(2_usize).copied(),
+        Some(&Code::fun(
+            vec![integer(), ValueTypeRef::prim(PrimTy::StringTy)],
+            itself()
+        )),
+        "a domain list is the former's domains in written order"
+    );
+    assert_eq!(
+        codes.get(3_usize).copied(),
+        Some(&Code::fun(
+            vec![integer()],
+            Code::fun(vec![integer()], itself())
+        )),
+        "`=>` nests to the right, one former per arrow"
+    );
+    assert_eq!(
+        codes.get(4_usize).copied(),
+        Some(&Code::fun(
+            vec![integer()],
+            Code::field(integer(), one, Attrs::empty())
+        )),
+        "a result that is not the family is a field"
+    );
+    assert_eq!(
+        entry.description.rules.len(),
+        1,
+        "and the family keeps its rule"
+    );
+}
+
+#[test]
 fn the_declined_metadata_golden_is_declined()
 {
     let report = elaborated(SourceText::from(
@@ -876,7 +939,11 @@ fn a_field_reads_each_primitive_and_each_applied_argument()
                         added.reverse();
                     }
                 },
-                CodeView::Unit | CodeView::Var(_) | CodeView::Sum(_) | CodeView::Bind { .. } => {},
+                CodeView::Unit
+                | CodeView::Var(_)
+                | CodeView::Sum(_)
+                | CodeView::Bind { .. }
+                | CodeView::Fun { .. } => {},
             }
         }
         found

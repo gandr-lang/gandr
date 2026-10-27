@@ -1,14 +1,17 @@
-//! The first-order code universe `{1, var, ×, σ}` with its leaf decorations:
-//! a graded, attributed field over a symbolic value type, and an
-//! atom-abstraction.
+//! The code universe `{1, var, ×, σ}` with its leaf decorations — a graded,
+//! attributed field over a symbolic value type, and an atom-abstraction —
+//! and one higher-order former, a function space over symbolic domains.
 //!
 //! A [`Code`] describes one constructor's payload. The tag σ over constructors
 //! lives at the description level (the constructor table of [`TheoryDesc`]);
 //! the [`Code::sum`] former additionally represents an inline sum, so a
-//! retrofitted builtin like `Boolean = 1 + 1` is one code. The fragment is
-//! first-order — no function-typed field — because that is what keeps code
-//! equality decidable: [`Code`] derives total structural equality and
-//! hashing, the property content addressing and matching modulo rely on.
+//! retrofitted builtin like `Boolean = 1 + 1` is one code. The function former
+//! [`Code::fun`] is the higher-order descriptions' `Π`: its domains are
+//! symbolic value types and its body a code, so a constructor field
+//! `k : Integer => T` is `Π Integer. var T`. Its domains are types, never
+//! codes, so the code holds no recursive occurrence under a domain; a domain
+//! that names the family is a type like any other here, and what it means is
+//! the admission's, as for the native reading of the same field.
 //!
 //! A field's grade is the consumer's: [`Code`] is generic over it, stores it
 //! as given, compares it structurally, and never interprets it.
@@ -17,13 +20,15 @@
 //!
 //! # Code equality
 //!
-//! The fragment is first-order so that code equality is decidable, and `Code`
+//! Every former's head is finite syntax — a function former's domains are
+//! symbolic types, not functions — so code equality is decidable, and `Code`
 //! derives total structural equality and hashing over its flat table. Two
-//! descriptions with equal tables are the same description; a grammar change
-//! admitting a higher-order code would break that, which is why the exclusion
-//! is a fragment boundary rather than a deferral. Content addressing is a
-//! consumer's map keyed on `Code`: the crate ships no interner, because a map
-//! over the derived `Eq` and `Hash` is all one needs
+//! descriptions with equal tables are the same description. What a function
+//! former gives up is the decidable equality of the values it describes: a
+//! generic program over values ([`generic_eq`](crate::generic_eq)) reads no
+//! payload at a function former. Content addressing is a consumer's map keyed
+//! on `Code`: the crate ships no interner, because a map over the derived
+//! `Eq` and `Hash` is all one needs
 //! (`code::tests::code_is_usable_as_a_hash_map_key`).
 //!
 //! Code equality is not the identity of a translation between descriptions. Two
@@ -709,6 +714,8 @@ enum CodeHead<G>
     Field(ValueTypeRef, G, Attrs),
     /// `⟨a⟩T` over an atom sort.
     Bind(AtomSort),
+    /// `Π (ȳ : Ā). T` over symbolic domains, left to right.
+    Fun(Box<[ValueTypeRef]>),
 }
 
 impl<G> Head for CodeHead<G>
@@ -722,26 +729,28 @@ impl<G> Head for CodeHead<G>
     {
         ArgumentCount::from(match *self {
             Self::Unit | Self::Var(_) | Self::Field(..) => 0_usize,
-            Self::Bind(_) => 1_usize,
+            Self::Bind(_) | Self::Fun(_) => 1_usize,
             Self::Prod | Self::Sum => 2_usize,
         })
     }
 }
 
-/// A first-order description code: one constructor's payload shape.
+/// A description code: one constructor's payload shape.
 ///
-/// The fragment is `{1, var, ×, σ}` ([`Self::unit`], [`Self::var`],
-/// [`Self::prod`], [`Self::sum`]) plus the leaf decorations ([`Self::field`],
-/// [`Self::bind`]). It is finitary and higher-order-free, so structural
-/// equality is decidable whenever the grade's is: [`Code`] derives total
-/// equality and hashing, keyed on by content addressing and compared by
-/// matching modulo. `G` is the grade a field carries, the consumer's own.
+/// The first-order fragment is `{1, var, ×, σ}` ([`Self::unit`],
+/// [`Self::var`], [`Self::prod`], [`Self::sum`]) plus the leaf decorations
+/// ([`Self::field`], [`Self::bind`]); the function former [`Self::fun`] is
+/// the one higher-order former. Every former is finitary syntax, so
+/// structural equality is decidable whenever the grade's is: [`Code`]
+/// derives total equality and hashing, keyed on by content addressing and
+/// compared by matching modulo. `G` is the grade a field carries, the
+/// consumer's own.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the six formers are distinguished by the equality
+/// - hypothesis: L3 — the seven formers are distinguished by the equality
 ///   witness: structurally identical codes are equal, and codes differing in a
-///   single leaf, grade, factor order, sort index or former are unequal; a
-///   hash-map lookup recovers an entry only under an equal code.
+///   single leaf, grade, factor order, sort index, domain or former are
+///   unequal; a hash-map lookup recovers an entry only under an equal code.
 /// - witness: `code::tests::decidable_equality_distinguishes_every_variant`
 /// - witness: `code::tests::code_is_usable_as_a_hash_map_key`
 #[repr(transparent)]
@@ -840,6 +849,23 @@ impl<G> Code<G>
         Self(Tree::node(CodeHead::Bind(sort), vec![body.0]))
     }
 
+    /// A function-space code `Π (ȳ : domains). body`, the domains left to
+    /// right: a field `k : (A, B) => T` is `fun([A, B], var T)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn fun(
+        domains: Vec<ValueTypeRef>,
+        body: Self,
+    ) -> Self
+    {
+        Self(Tree::node(CodeHead::Fun(domains.into_boxed_slice()), vec![
+            body.0,
+        ]))
+    }
+
     /// Fold a left-to-right field list into a right-nested product.
     ///
     /// # Specification
@@ -878,27 +904,32 @@ impl<G> Code<G>
         product
     }
 
-    /// Whether this code lies in the decidable first-order fragment.
-    ///
-    /// The type cannot represent a higher-order code, so the fragment
-    /// invariant holds by construction; the method is the executable
-    /// statement of that property, not a runtime gate.
+    /// Whether this code lies in the first-order fragment: no node of it is
+    /// a function former.
     ///
     /// # Specification
-    /// - ensures: positive for every code.
+    /// - ensures: positive exactly when no node is a [`Self::fun`].
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — no former represents a higher-order code. L3 — an
-    ///   atom-abstraction, at the binding boundary, must report the positive
-    ///   fragment verdict; replacing that report with false fails the witness.
+    /// - hypothesis: L3 — an atom-abstraction, at the binding boundary, reports
+    ///   the positive verdict, and a function former, alone or under a product,
+    ///   the negative one; reporting a constant fails the witness.
     /// - witness: `code::tests::recursion_and_fragment_predicates_hold`
     #[inline]
     #[must_use]
-    #[spec(ensures: |status| bool::from(status))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the code's heads once, as the check's preorder does"
+        )
+    )]
+    #[spec(ensures: |status| bool::from(status)
+        == self.0.to_ref().preorder().all(|head| !matches!(*head, CodeHead::Fun(_))))]
     pub fn is_first_order(&self) -> FirstOrderStatus
     {
-        FirstOrderStatus::from(true)
+        FirstOrderStatus::from(!self.0.heads().any(|head| matches!(*head, CodeHead::Fun(_))))
     }
 
     /// Whether this code contains a recursive occurrence, so the constructor
@@ -954,7 +985,8 @@ impl<G> Code<G>
             | CodeHead::Prod
             | CodeHead::Sum
             | CodeHead::Field(..)
-            | CodeHead::Bind(_) => None,
+            | CodeHead::Bind(_)
+            | CodeHead::Fun(_) => None,
         })
     }
 
@@ -1021,6 +1053,10 @@ impl<'code, G> CodeNode<'code, G>
             CodeHead::Sum => CodeView::Sum(args),
             CodeHead::Field(ref ty, ref grade, ref attrs) => CodeView::Field { ty, grade, attrs },
             CodeHead::Bind(ref sort) => CodeView::Bind { sort, body: args },
+            CodeHead::Fun(ref domains) => CodeView::Fun {
+                domains,
+                body: args,
+            },
         }
     }
 
@@ -1065,6 +1101,14 @@ pub enum CodeView<'code, G>
     {
         /// The atom sort abstracted over.
         sort: &'code AtomSort,
+        /// The body, the one sub-code.
+        body: CodeArgs<'code, G>,
+    },
+    /// `Π (ȳ : Ā). T`.
+    Fun
+    {
+        /// The symbolic domains, left to right.
+        domains: &'code [ValueTypeRef],
         /// The body, the one sub-code.
         body: CodeArgs<'code, G>,
     },
@@ -1162,6 +1206,7 @@ mod tests
             Code::sum(Code::unit(), Code::unit()),
             some_code(),
             Code::bind(AtomSort::named("x"), Code::var("Nat")),
+            Code::fun(vec![ValueTypeRef::prim(PrimTy::Integer)], Code::var("Nat")),
         ] {
             assert_eq!(code.clone(), code, "equality is reflexive");
         }
@@ -1190,6 +1235,25 @@ mod tests
             Attrs::empty(),
         );
         assert_ne!(some_code(), primed, "the field's value type is significant");
+        let reads = |domains| Code::<Grade>::fun(domains, Code::var("Nat"));
+        assert_ne!(
+            reads(vec![ValueTypeRef::prim(PrimTy::Integer)]),
+            reads(vec![ValueTypeRef::prim(PrimTy::StringTy)]),
+            "a function former's domain is significant"
+        );
+        assert_ne!(
+            reads(vec![ValueTypeRef::prim(PrimTy::Integer)]),
+            reads(vec![
+                ValueTypeRef::prim(PrimTy::Integer),
+                ValueTypeRef::prim(PrimTy::Integer),
+            ]),
+            "and so is its number of domains"
+        );
+        assert_ne!(
+            reads(vec![ValueTypeRef::prim(PrimTy::Integer)]),
+            Code::bind(AtomSort::named("Integer"), Code::var("Nat")),
+            "Π ≠ ⟨a⟩ over the same body"
+        );
     }
 
     #[test]
@@ -1230,7 +1294,20 @@ mod tests
             bool::from(
                 Code::<Grade>::bind(AtomSort::named("x"), Code::var("Nat")).is_first_order()
             ),
-            "every code is first-order by construction"
+            "an atom abstraction is first-order"
+        );
+        let get = Code::<Grade>::fun(vec![ValueTypeRef::prim(PrimTy::Integer)], Code::var("Nat"));
+        assert!(
+            !bool::from(get.is_first_order()),
+            "a function former is not"
+        );
+        assert!(
+            !bool::from(Code::prod(some_code(), get.clone()).is_first_order()),
+            "nor is a product holding one"
+        );
+        assert!(
+            bool::from(get.is_recursive()),
+            "recursion under a function former is detected"
         );
     }
 

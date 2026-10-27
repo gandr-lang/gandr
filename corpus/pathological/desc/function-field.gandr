@@ -1,0 +1,24 @@
+// A fold over a presented type with a continuation field still answers to
+// the type's rule (#2511): counting stores reaches a read's rest through its
+// continuation, as the state-passing handler does, and it tells put-put's two
+// sides apart. Shared with `../../model/desc/function-field.gandr`.
+
+// Programs over a state, quotiented by put-put.
+import "../../model/desc/function-field.gandr";
+
+/// The number of stores a program makes, its reads answered with zero: two
+/// stores and one tell the law's sides apart (#2511).
+@[ refuses("RuleNotRespected") ]
+def rec stores(p : Program) -> Integer {
+  case p {
+    Done(_x) => 0,
+    Get(k) => {
+      run q <- k(0);
+      stores[<](q)
+    },
+    Put(_t, k) => {
+      run r <- stores[<](k);
+      r + 1
+    }
+  }
+}

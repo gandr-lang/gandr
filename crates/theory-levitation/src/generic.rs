@@ -440,7 +440,9 @@ fn authored_name(port: &SortRef) -> Maybe<&Name, port_name::Absent>
 /// - ensures: positive exactly when the two values agree constructor by
 ///   constructor and, through every nested occurrence, payload by payload; a
 ///   value whose shape does not match its constructor's code (a mis-built
-///   value) compares unequal, as does an out-of-range constructor tag.
+///   value) compares unequal, as does an out-of-range constructor tag, and a
+///   function former reads no payload, so a value through one compares unequal
+///   even to itself.
 /// - panics: none.
 /// - intension: one worklist of (code, payload, payload) triples; a recursive
 ///   occurrence re-enters at the nested constructor's code.
@@ -588,7 +590,8 @@ pub fn generic_eq<G>(
 /// - ensures: `value`'s canonical encoding in a fresh buffer; values
 ///   [`generic_eq`] relates encode to equal bytes.
 /// - panics: none; a mis-built value encodes what structure it has (an
-///   out-of-range tag encodes just the tag).
+///   out-of-range tag encodes just the tag), and a function former's payload
+///   encodes nothing.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — exact bytes for empty/nonempty leaves, both injection
@@ -1387,6 +1390,22 @@ mod tests
         let malformed = DescValue::new(ConstructorTag::from(1_usize), Payload::unit());
         assert!(!bool::from(generic_eq(&desc, &malformed, &malformed)));
         assert_eq!(serialize_value(&desc, &malformed).as_ref(), [1_u8, 0, 0, 0]);
+        let mut reads = maybe_desc();
+        reads.ctors = alloc::boxed::Box::from([CtorDesc::new(
+            "Get",
+            Code::fun(
+                alloc::vec![ValueTypeRef::prim(crate::PrimTy::Integer)],
+                Code::var("Maybe"),
+            ),
+            "Maybe",
+            Attrs::empty(),
+        )]);
+        let read = DescValue::new(ConstructorTag::from(0_usize), Payload::leaf(&b"k"[..]));
+        assert!(
+            !bool::from(generic_eq(&reads, &read, &read)),
+            "a function former reads no payload, so a value through one is unequal even to itself"
+        );
+        assert_eq!(serialize_value(&reads, &read).as_ref(), [0_u8, 0, 0, 0]);
     }
 
     #[test]

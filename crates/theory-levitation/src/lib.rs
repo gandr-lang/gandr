@@ -1,12 +1,14 @@
-//! The first-order code universe of gandr's levitated descriptions: codes,
-//! the declaration table they populate, and the generic programs and checks
+//! The code universe of gandr's levitated descriptions: codes, the
+//! declaration table they populate, and the generic programs and checks
 //! driven by it.
 //!
 //! A [`Code`] is one constructor's payload shape in the fragment
-//! `{1, var, ×, σ}` with two leaf decorations: a field over a symbolic value
+//! `{1, var, ×, σ}` with two leaf decorations — a field over a symbolic value
 //! type ([`ValueTypeRef`]) carrying a grade and an attribute Σ, and an
-//! atom-abstraction. The fragment is first-order, so code equality is
-//! decidable and [`Code`] derives it. A [`TheoryDesc`] is the declaration table
+//! atom-abstraction — and one higher-order former, the function space over
+//! symbolic domains that a data field `k : A => T` is. Every former is finite
+//! syntax, so code equality is decidable and [`Code`] derives it; a theory's
+//! signature stays first-order. A [`TheoryDesc`] is the declaration table
 //! for one signature: its minted identity, its sort set, its graded
 //! parameters, its constructors (the σ tag over codes), its operations with
 //! multi-output [`BridgeArity`] shapes, its rule faces ([`RuleFace`]) over
@@ -192,9 +194,10 @@
 //!   "The Gentle Art of Levitation." In _Proceedings of the 15th ACM SIGPLAN
 //!   International Conference on Functional Programming (ICFP '10)_, pages
 //!   3–14, September 2010. `doi:10.1145/1863543.1863547` — the universe of
-//!   datatype descriptions as an inductive object, generic programs driven by a
-//!   description, and the staging that keeps the meta-theory functions
-//!   host-side until each moves deliberately.
+//!   datatype descriptions as an inductive object, its `Π` over a type of
+//!   arguments the function former, generic programs driven by a description,
+//!   and the staging that keeps the meta-theory functions host-side until each
+//!   moves deliberately.
 //! - Nicola Gambino and Joachim Kock. "Polynomial Functors and Polynomial
 //!   Monads." _Mathematical Proceedings of the Cambridge Philosophical Society_
 //!   154, 1 (2013), pages 153–192. `arXiv:0906.4931` — the presentation of a

@@ -232,8 +232,8 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
                         leaves.push("Theory");
                     },
                     CodeView::Unit => {},
-                    CodeView::Sum(_) | CodeView::Bind { .. } => {
-                        panic!("the code has no sum and no binder");
+                    CodeView::Sum(_) | CodeView::Bind { .. } | CodeView::Fun { .. } => {
+                        panic!("the code has no sum, no binder and no function former");
                     },
                 }
             }

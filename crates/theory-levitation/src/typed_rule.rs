@@ -311,7 +311,7 @@ mod tests
             },
             CodeView::Var(sort) if sort.as_ref() == "Self" => Ok(TestType::Carrier),
             CodeView::Bind { .. } => Err(TestDecodeError::AtomAbstraction),
-            CodeView::Var(_) | CodeView::Prod(_) | CodeView::Sum(_) => {
+            CodeView::Var(_) | CodeView::Prod(_) | CodeView::Sum(_) | CodeView::Fun { .. } => {
                 Err(TestDecodeError::Unsupported)
             },
         }
