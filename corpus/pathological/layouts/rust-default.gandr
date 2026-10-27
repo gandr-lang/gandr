@@ -1,0 +1,13 @@
+// The twin of `model/layouts/rust-default.gandr`: a field that is itself a
+// struct is no scalar, so its type has no code yet. rustc groups such a
+// field by a pseudo-alignment its size derives, which the program models
+// once it runs over levitated codes, where codes nest (#2343).
+
+// `Fields`, `Field`, `Done`, `U16`, `U8` and `structLayout`.
+import "../../model/layouts/rust-default.gandr";
+
+/// `struct Outer { a: u8, inner: Small }`, `Small` written as its fields where a scalar stands, is refused (#2343).
+@[ refuses("TypeMismatch") ]
+def nested() -> Layout {
+  structLayout(Field("a", U8, Field("inner", Field("x", U16, Field("y", U8, Done)), Done)))
+}
