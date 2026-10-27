@@ -17,7 +17,9 @@
 # out (`status:deferred`, `status:discarded`), not an epic and not a
 # `collector`, whose rows a guard keeps and other issues work (#2621). The
 # buckets, in order: a `kind:defect` in the area, then any `kind:defect`; a
-# `kind:performance` in the area, then any `kind:performance`; a `kind:gap` in
+# `kind:refactor` in the area, the refactoring a landing's `## Refactoring`
+# verdict asked for (#2884); a `kind:performance` in the area, then any
+# `kind:performance`; a `kind:gap` in
 # the area, cheapest first by its `effort:` label (`easy`, `medium`, `hard`,
 # `unknown`, then none); then a planned unit, an issue in the area whose
 # parent is an open epic not itself deferred, the oldest epic first and its
@@ -63,6 +65,7 @@ def blocked: (.blocked // 0) > 0;
 | [
     ($open | map(select(has("kind:defect") and has($area))) | sort_by(priority, .number) | .[] | [., "defect"]),
     ($open | map(select(has("kind:defect"))) | sort_by(priority, .number) | .[] | [., "defect"]),
+    ($open | map(select(has("kind:refactor") and has($area))) | sort_by(priority, .number) | .[] | [., "refactor"]),
     ($open | map(select(has("kind:performance") and has($area))) | sort_by(priority, .number) | .[] | [., "performance"]),
     ($open | map(select(has("kind:performance"))) | sort_by(priority, .number) | .[] | [., "performance"]),
     ($open | map(select(has("kind:gap") and has($area))) | sort_by(priority, effort, .number) | .[] | [., "gap"]),

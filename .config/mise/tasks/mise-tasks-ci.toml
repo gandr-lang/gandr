@@ -2271,7 +2271,11 @@ fi
 # `cost:` line and a `demand: <site>` line; the goldens `corpus:goldens`
 # records there ask for none (#2756). A closing keyword closes only from the
 # head's `Closes #n` lines (#2980): one anywhere else is refused, since
-# GitHub closes the issue it names on merge. The rule is
+# GitHub closes the issue it names on merge. Every body answers
+# `## Refactoring` (#2884): `yes`, `maybe` or `no`, and for the first two a
+# table `| Kind | Where | Observation |`, each `Where` resolved by
+# `check:refactoring` against the rustdoc JSON once `evidence:obligations`
+# has built it. The rule is
 # `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
 #
@@ -2428,6 +2432,11 @@ if (( status == 2 )); then
   exit 2
 fi
 (( status == 0 )) || exit "$status"
+# Every `Where` of the body's `## Refactoring` names an item of the
+# workspace's rustdoc JSON, which `evidence:obligations` has just built
+# through `evidence:rustdoc`, or a tracked path (#2884, `check:refactoring`).
+mise run --quiet check:refactoring "$body" \
+  || { echo "name each \`## Refactoring\` \`Where\` as the workspace carries it, then run \`pr:open\` again" >&2; exit 2; }
 # A change that reaches the recovery records, as prepare's `parser` filter
 # reads it, sweeps them whole first (`ci:recovery`, about two minutes
 # plain): a stale record is refused here rather than met in the queue

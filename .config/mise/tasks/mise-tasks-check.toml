@@ -1534,6 +1534,57 @@ done < <(jq -c '.[]' .config/claims/patched.json)
 echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report"
 '''
 
+# Every `Where` of a body's `## Refactoring` names something the workspace
+# carries (#2884). With a body, the task reads the rustdoc JSON
+# `evidence:rustdoc` wrote under `target/evidence/doc/` and the tracked files,
+# and prints one refusal per `Where` neither holds, exiting 1 on any;
+# `pr:open` runs it after `evidence:obligations` has built that JSON, so no
+# network is read. Without one, as in the gate, it runs the cases of
+# `.config/claims/refactoring.json` through `.config/claims/refactoring.jq`,
+# each a body, the paths, names and tracked files, and the lines it prints.
+["check:refactoring"]
+description = "Every Where of a body's Refactoring table names an item of the workspace's rustdoc or a tracked path; without a body, the recorded cases"
+tools.jq = "1.8.1"
+usage = '''
+arg "[body]" help="the pull request body file; without it, the recorded cases run"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+claims=.config/claims
+if [[ -z "${usage_body:-}" ]]; then
+  failed=0
+  while IFS= read -r case; do
+    got=$(jq .input <<< "$case" | jq -r -L "$claims" -f "$claims/refactoring.jq")
+    want=$(jq -r .output <<< "$case")
+    if [[ "$got" != "$want" ]]; then
+      printf 'refactoring case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$want" >&2
+      failed=1
+    fi
+  done < <(jq -c '.[]' "$claims/refactoring.json")
+  (( failed == 0 )) || exit 1
+  echo "refactoring check OK: $(jq length "$claims/refactoring.json") bodies their resolutions"
+  exit 0
+fi
+docs=(target/evidence/doc/*.json)
+[[ -f "${docs[0]}" ]] || { echo "no rustdoc JSON under target/evidence/doc; run \`mise run evidence:rustdoc\` first" >&2; exit 2; }
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+for doc in "${docs[@]}"; do
+  jq -c '[.paths[] | select(.crate_id == 0) | .path] as $own
+    | ($own[0][0] // empty) as $crate
+    | {paths: [$own[] | join("::")], names: [.index[] | select(.crate_id == 0) | .name | values | "\($crate)#\(.)"]}' "$doc"
+done | jq -s '{paths: (map(.paths[]) | unique), names: (map(.names[]) | unique)}' > "$scratch/workspace.json"
+git ls-files | jq -R . | jq -s . > "$scratch/tree.json"
+findings=$(jq -n --rawfile body "$usage_body" --slurpfile workspace "$scratch/workspace.json" --slurpfile tree "$scratch/tree.json" \
+  '{body: $body, paths: $workspace[0].paths, names: $workspace[0].names, tree: $tree[0]}' \
+  | jq -r -L "$claims" -f "$claims/refactoring.jq")
+if [[ -n "$findings" ]]; then
+  echo "$findings" >&2
+  exit 1
+fi
+{% endraw %}'''
+
 # The issue automations' decisions. An epic's closing is a ruling (#2973):
 # `.config/epics/close.jq` decides what a closed issue's parent gets, an
 # epic left with no open sub-issue asked for its close ruling and never
