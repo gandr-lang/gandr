@@ -1,0 +1,105 @@
+// What a thunk captures that stays, and the three axes of its image, each
+// refused by its capture rule.
+//
+// A thunk crosses with its environment, so a capture that cannot cross keeps
+// the thunk at its world. Where a capture lives, how often it is held and the
+// world it stands at are decided before any crossing.
+//
+// Each declaration forms a thunk at the seat for the operator. A crossing
+// names what the thunk reads: `Capture` for a hypothesis it captures,
+// `Homed` for a declaration homed at the seat. A thunk reached through a
+// variable carries no image, so it stays whole.
+//
+// - see: `model/worlds/closure-axes.gandr` — what a thunk captures that
+//   crosses
+// - see: `pathological/regions/stashed.gandr` — a thunk keeping what a
+//   region lends
+
+// The operator's and the seat's worlds, and the seat's sealed side of the
+// exchange, its dispatch unmarked.
+import "../../model/worlds/seat-and-operator.gandr";
+
+/// The seat's own work, homed at the seat.
+@[ entry(seat) ]
+def pending() -> Seat.Dispatch {
+  pure Seat.task
+}
+
+/// A thunk over the seat's dispatch is refused at the capture: the signature
+/// does not mark the dispatch mobile.
+@[ refuses("Immobile.Capture") ]
+@[ entry((operator, seat)) ]
+def dispatched() -> () => Seat.Dispatch {
+  migrate [seat] {
+    run task <- pure Seat.task;
+    pure thunk { pure task }
+  }
+}
+
+/// A thunk over a handle to the dispatch is refused at the capture: the
+/// handle is not open.
+@[ refuses("NotOpen.Capture") ]
+@[ entry((operator, seat)) ]
+def pointing() -> () => (Seat.Dispatch at seat) {
+  migrate [seat] {
+    run held : Seat.Dispatch at seat <- (hold Seat.task);
+    pure thunk { pure held }
+  }
+}
+
+/// A thunk calling the seat's own work is refused: forced at the operator, it
+/// would run that work away from its home.
+@[ refuses("Immobile.Homed") ]
+@[ entry((operator, seat)) ]
+def homed() -> () => Seat.Dispatch {
+  migrate [seat] { pure thunk { pending() } }
+}
+
+/// A handle to that thunk is refused as not open.
+@[ refuses("NotOpen.Homed") ]
+@[ entry((operator, seat)) ]
+def heldHomed() -> -F ((() => Seat.Dispatch) at seat) {
+  migrate [seat] { (hold thunk { pending() }) }
+}
+
+/// A thunk returned through the variable it is bound to is refused whole: a
+/// variable carries no image.
+@[ refuses("Immobile") ]
+@[ entry((operator, seat)) ]
+def through() -> () => Integer {
+  migrate [seat] {
+    run later : () => Integer <- pure thunk { pure 3 };
+    pure later
+  }
+}
+
+/// Region: a thunk over a view kept in a hold's region is refused where it
+/// would leave the region.
+@[ refuses("KeptEscaped") ]
+@[ entry((operator, seat)) ]
+def regioned() -> () => Integer {
+  migrate [seat] {
+    hold s = 3;
+    run k : (() => Integer) at s <- access shared s as w { pure pure w };
+    pure thunk { force k }
+  }
+}
+
+/// Grade: a thunk over a value held at grade one is refused where it
+/// captures it.
+@[ refuses("HeldCaptured") ]
+@[ entry((operator, seat)) ]
+def graded() -> () => Integer {
+  migrate [seat] {
+    hold [1] c = 0;
+    pure thunk { pure c + c }
+  }
+}
+
+/// Located: a thunk at the seat over an integer bound at the operator is
+/// refused where it reads it.
+@[ refuses("Elsewhere") ]
+@[ entry((operator, seat)) ]
+def located(n : Integer) -> () => Integer {
+  migrate [seat] { pure thunk { pure n } }
+}

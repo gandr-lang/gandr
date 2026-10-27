@@ -834,11 +834,6 @@ fn a_report_crosses_and_an_endpoint_does_not()
     let report = text(&mut arena, Spelled("report"));
     let returned = arena.computation_return(report);
     let reported = migrate(&mut arena, SEAT, returned);
-    let returns = arena.comp_type_returner(string);
-    let later = arena.value_type_thunk(returns);
-    let suspended = arena.value_thunk(returned);
-    let returned_later = arena.computation_return(suspended);
-    let deferred = migrate(&mut arena, SEAT, returned_later);
     let session = ended(&mut arena);
     let endpoint_handle = arena.value_type_world(WorldType::At {
         inner: session,
@@ -849,22 +844,11 @@ fn a_report_crosses_and_an_endpoint_does_not()
         operator,
         seat,
         entry_point(&mut arena, At(2), string, reported).entered(operating()),
-        entry_point(&mut arena, At(3), later, deferred).entered(operating()),
     ];
     let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
     assert!(
         matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
         "a migration returning a report checks"
-    );
-    assert_eq!(
-        verdicts.get(3),
-        Some(&located(computation(deferred), LocatedDefect::Immobile {
-            crossed: Crossed::Result,
-            ty: later,
-            former: later,
-            predicate: Predicate::Mobile,
-        })),
-        "one returning a thunk is refused by name"
     );
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
@@ -882,6 +866,157 @@ fn a_report_crosses_and_an_endpoint_does_not()
             predicate: Predicate::Open,
         }),
         "nor does a handle to one"
+    );
+}
+
+#[test]
+fn a_thunk_crosses_by_its_image()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let [operator, seat] = worlds();
+    let unmarked = sealed(&mut arena, At(2), string, Mobility::Immobile);
+    let marked = sealed(&mut arena, At(3), string, Mobility::Mobile);
+    let unmarked_atom = arena.value_type_abstract(ConstantIndex::from(2_usize));
+    let marked_atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
+    let [unmarked_payload, marked_payload] =
+        [4_usize, 5].map(|position| arena.value_constant(ConstantIndex::from(position)));
+    let report = text(&mut arena, Spelled("report"));
+    let returns_report = arena.computation_return(report);
+    let homed = entry_point(&mut arena, At(6), string, returns_report)
+        .entered(Entry::new(world(SEAT), vec![]));
+    let thunked = |arena: &mut CoreArena, result: ValueTypeId| {
+        let returns = arena.comp_type_returner(result);
+        arena.value_type_thunk(returns)
+    };
+    // `thunk { return x }` over the binder `x` the migration's body opens.
+    let captured = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_captured = arena.computation_return(captured);
+    let capturing = arena.value_thunk(returns_captured);
+    let returns_capturing = arena.computation_return(capturing);
+    let held_capturing = arena.computation_world(WorldForm::Hold { value: capturing });
+    let over = |arena: &mut CoreArena, payload: ValueId, tail: ComputationId| {
+        let bound = arena.computation_return(payload);
+        let body = arena.computation_bind(bound, tail);
+        migrate(arena, SEAT, body)
+    };
+    let closed = arena.value_thunk(returns_report);
+    let returns_closed = arena.computation_return(closed);
+    let closed_migration = migrate(&mut arena, SEAT, returns_closed);
+    let marked_migration = over(&mut arena, marked_payload, returns_capturing);
+    let unmarked_migration = over(&mut arena, unmarked_payload, returns_capturing);
+    let held_migration = over(&mut arena, unmarked_payload, held_capturing);
+    let named = arena.value_constant(ConstantIndex::from(6_usize));
+    let forced = arena.computation_force(named);
+    let homing = arena.value_thunk(forced);
+    let returns_homing = arena.computation_return(homing);
+    let homed_migration = migrate(&mut arena, SEAT, returns_homing);
+    let later = thunked(&mut arena, string);
+    let returner = arena.comp_type_returner(later);
+    let bound = arena.computation_ascribe(returns_closed, returner);
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_variable = arena.computation_return(variable);
+    let through = arena.computation_bind(bound, returns_variable);
+    let through_migration = migrate(&mut arena, SEAT, through);
+    let label = FieldLabel::from(String::from("later"));
+    let deferred = arena.value_record(BTreeMap::from([(label.clone(), closed)]));
+    let returns_deferred = arena.computation_return(deferred);
+    let deferred_migration = migrate(&mut arena, SEAT, returns_deferred);
+    let deferred_type = arena.value_type_record(BTreeMap::from([(label, later)]));
+    let later_marked = thunked(&mut arena, marked_atom);
+    let later_unmarked = thunked(&mut arena, unmarked_atom);
+    let held_unmarked = arena.value_type_world(WorldType::At {
+        inner: later_unmarked,
+        world: world(SEAT),
+    });
+    let homed_type = thunked(&mut arena, string);
+    let module = [
+        operator,
+        seat,
+        unmarked,
+        marked,
+        owed(At(4), unmarked_atom),
+        owed(At(5), marked_atom),
+        homed,
+        entry_point(&mut arena, At(7), later, closed_migration).entered(operating()),
+        entry_point(&mut arena, At(8), later_marked, marked_migration).entered(operating()),
+        entry_point(&mut arena, At(9), later_unmarked, unmarked_migration).entered(operating()),
+        entry_point(&mut arena, At(10), held_unmarked, held_migration).entered(operating()),
+        entry_point(&mut arena, At(11), homed_type, homed_migration).entered(operating()),
+        entry_point(&mut arena, At(12), later, through_migration).entered(operating()),
+        entry_point(&mut arena, At(13), deferred_type, deferred_migration).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert!(
+        matches!(verdicts.get(7), Some(&Verdict::Checked { .. })),
+        "a closed thunk crosses"
+    );
+    assert!(
+        matches!(verdicts.get(8), Some(&Verdict::Checked { .. })),
+        "a thunk capturing a marked payload crosses"
+    );
+    assert!(
+        matches!(
+            verdicts.get(9),
+            Some(&Verdict::Refused(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    former,
+                    predicate: Predicate::Mobile,
+                    ..
+                },
+            })) if at == value(captured) && former == unmarked_atom
+        ),
+        "one capturing an unmarked payload is refused at the capture: {:?}",
+        verdicts.get(9)
+    );
+    assert!(
+        matches!(
+            verdicts.get(10),
+            Some(&Verdict::Refused(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    predicate: Predicate::Open,
+                    ..
+                },
+            })) if at == value(captured)
+        ),
+        "a handle to it is not open at the capture: {:?}",
+        verdicts.get(10)
+    );
+    assert!(
+        matches!(
+            verdicts.get(11),
+            Some(&Verdict::Refused(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
+                    predicate: Predicate::Mobile,
+                    ..
+                },
+            })) if at == value(named)
+        ),
+        "one reading a seat-homed function is refused at the read: {:?}",
+        verdicts.get(11)
+    );
+    assert_eq!(
+        verdicts.get(12),
+        Some(&located(
+            computation(through_migration),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Result,
+                ty: later,
+                former: later,
+                predicate: Predicate::Mobile,
+            }
+        )),
+        "a thunk returned through a variable carries no image"
+    );
+    assert!(
+        matches!(verdicts.get(13), Some(&Verdict::Checked { .. })),
+        "a record holding a closed thunk crosses field by field"
     );
 }
 

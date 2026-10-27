@@ -7,7 +7,8 @@
 // when what it holds is.
 //
 // Each declaration below migrates to the seat and returns its result to the
-// operator. Data of integers is open, and so is a handle to it.
+// operator. Data of integers is open, and so is a handle to it. A closed
+// thunk is open too, since it captures nothing.
 //
 // - see: Rainey et al., "LoCalMem", PACMPL 10 (ICFP 2026), § 5.1, openness
 // - see: Murphy, Crary and Harper, "Type-Safe Distributed Programming with
@@ -39,4 +40,22 @@ def measured() -> Point {
 @[ entry((operator, seat)) ]
 def heldCounts() -> -F (#{done : Integer, left : Integer} at seat) {
   migrate [seat] { (hold #{done = 3, left = 4}) }
+}
+
+/// A handle to a closed thunk comes back: it captures nothing.
+@[ entry((operator, seat)) ]
+def heldThunk() -> -F ((() => Integer) at seat) {
+  migrate [seat] { (hold thunk { pure 3 }) }
+}
+
+/// A handle to a record holding a closed thunk comes back, each field open.
+@[ entry((operator, seat)) ]
+def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
+  migrate [seat] { (hold #{done = 3, later = thunk { pure 4 }}) }
+}
+
+/// The same record without a handle comes back, each field mobile.
+@[ entry((operator, seat)) ]
+def bareRecord() -> #{done : Integer, later : () => Integer} {
+  migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
 }

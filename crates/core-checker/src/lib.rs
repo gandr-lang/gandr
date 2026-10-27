@@ -287,10 +287,12 @@
 //! `cap_w` the declaration's entry holds in the linear zone. A migration's
 //! result comes back only when it crosses: mobile and open, decided on every
 //! value-type former, a sealed abstract type crossing exactly when its
-//! signature marks it `mobile`. Every way a located judgement breaks is
+//! signature marks it `mobile`, and a thunk by its image — a closure is
+//! mobile when every hypothesis it captures is, and open when every one is
+//! open, read where it is formed. Every way a located judgement breaks is
 //! refused by name as [`CheckRefusal::Located`]; located declarations stay on
-//! the checker's side of the kernel. The rules, the crossing table, the entry
-//! and the decisions are in [`worlds`].
+//! the checker's side of the kernel. The rules, the crossing table, the
+//! image's three axes, the entry and the decisions are in [`worlds`].
 //!
 //! # Session identity
 //!

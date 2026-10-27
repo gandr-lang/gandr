@@ -1,0 +1,54 @@
+// A thunk crosses by its image: what it captures, and the declarations homed
+// at its world that it names. No former marks a mobile thunk.
+//
+// A thunk is code over an environment, and the environment is what crosses
+// with it. Its image is read where it is formed, so a thunk crosses when
+// every capture and every homed declaration it names crosses.
+//
+// Each declaration forms a thunk at the seat and returns it to the operator.
+// The thunks are closed, or over an integer, a marked report or a handle to
+// an integer. The image's three axes are the capture rules, so every capture
+// stands at no region, at ω and at the thunk's own world.
+//
+// - see: `pathological/worlds/closure-axes.gandr` — what a thunk captures that
+//   stays
+// - see: Epstein, Black and Peyton Jones, "Towards Haskell in the Cloud",
+//   Haskell 2011 — a closure crosses as its code and its environment
+
+// The operator's and the seat's worlds, and the seat's sealed side of the
+// exchange, its report alone marked mobile.
+import "./seat-and-operator.gandr";
+
+/// A suspended report comes back from the seat: it names no capture.
+@[ entry((operator, seat)) ]
+def suspendedBack() -> () => Seat.Report {
+  migrate [seat] { pure thunk { pure Seat.progress } }
+}
+
+/// A thunk over an integer bound at the seat comes back with the integer.
+@[ entry((operator, seat)) ]
+def counted() -> () => Integer {
+  migrate [seat] {
+    run n <- pure 3;
+    pure thunk { pure n + 1 }
+  }
+}
+
+/// A thunk over the seat's report comes back, since the signature marks the
+/// report mobile.
+@[ entry((operator, seat)) ]
+def reported() -> () => Seat.Report {
+  migrate [seat] {
+    run report <- pure Seat.progress;
+    pure thunk { pure report }
+  }
+}
+
+/// A thunk over a handle to an integer comes back, since the handle is open.
+@[ entry((operator, seat)) ]
+def pointing() -> () => (Integer at seat) {
+  migrate [seat] {
+    run held : Integer at seat <- (hold 3);
+    pure thunk { pure held }
+  }
+}

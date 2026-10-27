@@ -680,6 +680,7 @@ pub fn type_value(
         sessions: super::Sessions::new(base, abstracted),
         root: quenchant_shape::shape::Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
+        images: super::worlds::Images::default(),
     };
     let register = machine.context.binders().world();
     let scope = machine.session_scope();
@@ -935,12 +936,12 @@ impl Machine<'_, '_>
     /// - requires: nothing.
     /// - ensures: a strict run, an engine fault or a run with no anchor is
     ///   refused with `refusal` unchanged; otherwise the innermost anchor is
-    ///   retired, the frames, binders and field types fall back to where its
-    ///   goal began, one mark is recorded at its term, the goal is the running
-    ///   one again, and it is answered — checked, the unknown type, or, for a
-    ///   term that cannot synthesise, a check against the unknown type. While
-    ///   the context records typings, an answered goal is kept as
-    ///   [`Self::keep`] keeps it.
+    ///   retired, the frames, binders, field types and forming thunk images
+    ///   fall back to where its goal began, one mark is recorded at its term,
+    ///   the goal is the running one again, and it is answered — checked, the
+    ///   unknown type, or, for a term that cannot synthesise, a check against
+    ///   the unknown type. While the context records typings, an answered goal
+    ///   is kept as [`Self::keep`] keeps it.
     /// - fails: `refusal` itself, as above.
     /// - panics: none.
     ///
@@ -1003,6 +1004,7 @@ impl Machine<'_, '_>
             let _moved = self.context.binders().relocate(from);
         }
         self.frames.truncate(anchor.frames);
+        self.abandon_forming();
         self.native_types.truncate(anchor.native);
         self.unwind(anchor.depth);
         self.close_sessions(anchor.sessions);

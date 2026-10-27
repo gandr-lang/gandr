@@ -1,35 +1,47 @@
-error[NotOpen]: this handle crosses to another world, but the value it holds is not open
-   ╭▸ corpus/pathological/worlds/open.gandr:21:3
+error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
+   ╭▸ corpus/pathological/worlds/open.gandr:25:24
    │
-20 │ ┌ def heldThunk() -> -F ((() => Integer) at seat) {
-21 │ │   migrate [seat] { (hold thunk { pure 3 }) }
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a handle whose held value is not open: found `() => Integer`
-22 │ │ }
-   │ └─┘ checked against `() => (() => Integer) at seat`; while checking the body of this thunk
+22 │ ┌  def heldThunk() -> -F ((() => Seat.Dispatch) at seat) {
+23 │ │┌   migrate [seat] {
+24 │ ││     run task <- pure Seat.task;
+25 │ ││     (hold thunk { pure task })
+   │ ││                        ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
+26 │ ││   }
+   │ │└───┘ checked against `-F ((() => Seat.Dispatch) at seat)`; while checking the body of this migration at its world
+27 │ │  }
+   │ └──┘ checked against `() => (() => Seat.Dispatch) at seat`; while checking the body of this thunk
    │
-   ├ note: `heldThunk` is refused with NotOpen, as its expectation states
-   ╰ help: hold data in the handle, or an abstract type that its signature marks `mobile`
+   ├ note: `heldThunk` is refused with NotOpen.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
 
-error[NotOpen]: this handle crosses to another world, but the value it holds is not open
-   ╭▸ corpus/pathological/worlds/open.gandr:29:3
+error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
+   ╭▸ corpus/pathological/worlds/open.gandr:36:44
    │
-28 │ ┌ def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
-29 │ │   migrate [seat] { (hold #{done = 3, later = thunk { pure 4 }}) }
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a handle whose held value is not open: found `() => Integer`
-30 │ │ }
-   │ └─┘ checked against `() => #{done : Integer, later : () => Integer} at seat`; while checking the body of this thunk
+33 │ ┌  def heldRecord() -> -F (#{done : Integer, later : () => Seat.Dispatch} at seat) {
+34 │ │┌   migrate [seat] {
+35 │ ││     run task <- pure Seat.task;
+36 │ ││     (hold #{done = 3, later = thunk { pure task }})
+   │ ││                                            ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
+37 │ ││   }
+   │ │└───┘ checked against `-F (#{done : Integer, later : () => Seat.Dispatch} at seat)`; while checking the body of this migration at its world
+38 │ │  }
+   │ └──┘ checked against `() => #{done : Integer, later : () => Seat.Dispatch} at seat`; while checking the body of this thunk
    │
-   ├ note: `heldRecord` is refused with NotOpen, as its expectation states
-   ╰ help: hold data in the handle, or an abstract type that its signature marks `mobile`
+   ├ note: `heldRecord` is refused with NotOpen.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
 
-error[Immobile]: this value crosses to another world, but its type is not mobile
-   ╭▸ corpus/pathological/worlds/open.gandr:37:3
+error[Immobile.Capture]: a thunk crossing to another world captures this, but its type is not mobile
+   ╭▸ corpus/pathological/worlds/open.gandr:47:43
    │
-36 │ ┌ def bareRecord() -> #{done : Integer, later : () => Integer} {
-37 │ │   migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type holds a former that is not mobile: found `() => Integer`
-38 │ │ }
-   │ └─┘ checked against `() => #{done : Integer, later : () => Integer}`; while checking the body of this thunk
+44 │ ┌  def bareRecord() -> #{done : Integer, later : () => Seat.Dispatch} {
+45 │ │┌   migrate [seat] {
+46 │ ││     run task <- pure Seat.task;
+47 │ ││     pure #{done = 3, later = thunk { pure task }}
+   │ ││                                           ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
+48 │ ││   }
+   │ │└───┘ checked against `-F #{done : Integer, later : () => Seat.Dispatch}`; while checking the body of this migration at its world
+49 │ │  }
+   │ └──┘ checked against `() => #{done : Integer, later : () => Seat.Dispatch}`; while checking the body of this thunk
    │
-   ├ note: `bareRecord` is refused with Immobile, as its expectation states
-   ╰ help: return data or a handle from the migration, or mark the abstract type `mobile` in its signature
+   ├ note: `bareRecord` is refused with Immobile.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature

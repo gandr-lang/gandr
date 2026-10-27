@@ -1,0 +1,137 @@
+error[Immobile.Capture]: a thunk crossing to another world captures this, but its type is not mobile
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:35:23
+   │
+32 │ ┌  def dispatched() -> () => Seat.Dispatch {
+33 │ │┌   migrate [seat] {
+34 │ ││     run task <- pure Seat.task;
+35 │ ││     pure thunk { pure task }
+   │ ││                       ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
+36 │ ││   }
+   │ │└───┘ checked against `-F (() => Seat.Dispatch)`; while checking the body of this migration at its world
+37 │ │  }
+   │ └──┘ checked against `() => () => Seat.Dispatch`; while checking the body of this thunk
+   │
+   ├ note: `dispatched` is refused with Immobile.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
+
+error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:46:23
+   │
+43 │ ┌  def pointing() -> () => (Seat.Dispatch at seat) {
+44 │ │┌   migrate [seat] {
+45 │ ││     run held : Seat.Dispatch at seat <- (hold Seat.task);
+46 │ ││     pure thunk { pure held }
+   │ ││                       ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
+47 │ ││   }
+   │ │└───┘ checked against `-F (() => Seat.Dispatch at seat)`; while checking the body of this migration at its world
+48 │ │  }
+   │ └──┘ checked against `() => () => Seat.Dispatch at seat`; while checking the body of this thunk
+   │
+   ├ note: `pointing` is refused with NotOpen.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
+
+error[Immobile.Homed]: a thunk crossing to another world reads this declaration away from its home, and its type is not mobile
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:55:33
+   │
+54 │ ┌ def homed() -> () => Seat.Dispatch {
+55 │ │   migrate [seat] { pure thunk { pending() } }
+   │ │   ┬─────────────────────────────┯━━━━━━──────
+   │ │   │                             │
+   │ │   │                             a declaration homed where the thunk is formed, whose type is not mobile: found `() => Seat.Dispatch`
+   │ │   checked against `-F (() => Seat.Dispatch)`; while checking the body of this migration at its world
+56 │ │ }
+   │ └─┘ checked against `() => () => Seat.Dispatch`; while checking the body of this thunk
+   │
+   ├ note: `homed` is refused with Immobile.Homed, as its expectation states
+   ╰ help: call the declaration before the migration returns, and return what it answers
+
+error[NotOpen.Homed]: a thunk crossing to another world reads this declaration away from its home, and its type is not open
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:62:34
+   │
+61 │ ┌ def heldHomed() -> -F ((() => Seat.Dispatch) at seat) {
+62 │ │   migrate [seat] { (hold thunk { pending() }) }
+   │ │   ┬──────────────────────────────┯━━━━━━───────
+   │ │   │                              │
+   │ │   │                              a declaration homed where the thunk is formed, whose type is not open: found `() => Seat.Dispatch`
+   │ │   checked against `-F ((() => Seat.Dispatch) at seat)`; while checking the body of this migration at its world
+63 │ │ }
+   │ └─┘ checked against `() => (() => Seat.Dispatch) at seat`; while checking the body of this thunk
+   │
+   ├ note: `heldHomed` is refused with NotOpen.Homed, as its expectation states
+   ╰ help: call the declaration before the migration returns, and return what it answers
+
+error[Immobile]: this value crosses to another world, but its type is not mobile
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:70:3
+   │
+69 │ ┌  def through() -> () => Integer {
+70 │ │┏   migrate [seat] {
+71 │ │┃     run later : () => Integer <- pure thunk { pure 3 };
+72 │ │┃     pure later
+73 │ │┃   }
+   │ │┗━━━┛ a value whose type holds a former that is not mobile: found `() => Integer`
+74 │ │  }
+   │ └──┘ checked against `() => () => Integer`; while checking the body of this thunk
+   │
+   ├ note: `through` is refused with Immobile, as its expectation states
+   ╰ help: return data or a handle from the migration, or mark the abstract type `mobile` in its signature
+
+error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:84:10
+   │
+80 │ ┌  def regioned() -> () => Integer {
+81 │ │┌   migrate [seat] {
+82 │ ││     hold s = 3;
+   │ ││     ──── checked against `-F (() => Integer)`; while checking the scope of this hold
+83 │ ││     run k : (() => Integer) at s <- access shared s as w { pure pure w };
+   │ ││     ─── checked against `-F (() => Integer)`; while checking the body under this binding; binds k : (() => Integer) at s
+84 │ ││     pure thunk { force k }
+   │ ││     ┬────┯━━━━━━━━━━━━━━━━
+   │ ││     │    │
+   │ ││     │    a value kept in the scope's own region
+   │ ││     checked against `-F (() => Integer)`; while judging the value this returns
+85 │ ││   }
+   │ │└───┘ checked against `-F (() => Integer)`; while checking the body of this migration at its world
+86 │ │  }
+   │ └──┘ checked against `() => () => Integer`; while checking the body of this thunk
+   │
+   ├ note: `regioned` is refused with KeptEscaped, as its expectation states
+   ╰ help: return a value that the scope's own region does not keep
+
+error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
+   ╭▸ corpus/pathological/worlds/closure-axes.gandr:95:10
+   │
+92 │ ┌  def graded() -> () => Integer {
+93 │ │┌   migrate [seat] {
+94 │ ││     hold [1] c = 0;
+   │ ││     ──── checked against `-F (() => Integer)`; while checking the scope of this hold
+95 │ ││     pure thunk { pure c + c }
+   │ ││     ┬────┯━━━━━━━━━━━━━━━━━━━
+   │ ││     │    │
+   │ ││     │    a held value that may be held other than once
+   │ ││     checked against `-F (() => Integer)`; while judging the value this returns
+96 │ ││   }
+   │ │└───┘ checked against `-F (() => Integer)`; while checking the body of this migration at its world
+97 │ │  }
+   │ └──┘ checked against `() => () => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `graded` is refused with HeldCaptured, as its expectation states
+
+error[Elsewhere]: this value lives at another world; open it there with `leta`
+    ╭▸ corpus/pathological/worlds/closure-axes.gandr:104:38
+    │
+103 │   def located(n : Integer) -> () => Integer {
+    │   │           ─ checked against `Integer -> -F (() => Integer)`; while checking the body of this function; binds n : Integer
+    │ ┌─┘
+    │ │
+104 │ │   migrate [seat] { pure thunk { pure n } }
+    │ │   ┬────────────────┬────┬───────┬────┯────
+    │ │   │                │    │       │    │
+    │ │   │                │    │       │    a value bound at another world
+    │ │   │                │    │       checked against `-F Integer`; while judging the value this returns
+    │ │   │                │    checked against `() => Integer`; while checking the body of this thunk
+    │ │   │                checked against `-F (() => Integer)`; while judging the value this returns
+    │ │   checked against `-F (() => Integer)`; while checking the body of this migration at its world
+105 │ │ }
+    │ └─┘ checked against `Integer => () => Integer`; while checking the body of this thunk
+    │
+    ╰ note: `located` is refused with Elsewhere, as its expectation states

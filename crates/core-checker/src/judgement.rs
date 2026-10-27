@@ -2869,6 +2869,8 @@ struct Machine<'context, 'arena>
     /// branches read ([`crate::recursion::motive_at`]): set where the case is
     /// checked, taken where its branches are.
     staged_motives: Vec<(ComputationId, CompTypeId)>,
+    /// The images of the thunks a migration's body forms.
+    images: worlds::Images,
 }
 
 impl<'context, 'arena> Machine<'context, 'arena>
@@ -4019,6 +4021,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             sessions: Sessions::new(base, abstracted),
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
             staged_motives: Vec::new(),
+            images: worlds::Images::default(),
         };
         let register = machine.context.binders().world();
         let scope = machine.session_scope();
@@ -4607,13 +4610,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
             {
                 Ok(declared) => {
                     self.located_here(term, index)?;
-                    self.mention(term, index)?;
-                    self.footprint_mentioned(declared)?;
                     // The slot's type moved to this depth as a root update:
                     // the value bridge reads it through the relocation, and
                     // every other rule settles it where it reads it.
                     let read =
                         shift_value_type(self.context.arena_mut(), declared, Binders::past(index));
+                    self.captured(term, index, read)?;
+                    self.mention(term, index)?;
+                    self.footprint_mentioned(declared)?;
                     Ok(Step::Ascend(Produced::ValueType(read)))
                 },
                 Err(ContextError::UnboundIndex { zone, index, depth }) => {
@@ -5097,6 +5101,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Thunk(body) => {
                 let body_type = self.thunk_expected(term, expected)?;
                 self.wait(Frame::ThunkBody);
+                self.forming(term);
                 Ok(Step::Descend(Goal::Computation {
                     term: body,
                     direction: Direction::Check(body_type),
@@ -8034,10 +8039,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.native_types.push(field);
                 Ok(Step::Ascend(Produced::Checked))
             },
+            (Frame::ThunkBody, Produced::Checked) => {
+                self.formed();
+                Ok(Step::Ascend(Produced::Checked))
+            },
             (Frame::NativeDiscard, Produced::ValueType(_))
             | (
                 Frame::Reset { .. }
-                | Frame::ThunkBody
                 | Frame::ReturnValue
                 | Frame::InjectionPayload
                 | Frame::RunProtocol,

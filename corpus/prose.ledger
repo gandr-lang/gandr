@@ -47,6 +47,8 @@ corpus/ledger/diagnostics/HeldCopied.gandr Tense 51a10feee8934c07
 corpus/ledger/diagnostics/HeldKept.gandr Passive 0a40a5919bb34046
 corpus/ledger/diagnostics/HoldElsewhere.gandr Tense 0d07cf82344a254d
 corpus/ledger/diagnostics/IllFormedDescription.gandr Glossary c59dd58d342c6595
+corpus/ledger/diagnostics/Immobile.Homed.gandr Passive e16d8e893930ef52
+corpus/ledger/diagnostics/Immobile.Homed.gandr Tense 91fb6d5acdc87497
 corpus/ledger/diagnostics/ImplicitUnsupplied.gandr Tense 6ed7e421fde1c4d3
 corpus/ledger/diagnostics/LoopNotRespected.gandr Passive 655c9b2045de270f
 corpus/ledger/diagnostics/ModelImplicitValue.gandr Passive d3408c10c39365c0
@@ -54,6 +56,8 @@ corpus/ledger/diagnostics/ModelImplicitValue.gandr Tense 9c8a4dd805be37e4
 corpus/ledger/diagnostics/NonUniformOccurrence.gandr Passive 9114f267e88bda16
 corpus/ledger/diagnostics/NotAnAbstractType.gandr Tense 4a05dce9f3a466c5
 corpus/ledger/diagnostics/NotApart.gandr Passive 678af6081fc2fce7
+corpus/ledger/diagnostics/NotOpen.Homed.gandr Passive 236a3d6b89d32d49
+corpus/ledger/diagnostics/NotOpen.Homed.gandr Tense 91fb6d5acdc87497
 corpus/ledger/diagnostics/NotSynthesisable.gandr Passive 46a0304386a224e1
 corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.gandr Passive 7b772d18a6830d78
 corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.gandr Tense 4e21c3eaae7f8ff3
@@ -1043,9 +1047,9 @@ corpus/pathological/worlds/capability-accounting.gandr Passive dfb66b932cf855e4
 corpus/pathological/worlds/capability-accounting.gandr Tense 0372abf66c8639ac
 corpus/pathological/worlds/capability-accounting.gandr Tense 8cae054ef1b8e84b
 corpus/pathological/worlds/capability-accounting.gandr Tense dfb66b932cf855e4
-corpus/pathological/worlds/immobile-crossing.gandr Passive 011dd0797571fc01
+corpus/pathological/worlds/closure-axes.gandr Passive de2a44f84847edc5
+corpus/pathological/worlds/closure-axes.gandr Tense 91fb6d5acdc87497
 corpus/pathological/worlds/immobile-crossing.gandr Passive d9e4093a88b9e271
-corpus/pathological/worlds/immobile-crossing.gandr Tense 011dd0797571fc01
 corpus/pathological/worlds/immobile-crossing.gandr Tense 988676f78c3a1eb4
 corpus/pathological/worlds/immobile-crossing.gandr Tense d9e4093a88b9e271
 corpus/pathological/worlds/located-reads.gandr Tense 17b40e801bd50d8b
@@ -1531,6 +1535,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/universe/inducti
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/v-infinity.txt Procedure 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure a755b43b32ffea91
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure ce9e9d602eb9772e
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/closure-axes.txt Procedure 4b248657a88f1895
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/closure-axes.txt Procedure 5d203717a6c072f2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 06ba600e8a7f9408
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 1f4f6176c64090b2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d18e9b339165083

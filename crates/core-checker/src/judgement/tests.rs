@@ -2350,6 +2350,7 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
         sessions: Sessions::new(BinderDepth::default(), crate::capability::Reach::Clear),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
+        images: crate::judgement::worlds::Images::default(),
     };
     let refusal = machine
         .resume(Frame::LambdaBody, Produced::ValueType(unit_type.into()))
@@ -2390,6 +2391,7 @@ fn machine_bookkeeping_preserves_zero_and_one_boundaries()
         sessions: Sessions::new(BinderDepth::default(), crate::capability::Reach::Clear),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
+        images: crate::judgement::worlds::Images::default(),
     };
     assert_eq!(machine.charge(), Ok(()));
     assert_eq!(machine.remaining, 0);
@@ -4642,6 +4644,7 @@ fn a_forged_answer_is_refused_naming_its_tactic_2762()
             sessions: Sessions::new(BinderDepth::default(), crate::capability::Reach::Clear),
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
             staged_motives: Vec::new(),
+            images: crate::judgement::worlds::Images::default(),
         };
         machine.wait(Frame::Spliced { at, hole, answer });
         machine.drive(goal).map_err(|halt| halt.refusal)

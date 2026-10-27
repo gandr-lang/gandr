@@ -1,35 +1,39 @@
 error[Immobile]: this value crosses to another world, but its type is not mobile
-   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:16:3
+   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:15:3
    │
-15 │ ┌ def unmarkedBack() -> Seat.Dispatch {
-16 │ │   migrate [seat] { pure Seat.task }
+14 │ ┌ def unmarkedBack() -> Seat.Dispatch {
+15 │ │   migrate [seat] { pure Seat.task }
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type holds a former that is not mobile: found `Seat.Dispatch`
-17 │ │ }
+16 │ │ }
    │ └─┘ checked against `() => Seat.Dispatch`; while checking the body of this thunk
    │
    ├ note: `unmarkedBack` is refused with Immobile, as its expectation states
    ╰ help: return data or a handle from the migration, or mark the abstract type `mobile` in its signature
 
 error[NotOpen]: this handle crosses to another world, but the value it holds is not open
-   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:25:3
+   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:24:3
    │
-24 │ ┌ def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
-25 │ │   migrate [seat] { (hold Seat.task) }
+23 │ ┌ def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
+24 │ │   migrate [seat] { (hold Seat.task) }
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a handle whose held value is not open: found `Seat.Dispatch`
-26 │ │ }
+25 │ │ }
    │ └─┘ checked against `() => Seat.Dispatch at seat`; while checking the body of this thunk
    │
    ├ note: `unmarkedHandle` is refused with NotOpen, as its expectation states
    ╰ help: hold data in the handle, or an abstract type that its signature marks `mobile`
 
-error[Immobile]: this value crosses to another world, but its type is not mobile
-   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:33:3
+error[Immobile.Capture]: a thunk crossing to another world captures this, but its type is not mobile
+   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:34:23
    │
-32 │ ┌ def suspendedBack() -> () => Seat.Report {
-33 │ │   migrate [seat] { pure thunk { pure Seat.progress } }
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type holds a former that is not mobile: found `() => Seat.Report`
-34 │ │ }
-   │ └─┘ checked against `() => () => Seat.Report`; while checking the body of this thunk
+31 │ ┌  def suspendedBack() -> () => Seat.Dispatch {
+32 │ │┌   migrate [seat] {
+33 │ ││     run task <- pure Seat.task;
+34 │ ││     pure thunk { pure task }
+   │ ││                       ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
+35 │ ││   }
+   │ │└───┘ checked against `-F (() => Seat.Dispatch)`; while checking the body of this migration at its world
+36 │ │  }
+   │ └──┘ checked against `() => () => Seat.Dispatch`; while checking the body of this thunk
    │
-   ├ note: `suspendedBack` is refused with Immobile, as its expectation states
-   ╰ help: return data or a handle from the migration, or mark the abstract type `mobile` in its signature
+   ├ note: `suspendedBack` is refused with Immobile.Capture, as its expectation states
+   ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature

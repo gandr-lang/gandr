@@ -48,6 +48,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
 use gandr_surface_corpus::BoundaryClause;
@@ -1325,14 +1326,46 @@ fn checked(
         },
         CheckRefusal::Located { defect, .. } => match defect {
             LocatedDefect::Immobile {
+                crossed: Crossed::Result | Crossed::Constant,
                 predicate: Predicate::Mobile,
                 ..
             } => f.write_str("this value crosses to another world, but its type is not mobile"),
             LocatedDefect::Immobile {
+                crossed: Crossed::Result | Crossed::Constant,
                 predicate: Predicate::Open,
                 ..
             } => f.write_str(
                 "this handle crosses to another world, but the value it holds is not open",
+            ),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Capture,
+                predicate: Predicate::Mobile,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world captures this, but its type is not mobile",
+            ),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Capture,
+                predicate: Predicate::Open,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world captures this, but its type is not open",
+            ),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Homed,
+                predicate: Predicate::Mobile,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world reads this declaration away from its home, \
+                 and its type is not mobile",
+            ),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Homed,
+                predicate: Predicate::Open,
+                ..
+            } => f.write_str(
+                "a thunk crossing to another world reads this declaration away from its home, \
+                 and its type is not open",
             ),
             LocatedDefect::CapabilityMissing { .. } => f.write_str(
                 "this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it",
@@ -1476,6 +1509,7 @@ pub mod tests
     use gandr_core_checker::ua::StratumDefect;
     use gandr_core_checker::ua::UaDefect;
     use gandr_core_checker::ua::Way;
+    use gandr_core_checker::worlds::Crossed;
     use gandr_core_checker::worlds::LocatedDefect;
     use gandr_core_checker::worlds::Predicate;
     use gandr_core_term::BinderDepth;
@@ -2341,7 +2375,7 @@ pub mod tests
             CheckRefusal::Located {
                 at: node,
                 defect: LocatedDefect::Immobile {
-                    crossed: gandr_core_checker::worlds::Crossed::Result,
+                    crossed: Crossed::Result,
                     ty: value_type,
                     former: value_type,
                     predicate: Predicate::Mobile,
@@ -2350,7 +2384,43 @@ pub mod tests
             CheckRefusal::Located {
                 at: node,
                 defect: LocatedDefect::Immobile {
-                    crossed: gandr_core_checker::worlds::Crossed::Result,
+                    crossed: Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
                     ty: value_type,
                     former: value_type,
                     predicate: Predicate::Open,
