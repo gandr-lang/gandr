@@ -39,8 +39,7 @@
 //!   `return` and `{` answer the computation they open. A node spanning a whole
 //!   declaration — the body's term the lowering writes over its declaration —
 //!   answers as that declaration's name does, about its head when the cursor is
-//!   there; a node spanning a source's run target answers as the run target:
-//!   its outline name, then ` : ` and the thunk type the checker gave it.
+//!   there.
 //! - **The head of the innermost declaration holding the cursor** — from its
 //!   declaring form's start to the brace opening its own body, or all of it
 //!   when it has none — about the head, as for its name: the keyword that
@@ -68,11 +67,10 @@
 //!   declaration. A rule a `data` declaration writes answers as written. A
 //!   `rec` group's own tile answers the declarations the group writes, one to a
 //!   line.
-//! - **A root form that declares nothing** — the run target, or a stray — is a
-//!   declaration of the outline's, keyed by its form as the engine keys its
-//!   slot. A run target's tiles answer by their own entries; a stray's tiles,
-//!   and the attributes before either form and the `;` after it, answer its
-//!   outline name with its type or its refusal.
+//! - **A root form that declares nothing** — a stray — is a declaration of the
+//!   outline's, keyed by its form as the engine keys its slot. Its tiles, the
+//!   attributes before it and the `;` after it answer its outline name with its
+//!   refusal.
 //! - **Any other tile** is one the engine typed nothing at: it answers what the
 //!   lowering kept, then says so. The corpus sweep refuses a tile that hovers
 //!   nothing or this.
@@ -584,36 +582,35 @@ impl Style
 ///   declaration as written, a theory and a module always so; then, after a
 ///   blank line, what a `deprecated` attribute marking the form states, and the
 ///   documentation the session filed for the form after another. A root form
-///   that declares nothing — a run target, a stray — has no name to hover here.
-///   On a member's name with no entry inside the member, the member as written,
-///   about the name. Else, on a use of a declaration the text writes with no
-///   entry inside the use — the theory an `include`, a `Model(…)` or a `handle`
-///   scope names — as on that declaration's name, about the use; in a run a
-///   theory or a `data` declaration writes that declares nothing — an
-///   `include`, a rule — with no entry inside it and no orientation noted at
-///   the position, the same for the first such use in the run, about the run,
-///   and else the run as written, about it. Else, on the innermost typed node
-///   holding the position: inside a member whose entries are none of them
-///   there, the member as written, about the member; when the node spans a
-///   whole declaration — its body's term written over the declaration, or a
-///   module's instantiation written over the module (#405) — or a root form
-///   that declares nothing, as on that declaration's name, about its head when
-///   the position is there and the node's range otherwise; else a block of its
-///   type — a binder's name, a written type's text or a term written as one
-///   name before ` : ` — and, for a term checked against a type spelled
-///   otherwise, that type in a second block; for a model standing where a model
-///   of a theory its own includes is asked, the reduct the checker applies
-///   there, and for a model whose sorts are manifest standing where a model of
-///   its theory is asked, the forgetting map the checker applies there with the
-///   carriers it puts back, each applied to the model, in a block after; for a
-///   parameter's binder or a use of it, the `///` run written before the
-///   parameter after a blank line; about the node's range. Else, in the head of
-///   a declaration — from its form's start to the brace opening its own body, a
-///   member's keyword to its name — as on its name, about the head, and in the
-///   attributes before the head, about them. Else, on a tile, [`stubbed`]'s
-///   answer, about what it is about. Absent in layout and comments. Every type
-///   is spelled in `style`'s form, and every block is written as [`Code`]
-///   writes it in `style`'s markup.
+///   that declares nothing — a stray — has no name to hover here. On a member's
+///   name with no entry inside the member, the member as written, about the
+///   name. Else, on a use of a declaration the text writes with no entry inside
+///   the use — the theory an `include`, a `Model(…)` or a `handle` scope names
+///   — as on that declaration's name, about the use; in a run a theory or a
+///   `data` declaration writes that declares nothing — an `include`, a rule —
+///   with no entry inside it and no orientation noted at the position, the same
+///   for the first such use in the run, about the run, and else the run as
+///   written, about it. Else, on the innermost typed node holding the position:
+///   inside a member whose entries are none of them there, the member as
+///   written, about the member; when the node spans a whole declaration — its
+///   body's term written over the declaration, or a module's instantiation
+///   written over the module (#405) — or a root form that declares nothing, as
+///   on that declaration's name, about its head when the position is there and
+///   the node's range otherwise; else a block of its type — a binder's name, a
+///   written type's text or a term written as one name before ` : ` — and, for
+///   a term checked against a type spelled otherwise, that type in a second
+///   block; for a model standing where a model of a theory its own includes is
+///   asked, the reduct the checker applies there, and for a model whose sorts
+///   are manifest standing where a model of its theory is asked, the forgetting
+///   map the checker applies there with the carriers it puts back, each applied
+///   to the model, in a block after; for a parameter's binder or a use of it,
+///   the `///` run written before the parameter after a blank line; about the
+///   node's range. Else, in the head of a declaration — from its form's start
+///   to the brace opening its own body, a member's keyword to its name — as on
+///   its name, about the head, and in the attributes before the head, about
+///   them. Else, on a tile, [`stubbed`]'s answer, about what it is about.
+///   Absent in layout and comments. Every type is spelled in `style`'s form,
+///   and every block is written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -632,9 +629,9 @@ impl Style
 ///   and a circuit rule as written; an `include`'s keyword and name and a
 ///   `Model(…)`'s theory as the theory they name; a declaration and a written
 ///   type in HTML, coloured by their roles; a documented parameter at its
-///   binder and at a use, and an undocumented one; a run target's call, its
-///   `;`, a name and an argument inside it, a stray and its `;`, the attribute
-///   of a run target the lowering refused, a model the checker carries to an
+///   binder and at a use, and an undocumented one; a final expression and its
+///   `;`, an expression before a definition and its `;`, a block's statement,
+///   the attribute before an expression, a model the checker carries to an
 ///   included theory's models by a reduct, and a manifest model it reads as its
 ///   theory's model by a forgetting map at the carriers it solves.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
@@ -653,7 +650,7 @@ impl Style
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
 /// - witness: `hover::tests::a_source_s_own_documentation_hovers_at_its_head_1365`
 /// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
-/// - witness: `hover::tests::a_run_target_and_a_stray_hover_as_declarations_2073`
+/// - witness: `hover::tests::a_stray_hovers_as_a_declaration_2073`
 /// - witness: `hover::tests::a_model_hovers_the_reduct_the_checker_applies_2031`
 /// - witness: `hover::tests::a_manifest_model_hovers_the_forgetting_map_the_checker_applies_2130`
 #[spec(ensures: |ref ret| match *ret {
@@ -824,8 +821,7 @@ pub fn hover<Store, Blocks>(
         // as the declaration it stands for. A module with a body has no entry
         // over it whole, so its members answer for themselves; an
         // instantiation's entry is one of the members it instantiates, so a
-        // module answers itself, never a member's type (#405). A run target's
-        // entry over its whole form answers as the run target.
+        // module answers itself, never a member's type (#405).
         if let Some(whole) = found
             .iter()
             .filter(|found| found.written != Written::Member)
@@ -1516,7 +1512,7 @@ impl Quoted<'_>
 /// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
 /// - witness: `hover::tests::a_checker_refused_declaration_hovers_its_refusal_1204`
 /// - witness: `hover::tests::a_deprecated_declaration_hovers_its_note`
-/// - witness: `hover::tests::a_run_target_and_a_stray_hover_as_declarations_2073`
+/// - witness: `hover::tests::a_stray_hovers_as_a_declaration_2073`
 #[spec(ensures: |ref ret| ret.range == range
     && ret.contents.value.starts_with(style.markup.opener().0))]
 fn declared<Store, Blocks>(
@@ -3171,57 +3167,63 @@ mod tests
         );
     }
 
-    /// A source's run target answers as a declaration the outline holds: a
-    /// node over its whole form with the target and the thunk type the
-    /// checker gave it, each tile inside it by its own entry, its `;` as the
-    /// target. A stray answers its refusal at every tile, and so does a run
-    /// target the lowering refused, at its attributes (#2073).
+    /// A stray answers as a declaration the outline holds: its refusal at
+    /// every tile, at its `;` and at the attributes before it. An expression
+    /// at the top level, the last one too, is refused there, and a block's
+    /// statement is of the wrong sort (#2073, #2572).
     #[test]
-    fn a_run_target_and_a_stray_hover_as_declarations_2073()
+    fn a_stray_hovers_as_a_declaration_2073()
     {
-        let rows: [(&str, &str, String); 7] = [
+        let top_level = "stands at a source's top level, where only declarations stand; a program \
+                         runs the `main` it declares";
+        let rows: [(&str, &str, String); 6] = [
             (
-                "the run target's call",
+                "a final expression",
                 "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame$0(Integer, answer) ;\n",
-                fenced(SourceText::from("same(Integer, answer) : +U (-F Integer)")),
+                format!(
+                    "{}\n\nrefused: `call_expression`, read as a declaration, {top_level}",
+                    fenced(SourceText::from("same(Integer, answer)"))
+                ),
             ),
             (
-                "the run target's `;`",
+                "a final expression's `;`",
                 "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame(Integer, answer) $0;\n",
-                fenced(SourceText::from("same(Integer, answer) : +U (-F Integer)")),
+                format!(
+                    "{}\n\nrefused: `call_expression`, read as a declaration, {top_level}",
+                    fenced(SourceText::from("same(Integer, answer)"))
+                ),
             ),
             (
-                "a name inside the run target",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\n$0same(Integer, answer) ;\n",
-                fenced(SourceText::from("same : +U ((a : Type) -> a -> -F a)")),
-            ),
-            (
-                "an argument inside the run target",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame(Integer, $0answer) ;\n",
-                fenced(SourceText::from("answer : Integer")),
-            ),
-            (
-                "a stray",
+                "an expression before a definition",
                 "$01 ;\ndef answer = 42 ;\n",
                 format!(
-                    "{}\n\nrefused: `number`, read as a declaration, is not a former of this sort",
+                    "{}\n\nrefused: `number`, read as a declaration, {top_level}",
                     fenced(SourceText::from("1"))
                 ),
             ),
             (
-                "a stray's `;`",
+                "its `;`",
                 "1 $0;\ndef answer = 42 ;\n",
                 format!(
-                    "{}\n\nrefused: `number`, read as a declaration, is not a former of this sort",
+                    "{}\n\nrefused: `number`, read as a declaration, {top_level}",
                     fenced(SourceText::from("1"))
                 ),
             ),
             (
-                "the attribute of a refused run target",
-                "@[ $0runs ]\nsame(Integer, 1)\n",
+                "a block's statement",
+                "$0leta x = 1 ;\ndef answer = 42 ;\n",
                 format!(
-                    "{}\n\nrefused: `runs` takes a text payload and was given none",
-                    fenced(SourceText::from("same(Integer, 1)"))
+                    "{}\n\nrefused: `view_expression`, read as a declaration, is not a former of \
+                     this sort",
+                    fenced(SourceText::from("leta x = 1"))
+                ),
+            ),
+            (
+                "the attribute before an expression",
+                "def answer = 42 ;\n@[ $0runs ]\nanswer\n",
+                format!(
+                    "{}\n\nrefused: `identifier`, read as a declaration, {top_level}",
+                    fenced(SourceText::from("answer"))
                 ),
             ),
         ];

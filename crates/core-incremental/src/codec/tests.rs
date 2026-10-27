@@ -2183,50 +2183,6 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
 }
 
 #[test]
-fn a_run_target_s_reason_round_trips_and_is_content_1105()
-{
-    // A run target's root states why it carries no signature, and a decoded
-    // root that lost the reason would be judged as an unsigned thunk.
-    let checkpoints = |signature| {
-        let content = crate::fixture::item_content(
-            Reference::Unoccupied,
-            &crate::content::DeclarationRoots::Value {
-                signature: Maybe::Absent(signature),
-                body: Maybe::Present(NodeIndex::from(0_usize)),
-                laws: Vec::new(),
-                rules: Vec::new(),
-                stages: Vec::new(),
-                supplies: Vec::new(),
-                models: Vec::new(),
-            },
-            &[ContentNode::Tuple(Vec::new())],
-        );
-        let item = ItemCheckpoint::new(
-            content,
-            Footprint::from_parts(
-                BTreeSet::new(),
-                BTreeSet::new(),
-                Opacity::Transparent,
-                HoleMark::Filled,
-            ),
-            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
-            Typing::Owed,
-        );
-        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
-    };
-    let target = checkpoints(signature::Absent::RunTarget);
-    let bytes = encode_checkpoints(&target).expect("a run target's root encodes");
-    assert_eq!(
-        decode_checkpoints(Bytes(bytes.as_ref())),
-        Ok(target),
-        "and decodes to itself, a run target still"
-    );
-    let unsigned = encode_checkpoints(&checkpoints(signature::Absent::Unsigned))
-        .expect("an unsigned root encodes");
-    assert_ne!(bytes.as_ref(), unsigned.as_ref(), "the reason is content");
-}
-
-#[test]
 fn a_ruled_value_root_round_trips_and_its_rules_are_content()
 {
     use crate::content::RuleRoot;

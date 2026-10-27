@@ -3650,8 +3650,7 @@ impl SymbolKind
     pub const TYPE_PARAMETER: Self = Self(26);
     /// A world: a place a term is judged at.
     pub const CONSTANT: Self = Self(14);
-    /// A root form that declares nothing: a source's run target, or a stray
-    /// the lowering refuses.
+    /// A root form that declares nothing: a stray the lowering refuses.
     pub const EVENT: Self = Self(24);
 }
 

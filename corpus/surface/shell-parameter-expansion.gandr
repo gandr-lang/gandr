@@ -4,11 +4,11 @@
 // definition's body, which the lowering admits no shell block for yet (#1057).
 
 /// A parameter and an escape inside single quotes, kept verbatim, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ printf 'literal $x and \n stay verbatim'; }
 
 /// One parameter, bare and braced, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ echo $HOME ${HOME}; }
 
 /// Braced parameters joined to a word and to each other, in a definition

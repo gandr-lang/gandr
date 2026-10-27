@@ -5,15 +5,15 @@
 // (#1057).
 
 /// A double-quoted argument with a space, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ echo "hello world"; }
 
 /// Escapes inside double quotes, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ printf "col1\tcol2\n"; }
 
 /// Parameters, bare and braced, expanded inside double quotes, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ echo "home is $HOME and user is ${USER}"; }
 
 /// A parameter inside a double-quoted argument beside a single-quoted format,

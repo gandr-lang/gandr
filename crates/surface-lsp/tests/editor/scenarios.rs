@@ -1261,8 +1261,9 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
         );
     }
     let unfinished = |code: &str| vec![vec![json!([code, seed_lines])]];
-    // `d` and `de` stand last at the root: a run target naming nothing.
-    let mut expected = vec![unfinished("UnresolvedName"); 2];
+    // `d` and `de` stand last at the root: expressions refused at the top
+    // level.
+    let mut expected = vec![unfinished("OutOfFragment.TopLevel"); 2];
     expected.extend(vec![
         unfinished("MalformedForm");
         QUIET_DECLARATION.len().saturating_sub(3)

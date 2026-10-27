@@ -64,7 +64,7 @@
 //! `I.op(v)`, where `I` names no value in scope but a host interface, is the
 //! perform of `op` of `I`: no capability is exercised, the computation's row
 //! holds `I`, and the operation goes to whichever handler stands nearest when
-//! it runs — a scope handling `I`, or else the host at the run target. So
+//! it runs — a scope handling `I`, or else the host at the program's entry. So
 //! `Console.print("hello, world!")` is a computation at `-F [Console] Unit`.
 //! An operation `I` does not offer is [`LoweringRefusal::UnresolvedName`] at
 //! the operation; a value named `I` shadows the interface, and its selection
@@ -342,7 +342,7 @@ enum Performer
     Capability(NodeIndex, Option<Arc<TheoryInterface>>),
     /// `I.op(v)`: the operation of the host interface `I` is performed by
     /// name, handled by whichever handler stands nearest when it runs — the
-    /// host's at the run target.
+    /// host's at the program's entry.
     Interface(EffectName),
 }
 

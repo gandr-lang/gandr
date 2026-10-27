@@ -247,10 +247,10 @@ fn code(output: &Output) -> Code
 /// - panics: if standard output is not UTF-8.
 ///
 /// # Adequacy
-/// - hypothesis: L2/L3 — value multiplicity and piped transcript fixtures
-///   compare exact visible lines. Lost, duplicated or replaced bytes change
-///   those observations; non-UTF-8 output is excluded.
-/// - witness: `tests::cli::the_value_of_a_run_is_printed_once`
+/// - hypothesis: L2/L3 — a printed line and piped transcript fixtures compare
+///   exact visible lines. Lost, duplicated or replaced bytes change those
+///   observations; non-UTF-8 output is excluded.
+/// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
 /// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
 #[spec(ensures: |ref ret| ret.as_bytes() == output.stdout.as_slice())]
 fn stdout(output: &Output) -> String
@@ -2073,11 +2073,11 @@ fn a_client_tries_five_seconds_for_a_hub_that_never_answers()
 /// - panics: on filesystem or process failure.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — scripts returning a value, reaching blame, carrying a
-///   checker refusal or declaring nothing expose status and stream separation.
-///   Wrong paths, arguments or captured outputs change these observations;
-///   arbitrary scripts and external mutation are excluded.
-/// - witness: `tests::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - hypothesis: L3 — scripts running their `main`, reaching blame, carrying a
+///   checker refusal or declaring no `main` expose status and stream
+///   separation. Wrong paths, arguments or captured outputs change these
+///   observations; arbitrary scripts and external mutation are excluded.
+/// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `tests::cli::a_script_with_no_program_is_refused`
 #[spec(ensures: |ref ret| ret.0.strip_prefix(&scratch.0).is_ok_and(|relative| relative == name)
@@ -2093,21 +2093,24 @@ fn run_script(
     (path, output)
 }
 
-/// A run that returns a value prints it on standard output and exits zero.
+/// A run of a `main` writes the lines it prints, and nothing else, on standard
+/// output and exits zero.
 #[test]
-fn a_script_that_returns_a_value_leaves_successfully()
+fn a_script_that_runs_its_main_leaves_successfully()
 {
-    let scratch = Scratch::new(Path::new("script-value"));
+    let scratch = Scratch::new(Path::new("script-main"));
     let (_path, output) = run_script(
         &scratch,
-        Path::new("value.gandr"),
-        Text::from("def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n"),
+        Path::new("main.gandr"),
+        Text::from(
+            "def answer = 42 ;\ndef main() -> [Console] Unit {\n  Console.print(\"42\")\n}\n",
+        ),
     );
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
     assert_eq!(
         stdout(&output),
         "42\n",
-        "the run routes its value to the caller"
+        "the run routes what it prints to the caller, once"
     );
     assert_eq!(stderr(&output), "", "a completed run writes no complaint");
 }
@@ -2188,27 +2191,6 @@ fn a_program_prints_hello_world_2279()
         stderr(&output).contains("Clock"),
         "the refusal names the effect: {}",
         stderr(&output)
-    );
-}
-
-/// The value of a completed run is the whole of standard output, once,
-/// however many declarations the script holds.
-#[test]
-fn the_value_of_a_run_is_printed_once()
-{
-    let scratch = Scratch::new(Path::new("script-once"));
-    let (_path, output) = run_script(
-        &scratch,
-        Path::new("once.gandr"),
-        Text::from(
-            "def answer = 42 ;\ndef copy = answer ;\ndef shown : +U (-F Integer) ;\ndef shown = thunk { return copy } ;\n",
-        ),
-    );
-    assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
-    assert_eq!(
-        stdout(&output).lines().collect::<Vec<_>>(),
-        ["42"],
-        "one value line, and nothing else on standard output"
     );
 }
 
@@ -2312,23 +2294,35 @@ fn an_absent_script_is_refused_by_path()
     );
 }
 
-/// A script declaring no name has nothing to run and exits two.
+/// A script declaring no `main` runs nothing — not its last declaration — and
+/// exits two, naming `def main` and pointing at `check` and `test` (#2572).
 #[test]
 fn a_script_with_no_program_is_refused()
 {
     let scratch = Scratch::new(Path::new("script-no-program"));
-    let (path, output) = run_script(
-        &scratch,
-        Path::new("nothing.gandr"),
-        Text::from("// declares nothing\n"),
-    );
-    assert_eq!(
-        code(&output),
-        Code(2_i32),
-        "a source with no runnable declaration never reaches the machine"
-    );
-    assert!(output.stdout.is_empty());
-    assert!(stderr(&output).starts_with(&format!("gandr: {}: ", path.display())));
+    for (name, text) in [
+        ("nothing.gandr", "// declares nothing\n"),
+        (
+            "declarations.gandr",
+            "def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n",
+        ),
+    ] {
+        let (path, output) = run_script(&scratch, Path::new(name), Text::from(text));
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "{name}: a source with no `main` never reaches the machine"
+        );
+        assert!(output.stdout.is_empty(), "{name}: nothing ran");
+        let complaint = stderr(&output);
+        assert!(
+            complaint.starts_with(&format!("gandr: {}: ", path.display()))
+                && complaint.contains("`def main() -> Unit { … }`")
+                && complaint.contains("`gandr check`")
+                && complaint.contains("`gandr test`"),
+            "{name}: the refusal names `main` and the verbs for declarations: {complaint}"
+        );
+    }
 }
 
 /// A literal dash selects a path, whether that file is absent or runnable.
@@ -2343,7 +2337,7 @@ fn a_bare_dash_is_a_path_not_standard_input()
     assert!(stderr(&output).starts_with("gandr: -: "));
     let _path = scratch.file(
         Path::new("-"),
-        Text::from("def answer : +U (-F Integer) ; def answer = thunk { return 17 } ;"),
+        Text::from("def main() -> [Console] Unit { Console.print(\"17\") }"),
     );
     let mut present = gandr(&["run", "-"]);
     present.current_dir(&scratch.0);
@@ -2389,33 +2383,30 @@ fn a_failed_diagnostic_stream_stops_later_output()
     let scratch = Scratch::new(Path::new("failed-diagnostic-stream"));
     let source = scratch.file(
         Path::new("value.gandr"),
-        Text::from(
-            "def unused : Integer ; def answer : +U (-F Integer) ; def answer = thunk { return 9 } ;",
-        ),
+        Text::from("def unused : Integer ; def main() -> [Console] Unit { Console.print(\"9\") }"),
     );
     let control = ran(gandr(&[Path::new("run"), &source]));
     assert_eq!(code(&control), Code(0));
     assert_eq!(stdout(&control), "9\n");
     let missing = scratch.0.join("missing.gandr");
-    for arguments in [[Path::new("check"), missing.as_path()], [
-        Path::new("run"),
-        source.as_path(),
-    ]] {
+    // A run prints as it runs, before its diagnostics are written, so what it
+    // printed stands; nothing is written after the stream fails.
+    for (arguments, printed) in [
+        ([Path::new("check"), missing.as_path()], ""),
+        ([Path::new("run"), source.as_path()], "9\n"),
+    ] {
         let (reader, writer) = std::io::pipe().expect("a pipe is made");
         drop(reader);
         let mut command = gandr(&arguments);
         command.stderr(writer);
         let output = ran(command);
         assert_eq!(code(&output), Code(2), "{arguments:?}");
-        assert!(
-            output.stdout.is_empty(),
-            "no later summary or value: {arguments:?}"
-        );
+        assert_eq!(stdout(&output), printed, "no later summary: {arguments:?}");
     }
 }
 
 /// #782: `presentation.spelling` in the user's configuration file spells
-/// what `check` and `run` print, `--spelling` outranks it, and a file naming
+/// what `check` and `run` report, `--spelling` outranks it, and a file naming
 /// no spelling stops the driver before any verb runs.
 #[test]
 fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
@@ -2424,13 +2415,6 @@ fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
     let refused = scratch.file(
         Path::new("relation.gandr"),
         Text::from("def r : Integer ≃ String ;\ndef r = 1 ;\n"),
-    );
-    let word = scratch.file(
-        Path::new("word.gandr"),
-        Text::from(
-            "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
-             Path(Circle, Base, Base)) ;\ndef once = thunk { loop } ;\n",
-        ),
     );
     let home = scratch.0.join("configuration");
     let configured = |text: &str| {
@@ -2451,8 +2435,8 @@ fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
     };
     let run = |flag: &[&str]| {
         let mut arguments: Vec<&std::ffi::OsStr> = flag.iter().map(std::ffi::OsStr::new).collect();
-        arguments.extend([std::ffi::OsStr::new("run"), word.as_os_str()]);
-        stdout(&under_home(&arguments))
+        arguments.extend([std::ffi::OsStr::new("run"), refused.as_os_str()]);
+        stderr(&under_home(&arguments))
     };
     assert!(
         check(&[]).contains("expected `Integer ≃ String`"),
@@ -2467,14 +2451,16 @@ fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
         check(&[]).contains("expected `Integer <~> String`"),
         "the file's spelling prints"
     );
-    assert_eq!(run(&[]), "loop :: here(Base)\n", "and spells a run's value");
+    assert!(
+        run(&[]).contains("expected `Integer <~> String`"),
+        "and spells what a run reports"
+    );
     assert!(
         check(&["--spelling", "unicode"]).contains("expected `Integer ≃ String`"),
         "the flag outranks the file"
     );
-    assert_eq!(
-        run(&["--spelling", "unicode"]),
-        "loop ∷ here(Base)\n",
+    assert!(
+        run(&["--spelling", "unicode"]).contains("expected `Integer ≃ String`"),
         "for a run too"
     );
     configured("[presentation]\nspelling = \"latin\"\n");

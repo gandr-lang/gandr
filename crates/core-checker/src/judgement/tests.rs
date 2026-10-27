@@ -49,7 +49,6 @@ use super::check_value;
 use super::check_value_with_failure;
 use super::checked;
 use super::synthesise_comp;
-use super::synthesise_run_target_with_failure;
 use super::synthesise_value;
 use super::unadmitted_value;
 use crate::context::Atom;
@@ -265,61 +264,6 @@ fn a_pair_synthesises_its_eager_product_and_checks_against_one()
             found: TypeNode::Value(integer.id()),
         }),
         "a pair against no eager product is a shape mismatch"
-    );
-}
-
-#[test]
-fn a_run_target_has_the_thunk_type_of_its_computation_1105()
-{
-    // A run target reads the thunk at its root by the computation it
-    // suspends; every other value, and a thunk below the root, by its own
-    // rule.
-    let mut arena = CoreArena::new();
-    let zero = arena.value_literal(integer_literal());
-    let returned = arena.computation_return(zero);
-    let thunk = arena.value_thunk(returned);
-    let forced = arena.computation_force(zero);
-    let ill_typed = arena.value_thunk(forced);
-    let inner = arena.value_tuple(&[thunk, zero]);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-    let synthesised = synthesise_run_target_with_failure(&mut context, thunk)
-        .map_err(|failure| failure.refusal())
-        .unwrap()
-        .produced();
-    assert!(
-        matches!(
-            context.arena().value_type(synthesised.id()),
-            Some(&ValueType::Thunk(_))
-        ),
-        "a thunk at the root has a thunk type"
-    );
-    assert!(
-        check_value(&mut context, thunk, synthesised).is_ok(),
-        "the thunk checks against the type its computation gave it"
-    );
-    assert!(
-        matches!(
-            synthesise_run_target_with_failure(&mut context, ill_typed)
-                .map_err(|failure| failure.refusal()),
-            Err(CheckRefusal::ShapeMismatch { .. })
-        ),
-        "a target whose computation does not synthesise refuses as the computation does"
-    );
-    assert_eq!(
-        synthesise_run_target_with_failure(&mut context, inner)
-            .map(|found| found.produced().id())
-            .map_err(|failure| failure.refusal()),
-        Err(CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Thunk(thunk),
-        }),
-        "a thunk below the root is read by its own rule"
-    );
-    assert_eq!(
-        synthesise_run_target_with_failure(&mut context, zero)
-            .map(|found| found.produced().id())
-            .map_err(|failure| failure.refusal()),
-        Ok(context.atom(Atom::Integer).id()),
-        "a target that is no thunk reads as the value it is"
     );
 }
 

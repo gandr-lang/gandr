@@ -5,14 +5,13 @@
 //! # A program is its declarations
 //!
 //! A program is the module's declarations, each a constant the machine
-//! unfolds on demand, the source's run target among them. An accepted
-//! declaration's elaborated body is focused once, when the program is built; a
-//! declaration owed its body, refused, or whose body does not focus is carried
-//! as itself, the machine's opaque constant. `gandr run` runs the program's
-//! entry, the `main` its source declares at the top level; a source that
-//! declares none runs its run target, or the last name it declares when it
-//! writes none. The session and the corpus run any accepted declaration by its
-//! admission position.
+//! unfolds on demand. An accepted declaration's elaborated body is focused
+//! once, when the program is built; a declaration owed its body, refused, or
+//! whose body does not focus is carried as itself, the machine's opaque
+//! constant. `gandr run` runs the program's entry, the `main` its source
+//! declares at the top level, and refuses a source that declares none. The
+//! session and the corpus run any accepted declaration by its admission
+//! position.
 //!
 //! # Running a declaration
 //!
@@ -111,13 +110,6 @@
 //! runs, so a run never starts that would meet a declaration the machine cannot
 //! carry.
 //!
-//! **The run target is the source's final expression.** An expression written
-//! as a source's last root form is lowered as the body of a thunk and admitted
-//! after every name the source declares, so it holds the highest admission
-//! position. A source that writes no final expression runs the last name it
-//! declares, and a source declaring no name and writing no expression is
-//! `Ran::NoProgram`.
-//!
 //! # Native universe-path boundaries
 //!
 //! Programmatic native `Path_U` declarations use ordinary checker export and
@@ -211,9 +203,9 @@ pub use entry::program_entry;
 pub use hole::hole_site;
 
 quenchant_shape::reason_enum! {
-    /// Why a program has no run target.
-    pub mod run_target {
-        /// The program declares nothing to run.
+    /// Why a program has no declaration of its own source's.
+    pub mod last_declared {
+        /// The source declares nothing.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// The source declares no name.
@@ -329,7 +321,7 @@ pub struct Program<'source>
     /// Where the program's sources write each hole an entry run can reach.
     holes: BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>,
     /// The admission positions of the declarations the source run writes,
-    /// among which its run target is chosen: every position, unless the
+    /// among which its last declaration is read: every position, unless the
     /// source is laid after others in its unit.
     own: Range<ConstantIndex>,
 }
@@ -1033,14 +1025,14 @@ impl<'source> Program<'source>
     /// # Specification
     /// - requires: `own` holds exactly the positions of the declarations the
     ///   source writes.
-    /// - ensures: [`Self::target`] reads only the declarations at `own`;
+    /// - ensures: [`Self::last_declared`] reads only the declarations at `own`;
     ///   nothing else changes.
-    /// - provides: a source laid after the prelude and its imports runs its own
-    ///   last declaration, never theirs.
+    /// - provides: a source laid after the prelude and its imports reads its
+    ///   own last declaration, never theirs.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the store is a move; [`Self::target`] states what
-    ///   it changes.
+    /// - executable: none — the store is a move; [`Self::last_declared`] states
+    ///   what it changes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a script declaring nothing, laid after the prelude,
@@ -1055,38 +1047,34 @@ impl<'source> Program<'source>
         self.own = own;
     }
 
-    /// The declaration `gandr run` runs: the source's run target, or the last
-    /// name the source declares when it writes none.
+    /// The declaration the source run declares last.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the highest admission position among the source's own
-    ///   ([`Self::run_within`]), which is the source's run target, admitted
-    ///   after every name, when it writes one, and otherwise the name the
-    ///   source declared last for the first time.
-    /// - provides: the declaration a source runs.
-    /// - fails: [`run_target::Absent::NoDeclaration`] when the source declares
-    ///   no name and writes no run target.
+    ///   ([`Self::run_within`]): the name the source declared last for the
+    ///   first time.
+    /// - provides: the declarations a source writes end there.
+    /// - fails: [`last_declared::Absent::NoDeclaration`] when the source
+    ///   declares no name.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a source of several names, a later declaration of an
-    ///   earlier name among them, a source of none, a final expression after a
-    ///   name and after a later declaration of an earlier name, and a source of
-    ///   none laid after the prelude.
-    /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
-    /// - witness: `evaluate::tests::a_final_expression_is_the_run_target_1105`
+    ///   earlier name among them, a source of none, and a source of none laid
+    ///   after the prelude.
+    /// - witness: `evaluate::tests::the_last_declared_is_the_last_name_a_source_declares`
     /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(last) => self.own.contains(&last) && self.declarations.contains_key(&last),
-        Maybe::Absent(run_target::Absent::NoDeclaration) => true,
+        Maybe::Absent(last_declared::Absent::NoDeclaration) => true,
     })]
     #[inline]
-    pub fn target(&self) -> Maybe<ConstantIndex, run_target::Absent>
+    pub fn last_declared(&self) -> Maybe<ConstantIndex, last_declared::Absent>
     {
         match self.declarations.range(self.own.clone()).next_back() {
             Some((&last, _)) => Maybe::Present(last),
-            None => Maybe::Absent(run_target::Absent::NoDeclaration),
+            None => Maybe::Absent(last_declared::Absent::NoDeclaration),
         }
     }
 
@@ -1103,7 +1091,7 @@ impl<'source> Program<'source>
     /// - hypothesis: L3 — distinct names retain their positions across a later
     ///   definition of an earlier name; empty and maximal-index queries are
     ///   absent.
-    /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
+    /// - witness: `evaluate::tests::the_last_declared_is_the_last_name_a_source_declares`
     #[spec(ensures: |ret| match (self.declarations.get(&constant), ret) {
         (Some(declared), Maybe::Present(name)) => declared.name == name,
         (None, Maybe::Absent(declaration_name::Absent::Undeclared)) => true,
@@ -2634,7 +2622,7 @@ mod tests
     use super::Spelling;
     use super::Unfinished;
     use super::Unrunnable;
-    use super::run_target;
+    use super::last_declared;
     use crate::compose::Composed;
     use crate::compose::LoweringCount;
     use crate::compose::compose;
@@ -2653,7 +2641,7 @@ mod tests
     ///   existing names and an empty source have independent expected outcomes
     ///   or targets.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
-    /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
+    /// - witness: `evaluate::tests::the_last_declared_is_the_last_name_a_source_declares`
     #[spec(ensures: |ref ret| ret.declarations.keys().all(|&constant| ret.definitions.get(constant).is_some()))]
     pub(super) fn program<'source>(source: impl Into<SourceText<'source>>) -> Program<'source>
     {
@@ -3158,17 +3146,17 @@ def bad : Integer ; def bad = "text" ;"#,
     }
 
     #[test]
-    fn the_run_target_is_the_last_name_declared()
+    fn the_last_declared_is_the_last_name_a_source_declares()
     {
         let several = program(r#"def a = 1 ; def b = 2 ; def c = 3 ;"#);
         assert_eq!(
-            several.target(),
+            several.last_declared(),
             Maybe::Present(ConstantIndex::from(2_usize)),
             "the last of several names"
         );
         let redeclared = program(r#"def x : Integer ; def y = 1 ; def x = 2 ;"#);
         assert_eq!(
-            redeclared.target(),
+            redeclared.last_declared(),
             Maybe::Present(ConstantIndex::from(1_usize)),
             "a later declaration of an earlier name keeps that name's position"
         );
@@ -3184,9 +3172,9 @@ def bad : Integer ; def bad = "text" ;"#,
         );
         let none = program(r#"// nothing declared"#);
         assert_eq!(
-            none.target(),
-            Maybe::Absent(run_target::Absent::NoDeclaration),
-            "a source of no name has no target"
+            none.last_declared(),
+            Maybe::Absent(last_declared::Absent::NoDeclaration),
+            "a source of no name has no last declaration"
         );
         assert_eq!(
             none.name(ConstantIndex::from(0_usize)),
@@ -3196,41 +3184,6 @@ def bad : Integer ; def bad = "text" ;"#,
             program("").declarations.is_empty(),
             "empty input admits no declaration"
         );
-    }
-
-    /// #1105: a source's final expression is its run target, admitted after
-    /// every name it declares, and what the source runs: a value written
-    /// there is returned, a call is run.
-    #[test]
-    fn a_final_expression_is_the_run_target_1105()
-    {
-        let mut redeclared = program(
-            r#"def x : Integer ; def y = 1 ; def x = 2 ;
-x"#,
-        );
-        let after = ConstantIndex::from(2_usize);
-        assert_eq!(
-            redeclared.target(),
-            Maybe::Present(after),
-            "the target follows every name, a later declaration of an earlier one included"
-        );
-        assert_eq!(
-            redeclared.evaluate(after).to_string(),
-            "2",
-            "a value target is returned"
-        );
-        let mut called = program(
-            r#"def answer = 42 ;
-def same(a : Type, x : a) -> -F a { return x }
-same(Integer, answer)"#,
-        );
-        assert_eq!(called.target(), Maybe::Present(after));
-        let evaluation = called.evaluate(after);
-        assert!(
-            matches!(evaluation, Evaluation::Value(_)),
-            "a call target runs to a value: {evaluation}"
-        );
-        assert_eq!(evaluation.to_string(), "42", "the call's value");
     }
 
     #[test]
@@ -3371,7 +3324,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             "the skipped position holds nothing to run"
         );
         assert_eq!(
-            program.target(),
+            program.last_declared(),
             Maybe::Present(ConstantIndex::from(2_usize))
         );
         assert!(

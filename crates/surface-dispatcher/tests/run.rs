@@ -16,7 +16,7 @@ use anodized::spec;
 use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Entered;
-use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::ExitStatus;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::RunStatus;
@@ -25,12 +25,11 @@ use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::SourceFault;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::run_source;
-use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 
-/// A program whose last declaration returns forty-two.
-const ANSWER: &str = "def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n";
+/// A program whose `main` returns forty-two.
+const ANSWER: &str = "def answer = 42 ;\ndef main() -> -F Integer { return answer }\n";
 
 /// A scratch source file, removed when dropped.
 #[repr(transparent)]
@@ -101,20 +100,20 @@ impl Drop for Scratch
 ///
 /// # Specification
 /// - requires: the built-in grammar builds and the fixture composes.
-/// - ensures: returns the source's execution outcome; any evaluated target is
-///   named in the supplied source.
+/// - ensures: returns the source's execution outcome; any entry run is named in
+///   the supplied source.
 /// - fails: never.
 /// - panics: if grammar construction or composition fails.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an explicit forty-two program asserts its target and
-///   value, while empty and refused sources assert their distinct outcomes.
-///   This detects losing the selected target or collapsing those outcomes, not
-///   arbitrary evaluation errors or parser recovery.
+/// - hypothesis: L3 — an explicit forty-two program asserts its entry and
+///   status, while empty and refused sources assert their distinct outcomes.
+///   This detects losing the entry or collapsing those outcomes, not arbitrary
+///   evaluation errors or parser recovery.
 /// - witness: `tests::run::run_source_runs_source_text`
 /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
 #[spec(ensures: |ref ret| match *ret {
-        Ran::Evaluated { target, .. } | Ran::Entered { target, .. } => text.as_ref().contains(target.as_ref()),
+        Ran::Entered { target, .. } => text.as_ref().contains(target.as_ref()),
         Ran::Refused | Ran::NoProgram => true,
     })]
 fn ran_text(text: SourceText<'_>) -> Ran<'_>
@@ -138,10 +137,10 @@ fn ran_text(text: SourceText<'_>) -> Ran<'_>
 /// - panics: if the script does not produce that source and execution.
 ///
 /// # Adequacy
-/// - hypothesis: L3 literal status and source observations distinguish value,
-///   refusal and empty programs and preserve the shebang's bytes; L2 comparison
-///   with in-memory execution checks the two entry paths agree. Neither is an
-///   independent evaluator for arbitrary programs.
+/// - hypothesis: L3 literal status and source observations distinguish an
+///   entry, refusal and empty programs and preserve the shebang's bytes; L2
+///   comparison with in-memory execution checks the two entry paths agree.
+///   Neither is an independent evaluator for arbitrary programs.
 /// - witness: `tests::run::run_source_file_runs_a_script_file`
 /// - witness: `tests::run::run_source_file_accepts_an_executable_shebang_line`
 /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
@@ -196,12 +195,12 @@ fn run_source_runs_source_text()
     assert!(
         matches!(
             ran,
-            Ran::Evaluated {
+            Ran::Entered {
                 target,
-                evaluation: Evaluation::Value(ref value),
-            } if target.as_ref() == "answer" && value.as_ref() == "42"
+                entered: Entered::Exited(status),
+            } if target.as_ref() == "main" && status == ExitStatus::from(42_u8)
         ),
-        "a completed run returns the computed value: {ran:?}"
+        "a completed run exits with what its entry returns: {ran:?}"
     );
 }
 
@@ -235,64 +234,38 @@ fn run_source_file_accepts_an_executable_shebang_line()
     );
 }
 
-/// #782: a script asked for ASCII writes the value it runs to in ASCII.
-#[test]
-fn a_script_runs_to_its_value_in_the_spelling_asked_782()
-{
-    let word = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
-                Path(Circle, Base, Base)) ;\ndef once = thunk { loop } ;\n";
-    let file = Scratch::write(Path::new("spelling"), SourceText::from(word));
-    for (spelling, spelled) in [
-        (Spelling::Unicode, "loop ∷ here(Base)"),
-        (Spelling::Ascii, "loop :: here(Base)"),
-    ] {
-        let mut script = Script::new(file.0.clone());
-        script.spell_in(spelling);
-        let run = script.run(&mut Captured::default());
-        let ScriptRun::Source {
-            ran:
-                Ran::Evaluated {
-                    evaluation: Evaluation::Value(ref value),
-                    ..
-                },
-            ..
-        } = run
-        else {
-            panic!("the word runs to a value: {run:?}");
-        };
-        assert_eq!(value.as_ref(), spelled, "the word in {spelling:?}");
-    }
-}
-
 /// #2302: a script is laid after the prelude, so `==` between two strings
 /// resolves the prelude's `EqString` and runs to whether they are the same
 /// text; bare, `==` would be the integer primitive and refuse them.
 #[test]
 fn a_script_compares_through_the_prelude_s_eq_2302()
 {
-    for (test, compared, spelled) in [
-        ("same", r#""types" == "types""#, "+{.0 = unit}"),
-        ("different", r#""types" == "machines""#, "+{.1 = unit}"),
+    for (test, compared, status) in [
+        ("same", r#""types" == "types""#, 0_u8),
+        ("different", r#""types" == "machines""#, 1_u8),
     ] {
-        let text = format!("def compared() -> Bool {{ {compared} }}\n");
+        let text = format!(
+            "def main() -> -F Integer {{\n  if {compared} {{ return 0 }} else {{ return 1 }}\n}}\n"
+        );
         let file = Scratch::write(
             Path::new(&format!("eq-2302-{test}")),
             SourceText::from(text.as_str()),
         );
         let mut script = Script::new(file.0.clone());
         let run = script.run(&mut Captured::default());
-        let ScriptRun::Source {
-            ran:
-                Ran::Evaluated {
-                    evaluation: Evaluation::Value(ref value),
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(exited),
+                        ..
+                    },
                     ..
-                },
-            ..
-        } = run
-        else {
-            panic!("`{compared}` runs to a value: {run:?}");
-        };
-        assert_eq!(value.as_ref(), spelled, "`{compared}`");
+                } if exited == ExitStatus::from(status)
+            ),
+            "`{compared}` decides the status: {run:?}"
+        );
     }
 }
 
@@ -359,6 +332,11 @@ fn run_source_file_surfaces_a_source_failure_unchanged()
 {
     for (test, text, failure) in [
         ("no-program", "// declares nothing\n", Ran::NoProgram),
+        (
+            "no-main",
+            "def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n",
+            Ran::NoProgram,
+        ),
         (
             "refused",
             "def only : Integer ;\ndef only = \"one\" ;\n",

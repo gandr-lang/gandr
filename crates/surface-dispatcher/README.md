@@ -38,7 +38,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `HostGrant`, `OperationName`, `WorldName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by, and the worlds every declaration is entered at, read against the worlds each module declares; `compose` and `test` judge under neither.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.
 - `Exercised` and `Row`: the fragment's exercised table, counted.
-- `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `run_target::Absent` and `declaration_name::Absent`: the run stage.
+- `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `last_declared::Absent` and `declaration_name::Absent`: the run stage.
 - `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.

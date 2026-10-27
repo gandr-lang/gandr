@@ -271,6 +271,10 @@ pub enum FragmentBoundary
     /// The form is a former of the fragment, but not of the sort its position
     /// demands.
     WrongSort,
+    /// The form is an expression written at a source's top level, where only
+    /// declarations stand: an expression runs inside a declaration, and a
+    /// program runs the `main` it declares.
+    TopLevel,
     /// The form is a former of this sort, offered a number of operands it does
     /// not take.
     Arity(OperandCount),
@@ -364,6 +368,10 @@ impl fmt::Display for FragmentBoundary
                  returner it rows is inserted",
             ),
             Self::WrongSort => f.write_str("is not a former of this sort"),
+            Self::TopLevel => f.write_str(
+                "stands at a source's top level, where only declarations stand; a program runs \
+                 the `main` it declares",
+            ),
             Self::Arity(operands) => write!(f, "does not take {operands} operands"),
             Self::Indexed => {
                 f.write_str("applies its family to an index, which the fragment does not read")

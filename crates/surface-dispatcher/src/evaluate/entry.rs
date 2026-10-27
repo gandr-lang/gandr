@@ -326,8 +326,8 @@ fn argument_list(
 /// - requires: `verdicts` judged `module` over `core`.
 /// - ensures: the admission position of the declaration named [`ENTRY`] at the
 ///   top level of the last source any top-level declaration of `module` stands
-///   in — a run target or a stray, named by the token it opens with, is none —
-///   with the arguments its declared type reads, when its verdict states a type
+///   in — a stray, named by the token it opens with, is none — with the
+///   arguments its declared type reads, when its verdict states a type
 ///   [`entry_shape()`] answers; the undeclared absence otherwise.
 /// - fails: never.
 /// - panics: none.
@@ -363,7 +363,7 @@ pub(super) fn entry_of(
         .iter()
         .filter(|lowered| {
             lowered.name().as_ref() == ENTRY
-                && !matches!(lowered.role(), Role::Held | Role::RunTarget)
+                && lowered.role() != Role::Held
                 && top(lowered.container()) == Some(run)
         })
         .map(LoweredDeclaration::constant)

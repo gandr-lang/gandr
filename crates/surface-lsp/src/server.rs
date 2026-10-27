@@ -10013,7 +10013,7 @@ mod tests
         assert_eq!(
             held(&search(&mut server, "twi")),
             [(String::from("twice"), 12_u64, Some(String::from("Ints")))],
-            "a module's member, held by its module; the run target writing it names nothing"
+            "a module's member, held by its module; the stray writing it names nothing"
         );
         assert_eq!(
             held(&search(&mut server, "nou")),

@@ -78,7 +78,7 @@
 //! IL, and the [`Program`] it builds runs any declaration on the L machine and
 //! reads its terminal back: the settle comparison runs the declarations that
 //! state a `runs` outcome, the session runs what the user entered, and `gandr
-//! run` runs a source's `main`, or else its run target. Nothing runs that no
+//! run` runs a source's `main`. Nothing runs that no
 //! caller asked for, so `check` performs no run beyond the outcomes its sources
 //! state.
 //!
@@ -247,8 +247,8 @@ pub use crate::evaluate::Unrunnable;
 pub use crate::evaluate::ValueSpelling;
 pub use crate::evaluate::declaration_name;
 pub use crate::evaluate::hole_site;
+pub use crate::evaluate::last_declared;
 pub use crate::evaluate::program_entry;
-pub use crate::evaluate::run_target;
 pub use crate::exercised::Exercised;
 pub use crate::exercised::Row;
 pub use crate::format::FormatFault;

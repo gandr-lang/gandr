@@ -27,10 +27,11 @@
 //! source reaches it; the refusal still carries the feature, so it stays
 //! named. The universe of representable sorts classifies a theory's sort
 //! member only, so read anywhere else it is misplaced, malformed source. A
-//! form of the wrong sort where a declaration
-//! is read is an expression at a module's root, which is a run target,
-//! unimplemented, except the operator declaration, which names its own issue; a
-//! form of the wrong sort anywhere else is misplaced and malformed source. An
+//! form of the wrong sort where a declaration is read is a stray, malformed
+//! source, except the operator declaration and the extern block, which name
+//! their own issues; an expression at a source's top level, where only
+//! declarations stand, is malformed source too, as is a form of the wrong sort
+//! anywhere else. An
 //! action on a name that is no fork's end is delegation, and a family read at
 //! an index is the indexed family, both unimplemented. Every other boundary —
 //! an operand count, a type the source does not state, a descent that is not
@@ -40,7 +41,7 @@
 //! slot — is a boundary the language draws, and malformed source.
 //!
 //! A refusal's name in a fixture's `refuses` expectation is keyed by
-//! [`FragmentFeature`]: the unbuilt feature; the run target; or the boundary,
+//! [`FragmentFeature`]: the unbuilt feature; the stray; or the boundary,
 //! without the operand count an arity offers. One name then covers one
 //! feature, and the witness checks that every feature, sort and boundary one
 //! name covers classifies alike.
@@ -441,6 +442,7 @@ fn out_of_fragment(
         | FragmentBoundary::JoinsBlock
         | FragmentBoundary::EmptyList
         | FragmentBoundary::NonContractive
+        | FragmentBoundary::TopLevel
         | FragmentBoundary::Held
         | FragmentBoundary::View => FailureClass::MalformedSource,
     }
@@ -469,8 +471,9 @@ pub enum FragmentFeature
     /// The feature a reserved or unadmitted form carries, and the operator
     /// declaration's and the extern block's wherever they stand.
     Unbuilt(Unbuilt),
-    /// A form of the wrong sort where a declaration is read: an expression
-    /// at a module's root that is not its run target, a stray.
+    /// A form of the wrong sort where a declaration is read, other than an
+    /// expression at the top level, which crosses a boundary of its own: a
+    /// stray.
     Stray,
     /// A form crossing any other boundary, named by the boundary alone: the
     /// operand count an arity offers is no part of the feature.
@@ -540,6 +543,7 @@ impl FragmentFeature
             | FragmentBoundary::EmptyList
             | FragmentBoundary::Endpoint
             | FragmentBoundary::NonContractive
+            | FragmentBoundary::TopLevel
             | FragmentBoundary::Held
             | FragmentBoundary::View => Self::Crossed(boundary),
         }

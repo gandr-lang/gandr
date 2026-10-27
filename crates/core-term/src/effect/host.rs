@@ -20,7 +20,7 @@
 //! The empty row is the row of a computation that returns.
 //!
 //! `Console` is the process's output: `print` takes a string and replies the
-//! unit once the host has written it as one line. The host at a run target
+//! unit once the host has written it as one line. The host at a program's entry
 //! writes it to standard output; a host capturing it, as a test's does, keeps
 //! the lines instead, and the program runs unchanged under either.
 //!

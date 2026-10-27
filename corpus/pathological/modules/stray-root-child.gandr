@@ -10,8 +10,9 @@ def before : Integer = 1;
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 leta x = 1 ;
 
-/// An expression standing where a declaration belongs (#1058).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// An expression standing where a declaration belongs, refused at the top
+/// level (#1058, #2572).
+@[ refuses("OutOfFragment.TopLevel") ]
 1 + 2
 
 /// A declaration whose name is a keyword names nothing to file it under

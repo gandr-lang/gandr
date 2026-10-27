@@ -116,8 +116,7 @@ pub enum Written
     /// The form holding it, among its own tiles: a member of a `theory`
     /// block, a `data` declaration or a `codata` declaration.
     Member,
-    /// A root form of its own that declares nothing: a source's run target,
-    /// or a stray.
+    /// A root form of its own that declares nothing: a stray.
     Root,
 }
 

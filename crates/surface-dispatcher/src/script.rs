@@ -1,6 +1,6 @@
 //! The run verb: one source read as a program, and its entry run — the `main`
-//! it declares at its top level — or, when it declares none, its run target:
-//! the final expression it writes, or its last declaration when it writes none.
+//! it declares at its top level. A source declaring no `main` runs nothing: a
+//! source of declarations alone is checked or tested, not run.
 //!
 //! # A script never reaches the machine with a refusal in it
 //!
@@ -20,7 +20,6 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
-use gandr_surface_pretty::Spelling;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -35,7 +34,6 @@ use crate::compose::lower_unit_source;
 use crate::evaluate::Console;
 use crate::evaluate::Entered;
 use crate::evaluate::Entry;
-use crate::evaluate::Evaluation;
 use crate::evaluate::RunStatus;
 use crate::evaluate::declaration_name;
 use crate::reader::Reader;
@@ -51,16 +49,9 @@ pub enum Ran<'source>
     /// The source carries a refusal, or the lowering refused it as a whole:
     /// it never reached the machine.
     Refused,
-    /// The source declares no name, so there is nothing to run.
+    /// The source declares no `main` at its top level, so there is nothing
+    /// to run.
     NoProgram,
-    /// The source's last declared name, and what running it came to.
-    Evaluated
-    {
-        /// The declaration run.
-        target: SurfaceName<'source>,
-        /// What the run came to.
-        evaluation: Evaluation<'source>,
-    },
     /// The source's entry, and what running it came to.
     Entered
     {
@@ -78,18 +69,17 @@ impl Ran<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a refused source and a source with no program never reached
-    ///   the machine, [`RunStatus::Unreached`]; an evaluated one has its
-    ///   evaluation's status; an entry that exited is [`RunStatus::Value`], and
-    ///   one that ended short of a status has its evaluation's.
+    ///   the machine, [`RunStatus::Unreached`]; an entry that exited is
+    ///   [`RunStatus::Value`], and one that ended short of a status has its
+    ///   evaluation's.
     /// - provides: the status the driver's exit code reads.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — real values, blame, refusal, empty programs and an
-    ///   unrunnable type distinguish the three statuses; an entry exiting and
-    ///   an entry reaching a goal distinguish an entry's. These fixtures do not
-    ///   enumerate every machine or readback failure.
+    /// - hypothesis: L3 — refusal, a source declaring no `main`, an entry
+    ///   exiting and an entry reaching a goal distinguish the statuses. These
+    ///   fixtures do not enumerate every machine or readback failure.
     /// - witness: `script::tests::each_kind_of_source_has_its_status`
     /// - witness: `script::tests::a_source_declaring_main_runs_its_entry_1881`
     #[inline]
@@ -97,8 +87,7 @@ impl Ran<'_>
     #[spec(ensures: |ret| match *self {
         Self::Refused | Self::NoProgram => matches!(ret, RunStatus::Unreached),
         Self::Entered { entered: Entered::Exited(_), .. } => matches!(ret, RunStatus::Value),
-        Self::Evaluated { ref evaluation, .. }
-        | Self::Entered { entered: Entered::Ended(ref evaluation), .. } => matches!((evaluation.status(), ret),
+        Self::Entered { entered: Entered::Ended(ref evaluation), .. } => matches!((evaluation.status(), ret),
             (RunStatus::Value, RunStatus::Value) | (RunStatus::Failed, RunStatus::Failed)
                 | (RunStatus::Unreached, RunStatus::Unreached)),
     })]
@@ -110,8 +99,7 @@ impl Ran<'_>
                 entered: Entered::Exited(_),
                 ..
             } => RunStatus::Value,
-            Self::Evaluated { ref evaluation, .. }
-            | Self::Entered {
+            Self::Entered {
                 entered: Entered::Ended(ref evaluation),
                 ..
             } => evaluation.status(),
@@ -126,20 +114,19 @@ impl Ran<'_>
 /// - requires: nothing.
 /// - ensures: a source the lowering refused whole, or holding a declaration
 ///   whose produced verdict is a refusal, is [`Ran::Refused`] and runs nothing;
-///   a source declaring no name is [`Ran::NoProgram`]; a program with an entry
-///   enters it once with `arguments` and [`Ran::Entered`] carries it; otherwise
-///   its program's run target is run once and [`Ran::Evaluated`] carries it.
-///   Either run writes each line it prints to `console`, in order.
+///   a source declaring no `main` at its top level is [`Ran::NoProgram`] and
+///   runs nothing, its last declaration included; a program with an entry
+///   enters it once with `arguments`, writing each line it prints to `console`,
+///   in order, and [`Ran::Entered`] carries it.
 /// - provides: the run step `gandr run` and [`run_source`] share.
 /// - fails: never; every failure is a [`Ran`].
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a refused source, an empty program, a last named target
-///   beside an unrelated goal and an entry declared before another name have
-///   exact run outcomes. Value and blame fixtures distinguish reaching the
-///   machine from refusal; arbitrary programs and resource failures are outside
-///   this finite set.
+/// - hypothesis: L3 — a refused source, a source of declarations and no `main`,
+///   an empty source and an entry declared before another name have exact run
+///   outcomes; arbitrary programs and resource failures are outside this finite
+///   set.
 /// - witness: `script::tests::each_kind_of_source_has_its_status`
 /// - witness: `script::tests::a_source_declaring_main_runs_its_entry_1881`
 #[inline]
@@ -151,22 +138,21 @@ impl Ran<'_>
                 .any(|declaration| !matches!(declaration.produced().refusal(),
                     Maybe::Absent(produced_refusal::Absent::Unrefused))),
         },
-        expected_target = match *composed {
-            Composed::Settled { ref program, .. } => match (program.entry(), program.target()) {
-                (Maybe::Present(Entry { constant, .. }), _) | (Maybe::Absent(_), Maybe::Present(constant)) => match program.name(constant) {
-                    Maybe::Present(name) => Some((name, matches!(program.entry(), Maybe::Present(_)))),
+        expected_entry = match *composed {
+            Composed::Settled { ref program, .. } => match program.entry() {
+                Maybe::Present(Entry { constant, .. }) => match program.name(constant) {
+                    Maybe::Present(name) => Some(name),
                     Maybe::Absent(_) => None,
                 },
-                (Maybe::Absent(_), Maybe::Absent(_)) => None,
+                Maybe::Absent(_) => None,
             },
             Composed::Refused(_) => None,
         },
     ],
     ensures: |ref ret| match *ret {
         Ran::Refused => was_refused,
-        Ran::NoProgram => !was_refused && expected_target.is_none(),
-        Ran::Evaluated { target, .. } => !was_refused && expected_target == Some((target, false)),
-        Ran::Entered { target, .. } => !was_refused && expected_target == Some((target, true)),
+        Ran::NoProgram => !was_refused && expected_entry.is_none(),
+        Ran::Entered { target, .. } => !was_refused && expected_entry == Some(target),
     },
 )]
 pub fn execute<'source>(
@@ -192,23 +178,14 @@ pub fn execute<'source>(
     if refused {
         return Ran::Refused;
     }
-    if let Maybe::Present(entry) = program.entry() {
-        return match program.name(entry.constant) {
-            Maybe::Present(name) => Ran::Entered {
-                target: name,
-                entered: program.enter(entry, arguments, console),
-            },
-            Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
-        };
-    }
-    let Maybe::Present(target) = program.target()
+    let Maybe::Present(entry) = program.entry()
     else {
         return Ran::NoProgram;
     };
-    match program.name(target) {
-        Maybe::Present(name) => Ran::Evaluated {
+    match program.name(entry.constant) {
+        Maybe::Present(name) => Ran::Entered {
             target: name,
-            evaluation: program.evaluate_printing(target, console),
+            entered: program.enter(entry, arguments, console),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
@@ -231,7 +208,7 @@ pub fn execute<'source>(
 /// The [`ComposeFault`] [`compose()`](crate::compose()) meets.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a real computation runs to its value and successive
+/// - hypothesis: L3 — an entry runs to its exit status and successive
 ///   empty-program compositions reach and remain at the maximum lowering count.
 ///   The parse-error counter branch is stated by the predicate, not
 ///   independently triggered by these valid built-in-grammar fixtures.
@@ -335,16 +312,13 @@ pub struct Script
     laid: Option<Laid>,
     /// The lowerings the script has run.
     lowerings: LoweringCount,
-    /// The spelling its run's value is written in.
-    spelling: Spelling,
     /// The arguments its entry is given.
     arguments: Vec<String>,
 }
 
 impl Script
 {
-    /// A script of the source at `path`, nothing yet read, its value written
-    /// in [`Spelling::Unicode`].
+    /// A script of the source at `path`, nothing yet read.
     ///
     /// # Specification
     /// trivial.
@@ -359,32 +333,8 @@ impl Script
             text: String::new(),
             laid: None,
             lowerings: LoweringCount::default(),
-            spelling: Spelling::Unicode,
             arguments: Vec::new(),
         }
-    }
-
-    /// This script, its run's value written in `spelling`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a later [`Self::run`] writes the value, or the sealed type,
-    ///   its program runs to in `spelling`; what runs is unchanged.
-    /// - provides: `gandr run`'s reader's spelling.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a script whose word holds a cons runs to it in ASCII.
-    /// - witness: `tests::run::a_script_runs_to_its_value_in_the_spelling_asked_782`
-    #[spec(ensures: self.spelling == spelling)]
-    #[inline]
-    pub fn spell_in(
-        &mut self,
-        spelling: Spelling,
-    )
-    {
-        self.spelling = spelling;
     }
 
     /// This script, its entry given `arguments`.
@@ -423,9 +373,8 @@ impl Script
     ///   [`SourceFault::Grammar`], and a pipeline fault a
     ///   [`SourceFault::Compose`], each naming the path given. Otherwise the
     ///   source is laid after the prelude alone, composed under its root, its
-    ///   step built as a walk builds it, and [`execute`] runs it, its value
-    ///   written in the script's spelling and its entry given the script's
-    ///   arguments.
+    ///   step built as a walk builds it, and [`execute`] runs it, its entry
+    ///   given the script's arguments.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
@@ -490,12 +439,6 @@ impl Script
             });
         match composed {
             Ok(mut composed) => {
-                if let Composed::Settled {
-                    ref mut program, ..
-                } = composed
-                {
-                    program.spell_in(self.spelling);
-                }
                 let ran = execute(&mut composed, &self.arguments, console);
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {
@@ -529,7 +472,6 @@ mod tests
     use crate::compose::LoweringCount;
     use crate::evaluate::Captured;
     use crate::evaluate::Entered;
-    use crate::evaluate::Evaluation;
     use crate::evaluate::ExitStatus;
     use crate::evaluate::RunStatus;
 
@@ -538,10 +480,7 @@ mod tests
     {
         let grammar = built_in().expect("the built-in grammar builds");
         let rows = [
-            (
-                r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#,
-                RunStatus::Value,
-            ),
+            (r#"def main() -> -F Integer { return 0 }"#, RunStatus::Value),
             (
                 r#"def later : +U (-F Integer) ; def main : +U (-F Integer) ; def main = thunk { become force later } ;"#,
                 RunStatus::Failed,
@@ -552,8 +491,8 @@ mod tests
             ),
             (r#"// nothing to run"#, RunStatus::Unreached),
             (
-                r#"def code : Type ; def code = Integer ;"#,
-                RunStatus::Value,
+                r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#,
+                RunStatus::Unreached,
             ),
         ];
         for (source, status) in rows {
@@ -577,34 +516,23 @@ mod tests
         )
         .expect("the source composes");
         assert_eq!(ran, Ran::Refused, "a refused source runs nothing");
-        let (_composed, ran) = run_source(
-            &grammar,
-            SourceText::from(r#"// nothing to run"#),
-            &mut lowerings,
-            &mut Captured::default(),
-        )
-        .expect("the source composes");
-        assert_eq!(ran, Ran::NoProgram, "a source of no name has no program");
-        let (_composed, ran) = run_source(
-            &grammar,
-            SourceText::from(r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#),
-            &mut lowerings,
-            &mut Captured::default(),
-        )
-        .expect("the source composes");
-        let Ran::Evaluated { target, evaluation } = ran
-        else {
-            panic!("a runnable source is evaluated");
-        };
-        assert_eq!(
-            (target.as_ref(), evaluation.to_string()),
-            ("answer", String::from("42")),
-            "the last name declared runs, beside a goal it does not reach"
-        );
-        assert!(
-            matches!(evaluation, Evaluation::Value(_)),
-            "the run returned a value"
-        );
+        for source in [
+            r#"// nothing to run"#,
+            r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#,
+        ] {
+            let (_composed, ran) = run_source(
+                &grammar,
+                SourceText::from(source),
+                &mut lowerings,
+                &mut Captured::default(),
+            )
+            .expect("the source composes");
+            assert_eq!(
+                ran,
+                Ran::NoProgram,
+                "a source declaring no `main` runs nothing, not its last declaration: `{source}`"
+            );
+        }
     }
 
     /// A source declaring `main` runs it, not its last declaration, and exits

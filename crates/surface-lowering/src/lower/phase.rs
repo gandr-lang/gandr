@@ -97,7 +97,6 @@ impl Phase
                 | Role::Derived
                 | Role::Abstract
                 | Role::Words
-                | Role::RunTarget
                 | Role::Generic,
                 _,
             ) => Maybe::Absent(phased::Absent::Outside),

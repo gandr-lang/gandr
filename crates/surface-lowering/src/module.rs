@@ -779,10 +779,6 @@ pub enum Role
     /// argument's component, which each application renames and which
     /// declares nothing.
     Parameter,
-    /// A source's run target, its last root child when that is an expression
-    /// the parser did not repair: entered in no name table, its definition the
-    /// expression read as a computation and suspended, which the source runs.
-    RunTarget,
     /// The prelude's generic program, `Eq.generic`: entered in its module's
     /// name table under its written signature, read only as the head of a
     /// definition `def m = Eq.generic(T)`, whose body the lowering derives
@@ -1132,9 +1128,6 @@ pub enum Operand
     /// A world declaration `world w ;`, which lowers to no core term: the
     /// declaration's admission position is the world's identity.
     World,
-    /// A source's run target: the expression written as its last root child,
-    /// read as a computation and suspended as a thunk.
-    RunTarget(Placed),
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -3164,7 +3157,7 @@ pub fn source_pieces(
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `module::tests::a_second_signature_is_refused`
 /// - witness: `module::tests::a_second_definition_is_refused`
-/// - witness: `module::tests::the_last_root_expression_is_the_run_target_1105`
+/// - witness: `module::tests::a_root_expression_is_refused_naming_main_2572`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
 /// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
 /// - witness: `module::tests::a_trailing_attribute_block_refuses_itself`
@@ -3218,9 +3211,6 @@ pub fn collect_source<'source>(
     // between the two aside.
     let mut marked: Option<Placed> = None;
     let mut after_stray = false;
-    // Whether the last root child read, the `;` ending it aside, is an
-    // expression the parser did not repair: the run target the source runs.
-    let mut targeted = false;
     // A complete item of the grammar the lowering does not reach yet is a
     // declaration out of the fragment: it carries its own refusal, whatever
     // else the source declares. One the parser repaired is malformed instead.
@@ -3273,12 +3263,6 @@ pub fn collect_source<'source>(
         if terminates && let Some(last) = strays.last_mut() {
             last.terminator = Some(child);
         }
-        // An expression a `;` ends may still be the run target: it waits for
-        // the child after it, as one written without a `;` does.
-        if terminates && targeted {
-            continue;
-        }
-        targeted = false;
         for stray in core::mem::take(&mut strays) {
             first_stray.get_or_insert(stray.refusal);
             filed = filed.saturating_add(1);
@@ -3411,7 +3395,7 @@ pub fn collect_source<'source>(
         }
         // The blocks before a child that stands on its own decorate it; before
         // a module, an import or a member they decorate nothing.
-        if let Some(refusal) = strayed(collector.module_child(child))? {
+        if let Some(mut refusal) = strayed(collector.module_child(child))? {
             let label = collector
                 .tree
                 .node(child.node)
@@ -3447,7 +3431,16 @@ pub fn collect_source<'source>(
                         })
                     }));
             items_refused |= item && !repaired;
-            targeted = expression && !repaired;
+            // An expression the parser did not repair is written where only
+            // declarations stand: it runs inside one, as `main`'s body.
+            if expression
+                && !repaired
+                && let LoweringRefusal::OutOfFragment {
+                    ref mut boundary, ..
+                } = refusal
+            {
+                *boundary = FragmentBoundary::TopLevel;
+            }
             strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
             after_stray = true;
         }
@@ -3471,10 +3464,6 @@ pub fn collect_source<'source>(
     for module in implied.into_iter().rev() {
         collector.close(module, &[])?;
     }
-    // The last root child, when it is an expression the parser did not repair,
-    // is the run target: every other expression at the root, before a named
-    // item or before another expression, and a repaired one, stays a stray.
-    let target = if targeted { strays.pop() } else { None };
     if let Some(&block) = decorations.first()
         && let Some(refusal) = strayed(collector.module_child(block))?
     {
@@ -3488,9 +3477,8 @@ pub fn collect_source<'source>(
         filed = filed.saturating_add(1);
         collector.refuse_stray(stray);
     }
-    // A source that declares nothing, not even an item out of the fragment or
-    // a run target, is no list of declarations: its first stray refuses it
-    // whole.
+    // A source that declares nothing, not even an item out of the fragment, is
+    // no list of declarations: its first stray refuses it whole.
     let declared = collector
         .collected
         .slots
@@ -3499,15 +3487,9 @@ pub fn collect_source<'source>(
         .saturating_sub(minted)
         > declared_before.0
         || collector.collected.structures.len() > declared_before.1
-        || items_refused
-        || target.is_some();
+        || items_refused;
     if !declared && let Some(refusal) = first_stray {
         return Err(refusal);
-    }
-    // The target is filed last, so it is the last declaration the source
-    // admits.
-    if let Some(target) = target {
-        collector.run_target(target);
     }
     collector.stray_expectations();
 
@@ -3638,8 +3620,8 @@ enum Exported
 }
 
 /// The first token `at` writes — a tile, or grout over bytes no label molds —
-/// as the name of a stray or a run target: `#{` for `#{ s | b = 2 }` and
-/// `#{s | b = 2}` alike, so the spacing inside the child never renames it.
+/// as the name of a stray: `#{` for `#{ s | b = 2 }` and `#{s | b = 2}` alike,
+/// so the spacing inside the child never renames it.
 ///
 /// # Specification
 /// trivial.
@@ -4118,7 +4100,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
     /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
-    /// - witness: `module::tests::a_respaced_stray_and_run_target_keep_their_names_2758`
+    /// - witness: `module::tests::a_respaced_stray_keeps_its_name_2758`
+    /// - witness: `module::tests::a_root_expression_is_refused_naming_main_2572`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() == before.0.saturating_add(1)
@@ -4169,82 +4152,6 @@ impl<'source> Collector<'_, 'source>
                     Maybe::Absent(_) => false,
                 };
                 slot.refuse(if written { block } else { child.node }, unread);
-            }
-        }
-    }
-
-    /// File `target`, the expression written as the source's last root
-    /// child, as the source's run target, decorated by the attribute blocks
-    /// written before it.
-    ///
-    /// # Specification
-    /// - requires: `target.child` is the source's last root child, an
-    ///   expression the parser did not repair, collecting refused as a form of
-    ///   the wrong sort; `target.decorations` are attribute blocks standing on
-    ///   their own before it, and `target.terminator` the `;` written right
-    ///   after it.
-    /// - ensures: one [`Role::RunTarget`] slot, entered in no name table, named
-    ///   by the expression's first token as a stray is, whose definition is the
-    ///   expression; it owns the expression and every piece the stray carried
-    ///   (its decorations, any piece a doubled closer tore from its line, and
-    ///   its terminator), and carries the decorations' attributes. An
-    ///   unreadable decoration refuses the slot where it stands first.
-    /// - provides: the declaration the source runs.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a final expression after a definition lowers as the
-    ///   last declaration and is no name the source declares; one before a
-    ///   definition, and the first of two, stay strays; a target respaced
-    ///   inside keeps its name.
-    /// - witness: `module::tests::the_last_root_expression_is_the_run_target_1105`
-    /// - witness: `module::tests::a_respaced_stray_and_run_target_keep_their_names_2758`
-    #[spec(
-        captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
-        ensures: self.collected.slots.len() == before.0.saturating_add(1)
-            && self.collected.by_name.len() == before.1
-            && self.collected.slots.last().is_some_and(|slot| {
-                slot.role == Role::RunTarget
-                    && matches!(slot.definition, Maybe::Present(Half { operand: Operand::RunTarget(_), .. }))
-            }),
-    )]
-    fn run_target(
-        &mut self,
-        target: Stray<'source>,
-    )
-    {
-        let Stray {
-            child,
-            refusal: _,
-            decorations,
-            terminator,
-            torn,
-        } = target;
-        let mut attributes = Vec::new();
-        let mut attributed = Ok(());
-        for &block in &decorations {
-            if attributed.is_ok() {
-                attributed = self.decoration(block, child.node, &mut attributes);
-            }
-        }
-        let name = first_token(self.tree, child.node);
-        let top = self.collected.top(child.span.start());
-        let slot = self.held(top, name, child, child);
-        self.collected.own(child.node, slot);
-        for block in decorations.into_iter().chain(torn).chain(terminator) {
-            self.collected.own(block.node, slot);
-        }
-        if let Some(entry) = self.collected.slots.get_mut(slot.0) {
-            entry.role = Role::RunTarget;
-            entry.definition = Maybe::Present(Half {
-                declaration: child,
-                named: child,
-                operand: Operand::RunTarget(child),
-            });
-            entry.attributes.append(&mut attributes);
-            if let Err(unread) = attributed {
-                entry.refuse(child.node, unread);
             }
         }
     }
@@ -8889,8 +8796,7 @@ impl<'source> Collector<'_, 'source>
                 | Operand::Presented
                 | Operand::Code
                 | Operand::Model(_)
-                | Operand::World
-                | Operand::RunTarget(_) => None,
+                | Operand::World => None,
             };
             let has_signature = matches!(prior, Maybe::Present(_));
             let keeps_signature = matches!(
@@ -12821,19 +12727,26 @@ mod tests
         assert_eq!(collected.by_name.len(), 3, "a stray enters no name table");
     }
 
-    /// The expression written as a source's last root child, decorated and
-    /// ended by its `;`, is the source's run target: the last slot, entered in
-    /// no name table, holding the expression and the attributes before it. An
-    /// expression before a definition, the first of two and one the parser
-    /// repaired stay strays; a source of nothing but an expression is no
-    /// source refused whole (#1105).
+    /// An expression the parser did not repair is refused at a source's top
+    /// level wherever it stands, the last root child too: each is a held slot
+    /// refused at the top level, entered in no name table, the attributes
+    /// before it its own. A source of nothing but an expression is refused
+    /// whole at it; an expression the parser repaired, and a lone closer, stay
+    /// strays of the wrong sort (#2572).
     #[test]
-    fn the_last_root_expression_is_the_run_target_1105()
+    fn a_root_expression_is_refused_naming_main_2572()
     {
         let pbg = grammar();
         let text = "1 ;\ndef a = 2 ;\n3 ;\n@[ runs(\"4\") ]\n4 ;\n";
         let tree = parsed(&pbg, SourceText::from(text));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        let top_level = |refusal: &LoweringRefusal<'_>| {
+            matches!(refusal, LoweringRefusal::OutOfFragment {
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::TopLevel,
+                ..
+            })
+        };
         let read: Vec<_> = collected
             .slots
             .iter()
@@ -12841,90 +12754,70 @@ mod tests
                 (
                     slot.name,
                     slot.role,
-                    slot.refusal.map(|(_at, refusal)| refusal.classify()),
+                    matches!(slot.refusal, Maybe::Present((_, ref refusal)) if top_level(refusal)),
                 )
             })
             .collect();
         assert_eq!(
             read,
             [
-                (
-                    SurfaceName::from("1"),
-                    Role::Held,
-                    Maybe::Present(FailureClass::MalformedSource)
-                ),
-                (
-                    SurfaceName::from("a"),
-                    Role::Declared,
-                    Maybe::Absent(slot_refusal::Absent::Unrefused)
-                ),
-                (
-                    SurfaceName::from("3"),
-                    Role::Held,
-                    Maybe::Present(FailureClass::MalformedSource)
-                ),
-                (
-                    SurfaceName::from("4"),
-                    Role::RunTarget,
-                    Maybe::Absent(slot_refusal::Absent::Unrefused)
-                ),
+                (SurfaceName::from("1"), Role::Held, true),
+                (SurfaceName::from("a"), Role::Declared, false),
+                (SurfaceName::from("3"), Role::Held, true),
+                (SurfaceName::from("4"), Role::Held, true),
             ],
-            "the strays before a definition and before the target are refused, the target is last"
+            "every expression at the top level is refused there, the last one too"
         );
         assert_eq!(
             collected.by_name.len(),
             1,
-            "the target enters no name table"
-        );
-        let Some(target) = collected.slots.last()
-        else {
-            panic!("the target holds a slot");
-        };
-        assert!(
-            matches!(
-                target.definition,
-                Maybe::Present(Half {
-                    operand: Operand::RunTarget(_),
-                    ..
-                })
-            ),
-            "the target's definition is the expression"
+            "an expression enters no name table"
         );
         assert_eq!(
-            target.attributes.len(),
-            1,
-            "the target carries the block before it"
+            collected.slots.last().map(|slot| slot.attributes.len()),
+            Some(1),
+            "the last expression carries the block before it"
         );
-        let roles = |tree: &SyntaxTree<'_>| {
+        assert!(
+            collect(
+                &pbg,
+                &parsed(&pbg, SourceText::from("pure 1")),
+                &Unit::single(),
+                &mut tank()
+            )
+            .is_err_and(|refusal| top_level(&refusal)),
+            "a source of nothing but an expression is refused whole at it"
+        );
+        let refused = |tree: &SyntaxTree<'_>| {
             collect(&pbg, tree, &Unit::single(), &mut tank())
                 .expect("the source collects")
                 .slots
                 .iter()
-                .map(|slot| slot.role)
+                .map(|slot| {
+                    (
+                        slot.role,
+                        matches!(slot.refusal, Maybe::Present((_, ref refusal)) if top_level(refusal)),
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            roles(&parsed(&pbg, SourceText::from("pure 1"))),
-            [Role::RunTarget],
-            "a source of nothing but its run target is no source refused whole"
+            refused(&repaired(&pbg, SourceText::from("def a = 1 ;\n1 +\n"))),
+            [(Role::Declared, false), (Role::Held, false)],
+            "an expression the parser repaired is malformed, not refused at the top level"
         );
         assert_eq!(
-            roles(&repaired(&pbg, SourceText::from("def a = 1 ;\n1 +\n"))),
-            [Role::Declared, Role::Held],
-            "an expression the parser repaired is a stray, not the run target"
-        );
-        assert_eq!(
-            roles(&repaired(&pbg, SourceText::from("def a = 1 ;\n}\n"))),
-            [Role::Declared, Role::Held],
-            "a closer standing alone is a stray, not the run target"
+            refused(&repaired(&pbg, SourceText::from("def a = 1 ;\n}\n"))),
+            [(Role::Declared, false), (Role::Held, false)],
+            "a closer standing alone is malformed, not refused at the top level"
         );
     }
 
-    /// A stray and a run target are named by the first token they write,
-    /// whatever spacing follows it, so a source respaced inside its root
-    /// expressions collects the same names (#2758).
+    /// A stray is named by the first token it writes, whatever spacing follows
+    /// it, so a source respaced inside its root expressions collects the same
+    /// names (#2758).
     #[test]
-    fn a_respaced_stray_and_run_target_keep_their_names_2758()
+    fn a_respaced_stray_keeps_its_name_2758()
     {
         let pbg = grammar();
         let names = |text: &'static str| {
@@ -12946,7 +12839,7 @@ mod tests
             [
                 (SurfaceName::from("("), Role::Held),
                 (SurfaceName::from("s"), Role::Declared),
-                (SurfaceName::from("#{"), Role::RunTarget),
+                (SurfaceName::from("#{"), Role::Held),
             ],
             "each is named by its first token"
         );

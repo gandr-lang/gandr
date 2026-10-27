@@ -37,7 +37,7 @@
 //! one it refuses after a dot: a form out of the fragment the feature its
 //! producer classifies it by — an unbuilt feature by its spelling
 //! (`OutOfFragment.projection_expression`,
-//! `OutOfFragment.instantiation_expression.computation`), the run target as
+//! `OutOfFragment.instantiation_expression.computation`), a stray as
 //! `OutOfFragment.WrongSort.declaration`, another boundary by its name
 //! (`OutOfFragment.Arity`, without the operand count), a checker former by
 //! its name (`OutOfFragment.Stage`) — and an unstated model component and an
@@ -218,7 +218,7 @@ impl Error for CorpusRefusal
 {
 }
 
-/// The text of one reading a qualifier names: a boundary, the run target, a
+/// The text of one reading a qualifier names: a boundary, the stray, a
 /// sort, a checker former, a member's or a model component's fault.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -275,7 +275,7 @@ pub enum Qualifier
     /// A form out of the fragment named by the unbuilt feature it carries:
     /// `projection_expression`, `grade.declaration`.
     Unbuilt(Unbuilt),
-    /// A named reading: a boundary, the run target, or a checker former.
+    /// A named reading: a boundary, the stray, or a checker former.
     Named(Tag),
 }
 
@@ -1784,8 +1784,8 @@ impl RefusalName
 }
 
 /// The tag a stray is qualified by: a form of the wrong sort where a
-/// declaration is read, an expression at the root that is not the source's
-/// run target.
+/// declaration is read that is no expression: an expression there crosses
+/// [`FragmentBoundary::TopLevel`].
 const STRAY: Tag = Tag("WrongSort.declaration");
 
 /// The tag a law admitted where a proof was owed is qualified by: the
@@ -1876,12 +1876,13 @@ const MEMBER_FAULTS: [MemberFault; 18_usize] = [
 /// - hypothesis: L3 — a crossed boundary named by no other producer, the
 ///   endpoint's, is minted and read back only through this list.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-fn crossed() -> [FragmentBoundary; 16_usize]
+fn crossed() -> [FragmentBoundary; 17_usize]
 {
     [
         FragmentBoundary::Misplaced,
         FragmentBoundary::NotAtResult,
         FragmentBoundary::WrongSort,
+        FragmentBoundary::TopLevel,
         FragmentBoundary::Arity(OperandCount::from(0_usize)),
         FragmentBoundary::Indexed,
         FragmentBoundary::Unannotated,
@@ -1899,7 +1900,7 @@ fn crossed() -> [FragmentBoundary; 16_usize]
 }
 
 /// The tags an `OutOfFragment` name is qualified by when no form qualifies it:
-/// each boundary a form crosses, the run target and each former the checker
+/// each boundary a form crosses, the stray and each former the checker
 /// declines.
 ///
 /// # Specification
@@ -1972,6 +1973,7 @@ const fn boundary_tag(boundary: FragmentBoundary) -> Tag
         FragmentBoundary::Misplaced => "Misplaced",
         FragmentBoundary::NotAtResult => "NotAtResult",
         FragmentBoundary::WrongSort => "WrongSort",
+        FragmentBoundary::TopLevel => "TopLevel",
         FragmentBoundary::Arity(_) => "Arity",
         FragmentBoundary::Indexed => "Indexed",
         FragmentBoundary::Unannotated => "Unannotated",
@@ -3201,6 +3203,7 @@ mod tests
             "OutOfFragment.grade.declaration",
             "OutOfFragment.operator_declaration",
             "OutOfFragment.WrongSort.declaration",
+            "OutOfFragment.TopLevel",
             "OutOfFragment.WrongSort",
             "OutOfFragment.Misplaced",
             "OutOfFragment.Arity",

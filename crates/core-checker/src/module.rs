@@ -159,7 +159,6 @@ use crate::judgement::Kept;
 use crate::judgement::Synthesised;
 use crate::judgement::Typings;
 use crate::judgement::check_value_with_failure;
-use crate::judgement::synthesise_run_target_with_failure;
 use crate::judgement::synthesise_value_with_failure;
 use crate::judgement::type_value;
 use crate::ledger::Absence;
@@ -1261,15 +1260,7 @@ fn decide(
             })
             .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
             .map(Direction::Check),
-        Maybe::Absent(signature::Absent::Unsigned | signature::Absent::RunTarget) => {
-            Ok(Direction::Synthesise)
-        },
-    };
-    let reading = if signature == Maybe::Absent(signature::Absent::RunTarget) {
-        Reading::RunTarget
-    }
-    else {
-        Reading::Value
+        Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
     };
     let mut signed = finish(context, outer);
     let direction = match direction {
@@ -1300,18 +1291,13 @@ fn decide(
             context.worlds_mut().enter(entry);
             // A scope over a theory owes the theory's laws, read through its
             // clauses where it was lowered, so on the body as lowered.
-            let first = judge(context, body, (direction, reading)).and_then(|verdict| {
+            let first = judge(context, body, direction).and_then(|verdict| {
                 crate::handler::lawful(context, declaration.handler_laws()).map(|()| verdict)
             });
             let (solved, filled, first, solutions) = implicits(
                 context,
                 body,
-                (
-                    direction,
-                    reading,
-                    declaration.stages(),
-                    declaration.models(),
-                ),
+                (direction, declaration.stages(), declaration.models()),
                 first,
             );
             entered = filled;
@@ -1342,7 +1328,7 @@ fn decide(
                             crate::quantified::mint(context.stages_mut(), declaration.stages());
                             context.deferrals_mut().open(Collecting::On);
                             context.own_body(elaborated);
-                            let second = judge(context, elaborated, (filled, reading));
+                            let second = judge(context, elaborated, filled);
                             let _second = context.take_crossings();
                             second
                         },
@@ -1366,23 +1352,7 @@ fn decide(
             );
             if let Some(signed) = signed.take() {
                 context.own_body(body);
-                // A run target's thunk is typed against the thunk type its
-                // computation synthesised, or the unknown one when it was
-                // refused, so only the computation's own refusals are marked.
-                let typing = match reading {
-                    Reading::Value => direction,
-                    Reading::RunTarget => {
-                        if let &Ok(Verdict::Synthesised { synthesised, .. }) = &judged {
-                            Direction::Check(synthesised.produced())
-                        }
-                        else {
-                            let unknown = context.arena_mut().comp_type_unknown();
-                            let suspended = context.arena_mut().value_type_thunk(unknown);
-                            Direction::Check(FormedValueType::derived(suspended))
-                        }
-                    },
-                };
-                let typed = type_value(context, body, typing);
+                let typed = type_value(context, body, direction);
                 // The bridge's crossings in the run are those of the body as
                 // written, which a face reads at the values it shows.
                 let crossed = context.take_crossings();
@@ -1633,7 +1603,7 @@ fn follows(
     context.deferrals_mut().open(Collecting::On);
     context.own_body(body);
     context.read_result(crate::recursion::ResultStage::Asked(root));
-    let staged = judge(context, body, (direction, Reading::Value));
+    let staged = judge(context, body, direction);
     let read = context.result_stage();
     context.read_result(crate::recursion::ResultStage::Declared);
     let _nesting = context.take_nesting();
@@ -1694,25 +1664,14 @@ fn founded(
     }
 }
 
-/// How a body is read where its declaration states no type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Reading
-{
-    /// As the value it is.
-    Value,
-    /// As a run target's: a thunk by the computation it suspends.
-    RunTarget,
-}
-
-/// Judge `body` in `direction`, read as `reading` says when it synthesises:
-/// the verdict an accepted body gets, or the failure of the run that refused
-/// it.
+/// Judge `body` in `direction`: the verdict an accepted body gets, or the
+/// failure of the run that refused it.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Verdict::Checked`] over `body` when it checks against a
 ///   declared type, [`Verdict::Synthesised`] over `body` when it synthesises
-///   one, a run target's thunk by its computation; the run's failure otherwise.
+///   one; the run's failure otherwise.
 /// - fails: the failure of the run that refused `body`.
 /// - panics: none.
 ///
@@ -1722,7 +1681,6 @@ enum Reading
 /// # Adequacy
 /// - hypothesis: L3 — as [`decide`].
 /// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
-/// - witness: `module::tests::a_run_target_has_the_thunk_type_an_unsigned_thunk_lacks_1105`
 #[spec(ensures: |ret| match ret {
     | Ok(Verdict::Checked { body: judged, .. } | Verdict::Synthesised { body: judged, .. }) => judged == body,
     | Ok(_) => false,
@@ -1731,17 +1689,13 @@ enum Reading
 fn judge(
     context: &mut CheckingContext<'_>,
     body: ValueId,
-    (direction, reading): (Direction<FormedValueType>, Reading),
+    direction: Direction<FormedValueType>,
 ) -> Result<Verdict, Failure>
 {
-    match (direction, reading) {
-        (Direction::Synthesise, Reading::Value) => synthesise_value_with_failure(context, body)
+    match direction {
+        Direction::Synthesise => synthesise_value_with_failure(context, body)
             .map(|synthesised| Verdict::Synthesised { body, synthesised }),
-        (Direction::Synthesise, Reading::RunTarget) => {
-            synthesise_run_target_with_failure(context, body)
-                .map(|synthesised| Verdict::Synthesised { body, synthesised })
-        },
-        (Direction::Check(declared), Reading::Value | Reading::RunTarget) => {
+        Direction::Check(declared) => {
             check_value_with_failure(context, body, declared).map(|evidence| Verdict::Checked {
                 declared,
                 body,
@@ -1761,9 +1715,9 @@ type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_te
 /// the declared type filled alike.
 ///
 /// # Specification
-/// - requires: `first` is the run over `body` in `direction`, read as
-///   `reading`, that left the collector as it stands; `models` are the slots
-///   the declaration's calls omit.
+/// - requires: `first` is the run over `body` in `direction` that left the
+///   collector as it stands; `models` are the slots the declaration's calls
+///   omit.
 /// - ensures: `body`, `direction`, `first` and no solution when the run refused
 ///   or met no nominated hole; the resolution's refusal,
 ///   [`CheckRefusal::ModelUnanswered`] or [`CheckRefusal::ModelAmbiguous`], at
@@ -1791,9 +1745,8 @@ type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_te
 fn implicits(
     context: &mut CheckingContext<'_>,
     body: ValueId,
-    (direction, reading, stages, models): (
+    (direction, stages, models): (
         Direction<FormedValueType>,
-        Reading,
         &[gandr_kernel_term::StageBound],
         &[gandr_core_term::model::ModelSlot],
     ),
@@ -1838,7 +1791,7 @@ fn implicits(
     crate::quantified::mint(context.stages_mut(), stages);
     context.deferrals_mut().open(Collecting::On);
     context.own_body(filled);
-    let judged = judge(context, filled, (direction, reading));
+    let judged = judge(context, filled, direction);
     (filled, direction, judged, solutions)
 }
 
