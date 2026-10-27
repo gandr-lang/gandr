@@ -715,6 +715,12 @@ struct Spelled(bool);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Claimed(pub bool);
 
+/// Whether a type application writes a recursive function's descent where a
+/// type is read, `own[<](…)`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct TypeDescent(bool);
+
 /// What an instantiation's resident claims of the self-call it heads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Claim
@@ -12077,8 +12083,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   and `roots` the syntax the function writes after its parameter list,
     ///   in source order.
     /// - ensures: `staged` is the position, in `0 .. parameters.len()`, of the
-    ///   parameter the innermost match above the first instantiation of `own`
-    ///   in source order scrutinises, a scrutinee written as a bare name equal
+    ///   parameter the innermost match above the first claim of `own` in source
+    ///   order — an instantiation, or a descent `own[<](…)` written where a
+    ///   type is read — scrutinises, a scrutinee written as a bare name equal
     ///   to that parameter's, passing over each match whose parameter that call
     ///   writes back bare in its own place — it consumes that one alongside the
     ///   one it descends on — unless every such match is passed over; the first
@@ -12115,6 +12122,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
+    /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged && staging.staged.0 < parameters.len().max(1)))]
     pub(super) fn staged_by_body(
         &mut self,
@@ -12147,9 +12155,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
     ///   pieces.
     /// - ensures: the largest `k <= staged` such that every call form headed by
-    ///   an instantiation of `own` writes, at each position below `k`, a bare
-    ///   name equal to the parameter at that position; `staged` when no call
-    ///   stands under `roots`.
+    ///   an instantiation of `own`, and every descent of `own` written where a
+    ///   type is read, writes, at each position below `k`, a bare name equal to
+    ///   the parameter at that position; `staged` when no call stands under
+    ///   `roots`.
     /// - fails: as [`Self::staged_by_body`].
     /// - panics: none.
     ///
@@ -12187,6 +12196,19 @@ impl<'source> Lowerer<'_, 'source>
                 ..
             }) && self.name_at(operand) == expected)
         };
+        // How many of `arguments`, from the first and at most `kept`, name
+        // their own parameter bare.
+        let passed =
+            |arguments: &[Placed], kept: usize| -> Result<usize, LoweringRefusal<'source>> {
+                let mut passed = 0_usize;
+                for (&argument, &parameter) in arguments.iter().zip(parameters).take(kept) {
+                    if !named(argument, parameter)? {
+                        break;
+                    }
+                    passed = passed.saturating_add(1);
+                }
+                Ok(passed)
+            };
         let mut pending: Vec<NodeIndex> = roots.iter().rev().copied().collect();
         let mut operands: Vec<Placed> = Vec::new();
         while let Some(at) = pending.pop() {
@@ -12207,6 +12229,11 @@ impl<'source> Lowerer<'_, 'source>
                 Piece::Operand(operand) => Some(operand),
                 Piece::Tile { .. } => None,
             }));
+            if former == Some(Former::TypeApplication)
+                && self.descends_in_type(own, &scratch.pieces).0
+            {
+                kept = kept.min(passed(&operands, kept)?);
+            }
             if former == Some(Former::Call)
                 && let Some((&head, arguments)) = operands.split_first()
                 && self.tree.node(head.node).is_some_and(|node| {
@@ -12227,14 +12254,7 @@ impl<'source> Lowerer<'_, 'source>
                 if let Some(instantiated) = instantiated
                     && named(instantiated, own)?
                 {
-                    let mut passed = 0_usize;
-                    for (&argument, &parameter) in arguments.iter().zip(parameters).take(kept) {
-                        if !named(argument, parameter)? {
-                            break;
-                        }
-                        passed = passed.saturating_add(1);
-                    }
-                    kept = kept.min(passed);
+                    kept = kept.min(passed(arguments, kept)?);
                 }
             }
             pending.extend(operands.iter().rev().map(|operand| operand.node));
@@ -12243,8 +12263,8 @@ impl<'source> Lowerer<'_, 'source>
         Ok(ParameterAt(kept))
     }
 
-    /// The position the match above the first instantiation of `own` under
-    /// `roots` scrutinises, by [`Self::staged_by_body`]'s rule.
+    /// The position the match above the first claim of `own` under `roots`
+    /// scrutinises, by [`Self::staged_by_body`]'s rule.
     ///
     /// # Specification
     /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
@@ -12253,8 +12273,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   innermost match's whose parameter the call does not write back bare,
     ///   the innermost's when it writes back every one — of the first position
     ///   when the instantiation's claim is `>`, or of the last position where
-    ///   no match on a parameter stands above the first instantiation; `None`
-    ///   when no instantiation of `own` stands under `roots`.
+    ///   no match on a parameter stands above the first claim; `None` when no
+    ///   instantiation of `own`, and no descent of it written where a type is
+    ///   read, stands under `roots`.
     /// - fails: as [`Self::staged_by_body`].
     /// - panics: none.
     ///
@@ -12269,6 +12290,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::staged_by_body`].
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
+    /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|position| position.0 < parameters.len().max(1))))]
     fn first_claim(
         &self,
@@ -12308,6 +12330,25 @@ impl<'source> Lowerer<'_, 'source>
                 ..
             }) && self.name_at(operand) == own)
         };
+        // The match a claim with `arguments` descends on, from the innermost
+        // `link` outward: past each match whose parameter the claim writes
+        // back bare in its own place, none when it writes back every one.
+        let descended = |mut link: Option<usize>,
+                         arguments: &[Placed],
+                         links: &[(ParameterAt, Option<usize>)]|
+         -> Result<Option<usize>, LoweringRefusal<'source>> {
+            while let Some(&(position, outer)) = link.and_then(|at| links.get(at)) {
+                let unchanged = match arguments.get(position.0) {
+                    Some(&argument) => named(argument)? == Some(position),
+                    None => false,
+                };
+                if !unchanged {
+                    break;
+                }
+                link = outer;
+            }
+            Ok(link)
+        };
         // The matches on parameters above a node, innermost first: each link
         // a position and the link of the match enclosing it.
         let mut links: Vec<(ParameterAt, Option<usize>)> = Vec::new();
@@ -12329,6 +12370,17 @@ impl<'source> Lowerer<'_, 'source>
                 Piece::Operand(operand) => Some(operand),
                 Piece::Tile { .. } => None,
             });
+            // A descent written where a type is read, `own[<](…)`, is a claim
+            // whose arguments are the application's own operands.
+            if former == Some(Former::TypeApplication) && self.descends_in_type(own, pieces).0 {
+                written.clear();
+                written.extend(operands);
+                let link = descended(scrutinised, &written, &links)?.or(scrutinised);
+                let innermost = link
+                    .and_then(|at| links.get(at))
+                    .map(|&(position, _)| position);
+                return Ok(Some(innermost.unwrap_or(last)));
+            }
             if former == Some(Former::Instantiation)
                 && let Some(head) = operands.clone().next()
                 && self.tree.node(head.node).is_some_and(|node| {
@@ -12383,18 +12435,7 @@ impl<'source> Lowerer<'_, 'source>
                     if let Some(instantiated) = instantiated
                         && named_own(instantiated)?
                     {
-                        let mut link = scrutinised;
-                        while let Some(&(position, outer)) = link.and_then(|at| links.get(at)) {
-                            let unchanged = match arguments.get(position.0) {
-                                Some(&argument) => named(argument)? == Some(position),
-                                None => false,
-                            };
-                            if !unchanged {
-                                break;
-                            }
-                            link = outer;
-                        }
-                        chosen = link.or(scrutinised);
+                        chosen = descended(scrutinised, arguments, &links)?.or(scrutinised);
                     }
                     read_pieces(self.pbg, self.tree, at, scratch)?;
                 }
@@ -12433,6 +12474,34 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(None)
+    }
+
+    /// Whether `pieces`, a type application's, write a descent of `own` where a
+    /// type is read, `own[<](…)`, as [`Self::staged_unquote`] reads one.
+    ///
+    /// # Specification
+    /// - ensures: `true` exactly when the pieces open with a type identifier or
+    ///   a type variable spelling `own`, followed by `[`.
+    /// - panics: none.
+    /// - executable: none — the spelling is read off the tree the pieces
+    ///   locate, which the answer does not carry.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a descent inside a quoted record type's field stages
+    ///   the parameter its match takes apart, as a bare one does.
+    /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
+    fn descends_in_type(
+        &self,
+        own: SurfaceName<'source>,
+        pieces: &[Piece],
+    ) -> TypeDescent
+    {
+        TypeDescent(
+            matches!(*pieces, [Piece::Tile { label, at }, Piece::Tile { label: open, .. }, ..]
+            if (label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE)
+                && open == TileName::BRACKET_OPEN
+                && self.name_at(at) == own),
+        )
     }
 
     /// How many parameters a recursive call headed by the instantiation

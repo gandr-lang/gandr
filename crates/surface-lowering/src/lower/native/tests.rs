@@ -1058,6 +1058,33 @@ fn a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3087: a descent written in a quoted record type's field stands under the
+/// match on the parameter it takes apart, as a bare one does, so it stages
+/// that parameter rather than the last, whatever follows it.
+#[test]
+fn a_descent_inside_a_record_type_stages_its_match_s_parameter_3087()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec noPath(p : Nat, v : Nat, v1 : Nat) -> Type {{ case p {{ Zero => return Unit, Succ(rest) => return type(#{{ inner : noPath[<](rest, v, v1) }}) }} }}\n\
+         def rec twoParams(p : Nat, v1 : Nat) -> Type {{ case p {{ Zero => return Path(Nat, v1, v1), Succ(rest) => return type(#{{ inner : twoParams[<](rest, v1) }}) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["noPath", "twoParams"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+        let (outside, _fixpoint) = fixpoint_of(&arena, &module, name);
+        assert_eq!(outside, ParameterAt(0), "`{name}` stages `p`, its match's");
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn an_unapplied_claim_lowers_to_the_self_binder()
 {
