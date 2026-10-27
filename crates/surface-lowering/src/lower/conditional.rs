@@ -38,6 +38,7 @@ use super::lowered;
 use super::native::Answer;
 use super::native::Over;
 use super::native::answered;
+use super::native::passed;
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
@@ -243,6 +244,7 @@ impl<'source> Lowerer<'_, 'source>
                     node: stated.node,
                     frame,
                     over: Over::Written,
+                    arm: Maybe::Absent(passed::Absent::Unpassed),
                 })
             },
             Maybe::Absent(reason) => Maybe::Absent(reason),

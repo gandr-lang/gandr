@@ -101,6 +101,24 @@
 //! - Reversal: a motive that is not the answer with the scrutinee abstracted —
 //!   one reading an index of the scrutinee's type — needs the clause.
 //!
+//! A match in an arm of another, with no answer of its own, takes the
+//! answer the arm passes its body, read as the arm's leaf reads that body:
+//! where the arm names every field of the root constructor it matched, the
+//! outer scrutinee's variable reads as that constructor over the arm's
+//! variables, through every such arm from the outermost in. Its motive
+//! abstracts its own scrutinee from that answer, and its leaves read their
+//! bodies' variables the same way before their own refinement, so a branch
+//! naming the outer scrutinee reads it at both constructors. An arm that
+//! leaves a field unnamed passes the answer as written, and its own leaf
+//! alone reads the scrutinee at the constructor.
+//!
+//! - Alternatives: refusing a match in an arm that leaves a field unnamed as
+//!   unannotated, which rejects one whose branches read only the whole
+//!   scrutinee and check against the answer as written.
+//! - Reversal: a leaf that reads each field a nested pattern matched at that
+//!   pattern's constructor (#3008) lets such an arm name what it matched, and
+//!   its answer then reads so too.
+//!
 //! # The patterns are kept beside the tree
 //!
 //! The tree does not keep the patterns, so the origin table does: per match,
@@ -427,6 +445,42 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why an answer is read at no arm of an enclosing match.
+    pub mod passed {
+        /// No match passed the answer into one of its arms on its way here,
+        /// or none that did reads its scrutinee at a constructor.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The answer is stated here, or reaches here through no arm.
+            Unpassed,
+            /// Every arm the answer was passed into reads its scrutinee as
+            /// written.
+            Unsettled,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an arm reads its match's scrutinee at no constructor over the
+    /// arm's own variables.
+    pub mod settled {
+        /// The arm's body reads the scrutinee as the source writes it.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The tree's root is no data switch on the scrutinee over a bare
+            /// family.
+            Unswitched,
+            /// The scrutinee is no name the case's frame binds
+            /// intuitionistically.
+            Unbound,
+            /// The arm's leaves stand under no one branch of the root, or a
+            /// field of that branch is settled by no variable of the arm.
+            Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a written type gives a field no classifier.
     pub mod inherited {
         /// The field's type is neither its family over its own parameters nor
@@ -631,6 +685,12 @@ struct VariableAt(usize);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct CaseIndex(usize);
+
+/// A match's constructor arm, by its position in the lowering's store of the
+/// arms an answer is passed into.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct ArmIndex(usize);
 
 /// A field read off a data value by name, by its position in the lowering's
 /// store of them.
@@ -927,17 +987,21 @@ impl Joint
 const UNWRITTEN: PatternAt = PatternAt(usize::MAX);
 
 /// The computation type a position answers, as a function's result or a
-/// match's answer states it, with the frame it was read under.
+/// match's answer states it, with the frame it was read under and the
+/// innermost match arm it was passed into on its way to the position.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the node is read where a result is read, under `frame`.
+/// - ensures: the node is read where a result is read, under `frame`; `arm`
+///   names an arm whose frame stands between `frame` and the position.
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an answer written on the match and one taken from the
-///   function result each become the motive of the same tree.
+///   function result each become the motive of the same tree, and one passed
+///   into an arm is read at the constructor the arm matched.
 /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) struct Answer
 {
@@ -947,6 +1011,9 @@ pub(super) struct Answer
     pub frame: Frame,
     /// What the position answers of the type the node writes.
     pub over: Over,
+    /// The innermost arm the answer was passed into, whose reading of its
+    /// match's scrutinee the answer is read under.
+    pub arm: Maybe<ArmIndex, passed::Absent>,
 }
 
 /// What a position answers of the type its answer's node writes.
@@ -1485,6 +1552,56 @@ pub(super) struct CaseForm
     /// Each constructor arm's variables, in the order its leaves settle
     /// them.
     variables: Vec<Vec<Placed>>,
+}
+
+/// What one constructor arm of a match reads the match's scrutinee as, for
+/// the answer the match passes the arm's body.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `outer` names an arm stored before this one.
+/// - executable: none — the reading names binders of the lowering's scope and
+///   an arm of its store, which the record cannot reach.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a match in an arm, on the variable naming the arm's
+///   field, reads the answer and the outer scrutinee at the arm's constructor;
+///   one in an arm that leaves a field unnamed reads them as written.
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::native::tests::an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ArmReading
+{
+    /// The constructor the arm reads the scrutinee at.
+    settled: Maybe<Settled, settled::Absent>,
+    /// The arm the match's own answer was passed into.
+    outer: Maybe<ArmIndex, passed::Absent>,
+}
+
+/// The constructor an arm reads its match's scrutinee at, over the binders
+/// of the arm's variables that name its fields.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `scrutinee` is the binder the case's frame reads the scrutinee
+///   by, intuitionistic; `fields` holds one binder per field of `tag`, in field
+///   order, each an arm variable's.
+/// - executable: none — the binders are coordinates of the lowering's scope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ArmReading`].
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Settled
+{
+    /// The scrutinee's binder.
+    scrutinee: ScopeId,
+    /// The bare family the root switch eliminates.
+    family: ConstantIndex,
+    /// The root branch's constructor.
+    tag: ConstructorTag,
+    /// The binder naming each field of the constructor, in field order.
+    fields: Vec<ScopeId>,
 }
 
 /// A field read off a data value by its name, `e.l`: the case over `e` whose
@@ -3078,6 +3195,7 @@ impl<'source> Lowerer<'_, 'source>
                 node: body,
                 frame: Frame::Outermost,
                 over: Over::Written,
+                arm: Maybe::Absent(passed::Absent::Unpassed),
             }),
             [domain, codomain] if written.former == Former::ValueFunctionType => {
                 match self.unwrapped(domain)? {
@@ -3089,11 +3207,13 @@ impl<'source> Lowerer<'_, 'source>
                         node: codomain,
                         frame: Frame::Outermost,
                         over: Over::Returning,
+                        arm: Maybe::Absent(passed::Absent::Unpassed),
                     }),
                     Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
                         node: written.node,
                         frame: Frame::Outermost,
                         over: Over::Valued { taken: 0_usize },
+                        arm: Maybe::Absent(passed::Absent::Unpassed),
                     }),
                 }
             },
@@ -3919,9 +4039,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   motive instead, and else the answer the position states is taken; each
     ///   arm body is read as a computation under the case's frame, the tree's
     ///   anonymous binders and its own variables, answers what the match does,
-    ///   and takes the paths through the match's position; a match on a
-    ///   recursive function's parameter records that parameter for its arm
-    ///   bodies ([`Self::scrutinise`]).
+    ///   passed with the constructor the arm reads a variable scrutinee at
+    ///   ([`ArmReading`]), and takes the paths through the match's position; a
+    ///   match on a recursive function's parameter records that parameter for
+    ///   its arm bodies ([`Self::scrutinise`]).
     /// - provides: the reading of `case`.
     /// - fails: the wrong-sort refusal outside computation position; the view
     ///   form `case … with` by the view's name; a match of no arms as
@@ -3943,6 +4064,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   asserting the tree read back out of the arena or the exact refusal.
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
     /// - witness: `lower::native::tests::a_non_exhaustive_match_is_refused`
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
     /// - witness: `lower::native::tests::a_match_without_an_answer_is_unannotated`
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
@@ -4084,6 +4206,7 @@ impl<'source> Lowerer<'_, 'source>
                 node: node.node,
                 frame,
                 over: Over::Written,
+                arm: Maybe::Absent(passed::Absent::Unpassed),
             }),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
@@ -4109,20 +4232,65 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(node) = written {
             self.read(node.node, Reading::Result(frame));
         }
-        for (&(_pattern, body), bound) in arms.iter().zip(&variables) {
+        // Each arm passes the answer on with the constructor it reads the
+        // scrutinee at, which a match in its body reads the answer under.
+        let switched = match (answer, tests.first()) {
+            (
+                Maybe::Present(_),
+                Some(&Test::Data {
+                    level,
+                    family: Maybe::Present(family),
+                    ..
+                }),
+            ) if level == TreeLevel::default() => self
+                .scrutinee_binder(frame, scrutinee)?
+                .map(|binder| (family, binder)),
+            (Maybe::Present(_) | Maybe::Absent(_), Some(_) | None) => {
+                Maybe::Absent(settled::Absent::Unswitched)
+            },
+        };
+        let beneath = match switched {
+            Maybe::Present(_) => beneath_root(&tests),
+            Maybe::Absent(_) => Vec::new(),
+        };
+        let mut binders = Vec::new();
+        for (position, (&(_pattern, body), bound)) in arms.iter().zip(&variables).enumerate() {
             let mut inner = frame;
+            binders.clear();
             for &binder in bound {
                 let name = SurfaceName::from(self.text_at(binder));
                 self.note_binder(binder, name)?;
                 let site = Maybe::Present(binder.span);
-                inner = Frame::Inner(match self.pattern_stated.get(&binder.node) {
+                let id = match self.pattern_stated.get(&binder.node) {
                     Some(&stated) => self.scope.extend_typed(inner, name, stated, site),
                     None => self.scope.extend(inner, name, site),
-                });
+                };
+                if let Maybe::Present(_) = switched {
+                    binders.push(id);
+                }
+                inner = Frame::Inner(id);
             }
             self.read(body.node, Reading::Computation(inner));
             if let Maybe::Present(stated) = answer {
-                let _first = self.answers.insert(body.node, stated);
+                let settled = match switched {
+                    Maybe::Present((family, binder)) => arm_settled(
+                        &tests,
+                        &beneath,
+                        ArmAt(position),
+                        &binders,
+                        (family, binder),
+                    ),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                };
+                let at = ArmIndex(self.arms.len());
+                self.arms.push(ArmReading {
+                    settled,
+                    outer: stated.arm,
+                });
+                let _first = self.answers.insert(body.node, Answer {
+                    arm: Maybe::Present(at),
+                    ..stated
+                });
             }
             self.pass_paths(site.at.node, body.node);
         }
@@ -4219,6 +4387,7 @@ impl<'source> Lowerer<'_, 'source>
                 node: node.node,
                 frame,
                 over: Over::Written,
+                arm: Maybe::Absent(passed::Absent::Unpassed),
             }),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
@@ -4627,6 +4796,86 @@ impl<'source> Lowerer<'_, 'source>
             pending.extend(children);
         }
         Spelled(false)
+    }
+
+    /// The binder the scrutinee `scrutinee` of a match under `frame` reads,
+    /// when it is a name the frame binds intuitionistically.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` is a match's scrutinee, read under `frame`.
+    /// - ensures: the binder [`crate::resolve::Scope::resolve`] finds for the
+    ///   name in `frame` when that binder is intuitionistic; the unbound
+    ///   absence for any other scrutinee.
+    /// - provides: the variable a match's arms read at a constructor.
+    /// - fails: the scrutinee's form and resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match on a parameter reads its binder, which each
+    ///   of its arms reads at a constructor.
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(binder)) => self.scope.zone(binder) == Zone::Intuitionistic,
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn scrutinee_binder(
+        &mut self,
+        frame: Frame,
+        scrutinee: Placed,
+    ) -> Result<Maybe<ScopeId, settled::Absent>, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(scrutinee)?, Some((_, Former::Name))) {
+            return Ok(Maybe::Absent(settled::Absent::Unbound));
+        }
+        let name = self.name_at(scrutinee);
+        Ok(match self.scope.resolve(frame, name, &mut self.fuel)? {
+            Maybe::Present(bound) if bound.zone == Zone::Intuitionistic => {
+                Maybe::Present(bound.binder)
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(settled::Absent::Unbound),
+        })
+    }
+
+    /// The arm `arm`, then each arm the answer was passed into before it, from
+    /// the innermost out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `arm`'s reading first when it is stored, then each stored
+    ///   reading's outer arm in turn while it stands before the one naming it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step moves to a position strictly before the last, so the walk
+    /// ends within the store's length.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match two arms deep reads the answer at both arms'
+    ///   constructors.
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| ret.len() <= self.arms.len())]
+    fn arms_outward(
+        &self,
+        arm: Maybe<ArmIndex, passed::Absent>,
+    ) -> Vec<&ArmReading>
+    {
+        let mut chain = Vec::new();
+        let mut next = arm;
+        let mut bound = self.arms.len();
+        while let Maybe::Present(ArmIndex(at)) = next
+            && at < bound
+            && let Some(reading) = self.arms.get(at)
+        {
+            chain.push(reading);
+            bound = at;
+            next = reading.outer;
+        }
+        chain
     }
 
     /// The alternatives of the arm pattern `pattern`: its or-pattern's
@@ -8814,6 +9063,116 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(case))
     }
 
+    /// What each term variable of `frame` reads as at the arm `arm` and every
+    /// arm the answer was passed into before it: the scrutinee of each
+    /// settled one its constructor over the variables naming its fields, the
+    /// outermost arm read first.
+    ///
+    /// # Specification
+    /// - requires: the arms `arm` chains stand on `frame`'s chain.
+    /// - ensures: one value per term binder of `frame`, index for index, when
+    ///   some arm on the chain is settled and `frame` reads its scrutinee and
+    ///   its fields intuitionistically: each variable read through every such
+    ///   arm from the outermost in, an arm reading its scrutinee's variable as
+    ///   its constructor over its fields' variables and every other variable as
+    ///   itself. The unsettled absence otherwise, every variable reading
+    ///   itself.
+    /// - provides: the substitution an arm's leaf makes in the arm's body, made
+    ///   where a match in that body stands, so the match reads its answer and
+    ///   its own leaves read their bodies under it before its own refinement.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match in an arm, on the arm's field, answers at the
+    ///   arm's constructor over each of its own constructors, and its branches
+    ///   read the outer scrutinee there too.
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(ref read) => read.len() == self.scope.telescope_binders(frame).count(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn arm_readings(
+        &self,
+        arm: Maybe<ArmIndex, passed::Absent>,
+        frame: Frame,
+        arena: &mut CoreArena,
+    ) -> Maybe<Vec<ValueId>, passed::Absent>
+    {
+        let context = self.scope.telescope_binders(frame).count();
+        let mut readings: Option<Vec<ValueId>> = None;
+        'arms: for reading in self.arms_outward(arm).into_iter().rev() {
+            let Maybe::Present(ref settled) = reading.settled
+            else {
+                continue;
+            };
+            let Some(held) = self.term_depth(frame, settled.scrutinee)
+            else {
+                continue;
+            };
+            let mut fields = Vec::with_capacity(settled.fields.len());
+            for &field in &settled.fields {
+                let Some(index) = self.term_depth(frame, field)
+                else {
+                    continue 'arms;
+                };
+                fields.push(variable(arena, index));
+            }
+            let value = constructed(arena, settled.family, settled.tag, fields);
+            let step: Vec<ValueId> = (0 .. context)
+                .map(|position| {
+                    if position == held.0 {
+                        value
+                    }
+                    else {
+                        variable(arena, Depth(position))
+                    }
+                })
+                .collect();
+            match readings {
+                None => readings = Some(step),
+                Some(ref mut read) => {
+                    for entry in read.iter_mut() {
+                        if let TermId::Value(stepped) = gandr_core_term::substitute_environment(
+                            arena,
+                            TermId::Value(*entry),
+                            &step,
+                        ) {
+                            *entry = stepped;
+                        }
+                    }
+                },
+            }
+        }
+        readings.map_or(Maybe::Absent(passed::Absent::Unsettled), Maybe::Present)
+    }
+
+    /// The term index the intuitionistic binder `binder` has from `frame`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the index [`crate::resolve::Scope::bindings`] gives `binder`
+    ///   from `frame` when the binder is intuitionistic and on the chain; none
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arm_readings`].
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| ret.is_none_or(|_| self.scope.zone(binder) == Zone::Intuitionistic))]
+    fn term_depth(
+        &self,
+        frame: Frame,
+        binder: ScopeId,
+    ) -> Option<Depth>
+    {
+        self.scope.bindings(frame).find_map(|(_, bound)| {
+            (bound.binder == binder && bound.zone == Zone::Intuitionistic)
+                .then(|| Depth(usize::try_from(u32::from(bound.index)).unwrap_or(usize::MAX)))
+        })
+    }
+
     /// Mint the match at `case`: its scrutinee bound once over its decision
     /// tree.
     ///
@@ -8821,16 +9180,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the scrutinee, every arm body and the answer are already
     ///   minted or absent.
     /// - ensures: the tree, every node minted descending: a data case over the
-    ///   scrutinised level with the motive [`tracked_motives`] reads, each
-    ///   branch a lambda per field and then one per index equation, a pruned
-    ///   branch the case of no branches on its equation; a sum case for a
-    ///   boolean; an integer comparison bound and cased on; a hole for a stuck
-    ///   node; and a leaf as its arm's body with each variable replaced by the
-    ///   level that settled it and the case's context carried under the tree's
-    ///   binders, the scrutinee's variable read at the root's constructor where
-    ///   [`refinements`] refines it. Level zero is the scrutinee itself,
-    ///   carried under the binders above its use, so no binding of it is
-    ///   minted. The root carries the written origin, a leaf's copy of its
+    ///   scrutinised level with the motive [`tracked_motives`] reads from the
+    ///   answer, each branch a lambda per field and then one per index
+    ///   equation, a pruned branch the case of no branches on its equation; a
+    ///   sum case for a boolean; an integer comparison bound and cased on; a
+    ///   hole for a stuck node; and a leaf as its arm's body with each variable
+    ///   replaced by the level that settled it and the case's context carried
+    ///   under the tree's binders, the scrutinee's variable read at the root's
+    ///   constructor where [`refinements`] refines it. An answer passed into
+    ///   arms is read with each variable of the case's frame as
+    ///   [`Self::arm_readings`] reads it, and each leaf reads its body's
+    ///   variables so before its own refinement. Level zero is the scrutinee
+    ///   itself, carried under the binders above its use, so no binding of it
+    ///   is minted. The root carries the written origin, a leaf's copy of its
     ///   arm's body the origin of what it copies, every other node the inserted
     ///   match origin, and the arms are recorded beside the root with the
     ///   scrutinee's value; a match whose first arm matches anything is that
@@ -8848,6 +9210,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_pattern_hole_leaves_its_leaf_stuck`
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     /// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_case(
         &self,
@@ -8869,6 +9232,12 @@ impl<'source> Lowerer<'_, 'source>
             bodies.push(self.computation_at(body));
         }
         let mark = sink.arena.watermark();
+        // What each variable of the match's frame reads as at the arms its
+        // answer was passed into.
+        let armed = match form.answer {
+            Maybe::Present(answer) => self.arm_readings(answer.arm, form.frame, sink.arena),
+            Maybe::Absent(_) => Maybe::Absent(passed::Absent::Unpassed),
+        };
         let motive = match form.answer {
             Maybe::Present(answer) => match self.answered_type(answer, sink) {
                 Maybe::Present(written) => {
@@ -8886,7 +9255,22 @@ impl<'source> Lowerer<'_, 'source>
                         Binders::default(),
                         None,
                     );
-                    Maybe::Present((base, gap))
+                    Maybe::Present(match armed {
+                        Maybe::Present(ref read) => {
+                            let carried = gandr_core_term::shift_comp_type(
+                                sink.arena,
+                                base,
+                                Binders::from(u32::try_from(gap.0).unwrap_or(u32::MAX)),
+                            )
+                            .settle(sink.arena);
+                            let refined = match environment_substituted(sink.arena, carried, read) {
+                                Maybe::Present(refined) => refined,
+                                Maybe::Absent(_) => carried,
+                            };
+                            (refined, Depth::default())
+                        },
+                        Maybe::Absent(_) => (base, gap),
+                    })
                 },
                 Maybe::Absent(reason) => Maybe::Absent(reason),
             },
@@ -8945,7 +9329,10 @@ impl<'source> Lowerer<'_, 'source>
             let id = mint_test(
                 test,
                 scrutinised,
-                &bodies,
+                (&bodies, match armed {
+                    Maybe::Present(ref read) => read,
+                    Maybe::Absent(_) => &[],
+                }),
                 &minted,
                 (read, at, answered),
                 sink,
@@ -9347,6 +9734,26 @@ struct Refined
     arity: usize,
 }
 
+/// The root switch's branch a node of a match's tree stands under.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `tag` is the branch's constructor and `arity` its field count.
+/// - executable: none — the record holds no tree to check its branch against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`beneath_root`].
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RootBranch
+{
+    /// The branch's constructor.
+    tag: ConstructorTag,
+    /// The constructor's field count.
+    arity: usize,
+}
+
 /// The motive of every data case and dependent split of a tree, read from the
 /// root down.
 ///
@@ -9570,7 +9977,6 @@ fn refinements(
     let Some(&Test::Data {
         level,
         family: Maybe::Present(family),
-        ref branches,
         ..
     }) = tests.first()
     else {
@@ -9599,24 +10005,60 @@ fn refinements(
     ) {
         return unrefined(refined::Absent::Independent);
     }
-    let mut refined = unrefined(refined::Absent::Unswitched);
-    for (tag, &(arity, at)) in branches.iter().enumerate() {
-        if let Some(slot) = refined.get_mut(at.0) {
-            *slot = Maybe::Present(Refined {
+    beneath_root(tests)
+        .into_iter()
+        .map(|under| match under {
+            Maybe::Present(RootBranch { tag, arity }) => Maybe::Present(Refined {
                 held,
                 family,
+                tag,
+                arity,
+            }),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        })
+        .collect()
+}
+
+/// The branch of a match's root switch each node of its tree stands under.
+///
+/// # Specification
+/// - requires: `tests` is a compiled tree, every child after its parent.
+/// - ensures: one entry per node. When the root is a data switch, every node
+///   below its branch for the constructor `t` of `k` fields reads that branch,
+///   `t` over `k` fields; the root, and every node of a tree whose root is no
+///   data switch, reads the unswitched absence.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a leaf under a dependent root reads the scrutinee at its
+///   branch's constructor, and an arm's leaves name the branch the arm reads
+///   its scrutinee at.
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+#[spec(ensures: |ret| ret.len() == tests.len())]
+fn beneath_root(tests: &[Test]) -> Vec<Maybe<RootBranch, refined::Absent>>
+{
+    let mut beneath = alloc::vec![Maybe::Absent(refined::Absent::Unswitched); tests.len()];
+    let Some(&Test::Data { ref branches, .. }) = tests.first()
+    else {
+        return beneath;
+    };
+    for (tag, &(arity, at)) in branches.iter().enumerate() {
+        if let Some(slot) = beneath.get_mut(at.0) {
+            *slot = Maybe::Present(RootBranch {
                 tag: ConstructorTag::from(tag),
                 arity,
             });
         }
     }
     for (position, test) in tests.iter().enumerate().skip(1) {
-        let Some(&Maybe::Present(read)) = refined.get(position)
+        let Some(&Maybe::Present(read)) = beneath.get(position)
         else {
             continue;
         };
         let mut mark = |at: TestAt| {
-            if let Some(slot) = refined.get_mut(at.0) {
+            if let Some(slot) = beneath.get_mut(at.0) {
                 *slot = Maybe::Present(read);
             }
         };
@@ -9644,7 +10086,88 @@ fn refinements(
         }
     }
 
-    refined
+    beneath
+}
+
+/// The constructor the arm `arm` of a match over the bare family `family`,
+/// on the variable `scrutinee` binds, reads that variable at, over the
+/// binders `variables` of the arm's variables that name its fields.
+///
+/// # Specification
+/// - requires: `beneath` is [`beneath_root`] of `tests`; `variables` holds the
+///   binders of the arm's variables, in variable order.
+/// - ensures: settled when the arm has a leaf, every leaf of it stands under
+///   one root branch, and each leaf settles every field of that branch's
+///   constructor at a variable, the same one at every leaf; each field then
+///   reads the binder of the first variable settled at its level. Unnamed
+///   otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm naming its constructor's field settles, and one
+///   leaving a field to a wildcard leaves it unnamed.
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::native::tests::an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(ref settled) => {
+        settled.fields.len() <= variables.len() && settled.scrutinee == scrutinee
+    },
+    | Maybe::Absent(_) => true,
+})]
+fn arm_settled(
+    tests: &[Test],
+    beneath: &[Maybe<RootBranch, refined::Absent>],
+    arm: ArmAt,
+    variables: &[ScopeId],
+    (family, scrutinee): (ConstantIndex, ScopeId),
+) -> Maybe<Settled, settled::Absent>
+{
+    let unnamed = Maybe::Absent(settled::Absent::Unnamed);
+    let mut found: Option<Settled> = None;
+    for (test, &under) in tests.iter().zip(beneath) {
+        let Test::Leaf {
+            arm: reached,
+            ref bindings,
+            ..
+        } = *test
+        else {
+            continue;
+        };
+        if reached != arm {
+            continue;
+        }
+        let Maybe::Present(RootBranch { tag, arity }) = under
+        else {
+            return unnamed;
+        };
+        let mut named: Vec<Option<ScopeId>> = alloc::vec![None; arity];
+        for (&level, &binder) in bindings.iter().zip(variables) {
+            if let Some(slot) = level
+                .0
+                .checked_sub(1_usize)
+                .and_then(|field| named.get_mut(field))
+            {
+                let _first = slot.get_or_insert(binder);
+            }
+        }
+        let Some(fields) = named.into_iter().collect::<Option<Vec<ScopeId>>>()
+        else {
+            return unnamed;
+        };
+        let reading = Settled {
+            scrutinee,
+            family,
+            tag,
+            fields,
+        };
+        match found {
+            Some(ref first) if *first != reading => return unnamed,
+            Some(_) => {},
+            None => found = Some(reading),
+        }
+    }
+    found.map_or(unnamed, Maybe::Present)
 }
 
 /// The constructor `tag` of the parameterless family `family` over `fields`.
@@ -9761,15 +10284,42 @@ fn abstracted(
             }
         })
         .collect();
+    match environment_substituted(arena, ty, &environment) {
+        Maybe::Present(motive) => motive,
+        Maybe::Absent(_) => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE).settle(arena),
+    }
+}
+
+/// `ty` with each index `i` below `environment`'s length read as its entry
+/// `i`.
+///
+/// # Specification
+/// - requires: `ty` is read under `environment.len()` binders, and every entry
+///   under the context the result is read in.
+/// - ensures: the substituted type, read back out of its quotation; absent when
+///   the substitution yields no quoted type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a split's answer abstracts its scrutinee, and an arm's
+///   answer reads its scrutinee at the arm's constructor.
+/// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(read) if arena.comp_type(read).is_some()))]
+fn environment_substituted(
+    arena: &mut CoreArena,
+    ty: CompTypeId,
+    environment: &[ValueId],
+) -> Maybe<CompTypeId, lowered::Absent>
+{
     let quoted = arena.value_quote_computation(ty);
-    match gandr_core_term::substitute_environment(arena, TermId::Value(quoted), &environment) {
+    match gandr_core_term::substitute_environment(arena, TermId::Value(quoted), environment) {
         TermId::Value(substituted) => match arena.value(substituted) {
-            Some(&Value::QuoteComputation(motive)) => motive,
-            _ => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE).settle(arena),
+            Some(&Value::QuoteComputation(read)) => Maybe::Present(read),
+            _ => Maybe::Absent(lowered::Absent::Unminted),
         },
-        TermId::Computation(_) => {
-            gandr_core_term::shift_comp_type(arena, ty, Binders::ONE).settle(arena)
-        },
+        TermId::Computation(_) => Maybe::Absent(lowered::Absent::Unminted),
     }
 }
 
@@ -9779,15 +10329,18 @@ fn abstracted(
 /// - requires: every child of `test` is minted in `minted` or absent; `read` is
 ///   the motive [`tracked_motives`] read for this node, `refined` the
 ///   constructor [`refinements`] reads the node's scrutinee at, and `answered`
-///   the answer the match writes, read where the node stands, for its root.
+///   the answer the match writes, read where the node stands, for its root;
+///   `armed` is empty or holds, per term binder of the case's frame, the value
+///   [`Lowerer::arm_readings`] reads it as.
 /// - ensures: as [`Lowerer::mint_case`], for one node; a data case and a
 ///   dependent split read the read motive; a leaf under a refining root reads
 ///   the scrutinee's variable as the refined constructor over the root's
-///   fields; any other node ascribed `answered`, an integer test's case under
-///   its comparison's binder; nothing when a child, the arm's body or a needed
-///   motive is absent. A leaf's copy of an exit or of a bind whose rest is
-///   distributed is recorded as its original is, and every copy a leaf makes is
-///   reported in `copies` beside its original.
+///   fields; a leaf reads each variable of the case's frame as its entry of a
+///   nonempty `armed`, read so; any other node ascribed `answered`, an integer
+///   test's case under its comparison's binder; nothing when a child, the arm's
+///   body or a needed motive is absent. A leaf's copy of an exit or of a bind
+///   whose rest is distributed is recorded as its original is, and every copy a
+///   leaf makes is reported in `copies` beside its original.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -9796,11 +10349,12 @@ fn abstracted(
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
 /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
 fn mint_test(
     test: &Test,
     scrutinised: Scrutinised,
-    bodies: &[Maybe<ComputationId, lowered::Absent>],
+    (bodies, armed): (&[Maybe<ComputationId, lowered::Absent>], &[ValueId]),
     minted: &[Maybe<ComputationId, lowered::Absent>],
     (read, refined, answered): (
         Maybe<CompTypeId, lowered::Absent>,
@@ -9845,9 +10399,11 @@ fn mint_test(
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
+            let armed = armed_for(sink.arena, body, Depth(bindings.len()), armed);
             if depth == Depth::default()
                 && bindings.is_empty()
                 && matches!(refined, Maybe::Absent(_))
+                && armed.is_empty()
             {
                 return Maybe::Present(answered_at(sink, body, answered));
             }
@@ -9872,6 +10428,21 @@ fn mint_test(
                     },
                 };
                 environment.push(read);
+            }
+            // The arms the answer was passed into read the frame's variables
+            // first, the leaf's own reading of them after.
+            if !armed.is_empty() {
+                let reads = environment.split_off(bindings.len());
+                for &reading in armed {
+                    match gandr_core_term::substitute_environment(
+                        sink.arena,
+                        TermId::Value(reading),
+                        &reads,
+                    ) {
+                        TermId::Value(read) => environment.push(read),
+                        TermId::Computation(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                    }
+                }
             }
             let mut carried = Vec::new();
             match gandr_core_term::substitute_environment_traced(
@@ -10057,6 +10628,57 @@ fn mint_test(
             _ => Maybe::Absent(lowered::Absent::Unminted),
         },
     }
+}
+
+/// `armed` when the arm body `body`, read under `bound` arm variables past
+/// the case's frame, reads a variable of the frame that `armed` reads as
+/// other than itself; nothing otherwise.
+///
+/// # Specification
+/// - requires: `armed` is empty or holds one value per term binder of the
+///   case's frame, as [`Lowerer::arm_readings`] reads them.
+/// - ensures: `armed` exactly when an intuitionistic index `j` the body's
+///   support selects is at least `bound` and `armed`'s entry `j - bound` is no
+///   variable at its own index; empty otherwise.
+/// - provides: a leaf that copies its body for the arm readings only where they
+///   change it, so a body they leave alone keeps its nodes and their origins.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a match in an arm whose branches name the outer scrutinee
+///   reads it at the arm's constructor, and a scrutinee in an arm whose leaf
+///   body the readings leave alone keeps its label.
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+#[spec(ensures: |ret| ret.is_empty() || ret.len() == armed.len())]
+fn armed_for<'armed>(
+    arena: &CoreArena,
+    body: ComputationId,
+    bound: Depth,
+    armed: &'armed [ValueId],
+) -> &'armed [ValueId]
+{
+    let Some(support) = arena.computation_support(body)
+    else {
+        return &[];
+    };
+    let changes = support.indices(Zone::Intuitionistic).any(|read| {
+        let Some(outer) = usize::try_from(u32::from(read))
+            .ok()
+            .and_then(|at| at.checked_sub(bound.0))
+        else {
+            return false;
+        };
+        armed.get(outer).is_some_and(|&reading| {
+            !matches!(
+                arena.value(reading),
+                Some(&Value::Variable { zone: Zone::Intuitionistic, index })
+                    if usize::try_from(u32::from(index)).ok() == Some(outer)
+            )
+        })
+    });
+    if changes { armed } else { &[] }
 }
 
 /// `id`, a match's root, ascribed `answered` when the match writes its

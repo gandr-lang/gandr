@@ -3251,6 +3251,9 @@ struct Lowerer<'run, 'source>
     trailing: BTreeSet<NodeIndex>,
     /// The matches, each compiled to its decision tree.
     cases: Vec<native::CaseForm>,
+    /// Each constructor arm a match passed its answer into, with what the arm
+    /// reads the match's scrutinee as.
+    arms: Vec<native::ArmReading>,
     /// The fields read off data values by name, each the case returning it.
     projected: Vec<native::Projected>,
     /// The position each lowered data declaration's signature takes, by its
@@ -4920,6 +4923,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && ret.in_type.is_empty()
                 && ret.at_endpoint.is_empty()
                 && ret.cases.is_empty()
+                && ret.arms.is_empty()
                 && ret.signatures.is_empty()
                 && ret.data.is_empty()
                 && ret.fuel == fuel
@@ -5027,6 +5031,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             stated_tails: BTreeSet::new(),
             trailing: BTreeSet::new(),
             cases: Vec::new(),
+            arms: Vec::new(),
             projected: Vec::new(),
             signatures: BTreeMap::new(),
             worded: BTreeMap::new(),
@@ -9038,6 +9043,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         node: component,
                         frame: answer.frame,
                         over: native::Over::Returning,
+                        arm: answer.arm,
                     },
                     frame,
                 };
@@ -9307,6 +9313,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 node: codomain,
                 frame: answer.frame,
                 over: native::Over::Returning,
+                arm: answer.arm,
             }
         };
 
@@ -9619,6 +9626,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     node,
                     frame,
                     over: native::Over::Written,
+                    arm: Maybe::Absent(native::passed::Absent::Unpassed),
                 };
                 let _first = self.answers.insert(block.last, answer);
                 Maybe::Present(answer)
