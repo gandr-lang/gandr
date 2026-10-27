@@ -331,6 +331,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theor
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','core-term','handler::subject','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-grammar','surface::circuit','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering','lower::capability::theory','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering','lower::model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering','model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','theory-levitation','desc','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','4600c115bfebaa09de54ca27489b80d76bf1526f','2026-10-27','bc0ec7513c2e8cd62068b81d00ff2b0ea9014f0b');

@@ -33,6 +33,23 @@
 //! whose type is not its component's is refused there. A sort the module seals
 //! is out of the fragment: the record would name the representation the seal
 //! hides, and a package over the abstract type carries such a module.
+//!
+//! # A member's sort is its definition's former
+//!
+//! A type member's position states no sort, so its definition's own former
+//! decides it: a returner, a computation record or lazy product, and a function
+//! into one of these, through parentheses, are computation types, and anything
+//! else is a value type. A name or an application reaching a computation
+//! member stands where a computation type is read, a family's application its
+//! definition quoted as a computation, its parameters replaced, and unquoted.
+//! An abstract component's type is a value type, so a seal or a functor
+//! argument over a computation member is refused at its definition.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
+//!   effect-modalities design (§ The declaration) — a carrier is the member
+//!   family `type T(a : Type) = -F Maybe(a)`, a computation type.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -490,8 +507,9 @@ struct BundleFrame
 impl<'source> Lowerer<'_, 'source>
 {
     /// Seed every type family member: each parameter's type under the
-    /// parameters before it, and the family's type under all of them; and
-    /// each written family kind at the outermost frame.
+    /// parameters before it, and the family's type under all of them, at the
+    /// sort its definition reads ([`Self::member_reading`]); and each written
+    /// family kind at the outermost frame.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
@@ -499,22 +517,29 @@ impl<'source> Lowerer<'_, 'source>
     ///   mentioned, so every parameter binds in the family's type, and one seed
     ///   per type the members and kinds write, appended to `seeds`.
     /// - provides: the family half of [`Self::seed`].
-    /// - fails: never.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when reading a definition's
+    ///   former outruns the allowance.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// The allowance's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter family whose type names both
-    ///   parameters lowers with both bound.
+    ///   parameters lowers with both bound, and a family into computation types
+    ///   is read as one.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
         captures: before = seeds.len(),
-        ensures: seeds.len() >= before,
+        ensures: |ret| ret.is_err() || seeds.len() >= before,
     )]
     pub(super) fn seed_families(
         &mut self,
         seeds: &mut Vec<(NodeIndex, Reading)>,
-    )
+    ) -> Result<(), LoweringRefusal<'source>>
     {
+        let mut definitions = Vec::new();
         for family in self.collected.families.iter().skip(self.current.families) {
             let mut frame = Frame::Outermost;
             for parameter in &family.parameters {
@@ -529,7 +554,11 @@ impl<'source> Lowerer<'_, 'source>
                 self.scope.mention(bound);
                 frame = Frame::Inner(bound);
             }
-            seeds.push((family.defined.node, Reading::ValueType(frame)));
+            definitions.push((family.defined.node, frame));
+        }
+        for (defined, frame) in definitions {
+            let reading = self.member_reading(defined, frame)?;
+            seeds.push((defined, reading));
         }
         for check in self
             .collected
@@ -541,6 +570,72 @@ impl<'source> Lowerer<'_, 'source>
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
         }
+
+        Ok(())
+    }
+
+    /// The reading of a type member's definition `defined` under `frame`, at
+    /// the sort its own former decides: a computation type for a returner, a
+    /// lazy product or a lazy record, read through parentheses and down an
+    /// arrow's codomain, and a value type for any other former; a computation
+    /// definition is recorded among the lowerer's computation members.
+    ///
+    /// # Specification
+    /// - requires: `defined` is a type member's definition.
+    /// - ensures: [`Reading::CompType`] under `frame` exactly when the
+    ///   definition's former, through parentheses and arrows' codomains, is a
+    ///   returner, a lazy product or a lazy record, the definition then
+    ///   recorded as a computation member; [`Reading::ValueType`] under `frame`
+    ///   otherwise.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The allowance's refusal.
+    ///
+    /// # Termination
+    /// Every turn reads one form, spending the allowance, and steps to an
+    /// arrow's codomain, strictly deeper in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returner, a family into returners and a value
+    ///   member are each read at their own sort.
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| match ret {
+        Ok(Reading::CompType(read)) => read == frame && self.computation_members.contains(&defined),
+        Ok(Reading::ValueType(read)) => read == frame,
+        Ok(_) => false,
+        Err(_) => true,
+    })]
+    pub(super) fn member_reading(
+        &mut self,
+        defined: NodeIndex,
+        frame: Frame,
+    ) -> Result<Reading, LoweringRefusal<'source>>
+    {
+        let mut node = defined;
+        loop {
+            let Maybe::Present(form) = self.unwrapped(node)?
+            else {
+                return Ok(Reading::ValueType(frame));
+            };
+            if matches!(
+                form.former,
+                Former::ReturnerType | Former::LazyProductType | Former::LazyRecordType
+            ) {
+                let _fresh = self.computation_members.insert(defined);
+                return Ok(Reading::CompType(frame));
+            }
+            let (true, Some(&codomain)) = (
+                matches!(form.former, Former::ArrowType),
+                form.operands.last(),
+            )
+            else {
+                return Ok(Reading::ValueType(frame));
+            };
+            node = codomain;
+        }
     }
 
     /// Classify the type family `family`, whose refusal `held` carries,
@@ -548,12 +643,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `applied` is a stretch of the operand store.
-    /// - ensures: the family stands as a value type over its arguments, each
-    ///   read as a value under the site's frame, and the reference is recorded
-    ///   against `held`, so a refused family refuses the declaration naming it.
+    /// - ensures: the family stands as a type of its sort
+    ///   ([`Self::family_produced`]) over its arguments, each read as a value
+    ///   under the site's frame, and the reference is recorded against `held`,
+    ///   so a refused family refuses the declaration naming it.
     /// - fails: the arity refusal for an argument count other than the family's
-    ///   parameter count; the wrong-sort refusal where no value type is read or
-    ///   reached.
+    ///   parameter count; the wrong-sort refusal where no type of the family's
+    ///   sort is read or reached.
     /// - panics: none.
     ///
     /// # Errors
@@ -564,6 +660,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   arity.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_family_applied_to_too_few_indices_is_refused`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Expansion(family, applied)))]
     pub(super) fn expansion(
         &mut self,
@@ -582,7 +679,7 @@ impl<'source> Lowerer<'_, 'source>
         if count != arity {
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
-        let frame = self.require(site, Produced::ValueType)?;
+        let frame = self.require(site, self.family_produced(family))?;
         for position in applied.start .. applied.end {
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
@@ -599,15 +696,21 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the family's type and every argument are minted or absent.
-    /// - ensures: as [`Self::expand`] over the arguments' values; nothing when
-    ///   an argument did not lower.
+    /// - ensures: as [`Self::expand`] over the arguments' values for a family
+    ///   into value types, and as [`Self::expand_computation`] for one into
+    ///   computation types; nothing when an argument did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::expansion`].
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| if self.family_produced(family) == Produced::CompType {
+        matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_)))
+    } else {
+        matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_)))
+    })]
     pub(super) fn mint_expansion(
         &self,
         family: FamilyIndex,
@@ -624,8 +727,44 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
 
-        self.expand(family, &values, sink, origin)
-            .map(Lowered::ValueType)
+        if self.family_produced(family) == Produced::CompType {
+            self.expand_computation(family, &values, sink, origin)
+                .map(Lowered::CompType)
+        }
+        else {
+            self.expand(family, &values, sink, origin)
+                .map(Lowered::ValueType)
+        }
+    }
+
+    /// The sort a family's applications stand at: [`Produced::CompType`] for a
+    /// family whose definition is a computation type, and
+    /// [`Produced::ValueType`] for any other.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the computation-type sort exactly when the family's
+    ///   definition is among the lowerer's computation members; the value-type
+    ///   sort otherwise, an unknown family too.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family into returners and a family into value types
+    ///   each stand at their own sort.
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| matches!(ret, Produced::CompType | Produced::ValueType))]
+    pub(super) fn family_produced(
+        &self,
+        family: FamilyIndex,
+    ) -> Produced
+    {
+        match self.collected.families.get(family.0) {
+            Some(member) if self.computation_members.contains(&member.defined.node) => {
+                Produced::CompType
+            },
+            Some(_) | None => Produced::ValueType,
+        }
     }
 
     /// The type of the family `family` with `arguments` for its parameters.
@@ -664,22 +803,62 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(defined) => defined,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let environment: Vec<ValueId> = arguments.iter().rev().copied().collect();
         let mark = sink.arena.watermark();
         let code = sink.arena.value_quote(defined);
-        let mut carried = Vec::new();
-        let substituted = gandr_core_term::substitute_environment_traced(
-            sink.arena,
-            TermId::Value(code),
-            &environment,
-            &mut carried,
-        );
-        exits::record_copies(sink, mark, &carried, origin);
-        let TermId::Value(substituted) = substituted
+        let substituted = match substitute_arguments(code, mark, arguments, sink, origin) {
+            Maybe::Present(substituted) => substituted,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(&Value::Quote(expanded)) = sink.arena.value(substituted)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let Some(&Value::Quote(expanded)) = sink.arena.value(substituted)
+
+        Maybe::Present(expanded)
+    }
+
+    /// The computation type of the family `family` with `arguments` for its
+    /// parameters.
+    ///
+    /// # Specification
+    /// - requires: every argument is a value of the context the result is read
+    ///   in.
+    /// - ensures: as [`Self::expand`], for a family whose definition lowered to
+    ///   a computation type; nothing when it did not.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `T(Integer)` is the member's `-F Maybe(a)` with its
+    ///   parameter at `Integer`.
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
+    fn expand_computation(
+        &self,
+        family: FamilyIndex,
+        arguments: &[ValueId],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<CompTypeId, lowered::Absent>
+    {
+        let Some(member) = self.collected.families.get(family.0)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        if member.parameters.len() != arguments.len() {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        }
+        let defined = match self.comp_type_at(member.defined.node) {
+            Maybe::Present(defined) => defined,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mark = sink.arena.watermark();
+        let code = sink.arena.value_quote_computation(defined);
+        let substituted = match substitute_arguments(code, mark, arguments, sink, origin) {
+            Maybe::Present(substituted) => substituted,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(&Value::QuoteComputation(expanded)) = sink.arena.value(substituted)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
@@ -4083,6 +4262,48 @@ fn member_read<'source>(
             &(Ok(ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_)) | Err(_)),
         )
         | None => Err(Missing::Unlowered),
+    }
+}
+
+/// The code `code`, a family's quoted definition, with its parameters
+/// replaced by `arguments`, the first parameter's argument first.
+///
+/// # Specification
+/// - requires: `code` quotes a definition under one binder per argument, minted
+///   after `mark`; every argument is a value of the context the result is read
+///   in.
+/// - ensures: the substituted value, each node minted since `mark` carrying the
+///   origin of the node it rewrote, or `origin` for one it built; nothing when
+///   the substitution yields no value.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value family and a computation family each expand to
+///   their definitions with the parameters replaced.
+/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value(id).is_some()))]
+fn substitute_arguments(
+    code: ValueId,
+    mark: gandr_core_term::ArenaWatermark,
+    arguments: &[ValueId],
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<ValueId, lowered::Absent>
+{
+    let environment: Vec<ValueId> = arguments.iter().rev().copied().collect();
+    let mut carried = Vec::new();
+    let substituted = gandr_core_term::substitute_environment_traced(
+        sink.arena,
+        TermId::Value(code),
+        &environment,
+        &mut carried,
+    );
+    exits::record_copies(sink, mark, &carried, origin);
+    match substituted {
+        TermId::Value(substituted) => Maybe::Present(substituted),
+        TermId::Computation(_) => Maybe::Absent(lowered::Absent::Unminted),
     }
 }
 

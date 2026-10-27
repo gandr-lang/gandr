@@ -12,6 +12,12 @@ use quenchant_shape::shape::Maybe;
 use super::Lowerer;
 use super::Sink;
 use super::Universe;
+use crate::error::FragmentBoundary;
+use crate::error::FragmentSort;
+use crate::error::LoweringRefusal;
+use crate::form::Placed;
+use crate::form::Shape;
+use crate::form::shape_of;
 use crate::module::Role;
 use crate::module::Sealing;
 use crate::module::SlotIndex;
@@ -24,19 +30,23 @@ use crate::module::SlotIndex;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Refused(pub bool);
 
-impl Lowerer<'_, '_>
+impl<'source> Lowerer<'_, 'source>
 {
     /// Carry each refused representation's refusal to the abstract slots
-    /// that read it.
+    /// that read it, and refuse each abstract slot whose representation is a
+    /// computation type.
     ///
     /// # Specification
     /// - requires: the classification has run.
     /// - ensures: every abstract slot, sealed or a kind witness, whose body
     ///   member's held slot holds a refusal holds one too, the member's own
-    ///   when the slot held none; the answer is affirmative exactly when some
-    ///   slot was unrefused before the call.
+    ///   when the slot held none; one whose body member's definition is a
+    ///   computation type holds the wrong-sort refusal at that definition, as
+    ///   its atom and its kind are value types; the answer is affirmative
+    ///   exactly when some slot was unrefused before the call.
     /// - provides: the rule that no atom is declared over a representation that
-    ///   did not lower, so a reader of the atom inherits the refusal.
+    ///   did not lower or is no value type, so a reader of the atom inherits
+    ///   the refusal.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -45,6 +55,7 @@ impl Lowerer<'_, '_>
     ///   type refuses its atom and every client of it, while an unrelated
     ///   declaration still lowers.
     /// - witness: `tests::modules::a_sealed_component_over_a_refused_member_is_refused_with_it`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -76,23 +87,68 @@ impl Lowerer<'_, '_>
             else {
                 continue;
             };
-            let Some(Maybe::Present((at, refusal))) = self
+            let inherited = match self
                 .collected
                 .slots
                 .get(usize::from(represented.held))
                 .map(|held| held.refusal)
-            else {
-                continue;
+            {
+                Some(Maybe::Present(held)) => held,
+                Some(Maybe::Absent(_)) | None => {
+                    let Some(refusal) = self.computation_refusal(represented.defined)
+                    else {
+                        continue;
+                    };
+                    (represented.defined.node, refusal)
+                },
             };
             if let Some(own) = self.collected.slots.get_mut(usize::from(slot))
                 && let Maybe::Absent(_) = own.refusal
             {
-                own.refuse(at, refusal);
+                own.refuse(inherited.0, inherited.1);
                 refused = true;
             }
         }
 
         Refused(refused)
+    }
+
+    /// The refusal of the type member defined at `defined` where a value type
+    /// is read of it, when its definition is a computation type.
+    ///
+    /// # Specification
+    /// - requires: the member's definition is seeded.
+    /// - ensures: for a definition among the computation members, the
+    ///   wrong-sort refusal at it naming its form, or the refusal reading its
+    ///   form met; nothing for a value member or a definition with no form.
+    /// - provides: the one refusal of a computation member read as a value type
+    ///   by an abstract component, an ascription's or a functor parameter's.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a seal and a functor's abstract parameter over a
+    ///   computation member are each refused at its definition.
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| ret.is_none() || self.computation_members.contains(&defined.node))]
+    pub(super) fn computation_refusal(
+        &self,
+        defined: Placed,
+    ) -> Option<LoweringRefusal<'source>>
+    {
+        if !self.computation_members.contains(&defined.node) {
+            return None;
+        }
+        match shape_of(self.pbg, self.tree.node(defined.node)?) {
+            Ok(Shape::Form { name, .. }) => Some(LoweringRefusal::OutOfFragment {
+                span: defined.span,
+                form: name,
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::WrongSort,
+            }),
+            Ok(_) => None,
+            Err(refusal) => Some(refusal),
+        }
     }
 
     /// Lower every unrefused abstract slot to its declaration.

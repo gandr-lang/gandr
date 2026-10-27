@@ -9,6 +9,7 @@ use anodized::spec;
 use gandr_core_term::Carried;
 use gandr_core_term::Renaming;
 use gandr_core_term::Sort;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -537,9 +538,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the type a manifest component lowered to, the atom a sealed
     ///   one's abstract slot declares, recorded at `origin`, or the type an
     ///   earlier instance's manifest component reads.
-    /// - fails: the refusal the component's slot holds;
-    ///   [`LoweringRefusal::UnresolvedTypeHead`] naming the component when its
-    ///   type is a family or did not lower and its slot holds none.
+    /// - fails: the wrong-sort refusal at a manifest or an instance's component
+    ///   whose definition is a computation type
+    ///   ([`Self::computation_refusal`]); the refusal the component's slot
+    ///   holds; [`LoweringRefusal::UnresolvedTypeHead`] naming the component
+    ///   when its type is a family or did not lower and its slot holds none.
     /// - panics: none.
     ///
     /// # Errors
@@ -549,6 +552,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::rename_instances_before`].
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::an_instance_can_be_an_argument`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn argument_type(
         &self,
@@ -577,6 +581,12 @@ impl<'source> Lowerer<'_, 'source>
                     },
                 )
         };
+        if let TypeMeaning::Manifest(defined) | TypeMeaning::Instantiated { defined, .. } =
+            argument.meaning
+            && let Some(refusal) = self.computation_refusal(defined)
+        {
+            return Err(refusal);
+        }
         match argument.meaning {
             TypeMeaning::Manifest(defined) => match self.value_type_at(defined.node) {
                 Maybe::Present(id) => Ok(id),
@@ -609,19 +619,21 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the instance's renaming is built.
     /// - ensures: every manifest component of every module of the instance
-    ///   whose template's type lowered has its renamed type recorded, every
-    ///   node the renaming minted carrying the origin of the node it was
-    ///   renamed from.
+    ///   whose template's type lowered has its renamed type recorded, a
+    ///   computation type among the instance's computation types and a value
+    ///   type among its value types, every node the renaming minted carrying
+    ///   the origin of the node it was renamed from.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a transparent functor's manifest result reads the
-    ///   argument's type at each instance.
+    ///   argument's type at each instance, a computation type too.
     /// - witness: `tests::modules::functors::a_transparent_result_reads_the_argument_through`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
-        captures: before = self.instance_types.len(),
-        ensures: self.instance_types.len() >= before,
+        captures: before = (self.instance_types.len(), self.instance_computations.len()),
+        ensures: self.instance_types.len() >= before.0 && self.instance_computations.len() >= before.1,
     )]
     fn instance_manifests(
         &mut self,
@@ -654,7 +666,25 @@ impl<'source> Lowerer<'_, 'source>
             return;
         };
         for defined in written {
-            if self.instance_types.contains_key(&(index, defined.node)) {
+            if self.instance_types.contains_key(&(index, defined.node))
+                || self
+                    .instance_computations
+                    .contains_key(&(index, defined.node))
+            {
+                continue;
+            }
+            if self.computation_members.contains(&defined.node) {
+                let Maybe::Present(template) = self.comp_type_at(defined.node)
+                else {
+                    continue;
+                };
+                let code = sink.arena.value_quote_computation(template);
+                let renamed = rename_value(sink, &renaming, code, origin);
+                if let Some(&Value::QuoteComputation(renamed)) = sink.arena.value(renamed) {
+                    let _fresh = self
+                        .instance_computations
+                        .insert((index, defined.node), renamed);
+                }
                 continue;
             }
             let Maybe::Present(template) = self.value_type_at(defined.node)
@@ -681,7 +711,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   image of its template's module. A template slot that refused is
     ///   reported once, at the template, so its image declares nothing; an
     ///   application whose argument's type did not lower, which the argument
-    ///   reports, declares nothing at all.
+    ///   reports, declares nothing at all; one whose argument's type for an
+    ///   abstract component is a computation type refuses that component's
+    ///   witness at the argument's definition and declares nothing else.
     /// - provides: the declarations [`Self::assemble`] reads for an instance.
     /// - fails: never.
     /// - panics: none.
@@ -690,6 +722,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — two applications of a counter functor yield two
     ///   abstract types at two sites, and their members each typed at its own.
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     #[spec(
         captures: before = self.instantiated.len(),
@@ -718,6 +751,25 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
+            for &matched in &instance.matched {
+                if let Matched::Abstract {
+                    witness,
+                    argument:
+                        TypeComponent {
+                            meaning:
+                                TypeMeaning::Manifest(defined)
+                                | TypeMeaning::Instantiated { defined, .. },
+                            ..
+                        },
+                    ..
+                } = matched
+                    && let Some(refusal) = self.computation_refusal(defined)
+                {
+                    let _first = self
+                        .instantiated
+                        .insert(witness, DeclarationOutcome::Refused(refusal));
+                }
+            }
             let Some(Ok(renaming)) = self.renamings.get(position).map(Result::as_ref)
             else {
                 continue;

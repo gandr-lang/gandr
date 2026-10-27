@@ -10335,14 +10335,17 @@ impl<'source> LoweredDeclaration<'source>
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a manifest type component carries no lowered type.
+    /// Why a manifest type component carries no lowered value type.
     pub mod manifest_type {
-        /// The type it names did not lower.
+        /// The type it names is no value type that lowered.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// The type refused, and the refusal is carried by a held
             /// declaration under the component's name.
             Unlowered,
+            /// The type lowered to a computation type, which the component's
+            /// value type cannot hold.
+            Computation,
         }
     }
 }
@@ -10395,7 +10398,7 @@ pub struct ManifestComponent<'source>
 {
     /// The component's name.
     pub name: SurfaceName<'source>,
-    /// The type it is manifestly equal to.
+    /// The value type it is manifestly equal to.
     pub defined: Maybe<ValueTypeId, manifest_type::Absent>,
 }
 
