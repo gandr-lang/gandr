@@ -357,8 +357,7 @@ use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
 use crate::rewrite::substitute_computation;
 use crate::rewrite::substitute_value;
-use crate::support::Reaches;
-use crate::support::Reads;
+use crate::support::innermost;
 
 /// What the replay reads of a trace identifier: the constant it names, if
 /// any. A caller maps its own identifiers into this before replaying.
@@ -4058,10 +4057,9 @@ where
     ) -> Result<Option<ConversionSide>, Stop>
     {
         let [left, right] = shapes;
-        let mut reads = Reaches::<Reads>::new();
-        let mut unread = |shape: &Shape| {
+        let unread = |shape: &Shape| {
             unread_call(shape).filter(|&continuation| {
-                reads.comp_reach(self.arena, continuation).innermost() == BinderUse::Ignored
+                innermost(self.arena.computation_support(continuation)) == BinderUse::Ignored
             })
         };
         let calls = [
@@ -6495,9 +6493,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     FixpointEvidence::Partial,
                                     Gate::Constructor | Gate::Canonical | Gate::Observed,
                                 ) => {
-                                    if Reaches::<Reads>::new()
-                                        .comp_reach(self.arena, body)
-                                        .innermost()
+                                    if innermost(self.arena.computation_support(body))
                                         != BinderUse::Ignored
                                     {
                                         return Err(Stop::PartialFixpoint);

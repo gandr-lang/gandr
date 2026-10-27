@@ -121,8 +121,8 @@
 //! | `check_comp` synth fallthrough         | `SynthComp(computation)`     | `ConvertComp`                                       |
 //!
 //! **A type keeps the scope it was written in.** A plain arrow's codomain is
-//! written outside the arrow's binder — formation and the reach walk read it
-//! there — so a lambda checked against it weakens it (`↑`) by the binder it
+//! written outside the arrow's binder — formation and the carried support read
+//! it there — so a lambda checked against it weakens it (`↑`) by the binder it
 //! steps under, where a dependent arrow's codomain is already written under
 //! it. A bind or a case moves its expected type under its binder the same way,
 //! and a type synthesized under a binder is strengthened back out of it,
@@ -173,11 +173,11 @@
 //!
 //! A type synthesized under the binder of a bind or a case branch is
 //! strengthened by instantiating the binder's variable at the index one past
-//! the outer context, which nothing outside the binder can name; the reach
-//! walk refuses the result as [`KernelError::BinderEscape`] when that index
+//! the outer context, which nothing outside the binder can name; the result's
+//! carried support refuses it as [`KernelError::BinderEscape`] when that index
 //! survives — exactly when the type mentioned the bound value. A dedicated
 //! occurrence walk would answer the same question as a third machine; the
-//! instantiation and the reach walk already answer it.
+//! instantiation and the carried support already answer it.
 //!
 //! # Universe families, codes and the lift
 //!
@@ -278,6 +278,7 @@ use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::LooseDepth;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
@@ -321,7 +322,6 @@ use crate::rewrite::substitute_comp_type_at_call;
 use crate::rewrite::substitute_value_type;
 use crate::seal;
 use crate::stage_order::StageOrder;
-use crate::support::LooseDepth;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
 use crate::support::SupportContext;
@@ -2628,7 +2628,8 @@ fn weakened(
 /// The binder's variable is replaced by the index one past the outer context —
 /// a variable nothing outside the binder can name — and every other index is
 /// lowered by one. The replacement survives exactly where the binder's variable
-/// occurred, and the reach walk sees it as an index past the context.
+/// occurred, and the result's carried support reads it as an index past the
+/// context.
 ///
 /// # Specification
 /// - requires: `outside` is the context the binder extended, its slot already
@@ -2673,7 +2674,7 @@ fn strengthened(
     let fresh = arena.value_variable(DeBruijnIndex::from(width));
     let (table, rewrites) = session.rewrite_parts();
     let lowered = substitute_comp_type(arena, table, rewrites, subject, fresh);
-    if session.comp_type_reach(arena, lowered) > LooseDepth::from(width) {
+    if arena.comp_type_support(lowered).depth() > LooseDepth::from(width) {
         return Err(escape(arena));
     }
 
@@ -4058,7 +4059,7 @@ where
                         if matches!(evidence, FixpointEvidence::Partial)
                             && judgement.partial == Partiality::Refused
                             && returner_ending(arena, expected).is_some()
-                            && session.comp_reads(arena, body).innermost()
+                            && crate::support::innermost(arena.computation_support(body))
                                 == crate::element_identity::BinderUse::Read
                         {
                             return Err(KernelError::PartialFixpoint {

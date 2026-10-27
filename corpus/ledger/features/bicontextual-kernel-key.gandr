@@ -1,0 +1,47 @@
+/// `bicontextual-kernel-key` keys the kernel's check memo by the binders a goal reads, as the support its node carries names them.
+///
+/// Implemented: every kernel node carries the free indices it mentions from its mint, and a goal's key takes only the binders that support names, so one goal under two contexts that differ only where it does not read is one memo entry.
+/// Not implemented: #3123 owes a kernel judgement that returns the support it read, so the kernel builds the key beside the check rather than deriving it.
+///
+/// Each branch of the case in `side` answers `n` under the field its constructor binds, a natural in one branch and a flag in the other.
+/// The two goals read `n` and not the field, so the kernel keys them alike and checks `n` once.
+///
+/// - see: crates/kernel-term/src/support.rs
+
+/// The naturals `side` answers.
+data Nat : Type {
+  /// Zero.
+  Zero : Nat;
+  /// The natural after `n`.
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A flag, on or off.
+data Flag : Type {
+  /// On.
+  On : Flag;
+  /// Off.
+  Off : Flag;
+}
+
+/// A natural or a flag.
+data Either : Type {
+  /// A natural.
+  Count : (m : Nat) --> Either;
+  /// A flag.
+  Mark : (f : Flag) --> Either;
+}
+
+/// Answers `n` whichever side `e` takes, each branch under the field it binds.
+def side(n : Nat, e : Either) -> -F Nat {
+  case e -> -F Nat {
+    Count(_m) => n,
+    Mark(_f) => n
+  }
+}
+
+/// The flag side answers the natural `side` takes first.
+@[ runs("Succ(Zero)") ]
+def marked() -> -F Nat {
+  side(Succ(Zero), Mark(On))
+}

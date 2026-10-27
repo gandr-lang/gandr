@@ -748,8 +748,6 @@ pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::substitute_comp_type;
 pub use crate::rewrite::substitute_comp_type_at_call;
 pub use crate::ruled::OperationBodyFault;
-pub use crate::support::LooseDepth;
-pub use crate::support::LooseDepths;
 pub use crate::support::NodeOutcome;
 pub use crate::support::NodeSupport;
 pub use crate::support::SupportContext;

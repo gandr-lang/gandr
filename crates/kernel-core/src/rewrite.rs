@@ -1036,8 +1036,7 @@ pub(crate) fn share_endpoint<M>(
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let closed = crate::support::LooseDepths::new().value_reach(arena, endpoint)
-        == crate::support::LooseDepth::default();
+    let closed = arena.value_support(endpoint).depth() == gandr_kernel_term::LooseDepth::default();
     run_rewrite(
         arena,
         table,

@@ -89,7 +89,6 @@ use crate::rewrite::BinderDepth;
 use crate::rewrite::substitute_comp_type;
 use crate::rewrite::substitute_computation_at;
 use crate::rewrite::substitute_value_type;
-use crate::support::LooseDepths;
 
 /// One loop a case over a sort owes: its words and its cell.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -696,7 +695,7 @@ fn binder_use(
     motive: CompTypeId,
 ) -> BinderUse
 {
-    let before = u32::from(LooseDepths::new().comp_type_reach(arena, motive));
+    let before = u32::from(arena.comp_type_support(motive).depth());
     if before == 0 {
         return BinderUse::Ignored;
     }
@@ -706,7 +705,7 @@ fn binder_use(
     let fresh = arena.value_variable(DeBruijnIndex::from(before));
     let mut table = ContentTable::default();
     let instantiated = substitute_comp_type(arena, &mut table, &mut NullMemo, motive, fresh);
-    if u32::from(LooseDepths::new().comp_type_reach(arena, instantiated)) <= before {
+    if u32::from(arena.comp_type_support(instantiated).depth()) <= before {
         BinderUse::Ignored
     }
     else {
