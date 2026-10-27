@@ -40,9 +40,11 @@ excludes = []
 enabled = true
 priority = 200
 description = "Root README over its budget"
-suggestion = "Keep what gandr is, its verbs, the build and the licence; move the rest into rustdoc"
+suggestion = "Keep what gandr is, its picture, the build and the licence; move the rest into crates/README.md and rustdoc"
 includes = ["README.md"]
-max_size = "6KB"
+# 8KB while the synopsis settles (owner, 2026-10-27, gandr #3247); the budget
+# returns to 6KB with the content the owner approves.
+max_size = "8KB"
 excludes = [
   "contrib/**",
   "crates/**",
