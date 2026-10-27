@@ -382,6 +382,114 @@ fn floating_point_rows_are_ieee_binary64()
 }
 
 #[test]
+fn a_width_converts_exactly_and_an_integer_by_its_remainder()
+{
+    let apply = |name: &'static str, operand: &Scalar| {
+        named(PrimitiveName(name)).evaluate(&[operand.borrowed()])
+    };
+    let fixed = Scalar::Fixed;
+    for (name, operand, expected) in [
+        ("u32.to_integer", FixedInteger::U32(u32::MAX), "4294967295"),
+        (
+            "u64.to_integer",
+            FixedInteger::U64(u64::MAX),
+            "18446744073709551615",
+        ),
+        ("i32.to_integer", FixedInteger::I32(i32::MIN), "-2147483648"),
+        (
+            "i64.to_integer",
+            FixedInteger::I64(i64::MIN),
+            "-9223372036854775808",
+        ),
+        (
+            "i64.to_integer",
+            FixedInteger::I64(i64::MAX),
+            "9223372036854775807",
+        ),
+    ] {
+        assert_eq!(
+            apply(name, &fixed(operand)),
+            Ok(integer(Digits(expected))),
+            "{name} is exact at {operand:?}"
+        );
+    }
+    for (name, operand, expected) in [
+        ("u32.from_integer", "-1", FixedInteger::U32(u32::MAX)),
+        ("u32.from_integer", "4294967301", FixedInteger::U32(5)),
+        ("u64.from_integer", "-1", FixedInteger::U64(u64::MAX)),
+        (
+            "u64.from_integer",
+            "18446744073709551616",
+            FixedInteger::U64(0),
+        ),
+        (
+            "i32.from_integer",
+            "2147483648",
+            FixedInteger::I32(i32::MIN),
+        ),
+        (
+            "i32.from_integer",
+            "-2147483649",
+            FixedInteger::I32(i32::MAX),
+        ),
+        (
+            "i64.from_integer",
+            "18446744073709551615",
+            FixedInteger::I64(-1),
+        ),
+        (
+            "i64.from_integer",
+            "-340282366920938463463374607431768211457",
+            FixedInteger::I64(-1),
+        ),
+    ] {
+        assert_eq!(
+            apply(name, &integer(Digits(operand))),
+            Ok(fixed(expected)),
+            "{name}({operand}) is its remainder, as Rust's `as` cast reads it"
+        );
+    }
+    for operand in [
+        FixedInteger::U32(u32::MAX),
+        FixedInteger::U64(u64::MAX),
+        FixedInteger::I32(i32::MIN),
+        FixedInteger::I64(i64::MIN),
+    ] {
+        let width = operand.width();
+        let width: &str = width.as_ref();
+        let widened = apply(
+            PRELUDE
+                .iter()
+                .map(|row| row.0.name)
+                .find(|name| name.strip_suffix(".to_integer") == Some(width))
+                .expect("a `to_integer` row per width"),
+            &fixed(operand),
+        )
+        .expect("a width converts");
+        let back = PRELUDE
+            .iter()
+            .map(|row| row.0.name)
+            .find(|name| name.strip_suffix(".from_integer") == Some(width))
+            .expect("a `from_integer` row per width");
+        assert_eq!(
+            apply(back, &widened),
+            Ok(fixed(operand)),
+            "{width} through `Integer` and back is itself"
+        );
+    }
+    assert_eq!(
+        apply("u64.to_integer", &fixed(FixedInteger::U32(7))),
+        Err(PrimitiveError::ArgumentType),
+        "a width row refuses another width"
+    );
+    assert_eq!(
+        apply("u32.from_integer", &fixed(FixedInteger::U32(7))),
+        Err(PrimitiveError::ArgumentType),
+        "a width row from the integers refuses a width"
+    );
+}
+
+#[test]
 fn table_signatures_and_currying_agree()
 {
     let mut arena = CoreArena::new();

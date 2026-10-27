@@ -1,9 +1,11 @@
 /// `sized-atoms`: Width atoms and their literals.
-/// Implemented: `u32`, `u64`, `i32` and `i64` as base atoms apart from `Integer` and from one another, and literals stating their width with a range-checked suffix.
+/// Implemented: `u32`, `u64`, `i32` and `i64` as base atoms apart from `Integer` and from one another, literals stating their width with a range-checked suffix, and each width's conversions to and from `Integer`.
 /// Not implemented: the `f32` atom and its literal; #2563 owes it.
 // Integers at a stated width: `u32`, `u64`, `i32` and `i64`, each an atom of
 // its own. A literal states its width with a suffix and its digits must fit
-// it, so no width is the integers and no width is another.
+// it, so no width is the integers and no width is another. A width converts
+// to `Integer` exactly, and an integer to a width by its remainder, as Rust's
+// `as` cast does.
 
 /// An unsigned word at a stated `u32`.
 @[ checks ]
@@ -28,3 +30,21 @@ def same_i64(n : i64) -> i64 { n }
 /// A width literal passes through a function at its width unchanged.
 @[ runs("42i64") ]
 def same_i64_called() -> i64 { same_i64(42i64) }
+
+/// The greatest `u32`, as an integer.
+@[ runs("4294967295") ]
+def greatest_u32_integer() -> Integer { u32.to_integer(4294967295u32) }
+
+/// Minus one is the greatest `u64`, the remainder modulo two to the 64.
+@[ runs("18446744073709551615u64") ]
+def minus_one_u64() -> u64 { u64.from_integer(-1) }
+
+/// One past the greatest `i32` is the least.
+@[ runs("-2147483648i32") ]
+def past_greatest_i32() -> i32 { i32.from_integer(2147483648) }
+
+/// The least `i64` through `Integer` keeps its sign.
+@[ runs("-9223372036854775808") ]
+def least_i64_integer() -> Integer {
+  i64.to_integer(i64.from_integer(-9223372036854775808))
+}
