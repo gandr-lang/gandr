@@ -937,14 +937,14 @@ impl Walk
                                     judge_regrouped(
                                         &mut self.report,
                                         grammar,
-                                        (root.corpus_root(), grant, keeping),
+                                        (grant, keeping),
                                         again,
                                     )
                                 }
                                 else {
                                     judge(
                                         &mut self.report,
-                                        (root.corpus_root(), grant, keeping),
+                                        (grant, keeping),
                                         component,
                                         (lowering, job.checking),
                                     )
@@ -960,12 +960,7 @@ impl Walk
                                 else {
                                     continue;
                                 };
-                                judge_regrouped(
-                                    &mut self.report,
-                                    grammar,
-                                    (root.corpus_root(), grant, keeping),
-                                    again,
-                                )
+                                judge_regrouped(&mut self.report, grammar, (grant, keeping), again)
                             };
                             unjudged.insert(held);
                         }
@@ -1364,7 +1359,7 @@ fn lower<'text>(
 /// # Specification
 /// - requires: `component` was laid out by `component::group`.
 /// - ensures: `None`, for the component to be lowered whole, when the prelude
-///   is not judged under the root of the component's last source, the
+///   is not judged under the root of the component's first source, the
 ///   component's text does not begin with the prelude's, or its own bytes do
 ///   not parse or do not lay after the prelude's tree. Otherwise, when its own
 ///   parse confirms how its imports were read, what [`lower_onto_closure`]
@@ -1390,7 +1385,9 @@ fn lower_after<'text>(
     component: &'text Component,
 ) -> Option<Job<'text>>
 {
-    let judged = prelude.judged(component.sources.last()?.root.corpus_root())?;
+    // The prelude's declarations settle under the first source's root, the
+    // root `judge_members` continues a closure under.
+    let judged = prelude.judged(component.members.first()?.root)?;
     let closure = judged.lowering();
     let own = component.text.strip_prefix(<&str>::from(closure.text()))?;
     let alone = parse(grammar, SourceText::from(own)).ok()?;
@@ -1430,8 +1427,9 @@ fn lower_after<'text>(
 }
 
 /// Judge `component` from what lowering it came to and how it is checked,
-/// under `root` and `grant`: each source's composition beside its unit's text
-/// up to the source's own end and where its bytes start.
+/// under `grant`, each source settled under its own root: each source's
+/// composition beside its unit's text up to the source's own end and where
+/// its bytes start.
 ///
 /// # Specification
 /// - requires: `lowering` is what [`lower`] or [`lower_unit_source`] made of
@@ -1451,7 +1449,7 @@ fn lower_after<'text>(
 #[spec(ensures: |ref ret| ret.len() == component.members.len())]
 fn judge<'text>(
     report: &mut RunReport,
-    (root, grant, keeping): (CorpusRoot, &HostGrant, Keeping),
+    (grant, keeping): (&HostGrant, Keeping),
     component: &'text Component,
     (lowering, checking): (
         Result<Lowering<'text>, ComposeFault<'text>>,
@@ -1461,7 +1459,6 @@ fn judge<'text>(
 {
     let (composed, admission) = match lowering {
         Ok(lowering) => judge_component(
-            root,
             (lowering, SourceText::from(component.text.as_str())),
             (grant, checking),
             (&component.members, report.spellings_mut()),
@@ -1500,9 +1497,9 @@ fn judge<'text>(
         .collect()
 }
 
-/// Lower and judge each component of `again`, under `root` and `grant`,
-/// keeping each one's admission when `keeping` asks for it, and hand back
-/// each given source's held composition in the order given.
+/// Lower and judge each component of `again`, under `grant`, keeping each
+/// one's admission when `keeping` asks for it, and hand back each given
+/// source's held composition in the order given.
 ///
 /// # Specification
 /// - requires: `again` is what [`regroup`] made of one component.
@@ -1521,7 +1518,7 @@ fn judge<'text>(
 fn judge_regrouped<'text>(
     report: &mut RunReport,
     grammar: &Pbg,
-    (root, grant, keeping): (CorpusRoot, &HostGrant, Keeping),
+    (grant, keeping): (&HostGrant, Keeping),
     again: &'text Grouped,
 ) -> Vec<Option<Held<'text>>>
 {
@@ -1540,15 +1537,10 @@ fn judge_regrouped<'text>(
             .parsed_mut()
             .absorb(ParsedBytes::from(part.text.len()));
         parts.push(
-            judge(
-                report,
-                (root, grant, keeping),
-                part,
-                (lowering, Checking::Whole),
-            )
-            .into_iter()
-            .map(Some)
-            .collect(),
+            judge(report, (grant, keeping), part, (lowering, Checking::Whole))
+                .into_iter()
+                .map(Some)
+                .collect(),
         );
     }
     again
@@ -2731,6 +2723,59 @@ pub mod tests
                  and its own"
             );
             assert!(!apart.contains("data Point"));
+        }
+    }
+
+    #[test]
+    fn each_source_of_a_component_settles_under_its_own_root_3100()
+    {
+        let scratch = Scratch::new(Path::new("roots-3100"));
+        // Under the strict root a `refuses` is itself the refusal; under the
+        // fixture root it is read, and settles when the checker refuses.
+        scratch.file(
+            Path::new("strict/s.gandr"),
+            SourceText::from(
+                "def one = 1 ;\n\n@[ refuses(\"UnresolvedName\") ]\ndef bad = nowhere ;\n",
+            ),
+        );
+        let strict = scratch.0.join("strict/s.gandr");
+        scratch.file(
+            Path::new("fixture/f.gandr"),
+            SourceText::from(
+                format!(
+                    "import \"{}\" ;\n\n@[ refuses(\"UnresolvedName\") ]\ndef missing = nowhere \
+                     ;\n",
+                    strict.display()
+                )
+                .as_str(),
+            ),
+        );
+        let fixture = scratch.0.join("fixture/f.gandr");
+        for given in [vec![fixture.clone(), strict.clone()], vec![
+            strict.clone(),
+            fixture.clone(),
+        ]] {
+            let mut standings = Vec::new();
+            let ControlFlow::Continue(_report) = Walk::new(given.clone()).visit(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    if let Step::Source { path, standing, .. } = step {
+                        standings.push((path.to_path_buf(), standing));
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+            standings.sort();
+            let mut expected = vec![
+                (fixture.clone(), Standing::Settled),
+                (strict.clone(), Standing::Unsettled),
+            ];
+            expected.sort();
+            assert_eq!(
+                standings, expected,
+                "given {given:?}, the fixture's `refuses` settles and the strict source's is \
+                 refused"
+            );
         }
     }
 

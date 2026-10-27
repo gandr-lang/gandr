@@ -46,7 +46,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::report::SettleReport;
-use crate::root::CorpusRoot;
+use crate::root::Rooted;
 use crate::run::RunSpelling;
 use crate::settle::settle;
 
@@ -334,15 +334,15 @@ fn abstract_type(sealing: Sealing) -> AbstractType
     })
 }
 
-/// The settle report for `source` under `root`, over its own verdicts, each
-/// run outcome asked for spelled by [`ran_at`].
+/// The settle report for `source`, each declaration under the root `roots`
+/// names for it, over its own verdicts, each run outcome asked for spelled by
+/// [`ran_at`].
 ///
 /// # Specification
 /// - requires: `source` parses cleanly and lowers as a module within the
 ///   fixture budgets.
-/// - ensures: the report retains `root`, and all reported declaration spans
-///   resolve in `source`; its expectations are compared with its own checker
-///   verdicts.
+/// - ensures: all reported declaration spans resolve in `source`; its
+///   expectations are compared with its own checker verdicts.
 /// - panics: when the fixture cannot be parsed, lowered or paired with its
 ///   verdicts.
 ///
@@ -355,21 +355,22 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
 #[spec(
     ensures: |ret| {
-    ret.root() == root
-        && ret
+    ret
             .declarations()
             .iter()
             .all(|declaration| source.fragment(declaration.span()).is_ok())
 },
 )]
-pub fn settled(
-    root: CorpusRoot,
+pub fn settled<Roots>(
+    roots: Roots,
     source: SourceText<'_>,
 ) -> SettleReport<'_>
+where
+    Roots: Rooted + Copy,
 {
     let checked = checked(source);
     settle(
-        root,
+        roots,
         &checked.arena,
         &checked.module,
         &checked.verdicts,
