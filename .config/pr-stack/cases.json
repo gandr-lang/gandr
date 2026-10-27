@@ -2571,5 +2571,91 @@
       "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "output": "{\"act\":\"clear\",\"seen\":null}"
+  },
+  {
+    "name": "#2829: a cancelled run beside a queued run of its workflow on the head is superseded though the queued run has the smaller id",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981589
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981551,
+        "conclusion": null
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "a cancelled run beside a newer run in progress is superseded (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981551
+    },
+    "input": [
+      {
+        "id": 40412981551,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981589,
+        "conclusion": null
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "a cancelled run beside a completed run of its workflow is superseded: the completed run's own checks are read (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981589
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981551,
+        "conclusion": "failure"
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "a cancelled run alone on its head is not superseded, so its checks are red (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981589
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "false"
+  },
+  {
+    "name": "a cancelled run whose every twin was cancelled too is not superseded (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981551
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981551,
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "false"
   }
 ]
