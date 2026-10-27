@@ -254,6 +254,12 @@ pub enum Insertion
     /// call: the source writes the call's explicit arguments, never the
     /// implicit the checker solves for and supplies.
     Implicit,
+    /// A node of the signature an extern block declares that the block does
+    /// not write, located at the member it serves: the product a member's
+    /// several parameters cross as, at the member's name, and the universe a
+    /// member's type is read at, at that type. The source writes each type,
+    /// never the payload or the kind.
+    Foreign,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

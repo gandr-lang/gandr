@@ -28,6 +28,7 @@ use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -41,6 +42,7 @@ use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
 use crate::model::InterfaceFault;
 use crate::module::DeclarationOutcome;
+use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
 use crate::origin::ClauseBinder;
@@ -757,6 +759,227 @@ fn an_operation_is_performed_by_its_interface_s_name_2279()
         ),
         "{:?}",
         verdict_of(&module, &report, "hello".into())
+    );
+}
+
+/// An `extern "rust"` block declares an interface its source's rows name and
+/// its calls perform, one operation per member, and declares no name of its
+/// own (#2901).
+#[test]
+fn an_extern_block_declares_an_interface_its_callers_perform_2901()
+{
+    let text = concat!(
+        "extern \"rust\" from \"boundary\" as Boundary {\n",
+        "  def add(x : u32, n : u32) -> u32;\n",
+        "  def negate(x : i64) -> i64;\n",
+        "}\n",
+        "extern \"rust\" from \"idle\" as Idle { def peek(x : u64) -> u64; }\n",
+        "def twice(x : u32) -> -F [Boundary] u32 { run y <- Boundary.add(x, x) ; Boundary.add(y, y) }\n",
+        "def flipped(x : i64) -> -F [Boundary] i64 { Boundary.negate(x) }\n",
+        "def missing(x : u32) -> -F [Boundary] u32 { Boundary.sub(x, x) }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(text), &mut arena);
+    let names: Vec<String> = module
+        .declarations()
+        .iter()
+        .map(|declaration| String::from(declaration.name().as_ref()))
+        .collect();
+    assert_eq!(
+        names,
+        ["twice", "flipped", "missing"],
+        "the block declares no name"
+    );
+    let flipped = tail_of(&module, &arena, "flipped".into());
+    let Some(&Computation::Perform {
+        ref signature,
+        ref operation,
+        payload,
+    }) = arena.computation(flipped)
+    else {
+        panic!(
+            "`Boundary.negate(…)` is a perform: {:?}",
+            arena.computation(flipped)
+        );
+    };
+    assert_eq!(
+        (signature.name().as_ref(), operation.as_ref()),
+        ("Boundary", "negate")
+    );
+    assert!(
+        matches!(arena.value(payload), Some(&Value::Variable { .. })),
+        "the one argument is the payload: {:?}",
+        arena.value(payload)
+    );
+    let fixed = |arena: &CoreArena, ty, width| matches!(arena.value_type(ty), Some(&ValueType::Base(BaseType::Fixed(found))) if found == width);
+    let added = signature.operation(&"add".into());
+    let Maybe::Present(added) = added
+    else {
+        panic!("the block's first member is an operation: {signature:?}");
+    };
+    let Some(&ValueType::Product(ref parameters)) = arena.value_type(added.payload)
+    else {
+        panic!(
+            "two parameters are passed as their product: {:?}",
+            arena.value_type(added.payload)
+        );
+    };
+    assert!(
+        parameters.len() == 2
+            && parameters
+                .iter()
+                .all(|&parameter| fixed(&arena, parameter, IntegerWidth::U32))
+            && fixed(&arena, added.reply, IntegerWidth::U32),
+        "`add` takes two `u32` and answers one"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "missing".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("sub")
+        ),
+        "the block declares no `sub`"
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["twice", "flipped"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. } | Verdict::Synthesised { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+    // Each member type answers at its own bytes, at the universe it is read
+    // at, the block no declaration performs included.
+    let mut kinded: Vec<(usize, &str)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| {
+            let Labelled::Kind(kind) = label.labelled
+            else {
+                return None;
+            };
+            matches!(arena.value_type(kind), Some(&ValueType::Universe { .. })).then_some(())?;
+            let start = usize::from(label.span.start());
+            Some((start, text.get(start .. usize::from(label.span.end()))?))
+        })
+        .collect();
+    kinded.sort_unstable();
+    let spelled: Vec<&str> = kinded.iter().map(|&(_, written)| written).collect();
+    assert_eq!(
+        spelled,
+        ["u32", "u32", "u32", "i64", "i64", "u64", "u64"],
+        "every member type, and only those, answers at its kind"
+    );
+    assert!(
+        kinded
+            .iter()
+            .all(|&(start, _)| start < text.find("def twice").unwrap_or(0)),
+        "each at the bytes its block writes it"
+    );
+}
+
+/// A `rust` block's piece beyond the form is refused where it stands, a
+/// member or an interface written twice at the second, and a block of
+/// another language as before (#2901).
+#[test]
+fn an_extern_block_beyond_the_form_is_refused_at_the_piece_2901()
+{
+    let beyond = |boundary: FragmentBoundary| {
+        boundary == FragmentBoundary::Unadmitted(crate::unbuilt::Unbuilt::ExternBlock)
+    };
+    for (source, at, expected) in [
+        (
+            "extern \"rust\" from \"m\" { def f(x : Integer) -> u32; }\n",
+            "Integer",
+            "a type no fixed width spells",
+        ),
+        (
+            "extern \"rust\" from \"m\" { type Handle; }\n",
+            "type",
+            "a type member",
+        ),
+        (
+            "extern \"rust\" from \"m\" { def f(x : u32); }\n",
+            "f",
+            "a member with no result",
+        ),
+        (
+            "extern \"rust\" from \"m\" { def f(x : shared u32) -> u32; }\n",
+            "shared",
+            "a mode",
+        ),
+    ] {
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        let refused = module.declarations().iter().find_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some(refusal)
+            }
+            else {
+                None
+            }
+        });
+        let Some(LoweringRefusal::OutOfFragment {
+            span,
+            form,
+            boundary,
+            ..
+        }) = refused
+        else {
+            panic!("{expected}: {refused:?}");
+        };
+        assert!(
+            form == crate::form::FormName::EXTERN_BLOCK
+                && beyond(boundary)
+                && source.get(usize::from(span.start()) .. usize::from(span.end())) == Some(at),
+            "{expected} is refused at `{at}`: {refused:?}"
+        );
+    }
+    for (source, second) in [
+        (
+            "extern \"rust\" from \"m\" { def f(x : u32) -> u32; def f(y : u32) -> u32; }\n",
+            "f(y",
+        ),
+        (
+            "extern \"rust\" from \"m\" as M { def f(x : u32) -> u32; }\nextern \"rust\" from \"n\" as M { def g(x : u32) -> u32; }\n",
+            "M {",
+        ),
+    ] {
+        let at = source.rfind(second);
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        assert!(
+            module.declarations().iter().any(|declaration| matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { span, .. })
+                    if Some(usize::from(span.start())) == at
+            )),
+            "the second is refused at `{second}`: {:?}",
+            module
+                .declarations()
+                .iter()
+                .map(LoweredDeclaration::outcome)
+                .collect::<Vec<_>>()
+        );
+    }
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from("extern \"c\" from \"m\" { def f(x : u32) -> u32; }\n"),
+        &mut arena,
+    );
+    assert!(
+        module.declarations().iter().any(|declaration| matches!(
+            declaration.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            })
+        )),
+        "a C block is refused whole, as before"
     );
 }
 

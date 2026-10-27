@@ -539,12 +539,16 @@ impl TileName
     pub const DOT: Self = Self(".");
     /// The two dots `..` opening a list pattern's rest.
     pub const DOT_DOT: Self = Self("..");
+    /// The extern block's keyword `extern`.
+    pub const EXTERN: Self = Self("extern");
     /// The lambda keyword `fn`.
     pub const FN: Self = Self("fn");
     /// The force keyword `force`.
     pub const FORCE: Self = Self("force");
     /// The fork keyword `fork`, opening a statement.
     pub const FORK: Self = Self("fork");
+    /// The extern block's keyword `from`, before the library it names.
+    pub const FROM: Self = Self("from");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
     /// The greater-than sign `>`: an instantiation's productivity claim, a

@@ -170,6 +170,7 @@ use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
@@ -188,8 +189,12 @@ use gandr_core_term::handler;
 use gandr_core_term::handler::HandlerLaw;
 use gandr_core_term::handler::subject;
 use gandr_core_term::session::SessionAction;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GroundSort;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::Name;
@@ -216,6 +221,7 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
+use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
@@ -225,8 +231,11 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::module::ForeignInterface;
+use crate::module::ForeignType;
 use crate::origin::ClauseBinder;
 use crate::origin::ClausePlace;
+use crate::origin::Insertion;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
@@ -364,8 +373,8 @@ enum Performer
     Interface(EffectName),
 }
 
-/// The interface a form names: a host interface, or a theory a capability
-/// scope handles or a row names at the sorts it fixes.
+/// The interface a form names: a host interface, a theory a capability scope
+/// handles or a row names at the sorts it fixes, or an extern block's.
 ///
 /// # Specification
 /// trivial.
@@ -376,12 +385,15 @@ pub(super) enum Interface
     Host(EffectName),
     /// The theory a capability scope or a row reads as an interface.
     Theory(Arc<TheoryInterface>),
+    /// The interface an extern block of the source declares, which the host
+    /// the run is offered to answers.
+    Foreign(Arc<ForeignInterface>),
 }
 
 impl Interface
 {
     /// The name a row keys the interface's default instance by: the host
-    /// interface's, or the theory's.
+    /// interface's, the theory's or the extern block's.
     ///
     /// # Specification
     /// trivial.
@@ -390,6 +402,7 @@ impl Interface
         match *self {
             Self::Host(ref name) => name,
             Self::Theory(ref theory) => &theory.name,
+            Self::Foreign(ref foreign) => &foreign.name,
         }
     }
 }
@@ -639,10 +652,154 @@ impl Sink<'_>
                 Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
             })
     }
+
+    /// The signature of the extern block's interface `foreign` in the
+    /// module's arena, minted at the first call, each member type where the
+    /// member writes it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one operation per member, in order, its payload the unit for
+    ///   no parameter, the parameter's width for one and the product of their
+    ///   widths in order for several, as a call passes its arguments, and its
+    ///   reply its result's width; minted at the first call for the block, as
+    ///   [`Self::foreign_type`] mints each member type, the product inserted at
+    ///   the member's name, and the same signature at every call after.
+    /// - fails: the unminted absence for a block naming one member twice, which
+    ///   the collection refuses.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row and two performs of one block check against one
+    ///   signature.
+    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    #[spec(ensures: |ref ret| match *ret {
+        | Maybe::Present(ref signature) => signature.name() == &foreign.name
+            && signature.operations().len() == foreign.operations.len(),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn foreign(
+        &mut self,
+        foreign: &ForeignInterface,
+    ) -> Maybe<EffectSig, lowered::Absent>
+    {
+        if let Some(minted) = self.foreign.get(&foreign.named.start()) {
+            return Maybe::Present(minted.clone());
+        }
+        let mut operations: Vec<EffectOp> = Vec::with_capacity(foreign.operations.len());
+        let mut parameters: Vec<ValueTypeId> = Vec::new();
+        for operation in &foreign.operations {
+            parameters.clear();
+            for &written in &operation.parameters {
+                parameters.push(self.foreign_type(written));
+            }
+            let payload = if let [only] = *parameters.as_slice() {
+                only
+            }
+            else {
+                let product = self.arena.value_type_product(&parameters);
+                let named = Origin::new(operation.named.node, operation.named.span);
+                self.origins
+                    .record_value_type(product, named.inserted(Insertion::Foreign));
+                product
+            };
+            let reply = self.foreign_type(operation.result);
+            operations.push(EffectOp {
+                name: operation.name.clone(),
+                payload,
+                reply,
+            });
+        }
+        let Ok(signature) = EffectSig::new(foreign.name.clone(), operations)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let _first = self
+            .foreign
+            .insert(foreign.named.start(), signature.clone());
+
+        Maybe::Present(signature)
+    }
+
+    /// The base type an extern block's member writes as `written`, read at
+    /// its kind there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a fresh base type of `written`'s width, recorded as written
+    ///   at the bytes that write it, and a kind label there naming a fresh
+    ///   value universe inserted for the block: no judgement forms the type
+    ///   where it is written, so it answers at its kind, as a functor
+    ///   parameter's abstract type does.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each member type of a block answers at its own bytes,
+    ///   whether or not a declaration performs the block's operations.
+    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    #[spec(
+        captures: labels = self.origins.labels().len(),
+        ensures: |ret| matches!(self.arena.value_type(ret), Some(&ValueType::Base(BaseType::Fixed(width))) if width == written.width)
+            && self.origins.labels().len() == labels.saturating_add(1),
+    )]
+    fn foreign_type(
+        &mut self,
+        written: ForeignType,
+    ) -> ValueTypeId
+    {
+        let at = Origin::new(written.written.node, written.written.span);
+        let ty = self.arena.value_type_base(BaseType::Fixed(written.width));
+        self.origins.record_value_type(ty, at);
+        let kind = self
+            .arena
+            .value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        self.origins
+            .record_value_type(kind, at.inserted(Insertion::Foreign));
+        self.origins.record_label(Label {
+            span: written.written.span,
+            labelled: Labelled::Kind(kind),
+        });
+        ty
+    }
 }
 
 impl<'source> Lowerer<'_, 'source>
 {
+    /// Mint the signature of every extern block the current source declares,
+    /// before any of its declarations is minted.
+    ///
+    /// # Specification
+    /// - requires: the current source is collected.
+    /// - ensures: each of its blocks' signatures is in `sink`, minted as
+    ///   [`Sink::foreign`] mints it, so each member type answers at its bytes
+    ///   whether or not a declaration performs the block's operations.
+    /// - fails: never: a block whose signature does not mint is refused at the
+    ///   call that performs it.
+    /// - panics: none.
+    /// - executable: none — the clause is the minted signatures, which
+    ///   [`Sink::foreign`] states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block no declaration performs answers at each
+    ///   member type.
+    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    pub(super) fn mint_foreign(
+        &self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        let source = self.current.source;
+        for (_, interface) in self
+            .collected
+            .foreign
+            .iter()
+            .filter(|&(&(at, _), _)| at == source)
+        {
+            let _minted = sink.foreign(interface);
+        }
+    }
+
     /// Classify a capability type, `Cap {op, …}` or `Cap[r] {op, …}`.
     ///
     /// # Specification
@@ -1056,15 +1213,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   it writes beside its interface, in written order, and the operand it
     ///   stays open through when one is written, the cursor past the `]`; a row
     ///   names an interface, a label or a tail. Each entry's name is read as a
-    ///   capability scope reads its interface's ([`Self::handled`]): the host
-    ///   interface of the name, or the theory it names at the sorts the entry
-    ///   fixes, each fixed type kept to be read with the row.
+    ///   capability scope reads its interface's ([`Self::handled`]): the
+    ///   interface an extern block of the entry's source declares under the
+    ///   name, ahead of the host interface of the name, or the theory it names
+    ///   at the sorts the entry fixes, each fixed type kept to be read with the
+    ///   row.
     /// - fails: the refusals of [`Self::handled`] at an entry, the unresolved
-    ///   head among them for a name neither the host nor a theory answers;
-    ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named whole
-    ///   again, or a label written again, at the second, since a row holds each
-    ///   label once; a misplaced-tile fault for a row out of shape or a label
-    ///   that is not one name.
+    ///   head among them for a name that no extern block, host interface or
+    ///   theory answers; [`LoweringRefusal::DuplicateDefinition`] for an
+    ///   interface named whole again, or a label written again, at the second,
+    ///   since a row holds each label once; a misplaced-tile fault for a row
+    ///   out of shape or a label that is not one name.
     /// - panics: none.
     ///
     /// # Errors
@@ -1403,6 +1562,21 @@ impl<'source> Lowerer<'_, 'source>
             }
             Interface::Theory(Arc::clone(theory))
         }
+        else if let Performer::Interface(ref named) = performer
+            && let Some(foreign) = self.collected.foreign_named(head.span.start(), named)
+        {
+            if !foreign
+                .operations
+                .iter()
+                .any(|offered| offered.name == operation)
+            {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: selected.span,
+                    name,
+                });
+            }
+            Interface::Foreign(Arc::clone(foreign))
+        }
         else {
             let table = host(site)?;
             let Maybe::Present(offered) = table.offering(&operation)
@@ -1512,7 +1686,8 @@ impl<'source> Lowerer<'_, 'source>
             Some((_, Former::Constructor)) => {
                 return Ok(match self.constructor_named(site, written) {
                     Maybe::Present(_) => None,
-                    Maybe::Absent(_) => Self::interface_named(written)
+                    Maybe::Absent(_) => self
+                        .interface_named(target.span.start(), written)
                         .map(|interface| (Performer::Interface(interface), selected)),
                 });
             },
@@ -1534,7 +1709,7 @@ impl<'source> Lowerer<'_, 'source>
                 self.written_holder(declared)?
             },
             Ok(Maybe::Absent(_)) | Err(_) => {
-                if let Some(interface) = Self::interface_named(written) {
+                if let Some(interface) = self.interface_named(target.span.start(), written) {
                     return Ok(Some((Performer::Interface(interface), selected)));
                 }
                 Holder::Other
@@ -1544,13 +1719,21 @@ impl<'source> Lowerer<'_, 'source>
             .then_some((Performer::Capability(target.node, None), selected)))
     }
 
-    /// The host interface named `written`, when the host declares one.
+    /// The interface named `written` where `at` stands: the one an extern
+    /// block of that source declares, or else the host's.
     ///
     /// # Specification
     /// trivial.
-    fn interface_named(written: SurfaceName<'_>) -> Option<EffectName>
+    fn interface_named(
+        &self,
+        at: ByteOffset,
+        written: SurfaceName<'_>,
+    ) -> Option<EffectName>
     {
         let interface = EffectName::from(written.as_ref());
+        if self.collected.foreign_named(at, &interface).is_some() {
+            return Some(interface);
+        }
         let table = HostSignatures::new(&mut CoreArena::new()).ok()?;
         matches!(table.named(&interface), Maybe::Present(_)).then_some(interface)
     }
@@ -1826,7 +2009,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   ([`Self::answering_model`]).
     /// - fails: the wrong-sort refusal where no computation is read, at a
     ///   module a host interface's scope names, and at the interface of a host
-    ///   scope writing no `with`; the refusals of [`Self::handled`],
+    ///   scope writing no `with`; out of the fragment (`extern_block`) at the
+    ///   interface of a scope over an extern block's interface, which the host
+    ///   the run is offered to answers; the refusals of [`Self::handled`],
     ///   [`Self::theory_slot`], [`Self::named_model`] and
     ///   [`Self::answering_model`]; [`LoweringRefusal::DuplicateDefinition`]
     ///   for a second return clause; a missing-operand fault for a scope with
@@ -1917,6 +2102,18 @@ impl<'source> Lowerer<'_, 'source>
                 // The written name refers to the theory, as `Model(T)`'s does.
                 self.resolutions
                     .push((written.span, crate::Resolution::Declaration(theory.theory)));
+            },
+            // A source handler of an extern block's interface is beyond the
+            // form: the host the run is offered to answers it (#327).
+            Interface::Foreign(_) => {
+                let named = Site {
+                    at: written,
+                    ..site
+                };
+                return Err(named.folded(
+                    FormName::EXTERN_BLOCK,
+                    FragmentBoundary::Unadmitted(Unbuilt::ExternBlock),
+                ));
             },
         }
         let subject = self.block(site, &mut cursor, Frame::Inner(held))?;
@@ -2161,8 +2358,19 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Interface, LoweringRefusal<'source>>
     {
         let handled = self.name_at(written);
+        let named = EffectName::from(handled.as_ref());
+        // A declared extern block shadows the host interface of its name.
+        if let Some(foreign) = self.collected.foreign_named(written.span.start(), &named) {
+            if let Some(&(sort, _)) = manifest.first() {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: sort.span,
+                    name: self.name_at(sort),
+                });
+            }
+            return Ok(Interface::Foreign(Arc::clone(foreign)));
+        }
         let table = host(site)?;
-        if let Maybe::Present(interface) = table.named(&EffectName::from(handled.as_ref())) {
+        if let Maybe::Present(interface) = table.named(&named) {
             if let Some(&(sort, _)) = manifest.first() {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: sort.span,
@@ -2399,10 +2607,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `argument` and the row's tail are already minted or absent.
     /// - ensures: `F^⟨row⟩ A` at `origin`, each interface named whole at its
-    ///   default label and each label's instance at its region, each a host's
-    ///   signature or a theory's at the types its entry fixes
-    ///   ([`Self::interface_signature`]), its tail standing for the row the
-    ///   tail's value denotes; the argument's, a fixed type's or the tail's
+    ///   default label and each label's instance at its region, each an extern
+    ///   block's signature, a host's, or a theory's at the types its entry
+    ///   fixes ([`Self::interface_signature`]), its tail standing for the row
+    ///   the tail's value denotes; the argument's, a fixed type's or the tail's
     ///   absence when it did not lower, and the unminted absence when two
     ///   labels name one instance.
     /// - fails: never.
@@ -2533,10 +2741,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
     /// - witness: `lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
     #[spec(ensures: |ref ret| match *ret {
-        | Maybe::Present(ref signature) => match *interface {
-            | Interface::Host(ref name) => signature.name() == name,
-            | Interface::Theory(ref theory) => signature.name() == &theory.name,
-        },
+        | Maybe::Present(ref signature) => signature.name() == interface.name(),
         | Maybe::Absent(_) => true,
     })]
     pub(super) fn interface_signature(
@@ -2549,6 +2754,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let theory = match *interface {
             Interface::Host(ref name) => return sink.signature(name, origin),
+            Interface::Foreign(ref foreign) => return sink.foreign(foreign),
             Interface::Theory(ref theory) => theory,
         };
         if let Some(minted) = sink.theories.get(&(theory.scope, standing)) {
@@ -2858,14 +3064,16 @@ impl<'source> Lowerer<'_, 'source>
         };
         let subject = match scoped.interface {
             Interface::Theory(ref theory) => normalized(sink, subject, &theory.rules, origin),
-            Interface::Host(_) => subject,
+            Interface::Host(_) | Interface::Foreign(_) => subject,
         };
         let minted = match (&scoped.handlers, &scoped.interface) {
             (&Handlers::Written(ref written), _) => self.mint_clauses(written, sink, origin),
             (&Handlers::Model(ref answering), &Interface::Theory(ref theory)) => {
                 self.mint_answered(theory, answering, sink, origin)
             },
-            (&Handlers::Model(_), &Interface::Host(_)) => Maybe::Absent(lowered::Absent::Unminted),
+            (&Handlers::Model(_), &Interface::Host(_) | &Interface::Foreign(_)) => {
+                Maybe::Absent(lowered::Absent::Unminted)
+            },
         };
         let (on_return, clauses) = match minted {
             Maybe::Present(minted) => minted,

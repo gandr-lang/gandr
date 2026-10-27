@@ -1,14 +1,25 @@
 //! Definitions of a composed program called from Rust on values the caller
 //! builds, each answer read back into the caller's arena.
 
+use core::convert::Infallible;
+
 use anodized::spec;
+use gandr_core_sequent::ConstructorTag;
+use gandr_core_sequent::HeapValue;
+use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::Stuck;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
+use gandr_runtime_emitter::HostHandler;
+use gandr_runtime_emitter::HostReply;
+use gandr_runtime_emitter::HostRequest;
+use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
@@ -67,8 +78,113 @@ fn returned<'arena>(
     arena.value(value)
 }
 
-/// Compose `source`, call its definition `name` on `arguments`, and answer
-/// the caller's arena beside how the call ended.
+/// A `u32` as the Rust side of the exemplar's extern block takes and answers
+/// it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Word(u32);
+
+/// The Rust function the exemplar's extern block declares, `add(x: u32, n:
+/// u32) -> u32`, wrapping as Rust's `u32` addition does in a release build.
+///
+/// # Specification
+/// trivial.
+fn add(
+    x: Word,
+    n: Word,
+) -> Word
+{
+    Word(x.0.wrapping_add(n.0))
+}
+
+/// The literal of `word`, a `u32`.
+///
+/// # Specification
+/// trivial.
+const fn word(word: Word) -> Literal
+{
+    Literal::Fixed(FixedInteger::U32(word.0))
+}
+
+/// A host answering nothing: every operation it is offered stays unhandled.
+struct Declining;
+
+impl HostHandler for Declining
+{
+    type Abort = Infallible;
+
+    /// Decline the operation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        _request: HostRequest<'_>,
+        _values: &mut HostValues<'_>,
+    ) -> HostReply<Infallible>
+    {
+        HostReply::Decline
+    }
+}
+
+/// The Rust side of the exemplar's extern block: a host answering
+/// `Boundary.add` with [`add`], keeping each pair of arguments it is passed,
+/// and declining any other operation.
+#[repr(transparent)]
+struct RustSide
+{
+    /// The arguments of each `Boundary.add` answered, in order.
+    received: Vec<(Word, Word)>,
+}
+
+impl HostHandler for RustSide
+{
+    type Abort = Infallible;
+
+    /// Answer `Boundary.add` on two `u32` with their [`add`], declining any
+    /// other operation or payload.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        request: HostRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> HostReply<Infallible>
+    {
+        if request.signature.name().as_ref() != "Boundary" || request.operation.as_ref() != "add" {
+            return HostReply::Decline;
+        }
+        let Some(&HeapValue::Constructed {
+            tag: ConstructorTag::Tuple(_),
+            ref fields,
+        }) = values.value(request.payload)
+        else {
+            return HostReply::Decline;
+        };
+        let read = |at: HeapValueId| match values.value(at) {
+            Some(&HeapValue::Literal(Literal::Fixed(FixedInteger::U32(value)))) => {
+                Some(Word(value))
+            },
+            _ => None,
+        };
+        let (Some(x), Some(n)) = (
+            fields.first().copied().and_then(read),
+            fields.get(1).copied().and_then(read),
+        )
+        else {
+            return HostReply::Decline;
+        };
+        self.received.push((x, n));
+        match values.allocate(HeapValue::Literal(word(add(x, n)))) {
+            Ok(sum) => HostReply::Resume(sum),
+            Err(_spent) => HostReply::Decline,
+        }
+    }
+}
+
+/// Compose `source`, call its definition `name` on `arguments` under `host`,
+/// and answer the caller's arena beside how the call ended.
 ///
 /// # Specification
 /// - requires: `source` composes and declares `name` at its top level.
@@ -78,17 +194,20 @@ fn returned<'arena>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — integer answers, an order-dependent answer, a function
-///   answered and a refused definition have distinct observations.
+///   answered, a refused definition, an extern operation answered and one
+///   declined have distinct observations.
 /// - witness: `tests::boundary::a_definition_answers_the_integer_rust_passes`
-/// - witness: `tests::boundary::the_arguments_apply_in_the_order_passed`
-/// - witness: `tests::boundary::a_function_answered_is_not_forced`
-/// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
+/// - witness: `tests::boundary::an_extern_operation_is_answered_by_the_rust_caller`
+/// - witness: `tests::boundary::an_extern_operation_no_host_answers_sticks_the_run`
 #[spec(ensures: |ref ret| !matches!(ret.1, Terminal::Ended(Evaluation::Unrunnable(Unrunnable::Undeclared(_)))))]
-fn call(
+fn call_under<Host>(
     source: SourceText<'static>,
     name: SurfaceName<'_>,
-    arguments: &[Integer],
+    arguments: &[Literal],
+    host: &mut Host,
 ) -> (CoreArena, Terminal<'static>)
+where
+    Host: HostHandler<Abort = Infallible>,
 {
     let grammar = built_in().expect("built-in grammar");
     let mut lowerings = LoweringCount::default();
@@ -104,10 +223,37 @@ fn call(
     let mut arena = CoreArena::new();
     let arguments: Vec<_> = arguments
         .iter()
-        .map(|&argument| arena.value_literal(literal(argument)))
+        .map(|argument| arena.value_literal(argument.clone()))
         .collect();
-    let terminal = program.call(constant, &arguments, &mut arena);
+    let Ok(terminal) = program.call(constant, &arguments, &mut arena, host);
     (arena, terminal)
+}
+
+/// Compose `source` and call its definition `name` on `arguments`, integers,
+/// under a host answering nothing.
+///
+/// # Specification
+/// - requires: as [`call_under`].
+/// - ensures: as [`call_under`].
+/// - panics: as [`call_under`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`call_under`].
+/// - witness: `tests::boundary::the_arguments_apply_in_the_order_passed`
+/// - witness: `tests::boundary::a_function_answered_is_not_forced`
+/// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
+#[spec(ensures: |ref ret| !matches!(ret.1, Terminal::Ended(Evaluation::Unrunnable(Unrunnable::Undeclared(_)))))]
+fn call(
+    source: SourceText<'static>,
+    name: SurfaceName<'_>,
+    arguments: &[Integer],
+) -> (CoreArena, Terminal<'static>)
+{
+    let literals: Vec<Literal> = arguments
+        .iter()
+        .map(|&argument| literal(argument))
+        .collect();
+    call_under(source, name, &literals, &mut Declining)
 }
 
 #[test]
@@ -176,6 +322,59 @@ fn an_unrunnable_definition_ends_before_a_run()
             terminal,
             Terminal::Ended(Evaluation::Unrunnable(Unrunnable::Refused(name)))
                 if name.as_ref() == "refused"
+        ),
+        "{terminal:?}"
+    );
+}
+
+#[test]
+fn an_extern_operation_is_answered_by_the_rust_caller()
+{
+    for (argument, answer, received) in [
+        (Word(5), Word(20), [
+            (Word(5), Word(5)),
+            (Word(10), Word(10)),
+        ]),
+        // Rust's addition wraps where gandr's `Integer` would not.
+        (Word(0x8000_0001), Word(4), [
+            (Word(0x8000_0001), Word(0x8000_0001)),
+            (Word(2), Word(2)),
+        ]),
+    ] {
+        let mut rust = RustSide {
+            received: Vec::new(),
+        };
+        let (arena, terminal) = call_under(
+            SourceText::from(ROUND_TRIP),
+            SurfaceName::from("quadrupled"),
+            &[word(argument)],
+            &mut rust,
+        );
+        assert_eq!(
+            returned(&arena, &terminal),
+            Some(&Value::Literal(word(answer))),
+            "quadrupled({argument:?}): {terminal:?}"
+        );
+        assert_eq!(
+            rust.received, received,
+            "each perform reached Rust with its arguments, in order"
+        );
+    }
+}
+
+#[test]
+fn an_extern_operation_no_host_answers_sticks_the_run()
+{
+    let (_, terminal) = call_under(
+        SourceText::from(ROUND_TRIP),
+        SurfaceName::from("quadrupled"),
+        &[word(Word(5))],
+        &mut Declining,
+    );
+    assert!(
+        matches!(
+            terminal,
+            Terminal::Ended(Evaluation::Stuck(Stuck::PerformNoHandler(_)))
         ),
         "{terminal:?}"
     );

@@ -261,6 +261,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::NameSegment;
@@ -330,6 +331,7 @@ use crate::origin::Provenance;
 use crate::resolve::InScope;
 use crate::resolve::Resolution;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
 use crate::unit::PathImportOrdinal;
 use crate::unit::SourceIndex;
@@ -343,6 +345,8 @@ use closer::Tearing;
 mod data;
 
 mod derive;
+
+mod foreign;
 
 mod functor;
 
@@ -365,6 +369,9 @@ pub use self::data::Generators;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
 pub use self::derive::DerivedSlot;
+use self::foreign::Foreign;
+pub use self::foreign::ForeignInterface;
+pub use self::foreign::ForeignType;
 use self::functor::Applied;
 pub use self::functor::Functor;
 pub use self::functor::FunctorIndex;
@@ -1566,6 +1573,10 @@ pub struct Collected<'source>
     pub declared_uses: Vec<(ByteSpan, SlotIndex)>,
     /// The bytes of each import a name lookup was answered through.
     pub reached: BTreeSet<ByteSpan>,
+    /// Each interface an `extern "rust"` block declares, by the source
+    /// declaring it and its name: read where its source reads a row or a
+    /// call, ahead of the host's interface of its name.
+    pub foreign: BTreeMap<(SourceIndex, EffectName), Arc<ForeignInterface>>,
 }
 
 quenchant_shape::reason_enum! {
@@ -3022,6 +3033,7 @@ pub fn begin_collection<'source>(
         receivers: BTreeMap::new(),
         declared_uses: Vec::new(),
         reached: BTreeSet::new(),
+        foreign: BTreeMap::new(),
     })
 }
 
@@ -3422,6 +3434,30 @@ pub fn collect_source<'source>(
             collector.world(child, &decorations)?;
             decorations.clear();
             continue;
+        }
+        if former == Maybe::Present(Former::Unadmitted(Unbuilt::ExternBlock)) {
+            match collector.foreign(child)? {
+                Foreign::Declared => {
+                    // The block takes no slot, so the blocks before it
+                    // decorate nothing, as before an import.
+                    if let Some(&block) = decorations.first()
+                        && let Some(refusal) = strayed(collector.module_child(block))?
+                    {
+                        strays.push(Stray::of(block, refusal, Vec::new()));
+                    }
+                    decorations.clear();
+                    continue;
+                },
+                Foreign::Refused(refusal) => {
+                    // A block the parser did not repair is an item out of the
+                    // fragment, carrying its own refusal.
+                    items_refused |= !matches!(refusal, LoweringRefusal::MalformedForm { .. });
+                    strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
+                    after_stray = true;
+                    continue;
+                },
+                Foreign::Other => {},
+            }
         }
         if former == Maybe::Present(Former::Data) {
             collector.data(child, &decorations)?;
@@ -3890,32 +3926,14 @@ fn read_import<'source>(
     if let Maybe::Absent(_) = cursor.tile(TileName::IMPORT) {
         return Err(out_of_place(&cursor));
     }
-    let (uri, addressed, address) = match cursor.tile(TileName::QUOTE) {
-        Maybe::Present(opened) => {
-            let mut written = String::new();
-            loop {
-                let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
-                    Maybe::Present(fragment) => fragment,
-                    Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
-                        Maybe::Present(escape) => escape,
-                        Maybe::Absent(_) => break,
-                    },
-                };
-                if let Some(text) = tree.fragment(piece.node) {
-                    written.push_str(text.as_ref());
-                }
-            }
-            let Maybe::Present(closed) = cursor.tile(TileName::QUOTE)
-            else {
-                return Err(out_of_place(&cursor));
-            };
-            let addressed = ByteSpan::new(opened.span.end(), closed.span.start())
-                .map_err(|_inverted| out_of_place(&cursor))?;
-            let uri = ImportUri::from(decode_escapes(SourceFragment::from(written.as_str())));
+    let (uri, addressed, address) = match quoted(tree, &mut cursor) {
+        Maybe::Present((written, addressed)) => {
+            let uri = ImportUri::from(written);
             let address = Address::of(&uri);
             (uri, addressed, address)
         },
-        Maybe::Absent(_) => {
+        Maybe::Absent(quoted_text::Absent::Unclosed) => return Err(out_of_place(&cursor)),
+        Maybe::Absent(quoted_text::Absent::Unopened) => {
             let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER)
             else {
                 return Err(out_of_place(&cursor));
@@ -3981,6 +3999,80 @@ fn read_import<'source>(
         addressed,
         address,
     })
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a cursor reads no quoted string.
+    pub mod quoted_text {
+        /// The reason none is read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No quote stands at the cursor.
+            Unopened,
+            /// A quote opens a string no quote closes.
+            Unclosed,
+        }
+    }
+}
+
+/// The string the quoted tiles at `cursor` spell, `"…"`, its escapes decoded,
+/// beside the bytes between its quotes, the cursor past the closing quote.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the fragments and escapes between the quotes, in order, decoded
+///   as [`decode_escapes`] decodes them, with the bytes the two quotes bound;
+///   [`quoted_text::Absent::Unopened`], the cursor unmoved, where no quote
+///   stands; [`quoted_text::Absent::Unclosed`] where no quote follows the
+///   string's last fragment.
+/// - provides: the string reading an import's address and an extern block's
+///   language and library share.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an escaped address reads decoded, and an extern block's
+///   language and library read as written.
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+#[spec(ensures: |ref ret| match *ret {
+    | Maybe::Present((_, between)) => between.end() <= cursor.here().start(),
+    | Maybe::Absent(_) => true,
+})]
+fn quoted(
+    tree: &SyntaxTree<'_>,
+    cursor: &mut Cursor<'_>,
+) -> Maybe<(String, ByteSpan), quoted_text::Absent>
+{
+    let Maybe::Present(opened) = cursor.tile(TileName::QUOTE)
+    else {
+        return Maybe::Absent(quoted_text::Absent::Unopened);
+    };
+    let mut written = String::new();
+    loop {
+        let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
+            Maybe::Present(fragment) => fragment,
+            Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
+                Maybe::Present(escape) => escape,
+                Maybe::Absent(_) => break,
+            },
+        };
+        if let Some(text) = tree.fragment(piece.node) {
+            written.push_str(text.as_ref());
+        }
+    }
+    let Maybe::Present(closed) = cursor.tile(TileName::QUOTE)
+    else {
+        return Maybe::Absent(quoted_text::Absent::Unclosed);
+    };
+    let Ok(between) = ByteSpan::new(opened.span.end(), closed.span.start())
+    else {
+        return Maybe::Absent(quoted_text::Absent::Unclosed);
+    };
+
+    Maybe::Present((
+        decode_escapes(SourceFragment::from(written.as_str())),
+        between,
+    ))
 }
 
 /// The file the module path `path` names, relative to the directory of the
@@ -10031,6 +10123,10 @@ pub struct DeclarationParts<'source>
 }
 
 /// One declared name, lowered.
+///
+/// Its [`DeclarationParts`] hold its admission position, the unit keys of its
+/// signature and definition forms, its origin token and the
+/// [`DeclarationOutcome`] naming what became of it.
 ///
 /// # Specification
 /// - requires: nothing to construct this data; its producers and consumers
