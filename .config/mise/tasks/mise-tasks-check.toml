@@ -13,7 +13,7 @@ description = "Every gate"
 depends = ["check:*"]
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
-# process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, beside
+# process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, and the standard library under `library/std`, beside
 # rustfmt. The formatter keeps each token as written, so the explicit-form
 # sources keep their spelling.
 ["check:fmt"]
@@ -26,7 +26,7 @@ run = ".config/mise/scope cargo fmt --all --check"
 # which would build the driver from nothing on every run.
 ["check:corpus-format"]
 description = "Every corpus source in the gandr formatter's layout"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std"
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
@@ -654,7 +654,8 @@ run = "typos"
 # specification detail live. The first command refuses tracked markdown
 # outside the allowlist, matched by Git's glob pathspec so `*` stays within
 # one directory, which sizelint's patterns cannot express. The ledger's
-# README and its generated syntax ledger are on it, and the issue templates,
+# README and its generated syntax ledger are on it, a library's README (its
+# module map, `library/std/README.md`), and the issue templates,
 # which GitHub reads as markdown. The second holds every
 # tracked markdown file to its budget in `sizelint.toml`; treefmt's sizelint
 # pass leaves markdown to this gate. The syntax ledger is exempt: it is
@@ -670,6 +671,7 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)crates/README.md' \
   ':(exclude,glob)crates/*/README.md' \
   ':(exclude,glob)contrib/*/README.md' \
+  ':(exclude,glob)library/*/README.md' \
   ':(exclude,glob)ledger/README.md' \
   ':(exclude,glob)ledger/syntax.md' \
   ':(exclude,glob).github/ISSUE_TEMPLATE/*.md')
@@ -923,17 +925,18 @@ description = "Unit and integration tests over every target"
 run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The corpus's two roots, run through the driver as an author runs them: the
-# strict root under `check`, every declaration checking and owing nothing;
-# the fixture root under `test`, every fixture settled and every pending
-# source still pending; and both roots in the sugared form, every source but
-# those declaring `form(explicit)` written as the formatter's sugared form
-# writes it. A red root exits nonzero and fails the gate.
+# strict root under `check`, every declaration checking and owing nothing, the
+# standard library among it (#628: it is built and tested by the corpus's
+# gates); the fixture root under `test`, every fixture settled and every
+# pending source still pending; and both roots in the sugared form, every
+# source but those declaring `form(explicit)` written as the formatter's
+# sugared form writes it. A red root exits nonzero and fails the gate.
 ["check:corpus"]
 description = "The strict root under `gandr check`, the fixture root under `gandr test`, and both in the sugared form"
 run = [
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict library/std",
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface",
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std",
 ]
 
 # Merge residue never lands: a conflict marker, or what a merge driver writes
