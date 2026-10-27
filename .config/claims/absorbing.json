@@ -1,0 +1,317 @@
+[
+  {
+    "name": "#3161: without the vault's statuses, as in CI, nothing is owed",
+    "input": {
+      "body": "Closes #3155\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+        }
+      ],
+      "absorption": null
+    },
+    "output": ""
+  },
+  {
+    "name": "#3161: a primary design page the body leaves out of `## Vault` is refused; a primary concept page and a secondary partly page are not",
+    "input": {
+      "body": "Closes #3155\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": "the body's `## Vault` does not answer the design pages its issues build on: a landing absorbs its page in the same pair (`design.md` § design-research). For each, add `- `<page>` — absorbed: <the tree locations this change adds>` with the vault pull request rewriting the page to point at them, or `- `<page>` — stays design: <why>`, then run `pr:open` again:\n  - `storage-metatheory-programme.md` (`design`, a primary source of #3155)\n"
+  },
+  {
+    "name": "#3161: `absorbed:` with the tree locations answers a design page",
+    "input": {
+      "body": "Closes #3155\n\n## Vault\n\n- `storage-metatheory-programme.md` — absorbed: `crates/README.md` § the picture\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#3161: `stays design:` with a reason answers a design page",
+    "input": {
+      "body": "Closes #3155\n\n## Vault\n\n- `storage-metatheory-programme.md` — stays design: this landing states the crate map only\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#3161: an answer with no text, or another verb, answers nothing",
+    "input": {
+      "body": "Closes #3155\n\n## Vault\n\n- `storage-metatheory-programme.md` — absorbed:\n- `module-and-package-design.md` — read: the manifests\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` — **primary**: a\n- `module-and-package-design.md` — primary: b\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": "the body's `## Vault` does not answer the design pages its issues build on: a landing absorbs its page in the same pair (`design.md` § design-research). For each, add `- `<page>` — absorbed: <the tree locations this change adds>` with the vault pull request rewriting the page to point at them, or `- `<page>` — stays design: <why>`, then run `pr:open` again:\n  - `module-and-package-design.md` (`partly`, a primary source of #3155)\n  - `storage-metatheory-programme.md` (`design`, a primary source of #3155)\n"
+  },
+  {
+    "name": "#3161: a filename two directories hold is owed when either page is design",
+    "input": {
+      "body": "Closes #3155\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `manifest.md` — **primary**: the manifest\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": "the body's `## Vault` does not answer the design pages its issues build on: a landing absorbs its page in the same pair (`design.md` § design-research). For each, add `- `<page>` — absorbed: <the tree locations this change adds>` with the vault pull request rewriting the page to point at them, or `- `<page>` — stays design: <why>`, then run `pr:open` again:\n  - `manifest.md` (`design`, a primary source of #3155)\n"
+  },
+  {
+    "name": "#3161: a path names a tree file, not a vault page, and is not read",
+    "input": {
+      "body": "Closes #3155\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `crates/storage-metatheory-programme.md` — **primary**: a tree file\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#3161: a vault path names that page alone: the absorbed one needs nothing, the design one is owed",
+    "input": {
+      "body": "Closes #3155\n",
+      "issues": [
+        {
+          "number": 3155,
+          "body": "## Problem\n\nx\n\n## Sources\n\n- `plans/a/manifest.md` — **primary**: the absorbed one\n- `plans/b/manifest.md` — **primary**: the design one\n"
+        }
+      ],
+      "absorption": {
+        "storage-metatheory-programme.md": [
+          {
+            "path": "docs/programme/storage-metatheory-programme.md",
+            "status": "design"
+          }
+        ],
+        "module-and-package-design.md": [
+          {
+            "path": "docs/programme/module-and-package-design.md",
+            "status": "partly"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "concept"
+          }
+        ],
+        "manifest.md": [
+          {
+            "path": "plans/a/manifest.md",
+            "status": "absorbed"
+          },
+          {
+            "path": "plans/b/manifest.md",
+            "status": "design"
+          }
+        ]
+      }
+    },
+    "output": "the body's `## Vault` does not answer the design pages its issues build on: a landing absorbs its page in the same pair (`design.md` § design-research). For each, add `- `<page>` — absorbed: <the tree locations this change adds>` with the vault pull request rewriting the page to point at them, or `- `<page>` — stays design: <why>`, then run `pr:open` again:\n  - `plans/b/manifest.md` (`design`, a primary source of #3155)\n"
+  }
+]
