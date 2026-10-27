@@ -156,10 +156,10 @@ impl Drop for Scratch
 /// # Specification
 /// - requires: arguments have stable operating-system string views.
 /// - ensures: selects the built driver and preserves arguments in order; the
-///   user's configuration directory is one no test writes, so a configuration
-///   file on the host never reaches a case that does not write its own, and the
-///   user's data directory is one only the tests' stores use, so no case writes
-///   the host's store.
+///   user's configuration and cache directories are ones no test writes by
+///   hand, so a configuration file or a kernel verdict on the host never
+///   reaches a case that does not set its own, and the user's data directory is
+///   one only the tests' stores use, so no case writes the host's store.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -183,6 +183,10 @@ where
     command.env(
         "XDG_CONFIG_HOME",
         std::env::temp_dir().join("gandr-driver-unconfigured"),
+    );
+    command.env(
+        "XDG_CACHE_HOME",
+        std::env::temp_dir().join("gandr-driver-uncached"),
     );
     command.env(
         "XDG_DATA_HOME",
@@ -490,6 +494,108 @@ fn verbosity_chooses_how_much_of_a_report_prints()
     assert_eq!(report["primary"]["column"], 14_u64);
     assert_eq!(summary["level"], "summary");
     assert_eq!(summary["verdict"], "unsettled");
+}
+
+/// The counts of a detailed `check`'s `kernel:` line as it prints them,
+/// recalled, recorded and unwritten, without the signer; absent when it
+/// printed none.
+///
+/// # Specification
+/// trivial.
+fn kernel_tally(output: &Output) -> Option<String>
+{
+    stdout(output).lines().find_map(|line| {
+        let (counts, _signer) = line.strip_prefix("kernel: ")?.split_once("; signed by ")?;
+        Some(counts.to_owned())
+    })
+}
+
+/// #2799: a second `check` over one verdict cache recalls in the kernel
+/// every declaration the first checked, printing what the first printed;
+/// `--recheck` installs no cache, a key the policy does not list recalls
+/// nothing, and a key `kernel.trusted` lists is believed.
+#[test]
+fn a_second_check_recalls_what_the_first_recorded_2799()
+{
+    let scratch = Scratch::new(Path::new("verdict-cache"));
+    let source = scratch.file(
+        Path::new("answers.gandr"),
+        Text::from("def answer = 42 ;\ndef again = answer ;\n"),
+    );
+    let home = scratch.0.join("configuration");
+    let cache = scratch.0.join("cache");
+    let check = |flags: &[&str]| {
+        let mut command = gandr(&["check", "--verbosity", "detailed"]);
+        let _configured = command
+            .args(flags)
+            .arg(&source)
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        output
+    };
+    let rest = |output: &Output| -> Vec<String> {
+        stdout(output)
+            .lines()
+            .filter(|line| !line.starts_with("kernel: "))
+            .map(String::from)
+            .collect()
+    };
+    let cold = check(&[]);
+    let tally = kernel_tally(&cold).unwrap_or_default();
+    let Some(recorded) = tally
+        .strip_prefix("0 recalled, ")
+        .and_then(|rest| rest.strip_suffix(" recorded, 0 unwritten"))
+        .filter(|recorded| *recorded != "0")
+    else {
+        panic!("a cold check records what it checks: {}", stdout(&cold));
+    };
+    let recalled = Some(format!("{recorded} recalled, 0 recorded, 0 unwritten"));
+    let unbelieved = Some(format!("0 recalled, {recorded} recorded, 0 unwritten"));
+    let first = stdout(&cold)
+        .lines()
+        .find_map(|line| {
+            line.split_once("; signed by ")
+                .map(|(_, key)| key.to_owned())
+        })
+        .expect("the tally names the key it signs with");
+    let key = home.join("gandr").join("kernel.key");
+
+    let warm = check(&[]);
+    assert_eq!(kernel_tally(&warm), recalled);
+    assert_eq!(
+        rest(&warm),
+        rest(&cold),
+        "a recalled verdict prints as a checked one"
+    );
+
+    let rechecked = check(&["--recheck"]);
+    assert_eq!(
+        kernel_tally(&rechecked),
+        None,
+        "`--recheck` installs no cache"
+    );
+    assert_eq!(rest(&rechecked), rest(&cold));
+
+    std::fs::write(&key, [1_u8; 32]).expect("another key is written");
+    assert_eq!(
+        kernel_tally(&check(&[])),
+        unbelieved,
+        "a receipt signed by a key the policy does not list is not believed"
+    );
+
+    std::fs::write(&key, [2_u8; 32]).expect("a third key is written");
+    std::fs::write(
+        home.join("gandr").join("config.toml"),
+        format!("[kernel]\ntrusted = [\"{first}\"]\n"),
+    )
+    .expect("the configuration is written");
+    assert_eq!(
+        kernel_tally(&check(&[])),
+        recalled,
+        "a receipt signed by a key `kernel.trusted` lists is believed"
+    );
 }
 
 #[test]

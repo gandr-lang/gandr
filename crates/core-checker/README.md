@@ -14,7 +14,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 ## Synopsis
 
-**What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. The ledger collects holes; refusal classification separates malformed source, unimplemented features and engine faults. The kernel independently checks the exportable pure fragment.
+**What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. The ledger collects holes; refusal classification separates malformed source, unimplemented features and engine faults. The kernel independently checks the exportable pure fragment.
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review.
 
@@ -142,6 +142,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 
 - `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: separation at a fork, its halves sharing an interface only to read it.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a resumed readmission signs only its own checks.
 
 ## License
 

@@ -42,6 +42,12 @@
 //! encoder’s output. That checks agreement with this implementation, not an
 //! independent proof of the wire format; shared encoder/decoder mistakes need
 //! independent wire fixtures to expose them.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: §
+//!   kernel-verdict-reuse — a verdict key reads each declaration's segment as
+//!   [`SegmentEncoder`] writes it, so the canonical bytes are the key's input.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -157,7 +163,7 @@ struct Assigned
 /// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
 /// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 /// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Interner
 {
     /// The frozen assignments of an encoding of the sequence's leading
@@ -553,6 +559,95 @@ pub fn encode_after(
         encode_declaration(&mut out, arena, &mut interner, declaration, remaining);
     }
     out
+}
+
+/// An admission-ordered sequence's declarations encoded one at a time.
+///
+/// Each segment is the one [`encode_prefix`] writes, so a key over the
+/// sequence reads its canonical bytes before the sequence is whole.
+///
+/// # Specification
+/// - requires: each declaration [`SegmentEncoder::segment`] is given follows
+///   the ones given before it, over one arena whose nodes keep their ids.
+/// - ensures: the segments given, concatenated, are the segments
+///   [`encode_prefix`] writes for the sequence.
+/// - provides: one declaration's canonical bytes at the cost of its own nodes,
+///   sharing with the declarations before it as a whole encoding shares.
+/// - panics: none.
+/// - executable: none — the interner is private and moved only by
+///   [`SegmentEncoder::segment`], whose specification states it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mixed sequence encoded one declaration at a time writes
+///   the prefix encoding's segments, and an open seal is refused.
+/// - witness: `encode::tests::declarations_encoded_one_at_a_time_write_the_prefix_segments`
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct SegmentEncoder
+{
+    /// What the segments given so far assigned.
+    interner: Interner,
+}
+
+impl Default for SegmentEncoder
+{
+    /// An encoder that has given no segment.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            interner: Interner::new(),
+        }
+    }
+}
+
+impl SegmentEncoder
+{
+    /// The segment of `declaration`, the next declaration of the sequence.
+    ///
+    /// # Specification
+    /// - requires: as [`SegmentEncoder`].
+    /// - ensures: absent as [`encoded_prefix::Absent::OpenSeal`], the encoder
+    ///   unchanged, when `declaration` is an abstract type sealed to the end of
+    ///   the sequence; otherwise its segment as [`encode_prefix`] writes it
+    ///   after the declarations given before.
+    /// - fails: never.
+    /// - panics: none within [`encode`]'s domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`SegmentEncoder`].
+    /// - witness: `encode::tests::declarations_encoded_one_at_a_time_write_the_prefix_segments`
+    #[inline]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(encoded_prefix::Absent::OpenSeal)) == matches!(
+        *declaration.declaration().content(),
+        DeclarationContent::AbstractType { scope: SealScope::Open, .. }
+    ))]
+    pub fn segment(
+        &mut self,
+        arena: &TermArena,
+        declaration: &MarkedDeclaration,
+    ) -> Maybe<EncodedArtifact, encoded_prefix::Absent>
+    {
+        if let DeclarationContent::AbstractType {
+            scope: SealScope::Open,
+            ..
+        } = *declaration.declaration().content()
+        {
+            return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
+        }
+        let mut out = EncodedArtifact::new();
+        encode_declaration(
+            &mut out,
+            arena,
+            &mut self.interner,
+            declaration,
+            SealExtent::from(0_usize),
+        );
+        Maybe::Present(out)
+    }
 }
 
 /// The admission positions of the abstract-type declarations in a sequence,
@@ -3878,6 +3973,79 @@ mod tests
         let leading = [MarkedDeclaration::new(AdmissionMark::Checked, open)];
         assert!(matches!(
             super::encode_prefix(&arena, &leading),
+            super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
+        ));
+    }
+
+    #[test]
+    fn declarations_encoded_one_at_a_time_write_the_prefix_segments()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let universe = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = builder.arena().value_type_base(BaseType::Integer);
+        let atom = builder.abstract_type(
+            LevelSignature::monomorphic(),
+            universe,
+            integer,
+            super::SealScope::Closed(super::SealExtent::from(2_usize)),
+        );
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let abstract_type = builder
+            .arena()
+            .value_type_abstract(ConstantIndex::from(0_usize));
+        let quote = builder.arena().value_quote(abstract_type);
+        let definition = builder.def(LevelSignature::monomorphic(), universe, quote);
+        // One body is the definition's own node, the other is built anew to
+        // the same content: both read the shared entries the first assigned.
+        let shared =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), universe, quote);
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let rebuilt_type = builder
+            .arena()
+            .value_type_abstract(ConstantIndex::from(0_usize));
+        let rebuilt = builder.arena().value_quote(rebuilt_type);
+        let anew = builder.def(LevelSignature::monomorphic(), universe, rebuilt);
+        let axiom =
+            DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), abstract_type);
+        let open = DeclarationBuilder::new(&mut arena).abstract_type(
+            LevelSignature::monomorphic(),
+            universe,
+            integer,
+            super::SealScope::Open,
+        );
+        let sequence = [
+            MarkedDeclaration::new(AdmissionMark::Checked, atom),
+            MarkedDeclaration::new(AdmissionMark::UncheckedBypass, definition),
+            MarkedDeclaration::new(AdmissionMark::Checked, shared),
+            MarkedDeclaration::new(AdmissionMark::Checked, anew),
+            MarkedDeclaration::new(AdmissionMark::Checked, axiom),
+        ];
+        let super::Maybe::Present(prefix) = super::encode_prefix(&arena, &sequence)
+        else {
+            panic!("no seal is open");
+        };
+        let mut encoder = super::SegmentEncoder::default();
+        let mut segments = Vec::new();
+        for declaration in &sequence {
+            let super::Maybe::Present(segment) = encoder.segment(&arena, declaration)
+            else {
+                panic!("no seal is open");
+            };
+            segments.extend_from_slice(segment.as_image().as_ref());
+        }
+        assert_eq!(
+            segments.as_slice(),
+            prefix.segments.as_image().as_ref(),
+            "the segments, concatenated, are the prefix encoding's"
+        );
+        assert!(matches!(
+            encoder.segment(
+                &arena,
+                &MarkedDeclaration::new(AdmissionMark::Checked, open)
+            ),
             super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
         ));
     }

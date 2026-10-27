@@ -183,11 +183,13 @@ rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 default-features = false
 features = ["anodized"]
 
-# BLAKE3 hashing for content and node identities, the engine hub's socket
-# names, the rank a sweep's sample orders sources by, and the digest a prose
-# finding's sentence is keyed by.
+# BLAKE3 hashing for content and node identities, the kernel's verdict keys
+# and build identity, the engine hub's socket names, the rank a sweep's
+# sample orders sources by, and the digest a prose finding's sentence is
+# keyed by.
 # consumers:
 # - core-incremental
+# - kernel-core (and its build script)
 # - storage-artifact
 # - storage-records
 # - storage-schema
@@ -246,6 +248,21 @@ version = "0.8.8"
 default-features = false
 features = ["std"]
 
+# Ed25519 receipts over the kernel's recorded verdicts: the installation's
+# kernel signs what it checked, and a run recalls a verdict only on a
+# receipt whose signer its policy trusts. Chosen over ed25519-compact (one
+# maintainer, a fiftieth of the dependents) and ring (no `no_std`, which the
+# kernel requires). Verification is `verify_strict`, which refuses weak keys.
+# features:
+# - fast: precomputed tables, so a verification costs 24 µs rather than 40
+# - zeroize: a signing key's bytes are cleared when it drops
+# consumers:
+# - kernel-core
+[workspace.dependencies.ed25519-dalek]
+version = "3.0.0"
+default-features = false
+features = ["fast", "zeroize"]
+
 # Snapshot comparison for the highlighter's role goldens, the printer's
 # layout goldens and the inline completion's ranking golden: a file or an
 # inline literal compared whole, a diff on mismatch, and a rewrite under
@@ -291,8 +308,10 @@ default-features = false
 path = "crates/core-checker"
 
 # Incremental checking over the core judgement: the item seam, validated
-# resume, content-addressed checkpoints and the synthesis stream.
+# resume, content-addressed checkpoints, the synthesis stream and the kernel
+# verdict store.
 # consumers:
+# - surface-driver
 # - surface-lsp
 # - surface-pretty
 # - surface-repl
@@ -390,9 +409,12 @@ path = "crates/kernel-conversion-trace"
 # features: none; synchronous no_std certificate replay.
 # consumers:
 # - core-checker
+# - core-incremental
 # - core-nbe (dev)
 # - core-session
 # - surface-corpus (dev)
+# - surface-dispatcher
+# - surface-driver
 # - surface-lowering (dev)
 # - theory-coherent-resolutions (dev)
 # - theory-levitation (dev)
@@ -913,6 +935,17 @@ path = "crates/workflow-sweep"
 # - workflow-spec-cost
 [workspace.dependencies.gandr-workflow-test-timing]
 path = "crates/workflow-test-timing"
+
+# The operating system's entropy, read once to mint an installation's kernel
+# signing key. Already in the build beneath other crates; std's own source is
+# unstable.
+# features:
+# - none: `fill` needs neither `std` nor a fallback
+# consumers:
+# - surface-driver
+[workspace.dependencies.getrandom]
+version = "0.4.3"
+default-features = false
 
 # SwissTable hash maps without `std`, for the grammar's label index, the
 # printer's binder scopes, the content table's interner and the derivation

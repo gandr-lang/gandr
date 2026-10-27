@@ -4158,9 +4158,10 @@ type Readmitting<Retired> = Polled<
 >;
 
 /// Have the kernel re-derive every declaration in `verdicts` the checker
-/// accepted, resuming the first of them from `leading`'s record and
-/// recording its boundary's, as [`bridge::readmit_retiring`] does under
-/// `retirement`.
+/// accepted, or admit it on a verdict the installed cache recalls, resuming
+/// the first of them from `leading`'s record and recording its boundary's, as
+/// [`bridge::readmit_retiring`] does under `retirement` and the recall
+/// [`crate::verdicts::readmit`] chooses.
 ///
 /// # Specification
 /// - requires: `verdicts` was judged over `arena`; `leading`'s record, when
@@ -4231,9 +4232,8 @@ fn readmitted<Poll>(
 where
     Poll: Retirement,
 {
-    let (boundary, crossed) = leading;
     let (readmission, recorded) =
-        match bridge::readmit_retiring(arena, verdicts, boundary, crossed, retirement) {
+        match crate::verdicts::readmit(arena, verdicts, leading, retirement) {
             Polled::Whole(whole) => whole,
             Polled::Retired(retired, held) => return Polled::Retired(retired, held),
         };

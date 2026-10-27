@@ -27,3 +27,5 @@ mod refusals;
 mod replay_laws;
 #[cfg(test)]
 mod sealed_export;
+#[cfg(test)]
+mod verdicts;

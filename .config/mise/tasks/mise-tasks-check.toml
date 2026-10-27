@@ -948,9 +948,9 @@ run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ en
 # source but those declaring `form(explicit)` written as the formatter's
 # sugared form writes it. A red root exits nonzero and fails the gate.
 ["check:corpus"]
-description = "The strict root under `gandr check`, the fixture root under `gandr test`, and both in the sugared form"
+description = "The strict root under `gandr check --recheck`, so the kernel checks every declaration whatever verdicts the host keeps, the fixture root under `gandr test`, and both in the sugared form"
 run = [
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict library/std",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check --recheck crates/surface-corpus/strict library/std",
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface",
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std",
 ]

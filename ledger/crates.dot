@@ -104,6 +104,7 @@ digraph crates {
   "core-incremental" -> "core-checker";
   "core-incremental" -> "core-term";
   "core-incremental" -> "kernel-check-memo";
+  "core-incremental" -> "kernel-core";
   "core-incremental" -> "kernel-strata";
   "core-incremental" -> "kernel-term";
   "core-incremental" -> "theory-levitation";
@@ -177,6 +178,7 @@ digraph crates {
   "surface-dispatcher" -> "core-nbe";
   "surface-dispatcher" -> "core-sequent";
   "surface-dispatcher" -> "core-term";
+  "surface-dispatcher" -> "kernel-core";
   "surface-dispatcher" -> "kernel-strata";
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
@@ -191,6 +193,8 @@ digraph crates {
   "surface-dispatcher" -> "surface-pretty";
   "surface-dispatcher" -> "surface-syntax";
   "surface-dispatcher" -> "theory-cell-complexes";
+  "surface-driver" -> "core-incremental";
+  "surface-driver" -> "kernel-core";
   "surface-driver" -> "storage-store";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";
@@ -317,7 +321,7 @@ digraph crates {
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
   "core-checker" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
-  "kernel-strata" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
+  "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "core-nbe" -> "kernel-check-memo" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "kernel-check-memo" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];

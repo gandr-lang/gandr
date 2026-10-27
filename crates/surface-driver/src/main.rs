@@ -274,6 +274,8 @@
         reason = "module documentation that predates the shape lint"
     )
 )]
+extern crate alloc;
+
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 #[cfg(unix)]
@@ -366,6 +368,7 @@ use quenchant_shape::shape::Maybe;
 
 mod allocator;
 mod config;
+mod verdicts;
 
 /// The process's global allocator: the private malloc zone of
 /// [`allocator::zone::Zone`] on macOS under `malloc-zone`, the system
@@ -444,6 +447,11 @@ enum Command
         /// it states.
         #[arg(long, value_delimiter = ',', value_name = "WORLDS")]
         entry: Vec<WorldName>,
+        /// Check every declaration in the kernel, recalling no recorded
+        /// verdict and recording none, over the configuration's
+        /// `kernel.policy`.
+        #[arg(long)]
+        recheck: bool,
         /// How much of each report to print.
         #[arg(long, value_enum, default_value_t = Level::User)]
         verbosity: Level,
@@ -1208,16 +1216,18 @@ enum Screen
 ///   prints, and exit `0`, `1` or `2` as the run settled, was unsettled or
 ///   faulted, `check` reconciling each package's lock and manifest as [`run`]
 ///   states; `check` reaching a package, and `lock`, first open the store as
-///   [`opened`] states, exiting `2` when no directory names it; `lock` rewrites
-///   each package's lock as [`lock`] states; `run` runs its script as
-///   [`script`] states, and `fmt` lays out its paths as [`fmt`] states. `lsp`
-///   serves and `lsp --capabilities` prints as [`lsp`] and [`capabilities`]
-///   state, `repl` runs as [`repl`] states, and `tui` as [`tui`] states. Every
-///   face writes its types and values in the spelling [`spelling`] resolves; a
-///   configuration file that cannot be read is `gandr: <path>: <fault>` on
-///   standard error and exits `2` before any verb runs. Output the driver
-///   cannot write is noted on standard error, when that is writable, and exits
-///   `2`.
+///   [`opened`] states, exiting `2` when no directory names it; `check` without
+///   `--recheck` keeps the kernel's verdicts as [`verdicts::install`] states,
+///   and runs without them after one `gandr:` line on standard error when the
+///   cache cannot be installed; `lock` rewrites each package's lock as [`lock`]
+///   states; `run` runs its script as [`script`] states, and `fmt` lays out its
+///   paths as [`fmt`] states. `lsp` serves and `lsp --capabilities` prints as
+///   [`lsp`] and [`capabilities`] state, `repl` runs as [`repl`] states, and
+///   `tui` as [`tui`] states. Every face writes its types and values in the
+///   spelling [`spelling`] resolves; a configuration file that cannot be read
+///   is `gandr: <path>: <fault>` on standard error and exits `2` before any
+///   verb runs. Output the driver cannot write is noted on standard error, when
+///   that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -1288,6 +1298,7 @@ fn main() -> ExitCode
             lint,
             grant,
             entry,
+            recheck,
             verbosity,
             jobs,
             paths,
@@ -1319,6 +1330,21 @@ fn main() -> ExitCode
                 },
                 Err(unpackaged) => return unpathed(&unpackaged),
             };
+            if !recheck {
+                let kernel = match config::kernel() {
+                    Ok(kernel) => kernel,
+                    Err(fault) => {
+                        return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                        };
+                    },
+                };
+                if let Err(uninstalled) = verdicts::install(kernel) {
+                    // The check runs without the cache; standard error says
+                    // why, or, unwritable, is passed over as the warning it is.
+                    drop(writeln!(std::io::stderr(), "gandr: {uninstalled}"));
+                }
+            }
             (
                 Invocation::Check {
                     goals: if goals { Goals::Reported } else { Goals::Gated },
@@ -2536,12 +2562,14 @@ fn stage(
 ///   output, at the JSON level an object whose `level` is `manifest`; a library
 ///   that states no manifest, and a manifest refused as drift, are each `gandr:
 ///   <path>: <why>` on standard error and unsettle the run, and one that cannot
-///   be read or written faults it. Then the final report and verdict, at the
-///   JSON level as one object whose `level` is `summary`. The exit is zero for
-///   settled, one for unsettled and two for faulted, as the walk's final report
-///   decides under the offered verb, or a lock or a manifest when that is
-///   worse, at every verbosity. Every byte written and the exit are the same at
-///   every width.
+///   be read or written faults it. Then the final report, at the detailed and
+///   debug levels the line `kernel: <n> recalled, <n> recorded, <n> unwritten;
+///   signed by <key>` when a verdict cache is installed, and the verdict, at
+///   the JSON level as one object whose `level` is `summary`. The exit is zero
+///   for settled, one for unsettled and two for faulted, as the walk's final
+///   report decides under the offered verb, or a lock or a manifest when that
+///   is worse, at every verbosity. Every byte written and the exit are the same
+///   at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -2564,6 +2592,7 @@ fn stage(
 /// - witness: `tests::cli::verbosity_chooses_how_much_of_a_report_prints`
 /// - witness: `tests::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -2658,6 +2687,11 @@ fn run(
     }
     else {
         writeln!(stdout, "{report}")?;
+        if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug)
+            && let Maybe::Present(tally) = gandr_surface_dispatcher::verdict_tally()
+        {
+            writeln!(stdout, "kernel: {tally}")?;
+        }
         writeln!(stdout, "verdict: {verdict}")?;
     }
     Ok(match verdict {

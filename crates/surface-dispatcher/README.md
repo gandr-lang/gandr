@@ -27,7 +27,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `compose`, `Composed`, `ComposeFault`, `LoweringCount` and `ParsedBytes`: the composition.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
 - `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure, the component it makes when given alone; a source read whole is parsed once per process, and a settled file read from disk once while a `stat` reads it unchanged. `lower_closure`, `lower_resumed_unit` and `Unheld`: an import closure lowered once and resumed for each document laid after it. `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: the closure's own declarations judged, focused, settled and spelled once, and each document judged after them on a copy of the state they left. `Recorded` and `Recording`: a revision whose lowering moves no node of the one judged before it takes that judgement's verdicts, and settles and spells again at its own spans.
-- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module; `Admission::admit_resuming` and `Resumption` resume its leading declarations from an earlier readmission's record.
+- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module; `Admission::admit_resuming` and `Resumption` resume its leading declarations from an earlier readmission's record; `install_verdict_cache` keeps kernel verdicts ([`verdicts`](src/verdicts.rs)).
 - `spellings` and `failures` on `Composed::Settled`: the diagnostics model's `TypeSpellings` of the types a module's checker refusals compare and its failures name, spelled while its arena was at hand, and the `Failures` the checking machine kept for each refused body, by admission position.
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings, lint findings and ledger lines.
 - `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables; a lint reaches every source when enabled, and otherwise only the declarations and modules whose attribute asks for it, `Lints::asking_effects` narrowing `explicit-runs` to the runs that perform an effect. `inferred` on `Composed::Settled` holds the exits the lowering inferred, which the `explicit-exits` lint reports, and `runs` the runs the checker inferred, which the `explicit-runs` lint reports.
@@ -52,7 +52,6 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 | Surface | Observed boundary |
 | ------- | ----------------- |
 | [Reports](src/report.rs) and [exercised rows](src/exercised.rs) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
-| [Filesystem walk](src/walk.rs) | Explicit links retain their reported path and use their target for classification; a visit at three threads yields the serial visit's rows and report, and a stopped visit hands over nothing more; a diamond of importers is lowered once. |
 | [Corpus registration](tests/corpus.rs) | A directory with a source extension is traversed rather than registered as a source. |
 
 ## Expected features
@@ -124,6 +123,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — the census reports each cell's counts.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts.
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures try-first.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — only a cache a driver installs recalls; the rest recheck.
 
 ## License
 

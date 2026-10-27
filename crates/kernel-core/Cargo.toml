@@ -22,9 +22,13 @@ path = "tests/lib.rs"
 # arithmetic and absence types add no runtime allocation or std dependency.
 # The conversion-decision seam is the vocabulary the replay reads an engine's
 # trace in. The anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled. Dev-dependencies are outside shipped trust.
+# logic/BigInt stays disabled. BLAKE3 keys a recalled verdict by the
+# kernel's whole input, and Ed25519 signs and verifies the receipt that
+# attests it. Dev-dependencies are outside shipped trust.
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
@@ -36,6 +40,11 @@ quenchant-shape.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
 proptest.workspace = true
+
+# The build script digests the kernel crates' files and the lock into the
+# build identity every verdict key binds.
+[build-dependencies]
+blake3.workspace = true
 
 [lints]
 workspace = true

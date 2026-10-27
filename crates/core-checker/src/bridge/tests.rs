@@ -59,7 +59,9 @@ fn native_operations_cross_as_audited_assumptions()
 }
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -76,11 +78,18 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_core::Admission;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ReplayDecline;
 use gandr_kernel_core::ReplayRefusal;
 use gandr_kernel_core::TracePosition;
 use gandr_kernel_core::content_digest;
+use gandr_kernel_core::verdict::KernelSigner;
+use gandr_kernel_core::verdict::NoVerdicts;
+use gandr_kernel_core::verdict::StoredReceipt;
+use gandr_kernel_core::verdict::TrustPolicy;
+use gandr_kernel_core::verdict::VerdictKey;
+use gandr_kernel_core::verdict::VerdictSource;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::AdmissionMark;
@@ -115,6 +124,7 @@ use super::Outcome;
 use super::Positions;
 use super::Readmission;
 use super::Readmitted;
+use super::Recall;
 use super::Refusal;
 use super::Replayed;
 use super::Source;
@@ -158,6 +168,7 @@ use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
 use crate::retire::Polled;
+use crate::retire::Unretired;
 
 /// A module position in a fixture.
 #[repr(transparent)]
@@ -1173,8 +1184,8 @@ fn a_retired_readmission_resumes_from_its_record_1547()
     let retired = readmit_retiring(
         &mut arena,
         &report,
-        LeadingCount::NONE,
-        Maybe::Absent(crossed::Absent::Unasked),
+        (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
         &poll,
     );
     let Polled::Retired((), Maybe::Present(record)) = retired
@@ -1223,14 +1234,99 @@ fn a_retired_readmission_resumes_from_its_record_1547()
             readmit_retiring(
                 &mut first_arena,
                 &first_report,
-                LeadingCount::NONE,
-                Maybe::Absent(crossed::Absent::Unasked),
+                (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+                &Recall::recheck(),
                 &at_once,
             ),
             Polled::Retired((), Maybe::Absent(crossed::Absent::Unchanged))
         ),
         "retired before its first declaration, a readmission crossed nothing to record"
     );
+}
+
+/// A source holding one receipt, answered for every key its records hold.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug)]
+struct Held(Arc<StoredReceipt>);
+
+impl VerdictSource for Held
+{
+    /// The receipt, when one of its records holds `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn receipts(
+        &self,
+        key: VerdictKey,
+    ) -> &[Arc<StoredReceipt>]
+    {
+        if self.0.records().iter().any(|record| record.key() == key) {
+            core::slice::from_ref(&self.0)
+        }
+        else {
+            &[]
+        }
+    }
+}
+
+/// The numerals module readmitted whole under `recall`.
+///
+/// # Specification
+/// trivial.
+fn readmitted_under(recall: &Recall) -> Readmission
+{
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Num, At(4));
+    readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+        recall,
+        &Unretired,
+    )
+    .whole()
+    .0
+}
+
+/// #2799: a module readmitted under the receipt of its own cold readmission
+/// recalls every declaration that one checked, to the same outcomes and the
+/// same artifact; under a policy listing another signer it recalls nothing.
+#[test]
+fn a_readmission_recalls_what_its_own_receipt_recorded()
+{
+    let signer = KernelSigner::from([5_u8; 32]);
+    let trusting =
+        |signer: &KernelSigner| TrustPolicy::Trusted(BTreeSet::from([signer.identity()]));
+    let cold = readmitted_under(&Recall::trusting(trusting(&signer), Arc::new(NoVerdicts)));
+    let Maybe::Present(receipt) = cold.environment().receipt(&signer)
+    else {
+        panic!("a cold readmission under keys gives a receipt");
+    };
+    let checked = cold
+        .environment()
+        .entries()
+        .iter()
+        .filter(|entry| entry.admission() == Admission::Checked)
+        .count();
+    assert_eq!(
+        receipt.records().len(),
+        checked,
+        "every declaration the kernel checked is recorded"
+    );
+    let held: Arc<dyn VerdictSource> = Arc::new(Held(Arc::new(receipt)));
+    let warm = readmitted_under(&Recall::trusting(trusting(&signer), Arc::clone(&held)));
+    assert_eq!(usize::from(warm.environment().recalls()), checked);
+    assert_eq!(warm.readmitted(), cold.readmitted());
+    assert_eq!(
+        warm.export(BTreeMap::new()),
+        cold.export(BTreeMap::new()),
+        "a recalled declaration exports as the checked one did"
+    );
+    let other = KernelSigner::from([6_u8; 32]);
+    let distrusting = readmitted_under(&Recall::trusting(trusting(&other), held));
+    assert_eq!(usize::from(distrusting.environment().recalls()), 0);
 }
 
 /// A run's certificate keeps a code constant it is handed as the constant:
