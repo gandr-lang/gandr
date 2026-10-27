@@ -1,0 +1,21 @@
+error[AbsentRecordField]: the record has no such field
+  ╭▸ corpus/pathological/records/record-field-absent.gandr:9:28
+  │
+9 │ def lacking() -> Integer { pair.z }
+  │ ┬──────────────────────────┯━━━━━──
+  │ │                          │
+  │ │                          no field of the record type
+  │ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `lacking` is refused with AbsentRecordField, as its expectation states
+
+error[ShapeMismatch]: expected a record type
+   ╭▸ corpus/pathological/records/record-field-absent.gandr:16:30
+   │
+16 │ def unfielded() -> Integer { count.x }
+   │ ┬────────────────────────────┯━━━━━━──
+   │ │                            │
+   │ │                            its type is not of the required shape: found `Integer`
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `unfielded` is refused with ShapeMismatch, as its expectation states

@@ -1,0 +1,10 @@
+error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
+   ╭▸ corpus/pathological/extension/generated.gandr:18:3
+   │
+18 │   ext Cell = Val on left is zero;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
+19 │
+20 │   rule leaked : outCell0(inCell(y1)) ==> y1;
+   │   ───────────────────────────────────────── the rule it overlaps
+   │
+   ╰ note: `Leaked` is refused with RulesUncompleted, as its expectation states

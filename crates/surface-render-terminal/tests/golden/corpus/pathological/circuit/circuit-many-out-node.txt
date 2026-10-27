@@ -1,0 +1,9 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+  ╭▸ corpus/pathological/circuit/circuit-many-out-node.gandr:6:3
+  │
+6 │ ┏   rule split : (data x : Nat) ==> (z : Nat) {
+7 │ ┃     node : tee(x) --> (z, w);
+8 │ ┃   };
+  │ ┗━━━┛ out of place
+  │
+  ╰ note: `Wide` is refused with MalformedForm, as its expectation states

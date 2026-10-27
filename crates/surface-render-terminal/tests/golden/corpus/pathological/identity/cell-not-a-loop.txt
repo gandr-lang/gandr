@@ -1,0 +1,7 @@
+error[CellNotALoop]: a cell `<->` is a loop: write the same term on both sides; a cell between two distinct terms is not supported yet
+   ╭▸ corpus/pathological/identity/cell-not-a-loop.gandr:10:3
+   │
+10 │   seg : Start <-> End;
+   │   ━━━━━━━━━━━━━━━━━━━ a cell between two distinct terms
+   │
+   ╰ note: `Interval` is refused with CellNotALoop, as its expectation states

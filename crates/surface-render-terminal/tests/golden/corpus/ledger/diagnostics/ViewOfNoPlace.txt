@@ -1,0 +1,7 @@
+error[ViewOfNoPlace]: `as w { … }` lends a view only after a call of a method that answers a place of its receiver
+   ╭▸ corpus/ledger/diagnostics/ViewOfNoPlace.gandr:13:5
+   │
+13 │   n.size() as w { pure w }
+   │     ━━━━ a call answering no place
+   │
+   ╰ note: `sized` is refused with ViewOfNoPlace, as its expectation states

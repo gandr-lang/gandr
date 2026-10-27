@@ -1,0 +1,7 @@
+error[DataKindNotUniverse]: a datatype's kind must be a universe
+  ╭▸ corpus/ledger/diagnostics/DataKindNotUniverse.gandr:3:12
+  │
+3 │ data Odd : Integer {
+  │            ━━━━━━━ not a value universe
+  │
+  ╰ note: `Odd` is refused with DataKindNotUniverse, as its expectation states

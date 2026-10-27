@@ -1,0 +1,7 @@
+error[UnresolvedDocLink]: the documentation links to `missing`, which is not defined
+  ╭▸ corpus/ledger/diagnostics/UnresolvedDocLink.gandr:3:16
+  │
+3 │ /// Points at [missing], which nothing declares.
+  │                ━━━━━━━ links to no declared name
+  │
+  ╰ note: `stale` is refused with UnresolvedDocLink, as its expectation states

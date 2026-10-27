@@ -1,0 +1,16 @@
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/data/vector-head.gandr:16:3
+   │
+15 │    def vheadAny(n : Nat, v : Vec(Integer, n)) -> Integer {
+   │    │            ┬        ─ checked against `Vec(Integer, n) -> -F Integer`; while checking the body of this function; binds v : Vec(Integer, n)
+   │    │            │
+   │ ┌──┘            checked against `(n : Nat) -> Vec(Integer, n) -> -F Integer`; while checking the body of this function; binds n : Nat
+   │ │
+16 │ │┏   case v {
+17 │ │┃     VCons(m, h, t) => h
+18 │ │┃   }
+   │ │┗━━━┛ a path whose endpoints are not apart
+19 │ │  }
+   │ └──┘ checked against `(n : Nat, Vec(Integer, n)) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `vheadAny` is refused with NotApart, as its expectation states

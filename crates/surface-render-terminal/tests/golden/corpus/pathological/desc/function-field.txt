@@ -1,0 +1,18 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/desc/function-field.gandr:13:3
+   │
+12 │    def rec stores(p : Program) -> Integer {
+   │    │              ─ checked against `Program -> -F Integer`; while checking the body of this function; binds p : Program
+   │ ┌──┘
+   │ │
+13 │ │┏   case p {
+14 │ │┃     Done(_x) => 0,
+15 │ │┃     Get(k) => {
+16 │ │┃       run q <- k(0);
+   ‡ │┃
+23 │ │┃   }
+   │ │┗━━━┛ a case its datatype's rules do not admit
+24 │ │  }
+   │ └──┘ checked against `Program => Integer`; while checking the body of this function; binds stores : Program => Integer
+   │
+   ╰ note: `stores` is refused with RuleNotRespected, as its expectation states

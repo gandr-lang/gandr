@@ -1,0 +1,7 @@
+error[PointwiseDistinct]: `funext` needs both functions to agree at every input: return the same value, or apply their function argument at the same input
+   ╭▸ corpus/ledger/diagnostics/PointwiseDistinct.gandr:18:20
+   │
+18 │ def not_identity = funext(not, same) ;
+   │                    ━━━━━━━━━━━━━━━━━ functions that differ at some input
+   │
+   ╰ note: `not_identity` is refused with PointwiseDistinct, as its expectation states

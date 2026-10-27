@@ -1,0 +1,10 @@
+error[Unlocated]: this stands at the host's own world, where no handle is made or opened: state the declaration's world with `@[ entry(w) ]`
+   ╭▸ corpus/ledger/diagnostics/Unlocated.gandr:36:4
+   │
+35 │ ┌ def unplaced() -> -F (Seat.Report at seat) {
+36 │ │   (hold Seat.progress)
+   │ │    ━━━━━━━━━━━━━━━━━━ a handle made or opened at the host's own world
+37 │ │ }
+   │ └─┘ checked against `() => Seat.Report at seat`; while checking the body of this thunk
+   │
+   ╰ note: `unplaced` is refused with Unlocated, as its expectation states

@@ -181,6 +181,18 @@ enum Last<'step>
     Source(LoweringRefusal<'step>),
 }
 
+/// Which of a step's refusals its declarations print.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Refusals
+{
+    /// The refusals that leave their declaration unsettled: what a verb prints.
+    #[default]
+    Unsettling,
+    /// Every refusal a declaration produced, one its expectation states too,
+    /// as it would print unexpected: the text a rendered golden pins.
+    Every,
+}
+
 /// The warnings and declarations of a settled composition still to visit.
 #[derive(Clone, Debug)]
 struct Remaining<'step>
@@ -232,6 +244,8 @@ pub struct Entries<'step>
     verb: Verb,
     /// Where each lint reports its findings.
     lints: Lints,
+    /// Which refusals the declarations print.
+    refusals: Refusals,
     /// The spelling the types a diagnostic names are read in.
     spelling: Spelling,
     /// What remains.
@@ -280,7 +294,7 @@ pub struct Entries<'step>
 /// - witness: `entry::tests::each_use_of_a_deprecated_declaration_is_a_finding`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && ret.spelling == Spelling::Unicode && match *step {
+#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && ret.refusals == Refusals::Unsettling && ret.spelling == Spelling::Unicode && match *step {
     Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path))
         && ret.text.as_ref().is_empty() && matches!(ret.cursor, Cursor::Done),
     Step::Source { path, text, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path)) && core::ptr::eq(core::ptr::from_ref(ret.text.as_ref()), core::ptr::from_ref(text.as_ref())),
@@ -314,6 +328,7 @@ pub fn entries<'step>(
         start: SourceStart::of(text, base),
         verb,
         lints: Lints::default(),
+        refusals: Refusals::Unsettling,
         spelling: Spelling::Unicode,
         cursor,
     }
@@ -750,12 +765,44 @@ impl<'step> Entries<'step>
         self
     }
 
+    /// These entries, printing the refusals `refusals` selects.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same entries, in the same order, except that under
+    ///   [`Refusals::Every`] a settled declaration that produced a refusal
+    ///   prints that refusal as an unsettled one does, under every verb;
+    ///   [`entries`] prints [`Refusals::Unsettling`].
+    /// - provides: the rendered text of an expected refusal, which no verb
+    ///   prints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixture whose expectation states its refusal prints
+    ///   nothing under `check` and its refusal under `Refusals::Every`, the
+    ///   same text an unexpected one prints.
+    /// - witness: `entry::tests::an_expected_refusal_prints_as_an_unexpected_one_when_every_refusal_is_asked`
+    #[spec(ensures: |ref ret| ret.refusals == refusals)]
+    #[inline]
+    #[must_use]
+    pub fn refusals(
+        mut self,
+        refusals: Refusals,
+    ) -> Self
+    {
+        self.refusals = refusals;
+        self
+    }
+
     /// What `declaration` prints, when its verb prints it.
     ///
     /// # Specification
     /// - requires: the declaration, origins, spellings and failures belong to
     ///   this entry stream.
-    /// - ensures: counted declarations print nothing; goals are goal subjects.
+    /// - ensures: under [`Refusals::Every`], a settled declaration that
+    ///   produced a refusal is that refusal's subject, as an unsettled one is.
+    ///   Otherwise counted declarations print nothing; goals are goal subjects.
     ///   A shown settled declaration is a fixture ledger line; an unsettled
     ///   declaration is a refusal subject, carrying the failure the machine
     ///   kept for it, when one was produced, otherwise an unsettled subject
@@ -771,7 +818,11 @@ impl<'step> Entries<'step>
     ///   and malformed expectations are not enumerated by these fixtures.
     /// - witness: `entry::tests::each_verb_prints_its_entries`
     /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
+    /// - witness: `entry::tests::an_expected_refusal_prints_as_an_unexpected_one_when_every_refusal_is_asked`
     #[spec(ensures: |ref ret| match (shown(declaration, self.verb), ret) {
+        (_, &Maybe::Present(Printed::Subject(Subject::Refused { refusal, .. })))
+            if self.refusals == Refusals::Every && declaration.settlement() == Settlement::Settled =>
+            declaration.produced().refusal() == Maybe::Present(refusal),
         (Shown::Counted, &Maybe::Absent(unshown::Absent::Counted)) => true,
         (Shown::Goal, &Maybe::Present(Printed::Subject(Subject::Goal(held)))) =>
             core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(declaration)),
@@ -792,6 +843,12 @@ impl<'step> Entries<'step>
         held: &Remaining<'step>,
     ) -> Maybe<Printed<'step>, unshown::Absent>
     {
+        if self.refusals == Refusals::Every
+            && declaration.settlement() == Settlement::Settled
+            && let Maybe::Present(refusal) = declaration.produced().refusal()
+        {
+            return Maybe::Present(Printed::Subject(self.refused(declaration, refusal, held)));
+        }
         Maybe::Present(
             match (shown(declaration, self.verb), declaration.settlement()) {
                 (Shown::Counted, _) => return Maybe::Absent(unshown::Absent::Counted),
@@ -799,14 +856,7 @@ impl<'step> Entries<'step>
                 (Shown::Goal, _) => Printed::Subject(Subject::Goal(declaration)),
                 (Shown::Line, Settlement::Unsettled) => {
                     Printed::Subject(match declaration.produced().refusal() {
-                        Maybe::Present(refusal) => Subject::Refused {
-                            declaration,
-                            refusal,
-                            origins: held.origins,
-                            spellings: held.spellings.spelled(self.spelling),
-                            failure: held.failures.get(declaration.constant()),
-                            upstream: upstream(refusal, held.admitted),
-                        },
+                        Maybe::Present(refusal) => self.refused(declaration, refusal, held),
                         Maybe::Absent(produced_refusal::Absent::Unrefused) => {
                             let unsettlement = match (declaration.stated(), declaration.outcome()) {
                                 (&Stated::Verdict(Outcome::Checks(_)), _)
@@ -852,6 +902,28 @@ impl<'step> Entries<'step>
                 },
             },
         )
+    }
+
+    /// The subject of `declaration`'s `refusal`, with what the step holds of
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refused(
+        &self,
+        declaration: &'step DeclarationReport<'step>,
+        refusal: Refusal<'step>,
+        held: &Remaining<'step>,
+    ) -> Subject<'step>
+    {
+        Subject::Refused {
+            declaration,
+            refusal,
+            origins: held.origins,
+            spellings: held.spellings.spelled(self.spelling),
+            failure: held.failures.get(declaration.constant()),
+            upstream: upstream(refusal, held.admitted),
+        }
     }
 
     /// The diagnostic `printed` makes at this step's source.
@@ -1065,6 +1137,7 @@ mod tests
     use crate::Lints;
     use crate::LoweringCount;
     use crate::Pool;
+    use crate::Refusals;
     use crate::SourceRoot;
     use crate::Standing;
     use crate::Step;
@@ -1189,6 +1262,48 @@ mod tests
                 .is_some_and(|line| line.1.starts_with("unsettled: a pending source")),
             "{ledger:?}"
         );
+    }
+
+    #[test]
+    fn an_expected_refusal_prints_as_an_unexpected_one_when_every_refusal_is_asked()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let expected = SourceText::from(
+            "def good = 1 ;\n@[ refuses(\"UnresolvedName\") ] def bad = missing ;\n",
+        );
+        let settled = step(
+            Path::new("fixtures/pair.gandr"),
+            SourceRoot::Fixture,
+            expected,
+            Standing::Settled,
+            &grammar,
+        );
+        let unexpected = SourceText::from("def good = 1 ;\ndef bad = missing ;\n");
+        let refused = step(
+            Path::new("fixtures/pair.gandr"),
+            SourceRoot::Strict,
+            unexpected,
+            Standing::Unsettled,
+            &grammar,
+        );
+        let check = Verb::Check(Goals::Gated);
+        assert!(
+            entries(&settled, check).next().is_none(),
+            "check prints no refusal its expectation states"
+        );
+        for verb in [check, Verb::Test] {
+            let every: Vec<_> = entries(&settled, verb)
+                .refusals(Refusals::Every)
+                .map(|diagnostic| (diagnostic.severity, diagnostic.message.text))
+                .collect();
+            let printed: Vec<_> = entries(&refused, check)
+                .map(|diagnostic| (diagnostic.severity, diagnostic.message.text))
+                .collect();
+            assert_eq!(
+                every, printed,
+                "{verb:?}: the expected refusal prints as the unexpected one does"
+            );
+        }
     }
 
     /// #582: a source laid after its import prints its fixture line at bytes

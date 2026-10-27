@@ -1,0 +1,11 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/sessions/type-quote-chain.gandr:7:70
+  │
+7 │ def bare_product : Flow(Type, Unit * Integer, Unit * Integer) = stay(Unit * Integer);
+  │                                                                 ┬────┯━━━───────────
+  │                                                                 │    │
+  │                                                                 │    its type does not convert: expected `Integer`, found `Type`
+  │                                                                 │    checked against `Type`; while checking the first argument of this operation
+  │                                                                 checked against `Flow(Type, Unit * Integer, Unit * Integer)`; while meeting the point of this stay with both endpoints of its flow
+  │
+  ╰ note: `bare_product` is refused with TypeMismatch, as its expectation states

@@ -1,0 +1,7 @@
+error[StrayReceiverMode]: `shared` is a receiver's mode: only a module member's first parameter is written with it, `self : shared T`
+  ╭▸ corpus/ledger/diagnostics/StrayReceiverMode.gandr:3:14
+  │
+3 │ def lent(t : shared Repr) -> -F Integer {
+  │              ━━━━━━ a mode off a receiver
+  │
+  ╰ note: `lent` is refused with StrayReceiverMode, as its expectation states

@@ -1,0 +1,22 @@
+error[BufferRead]: a buffer can be used only by the `send`, the operation or the resumption that hands it back
+   ╭▸ corpus/ledger/diagnostics/BufferRead.gandr:6:30
+   │
+ 3 │ ┌  def readWhileHeld() -> -F Unit {
+ 4 │ │┌   handle r : Ring {
+ 5 │ ││     run b <- r.alloc(4096);
+   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
+ 6 │ ││     run copied : Buf <- pure b;
+   │ ││     ┬──                 ┬────┯
+   │ ││     │                   │    │
+   │ ││     │                   │    a buffer read other than by its return
+   │ ││     │                   checked against `-F Buf`; while judging the value this returns
+   │ ││     checked against `-F [Ring, r : Ring] Unit`; while finishing the type of this
+ 7 │ ││     r.free(b)
+   ‡ ││
+11 │ ││     oper free(b, k) => k(unit)
+12 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
+13 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `readWhileHeld` is refused with BufferRead, as its expectation states

@@ -1,0 +1,9 @@
+error[DuplicateAttribute]: the attribute `explicit_exits` is written twice
+  ╭▸ corpus/ledger/diagnostics/DuplicateAttribute.gandr:2:51
+  │
+2 │ @[ refuses("DuplicateAttribute"), explicit_exits, explicit_exits ]
+  │                                   ┬─────────────  ━━━━━━━━━━━━━━ written again here
+  │                                   │
+  │                                   first written here
+  │
+  ╰ note: `twice` is refused with DuplicateAttribute, as its expectation states

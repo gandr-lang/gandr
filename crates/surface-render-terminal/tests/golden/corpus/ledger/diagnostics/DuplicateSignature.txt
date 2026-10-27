@@ -1,0 +1,9 @@
+error[DuplicateSignature]: `x` is given a type twice
+  ╭▸ corpus/ledger/diagnostics/DuplicateSignature.gandr:4:1
+  │
+3 │ def x : Integer ;
+  │ ───────────────── first written here
+4 │ def x : Unit ;
+  │ ━━━━━━━━━━━━━━ written again here
+  │
+  ╰ note: `x` is refused with DuplicateSignature, as its expectation states

@@ -1,0 +1,34 @@
+error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
+   ╭▸ corpus/pathological/self-reference/dangling.gandr:13:12
+   │
+ 7 │ ┌   def dangling() -> Integer {
+ 8 │ │     hold x = 5;
+   │ │     ──── checked against `-F Integer`; while checking the scope of this hold
+ 9 │ │     run r : Integer <- handle c : Proc {
+   │ │┌────┬──────────────────┘
+   │ ││    │
+   │ ││    checked against `-F Integer`; while finishing the type of this
+10 │ ││      run k <- access x as v {
+   │ ││┌─────┬────────┘
+   │ │││     │
+   │ │││     checked against `-F [Proc, c : Proc] Integer`; while synthesising the computation this binds
+11 │ │││       c.exit(1);
+   │ │││       ───────── synthesised; while checking the body of this split; binds _ : Unit
+12 │ │││       resume(v, v + 7);
+   │ │││       ──────────────── synthesised; while checking the body of this split; binds _ : Unit
+13 │ │││       pure thunk { pure v }
+   │ │││       ┬────┯━━━━━━━━━━━━━━━
+   │ │││       │    │
+   │ │││       │    a view outliving its access
+   │ │││       synthesised; while judging the value this returns
+14 │ │││     };
+   │ ││└─────┘ synthesised; while checking the body of this access
+   ‡ ││
+18 │ ││      oper exit(code, k) => k(unit)
+19 │ ││    };
+   │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
+20 │ │     pure x
+21 │ │   }
+   │ └───┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `dangling` is refused with ViewEscaped, as its expectation states

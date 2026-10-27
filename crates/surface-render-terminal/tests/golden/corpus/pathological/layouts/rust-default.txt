@@ -1,0 +1,16 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/layouts/rust-default.gandr:12:46
+   │
+11 │ ┌ def nested() -> Layout {
+12 │ │   structLayout(Field("a", U8, Field("inner", Field("x", U16, Field("y", U8, Done)), Done)))
+   │ │   ┬────────────┬──────────────┬──────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────────
+   │ │   │            │              │              │
+   │ │   │            │              │              its type does not convert: expected `Scalar`, found `Fields`
+   │ │   │            │              │              the type it synthesises
+   │ │   │            │              checked against `Fields`; while checking the next premise of this
+   │ │   │            checked against `Fields`; while finishing the type of this
+   │ │   checked against `-F Layout`; while checking the argument of this application
+13 │ │ }
+   │ └─┘ checked against `() => Layout`; while checking the body of this thunk
+   │
+   ╰ note: `nested` is refused with TypeMismatch, as its expectation states

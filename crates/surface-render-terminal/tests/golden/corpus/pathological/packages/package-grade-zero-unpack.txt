@@ -1,0 +1,29 @@
+error[OutOfFragment.package_type]: the package type is not supported yet
+  ╭▸ corpus/pathological/packages/package-grade-zero-unpack.gandr:7:14
+  │
+7 │ def closed : package [T] +U[0] (-F #{seed : T});
+  │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `closed` is refused with OutOfFragment.package_type, as its expectation states
+  ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>
+
+error[OutOfFragment.unpack_statement]: the unpack statement is not supported yet
+   ╭▸ corpus/pathological/packages/package-grade-zero-unpack.gandr:13:3
+   │
+13 │   unpack m : package [T] +U[0] (-F #{seed : T}) = p;
+   │   ━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `open_it` is refused with OutOfFragment.unpack_statement, as its expectation states
+   ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>
+
+error[UnknownConstant]: this names a declaration whose type is not known
+   ╭▸ corpus/pathological/packages/package-grade-zero-unpack.gandr:20:27
+   │
+20 │ def opened() -> Integer { open_it(closed) }
+   │ ┬─────────────────────────┯━━━━━━──────────
+   │ │                         │
+   │ │                         no declaration with a type
+   │ │                         checked against `-F Integer`; while synthesising the function this applies
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `opened` is refused with UnknownConstant, as its expectation states

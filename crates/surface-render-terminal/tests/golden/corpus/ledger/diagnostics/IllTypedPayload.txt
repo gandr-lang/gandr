@@ -1,0 +1,7 @@
+error[IllTypedPayload]: the attribute `doc` takes a text payload, not an integer payload
+  ╭▸ corpus/ledger/diagnostics/IllTypedPayload.gandr:3:7
+  │
+3 │ @[doc(42)]
+  │       ━━ a payload of another schema
+  │
+  ╰ note: `f` is refused with IllTypedPayload, as its expectation states

@@ -1,0 +1,81 @@
+error[OutOfFragment.WrongSort]: a projection expression cannot stand where a computation is expected
+   ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:37:10
+   │
+37 │   become m.get
+   │          ━━━━━ a form of another sort than this position takes
+   │
+   ╰ note: `not_a_record` is refused with OutOfFragment.WrongSort, as its expectation states
+
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:3:3
+  │
+2 │   def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> Integer {
+  │   │              ┬                                ┬────────      ─────── the type it is checked against
+  │   │              │                                │
+  │   │              │                                the type it synthesises
+  │ ┌─┘              checked against `+U (-F Integer & -F String) -> -F Integer`; while checking the body of this function; binds m : +U (-F Integer & -F String)
+  │ │
+3 │ │   m.put
+  │ │   ━━━━━ its type does not convert: expected `-F Integer`, found `-F String`
+4 │ │ }
+  │ └─┘ checked against `+U (-F Integer & -F String) => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `wrong_side` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:8:13
+  │
+7 │   def swapped(n : Integer) -> &{get : -F Integer, put : -F String} {
+  │   │           ┬                          ─────── the type it is checked against
+  │   │           │
+  │ ┌─┘           checked against `Integer -> -F Integer & -F String`; while checking the body of this function; binds n : Integer
+  │ │
+8 │ │   &{.get => "s", .put => n}
+  │ │   ┬─────────┯━━────────────
+  │ │   │         │
+  │ │   │         its type does not convert: expected `Integer`, found `String`
+  │ │   checked against `-F Integer & -F String`; while checking the remaining parts of this
+9 │ │ }
+  │ └─┘ checked against `+U (Integer -> -F Integer & -F String)`; while checking the body of this thunk
+  │
+  ╰ note: `swapped` is refused with TypeMismatch, as its expectation states
+
+error[UnresolvedName]: `size` is not defined
+   ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:13:5
+   │
+13 │   m.size
+   │     ━━━━ not found in this scope
+   │
+   ╰ note: `missing_label` is refused with UnresolvedName, as its expectation states
+
+error[UnresolvedName]: `2` is not defined
+   ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:19:5
+   │
+19 │   m.2
+   │     ━ not found in this scope
+   │
+   ╰ note: `past_the_end` is refused with UnresolvedName, as its expectation states
+
+error[UnresolvedName]: `get` is not defined
+   ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:26:5
+   │
+26 │   m.get
+   │     ━━━ not found in this scope
+   │
+   ╰ note: `chain_label` is refused with UnresolvedName, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/codata/lazy-record-projection.gandr:32:3
+   │
+31 │   def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> Integer {
+   │   │               ┬                                ┬────────      ─────── the type it is checked against
+   │   │               │                                │
+   │   │               │                                the type it synthesises
+   │ ┌─┘               checked against `+U (-F Integer & -F String) -> -F Integer`; while checking the body of this function; binds m : +U (-F Integer & -F String)
+   │ │
+32 │ │   m.1
+   │ │   ━━━ its type does not convert: expected `-F Integer`, found `-F String`
+33 │ │ }
+   │ └─┘ checked against `+U (-F Integer & -F String) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `wrong_place` is refused with TypeMismatch, as its expectation states

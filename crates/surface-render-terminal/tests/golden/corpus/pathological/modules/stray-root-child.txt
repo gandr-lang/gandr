@@ -1,0 +1,31 @@
+error[OutOfFragment.WrongSort.declaration]: a view expression cannot stand where a declaration is expected
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:11:1
+   │
+11 │ leta x = 1 ;
+   │ ━━━━━━━━━━━━ a form of another sort than this position takes
+   │
+   ╰ note: `leta` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
+
+error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit { … }`, or name it with a definition
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:16:1
+   │
+16 │ 1 + 2
+   │ ━━━━━ an expression where only declarations stand
+   │
+   ╰ note: `1` is refused with OutOfFragment.TopLevel, as its expectation states
+
+error[MalformedForm]: `mu` is a keyword and cannot stand here in this def value
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:21:5
+   │
+21 │ def mu = 1 ;
+   │     ━━ a keyword where a term belongs
+   │
+   ╰ note: `def` is refused with MalformedForm, as its expectation states
+
+error[MalformedForm]: a term is missing in this source file
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:28:1
+   │
+28 │ §
+   │ ━ a term is missing here
+   │
+   ╰ note: `§` is refused with MalformedForm, as its expectation states

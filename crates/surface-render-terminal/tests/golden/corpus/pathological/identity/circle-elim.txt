@@ -1,0 +1,91 @@
+error[LoopNotRespected]: this case might tell a loop apart from staying put: carried along the loop, its answer at the loop's point is not that answer
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:18:3
+   │
+17 │    def contractible(x : Circle) -> Path(Circle, Base, x) {
+   │    │                ─ checked against `(x : Circle) -> -F Path(Circle, Base, x)`; while checking the body of this function; binds x : Circle
+   │ ┌──┘
+   │ │
+18 │ │┏   case x {
+19 │ │┃     Base => here(Base)
+20 │ │┃   }
+   │ │┗━━━┛ a case its sort's loops do not admit
+21 │ │  }
+   │ └──┘ checked against `(x : Circle) => Path(Circle, Base, x)`; while checking the body of this thunk
+   │
+   ╰ note: `contractible` is refused with LoopNotRespected, as its expectation states
+
+error[LoopNotRespected]: this case answers at its loop's point by a case over another looped point, and the fibre it answers in is not presented as a set: the square between the two loops is owed, and nothing here supplies it
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:29:3
+   │
+28 │    def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path(Circle, a, a)} {
+   │    │           ┬           ─ checked against `Circle -> -F #{around : Path(Circle, a, a), centre : Circle}`; while checking the body of this function; binds b : Circle
+   │    │           │
+   │ ┌──┘           checked against `(a : Circle) -> Circle -> -F #{around : Path(Circle, a, a), centre : Circle}`; while checking the body of this function; binds a : Circle
+   │ │
+29 │ │┏   case a {
+30 │ │┃     Base => case b {
+31 │ │┃       Base => #{centre = Base, around = loop}
+32 │ │┃     }
+33 │ │┃   }
+   │ │┗━━━┛ a case its sort's loops do not admit
+34 │ │  }
+   │ └──┘ checked against `(a : Circle, Circle) => #{around : Path(Circle, a, a), centre : Circle}`; while checking the body of this thunk
+   │
+   ╰ note: `rotTwin` is refused with LoopNotRespected, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:53:13
+   │
+50 │    def misjoined(x : Circle) -> Path(Circle, Base, x) {
+   │    │             ─ checked against `(x : Circle) -> -F Path(Circle, Base, x)`; while checking the body of this function; binds x : Circle
+   │ ┌──┘
+   │ │
+51 │ │┌   case x {
+52 │ ││     Base => here(Base),
+   │ ││             ────────── an endpoint the point does not convert to
+53 │ ││     loop => here(here(Base))
+   │ ││             ━━━━━━━━━━━━━━━━ not both endpoints of the path
+54 │ ││   }
+   │ │└───┘ checked against `-F Path(Circle, Base, x)`; while showing this case respects its sort's loops
+55 │ │  }
+   │ └──┘ checked against `(x : Circle) => Path(Circle, Base, x)`; while checking the body of this thunk
+   │
+   ╰ note: `misjoined` is refused with EndpointMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:69:54
+   │
+58 │ ┌ data Marked : Type {
+59 │ │   Mark : Marked;
+60 │ │   Elsewhere : Marked;
+61 │ │   turn : Mark <-> Mark;
+62 │ │ }
+   │ └─┘ the type it synthesises
+   ‡
+69 │   def misjoined_then : Path(Marked, Mark, Elsewhere) = turn then here(Elsewhere);
+   │                                                        ┯━━━─────────────────────
+   │                                                        │
+   │                                                        its type does not convert: expected `Path(Marked, Mark, Elsewhere)`, found `Path(Marked, Mark, Mark)`
+   │                                                        checked against `Path(Marked, Mark, Elsewhere)`; while checking the operand of this transport
+   │
+   ╰ note: `misjoined_then` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:85:74
+   │
+85 │ def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) = here(Mark);
+   │                         ┬─────────────────────────────────────────────   ┯━━━━━━━━━
+   │                         │                                                │
+   │                         │                                                its type does not convert: expected `Path(Marked, kept(Elsewhere), kept(Elsewhere))`, found `Path(Marked, Mark, Mark)`
+   │                         │                                                the type it synthesises
+   │                         the type it is checked against
+   │
+   ╰ note: `elsewhereComputed` is refused with TypeMismatch, as its expectation states
+
+error[OutOfFragment.NotAFunction]: `cong` maps a path by a function, and a constructor is not one; write a function definition that applies it
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:91:21
+   │
+91 │ def cong_at_point = cong(Base, loop);
+   │                     ━━━━━━━━━━━━━━━━ a constructor, not a function
+   │
+   ╰ note: `cong_at_point` is refused with OutOfFragment.NotAFunction, as its expectation states

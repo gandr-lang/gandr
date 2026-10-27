@@ -1,0 +1,7 @@
+error[UnresolvedName]: `missing` is not defined
+   ╭▸ corpus/pathological/modules/model-refused-member.gandr:16:48
+   │
+16 │   def flip(n : Integer) -> -F Integer { return missing }
+   │                                                ━━━━━━━ not found in this scope
+   │
+   ╰ note: `flip` is refused with UnresolvedName, as its expectation states

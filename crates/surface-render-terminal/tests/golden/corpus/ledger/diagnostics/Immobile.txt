@@ -1,0 +1,10 @@
+error[Immobile]: this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead
+   ╭▸ corpus/ledger/diagnostics/Immobile.gandr:37:3
+   │
+36 │ ┌ def suspendedBack() -> -F (() => Seat.Report) {
+37 │ │   migrate [seat] { pure thunk { pure Seat.progress } }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type does not cross
+38 │ │ }
+   │ └─┘ checked against `() => () => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `suspendedBack` is refused with Immobile, as its expectation states

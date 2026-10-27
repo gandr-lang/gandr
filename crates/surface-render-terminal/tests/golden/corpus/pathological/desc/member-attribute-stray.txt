@@ -1,0 +1,7 @@
+error[MalformedForm]: a keyword or symbol of this data declaration is out of place
+  ╭▸ corpus/pathological/desc/member-attribute-stray.gandr:9:3
+  │
+9 │   @[ checks ]
+  │   ━━━━━━━━━━━ out of place
+  │
+  ╰ note: `Stray` is refused with MalformedForm, as its expectation states

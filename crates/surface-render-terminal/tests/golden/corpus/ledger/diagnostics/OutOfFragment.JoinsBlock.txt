@@ -1,0 +1,7 @@
+error[OutOfFragment.JoinsBlock]: an arm of this match exits, so its other arms continue the block and answer what the block answers; remove the written answer
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.JoinsBlock.gandr:10:22
+   │
+10 │   run m <- case n -> -F Nat {
+   │                      ━━━━━━ an answer the arms do not give
+   │
+   ╰ note: `joined` is refused with OutOfFragment.JoinsBlock, as its expectation states

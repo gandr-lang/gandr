@@ -1,0 +1,7 @@
+error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `same[a = …](…)`
+  ╭▸ corpus/ledger/diagnostics/ImplicitUnsupplied.gandr:9:18
+  │
+9 │ def unsupplied = same ;
+  │                  ━━━━ an implicit left unsupplied
+  │
+  ╰ note: `unsupplied` is refused with ImplicitUnsupplied, as its expectation states

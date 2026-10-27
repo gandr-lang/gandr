@@ -1,0 +1,105 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/univalence.gandr:24:28
+   │
+22 │   def collapsedPath : Path(Type, Two, One) = ua((
+   │ ┌────────────────────────────────────────────┘
+23 │ │   collapse,
+24 │ │   ((pick, thunk { fn (x) { here(x) } }), (pick, single))
+   │ │   ┬───────┬───────┬────────┯━━━━━━──────────────────────
+   │ │   │       │       │        │
+   │ │   │       │       │        not both endpoints of the path
+   │ │   │       │       checked against `(a : Two) -> -F Path(Two, pick(collapse(a)), a)`; while checking the body of this function; binds x : Two
+   │ │   │       checked against `(a : Two) => Path(Two, pick(collapse(a)), a)`; while checking the body of this thunk
+   │ │   checked; while checking the next premise of this
+25 │ │ ));
+   │ └──┘ checked against `Path(Type, Two, One)`; while checking the record of this univalence and the codes it relates
+   │
+   ╰ note: `collapsedPath` is refused with EndpointMismatch, as its expectation states
+
+error[LevelMismatch]: this code lives in a larger universe than the one expected
+   ╭▸ corpus/pathological/identity/univalence.gandr:31:1
+   │
+31 │   def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
+   │   │                 ┬                ─ checked against `Type -> -F Type`; while checking the body of this function; binds x : Type
+   │   │                 │
+   │ ┌─┘                 checked against `(Type ≃ Type) -> Type -> -F Type`; while checking the body of this function; binds e : Type ≃ Type
+   │ │
+32 │ │   transport(\X. X, ua(e), x)
+   │ │   ┬────────────────┬────────
+   │ │   │                │
+   │ │   │                synthesised; while checking the next premise of this
+   │ │   checked against `-F Type`; while synthesising the path this element transport follows
+33 │ │ }
+   │ └─┘ checked against `(Type ≃ Type, Type) => Type`; while checking the body of this thunk
+   │
+   ├ note: while comparing the type this synthesises with the one it is checked against
+   ╰ note: `alongTypeSelf` is refused with LevelMismatch, as its expectation states
+
+error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
+   ╭▸ corpus/pathological/identity/univalence.gandr:50:20
+   │
+40 │ ┌ def alongLiteral(
+41 │ │   a : Type,
+   │ │   ─ checked; while checking the body of this function; binds a : Type
+42 │ │   b : Type,
+   │ │   ─ checked; while checking the body of this function; binds b : Type
+43 │ │   t : a => b,
+   │ │   ─ checked; while checking the body of this function; binds t : a => b
+44 │ │   g : b => a,
+   │ │   ─ checked; while checking the body of this function; binds g : b => a
+45 │ │   s : (x : a) => Path(a, g(t(x)), x),
+   │ │   ─ checked against `((x : a) => Path(a, g(t(x)), x)) -> (h : b => a) -> ((y : b) => Path(b, t(h(y)), y)) -> a -> -F b`; while checking the body of this function; binds s : (x : a) => Path(a, g(t(x)), x)
+46 │ │   h : b => a,
+   │ │   ─ checked against `(c : b => a) -> ((d : b) => Path(b, t(c(d)), d)) -> a -> -F b`; while checking the body of this function; binds h : b => a
+47 │ │   r : (y : b) => Path(b, t(h(y)), y),
+   │ │   ─ checked against `((c : b) => Path(b, t(h(c)), c)) -> a -> -F b`; while checking the body of this function; binds r : (c : b) => Path(b, t(h(c)), c)
+48 │ │   x : a
+   │ │   ─ checked against `a -> -F b`; while checking the body of this function; binds x : a
+49 │ │ ) -> b {
+50 │ │   transport(\X. X, ua((t, ((g, s), (h, r)))), x)
+   │ │   ┬────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━────
+   │ │   │                │
+   │ │   │                its type is not of the required shape
+   │ │   checked against `-F b`; while synthesising the path this element transport follows
+51 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `alongLiteral` is refused with ShapeMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/univalence.gandr:62:3
+   │
+57 │   def uaEtaByConversion(a : Type) -> Path(
+   │   │                     ─ checked against `(a : Type) -> -F Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a))`; while checking the body of this function; binds a : Type
+   │ ┌─┘
+   │ │
+58 │ │   Path(Type, a, a),
+59 │ │   ua(idtoequiv(a, a, here(a))),
+   │ │   ──────────────────────────── an endpoint the point does not convert to
+60 │ │   here(a)
+   │ │   ─────── an endpoint the point does not convert to
+61 │ │ ) {
+62 │ │   here(here(a))
+   │ │   ━━━━━━━━━━━━━ not both endpoints of the path
+63 │ │ }
+   │ └─┘ checked against `(a : Type) => Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a))`; while checking the body of this thunk
+   │
+   ╰ note: `uaEtaByConversion` is refused with EndpointMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/univalence.gandr:69:65
+   │
+69 │    def loopsAreUnit : Path(Type, Path(Circle, Base, Base), Unit) = (ua(winding) : Path(
+   │  ┌────────────────────┬────────────────────────────────────────────╿──────────────┘
+   │ ┏│━━━━━━━━━━━━━━━━━━━━│━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┙
+   │ ┃│                    │
+   │ ┃│                    the type it is checked against
+70 │ ┃│   Type,
+71 │ ┃│   Path(Circle, Base, Base),
+72 │ ┃│   _
+73 │ ┃│ ));
+   │ ┗│━│┛ its type does not convert: expected `Path(Type, Path(Circle, Base, Base), Unit)`, found `Path(Type, Path(Circle, Base, Base), _)`
+   │  └─┤
+   │    the type it synthesises
+   │
+   ╰ note: `loopsAreUnit` is refused with TypeMismatch, as its expectation states

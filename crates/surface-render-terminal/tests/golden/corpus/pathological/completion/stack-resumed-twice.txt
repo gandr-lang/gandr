@@ -1,0 +1,19 @@
+error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second time
+   ╭▸ corpus/pathological/completion/stack-resumed-twice.gandr:27:51
+   │
+14 │ ┌  def resumedTwice() -> Unit {
+15 │ │┌   handle c : Proc {
+16 │ ││     fork (kernel : Ring.Submission) {
+17 │ ││       recv(kernel) as sqe;
+18 │ ││       send(kernel, Ring.done);
+   ‡ ││
+27 │ ││     oper exit(code, k) => { run first <- k(unit); k(unit) }
+   │ ││                             ┬──                   ━━━━━━━ a continuation already ended
+   │ ││                             │
+   │ ││                             checked against `-F Unit`; while checking the body under this binding; binds first : Unit
+28 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+29 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `resumedTwice` is refused with ContinuationUsedTwice, as its expectation states

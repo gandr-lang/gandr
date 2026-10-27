@@ -1,0 +1,10 @@
+error[UndeclaredWorld]: this names no world; declare one with `world w ;`
+   ╭▸ corpus/ledger/diagnostics/UndeclaredWorld.gandr:43:3
+   │
+42 │ ┌ def toAValue() -> -F Seat.Report {
+43 │ │   migrate [collect] { pure Seat.progress }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ no world declaration
+44 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `toAValue` is refused with UndeclaredWorld, as its expectation states

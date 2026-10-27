@@ -1,0 +1,7 @@
+error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
+  ╭▸ corpus/ledger/diagnostics/GenericMisplaced.gandr:8:22
+  │
+8 │ def same() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
+  │                      ━━━━━━━━━━━━━━━━━ a generic program read off its place
+  │
+  ╰ note: `same` is refused with GenericMisplaced, as its expectation states

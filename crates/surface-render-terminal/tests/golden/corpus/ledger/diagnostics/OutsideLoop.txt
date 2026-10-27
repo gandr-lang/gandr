@@ -1,0 +1,7 @@
+error[OutsideLoop]: `break` leaves a loop, and no loop runs here; a function, a lambda or a thunk inside a loop has a body of its own
+   ╭▸ corpus/ledger/diagnostics/OutsideLoop.gandr:10:3
+   │
+10 │   break(n)
+   │   ━━━━━━━━ no loop to leave
+   │
+   ╰ note: `stray` is refused with OutsideLoop, as its expectation states

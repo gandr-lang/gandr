@@ -1,0 +1,16 @@
+error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
+  ╭▸ corpus/pathological/regions/stashed.gandr:8:8
+  │
+7 │   def stash @[r : Region] (k : (() => Integer) at r) -> () => Integer {
+  │   │                        ─ checked against `(() => Integer) at r -> -F (() => Integer)`; while checking the body of this function; binds k : (() => Integer) at r
+  │ ┌─┘
+  │ │
+8 │ │   pure thunk { force k }
+  │ │   ┬────┯━━━━━━━━━━━━━━━━
+  │ │   │    │
+  │ │   │    a value kept in the scope's own region
+  │ │   checked against `-F (() => Integer)`; while judging the value this returns
+9 │ │ }
+  │ └─┘ checked against `(() => Integer) at r => () => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `stash` is refused with KeptEscaped, as its expectation states

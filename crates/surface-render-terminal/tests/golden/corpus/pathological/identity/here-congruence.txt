@@ -1,0 +1,10 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/here-congruence.gandr:12:68
+   │
+12 │ def peak_apart(x : Int) -> Path(Path(Int, S(x), S(x)), here(S(x)), here(P(x))) {
+   │                                           ┬───  ┬───               ━━━━━━━━━━ not both endpoints of the path
+   │                                           │     │
+   │                                           │     an endpoint the point does not convert to
+   │                                           an endpoint the point does not convert to
+   │
+   ╰ note: `peak_apart` is refused with EndpointMismatch, as its expectation states

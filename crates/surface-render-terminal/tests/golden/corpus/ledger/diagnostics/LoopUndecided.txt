@@ -1,0 +1,18 @@
+error[LoopUndecided]: deciding whether this case respects its sort's loops ran past the checker's budget: unfolding what the loop's obligation calls did not settle it
+   ╭▸ corpus/ledger/diagnostics/LoopUndecided.gandr:28:3
+   │
+27 │    def costly(x : Circle) -> -F Path(Circle, x, x) {
+   │    │          ─ checked against `(x : Circle) -> -F Path(Circle, x, x)`; while checking the body of this function; binds x : Circle
+   │ ┌──┘
+   │ │
+28 │ │┏   case x {
+29 │ │┃     Base => case power(power(Succ(Succ(Succ(Zero))))) {
+30 │ │┃       Zero => here(Base),
+31 │ │┃       Succ(p) => here(Base)
+32 │ │┃     }
+33 │ │┃   }
+   │ │┗━━━┛ a case whose loop obligation ran past its budget
+34 │ │  }
+   │ └──┘ checked against `(x : Circle) => Path(Circle, x, x)`; while checking the body of this thunk
+   │
+   ╰ note: `costly` is refused with LoopUndecided, as its expectation states

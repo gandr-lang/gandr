@@ -1,0 +1,15 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+  ╭▸ corpus/ledger/diagnostics/EndpointMismatch.gandr:4:3
+  │
+3 │   def etaSwapped(e : Integer * Integer) -> -F Path(Integer * Integer, (e.1, e.0), e) {
+  │   │              ┬                                                    ┬─────────  ─ an endpoint the point does not convert to
+  │   │              │                                                    │
+  │   │              │                                                    an endpoint the point does not convert to
+  │ ┌─┘              checked against `(e : Integer * Integer) -> -F Path(Integer * Integer, (e.1, e.0), e)`; while checking the body of this function; binds e : Integer * Integer
+  │ │
+4 │ │   here(e)
+  │ │   ━━━━━━━ not both endpoints of the path
+5 │ │ }
+  │ └─┘ checked against `(e : Integer * Integer) => Path(Integer * Integer, (e.1, e.0), e)`; while checking the body of this thunk
+  │
+  ╰ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states

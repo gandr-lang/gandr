@@ -1,0 +1,18 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/identity/int-accumulated.gandr:13:3
+   │
+12 │    def rec count(acc : Int, b : Int) -> Int {
+   │    │             ┬──        ─ checked against `Int -> -F Int`; while checking the body of this function; binds b : Int
+   │    │             │
+   │ ┌──┘             checked against `Int -> Int -> -F Int`; while checking the body of this function; binds acc : Int
+   │ │
+13 │ │┏   case b {
+14 │ │┃     Z => acc,
+15 │ │┃     S(x) => count[<](S(acc), x),
+16 │ │┃     P(x) => count[<](S(acc), x)
+17 │ │┃   }
+   │ │┗━━━┛ a case its datatype's rules do not admit
+18 │ │  }
+   │ └──┘ checked against `(Int, Int) => Int`; while checking the body of this function; binds count : (Int, Int) => Int
+   │
+   ╰ note: `count` is refused with RuleNotRespected, as its expectation states

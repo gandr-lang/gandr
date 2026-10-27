@@ -297,17 +297,18 @@ pub struct Golden
     pub advice: Advice,
 }
 
-/// The rendered diagnostic of a golden file, when its first line is a
-/// diagnostic's headline.
+/// The rendered diagnostics of a golden file, when its first line is a
+/// diagnostic's headline: one for each headline, read up to the next.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: for a first line `error[NAME]: MESSAGE`, `warning[NAME]: MESSAGE`
-///   or the same without `[NAME]`, a golden whose what is `MESSAGE` on line 1;
-///   labelled when a line holds `│`, then a run of `─` or `━`, a space and
-///   text; the first `help:` line's text as its advice, else tracked when a
-///   `note:` line names an issue as `#` and digits, else missing. Any other
-///   first line, such as a JSON rendering, gives an empty vector.
+/// - ensures: for each line `error[NAME]: MESSAGE`, `warning[NAME]: MESSAGE` or
+///   the same without `[NAME]`, in order, a golden whose what is `MESSAGE` at
+///   that line; labelled when a line before the next headline holds `│`, then a
+///   run of `─` or `━`, a space and text; the first `help:` line's text there
+///   as its advice, else tracked when a `note:` line there names an issue as
+///   `#` and digits, else missing. A file whose first line is no headline, such
+///   as a JSON rendering, gives an empty vector.
 /// - provides: the diagnostics the procedural rule reads.
 /// - fails: never.
 /// - panics: none.
@@ -315,8 +316,10 @@ pub struct Golden
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a golden with a help line, one tracked by a note, one
-///   with neither and no label, and a JSON rendering; a missed label, a note
-///   read as help or a JSON line read as a headline changes the golden.
+///   with neither and no label, a JSON rendering, and a file of two
+///   diagnostics, the first labelled and helped and the second neither; a
+///   missed label, a note read as help, a JSON line read as a headline, or a
+///   second diagnostic missed or read into the first changes the goldens.
 /// - witness: `passage::tests::a_golden_reads_its_what_where_and_advice`
 #[inline]
 #[must_use]
@@ -325,61 +328,88 @@ pub fn golden(
     text: Text<'_>,
 ) -> Vec<Golden>
 {
-    let mut lines = text.0.lines();
-    let Some(headline) = lines.next()
-    else {
+    /// The message of a diagnostic's headline, when `line` is one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn headline(line: Text<'_>) -> Option<Text<'_>>
+    {
+        ["error", "warning"].iter().find_map(|severity| {
+            let rest = line.0.strip_prefix(severity)?;
+            let rest = match rest.strip_prefix('[') {
+                Some(named) => named.split_once(']')?.1,
+                None => rest,
+            };
+            rest.strip_prefix(": ").map(Text)
+        })
+    }
+    if text.0.lines().next().map(Text).and_then(headline).is_none() {
         return Vec::new();
-    };
-    let Some(message) = ["error", "warning"].iter().find_map(|severity| {
-        let rest = headline.strip_prefix(severity)?;
-        let rest = match rest.strip_prefix('[') {
-            Some(named) => named.split_once(']')?.1,
-            None => rest,
-        };
-        rest.strip_prefix(": ")
-    })
-    else {
-        return Vec::new();
-    };
+    }
     let passage = |line: usize, text: &str, source: Source| Passage {
         path: path.0.to_owned(),
         line: Line(line),
         source,
         text: text.trim().to_owned(),
     };
-    let mut placed = Placed::Unlabelled;
-    let mut help = Vec::new();
-    let mut tracked = false;
-    for (index, line) in text.0.lines().enumerate().skip(1) {
-        if let Some((_, after)) = line.split_once('│') {
-            let after = after.trim_start();
-            let marks = after.trim_start_matches(['─', '━', '┬', '┯']);
-            if marks.len() < after.len() && marks.starts_with(' ') && !marks.trim().is_empty() {
-                placed = Placed::Labelled;
+    let lines: Vec<&str> = text.0.lines().collect();
+    let starts: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| headline(Text(line)).map(|_| index))
+        .collect();
+    let mut goldens = Vec::with_capacity(starts.len());
+    for (at, &start) in starts.iter().enumerate() {
+        let end = starts
+            .get(at.saturating_add(1))
+            .copied()
+            .unwrap_or(lines.len());
+        let Some(Text(message)) = lines.get(start).copied().map(Text).and_then(headline)
+        else {
+            continue;
+        };
+        let mut placed = Placed::Unlabelled;
+        let mut help = None;
+        let mut tracked = false;
+        for (index, line) in lines
+            .iter()
+            .enumerate()
+            .take(end)
+            .skip(start.saturating_add(1))
+        {
+            if let Some((_, after)) = line.split_once('│') {
+                let after = after.trim_start();
+                let marks = after.trim_start_matches(['─', '━', '┬', '┯']);
+                if marks.len() < after.len() && marks.starts_with(' ') && !marks.trim().is_empty() {
+                    placed = Placed::Labelled;
+                }
+            }
+            if help.is_none()
+                && let Some(advice) = line.trim_start().strip_prefix("help: ")
+            {
+                help = Some(passage(index.saturating_add(1), advice, Source::Diagnostic));
+            }
+            if let Some((_, note)) = line.split_once("note: ") {
+                tracked |= note.split('#').skip(1).any(|after| {
+                    after
+                        .bytes()
+                        .next()
+                        .is_some_and(|byte| byte.is_ascii_digit())
+                });
             }
         }
-        if let Some(advice) = line.trim_start().strip_prefix("help: ") {
-            help.push(passage(index.saturating_add(1), advice, Source::Diagnostic));
-        }
-        if let Some((_, note)) = line.split_once("note: ") {
-            tracked |= note.split('#').skip(1).any(|after| {
-                after
-                    .bytes()
-                    .next()
-                    .is_some_and(|byte| byte.is_ascii_digit())
-            });
-        }
+        let advice = match help {
+            Some(help) => Advice::Help(help),
+            None if tracked => Advice::Tracked,
+            None => Advice::Missing,
+        };
+        goldens.push(Golden {
+            what: passage(start.saturating_add(1), message, Source::Diagnostic),
+            placed,
+            advice,
+        });
     }
-    let advice = match help.into_iter().next() {
-        Some(help) => Advice::Help(help),
-        None if tracked => Advice::Tracked,
-        None => Advice::Missing,
-    };
-    vec![Golden {
-        what: passage(1, message, Source::Diagnostic),
-        placed,
-        advice,
-    }]
+    goldens
 }
 
 /// Everything the check reads under a repository root.
@@ -406,7 +436,7 @@ const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 /// - requires: `root` is a repository checkout.
 /// - ensures: the passages of every `.gandr` file under `corpus/`, walked in
 ///   path order, then of every `crates/*/README.md` in path order; the goldens
-///   of every `.txt` file of the render goldens, in path order.
+///   of every `.txt` file under the render goldens, walked in path order.
 /// - provides: the check's whole input.
 /// - fails: [`ProseError::Io`] naming the directory or file that could not be
 ///   read.
@@ -417,9 +447,9 @@ const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 /// As `fails` lists.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a scratch root with a nested corpus source, a README and
-///   a golden; a file skipped, read twice or out of order changes the gathered
-///   input.
+/// - hypothesis: L3 — a scratch root with a nested corpus source, a README, a
+///   golden and a nested golden; a file skipped, read twice or out of order
+///   changes the gathered input.
 /// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
 #[inline]
 pub fn gather(root: &Path) -> Result<Gathered, ProseError>
@@ -449,9 +479,9 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
             .passages
             .extend(readme(Text(&key), Text(&read(path)?)));
     }
-    let mut goldens = listed(&root.join(GOLDENS))?;
+    let mut goldens = Vec::new();
+    walk(&root.join(GOLDENS), &mut goldens)?;
     goldens.retain(|path| path.extension().is_some_and(|extension| extension == "txt"));
-    goldens.sort();
     for path in &goldens {
         let key = relative(root, path);
         gathered
@@ -626,6 +656,28 @@ mod tests
             "{read:?}"
         );
         assert!(golden(Text("g/json.txt"), Text("{\"severity\":\"error\"}\n")).is_empty());
+        let two = "error[A]: first\n  │\n1 │ def a\n  │ ━━━━━ the first\nhelp: write it\n\nerror[B]: \
+                   second\n  ╰ note: `b` is expected to check\n";
+        let read = golden(Text("g/two.txt"), Text(two));
+        let [ref first, ref second] = read[..]
+        else {
+            panic!("two diagnostics: {read:?}");
+        };
+        assert_eq!(
+            (first.what.text.as_str(), first.placed),
+            ("first", Placed::Labelled)
+        );
+        assert!(matches!(first.advice, Advice::Help(ref help) if help.line == Line(5)));
+        assert_eq!(
+            (
+                second.what.text.as_str(),
+                second.what.line,
+                second.placed,
+                &second.advice
+            ),
+            ("second", Line(7), Placed::Unlabelled, &Advice::Missing),
+            "the second reads nothing of the first"
+        );
     }
 
     #[test]
@@ -647,6 +699,10 @@ mod tests
             "crates/surface-render-terminal/tests/golden/g.txt",
             "error[E]: wrong\nhelp: fix it\n",
         );
+        write(
+            "crates/surface-render-terminal/tests/golden/corpus/p/h.txt",
+            "error[H]: nested\n",
+        );
         let gathered = gather(&root).unwrap();
         let read: Vec<String> = gathered
             .passages
@@ -664,6 +720,7 @@ mod tests
             .map(|golden| golden.what.path.as_str())
             .collect();
         assert_eq!(goldens, [
+            "crates/surface-render-terminal/tests/golden/corpus/p/h.txt",
             "crates/surface-render-terminal/tests/golden/g.txt"
         ]);
         std::fs::remove_dir_all(&root).unwrap();

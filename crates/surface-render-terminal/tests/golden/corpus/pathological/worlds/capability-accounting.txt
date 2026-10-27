@@ -1,0 +1,38 @@
+error[CapabilityMissing]: this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it
+   ╭▸ corpus/pathological/worlds/capability-accounting.gandr:15:3
+   │
+13 │ ┌ def twice() -> Seat.Report {
+14 │ │   run first : Seat.Report <- migrate [seat] { pure Seat.progress };
+   │ │   ─── checked against `-F Seat.Report`; while checking the body under this binding; binds first : Seat.Report
+15 │ │   migrate [seat] { pure first }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ no capability for the world
+16 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `twice` is refused with CapabilityMissing, as its expectation states
+
+error[CapabilityMissing]: this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it
+   ╭▸ corpus/pathological/worlds/capability-accounting.gandr:23:3
+   │
+22 │ ┌ def unheld() -> Seat.Report {
+23 │ │   migrate [seat] { pure Seat.progress }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ no capability for the world
+24 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `unheld` is refused with CapabilityMissing, as its expectation states
+
+error[CapabilityCaptured]: this `migrate` stands inside a thunk, which may spend its capability other than once
+   ╭▸ corpus/pathological/worlds/capability-accounting.gandr:31:16
+   │
+30 │ ┌ def suspended() -> () => Seat.Report {
+31 │ │   pure thunk { migrate [seat] { pure Seat.progress } }
+   │ │   ┬────┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
+   │ │   │    │       │
+   │ │   │    │       a migration that may run other than once
+   │ │   │    checked against `() => Seat.Report`; while checking the body of this thunk
+   │ │   checked against `-F (() => Seat.Report)`; while judging the value this returns
+32 │ │ }
+   │ └─┘ checked against `() => () => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `suspended` is refused with CapabilityCaptured, as its expectation states

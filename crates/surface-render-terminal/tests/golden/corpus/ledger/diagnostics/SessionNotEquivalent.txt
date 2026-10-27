@@ -1,0 +1,7 @@
+error[SessionNotEquivalent]: `bisim` needs the two protocols to behave alike at every step
+   ╭▸ corpus/ledger/diagnostics/SessionNotEquivalent.gandr:14:14
+   │
+14 │   def same = bisim(SeatEnd, SeatEnd′) ;
+   │              ━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
+   │
+   ╰ note: `same` is refused with SessionNotEquivalent, as its expectation states

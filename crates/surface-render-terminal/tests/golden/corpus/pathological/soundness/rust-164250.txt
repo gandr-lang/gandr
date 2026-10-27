@@ -1,0 +1,33 @@
+error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
+   ╭▸ corpus/pathological/soundness/rust-164250.gandr:30:72
+   │
+25 │ ┌   def bypassed() -> Integer {
+26 │ │┌    handle outer : Proc {
+27 │ ││      run q : (() => Integer) at outer <- pure thunk { pure 0 };
+   │ ││      ─── checked against `-F [Proc, outer : Proc] Integer`; while checking the body under this binding; binds q : (() => Integer) at outer
+28 │ ││      run x : Integer <- handle inner : Proc {
+   │ ││┌─────┬──────────────────┘
+   │ │││     │
+   │ │││     checked against `-F [Proc, outer : Proc] Integer`; while finishing the type of this
+29 │ │││       hold l = 42;
+   │ │││       ──── checked against `-F [Proc, inner : Proc] Integer`; while checking the scope of this hold
+30 │ │││       run q2 : (() => Integer) at outer <- access shared l as w { pure thunk { pure w } };
+   │ │││       ┬──                                  ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
+   │ │││       │                                    │                      │    │
+   │ │││       │                                    │                      │    a view outliving its access
+   │ │││       │                                    │                      checked against `-F ((() => Integer) at outer)`; while judging the value this returns
+   │ │││       │                                    checked against `-F ((() => Integer) at outer)`; while checking the body of this access
+   │ │││       checked against `-F [Proc, inner : Proc] Integer`; while finishing the type of this
+31 │ │││       force q2
+   ‡ │││
+34 │ │││       oper exit(code, k) => pure 0
+35 │ │││     };
+   │ ││└─────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
+   ‡ ││
+39 │ ││      oper exit(code, k) => pure 0
+40 │ ││    }
+   │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
+41 │ │   }
+   │ └───┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `bypassed` is refused with ViewEscaped, as its expectation states

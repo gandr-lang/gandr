@@ -1,0 +1,41 @@
+error[RulesUnoriented]: this rule may rewrite forever: its right side is not smaller than its left in the order the block's calls induce, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/second-order-rules.gandr:15:3
+   │
+15 │   rule beta : app(lam(t), u) <=> t(u);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
+   │
+   ╰ note: `Beta` is refused with RulesUnoriented, as its expectation states
+
+error[IllFormedDescription]: a rule uses `t` where no port binds it over the same sorts
+   ╭▸ corpus/pathological/desc/second-order-rules.gandr:26:3
+   │
+26 │   rule betaShadow : app(lam(t), u) <=> app(t, u);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ╰ note: `BetaShadow` is refused with IllFormedDescription, as its expectation states
+
+error[IllFormedDescription]: a rule uses `t` where no port binds it over the same sorts
+   ╭▸ corpus/pathological/desc/second-order-rules.gandr:35:3
+   │
+35 │   rule zeta : let(u, t) <=> t(u, u);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ╰ note: `LetTwice` is refused with IllFormedDescription, as its expectation states
+
+error[IllFormedDescription]: a rule applies `f`, which the signature does not declare
+   ╭▸ corpus/pathological/desc/second-order-rules.gandr:47:3
+   │
+47 │   rule putPut : put(s, put(f(s), k)) <=> put(f(s), k);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ╰ note: `Undeclared` is refused with IllFormedDescription, as its expectation states
+
+error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping terms, one of them applies a variable a binding port binds, and the overlap rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/second-order-rules.gandr:58:3
+   │
+57 │   rule zeta : let(u, t) <=> t(u);
+   │   ────────────────────────────── the rule it overlaps
+58 │   rule toZero : let(zero(), t) <=> zero();
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
+   │
+   ╰ note: `LetToZero` is refused with RulesOverlapSecondOrder, as its expectation states

@@ -1,0 +1,9 @@
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor
+   ╭▸ corpus/ledger/diagnostics/NegativeOccurrence.gandr:9:1
+   │
+ 9 │ ┏ data Lop(a : Type) : Type {
+10 │ ┃   MkLop : (f : Lop(Two) => Two) --> Lop(a);
+11 │ ┃ }
+   │ ┗━┛ the declared type under a function's domain, where no stage reaches it
+   │
+   ╰ note: `Lop` is refused with NegativeOccurrence, as its expectation states

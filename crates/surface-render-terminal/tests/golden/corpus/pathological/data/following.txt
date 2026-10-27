@@ -1,0 +1,22 @@
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/data/following.gandr:16:68
+   │
+13 │    def rec halvedThroughPlus(n : Nat) -> Nat {
+   │    │                         ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+14 │ │┌   case n {
+15 │ ││     Zero => Zero,
+16 │ ││     Succ(p) => { run q <- plus(Zero, p); Succ(halvedThroughPlus[<](q)) }
+   │ ││                  ┬──                     ┬────┬────────────────────┯──
+   │ ││                  │                       │    │                    │
+   │ ││                  │                       │    │                    not below the stage its recursion wants
+   │ ││                  │                       │    checked against `Nat`; while checking the argument of this application
+   │ ││                  │                       checked against `-F Nat`; while finishing the type of this
+   │ ││                  checked against `-F Nat`; while checking the body under this binding; binds _ : Nat
+17 │ ││   }
+   │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds p : Nat
+18 │ │  }
+   │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds halvedThroughPlus : Nat => Nat
+   │
+   ╰ note: `halvedThroughPlus` is refused with StageNotBelow, as its expectation states

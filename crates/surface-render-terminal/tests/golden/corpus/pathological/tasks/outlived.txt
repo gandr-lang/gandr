@@ -1,0 +1,17 @@
+error[CapabilityEscaped]: a capability its scope introduced would outlive the scope here
+   ╭▸ corpus/pathological/tasks/outlived.gandr:12:5
+   │
+10 │ ┌  def outlived() -> Unit {
+11 │ │┌   handle c : Proc {
+12 │ ││     fork (task : Task.Join) {
+   │ ││     ━━━━ a capability outliving its scope: found `Cap {exit}`
+13 │ ││       send(task, Task.notes);
+14 │ ││       close(task);
+   ‡ ││
+21 │ ││     oper exit(code, k) => k(unit)
+22 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds c : Cap {exit}
+23 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `outlived` is refused with CapabilityEscaped, as its expectation states

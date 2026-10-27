@@ -1,0 +1,48 @@
+error[MalformedForm]: a keyword or symbol of this type application is out of place
+   ╭▸ corpus/pathological/modules/model-manifest-type.gandr:34:38
+   │
+34 │ def listed : List(Integer) with sort C = Integer;
+   │                                      ━ out of place
+   │
+   ╰ note: `listed` is refused with MalformedForm, as its expectation states
+
+error[MalformedForm]: this manifest type has an operand it does not take
+   ╭▸ corpus/pathological/modules/model-manifest-type.gandr:38:35
+   │
+38 │ def unbound : Model(Counter) with Integer;
+   │                                   ━━━━━━━ an operand the form does not take
+   │
+   ╰ note: `unbound` is refused with MalformedForm, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/modules/model-manifest-type.gandr:22:69
+   │
+11 │ ┌ def unitStart() -> Unit {
+12 │ │   unit
+13 │ │ }
+   │ └─┘ the type it synthesises
+   ‡
+22 │   def unitCounter : Model(Counter) with sort C = Integer = #{.start = unitStart, .step = unitStep};
+   │                           ┬──────                          ┬──────────┯━━━━━━━━───────────────────
+   │                           │                                │          │
+   │                           │                                │          its type does not convert: expected `() => Integer`, found `() => Unit`
+   │                           │                                checked against `Model(Counter) with sort C = Integer`; while checking the next premise of this
+   │                           the type it is checked against
+   │
+   ╰ note: `unitCounter` is refused with TypeMismatch, as its expectation states
+
+error[UnknownMember]: the module `Counter` has no member `D`
+   ╭▸ corpus/pathological/modules/model-manifest-type.gandr:26:43
+   │
+26 │ def noSuchSort : Model(Counter) with sort D = Integer;
+   │                                           ━ no member of this name
+   │
+   ╰ note: `noSuchSort` is refused with UnknownMember, as its expectation states
+
+error[DuplicateDefinition]: `C` is defined twice
+   ╭▸ corpus/pathological/modules/model-manifest-type.gandr:30:65
+   │
+30 │ def fixedTwice : Model(Counter) with sort C = Integer with sort C = Unit;
+   │                                           ─ first written here  ━ written again here
+   │
+   ╰ note: `fixedTwice` is refused with DuplicateDefinition, as its expectation states

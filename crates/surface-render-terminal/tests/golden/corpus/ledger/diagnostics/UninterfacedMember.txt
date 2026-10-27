@@ -1,0 +1,7 @@
+error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `S`, which is a sort the operations do not return, which the manifest leaves unfixed
+   ╭▸ corpus/ledger/diagnostics/UninterfacedMember.gandr:11:15
+   │
+11 │   handle st : Stored {
+   │               ━━━━━━ a member the handler cannot read as an operation
+   │
+   ╰ note: `unfixed` is refused with UninterfacedMember, as its expectation states

@@ -1,0 +1,7 @@
+error[NoUniverseAbove]: the universe level `18446744073709551615` is at or past the greatest, which has no universe above it
+  ╭▸ corpus/ledger/diagnostics/NoUniverseAbove.gandr:3:24
+  │
+3 │ def greatest : Type[+, 18446744073709551615] ;
+  │                        ━━━━━━━━━━━━━━━━━━━━ no universe stands above this level
+  │
+  ╰ note: `greatest` is refused with NoUniverseAbove, as its expectation states

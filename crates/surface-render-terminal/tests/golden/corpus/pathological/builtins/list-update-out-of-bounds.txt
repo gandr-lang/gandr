@@ -1,0 +1,8 @@
+error[OutOfFragment.projection_expression]: the projection expression is not supported yet
+  ╭▸ corpus/pathological/builtins/list-update-out-of-bounds.gandr:7:11
+  │
+7 │ def set = list.set([1, 2, 3], 9, 0);
+  │           ━━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `set` is refused with OutOfFragment.projection_expression, as its expectation states
+  ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>

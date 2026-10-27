@@ -1,0 +1,7 @@
+error[MalformedForm]: `type` is a keyword and cannot stand here in this theory declaration; did you mean `Type`?
+  ╭▸ corpus/ledger/diagnostics/MalformedForm.gandr:4:12
+  │
+4 │   sort M : type;
+  │            ━━━━ a keyword where a term belongs
+  │
+  ╰ note: `Magma` is refused with MalformedForm, as its expectation states

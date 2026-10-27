@@ -1,0 +1,10 @@
+error[UndescribedMember.LhsNotOperation]: this member rewrites from something other than an operation application
+  ╭▸ corpus/pathological/circuit/circuit-shared-port.gandr:6:3
+  │
+6 │ ┏   rule twice : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
+7 │ ┃     node : p(x) ==> (m);
+8 │ ┃     node : f(x) --> (m);
+9 │ ┃   };
+  │ ┗━━━┛ a member the description does not read
+  │
+  ╰ note: `Shared` is refused with UndescribedMember.LhsNotOperation, as its expectation states

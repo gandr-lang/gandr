@@ -239,6 +239,7 @@ pub use crate::compose::lower_source;
 pub use crate::compose::lower_unit_source;
 pub use crate::compose::tabled;
 pub use crate::entry::Entries;
+pub use crate::entry::Refusals;
 pub use crate::entry::entries;
 pub use crate::evaluate::Captured;
 pub use crate::evaluate::Console;

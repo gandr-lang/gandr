@@ -1,0 +1,7 @@
+error[EntryType]: `main` is the program's entry; declare it `def main() -> -F Integer` or `def main() -> -F Unit`, or `def main(args : List(String)) -> -F Integer` to read the arguments
+  ╭▸ corpus/ledger/diagnostics/EntryType.gandr:3:5
+  │
+3 │ def main() -> -F String { return "done" }
+  │     ━━━━ an entry of another type
+  │
+  ╰ note: `main` is refused with EntryType, as its expectation states

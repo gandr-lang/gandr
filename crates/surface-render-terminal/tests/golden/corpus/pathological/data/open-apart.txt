@@ -1,0 +1,29 @@
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/data/open-apart.gandr:11:3
+   │
+10 │   def belowTheHead(n : Nat, e : Path(Nat, Succ(n), Succ(Zero))) -> Nat {
+   │   │                ┬        ─ checked against `Path(Nat, Succ(n), Succ(Zero)) -> -F Nat`; while checking the body of this function; binds e : Path(Nat, Succ(n), Succ(Zero))
+   │   │                │
+   │ ┌─┘                checked against `(n : Nat) -> Path(Nat, Succ(n), Succ(Zero)) -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ │
+11 │ │   case e {}
+   │ │   ━━━━━━━━━ a path whose endpoints are not apart
+12 │ │ }
+   │ └─┘ checked against `(n : Nat, Path(Nat, Succ(n), Succ(Zero))) => Nat`; while checking the body of this thunk
+   │
+   ╰ note: `belowTheHead` is refused with NotApart, as its expectation states
+
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/data/open-apart.gandr:17:3
+   │
+16 │   def atTheRoot(n : Nat, e : Path(Nat, n, Succ(Zero))) -> Nat {
+   │   │             ┬        ─ checked against `Path(Nat, n, Succ(Zero)) -> -F Nat`; while checking the body of this function; binds e : Path(Nat, n, Succ(Zero))
+   │   │             │
+   │ ┌─┘             checked against `(n : Nat) -> Path(Nat, n, Succ(Zero)) -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ │
+17 │ │   case e {}
+   │ │   ━━━━━━━━━ a path whose endpoints are not apart
+18 │ │ }
+   │ └─┘ checked against `(n : Nat, Path(Nat, n, Succ(Zero))) => Nat`; while checking the body of this thunk
+   │
+   ╰ note: `atTheRoot` is refused with NotApart, as its expectation states

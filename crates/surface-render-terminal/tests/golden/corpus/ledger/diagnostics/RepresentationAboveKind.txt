@@ -1,0 +1,10 @@
+error[RepresentationAboveKind]: the type sealed here lives in a larger universe than its abstract type
+  ╭▸ corpus/ledger/diagnostics/RepresentationAboveKind.gandr:4:12
+  │
+2 │ module Above :> #{ type T : Type } {
+  │                             ──── the type it is checked against
+3 │   @[ refuses("RepresentationAboveKind") ]
+4 │   type T = Type;
+  │            ━━━━ above the abstract type's universe
+  │
+  ╰ note: `T` is refused with RepresentationAboveKind, as its expectation states

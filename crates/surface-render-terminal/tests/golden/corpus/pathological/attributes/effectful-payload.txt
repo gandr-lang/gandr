@@ -1,0 +1,7 @@
+error[NonValuePayload]: the argument of the attribute `doc` must be a value
+  ╭▸ corpus/pathological/attributes/effectful-payload.gandr:2:8
+  │
+2 │ @[ doc(#!{ echo hi; }) ]
+  │        ━━━━━━━━━━━━━━ a payload that is not a value
+  │
+  ╰ note: `f` is refused with NonValuePayload, as its expectation states

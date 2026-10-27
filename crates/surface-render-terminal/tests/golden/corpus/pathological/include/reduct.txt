@@ -1,0 +1,14 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/include/reduct.gandr:20:35
+   │
+11 │ def absorbs(z : Model(LeftZero)) -> Integer {
+   │                 ─────────────── the type it is checked against
+   ‡
+20 │ def noZero() -> Integer { absorbs(endoManifest) }
+   │ ┬─────────────────────────┬───────┯━━━━━━━━━━━───
+   │ │                         │       │
+   │ │                         │       its type does not convert: expected `Model(LeftZero)`, found `Model(Monoid) with sort M = (Integer => Integer)`
+   │ │                         checked against `-F Integer`; while checking the argument of this application
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `noZero` is refused with TypeMismatch, as its expectation states

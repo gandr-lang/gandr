@@ -1,0 +1,18 @@
+error[Elsewhere]: this value lives at another world; open it there with `leta`
+   ╭▸ corpus/ledger/diagnostics/Elsewhere.gandr:38:8
+   │
+36 │   def readHere(report : Seat.Report at seat) -> -F Seat.Report {
+   │   │            ────── checked against `Seat.Report at seat -> -F Seat.Report`; while checking the body of this function; binds report : Seat.Report at seat
+   │ ┌─┘
+   │ │
+37 │ │   leta written = report;
+   │ │   ──── checked against `-F Seat.Report`; while checking the rest under the value this opens; binds written : Seat.Report
+38 │ │   pure written
+   │ │   ┬────┯━━━━━━
+   │ │   │    │
+   │ │   │    a value bound at another world
+   │ │   checked against `-F Seat.Report`; while judging the value this returns
+39 │ │ }
+   │ └─┘ checked against `Seat.Report at seat => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `readHere` is refused with Elsewhere, as its expectation states

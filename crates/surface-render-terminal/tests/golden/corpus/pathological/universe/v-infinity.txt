@@ -1,0 +1,60 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/universe/v-infinity.gandr:24:42
+   │
+10 │      Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
+   │                                    ─────── the type it synthesises
+   ‡
+16 │      Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord;
+   │                                    ────── the type it is checked against
+   ‡
+22 │    def rec unranked(v : Vinf) -> -F Ord {
+   │    │                ─ checked against `Vinf -> -F Ord`; while checking the body of this function; binds v : Vinf
+   │ ┌──┘
+   │ │
+23 │ │┌   case v {
+24 │ ││     Sup(a, f) => Lim(a, thunk { fn (x) { f(x) } })
+   │ ││                  ┬──────┬───────┬────────┯━━━─────
+   │ ││                  │      │       │        │
+   │ ││                  │      │       │        its type does not convert: expected `-F Ord`, found `-F Vinf`
+   │ ││                  │      │       checked against `a -> -F Ord`; while checking the body of this function; binds _ : a
+   │ ││                  │      checked against `a => Ord`; while checking the body of this thunk
+   │ ││                  checked against `-F Ord`; while finishing the type of this
+25 │ ││   }
+   │ │└───┘ checked against `-F Ord`; while checking the body of this function; binds a : Type, f : a => Vinf
+26 │ │  }
+   │ └──┘ checked against `Vinf => Ord`; while checking the body of this function; binds unranked : Vinf => Ord
+   │
+   ╰ note: `unranked` is refused with TypeMismatch, as its expectation states
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/universe/v-infinity.gandr:32:54
+   │
+30 │    def rec circular(v : Vinf) -> -F Ord {
+   │    │                ─ checked against `Vinf -> -F Ord`; while checking the body of this function; binds v : Vinf
+   │ ┌──┘
+   │ │
+31 │ │┌   case v {
+32 │ ││     Sup(a, f) => Lim(a, thunk { fn (x) { circular[<](Sup(a, f)) } })
+   │ ││                  ┬──────┬───────┬────────┬───────────┯━━━━━━━━──────
+   │ ││                  │      │       │        │           │
+   │ ││                  │      │       │        │           not below the stage its recursion wants
+   │ ││                  │      │       │        checked against `-F Ord`; while checking the argument of this application
+   │ ││                  │      │       checked against `a -> -F Ord`; while checking the body of this function; binds _ : a
+   │ ││                  │      checked against `a => Ord`; while checking the body of this thunk
+   │ ││                  checked against `-F Ord`; while finishing the type of this
+33 │ ││   }
+   │ │└───┘ checked against `-F Ord`; while checking the body of this function; binds a : Type, f : a => Vinf
+34 │ │  }
+   │ └──┘ checked against `Vinf => Ord`; while checking the body of this function; binds circular : Vinf => Ord
+   │
+   ╰ note: `circular` is refused with StageNotBelow, as its expectation states
+
+error[DataFieldLevel]: a constructor field lives in a larger universe than its datatype
+   ╭▸ corpus/pathological/universe/v-infinity.gandr:39:15
+   │
+38 │ data Small : Type {
+   │              ──── the type it is checked against
+39 │   Pick : (a : Type, f : +U (a -> -F Small)) --> Small;
+   │               ━━━━ above the declared universe
+   │
+   ╰ note: `Small` is refused with DataFieldLevel, as its expectation states

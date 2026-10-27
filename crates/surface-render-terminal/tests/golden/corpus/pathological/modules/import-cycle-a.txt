@@ -1,0 +1,10 @@
+error[ImportCycle]: this import leads back to this source, so its declarations are not read
+   ╭▸ corpus/pathological/modules/import-cycle-a.gandr:6:1
+   │
+ 6 │ import "./import-cycle-b.gandr";
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ leads back to this source
+   ‡
+10 │ data Left : Type {
+   │      ──── declared here
+   │
+   ╰ note: `Left` is refused with ImportCycle, as its expectation states

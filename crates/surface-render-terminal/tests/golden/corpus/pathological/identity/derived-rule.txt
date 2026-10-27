@@ -1,0 +1,7 @@
+error[UnderivedRule]: the theory `Group` does not derive `comm`: its rules rewrite the two sides to different normal forms
+   ╭▸ corpus/pathological/identity/derived-rule.gandr:11:1
+   │
+11 │ derive comm : mul(x, y) <=> mul(y, x) in Group
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule its theory does not derive
+   │
+   ╰ note: `comm` is refused with UnderivedRule, as its expectation states

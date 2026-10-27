@@ -1,0 +1,19 @@
+error[OutOfFragment.extern_block]: an extern block cannot stand where a declaration is expected
+  ╭▸ corpus/pathological/ffi/wrong-arity.gandr:7:1
+  │
+7 │ ┏ extern "c" from "m" {
+8 │ ┃   def pow(base : f64, exp : f64) -> f64;
+9 │ ┃ }
+  │ ┗━┛ a form of another sort than this position takes
+  │
+  ├ note: `extern` is refused with OutOfFragment.extern_block, as its expectation states
+  ╰ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
+
+error[OutOfFragment.projection_expression]: the projection expression is not supported yet
+   ╭▸ corpus/pathological/ffi/wrong-arity.gandr:14:15
+   │
+14 │ def squared = m.pow(2.0f64);
+   │               ━━━━━ a form the fragment does not admit
+   │
+   ├ note: `squared` is refused with OutOfFragment.projection_expression, as its expectation states
+   ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>

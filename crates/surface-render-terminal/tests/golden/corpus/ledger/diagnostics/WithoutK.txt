@@ -1,0 +1,7 @@
+error[WithoutK]: a path cannot be matched against `here`; use it by transport, through `back`, `then` or `cong`
+  ╭▸ corpus/ledger/diagnostics/WithoutK.gandr:8:12
+  │
+8 │   case p { here => case q { here => return here(p) } }
+  │            ━━━━ a path matched against reflexivity
+  │
+  ╰ note: `uip` is refused with WithoutK, as its expectation states

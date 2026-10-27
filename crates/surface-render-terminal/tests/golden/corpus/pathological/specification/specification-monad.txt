@@ -1,0 +1,17 @@
+error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
+   ╭▸ corpus/pathological/specification/specification-monad.gandr:19:3
+   │
+19 │   rule unitR : ext(m, bind x. ret(x)) <=> m;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+   │
+   ├ note: `LawfulSpecificationMonad` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ╰ note: tracked by #1510 <https://github.com/gandr-lang/gandr/issues/1510>
+
+error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
+   ╭▸ corpus/pathological/specification/specification-monad.gandr:29:3
+   │
+29 │   include RelativeMonad;
+   │   ━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+   │
+   ├ note: `IncludedSpecificationMonad` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ╰ note: tracked by #1510 <https://github.com/gandr-lang/gandr/issues/1510>

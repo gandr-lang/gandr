@@ -1,0 +1,10 @@
+error[NonExhaustiveMatch]: this match does not cover every value it can be given
+   ╭▸ corpus/pathological/data/literal-column-uncovered.gandr:8:3
+   │
+ 8 │ ┏   case m {
+ 9 │ ┃     Some(0) => return 0,
+10 │ ┃     None => return 1
+11 │ ┃   }
+   │ ┗━━━┛ some value matches no arm
+   │
+   ╰ note: `by_literal` is refused with NonExhaustiveMatch, as its expectation states

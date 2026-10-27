@@ -1,0 +1,7 @@
+error[AmbiguousMethod]: `len` is a method of both `Str` and `Bytes`; a call selects exactly one
+   ╭▸ corpus/pathological/strings/method-ambiguity.gandr:24:5
+   │
+24 │   s.len()
+   │     ━━━ a method of several modules
+   │
+   ╰ note: `measured` is refused with AmbiguousMethod, as its expectation states

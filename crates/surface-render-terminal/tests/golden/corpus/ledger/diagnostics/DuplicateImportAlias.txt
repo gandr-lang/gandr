@@ -1,0 +1,10 @@
+error[DuplicateImportAlias]: two imports are both named `parse`
+  ╭▸ corpus/ledger/diagnostics/DuplicateImportAlias.gandr:4:1
+  │
+2 │ import "file:///lib/parse.gandr" as parse;
+  │ ────────────────────────────────────────── first written here
+3 │ @[ refuses("DuplicateImportAlias") ]
+4 │ import "file:///lib/list.gandr" as parse;
+  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ written again here
+  │
+  ╰ note: `import` is refused with DuplicateImportAlias, as its expectation states

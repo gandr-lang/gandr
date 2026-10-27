@@ -1,0 +1,18 @@
+error[UnresolvedTypeHead]: no type named `Band` is written bare
+  ╭▸ corpus/pathological/modules/top-level-type.gandr:6:13
+  │
+6 │ def early : Band;
+  │             ━━━━ no type head of this name and arity
+  │
+  ╰ note: `early` is refused with UnresolvedTypeHead, as its expectation states
+
+error[MissingRecordField]: the record is missing a field
+   ╭▸ corpus/pathological/modules/top-level-type.gandr:14:22
+   │
+10 │ type Band = #{low : Integer, high : Integer};
+   │             ──────────────────────────────── the type it is checked against
+   ‡
+14 │ def partial : Band = #{low = 200000};
+   │                      ━━━━━━━━━━━━━━━ a required field is missing
+   │
+   ╰ note: `partial` is refused with MissingRecordField, as its expectation states

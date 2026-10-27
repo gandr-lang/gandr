@@ -1,0 +1,7 @@
+error[UnknownMember]: the module `Unread` has no member `read`
+   ╭▸ corpus/pathological/modules/functor-unexported.gandr:22:31
+   │
+22 │ module Unreadable = MkCounter(Unread);
+   │                               ━━━━━━ no member of this name
+   │
+   ╰ note: `Unreadable` is refused with UnknownMember, as its expectation states

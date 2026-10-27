@@ -1,0 +1,7 @@
+error[GenericUncovered]: `Eq.generic` derives no equality for `Shape`: field 0 of constructor 0 has no equality the program decides: a function, a universe, a path, a list or a float
+  ╭▸ corpus/ledger/diagnostics/GenericUncovered.gandr:8:26
+  │
+8 │ def eqShape = Eq.generic(Shape) ;
+  │                          ━━━━━ a type with no derived equality
+  │
+  ╰ note: `eqShape` is refused with GenericUncovered, as its expectation states

@@ -1,0 +1,15 @@
+error[UndescribedMember.LhsNotOperation]: this member rewrites from something other than an operation application
+  ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unsorted.gandr:8:3
+  │
+8 │   rule loose : x ==> x;
+  │   ━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ╰ note: `T` is refused with UndescribedMember.LhsNotOperation, as its expectation states
+
+error[UnstatedComponent.Unsorted]: the model signature cannot state `loose`, which binds a variable no occurrence gives a sort
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unsorted.gandr:12:19
+   │
+12 │ def model : Model(T) ;
+   │                   ━ the signature this model derives
+   │
+   ╰ note: `model` is refused with UnstatedComponent.Unsorted, as its expectation states

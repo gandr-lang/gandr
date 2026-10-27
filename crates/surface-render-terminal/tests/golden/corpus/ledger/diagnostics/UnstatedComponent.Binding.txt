@@ -1,0 +1,8 @@
+error[UnstatedComponent.Binding]: the model signature cannot state `collect`, which relates a term at a port that binds a variable, a path between host functions
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Binding.gandr:14:19
+   │
+14 │ def model : Model(T) ;
+   │                   ━ the signature this model derives
+   │
+   ├ note: `model` is refused with UnstatedComponent.Binding, as its expectation states
+   ╰ note: tracked by #2565 <https://github.com/gandr-lang/gandr/issues/2565>

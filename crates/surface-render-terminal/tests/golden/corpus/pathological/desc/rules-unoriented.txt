@@ -1,0 +1,7 @@
+error[RulesUnoriented]: this rule may rewrite forever: its right side is not smaller than its left in the order the block's calls induce, so the block's rules are refused
+  ╭▸ corpus/pathological/desc/rules-unoriented.gandr:6:3
+  │
+6 │   rule grow(n) ==> Succ(grow(n));
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
+  │
+  ╰ note: `NatGrow` is refused with RulesUnoriented, as its expectation states

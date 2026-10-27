@@ -1,0 +1,7 @@
+error[NonValuePayload]: the argument of the attribute `doc` must be a value
+  ╭▸ corpus/ledger/diagnostics/NonValuePayload.gandr:3:7
+  │
+3 │ @[doc(#!{ echo hi; })]
+  │       ━━━━━━━━━━━━━━ a payload that is not a value
+  │
+  ╰ note: `f` is refused with NonValuePayload, as its expectation states

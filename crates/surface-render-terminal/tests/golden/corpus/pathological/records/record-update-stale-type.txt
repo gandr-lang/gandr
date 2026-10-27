@@ -1,0 +1,9 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/records/record-update-stale-type.gandr:10:50
+   │
+10 │ def stale : #{count : Integer, label : String} = #{cell | count = "three"};
+   │             ┬─────────────────────────────────   ━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert: expected `#{count : Integer, label : String}`, found `#{count : String, label : String}`
+   │             │
+   │             the type it is checked against
+   │
+   ╰ note: `stale` is refused with TypeMismatch, as its expectation states

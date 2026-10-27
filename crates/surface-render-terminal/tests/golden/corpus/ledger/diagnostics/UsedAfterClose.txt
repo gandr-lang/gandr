@@ -1,0 +1,15 @@
+error[UsedAfterClose]: the endpoint is used after `close`
+  ╭▸ corpus/ledger/diagnostics/UsedAfterClose.gandr:4:36
+  │
+3 │ ┌ def seat_closed_twice() -> -F Unit {
+4 │ │   fork (seat : end) { close(seat); close(seat) } as desk;
+  │ │   ┬───                ┬──────────  ━━━━━━━━━━━ an endpoint already closed
+  │ │   │                   │
+  │ │   │                   checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the child this forks
+5 │ │   close(desk)
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `seat_closed_twice` is refused with UsedAfterClose, as its expectation states

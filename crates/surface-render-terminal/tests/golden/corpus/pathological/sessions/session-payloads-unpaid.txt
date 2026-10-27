@@ -1,0 +1,7 @@
+error[SessionNotEquivalent]: `bisim` needs the two protocols to behave alike at every step
+  ╭▸ corpus/pathological/sessions/session-payloads-unpaid.gandr:9:52
+  │
+9 │ def unpaid : Path(Type, Judge.Right, Judge.Left) = bisim(Judge.Right, Judge.Left);
+  │                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
+  │
+  ╰ note: `unpaid` is refused with SessionNotEquivalent, as its expectation states

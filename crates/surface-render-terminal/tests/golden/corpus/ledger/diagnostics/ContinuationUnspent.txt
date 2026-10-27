@@ -1,0 +1,17 @@
+error[ContinuationUnspent]: the operation's continuation holds something that must end, so the clause must `resume` it or `abandon` it exactly once
+   ╭▸ corpus/ledger/diagnostics/ContinuationUnspent.gandr:23:27
+   │
+12 │ ┌  def dropped() -> -F Unit {
+13 │ │┌   handle c : Proc {
+14 │ ││     fork (task : Cancel.Join) {
+15 │ ││       send(task, Cancel.notes);
+16 │ ││       close(task)
+   ‡ ││
+23 │ ││     oper exit(code, k) => pure unit
+   │ ││                           ━━━━━━━━━ a continuation never resumed or abandoned
+24 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+25 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `dropped` is refused with ContinuationUnspent, as its expectation states

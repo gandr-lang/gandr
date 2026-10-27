@@ -1,0 +1,32 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/holes/suspended-decode.gandr:27:31
+   │
+27 │ def threeAtString : stringy = 3;
+   │                     ┬──────   ━ its type does not convert: expected `stringy`, found `Integer`
+   │                     │
+   │                     the type it is checked against
+   │
+   ╰ note: `threeAtString` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/holes/suspended-decode.gandr:32:26
+   │
+19 │ def held : other;
+   │            ───── the type it synthesises
+   ‡
+32 │ def acrossHoles : code = held;
+   │                   ┬───   ━━━━ its type does not convert: expected `code`, found `other`
+   │                   │
+   │                   the type it is checked against
+   │
+   ╰ note: `acrossHoles` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/holes/suspended-decode.gandr:37:40
+   │
+37 │ def halfWaiting : code * Integer = (3, "three");
+   │                          ┬──────       ━━━━━━━ its type does not convert: expected `Integer`, found `String`
+   │                          │
+   │                          the type it is checked against
+   │
+   ╰ note: `halfWaiting` is refused with TypeMismatch, as its expectation states

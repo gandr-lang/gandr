@@ -1,0 +1,22 @@
+error[BufferReturnedTwice]: the buffer is handed back a second time
+   ╭▸ corpus/ledger/diagnostics/BufferReturnedTwice.gandr:7:12
+   │
+ 3 │ ┌  def freedTwice() -> -F Unit {
+ 4 │ │┌   handle r : Ring {
+ 5 │ ││     run b <- r.alloc(4096);
+   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
+ 6 │ ││     run first <- r.free(b);
+   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the body under this binding; binds first : Unit
+ 7 │ ││     r.free(b)
+   │ ││     ┬──────┯─
+   │ ││     │      │
+   │ ││     │      a buffer already handed back
+   │ ││     checked against `-F [Ring, r : Ring] Unit`; while checking the payload of this operation
+   ‡ ││
+11 │ ││     oper free(b, k) => k(unit)
+12 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
+13 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states

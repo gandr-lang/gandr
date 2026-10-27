@@ -1,0 +1,37 @@
+error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/pathological/effects/rows.gandr:19:3
+   │
+18 │   rule dropped : flush(mark(k)) <=> k under [Sink | r];
+   │   ──────────────────────────────────────────────────── the rule it overlaps
+19 │   rule kept : flush(mark(k)) <=> mark(k) under [State | r];
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+   │
+   ╰ note: `Unerased` is refused with RulesOverlapCondition, as its expectation states
+
+error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/pathological/effects/rows.gandr:31:3
+   │
+30 │   rule dropped : flush(mark(k)) <=> k under [Sink | r];
+   │   ──────────────────────────────────────────────────── the rule it overlaps
+31 │   rule kept : flush(mark(k)) <=> mark(k) under [State | r];
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+   │
+   ╰ note: `Overreaching` is refused with RulesOverlapCondition, as its expectation states
+
+error[UnresolvedTypeHead]: no type named `Missing` is written bare
+   ╭▸ corpus/pathological/effects/rows.gandr:41:39
+   │
+41 │   rule dropped : mark(k) <=> k under [Missing | r];
+   │                                       ━━━━━━━ no type head of this name and arity
+   │
+   ╰ note: `Unseen` is refused with UnresolvedTypeHead, as its expectation states
+
+error[DuplicateDefinition]: `Sink` is defined twice
+   ╭▸ corpus/pathological/effects/rows.gandr:49:52
+   │
+49 │   rule dropped : mark(k) <=> k under [Sink, State, Sink];
+   │                                       ┬───         ━━━━ written again here
+   │                                       │
+   │                                       first written here
+   │
+   ╰ note: `Twice` is refused with DuplicateDefinition, as its expectation states

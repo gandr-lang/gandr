@@ -1,0 +1,55 @@
+error[MalformedForm]: a keyword or symbol of this access expression is out of place
+   ╭▸ corpus/pathological/control/accessor-shared.gandr:28:38
+   │
+28 │   access shared c as w { pure unit } unwind { pure unit }
+   │                                      ━━━━━━ out of place
+   │
+   ╰ note: `unwound` is refused with MalformedForm, as its expectation states
+
+error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
+  ╭▸ corpus/pathological/control/accessor-shared.gandr:6:26
+  │
+4 │ ┌ def frozen() -> Unit {
+5 │ │   hold c = 0;
+  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+6 │ │   access shared c as w { access c as v { resume(v, w) } }
+  │ │   ┬──────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
+  │ │   │                      │
+  │ │   │                      a held value lent to an access
+  │ │   checked against `-F Unit`; while checking the body of this access
+7 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `frozen` is refused with HeldLent, as its expectation states
+
+error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
+   ╭▸ corpus/pathological/control/accessor-shared.gandr:13:26
+   │
+11 │ ┌ def written() -> Unit {
+12 │ │   hold c = 0;
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+13 │ │   access shared c as w { resume(w, 1) }
+   │ │   ┬──────────────────────┯━━━━━━━━━━━──
+   │ │   │                      │
+   │ │   │                      a shared view, which is read-only
+   │ │   checked against `-F Unit`; while checking the body of this access
+14 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `written` is refused with ViewReadOnly, as its expectation states
+
+error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
+   ╭▸ corpus/pathological/control/accessor-shared.gandr:20:26
+   │
+18 │ ┌ def aborted() -> Unit {
+19 │ │   hold c = 0;
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+20 │ │   access shared c as w { abort(w) }
+   │ │   ┬──────────────────────┯━━━━━━━──
+   │ │   │                      │
+   │ │   │                      a shared view, which is read-only
+   │ │   checked against `-F Unit`; while checking the body of this access
+21 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `aborted` is refused with ViewReadOnly, as its expectation states

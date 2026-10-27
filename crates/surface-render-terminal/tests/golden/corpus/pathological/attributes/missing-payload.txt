@@ -1,0 +1,7 @@
+error[MissingPayload]: the attribute `doc` needs a text payload
+  ╭▸ corpus/pathological/attributes/missing-payload.gandr:2:4
+  │
+2 │ @[ doc ]
+  │    ━━━ takes a payload
+  │
+  ╰ note: `f` is refused with MissingPayload, as its expectation states

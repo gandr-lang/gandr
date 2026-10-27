@@ -1,0 +1,17 @@
+error[EndpointUsedTwice]: one action names the endpoint twice
+  ╭▸ corpus/ledger/diagnostics/EndpointUsedTwice.gandr:4:43
+  │
+3 │ ┌ def seat_sent_over_itself() -> -F Unit {
+4 │ │   fork (seat : !String. end) { send(seat, seat); close(seat) } as desk;
+  │ │   ┬───                         ┬──────────┯━━━─
+  │ │   │                            │          │
+  │ │   │                            │          an endpoint used twice in one action
+  │ │   │                            checked against `-F Unit`; while synthesising the computation this binds
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the child this forks
+5 │ │   recv(desk) as task;
+6 │ │   close(desk)
+7 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `seat_sent_over_itself` is refused with EndpointUsedTwice, as its expectation states

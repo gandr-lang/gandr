@@ -1,0 +1,7 @@
+error[UnderivedRule]: the theory `Involution` does not derive `fixed`: its rules rewrite the two sides to different normal forms
+   ╭▸ corpus/ledger/diagnostics/UnderivedRule.gandr:10:1
+   │
+10 │ derive fixed : inv(x) <=> x in Involution
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule its theory does not derive
+   │
+   ╰ note: `fixed` is refused with UnderivedRule, as its expectation states

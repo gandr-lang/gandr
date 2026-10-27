@@ -1,0 +1,11 @@
+error[NonCovariantMotive]: a flow runs one way: `ride` may use the moving endpoint only where a run of it would be produced
+   ╭▸ corpus/pathological/sessions/session-identity-symmetric.gandr:15:5
+   │
+13 │ ┌   @[ refuses("NonCovariantMotive") ]
+14 │ │   def reversed() -> Flow(Type, SeatEnd′, SeatEnd) {
+15 │ │     ride(\X. Flow(Type, X, SeatEnd), sub, stay(SeatEnd))
+   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
+16 │ │   }
+   │ └───┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `reversed` is refused with NonCovariantMotive, as its expectation states

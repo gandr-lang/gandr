@@ -1,0 +1,16 @@
+error[OutOfFragment.package_type]: the package type is not supported yet
+  ╭▸ corpus/pathological/packages/package-payload-not-a-thunk.gandr:7:11
+  │
+7 │ def bad : package [T] Integer;
+  │           ━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `bad` is refused with OutOfFragment.package_type, as its expectation states
+  ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>
+
+error[UnknownConstant]: this names a declaration whose type is not known
+   ╭▸ corpus/pathological/packages/package-payload-not-a-thunk.gandr:13:13
+   │
+13 │ def again = bad;
+   │             ━━━ no declaration with a type
+   │
+   ╰ note: `again` is refused with UnknownConstant, as its expectation states

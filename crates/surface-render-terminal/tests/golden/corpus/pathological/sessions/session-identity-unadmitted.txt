@@ -1,0 +1,11 @@
+error[RunNotAdmitted]: the protocol does not admit this run
+   ╭▸ corpus/pathological/sessions/session-identity-unadmitted.gandr:20:73
+   │
+20 │ def retired() -> Run(Evolution.Kept) { ride(\X. Run(X), Evolution.keep, served) }
+   │ ┬──────────────────────────────────────┬────────────────────────────────┯━━━━━───
+   │ │                                      │                                │
+   │ │                                      │                                a label the protocol does not admit here
+   │ │                                      checked against `-F Run(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the value this ride moves against the flow's source
+   │ checked against `() => Run(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the body of this thunk
+   │
+   ╰ note: `retired` is refused with RunNotAdmitted, as its expectation states

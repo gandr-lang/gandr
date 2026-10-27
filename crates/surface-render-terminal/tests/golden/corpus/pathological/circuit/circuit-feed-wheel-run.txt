@@ -1,0 +1,8 @@
+error[UnstatedComponent.Circuit]: the model signature cannot state `spin`, which is a circuit rule, whose sphere a model does not read yet
+   ╭▸ corpus/pathological/circuit/circuit-feed-wheel-run.gandr:25:21
+   │
+25 │ def summing : Model(Wheel);
+   │                     ━━━━━ the signature this model derives
+   │
+   ├ note: `summing` is refused with UnstatedComponent.Circuit, as its expectation states
+   ╰ note: tracked by #1323 <https://github.com/gandr-lang/gandr/issues/1323>

@@ -1,0 +1,24 @@
+error[OutOfFragment.Unannotated]: a number with a fraction states no type of its own; write the type, as `(0.5 : f64)` or `0.5f64`
+  ╭▸ corpus/pathological/basics/fractions.gandr:8:11
+  │
+8 │ def low = 0.2;
+  │           ━━━ needs a stated type
+  │
+  ╰ note: `low` is refused with OutOfFragment.Unannotated, as its expectation states
+
+error[OutOfFragment.Unannotated]: a number with a fraction states no type of its own; write the type, as `(0.5 : f64)` or `0.5f64`
+   ╭▸ corpus/pathological/basics/fractions.gandr:12:13
+   │
+12 │ def small = 1e-3;
+   │             ━━━━ needs a stated type
+   │
+   ╰ note: `small` is refused with OutOfFragment.Unannotated, as its expectation states
+
+error[OutOfFragment.typed_number]: the typed number is not supported yet
+   ╭▸ corpus/pathological/basics/fractions.gandr:16:14
+   │
+16 │ def single = 0.5f32;
+   │              ━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `single` is refused with OutOfFragment.typed_number, as its expectation states
+   ╰ note: tracked by #2563 <https://github.com/gandr-lang/gandr/issues/2563>

@@ -1,0 +1,7 @@
+error[RegionAsValue]: `r` is a region, never a value; name it only where a type keeps a value in it, `A at r`
+  ╭▸ corpus/ledger/diagnostics/RegionAsValue.gandr:3:73
+  │
+3 │ def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }
+  │                                                                         ━ a region named as a value
+  │
+  ╰ note: `named` is refused with RegionAsValue, as its expectation states

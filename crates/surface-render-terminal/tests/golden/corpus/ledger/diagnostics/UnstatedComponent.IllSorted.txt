@@ -1,0 +1,7 @@
+error[UnstatedComponent.IllSorted]: the model signature cannot state `crossed`, which relates a term at a sort its position does not read
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.IllSorted.gandr:14:19
+   │
+14 │ def model : Model(T) ;
+   │                   ━ the signature this model derives
+   │
+   ╰ note: `model` is refused with UnstatedComponent.IllSorted, as its expectation states

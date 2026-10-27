@@ -1,0 +1,7 @@
+error[OutOfFragment.NonUniform]: a recursive call must pass the parameters before the one it descends on unchanged
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.NonUniform.gandr:14:28
+   │
+14 │     Succ(n) => shadowed[<](n, n)
+   │                            ━ not the parameter itself
+   │
+   ╰ note: `shadowed` is refused with OutOfFragment.NonUniform, as its expectation states

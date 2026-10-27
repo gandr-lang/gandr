@@ -1,0 +1,47 @@
+error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
+   ╭▸ corpus/pathological/universe/decoded-descent.gandr:29:44
+   │
+21 │       def rec totalDirect(c : UL) -> elL(c) => Nat {
+   │       │                   ─ checked against `(a : UL) -> -F (elL(a) => Nat)`; while checking the body of this function; binds c : UL
+   │ ┌─────┘
+   │ │
+22 │ │┌      case c {
+23 │ ││        NatL => thunk { fn (v) { v } },
+24 │ ││        ListL(a) => thunk { fn (v) {
+   │ ││ ┌──────────────────│───────┘
+   │ ││┌│──────────────────┘
+   │ ││││
+25 │ ││││┌       case v -> -F Nat {
+26 │ │││││         Nil => Zero,
+27 │ │││││         Cons(h, t) => {
+28 │ │││││           run each <- totalDirect[<](a);
+   │ │││││           ─── checked against `-F Nat`; while checking the body under this binding; binds _ : elL(a) => Nat
+29 │ │││││           run rest <- totalDirect[<](ListL(a));
+   │ │││││           ┬──         ┬──────────────┬─────┯──
+   │ │││││           │           │              │     │
+   │ │││││           │           │              │     not below the stage its recursion wants
+   │ │││││           │           │              checked against `UL`; while finishing the type of this
+   │ │││││           │           synthesised; while checking the argument of this application
+   │ │││││           checked against `-F Nat`; while synthesising the computation this binds
+   ‡ │││││
+32 │ │││││       }
+   │ ││││└───────┘ checked against `-F Nat`; while checking the body of this function; binds _ : elL(a), _ : List(elL(a))
+33 │ ││││      } },
+   │ ││└│──────│─┘ checked against `-F (elL(ListL(a)) => Nat)`; while checking the body of this thunk
+   │ ││ └──────┤
+   │ ││        checked against `elL(ListL(a)) -> -F Nat`; while checking the body of this function; binds _ : elL(ListL(a))
+34 │ ││        PiL(a, b) => thunk { fn (f) { Zero } }
+35 │ ││      }
+   │ │└──────┘ checked against `-F (elL(c) => Nat)`; while checking the body of this function; binds a : UL
+36 │ │     }
+   │ └─────┘ checked against `(c : UL) => elL(c) => Nat`; while checking the body of this function; binds totalDirect : (a : UL) => elL(a) => Nat
+   │
+   ╰ note: `totalDirect` is refused with StageNotBelow, as its expectation states
+
+error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
+   ╭▸ corpus/pathological/universe/decoded-descent.gandr:41:40
+   │
+41 │ def decodedAt @[i : Size] (c : UL, v : elL(c)[i]) -> Nat {
+   │                                        ━━━━━━━━━ no rule for this former
+   │
+   ╰ note: `decodedAt` is refused with OutOfFragment.Stage, as its expectation states

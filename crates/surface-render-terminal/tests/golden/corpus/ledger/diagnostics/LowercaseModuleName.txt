@@ -1,0 +1,9 @@
+error[LowercaseModuleName]: the module `lower` must start with an uppercase letter at the top level
+  ╭▸ corpus/ledger/diagnostics/LowercaseModuleName.gandr:3:1
+  │
+3 │ ┏ module lower {
+4 │ ┃   def two = 2;
+5 │ ┃ }
+  │ ┗━┛ a lowercase initial
+  │
+  ╰ note: `lower` is refused with LowercaseModuleName, as its expectation states

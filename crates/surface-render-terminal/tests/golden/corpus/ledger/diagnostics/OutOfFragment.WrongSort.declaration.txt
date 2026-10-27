@@ -1,0 +1,7 @@
+error[OutOfFragment.WrongSort.declaration]: a view expression cannot stand where a declaration is expected
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.WrongSort.declaration.gandr:4:1
+  │
+4 │ leta x = 1 ;
+  │ ━━━━━━━━━━━━ a form of another sort than this position takes
+  │
+  ╰ note: `leta` is refused with OutOfFragment.WrongSort.declaration, as its expectation states

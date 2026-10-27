@@ -1,0 +1,13 @@
+error[NotSynthesisable]: the type of a case cannot be inferred where it stands
+   ╭▸ corpus/pathological/control/eliminator-answer-type-tail-rung-only.gandr:10:12
+   │
+ 9 │ ┌ def answered() -> Integer {
+10 │ │   run n <- if false { pure 0 } else if true -> -F Integer { pure 1 } else { pure 2 };
+   │ │   ┬──      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ needs a type to be checked against
+   │ │   │
+   │ │   checked against `-F Integer`; while synthesising the computation this binds
+11 │ │   pure n
+12 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `answered` is refused with NotSynthesisable, as its expectation states

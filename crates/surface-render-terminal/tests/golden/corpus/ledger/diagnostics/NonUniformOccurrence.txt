@@ -1,0 +1,9 @@
+error[NonUniformOccurrence]: the datatype is applied to other arguments than its parameters in its field 1 of constructor 0
+  ╭▸ corpus/ledger/diagnostics/NonUniformOccurrence.gandr:3:1
+  │
+3 │ ┏ data Cell(a : Type) : Type {
+4 │ ┃   Mk : (n : a, m : Cell(Integer)) --> Cell(a);
+5 │ ┃ }
+  │ ┗━┛ the declared type at other arguments
+  │
+  ╰ note: `Cell` is refused with NonUniformOccurrence, as its expectation states

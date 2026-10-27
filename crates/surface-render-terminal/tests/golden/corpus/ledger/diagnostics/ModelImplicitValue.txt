@@ -1,0 +1,7 @@
+error[ModelImplicitValue]: the model implicit `s` is its components, never a value; read them as `s.x`, and supply the slot by a module's name or a model implicit's, `f[s = M]`
+   ╭▸ corpus/ledger/diagnostics/ModelImplicitValue.gandr:23:42
+   │
+23 │ def packed() -> -F Integer { pointOf[s = pack Origin at Model(Pointed)]() }
+   │                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a model implicit as a value
+   │
+   ╰ note: `packed` is refused with ModelImplicitValue, as its expectation states

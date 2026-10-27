@@ -1,0 +1,15 @@
+error[DependentBind]: the result type of this `run` depends on the value it binds
+   ╭▸ corpus/ledger/diagnostics/DependentBind.gandr:10:5
+   │
+ 8 │ ┌ def bound() -> -F Integer {
+ 9 │ │   run p <- {
+   │ │   ─── checked against `-F Integer`; while synthesising the computation this binds
+10 │ │     run n <- one();
+   │ │     ━━━ its type mentions the bound value: found `-F Path(Integer, n, n)`
+11 │ │     pure here(n)
+12 │ │   };
+13 │ │   pure 1
+14 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `bound` is refused with DependentBind, as its expectation states

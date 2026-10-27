@@ -1,0 +1,15 @@
+error[AcrossHandler]: `break` would leave a handler's subject while its handler is still running; `return` leaves past the handler, or end the subject with its result
+  ╭▸ corpus/pathological/control/handler-break.gandr:5:7
+  │
+5 │       break(1)
+  │       ━━━━━━━━ an exit across a live handler
+  │
+  ╰ note: `broke` is refused with AcrossHandler, as its expectation states
+
+error[AcrossHandler]: `continue` would leave a handler's subject while its handler is still running; `return` leaves past the handler, or end the subject with its result
+   ╭▸ corpus/pathological/control/handler-break.gandr:17:7
+   │
+17 │       continue
+   │       ━━━━━━━━ an exit across a live handler
+   │
+   ╰ note: `again` is refused with AcrossHandler, as its expectation states

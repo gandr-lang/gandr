@@ -1,0 +1,15 @@
+error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
+  ╭▸ corpus/ledger/diagnostics/HeldKept.gandr:6:3
+  │
+3 │ ┌ def writtenWhileKept() -> -F Integer {
+4 │ │   hold s = 3;
+  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+5 │ │   run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() => Integer) at s
+6 │ │   access s as v { resume(v, 4) };
+  │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
+7 │ │   force k
+8 │ │ }
+  │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `writtenWhileKept` is refused with HeldKept, as its expectation states

@@ -1,0 +1,84 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/divergence.gandr:11:12
+   │
+10 │    def spinPure(x : Bool) -> Bool {
+   │    │            ┬            ──── the type it is checked against
+   │    │            │
+   │ ┌──┘            checked against `Bool -> -F Bool`; while checking the body of this function; binds x : Bool
+   │ │
+11 │ │    run y <- loop {
+   │ │┏━━━━━━━━━━━━┛
+12 │ │┃     run below <- 1 < 0;
+13 │ │┃     case below {
+14 │ │┃       true => break(x),
+   ‡ │┃
+17 │ │┃   };
+   │ │┗━━━┛ its type does not convert: expected `-F Bool`, found `-F [Div] Bool`
+18 │ │    y
+19 │ │  }
+   │ └──┘ checked against `Bool => Bool`; while checking the body of this thunk
+   │
+   ╰ note: `spinPure` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/divergence.gandr:37:3
+   │
+22 │   def spin(x : Bool) -> [Div] Bool {
+   │                         ────────── the type it synthesises
+   ‡
+36 │   def spinFirst(x : Bool) -> Bool {
+   │   │             ┬            ──── the type it is checked against
+   │   │             │
+   │ ┌─┘             checked against `Bool -> -F Bool`; while checking the body of this function; binds x : Bool
+   │ │
+37 │ │   spin(x)
+   │ │   ━━━━━━━ its type does not convert: expected `-F Bool`, found `-F [Div] Bool`
+38 │ │ }
+   │ └─┘ checked against `Bool => Bool`; while checking the body of this thunk
+   │
+   ╰ note: `spinFirst` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/divergence.gandr:46:5
+   │
+22 │    def spin(x : Bool) -> [Div] Bool {
+   │                          ────────── the type it synthesises
+   ‡
+44 │    def tamed(x : Bool) -> Bool {
+   │    │         ─ checked against `Bool -> -F Bool`; while checking the body of this function; binds x : Bool
+   │ ┌──┘
+   │ │
+45 │ │┌   handle c : Div {
+46 │ ││     spin(x)
+   │ ││     ━━━━━━━ its type does not convert: expected `-F Bool`, found `-F [Div] Bool`
+47 │ ││   } with {
+48 │ ││     pure(v) => pure v
+49 │ ││   }
+   │ │└───┘ checked against `-F Bool`; while checking the subject of this scope under its capability; binds c : Cap {}
+50 │ │  }
+   │ └──┘ checked against `Bool => Bool`; while checking the body of this thunk
+   │
+   ╰ note: `tamed` is refused with TypeMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/control/divergence.gandr:60:3
+   │
+55 │   def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> Path(
+   │   │             ┬         ┬         ┬           ─ checked; while checking the body of this function; binds g : +U (a -> -F [Div] b)
+   │   │             │         │         │
+   │   │             │         │         checked; while checking the body of this function; binds f : a => b
+   │   │             │         checked; while checking the body of this function; binds b : Type
+   │ ┌─┘             checked; while checking the body of this function; binds a : Type
+   │ │
+56 │ │   +U (a -> -F [Div] b),
+57 │ │   thunk { fn (x) { run v <- g(x); f(x) } },
+   │ │   ──────────────────────────────────────── an endpoint the point does not convert to
+58 │ │   thunk { fn (x) { f(x) } }
+   │ │   ───────────────────────── an endpoint the point does not convert to
+59 │ │ ) {
+60 │ │   here(thunk { fn (x) { f(x) } })
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+61 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `unreadDiv` is refused with EndpointMismatch, as its expectation states

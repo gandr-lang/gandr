@@ -1,0 +1,27 @@
+error[OutOfFragment.WrongSort]: a wildcard cannot stand where a computation is expected
+   ╭▸ corpus/pathological/holes/wildcard.gandr:22:12
+   │
+22 │   run x <- _;
+   │            ━ a form of another sort than this position takes
+   │
+   ╰ note: `ranWildcard` is refused with OutOfFragment.WrongSort, as its expectation states
+
+error[ImplicitUnsolved]: no equation determines the term this `_` stands for; write the term
+   ╭▸ corpus/pathological/holes/wildcard.gandr:11:40
+   │
+11 │ def loose() -> Integer { idAt(Integer, _) }
+   │                                        ━ an implicit left unsolved
+   │
+   ╰ note: `loose` is refused with ImplicitUnsolved, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/holes/wildcard.gandr:16:29
+   │
+16 │ def disagreeing() -> Unit { idAt(_, 3) }
+   │ ┬────────────────────┬──────┯━━━━━━━━━──
+   │ │                    │      │
+   │ │                    │      its type does not convert: expected `-F Unit`, found `-F _`
+   │ │                    the type it is checked against
+   │ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `disagreeing` is refused with TypeMismatch, as its expectation states

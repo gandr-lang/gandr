@@ -1,0 +1,15 @@
+error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
+  ╭▸ corpus/ledger/diagnostics/HeldLent.gandr:5:26
+  │
+3 │ ┌ def frozen() -> -F Unit {
+4 │ │   hold c = 0;
+  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+5 │ │   access shared c as w { access c as v { resume(v, w) } }
+  │ │   ┬──────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
+  │ │   │                      │
+  │ │   │                      a held value lent to an access
+  │ │   checked against `-F Unit`; while checking the body of this access
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `frozen` is refused with HeldLent, as its expectation states

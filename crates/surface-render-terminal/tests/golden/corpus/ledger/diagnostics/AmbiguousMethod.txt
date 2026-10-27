@@ -1,0 +1,7 @@
+error[AmbiguousMethod]: `width` is a method of both `Wide` and `Narrow`; a call selects exactly one
+   ╭▸ corpus/ledger/diagnostics/AmbiguousMethod.gandr:17:5
+   │
+17 │   n.width()
+   │     ━━━━━ a method of several modules
+   │
+   ╰ note: `measured` is refused with AmbiguousMethod, as its expectation states

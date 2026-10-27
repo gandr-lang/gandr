@@ -1,0 +1,9 @@
+error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/ledger/diagnostics/RulesOverlapCondition.gandr:11:3
+   │
+10 │   rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+   │   ────────────────────────────────────────────────────────────────────────── the rule it overlaps
+11 │   rule vacant : nu(bind a . nil()) <=> nil();
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+   │
+   ╰ note: `VacantOverlap` is refused with RulesOverlapCondition, as its expectation states

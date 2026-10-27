@@ -1,0 +1,14 @@
+error[UndescribedMember.ParallelRedexes]: this member is a circuit rule rewriting two redexes at once, which has no single whiskered composite yet
+   ╭▸ corpus/pathological/circuit/circuit-two-redex.gandr:6:3
+   │
+ 6 │ ┏   rule cong2 : (
+ 7 │ ┃     rule p : Nat ==> Nat,
+ 8 │ ┃     rule q : Nat ==> Nat,
+ 9 │ ┃     data x : Nat,
+   ‡ ┃
+14 │ ┃     node : add(x′, y′) --> (z);
+15 │ ┃   };
+   │ ┗━━━┛ a member the description does not read
+   │
+   ├ note: `Nat` is refused with UndescribedMember.ParallelRedexes, as its expectation states
+   ╰ note: tracked by #1511 <https://github.com/gandr-lang/gandr/issues/1511>

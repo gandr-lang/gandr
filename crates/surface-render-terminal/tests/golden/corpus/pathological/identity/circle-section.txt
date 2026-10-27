@@ -1,0 +1,40 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/circle-section.gandr:62:17
+   │
+55 │    def rec forged(p : Path(Circle, Base, Base)) -> Path(
+   │    │              ─ checked against `(a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), spin(wind(a)), a)`; while checking the body of this function; binds p : Path(Circle, Base, Base)
+   │ ┌──┘
+   │ │
+56 │ │    Path(Circle, Base, Base),
+57 │ │    spin(wind(p)),
+58 │ │    p
+59 │ │  ) {
+60 │ │┌   case p {
+61 │ ││     here => here(here(Base)),
+62 │ ││     loop ∷ q => forged[<](q),
+   │ ││                 ━━━━━━━━━━━━ its type does not convert: expected `-F Path(Path(Circle, Base, Base), spin(wind(loop ∷ q)), loop ∷ q)`, found `-F Path(Path(Circle, Base, Base), spin(wind(q)), q)`
+63 │ ││     back(loop) ∷ q => { run ih <- forged[<](q); cong(unloopOn, ih) }
+64 │ ││   }
+   │ │└───┘ checked against `-F Path(Path(Circle, Base, Base), spin(wind(p)), p)`; while checking the body of this function; binds q : Path(Circle, Base, Base)
+65 │ │  }
+   │ └──┘ checked against `(p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(p)), p)`; while checking the body of this function; binds forged : (a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)), a)
+   │
+   ╰ note: `forged` is refused with TypeMismatch, as its expectation states
+
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/identity/circle-section.gandr:74:3
+   │
+73 │    def rec rewound(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), p, p) {
+   │    │               ─ checked against `(a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), a, a)`; while checking the body of this function; binds p : Path(Circle, Base, Base)
+   │ ┌──┘
+   │ │
+74 │ │┏   case p {
+75 │ │┃     here => here(here(Base)),
+76 │ │┃     loop ∷ q => { run ih <- rewound[<](q); cong(loopOn, ih) },
+77 │ │┃     back(loop) ∷ q => here(back(loop) ∷ q)
+78 │ │┃   }
+   │ │┗━━━┛ a case its datatype's rules do not admit
+79 │ │  }
+   │ └──┘ checked against `(p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), p, p)`; while checking the body of this function; binds rewound : (a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), a, a)
+   │
+   ╰ note: `rewound` is refused with RuleNotRespected, as its expectation states

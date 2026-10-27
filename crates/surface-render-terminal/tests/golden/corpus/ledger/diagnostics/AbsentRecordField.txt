@@ -1,0 +1,13 @@
+error[AbsentRecordField]: the record has no such field
+  ╭▸ corpus/ledger/diagnostics/AbsentRecordField.gandr:4:3
+  │
+3 │   def absent_selected(r : #{n : Integer, s : String}) -> -F Integer {
+  │   │                   ─ checked against `#{n : Integer, s : String} -> -F Integer`; while checking the body of this function; binds r : #{n : Integer, s : String}
+  │ ┌─┘
+  │ │
+4 │ │   r.z
+  │ │   ━━━ no field of the record type
+5 │ │ }
+  │ └─┘ checked against `#{n : Integer, s : String} => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `absent_selected` is refused with AbsentRecordField, as its expectation states

@@ -1,0 +1,8 @@
+error[OutOfFragment.grade.declaration]: the grade is not supported yet
+  ╭▸ corpus/pathological/data/field-grade.gandr:7:11
+  │
+7 │   Both : (2 first : a, second : a) --> Twice(a);
+  │           ━ a form the fragment does not admit
+  │
+  ├ note: `Twice` is refused with OutOfFragment.grade.declaration, as its expectation states
+  ╰ note: tracked by #2033 <https://github.com/gandr-lang/gandr/issues/2033>

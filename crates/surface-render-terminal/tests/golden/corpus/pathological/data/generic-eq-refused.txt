@@ -1,0 +1,79 @@
+error[GenericUncovered]: `Eq.generic` derives no equality for `Shape`: field 0 of constructor 0 has no equality the program decides: a function, a universe, a path, a list or a float
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:36:26
+   │
+36 │ def eqShape = Eq.generic(Shape);
+   │                          ━━━━━ a type with no derived equality
+   │
+   ╰ note: `eqShape` is refused with GenericUncovered, as its expectation states
+
+error[GenericUncovered]: `Eq.generic` derives no equality for `Box`: it takes parameters or indices
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:40:24
+   │
+40 │ def eqBox = Eq.generic(Box);
+   │                        ━━━ a type with no derived equality
+   │
+   ├ note: `eqBox` is refused with GenericUncovered, as its expectation states
+   ╰ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>
+
+error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:44:24
+   │
+44 │ def inside() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
+   │                        ━━━━━━━━━━━━━━━━━ a generic program read off its place
+   │
+   ╰ note: `inside` is refused with GenericMisplaced, as its expectation states
+
+error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:48:17
+   │
+48 │ def eqInteger = Eq.generic(Integer);
+   │                 ━━━━━━━━━━━━━━━━━━━ a generic program read off its place
+   │
+   ╰ note: `eqInteger` is refused with GenericMisplaced, as its expectation states
+
+error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:52:12
+   │
+52 │ def bare = Eq.generic;
+   │            ━━━━━━━━━━ a generic program read off its place
+   │
+   ╰ note: `bare` is refused with GenericMisplaced, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:56:15
+   │
+56 │ def eqWrong : (Point, Point) => Integer = Eq.generic(Point);
+   │               ┬────────────────────────   ───────────────── checked against `(Point, Point) => Integer`; while checking the body of this thunk
+   │               │
+   │               the type it is checked against
+   │
+   ├ note: while checking the body of this function; binds _ : (Point, Point) => Integer, _ : Point, _ : Point
+   ├ note: while comparing the type this synthesises with the one it is checked against
+   ╰ note: `eqWrong` is refused with TypeMismatch, as its expectation states
+
+error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:60:35
+   │
+60 │ def reflFlagged = Eq.generic.refl(Flagged);
+   │                                   ━━━━━━━ a type with no derived equality
+   │
+   ├ note: `reflFlagged` is refused with GenericUncovered.Dependent, as its expectation states
+   ╰ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+
+error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:64:33
+   │
+64 │ def symFlagged = Eq.generic.sym(Flagged);
+   │                                 ━━━━━━━ a type with no derived equality
+   │
+   ├ note: `symFlagged` is refused with GenericUncovered.Dependent, as its expectation states
+   ╰ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+
+error[GenericUncovered]: `Eq.generic` derives no equality for `Peano`: field 0 of constructor 1 holds the type itself, whose law is an induction the derivation does not write
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:68:33
+   │
+68 │ def reflPeano = Eq.generic.refl(Peano);
+   │                                 ━━━━━ a type with no derived equality
+   │
+   ├ note: `reflPeano` is refused with GenericUncovered, as its expectation states
+   ╰ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>

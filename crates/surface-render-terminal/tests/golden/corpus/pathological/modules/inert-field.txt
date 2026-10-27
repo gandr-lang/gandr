@@ -1,0 +1,39 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/modules/inert-field.gandr:45:6
+   │
+45 │   @[ inert ]
+   │      ━━━━━ out of place
+   │
+   ╰ note: `Sorted` is refused with MalformedForm, as its expectation states
+
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/modules/inert-field.gandr:53:6
+   │
+53 │   @[ checks ]
+   │      ━━━━━━ out of place
+   │
+   ╰ note: `Checked` is refused with MalformedForm, as its expectation states
+
+error[InertRead]: `tag` reads the inert field `label`; only another inert field reads one
+   ╭▸ corpus/pathological/modules/inert-field.gandr:30:13
+   │
+30 │   def tag = label;
+   │             ━━━━━ an inert field read
+   │
+   ╰ note: `tag` is refused with InertRead, as its expectation states
+
+error[InertRead]: `shown` reads the inert field `label`; only another inert field reads one
+   ╭▸ corpus/pathological/modules/inert-field.gandr:35:13
+   │
+35 │ def shown = Box.label;
+   │             ━━━━━━━━━ an inert field read
+   │
+   ╰ note: `shown` is refused with InertRead, as its expectation states
+
+error[InertRead]: `labelOf` reads the inert field `label`; only another inert field reads one
+   ╭▸ corpus/pathological/modules/inert-field.gandr:39:46
+   │
+39 │ def labelOf(l : Model(Labelled)) -> String { l.label }
+   │                                              ━━━━━━━ an inert field read
+   │
+   ╰ note: `labelOf` is refused with InertRead, as its expectation states

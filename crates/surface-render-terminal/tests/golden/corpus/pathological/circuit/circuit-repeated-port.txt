@@ -1,0 +1,10 @@
+error[RulesNonLinear]: this rule's left side names one variable twice: a rule matches each variable once, since copying a matched value needs a comonoid its sort may not have, so the rule is refused
+  ╭▸ corpus/pathological/circuit/circuit-repeated-port.gandr:6:3
+  │
+6 │ ┏   rule copy2 : (data x : Nat) ==> (z : Nat) {
+7 │ ┃     node : add(x, x) --> (z);
+  │ ┃                   ─ the variable matched again
+8 │ ┃   };
+  │ ┗━━━┛ a rule matching one variable twice
+  │
+  ╰ note: `Copy` is refused with RulesNonLinear, as its expectation states

@@ -1,0 +1,33 @@
+error[UnprovenLaw]: the module `Unproven` neither proves nor admits its model's law `sym`
+   ╭▸ corpus/pathological/modules/model-laws.gandr:25:25
+   │
+25 │ module Unproven : Model(Decided) with sort Carrier = Lone {
+   │                         ━━━━━━━ a law this module does not prove
+   │
+   ╰ note: `sym` is refused with UnprovenLaw, as its expectation states
+
+error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
+   ╭▸ corpus/pathological/modules/model-laws.gandr:34:3
+   │
+34 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+35 │ ┃   law refl admitted;
+   │ ┗━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path(Bool, Overadmitted.alike(a, a), true)`
+   │
+   ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
+
+error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
+   ╭▸ corpus/pathological/modules/model-laws.gandr:43:3
+   │
+43 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+44 │ ┃   law refl admitted;
+   │ ┗━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : f64) => Path(Bool, FloatEqAdmitted.eq(a, a), true)`
+   │
+   ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
+
+error[UnprovenLaw]: the module `FloatEqMissing` neither proves nor admits its model's law `refl`
+   ╭▸ corpus/pathological/modules/model-laws.gandr:50:31
+   │
+50 │ module FloatEqMissing : Model(Eq) with sort Carrier = f64 {
+   │                               ━━ a law this module does not prove
+   │
+   ╰ note: `refl` is refused with UnprovenLaw, as its expectation states

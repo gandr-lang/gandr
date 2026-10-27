@@ -1,0 +1,94 @@
+error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self[i] }`
+   ╭▸ corpus/pathological/control/accessor-method.gandr:16:56
+   │
+16 │   def valued @[ m : Mode ] (self : m List(Integer)) -> -F Integer { self[0] }
+   │                                                        ━━━━━━━━━━ no place of the receiver
+   │
+   ╰ note: `valued` is refused with ViewNotPlace, as its expectation states
+
+error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self[i] }`
+   ╭▸ corpus/pathological/control/accessor-method.gandr:20:80
+   │
+20 │   def computed @[ m : Mode ] (self : m List(Integer)) -> -F View[m](Integer) { pure 0 }
+   │                                                                                ━━━━━━ no place of the receiver
+   │
+   ╰ note: `computed` is refused with ViewNotPlace, as its expectation states
+
+error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self[i] }`
+   ╭▸ corpus/pathological/control/accessor-method.gandr:23:75
+   │
+23 │   def crossed @[ m : Mode, n : Mode ] (self : m List(Integer)) -> -F View[n](Integer) { self[0] }
+   │                                                                           ━ no place of the receiver
+   │
+   ╰ note: `crossed` is refused with ViewNotPlace, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/accessor-method.gandr:26:79
+   │
+25 │ ┌   @[ refuses("TypeMismatch") ]
+26 │ │   def mistyped @[ m : Mode ] (self : m List(Integer)) -> -F View[m](String) { self[0] }
+   │ └───────────────────────────────┬─────────────┬───────────────────────┬─────────┯━━━━━━─┘ checked against `List(Integer) => Integer`; while checking the body of this thunk
+   │                                 │             │                       │         │
+   │                                 │             │                       │         its type does not convert: expected `String`, found `Integer`
+   │                                 │             │                       the type it is checked against
+   │                                 │             the type it synthesises
+   │                                 checked against `List(Integer) -> -F Integer`; while checking the body of this function; binds self : List(Integer)
+   │
+   ╰ note: `mistyped` is refused with TypeMismatch, as its expectation states
+
+error[ViewOfNoPlace]: `as w { … }` lends a view only after a call of a method that answers a place of its receiver
+   ╭▸ corpus/pathological/control/accessor-method.gandr:36:6
+   │
+36 │   xs.size() as w { pure w }
+   │      ━━━━ a call answering no place
+   │
+   ╰ note: `sized` is refused with ViewOfNoPlace, as its expectation states
+
+error[OutOfFragment.Held]: an `access` lends a held value: a name a `hold` statement holds
+   ╭▸ corpus/pathological/control/accessor-method.gandr:43:3
+   │
+43 │   ys.first() as w { pure w }
+   │   ━━ not a value a hold holds
+   │
+   ╰ note: `unheld` is refused with OutOfFragment.Held, as its expectation states
+
+error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
+   ╭▸ corpus/pathological/control/accessor-method.gandr:50:27
+   │
+48 │ ┌ def raisedWhileRead() -> Integer {
+49 │ │   hold xs = pair;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+50 │ │   access shared xs as v { xs.first() as w { resume(w, 3) }; pure 0 }
+   │ │   ┬───────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──────────
+   │ │   │                       │
+   │ │   │                       a held value lent to an access
+   │ │   checked against `-F Integer`; while checking the body of this access
+51 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `raisedWhileRead` is refused with HeldLent, as its expectation states
+
+error[OutOfFragment.index_expression]: the index expression is not supported yet
+   ╭▸ corpus/pathological/control/accessor-method.gandr:56:12
+   │
+56 │   run y <- ys[i];
+   │            ━━━━━ a form the fragment does not admit
+   │
+   ├ note: `unheldIndex` is refused with OutOfFragment.index_expression, as its expectation states
+   ╰ note: tracked by #2670 <https://github.com/gandr-lang/gandr/issues/2670>
+
+error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self[i] }`
+   ╭▸ corpus/pathological/control/accessor-method.gandr:62:15
+   │
+62 │ def stray(v : View[m](Integer)) -> -F Integer {
+   │               ━━━━━━━━━━━━━━━━ no place of the receiver
+   │
+   ╰ note: `stray` is refused with ViewNotPlace, as its expectation states
+
+error[StrayReceiverMode]: `m` is a receiver's mode: only a module member's first parameter is written with it, `self : m T`
+   ╭▸ corpus/pathological/control/accessor-method.gandr:68:28
+   │
+68 │ def lent @[m : Mode] (ys : m List(Integer)) -> -F Integer {
+   │                            ━ a mode off a receiver
+   │
+   ╰ note: `lent` is refused with StrayReceiverMode, as its expectation states

@@ -1,0 +1,7 @@
+error[RoundTripDistinct]: `equiv` needs each round trip to return its input
+   ╭▸ corpus/ledger/diagnostics/RoundTripDistinct.gandr:23:21
+   │
+23 │ def collapse_bool = equiv(not, same) ;
+   │                     ━━━━━━━━━━━━━━━━ translators that are not inverse
+   │
+   ╰ note: `collapse_bool` is refused with RoundTripDistinct, as its expectation states

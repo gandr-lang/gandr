@@ -1,0 +1,15 @@
+error[OfferArms]: `offer` must handle every label of its protocol exactly once
+  ╭▸ corpus/ledger/diagnostics/OfferArms.gandr:4:49
+  │
+3 │ ┌ def seat_arms_one_label_of_two() -> -F Unit {
+4 │ │   fork (seat : &{ next : end, retire : end }) { offer(seat) { next => close(seat) } } as desk;
+  │ │   ┬───                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
+  │ │   │
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the child this forks
+5 │ │   select(desk, next);
+6 │ │   close(desk)
+7 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states

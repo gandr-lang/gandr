@@ -1,0 +1,11 @@
+error[UncertifiedStratum]: `equiv` needs each list cell's round trip to return the cell, its tail unread
+   ╭▸ corpus/pathological/identity/equiv-list-tail.gandr:18:17
+   │
+11 │ def emptied(xs : List(Bool)) -> List(Bool) {
+   │                  ────────── the type it synthesises
+   ‡
+18 │ def collapsed = equiv(emptied, keep);
+   │                 ━━━━━━━━━━━━━━━━━━━━ a list cell its round trip does not return: found `List(Bool)`
+   │
+   ├ note: `collapsed` is refused with UncertifiedStratum, as its expectation states
+   ╰ note: tracked by #524 <https://github.com/gandr-lang/gandr/issues/524>

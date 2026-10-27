@@ -1,0 +1,17 @@
+error[GenericUncovered]: `Eq.generic` derives no equality for `List`: it takes parameters or indices
+   ╭▸ corpus/pathological/metaprograms/derive-eq-over-codes.gandr:35:25
+   │
+35 │ def eqList = Eq.generic(List);
+   │                         ━━━━ a type with no derived equality
+   │
+   ├ note: `eqList` is refused with GenericUncovered, as its expectation states
+   ╰ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>
+
+error[GenericUncovered]: `Eq.generic` derives no equality for `Even`: field 0 of constructor 0 reaches a declaration whose equality is derived through it
+   ╭▸ corpus/pathological/metaprograms/derive-eq-over-codes.gandr:40:25
+   │
+40 │ def eqEven = Eq.generic(Even);
+   │                         ━━━━ a type with no derived equality
+   │
+   ├ note: `eqEven` is refused with GenericUncovered, as its expectation states
+   ╰ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>

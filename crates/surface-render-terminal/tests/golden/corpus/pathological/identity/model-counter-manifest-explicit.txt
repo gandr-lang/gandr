@@ -1,0 +1,46 @@
+error[MalformedForm]: a keyword or symbol of this forget model expression is out of place
+   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:34:12
+   │
+34 │       sort C = Unit + (Unit + Unit)
+   │            ━ out of place
+   │
+   ╰ note: `twiceWritten` is refused with MalformedForm, as its expectation states
+
+error[MalformedForm]: this forget model expression has an operand it does not take
+   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:42:25
+   │
+42 │   become observe(forget[Unit + (Unit + Unit)](upManifest) at Model(Counter))
+   │                         ━━━━━━━━━━━━━━━━━━━━ an operand the form does not take
+   │
+   ╰ note: `unbound` is refused with MalformedForm, as its expectation states
+
+error[MalformedForm]: a keyword or symbol of this forget model expression is out of place
+   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:48:68
+   │
+48 │   become observe(forget[sort C = Unit + (Unit + Unit)](upManifest) at Integer)
+   │                                                                    ━━ out of place
+   │
+   ╰ note: `ontoIntegers` is refused with MalformedForm, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:19:43
+   │
+18 │ ┌ def otherCarrier() -> -F Integer {
+19 │ │   become observe(forget[sort C = Integer](upManifest) at Model(Counter))
+   │ │          ┬───────┬────────────────────────┯━━━━━━━━━────────────────────
+   │ │          │       │                        │
+   │ │          │       │                        its type does not convert: expected `#{incr : Integer => Integer, read : Integer => Integer, zero : Integer}`, found `Model(Counter) with sort C = Unit + Bool`
+   │ │          │       checked against `Model(Counter)`; while checking the argument of this application
+   │ │          checked against `-F Integer`; while checking the argument of this application
+20 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `otherCarrier` is refused with TypeMismatch, as its expectation states
+
+error[UnknownMember]: the module `Counter` has no member `D`
+   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:25:30
+   │
+25 │   become observe(forget[sort D = Integer](upManifest) at Model(Counter))
+   │                              ━ no member of this name
+   │
+   ╰ note: `strangeSort` is refused with UnknownMember, as its expectation states

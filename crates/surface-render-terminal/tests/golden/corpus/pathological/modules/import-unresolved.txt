@@ -1,0 +1,10 @@
+error[ImportUnresolved]: this import names no source the root holds, so this source's declarations are not read
+   ╭▸ corpus/pathological/modules/import-unresolved.gandr:6:1
+   │
+ 6 │ import "./circle-absent.gandr";
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ names no source this root holds
+   ‡
+11 │ data Point : Type {
+   │      ───── declared here
+   │
+   ╰ note: `Point` is refused with ImportUnresolved, as its expectation states

@@ -1,0 +1,7 @@
+error[OutOfFragment.Arity]: the block cannot take 0 operands
+  ╭▸ corpus/pathological/basics/empty-block.gandr:6:26
+  │
+6 │ def nothing() -> -F Unit {}
+  │                          ━━ the wrong number of operands
+  │
+  ╰ note: `nothing` is refused with OutOfFragment.Arity, as its expectation states

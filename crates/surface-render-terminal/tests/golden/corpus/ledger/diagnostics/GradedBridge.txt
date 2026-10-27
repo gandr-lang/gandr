@@ -1,0 +1,8 @@
+error[GradedBridge]: the grade `1` is not supported; only the default grade `ω` is
+  ╭▸ corpus/ledger/diagnostics/GradedBridge.gandr:5:17
+  │
+5 │ def graded = +U[1] (-F Integer) ;
+  │                 ━ a grade other than `ω`
+  │
+  ├ note: `graded` is refused with GradedBridge, as its expectation states
+  ╰ note: tracked by #1112 <https://github.com/gandr-lang/gandr/issues/1112>

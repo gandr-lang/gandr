@@ -1,0 +1,10 @@
+error[IndexOccurrence]: the datatype occurs inside a term in its field 0 of constructor 1
+  ╭▸ corpus/ledger/diagnostics/IndexOccurrence.gandr:3:1
+  │
+3 │ ┏ data Coded : Type {
+4 │ ┃   Base : Coded;
+5 │ ┃   Looped : (p : Path(Type, Coded, Coded)) --> Coded;
+6 │ ┃ }
+  │ ┗━┛ the declared type inside an index
+  │
+  ╰ note: `Coded` is refused with IndexOccurrence, as its expectation states

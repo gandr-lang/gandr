@@ -1,0 +1,16 @@
+error[SessionMismatch]: the endpoint's protocol expects a send here, not a receive
+  ╭▸ corpus/ledger/diagnostics/SessionMismatch.gandr:5:3
+  │
+3 │ ┌ def desk_receives_first() -> -F Unit {
+4 │ │   fork (seat : ?String. end) { recv(seat) as task; close(seat) } as desk;
+  │ │   ┬───
+  │ │   │
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the rest of this fork's parent
+5 │ │   recv(desk) as task;
+  │ │   ━━━━ an action the endpoint's state does not admit: found `!String. end`
+6 │ │   close(desk)
+7 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states

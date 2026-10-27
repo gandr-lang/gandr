@@ -1,0 +1,7 @@
+error[UnresolvedTypeHead]: no type named `Natural` is written bare
+  ╭▸ corpus/ledger/diagnostics/UnresolvedTypeHead.gandr:3:15
+  │
+3 │ def counted : Natural ;
+  │               ━━━━━━━ no type head of this name and arity
+  │
+  ╰ note: `counted` is refused with UnresolvedTypeHead, as its expectation states

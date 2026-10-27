@@ -1,0 +1,17 @@
+error[FootprintsOverlap]: both halves of this fork may use the authority found here, and one of them may change it
+   ╭▸ corpus/ledger/diagnostics/FootprintsOverlap.gandr:13:3
+   │
+12 │   def racing(c : Cap { read, write }) -> [Fs] Unit {
+   │   │          ─ checked against `Cap {read, write} -> -F [Fs] Unit`; while checking the body of this function; binds c : Cap {read, write}
+   │ ┌─┘
+   │ │
+13 │ │   fork (task : end) {
+   │ │   ━━━━ authority both halves of a fork hold, one to change: found `Cap {read, write}`
+14 │ │     c.write("notes", "task");
+15 │ │     close(task)
+   ‡ │
+18 │ │   close(found)
+19 │ │ }
+   │ └─┘ checked against `+U (Cap {read, write} -> -F [Fs] Unit)`; while checking the body of this thunk
+   │
+   ╰ note: `racing` is refused with FootprintsOverlap, as its expectation states

@@ -1,0 +1,13 @@
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/ledger/diagnostics/NotApart.gandr:14:3
+   │
+13 │   def agree(e : Path(Int, S(P(Z)), Z)) -> -F Empty {
+   │   │         ─ checked against `Path(Int, S(P(Z)), Z) -> -F Empty`; while checking the body of this function; binds e : Path(Int, S(P(Z)), Z)
+   │ ┌─┘
+   │ │
+14 │ │   case e {}
+   │ │   ━━━━━━━━━ a path whose endpoints are not apart
+15 │ │ }
+   │ └─┘ checked against `Path(Int, S(P(Z)), Z) => Empty`; while checking the body of this thunk
+   │
+   ╰ note: `agree` is refused with NotApart, as its expectation states

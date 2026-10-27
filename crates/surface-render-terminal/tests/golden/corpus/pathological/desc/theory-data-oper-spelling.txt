@@ -1,0 +1,7 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+  ╭▸ corpus/pathological/desc/theory-data-oper-spelling.gandr:4:3
+  │
+4 │   oper add(m : Nat, n : Nat) -> Nat;
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
+  │
+  ╰ note: `Theory` is refused with MalformedForm, as its expectation states

@@ -1,0 +1,7 @@
+error[AcrossHandler]: `become` would leave a handler's subject while its handler is still running; `return` leaves past the handler, or end the subject with its result
+  ╭▸ corpus/ledger/diagnostics/AcrossHandler.gandr:5:5
+  │
+5 │     become one()
+  │     ━━━━━━━━━━━━ an exit across a live handler
+  │
+  ╰ note: `became` is refused with AcrossHandler, as its expectation states

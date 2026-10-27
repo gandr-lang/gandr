@@ -1,0 +1,8 @@
+error[UndescribedMember.TypeShape]: this member names a type with no first-order description reference
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.TypeShape.gandr:5:3
+  │
+5 │   sort Bad : Integer;
+  │   ━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ├ note: `Shape` is refused with UndescribedMember.TypeShape, as its expectation states
+  ╰ note: tracked by #2664 <https://github.com/gandr-lang/gandr/issues/2664>

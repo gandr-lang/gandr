@@ -1,0 +1,15 @@
+error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
+  ╭▸ corpus/ledger/diagnostics/ViewReadOnly.gandr:5:26
+  │
+3 │ ┌ def written() -> -F Unit {
+4 │ │   hold c = 0;
+  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+5 │ │   access shared c as w { resume(w, 1) }
+  │ │   ┬──────────────────────┯━━━━━━━━━━━──
+  │ │   │                      │
+  │ │   │                      a shared view, which is read-only
+  │ │   checked against `-F Unit`; while checking the body of this access
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `written` is refused with ViewReadOnly, as its expectation states

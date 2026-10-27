@@ -1,0 +1,23 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/regions/outlived.gandr:14:33
+   │
+10 │ ┌  def outlived() -> Integer {
+11 │ │    hold s = 4;
+   │ │    ──── checked against `-F Integer`; while checking the scope of this hold
+12 │ │┌   handle c : Proc {
+13 │ ││     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+14 │ ││     run back : () => Integer <- pass(k);
+   │ ││     ┬──                         ━━━━━━━ its type does not convert: expected `-F (() => Integer)`, found `-F ((() => Integer) at c)`
+   │ ││     │
+   │ ││     the type it is checked against
+   │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
+15 │ ││     force back
+   ‡ ││
+18 │ ││     oper exit(code, rest) => pure 0
+19 │ ││   }
+   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
+20 │ │  }
+   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `outlived` is refused with TypeMismatch, as its expectation states

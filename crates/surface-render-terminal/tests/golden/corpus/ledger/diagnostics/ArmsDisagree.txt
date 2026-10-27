@@ -1,0 +1,22 @@
+error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different states
+  ╭▸ corpus/ledger/diagnostics/ArmsDisagree.gandr:5:50
+  │
+3 │ ┌ def seat_arms_leave_it_apart() -> -F Unit {
+4 │ │   fork (seat : &{ next : end, retire : end }) {
+  │ │   ┬───
+  │ │   │
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the child this forks
+5 │ │     offer(seat) { next => close(seat), retire => pure unit }
+  │ │     ┬─────────────────────┬──────────────────────┯━━━━━━━━──
+  │ │     │                     │                      │
+  │ │     │                     │                      an arm that leaves the endpoints otherwise
+  │ │     │                     the arm it disagrees with
+  │ │     checked against `-F Unit`; while checking an arm of this offer
+6 │ │   } as desk;
+7 │ │   select(desk, next);
+8 │ │   close(desk)
+9 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `seat_arms_leave_it_apart` is refused with ArmsDisagree, as its expectation states

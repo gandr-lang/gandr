@@ -1,0 +1,29 @@
+error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two normal forms, and each rule completion derives to join them wraps the one before, so completion never ends and the block's rules are refused
+   ╭▸ corpus/pathological/desc/rules-never-complete.gandr:11:1
+   │
+11 │ ┏ theory Extrusion {
+12 │ ┃   sort Proc : Type;
+13 │ ┃   oper nil : () --> Proc;
+14 │ ┃   oper par : (p : Proc, q : Proc) --> Proc;
+   ‡ ┃
+17 │ ┃   rule scope : par(nu(p), q) ==> nu(par(p, q));
+   │ ┃   ──────────────────────────────────────────── the rule it overlaps
+18 │ ┃ }
+   │ ┗━┛ rules whose completion never ends
+   │
+   ╰ note: `Extrusion` is refused with RulesNeverComplete, as its expectation states
+
+error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two normal forms, and each rule completion derives to join them wraps the one before, so completion never ends and the block's rules are refused
+   ╭▸ corpus/pathological/desc/rules-never-complete.gandr:24:1
+   │
+24 │ ┏ theory Restriction {
+25 │ ┃   sort Name : Atom;
+26 │ ┃   sort Proc : Type;
+27 │ ┃   oper nil : () --> Proc;
+   ‡ ┃
+31 │ ┃   rule scope : par(nu(bind a. p), q) ==> nu(bind a. par(p, q)) where a # q;
+   │ ┃   ──────────────────────────────────────────────────────────────────────── the rule it overlaps
+32 │ ┃ }
+   │ ┗━┛ rules whose completion never ends
+   │
+   ╰ note: `Restriction` is refused with RulesNeverComplete, as its expectation states

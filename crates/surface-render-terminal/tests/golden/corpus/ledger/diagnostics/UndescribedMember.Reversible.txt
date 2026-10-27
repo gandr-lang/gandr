@@ -1,0 +1,8 @@
+error[UndescribedMember.Reversible]: this member writes `<->`, which is reserved for reversible maps
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.Reversible.gandr:5:27
+  │
+5 │   oper negate : (b : Bit) <-> (c : Bit);
+  │                           ━━━ a member the description does not read
+  │
+  ├ note: `Reserved` is refused with UndescribedMember.Reversible, as its expectation states
+  ╰ note: tracked by #1509 <https://github.com/gandr-lang/gandr/issues/1509>

@@ -1,0 +1,34 @@
+error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
+   ╭▸ corpus/pathological/holes/pattern-hole-arms.gandr:23:3
+   │
+22 │    def classify(c : Color) -> Integer {
+   │    │            ─ checked against `Color -> -F Integer`; while checking the body of this function; binds c : Color
+   │ ┌──┘
+   │ │
+23 │ │┏   case c {
+24 │ │┃     Red => 0,
+25 │ │┃     ? => 1,
+26 │ │┃     Blue => 2
+27 │ │┃   }
+   │ │┗━━━┛ an arm left to a pattern hole
+28 │ │  }
+   │ └──┘ checked against `Color => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `classify` is refused with UndecidedCoverage, as its expectation states
+
+error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
+   ╭▸ corpus/pathological/holes/pattern-hole-arms.gandr:34:3
+   │
+33 │    def unwrap(m : Chosen) -> Integer {
+   │    │          ─ checked against `Chosen -> -F Integer`; while checking the body of this function; binds m : Chosen
+   │ ┌──┘
+   │ │
+34 │ │┏   case m {
+35 │ │┃     Unchosen => 0,
+36 │ │┃     Chose(?) => 1
+37 │ │┃   }
+   │ │┗━━━┛ an arm left to a pattern hole
+38 │ │  }
+   │ └──┘ checked against `Chosen => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `unwrap` is refused with UndecidedCoverage, as its expectation states

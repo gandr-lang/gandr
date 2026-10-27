@@ -1,0 +1,10 @@
+error[LevelMismatch]: this code lives in a larger universe than the one expected
+  ╭▸ corpus/ledger/diagnostics/LevelMismatch.gandr:5:15
+  │
+3 │ def too_big : Type ;
+  │               ──── the type it is checked against
+4 │
+5 │ def too_big = Type ;
+  │               ━━━━ a universe at a level not admitted: expected `Type`, found `Type[+, 1]`
+  │
+  ╰ note: `too_big` is refused with LevelMismatch, as its expectation states

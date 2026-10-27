@@ -1,0 +1,10 @@
+error[ImportCycle]: this import leads back to this source, so its declarations are not read
+  ╭▸ corpus/ledger/diagnostics/ImportCycle.gandr:2:1
+  │
+2 │ import "ImportCycle.gandr" ;
+  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ leads back to this source
+  ‡
+5 │ def a = 1 ;
+  │     ─ declared here
+  │
+  ╰ note: `a` is refused with ImportCycle, as its expectation states

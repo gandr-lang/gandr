@@ -1,0 +1,11 @@
+error[EquivUnsupported]: `equiv` needs two closed pure translators between types built from units, integers, strings, tuples, sums, lists and data types that do not hold themselves
+   ╭▸ corpus/ledger/diagnostics/EquivUnsupported.gandr:15:17
+   │
+ 9 │ def same(n : Nat) -> -F Nat {
+   │              ─── the type it synthesises
+   ‡
+15 │ def recursive = equiv(same, same) ;
+   │                 ━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Nat`
+   │
+   ├ note: `recursive` is refused with EquivUnsupported, as its expectation states
+   ╰ note: tracked by #1316 <https://github.com/gandr-lang/gandr/issues/1316>

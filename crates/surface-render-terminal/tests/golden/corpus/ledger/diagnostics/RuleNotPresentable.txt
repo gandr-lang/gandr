@@ -1,0 +1,7 @@
+error[RuleNotPresentable]: these rules do not present the datatype
+  ╭▸ corpus/ledger/diagnostics/RuleNotPresentable.gandr:3:14
+  │
+3 │ data Tally : Type {
+  │              ━━━━ rules that do not present the datatype
+  │
+  ╰ note: `Tally` is refused with RuleNotPresentable, as its expectation states

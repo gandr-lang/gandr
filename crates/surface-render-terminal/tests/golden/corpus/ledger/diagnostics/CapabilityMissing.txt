@@ -1,0 +1,10 @@
+error[CapabilityMissing]: this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it
+   ╭▸ corpus/ledger/diagnostics/CapabilityMissing.gandr:37:3
+   │
+36 │ ┌ def unheld() -> -F Seat.Report {
+37 │ │   migrate [seat] { pure Seat.progress }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ no capability for the world
+38 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `unheld` is refused with CapabilityMissing, as its expectation states

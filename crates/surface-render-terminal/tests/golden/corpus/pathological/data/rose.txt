@@ -1,0 +1,31 @@
+error[NestedOccurrence]: the datatype occurs nested inside another type in its field 0 of constructor 0, at a place that type does not hold strictly positively
+   ╭▸ corpus/pathological/data/rose.gandr:25:1
+   │
+25 │ ┏ data Rose : Type {
+26 │ ┃   Node : (kids : Test(Rose)) --> Rose;
+27 │ ┃ }
+   │ ┗━┛ the declared type inside another former, at a place it does not hold strictly positively
+   │
+   ╰ note: `Rose` is refused with NestedOccurrence, as its expectation states
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/data/rose.gandr:78:45
+   │
+76 │    def rec forged(t : Bush) -> Nat {
+   │    │              ─ checked against `Bush -> -F Nat`; while checking the body of this function; binds t : Bush
+   │ ┌──┘
+   │ │
+77 │ │┌   case t {
+78 │ ││     Sprout(kids) => Succ(sum(map(Bush, Nat, forged[<], (Cons(t, (Nil : List(Bush))) : List(Bush)))))
+   │ ││                     ┬────┬───┬──────────────┯━━━━━━━━───────────────────────────────────────────────
+   │ ││                     │    │   │              │
+   │ ││                     │    │   │              not below the stage its recursion wants
+   │ ││                     │    │   checked against `List(Nat)`; while checking the argument of this application
+   │ ││                     │    checked against `Nat`; while checking the argument of this application
+   │ ││                     checked against `-F Nat`; while finishing the type of this
+79 │ ││   }
+   │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds kids : List(Bush)
+80 │ │  }
+   │ └──┘ checked against `Bush => Nat`; while checking the body of this function; binds forged : Bush => Nat
+   │
+   ╰ note: `forged` is refused with StageNotBelow, as its expectation states

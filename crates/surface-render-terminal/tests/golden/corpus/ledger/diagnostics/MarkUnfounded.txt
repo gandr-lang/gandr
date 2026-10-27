@@ -1,0 +1,7 @@
+error[MarkUnfounded]: this type is marked `mobile`, but its representation cannot cross to another world
+  ╭▸ corpus/ledger/diagnostics/MarkUnfounded.gandr:4:17
+  │
+4 │   type Report = +U (Integer -> -F Integer);
+  │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━ a representation that does not cross
+  │
+  ╰ note: `Report` is refused with MarkUnfounded, as its expectation states

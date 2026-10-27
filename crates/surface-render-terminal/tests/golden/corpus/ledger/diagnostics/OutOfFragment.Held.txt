@@ -1,0 +1,7 @@
+error[OutOfFragment.Held]: an `access` lends a held value: a name a `hold` statement holds
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Held.gandr:12:3
+   │
+12 │   n.bump()
+   │   ━ not a value a hold holds
+   │
+   ╰ note: `unheld` is refused with OutOfFragment.Held, as its expectation states

@@ -1,0 +1,7 @@
+error[OutOfFragment.Arity]: the type variable cannot take 0 operands
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Arity.gandr:22:28
+   │
+22 │ def unapplied(c : U) -> -F el { return c }
+   │                            ━━ the wrong number of operands
+   │
+   ╰ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states

@@ -1,0 +1,65 @@
+error[SessionMismatch]: the endpoint's protocol expects a send here, not a receive
+  ╭▸ corpus/pathological/sessions/protocol.gandr:4:3
+  │
+2 │ ┌ def desk_receives_first() -> Unit {
+3 │ │   fork (seat : ?String. end) { recv(seat) as task; close(seat) } as desk;
+  │ │   ┬───
+  │ │   │
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the rest of this fork's parent
+4 │ │   recv(desk) as task;
+  │ │   ━━━━ an action the endpoint's state does not admit: found `!String. end`
+5 │ │   close(desk)
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states
+
+error[UnofferedLabel]: the endpoint's protocol offers no such label here
+   ╭▸ corpus/pathological/sessions/protocol.gandr:11:3
+   │
+ 9 │ ┌ def desk_selects_no_offered_label() -> Unit {
+10 │ │   fork (seat : &{next : end}) { offer(seat) { next => close(seat) } } as desk;
+   │ │   ┬───
+   │ │   │
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the rest of this fork's parent
+11 │ │   select(desk, retire);
+   │ │   ━━━━━━━━━━━━━━━━━━━━ a label the endpoint's state does not offer: found `+{next : end}`
+12 │ │   close(desk)
+13 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `desk_selects_no_offered_label` is refused with UnofferedLabel, as its expectation states
+
+error[OfferArms]: `offer` must handle every label of its protocol exactly once
+   ╭▸ corpus/pathological/sessions/protocol.gandr:17:47
+   │
+16 │ ┌ def seat_arms_one_label_of_two() -> Unit {
+17 │ │   fork (seat : &{next : end, retire : end}) { offer(seat) { next => close(seat) } } as desk;
+   │ │   ┬───                                        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
+   │ │   │
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the child this forks
+18 │ │   select(desk, next);
+19 │ │   close(desk)
+20 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states
+
+error[SessionMismatch]: the endpoint's protocol expects an offer here, not a close
+   ╭▸ corpus/pathological/sessions/protocol.gandr:27:3
+   │
+25 │ ┌ def desk_drops_a_live_endpoint() -> Unit {
+26 │ │   fork (seat : +{done : end}) { select(seat, done); drop(seat) } as desk;
+   │ │   ┬───
+   │ │   │
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the rest of this fork's parent
+27 │ │   drop(desk)
+   │ │   ━━━━━━━━━━ an action the endpoint's state does not admit: found `&{done : end}`
+28 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `desk_drops_a_live_endpoint` is refused with SessionMismatch, as its expectation states

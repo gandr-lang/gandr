@@ -1,0 +1,16 @@
+error[OutOfFragment.extern_block]: the extern block is not supported yet
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:20:17
+   │
+20 │   def widen(x : Integer) -> u64;
+   │                 ━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `extern` is refused with OutOfFragment.extern_block, as its expectation states
+   ╰ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
+
+error[UnresolvedName]: `sub` is not defined
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:30:48
+   │
+30 │ def less(x : u32) -> [Boundary] u32 { Boundary.sub(x, x) }
+   │                                                ━━━ not found in this scope
+   │
+   ╰ note: `less` is refused with UnresolvedName, as its expectation states

@@ -1,0 +1,14 @@
+error[LinearResidue]: the endpoint is not closed before the fork half or receive body that bound it ends
+  ╭▸ corpus/ledger/diagnostics/LinearResidue.gandr:4:3
+  │
+3 │ ┌ def seat_left_open() -> -F Unit {
+4 │ │   fork (seat : end) { pure unit } as desk;
+  │ │   ┯━━━
+  │ │   │
+  │ │   an endpoint left unconsumed: found `end`
+  │ │   the endpoint was opened by this fork
+5 │ │   close(desk)
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `seat_left_open` is refused with LinearResidue, as its expectation states

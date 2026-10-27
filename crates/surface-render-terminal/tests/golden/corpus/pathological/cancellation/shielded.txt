@@ -1,0 +1,23 @@
+error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an effect
+   ╭▸ corpus/pathological/cancellation/shielded.gandr:23:43
+   │
+10 │ ┌  def shielded() -> Unit {
+11 │ │┌   handle c : Proc {
+12 │ ││     fork (task : Cancel.Join) {
+13 │ ││       send(task, Cancel.notes);
+14 │ ││       close(task)
+   ‡ ││
+22 │ ││       hold n = 0;
+   │ ││       ──── checked against `-F Unit`; while checking the scope of this hold
+23 │ ││       access n as v { abort(v) } unwind { abandon(k) }
+   │ ││       ┬───────────────────────────────────┯━━━━━━━━━──
+   │ ││       │                                   │
+   │ ││       │                                   an effect in an unwind
+   │ ││       checked against `-F Unit`; while checking the unwind of this access under the empty row
+24 │ ││     }
+25 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+26 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `shielded` is refused with UnwindEffect, as its expectation states

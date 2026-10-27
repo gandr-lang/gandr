@@ -1,0 +1,95 @@
+error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
+   ╭▸ corpus/pathological/strings/views.gandr:16:25
+   │
+14 │ ┌ def escaped() -> Repr {
+15 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Repr`; while checking the scope of this hold
+16 │ │   access s as v { force thunk { resume(v, v) } };
+   │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━━━──
+   │ │   │               │     │
+   │ │   │               │     a view outliving its access
+   │ │   │               synthesised; while forcing this
+   │ │   checked against `-F Repr`; while checking the body of this access
+17 │ │   pure s
+18 │ │ }
+   │ └─┘ checked against `() => Repr`; while checking the body of this thunk
+   │
+   ╰ note: `escaped` is refused with ViewEscaped, as its expectation states
+
+error[ViewSpent]: the view is used after its `resume` or `abort`
+   ╭▸ corpus/pathological/strings/views.gandr:25:33
+   │
+23 │ ┌ def endedTwice() -> Unit {
+24 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+25 │ │   access s as v { resume(v, v); abort(v) }
+   │ │   ┬───────────────┬─────────────┯━━━━━━━──
+   │ │   │               │             │
+   │ │   │               │             a view already ended
+   │ │   │               checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+   │ │   checked against `-F Unit`; while checking the body of this access
+26 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `endedTwice` is refused with ViewSpent, as its expectation states
+
+error[ViewUnended]: the body of this `access` must end its view with `resume` or `abort`
+   ╭▸ corpus/pathological/strings/views.gandr:33:3
+   │
+31 │ ┌ def unended() -> Unit {
+32 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+33 │ │   access s as v { pure unit }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a view neither resumed nor aborted
+34 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `unended` is refused with ViewUnended, as its expectation states
+
+error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
+   ╭▸ corpus/pathological/strings/views.gandr:45:35
+   │
+39 │ ┌  def keptPastRegion() -> Integer {
+40 │ │    hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │    ──── checked against `-F Integer`; while checking the scope of this hold
+41 │ │┌   handle c : Proc {
+42 │ ││     run k : (() => Integer) at c <- access shared s as w {
+   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+43 │ ││       pure thunk { run bs <- bytes(w); count(bs) }
+44 │ ││     };
+45 │ ││     run j : () => Integer <- pure thunk { force k };
+   │ ││     ┬──                      ┬────┯━━━━━━━━━━━━━━━━
+   │ ││     │                        │    │
+   │ ││     │                        │    a value kept in the scope's own region
+   │ ││     │                        checked against `-F (() => Integer)`; while judging the value this returns
+   │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
+   ‡ ││
+49 │ ││     oper exit(code, k) => pure 0
+50 │ ││   }
+   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
+51 │ │  }
+   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `keptPastRegion` is refused with KeptEscaped, as its expectation states
+
+error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
+   ╭▸ corpus/pathological/strings/views.gandr:62:5
+   │
+56 │ ┌  def writtenWhileKept() -> Integer {
+57 │ │    hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │    ──── checked against `-F Integer`; while checking the scope of this hold
+58 │ │┌   handle c : Proc {
+59 │ ││     run k : (() => Integer) at c <- access shared s as w {
+   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+60 │ ││       pure thunk { run bs <- bytes(w); count(bs) }
+61 │ ││     };
+62 │ ││     access s as v { resume(v, v) };
+   │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
+   ‡ ││
+66 │ ││     oper exit(code, k) => pure 0
+67 │ ││   }
+   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
+68 │ │  }
+   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `writtenWhileKept` is refused with HeldKept, as its expectation states

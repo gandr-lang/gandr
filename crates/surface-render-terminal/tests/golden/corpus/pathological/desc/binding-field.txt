@@ -1,0 +1,7 @@
+error[IllFormedDescription]: the freshness condition on the atom `x` and `q` names an atom no abstraction of the rule abstracts, or a variable its left side does not bind
+   ╭▸ corpus/pathological/desc/binding-field.gandr:15:3
+   │
+15 │   rule gc : new(bind x. q) <=> q where x # q;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ╰ note: `Unknown` is refused with IllFormedDescription, as its expectation states

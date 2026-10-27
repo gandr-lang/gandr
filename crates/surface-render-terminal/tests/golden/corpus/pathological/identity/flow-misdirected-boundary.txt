@@ -1,0 +1,10 @@
+error[Boundary]: this boundary flow runs against the variance of its position
+   ╭▸ corpus/pathological/identity/flow-misdirected-boundary.gandr:13:67
+   │
+13 │   def reader : Flow(Type, Old => Integer, New => Integer) = arrow(upgrade, stay(Integer));
+   │                                                             ┬─────┯━━━━━━────────────────
+   │                                                             │     │
+   │                                                             │     a boundary flow running against its variance
+   │                                                             checked against `Flow(Type, String * Integer => Integer, Integer * String => Integer)`; while checking this arrow's boundaries against the function codes it relates
+   │
+   ╰ note: `reader` is refused with Boundary, as its expectation states
