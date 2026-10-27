@@ -1112,6 +1112,39 @@ fi
 echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, $(concerns 'SELECT count(*) FROM concern;') concerns on $(concerns 'SELECT count(*) FROM site;') sites, the map current"
 '''
 
+# The crate leads (#3155, `.config/crate-lead/lead.jq`): each source the table
+# of `crates/README.md` § Storage and distribution names opens, before its
+# first heading, with a lead naming the row's layer, each wall the row names
+# and the section's paper key, so the storage picture is read where an agent
+# reads first. Each case in `.config/crate-lead/cases.json` holds an input and
+# what the program gives for it.
+["check:crate-lead"]
+description = "Each crate the storage picture places opens with a lead naming its layer, its wall and its paper"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+.config/cases/run.bash 'crate lead' .config/crate-lead/cases.json --program .config/crate-lead/lead.jq || failed=1
+input=$(jq -n --rawfile readme crates/README.md '{readme: $readme, sources: {}}')
+mapfile -t paths < <(jq -r --arg form paths -f .config/crate-lead/lead.jq <<< "$input")
+for path in "${paths[@]}"; do
+  if [[ -f $path ]]; then
+    input=$(jq --arg path "$path" --rawfile text "$path" '.sources[$path] = $text' <<< "$input")
+  fi
+done
+findings=$(jq -r --arg form findings -f .config/crate-lead/lead.jq <<< "$input")
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'crate lead check FAILED' >&2
+  exit 1
+fi
+echo "crate lead check OK: ${#paths[@]} crates of the storage picture each open with a lead naming its layer, its wall and its paper"
+{% endraw %}'''
+
 # The bootstrap census's programs (#2896): each case in
 # `.config/census/cases.json` names its program, `surface.jq` or `census.jq`,
 # and holds its arguments, an input and the output it must give, raw where

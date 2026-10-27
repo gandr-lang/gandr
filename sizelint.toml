@@ -34,7 +34,8 @@ excludes = []
 # mechanism, decisions and specification detail it links to live in the
 # crate's rustdoc. Over budget: move more into rustdoc, never trim to pass.
 # Both rules outrank `doc_sprawl`. A pattern without a slash matches at any
-# depth, so the root rule excludes the crate and contrib trees.
+# depth, so the root rule excludes the crate, contrib, library and ledger
+# trees; `ledger/README.md` is a ledger page and falls to `doc_sprawl`.
 [rules.readme_root]
 enabled = true
 priority = 200
@@ -45,6 +46,7 @@ max_size = "6KB"
 excludes = [
   "contrib/**",
   "crates/**",
+  "ledger/**",
   "library/**",
 ]
 
@@ -62,6 +64,6 @@ max_size = "12KB"
 enabled = true
 priority = 200
 description = "Crates listing over its budget"
-suggestion = "Move the README-shape guidance out before trimming a member row"
+suggestion = "Move a section's detail into the crate rustdoc or ledger page it names before trimming a member row"
 includes = ["crates/README.md"]
 max_size = "16KB"

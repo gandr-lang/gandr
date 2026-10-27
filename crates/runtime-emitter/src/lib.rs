@@ -1,4 +1,11 @@
-//! Copy-and-patch emission of the L machine's lowered commands.
+//! Copy-and-patch emission of the L machine's lowered commands. In the
+//! storage picture a run's heap, frame and window regions are a LAM, a
+//! location-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`:
+//! a value stands at a location in its thread's regions, meaningful to that
+//! run alone, and the thread's next run reuses them. What leaves a run moves
+//! into the caller's store. Its wall is validity, upstream: it runs only a
+//! command the checker admitted.
 //!
 //! A command the checker admitted is lowered to a straight list of stencil
 //! instructions ([`lower()`]), and that one list runs on either of two tiers
@@ -125,6 +132,12 @@
 //! third format needs a reader `object` lacks. Executable memory is mapped
 //! through `libc`: `rustix`, already in the graph, exposes neither `MAP_JIT`
 //! nor `pthread_jit_write_protect_np`; the choice reverses if it grows both.
+//!
+//! # References
+//!
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
+//!   LAM a run's regions are, a regioned store whose locations no other run
+//!   or world reads.
 
 // Module documentation that predates the shape lint: 6 headings outside the
 // vocabulary, 5 decision records, 1 issue reference and 3 budgets exceeded.

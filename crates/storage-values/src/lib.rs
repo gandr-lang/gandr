@@ -1,4 +1,10 @@
-//! Content-addressed values as typed chunk DAGs or flat canonical token bytes.
+//! Content-addressed values as typed chunk DAGs or flat canonical token bytes:
+//! the value plane of the CAM, the content-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`.
+//! A committed value is named by a content pointer, a chunk's digest and a
+//! token offset in it, which no world's location enters. A pointer proves
+//! integrity: these are the bytes committed. It never proves validity, which
+//! the codec and its consumer keep.
 //!
 //! [`CanonicalValue`] defines a codec over [`TokenSink`] and [`TokenReader`].
 //! [`cam_commit`] stores a value and returns its [`ValueManifest`];
@@ -237,13 +243,10 @@
 //!
 //! # References
 //!
-//! - Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S.
-//!   Koparkar, Mikah Kainen, and Vidush Singhal. "`LoCalMem`: Type-Directed
-//!   Adaptive Serialization for Location- and Content-Addressable Memory."
-//!   _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290,
-//!   August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) —
-//!   constructor-directed cuts, content pointers, the representation lemmas the
-//!   laws stand in for, and the expected-chunk bound in Theorem 5.2.
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: the CAM
+//!   this crate is, its constructor-directed cuts and content pointers, the
+//!   representation lemmas the laws stand in for, and the expected-chunk bound
+//!   in Theorem 5.2.
 //! - Athicha Muthitacharoen, Benjie Chen, and David Mazières. "A Low-Bandwidth
 //!   Network File System." _Proceedings of the Eighteenth ACM Symposium on
 //!   Operating Systems Principles (SOSP '01)_, pages 174–187, 2001.

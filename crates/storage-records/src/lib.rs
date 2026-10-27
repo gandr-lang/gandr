@@ -1,5 +1,11 @@
 //! Authenticated ordered records with content-defined Merkle leaves and
-//! root-checkable membership, absence and range proofs.
+//! root-checkable membership, absence and range proofs. In the storage
+//! picture this crate is the keyed plane of the CAM, the content-addressable
+//! memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`,
+//! cut between records rather than between constructors. Its wall is
+//! integrity: a proof checked against a [`TreeRoot`] shows which records a
+//! root commits, never that they are valid.
 //!
 //! [`RecordTree`] builds from strictly increasing keys under [`TreeParams`].
 //! Its [`TreeRoot`] binds the parameters, record count and root-node identity.
@@ -23,6 +29,12 @@
 //! [decode budgets](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#decode-budgets),
 //! [storage planes](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#storage-planes)
 //! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#references).
+//!
+//! # References
+//!
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: the
+//!   boundary discipline, applied at the record grain: every record boundary
+//!   is a boundary event of the typed scanner.
 
 // Module documentation that predates the shape lint: 16 headings outside the
 // vocabulary. Each allow leaves with the rewrite that clears its count.

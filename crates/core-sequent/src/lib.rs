@@ -1,6 +1,12 @@
 //! The sequent tier of gandr's core: the command IL a call-by-push-value
 //! program is focused into, the store a run's values are read back from, and
-//! the vocabulary every run of a command answers in.
+//! the vocabulary every run of a command answers in. In the storage picture
+//! the [`Store`] is a LAM, a location-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`:
+//! one append-only region per family, each value immutable at its location,
+//! its [`HeapValueId`], which the store never recycles. A location proves
+//! nothing, so the store stands behind no wall: validity was decided before
+//! the run.
 //!
 //! - [`CommandArena`] holds producers, consumers and commands —
 //!   [`ProducerNode`], [`ConsumerNode`], [`CommandNode`] — minted only over
@@ -97,6 +103,9 @@
 //!   stack, the two-region store read as residency; Lemma 3.1 (a heap value
 //!   refers to no stack variable) and Theorem 4.1 (stackability), the
 //!   second-class restriction `check` states on closures.
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
+//!   LAM the [`Store`] is, a regioned append-only store addressed by
+//!   location.
 
 // Module documentation that predates the shape lint: 18 headings outside the
 // vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with

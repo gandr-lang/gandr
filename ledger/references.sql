@@ -27,6 +27,14 @@ CREATE TABLE reference(
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','bcd5208d8b0414d4706e2afdb774c208bf266495');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-sequent','','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8f6ba796e48eeb5dd454e59b998a36aca44c69d1');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','memory','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','1b6091fc402781549385efd19a99c87b29c0fe2d');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','world','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','553995ee36318b2c837be659cdc92ae4e79640eb');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-emitter','','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8fcba5da1cb322710f478861e7eecb99fa0b1c4e');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-artifact','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','ef9bb00ebb8083a526b1a08c9c150047066064d8');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-chunker','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','6227fbbd288c00a8d4056ac5d9aad7844826e3bb');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-records','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','d79616b7f14951779128a95cb9a8bf64be0e10e6');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-values','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8b696948ad821b58ff0396a795d5884518aaa6b2');
 INSERT INTO reference VALUES('Sullivan-2023-closure_conversion_little_pieces','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-reflections_closures','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
@@ -263,10 +271,6 @@ INSERT INTO reference VALUES('doi:10.1145/3776695','core-term','','background',N
 INSERT INTO reference VALUES('doi:10.1145/3776695','kernel-conversion-trace','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3776695','kernel-core','replay','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3776695','kernel-term','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/3828688','storage-artifact','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/3828688','storage-chunker','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/3828688','storage-records','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/3828688','storage-values','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/502034.502052','storage-chunker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/502034.502052','storage-records','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/502034.502052','storage-values','','background',NULL,NULL,NULL);
@@ -306,8 +310,6 @@ INSERT INTO reference VALUES('doi:10.4230/lipics.types.2015.5','theory-shapes','
 INSERT INTO reference VALUES('doi:10.4230/lipics.types.2024.9','theory-shapes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4310/hha.2018.v20.n2.a11','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.46298/lmcs-18(1:10)2022','theory-circuit-algebras','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-artifact','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-records','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);

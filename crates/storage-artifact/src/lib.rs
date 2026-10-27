@@ -1,5 +1,10 @@
 //! Kernel artifacts on the authenticated record plane: one record per
-//! declaration segment, under a BLAKE3 manifest identity.
+//! declaration segment, under a BLAKE3 manifest identity. In the storage
+//! picture this crate is where the kernel's export enters the CAM, the
+//! content-addressable memory of
+//! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`.
+//! It stands on both walls in turn: the identity proves integrity, and
+//! validity stays the kernel decoder's and, after it, admission's.
 //!
 //! [`ArtifactRecordSet::from_artifact`] cuts a kernel artifact where the
 //! kernel's decoder finds its segments end: the header under the empty key,
@@ -81,15 +86,9 @@
 //!
 //! # References
 //!
-//! - Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S.
-//!   Koparkar, Mikah Kainen, and Vidush Singhal. "`LoCalMem`: Type-Directed
-//!   Adaptive Serialization for Location- and Content-Addressable Memory."
-//!   _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290,
-//!   August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688);
-//!   [mechanization artifact,
-//!   doi:10.5281/zenodo.20315616](https://doi.org/10.5281/zenodo.20315616) —
-//!   the content-addressable model a keyed artifact instantiates, and the
-//!   token-bound lemmas whose scope § Scope of the mechanized bounds states.
+//! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: the CAM
+//!   a keyed artifact instantiates, and the token-bound lemmas whose scope
+//!   § Scope of the mechanized bounds states.
 //! - Alex Auvolat and François Taïani. "Merkle Search Trees: Efficient
 //!   State-Based CRDTs in Open Networks." _38th IEEE International Symposium on
 //!   Reliable Distributed Systems (SRDS)_, 2019.
