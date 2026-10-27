@@ -1860,12 +1860,13 @@ const MODEL_FAULTS: [ModelFault; 11_usize] = [
 ];
 
 /// Every fault a member the description does not read carries.
-const MEMBER_FAULTS: [MemberFault; 18_usize] = [
+const MEMBER_FAULTS: [MemberFault; 19_usize] = [
     MemberFault::HigherOrderField,
     MemberFault::DependentField,
     MemberFault::TypeShape,
     MemberFault::NativeDecode,
     MemberFault::OperationFiller,
+    MemberFault::TopLevelOperation,
     MemberFault::HigherCell,
     MemberFault::Reversible,
     MemberFault::NoOutput,
@@ -2103,6 +2104,7 @@ const fn member_tag(fault: MemberFault) -> Tag
         MemberFault::TypeShape => "TypeShape",
         MemberFault::NativeDecode => "NativeDecode",
         MemberFault::OperationFiller => "OperationFiller",
+        MemberFault::TopLevelOperation => "TopLevelOperation",
         MemberFault::HigherCell => "HigherCell",
         MemberFault::Reversible => "Reversible",
         MemberFault::NoOutput => "NoOutput",

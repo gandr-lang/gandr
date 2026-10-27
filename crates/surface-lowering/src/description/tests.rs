@@ -1407,6 +1407,7 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::TypeShape,
         MemberFault::NativeDecode,
         MemberFault::OperationFiller,
+        MemberFault::TopLevelOperation,
         MemberFault::HigherCell,
         MemberFault::Reversible,
         MemberFault::NoOutput,

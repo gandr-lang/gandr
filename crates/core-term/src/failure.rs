@@ -119,6 +119,9 @@ impl TrackingIssue
     pub const CASE_VIEW: Self = Self(1506);
     /// An operation written with a circuit body.
     pub const OPERATION_FILLER: Self = Self(1507);
+    /// An operation declared outside a theory block, which no signature holds:
+    /// tracked beside the operation filler.
+    pub const TOP_LEVEL_OPERATION: Self = Self(1507);
     /// A fillerless higher cell: a rule between rules.
     pub const HIGHER_CELL: Self = Self(1508);
     /// A reversible map, `<->`.

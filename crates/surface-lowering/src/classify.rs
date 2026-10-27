@@ -161,6 +161,7 @@ impl LoweringRefusal<'_>
                     | MemberFault::TypeShape
                     | MemberFault::NativeDecode
                     | MemberFault::OperationFiller
+                    | MemberFault::TopLevelOperation
                     | MemberFault::HigherCell
                     | MemberFault::Reversible
                     | MemberFault::AggregatedOutput
@@ -701,6 +702,9 @@ fn undescribed(fault: MemberFault) -> FailureClass
     match fault {
         MemberFault::OperationFiller => {
             FailureClass::Unimplemented(TrackingIssue::OPERATION_FILLER)
+        },
+        MemberFault::TopLevelOperation => {
+            FailureClass::Unimplemented(TrackingIssue::TOP_LEVEL_OPERATION)
         },
         MemberFault::HigherCell => FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
         MemberFault::Reversible => FailureClass::Unimplemented(TrackingIssue::REVERSIBLE),
@@ -1476,6 +1480,10 @@ mod tests
             (
                 MemberFault::OperationFiller,
                 FailureClass::Unimplemented(TrackingIssue::OPERATION_FILLER),
+            ),
+            (
+                MemberFault::TopLevelOperation,
+                FailureClass::Unimplemented(TrackingIssue::TOP_LEVEL_OPERATION),
             ),
             (
                 MemberFault::HigherCell,

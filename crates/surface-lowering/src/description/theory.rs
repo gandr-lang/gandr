@@ -158,17 +158,19 @@
 //! before the block state every one of them,
 //! `@[ refuses("UndescribedMember.NestedOperation") ] theory …`, and a block
 //! whose members refuse two features is two sources. A top-level `oper`
-//! declares no core constant: each refusal raised
-//! inside it is such a held declaration and its name enters no namespace. The
-//! alternatives were a refused block taking no slot, which leaves `S` naming
-//! nothing a module or a program can reach, and a block's refusals with no
-//! half, which no expectation can state. `Model(S)` derives from the value of
-//! a refused block too, as it never inherited the cell gate (the decision is
-//! in `module::model`). Witnesses:
+//! declares no core constant and always refuses: by the fault its filler or
+//! its boundary earns, and otherwise as an operation no signature holds. Each
+//! refusal raised inside it is such a held declaration and its name enters no
+//! namespace. The alternatives were a refused block taking no slot, which
+//! leaves `S` naming nothing a module or a program can reach, and a block's
+//! refusals with no half, which no expectation can state. `Model(S)` derives
+//! from the value of a refused block too, as it never inherited the cell gate
+//! (the decision is in `module::model`). Witnesses:
 //! `description::theory::tests::a_theory_block_defines_its_presentation`,
 //! `description::theory::tests::a_refused_theory_block_states_its_refusal`,
 //! `description::theory::tests::a_refused_top_level_operation_states_its_refusal`,
-//! `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`.
+//! `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`,
+//! `description::theory::tests::a_decorated_top_level_operation_is_refused_at_itself_3073`.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -1021,15 +1023,18 @@ impl Reader<'_, '_>
     }
 
     /// Read a top-level `oper` declaration as the one operation it declares,
-    /// in a description of its own: its boundary through the theory route, and
-    /// its filler declined as an operation filler is inside a theory block.
+    /// in a description of its own: its boundary through the theory route, its
+    /// filler declined as an operation filler is inside a theory block, and an
+    /// operation that reads whole declined as one no signature holds.
     ///
     /// # Specification
     /// - ensures: the description holds the operation when its boundary reads
     ///   and it has no filler, and nothing else; the declaration is named by
     ///   the operation.
     /// - fails: a missing name refuses the declaration; a filler or an
-    ///   unreadable boundary is the operation's own diagnostic, appended.
+    ///   unreadable boundary is the operation's own diagnostic, appended, and
+    ///   an operation that reads whole appends a top-level operation diagnostic
+    ///   at the declaration.
     /// - panics: none.
     /// - executable: none — which diagnostic the operation earned is source
     ///   syntax the description does not retain.
@@ -1040,8 +1045,10 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a top-level operation with a filler keeps its name
     ///   and declines the filler at the declaration, where a stray form would
-    ///   refuse the whole module.
+    ///   refuse the whole module; one with no filler is declined at the
+    ///   declaration by its own name, so the blocks before it decorate it.
     /// - witness: `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`
+    /// - witness: `description::theory::tests::a_decorated_top_level_operation_is_refused_at_itself_3073`
     pub(super) fn circuit_declaration(
         &self,
         at: Placed,
@@ -1061,6 +1068,7 @@ impl Reader<'_, '_>
             Ok((operation, _tile, _written)) => {
                 operations.push(operation.description());
                 operation_spans.push(at.span);
+                diagnostics.push(run.signature_fault(SignatureFault::TopLevelOperation));
             },
             Err(diagnostic) => diagnostics.push(diagnostic),
         }

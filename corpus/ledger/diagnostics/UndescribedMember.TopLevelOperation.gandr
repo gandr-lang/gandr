@@ -1,0 +1,3 @@
+/// `UndescribedMember.TopLevelOperation`: a member the description does not read: an operation declared outside a theory, which no signature holds.
+@[ refuses("UndescribedMember.TopLevelOperation") ]
+oper split : (b : Bit) --> (_ : Bit, _ : Bit)
