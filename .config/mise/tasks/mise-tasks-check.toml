@@ -1418,16 +1418,18 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # in `.config/claims/chain.json` a rung's body and the body `epic:order
 # --chain` writes back (`chain.jq`); each in `.config/claims/report.json`
 # the open issues, their dependencies and the last report, and the report
-# `report:deps` writes (`report.jq`).
+# `report:deps` writes (`report.jq`); each in `.config/claims/filing.json` a
+# merged pull request, the refactor issues, and what `refactor:file` files
+# for them (`filing.jq`, #2885).
 ["check:claims"]
-description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and dependencies, claim:next each board its claim, ledger:patched each landing its refusals, ledger:reserved each lowered reserved rule its refusal and report:deps each board its report"
+description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and dependencies, claim:next each board its claim, ledger:patched each landing its refusals, ledger:reserved each lowered reserved rule its refusal, report:deps each board its report and refactor:file each merged verdict its filing"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 failed=0
 cases() {
-  .config/cases/run.bash "$1" ".config/claims/$3" --program ".config/claims/$2" -L .config/issues || failed=1
+  .config/cases/run.bash "$1" ".config/claims/$3" --program ".config/claims/$2" -L .config/issues "${@:4}" || failed=1
 }
 cases claims decide.jq cases.json
 cases opening opening.jq opening.json
@@ -1440,6 +1442,7 @@ cases annotated annotated.jq annotated.json
 cases deps deps.jq deps.json
 cases chain chain.jq chain.json
 cases report report.jq report.json
+cases filing filing.jq filing.json --mode c
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -1467,7 +1470,7 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing"
 '''
 
 # Every `Where` of a body's `## Refactoring` names something the workspace
@@ -1573,7 +1576,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c
+.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c -L .config/claims
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
 '''
 

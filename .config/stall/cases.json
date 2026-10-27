@@ -93,7 +93,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"removals\":[],\"checks\":[]}]}"
+    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"removals\":[],\"checks\":[]}],\"merged\":[],\"filed\":[]}"
   },
   {
     "name": "a green mergeable root out of the queue past the threshold is root-unqueued (#2785)",
@@ -1354,5 +1354,199 @@
       }
     },
     "output": "{\"findings\":[{\"kind\":\"conflicting\",\"number\":2800,\"lane\":\"core\",\"placed\":true,\"age\":10,\"line\":\"STALL conflicting #2800 core 10m: conflicts with its base at the same head\"},{\"kind\":\"base-blocked\",\"number\":2801,\"lane\":\"theory\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2801 theory 10m: its base #2800 conflicts with its own base\"},{\"kind\":\"base-blocked\",\"number\":2810,\"lane\":\"surface\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2810 surface 10m: its base `runtime-2809` heads no open pull request (merged or closed), and #2810 is not rebased\"}],\"pages\":[{\"kind\":\"conflicting\",\"number\":2800,\"lane\":\"core\",\"placed\":true,\"age\":10,\"line\":\"STALL conflicting #2800 core 10m: conflicts with its base at the same head\"},{\"kind\":\"base-blocked\",\"number\":2801,\"lane\":\"theory\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2801 theory 10m: its base #2800 conflicts with its own base\"},{\"kind\":\"base-blocked\",\"number\":2810,\"lane\":\"surface\",\"placed\":true,\"age\":10,\"line\":\"STALL base-blocked #2810 surface 10m: its base `runtime-2809` heads no open pull request (merged or closed), and #2810 is not rebased\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"2800:conflicting:o2800\":99400,\"2801:base-blocked:o2801\":99400,\"2810:base-blocked:o2810\":99400,\"2811:base-blocked:o2811\":100000},\"paged\":{\"2800:conflicting\":{\"first\":100000,\"last\":100000},\"2801:base-blocked\":{\"first\":100000,\"last\":100000},\"2810:base-blocked\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
+  },
+  {
+    "name": "the latest merged pull requests read with their refactoring verdict and row count, and the pull requests refactor issues were filed from (#2885)",
+    "program": "facts.jq",
+    "input": {
+      "pullRequests": {
+        "nodes": []
+      },
+      "merged": {
+        "nodes": [
+          {
+            "number": 3031,
+            "headRefName": "triage-2884-refactoring",
+            "mergedAt": "2026-10-27T09:32:00Z",
+            "body": "## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `.config/mise/tasks/mise-tasks-check.toml` | four copies of one loop |\n"
+          },
+          {
+            "number": 3032,
+            "headRefName": "surface-2990-x",
+            "mergedAt": "2026-10-27T09:40:00Z",
+            "body": "## Refactoring\n\nno\n"
+          },
+          {
+            "number": 3033,
+            "headRefName": "core-2991-y",
+            "mergedAt": "2026-10-27T09:41:00Z",
+            "body": "Closes #2991\n"
+          }
+        ]
+      },
+      "refactors": {
+        "nodes": [
+          {
+            "body": "## Observation\n\nfrom: #3020\nfrom: #3031\n"
+          },
+          {
+            "body": "## Observation\n\nfrom: #3020\n"
+          }
+        ]
+      }
+    },
+    "output": "{\"prs\":[],\"merged\":[{\"number\":3031,\"head\":\"triage-2884-refactoring\",\"merged\":1793093520,\"verdict\":\"yes\",\"rows\":1},{\"number\":3032,\"head\":\"surface-2990-x\",\"merged\":1793094000,\"verdict\":\"no\",\"rows\":0},{\"number\":3033,\"head\":\"core-2991-y\",\"merged\":1793094060,\"verdict\":null,\"rows\":0}],\"filed\":[3020,3031]}"
+  },
+  {
+    "name": "a merged `yes` verdict no refactor issue names is paged `unfiled` minutes after the merge, a `no` and a rowless `maybe` never (#2885)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "merged": [
+        {
+          "number": 3031,
+          "head": "triage-2884-refactoring",
+          "merged": 99400,
+          "verdict": "yes",
+          "rows": 1
+        },
+        {
+          "number": 3032,
+          "head": "surface-2990-x",
+          "merged": 99000,
+          "verdict": "no",
+          "rows": 0
+        },
+        {
+          "number": 3033,
+          "head": "core-2991-y",
+          "merged": 99000,
+          "verdict": "maybe",
+          "rows": 0
+        }
+      ],
+      "filed": []
+    },
+    "output": "{\"findings\":[{\"kind\":\"verdict-unfiled\",\"number\":3031,\"lane\":\"triage\",\"placed\":true,\"age\":10,\"line\":\"STALL verdict-unfiled #3031 triage 10m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #3031`; run `mise run refactor:file 3031`\"}],\"pages\":[{\"kind\":\"verdict-unfiled\",\"number\":3031,\"lane\":\"triage\",\"placed\":true,\"age\":10,\"line\":\"STALL verdict-unfiled #3031 triage 10m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #3031`; run `mise run refactor:file 3031`\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"3031:verdict-unfiled\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
+  },
+  {
+    "name": "a merged `yes` verdict a second short of `unfiled` is not paged yet (#2885)",
+    "program": "detect.jq",
+    "input": {
+      "now": 99999,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "merged": [
+        {
+          "number": 3031,
+          "head": "triage-2884-refactoring",
+          "merged": 99400,
+          "verdict": "yes",
+          "rows": 1
+        }
+      ],
+      "filed": []
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
+  },
+  {
+    "name": "a merged verdict a refactor issue's `from:` line names is filed, and no finding (#2885)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "merged": [
+        {
+          "number": 3031,
+          "head": "triage-2884-refactoring",
+          "merged": 99400,
+          "verdict": "yes",
+          "rows": 1
+        }
+      ],
+      "filed": [3031]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
+  },
+  {
+    "name": "an unfiled verdict paged `escalate` minutes ago repages the coordinator but never stalls the merged pull request (#2885)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "merged": [
+        {
+          "number": 3031,
+          "head": "triage-2884-refactoring",
+          "merged": 99400,
+          "verdict": "yes",
+          "rows": 1
+        }
+      ],
+      "filed": [],
+      "paged": {
+        "3031:verdict-unfiled": {
+          "first": 99400,
+          "last": 99400
+        }
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"verdict-unfiled\",\"number\":3031,\"lane\":\"triage\",\"placed\":true,\"age\":10,\"line\":\"STALL verdict-unfiled #3031 triage 10m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #3031`; run `mise run refactor:file 3031`\"}],\"pages\":[],\"repages\":[{\"kind\":\"verdict-unfiled\",\"number\":3031,\"lane\":\"triage\",\"placed\":true,\"age\":10,\"line\":\"STALL verdict-unfiled #3031 triage 10m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #3031`; run `mise run refactor:file 3031`\"}],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"3031:verdict-unfiled\":{\"first\":99400,\"last\":100000}},\"stalled\":{}}"
   }
 ]

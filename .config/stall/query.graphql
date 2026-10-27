@@ -33,5 +33,11 @@ query($owner: String!, $name: String!) {
         }
       }
     }
+    merged: pullRequests(states: MERGED, last: 30, orderBy: {field: UPDATED_AT, direction: ASC}) {
+      nodes { number headRefName mergedAt body }
+    }
+    refactors: issues(labels: ["kind:refactor"], last: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes { body }
+    }
   }
 }

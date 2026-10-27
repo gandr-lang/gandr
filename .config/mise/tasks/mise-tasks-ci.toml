@@ -1833,6 +1833,91 @@ fi
 echo "$url"
 {% endraw %}'''
 
+# A merged pull request's `## Refactoring` verdict, filed (#2885):
+# `refactor:file <pr>` reads the pull request, the area and epic of the unit
+# it closed, and every `kind:refactor` issue, and carries out what
+# `.config/claims/filing.jq` decides. A `yes` or `maybe` with rows opens an
+# issue through `issue:file` (its labels `kind:refactor`, the unit's `area:`
+# and `status:unsectioned`, linked under the unit's epic); a `maybe` whose
+# `Where` an open refactor issue observes adds its rows and a `from:` line to
+# that issue instead. Either pages the coordinator through the page command of
+# the stall configuration (`.config/stall/stall.bash`) to write the issue's
+# sections. An issue carrying the pull request's `from:` line is the filing,
+# so a second run files nothing. `pr:watch` runs it when its pull request
+# merges; `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
+# decision and changes nothing.
+["refactor:file"]
+description = "File a merged pull request's yes or maybe refactoring verdict as a kind:refactor issue and page the coordinator"
+usage = '''
+arg "<pr>" help="the merged pull request's number"
+flag "--dry-run" help="print the decision without filing or paging"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+number=${usage_pr:?}
+[[ $number =~ ^[1-9][0-9]*$ ]] || { echo "refactor:file: expected a pull request number, not \`$number\`" >&2; exit 2; }
+root=$(git rev-parse --show-toplevel)
+claims=$root/.config/claims
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+pr=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$number" -f query='
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        state body
+        closingIssuesReferences(first: 10) { nodes { number parent { number } labels(first: 30) { nodes { name } } } }
+      }
+    }
+  }' --jq '.data.repository.pullRequest')
+state=$(jq -r .state <<< "$pr")
+[[ $state == MERGED ]] || { echo "refactor:file: #$number is $state, not merged" >&2; exit 2; }
+area=$(jq -c '[.closingIssuesReferences.nodes[].labels.nodes[].name | select(startswith("area:")) | ltrimstr("area:")] | first' <<< "$pr")
+epic=$(jq -r '[.closingIssuesReferences.nodes[].parent.number | values] | first // empty' <<< "$pr")
+issues=$(gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body)
+decision=$(jq -n --argjson number "$number" --argjson pr "$pr" --argjson area "$area" --argjson issues "$issues" \
+  '{pr: {number: $number, body: $pr.body, area: $area}, issues: $issues}' | jq -c -L "$claims" -f "$claims/filing.jq")
+if [[ ${usage_dry_run:-false} == true ]]; then
+  jq --arg epic "$epic" '. + {epic: (if $epic == "" then null else ($epic | tonumber) end)}' <<< "$decision"
+  exit 0
+fi
+body=$(mktemp)
+trap 'rm -f "$body"' EXIT
+case $(jq -r .act <<< "$decision") in
+  none)
+    echo "refactor:file: #$number's verdict files nothing"
+    exit 0
+    ;;
+  filed)
+    echo "refactor:file: #$number is filed as #$(jq -r .issue <<< "$decision")"
+    exit 0
+    ;;
+  update)
+    issue=$(jq -r .issue <<< "$decision")
+    jq -j .body <<< "$decision" > "$body"
+    gh issue edit "$issue" -R "$repo" --body-file "$body" > /dev/null
+    line="refactor #$issue gains #$number's maybe rows; rule on it"
+    ;;
+  open)
+    jq -j .body <<< "$decision" > "$body"
+    mapfile -t labels < <(jq -r '.labels[]' <<< "$decision")
+    url=$(mise run --quiet issue:file "$(jq -r .title <<< "$decision")" "$body" "${labels[@]}" ${epic:+--epic "$epic"})
+    issue=${url##*/}
+    line="refactor #$issue filed from #$number's verdict; write its sections"
+    ;;
+esac
+echo "refactor:file: $line"
+source "$root/.config/stall/stall.bash"
+page=$(stall_configuration | jq -c '.page // empty')
+if [[ -z $page ]]; then
+  echo "refactor:file: no page command in $stall_config; tell the coordinator: $line" >&2
+  exit 0
+fi
+mapfile -t command < <(jq -r '.command[]' <<< "$page")
+mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
+"${command[@]}" "${coordinator[@]}" "$line" || echo "refactor:file: the page failed; tell the coordinator: $line" >&2
+{% endraw %}'''
+
 # An issue's full label set, applied after the fact (#2902): `issue:labels
 # <n>...` adds each missing `priority:` and `effort:` its kind's default
 # names (`.config/issues/defaults.toml`, the rule `.config/issues/labels.jq`,
@@ -2855,7 +2940,10 @@ echo "#$number held: $reason"
 # The wake-up a seat arms after `pr:land`: it polls the pull request and its
 # queue entry and exits the moment one of these holds, printing one line and
 # nothing else on stdout:
-#   pr-merged #n               landed, its branch's worktree removed (exit 0)
+#   pr-merged #n               landed, its branch's worktree removed and its
+#                              `## Refactoring` verdict filed (`refactor:file`,
+#                              #2885; a failed filing is told on stderr and
+#                              `stall:watch` pages it) (exit 0)
 #   pr-closed #n               closed without merging
 #   pr-dirty #n                a landing ahead conflicts: rebase, `pr:land`
 #   pr-red #n <job>            a required check, or the queue entry's run,
@@ -3049,7 +3137,13 @@ while (( SECONDS < deadline )); do
     gh pr edit "$number" -R "$repo" --remove-label landing > /dev/null 2>&1 || true
   fi
   case "$state" in
-    MERGED) remove_landed_worktree "$number"; echo "pr-merged #$number"; exit 0 ;;
+    MERGED)
+      # Filed before the worktree, which may be this watch's own, goes.
+      mise run --quiet refactor:file "$number" >&2 || echo "refactor-unfiled #$number: refactor:file failed; stall:watch pages the verdict" >&2
+      remove_landed_worktree "$number"
+      echo "pr-merged #$number"
+      exit 0
+      ;;
     CLOSED) echo "pr-closed #$number"; exit 1 ;;
     OPEN) ;;
     *) echo "unexpected pull request state: $state" >&2; exit 2 ;;
