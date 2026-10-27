@@ -17,7 +17,9 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::Above;
 use gandr_kernel_term::BinderDistance;
+use gandr_kernel_term::Exhausted;
 use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::NormalNode;
 use gandr_kernel_term::OperationRank;
 use gandr_kernel_term::PRESENTATION_FUEL;
 use gandr_kernel_term::PeakSearch;
@@ -32,6 +34,7 @@ use gandr_kernel_term::TheoryRule;
 use gandr_kernel_term::TheoryRuleFault;
 use gandr_kernel_term::TheoryRules;
 use gandr_kernel_term::TheorySymbol;
+use gandr_theory_levitation::AbstractionDepth;
 use gandr_theory_levitation::DerivedFace;
 use gandr_theory_levitation::DerivedPeak;
 use gandr_theory_levitation::FreeTerm;
@@ -93,21 +96,10 @@ where
             RuleDirection::RightToLeft => RuleTurn::Turned,
         })
         .collect();
-    let derived: Vec<((FreeTerm, FreeTerm), Joined)> = match cells.coincidence {
-        Coincidence::Joined(ref certificates) if !certificates.derived_terms.is_empty() => {
-            certificates
-                .derived_terms
-                .iter()
-                .map(|rule| (rule.rule.clone(), rule.joined))
-                .collect()
-        },
-        Coincidence::Joined(ref certificates) => certificates
-            .derived_commands
-            .iter()
-            .map(|rule| (rule.rule.clone(), rule.joined))
-            .collect(),
-        Coincidence::Unexamined | Coincidence::Orthogonal | Coincidence::Refused(_) => Vec::new(),
-    };
+    let derived: Vec<((FreeTerm, FreeTerm), Joined)> = derived(cells)
+        .into_iter()
+        .map(|(rule, joined)| (rule.clone(), joined))
+        .collect();
     let mut oriented = description.clone();
     oriented.rules = cells.oriented.clone().into();
     let ranking: Vec<(FreeTerm, FreeTerm)> = derived
@@ -219,6 +211,87 @@ pub fn second_order_parts<G>(
         RuleIndex::from(outer.max(inner)),
         RuleIndex::from(outer.min(inner)),
     ))
+}
+
+/// The normal form `call` reaches in the kernel's second-order reading.
+///
+/// The rules are those `cells` oriented and derived for `description`, the
+/// reading [`TheoryRules::second_order_normal_form`], and the normal form is
+/// written back as a free term.
+///
+/// # Specification
+/// - requires: `cells` is the coincidence check's outcome for `description`;
+///   `call` writes no variable.
+/// - ensures: [`Some`] with the normal form, the written rules read as
+///   [`rule_certificate`] reads them followed by the derived ones and the call
+///   read as a rule side is, each abstraction and binding field written back
+///   naming the canonical atom of its depth and each occurrence its binder's;
+///   [`None`] where the kernel reads the call as no closed term or a rule's
+///   instance as ill formed.
+/// - fails: [`Exhausted`] when `fuel` runs out first.
+/// - panics: none.
+/// - executable: none — the normal form is what the kernel's reading computes;
+///   checking one is another normalization of the call.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — β at a binding field and a rule instantiating its
+///   continuation below an operation reach the normal forms substitution gives,
+///   a binder the normal form keeps reading back at its depth.
+/// - witness: `coincide::tests::an_instantiating_rule_fires_at_an_inspected_call_2966`
+pub fn second_order_normal_form<G>(
+    description: &TheoryDesc<G>,
+    cells: &DeclarationCells,
+    call: &FreeTerm,
+    fuel: &mut RewriteFuel,
+) -> Result<Option<FreeTerm>, Exhausted>
+{
+    let mut symbols = Symbols::new(&[]);
+    let nameable = Nameable::from(naming_port(description).is_some());
+    let mut rules: Vec<TheoryRule> = cells
+        .oriented
+        .iter()
+        .map(|face| symbols.face(face, nameable))
+        .collect();
+    rules.extend(
+        derived(cells)
+            .into_iter()
+            .map(|(&(ref left, ref right), _)| symbols.rule(left, right, &[], nameable)),
+    );
+    let term = symbols.side(call, &mut BTreeMap::new(), &mut Held::default());
+    let Some(normal) =
+        TheoryRules::new(symbols.table(), rules).second_order_normal_form(&term, fuel)?
+    else {
+        return Ok(None);
+    };
+    Ok(symbols.written(&normal))
+}
+
+/// The rules completion derived for `cells`, each with how its pair joined:
+/// the presented reading's when it derived any there, else the sequent
+/// reading's.
+///
+/// # Specification
+/// trivial.
+fn derived(cells: &DeclarationCells) -> Vec<(&(FreeTerm, FreeTerm), Joined)>
+{
+    match cells.coincidence {
+        Coincidence::Joined(ref certificates) if !certificates.derived_terms.is_empty() => {
+            certificates
+                .derived_terms
+                .iter()
+                .map(|rule| (&rule.rule, rule.joined))
+                .collect()
+        },
+        Coincidence::Joined(ref certificates) => certificates
+            .derived_commands
+            .iter()
+            .map(|rule| (&rule.rule, rule.joined))
+            .collect(),
+        Coincidence::Unexamined | Coincidence::Orthogonal | Coincidence::Refused(_) => Vec::new(),
+    }
 }
 
 /// A symbol's interning key: its class, its name, and its argument count.
@@ -563,6 +636,75 @@ impl<'term> Symbols<'term>
     {
         let fresh = RuleVariable::from(u32::try_from(variables.len()).unwrap_or(u32::MAX));
         *variables.entry(name).or_insert(fresh)
+    }
+
+    /// The free term the kernel's `nodes` write: each symbol by the key it
+    /// was interned under, each abstraction and binding field naming the
+    /// canonical atom of its depth, and each occurrence the name its binder
+    /// names; [`None`] where a node names no symbol the table interned or an
+    /// occurrence's, an occurrence counts past every binder above it, or the
+    /// nodes are no one whole term.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        nodes: &[NormalNode],
+    ) -> Option<FreeTerm>
+    {
+        let key = |node: NormalNode| match node {
+            NormalNode::Symbol(symbol) => self.keys.get(usize::from(symbol)).copied(),
+            NormalNode::Atom(_) | NormalNode::Bound(_) => None,
+        };
+        // Each node's depth: the binders above it.
+        let mut depths = Vec::with_capacity(nodes.len());
+        // Each open node's arguments still to come, and whether it binds over
+        // them.
+        let mut open: Vec<(usize, bool)> = Vec::new();
+        for &node in nodes {
+            while let Some(&(0, _)) = open.last() {
+                open.truncate(open.len().saturating_sub(1));
+            }
+            depths.push(open.iter().filter(|&&(_, binds)| binds).count());
+            if let Some(&mut (ref mut left, _)) = open.last_mut() {
+                *left = left.saturating_sub(1);
+            }
+            if let Some((class, _, arity)) = key(node)
+                && arity > 0
+            {
+                open.push((arity, matches!(class, Class::Abstraction | Class::Field)));
+            }
+        }
+        let mut built: Vec<FreeTerm> = Vec::with_capacity(nodes.len());
+        for (&node, &depth) in nodes.iter().zip(&depths).rev() {
+            let binder = |level: usize| FreeTerm::canonical_atom(AbstractionDepth::from(level));
+            let occurrence = |distance: BinderDistance| {
+                depth
+                    .checked_sub(usize::from(distance))?
+                    .checked_sub(1)
+                    .map(binder)
+            };
+            let term = match node {
+                NormalNode::Atom(distance) => FreeTerm::atom(occurrence(distance)?),
+                NormalNode::Bound(distance) => FreeTerm::bound(occurrence(distance)?),
+                NormalNode::Symbol(_) => {
+                    let (class, name, arity) = key(node)?;
+                    let split = built.len().checked_sub(arity)?;
+                    let mut arguments: Vec<FreeTerm> = built.drain(split ..).rev().collect();
+                    match class {
+                        Class::Operation => FreeTerm::op(name?.clone(), arguments),
+                        Class::Constructor => FreeTerm::ctor(name?.clone(), arguments),
+                        Class::Tuple => FreeTerm::results(arguments),
+                        Class::Abstraction => FreeTerm::abs(binder(depth), arguments.pop()?),
+                        Class::Field => FreeTerm::lam(binder(depth), arguments.pop()?),
+                        Class::Occurrence(_) | Class::BoundVariable(_) => return None,
+                    }
+                },
+            };
+            built.push(term);
+        }
+        let whole = built.pop()?;
+        built.is_empty().then_some(whole)
     }
 }
 

@@ -442,6 +442,7 @@ pub use crate::theory_rules::Above;
 pub use crate::theory_rules::BinderDistance;
 pub use crate::theory_rules::CodeRecognition;
 pub use crate::theory_rules::CriticalPeak;
+pub use crate::theory_rules::NormalNode;
 pub use crate::theory_rules::OperationRank;
 pub use crate::theory_rules::PRESENTATION_CODE;
 pub use crate::theory_rules::PRESENTATION_FUEL;

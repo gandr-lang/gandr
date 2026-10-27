@@ -42,6 +42,7 @@
 //!   match to an overlap and transported along a rule, and the composite of two
 //!   rules carrying both.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::vec;
@@ -49,6 +50,8 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::slice;
 
+use super::BinderDistance;
+use super::NormalNode;
 use super::Occurrence;
 use super::Position;
 use super::SymbolKind;
@@ -417,6 +420,46 @@ impl Higher
             return Ok(Some(term));
         }
     }
+
+    /// The normal form of the closed term `term` over `rules`' table, as
+    /// [`TheoryRules::second_order_normal_form`] states it: read, checked to
+    /// be one whole term, η-contracted and normalized at the row every rule
+    /// stated under no row fires in.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn closed_normal_form(
+        &self,
+        rules: &TheoryRules,
+        term: &[TheoryNode],
+        fuel: &mut RewriteFuel,
+    ) -> Result<Option<Box<[NormalNode]>>, Exhausted>
+    {
+        let Some(read) = closed(rules, term)
+        else {
+            return Ok(None);
+        };
+        if end(&read, Position(0)) != Some(Position(read.len())) {
+            return Ok(None);
+        }
+        let Some(normal) = self.normalize(contracted(read, fuel)?, &RuleRow::default(), fuel)?
+        else {
+            return Ok(None);
+        };
+        Ok(normal
+            .into_iter()
+            .map(|node| match node {
+                Node::Symbol(symbol, ..) => Some(NormalNode::Symbol(symbol)),
+                Node::Index(Binds::Atom, Count(distance)) => {
+                    Some(NormalNode::Atom(BinderDistance::from(distance)))
+                },
+                Node::Index(Binds::Variable, Count(distance)) => {
+                    Some(NormalNode::Bound(BinderDistance::from(distance)))
+                },
+                Node::Index(Binds::Nothing, _) | Node::Meta(..) => None,
+            })
+            .collect())
+    }
 }
 
 /// `rule` read second-order, its variables metavariables by their ordinals;
@@ -491,21 +534,7 @@ fn side(
     for &node in nodes {
         let (variable, written) = match node {
             TheoryNode::Symbol(symbol) => {
-                let &(kind, arity) = rules.symbols.get(symbol.0)?;
-                let arity = Count(usize::from(arity));
-                term.push(match kind {
-                    SymbolKind::Operation(_) | SymbolKind::Constructor => {
-                        Node::Symbol(symbol, arity, Binds::Nothing)
-                    },
-                    SymbolKind::Abstraction => Node::Symbol(symbol, arity, Binds::Atom),
-                    SymbolKind::Field => Node::Symbol(symbol, arity, Binds::Variable),
-                    SymbolKind::Occurrence(distance) => {
-                        Node::Index(Binds::Atom, Count(usize::from(distance)))
-                    },
-                    SymbolKind::Bound(distance) => {
-                        Node::Index(Binds::Variable, Count(usize::from(distance)))
-                    },
-                });
+                term.push(symbol_node(rules, symbol)?);
                 continue;
             },
             TheoryNode::Variable(variable) => (variable, 0),
@@ -524,6 +553,49 @@ fn side(
         );
     }
     Some(term)
+}
+
+/// The table symbol `symbol` as a node of the second-order reading: an
+/// application binding what its kind binds, or an occurrence by its
+/// distance; [`None`] where the table holds no such symbol.
+///
+/// # Specification
+/// trivial.
+fn symbol_node(
+    rules: &TheoryRules,
+    symbol: TheorySymbol,
+) -> Option<Node>
+{
+    let &(kind, arity) = rules.symbols.get(symbol.0)?;
+    let arity = Count(usize::from(arity));
+    Some(match kind {
+        SymbolKind::Operation(_) | SymbolKind::Constructor => {
+            Node::Symbol(symbol, arity, Binds::Nothing)
+        },
+        SymbolKind::Abstraction => Node::Symbol(symbol, arity, Binds::Atom),
+        SymbolKind::Field => Node::Symbol(symbol, arity, Binds::Variable),
+        SymbolKind::Occurrence(distance) => Node::Index(Binds::Atom, Count(usize::from(distance))),
+        SymbolKind::Bound(distance) => Node::Index(Binds::Variable, Count(usize::from(distance))),
+    })
+}
+
+/// The closed term `nodes` read second-order; [`None`] where it holds a
+/// variable or names a symbol outside the table.
+///
+/// # Specification
+/// trivial.
+fn closed(
+    rules: &TheoryRules,
+    nodes: &[TheoryNode],
+) -> Option<Term>
+{
+    nodes
+        .iter()
+        .map(|&node| match node {
+            TheoryNode::Symbol(symbol) => symbol_node(rules, symbol),
+            TheoryNode::Variable(_) | TheoryNode::Instance(..) => None,
+        })
+        .collect()
 }
 
 /// The subterms `node` applies.

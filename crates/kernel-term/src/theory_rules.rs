@@ -481,6 +481,26 @@ pub enum TheoryNode
     Instance(RuleVariable, FieldCount),
 }
 
+/// One node of a closed term's normal form in the second-order reading.
+///
+/// The nodes stand in pre-order: a symbol applied to the next subterms its
+/// arity counts, or an occurrence by the binders of either kind between it
+/// and its own.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum NormalNode
+{
+    /// A symbol of the table: an operation, a constructor, a results tuple,
+    /// an atom's abstraction or a binding field.
+    Symbol(TheorySymbol),
+    /// An atom named inside an abstraction of it.
+    Atom(BinderDistance),
+    /// A variable named inside a binding field of it.
+    Bound(BinderDistance),
+}
+
 /// One oriented rule: its left side rewrites to its right.
 ///
 /// # Specification
@@ -1326,6 +1346,42 @@ impl TheoryRules
             }
         }
         Ok(())
+    }
+
+    /// The normal form of the closed term `term` under these rules read
+    /// second-order, in the rows of a program that names no theory: each rule
+    /// stated under no row fires, one instantiating a variable by matching
+    /// its pattern and substituting its instance.
+    ///
+    /// # Specification
+    /// - requires: these rules well formed, as [`Self::decide`] checks.
+    /// - ensures: [`Some`] with an η-short term no rule stated under no row
+    ///   matches at any position, reached from `term`, η-contracted, by
+    ///   rewriting with those rules, the last redex in pre-order first;
+    ///   [`None`] where `term` holds a variable, names a symbol outside the
+    ///   table or is no one whole term, or a rule's instance is ill formed.
+    /// - fails: [`Exhausted`] when `fuel` runs out first, one unit spent on
+    ///   each rule tried at each position.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — β fires at a binding field, substituting its argument
+    ///   for the field's variable; a rule instantiating a variable below an
+    ///   operation fires there; a rule under a row does not fire; a term
+    ///   holding a variable or ending early is no closed term.
+    /// - witness: `theory_rules::tests::an_instantiating_rule_fires_by_substitution_2966`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |normal| normal.as_ref().is_none_or(|nodes| !nodes.is_empty())))]
+    #[inline]
+    pub fn second_order_normal_form(
+        &self,
+        term: &[TheoryNode],
+        fuel: &mut RewriteFuel,
+    ) -> Result<Option<Box<[NormalNode]>>, Exhausted>
+    {
+        Higher::new(self).closed_normal_form(self, term, fuel)
     }
 
     /// The first critical pair of these rules whose two normal forms under

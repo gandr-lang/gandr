@@ -462,6 +462,96 @@ fn a_relative_monads_laws_join_their_overlaps_2328()
     );
 }
 
+/// #2966: in the second-order reading a closed term's rule instantiating a
+/// variable fires by matching and substitution, below an operation and under
+/// a binder too; a rule under a row does not fire in a program naming none.
+#[test]
+fn an_instantiating_rule_fires_by_substitution_2966()
+{
+    use super::NormalNode;
+    use super::row::RowExtent;
+    use super::row::RowLabel;
+    use super::row::RuleRow;
+
+    // app = 0, post = 1, z = 2, the binding field = 3, the bound occurrence
+    // = 4, w = 5, lit = 6, int = 7.
+    let symbols = vec![
+        operation!(1, 2),
+        operation!(0, 1),
+        operation!(0, 0),
+        (SymbolKind::Field, FieldCount::from(1_usize)),
+        (
+            SymbolKind::Bound(BinderDistance::from(0_usize)),
+            FieldCount::from(0_usize),
+        ),
+        operation!(1, 2),
+        operation!(0, 1),
+        operation!(0, 1),
+    ];
+    // app(k, a) ==> k(a)
+    let beta = rule(&[s!(0), v!(0), v!(1)], &[i!(0, 1), v!(1)]);
+    // w(lit(n), k) ==> k(int(n))
+    let literal = rule(&[s!(5), s!(6), v!(0), v!(1)], &[i!(1, 1), s!(7), v!(0)]);
+    let rules = TheoryRules::new(symbols.clone(), vec![beta.clone(), literal]);
+    assert_eq!(rules.decide(&mut fuel()), Ok(()));
+    let normal = |rules: &TheoryRules, term: &[TheoryNode]| {
+        rules
+            .second_order_normal_form(term, &mut fuel())
+            .expect("the term normalizes within its fuel")
+            .map(Vec::from)
+    };
+    let symbol = |at: usize| NormalNode::Symbol(TheorySymbol::from(at));
+    // app(bind v . post(v), z)
+    let applied = [s!(0), s!(3), s!(1), s!(4), s!(2)];
+    assert_eq!(
+        normal(&rules, &applied),
+        Some(vec![symbol(1), symbol(2)]),
+        "β substitutes `z` for the field's variable: `post(z)`, not `k(z)`"
+    );
+    // app(bind v . w(lit(v), bind u . post(u)), z)
+    let nested = [
+        s!(0),
+        s!(3),
+        s!(5),
+        s!(6),
+        s!(4),
+        s!(3),
+        s!(1),
+        s!(4),
+        s!(2),
+    ];
+    assert_eq!(
+        normal(&rules, &nested),
+        Some(vec![symbol(1), symbol(7), symbol(2)]),
+        "the literal rule fires below `app` under `v`, then β: `post(int(z))`"
+    );
+    let under = TheoryRules::new(symbols, vec![beta.under(RuleRow::new(
+        vec![RowLabel::from(0_u32)],
+        RowExtent::AtLeast,
+    ))]);
+    assert_eq!(
+        normal(&under, &applied),
+        Some(vec![
+            symbol(0),
+            symbol(3),
+            symbol(1),
+            NormalNode::Bound(BinderDistance::from(0_usize)),
+            symbol(2),
+        ]),
+        "a rule under a row fires in no row a program naming no theory stands in"
+    );
+    assert_eq!(
+        normal(&rules, &[s!(1), v!(0)]),
+        None,
+        "a term holding a variable is not closed"
+    );
+    assert_eq!(
+        normal(&rules, &[s!(0), s!(2)]),
+        None,
+        "nor one ending early"
+    );
+}
+
 /// #2272: read from a presentation, put-get instantiates its continuation at
 /// the value `put` stores. While no operation returns that value's sort, the
 /// variable is one of the rule's values and the rule is decided. Once `read`

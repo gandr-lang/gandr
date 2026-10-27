@@ -10,10 +10,11 @@
 // § 4: `break`, `continue` and `nomatch` are left out, `u8` is read as
 // `Integer`, each function takes one parameter, and propositions are read
 // as types. The axioms are written twice. As the rules of `Thir.Wp`, over
-// THIR's nodes as its operations, the checker orients them and joins their
-// pairs in the second-order reading, and an inspected call does not fire
-// them yet (#2966). As a fold of THIR's data, the normaliser computes each
-// precondition and the kernel replays it, so `example` meets its
+// THIR's nodes as its operations, the checker orients them, joins their
+// pairs in the second-order reading, and fires them at an inspected call:
+// `example`'s guarded body at false ends at its return continuation, never
+// reaching `identity`. As a fold of THIR's data, the normaliser computes
+// each precondition and the kernel replays it, so `example` meets its
 // specification at every value and postcondition given `identity`'s.
 
 /// A value the fragment computes: an integer or a boolean.
@@ -48,7 +49,8 @@ pub data Expr : Type {
   Call : (g : Item, e : Expr) --> Expr;
 }
 
-/// The axioms as rules over THIR's nodes, each transformer an operation whose continuations bind a value.
+/// The axioms as rules over THIR's nodes, each transformer an operation whose continuations bind a value: `example`'s guarded body at false normalizes to its postcondition at zero.
+@[ normalizes("body(ret(call(identity, cond(param, lit(succ(zero)), ret(lit(zero))))), ff, bind v . post(v)) ~> post(int(zero))") ]
 pub theory Thir.Wp {
   /// A natural number, which a literal carries.
   sort Num : Type;
@@ -80,6 +82,10 @@ pub theory Thir.Wp {
   oper ret : (e : Exp) --> Exp;
   /// The item `g` called at the argument `e`.
   oper call : (g : Fun, e : Exp) --> Exp;
+  /// `identity`, an item a call names.
+  oper identity : () --> Fun;
+  /// The caller's postcondition at the value `v`.
+  oper post : (v : Val) --> Pre;
   /// The precondition `t` or `f` that the value `v` picks.
   oper branch : (v : Val, t : Pre, f : Pre) --> Pre;
   /// What `e` needs at the parameter `x` to end in `k` or return into `r`.
