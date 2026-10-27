@@ -8,6 +8,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -35,9 +36,9 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `Value::Hole`, `Value::Mark`, `Computation::Hole`, `Computation::Mark`, `ValueType::Unknown` and `CompType::Unknown`, with `hole::HoleId`, `hole::MarkIndex` and `hole::TermId`: the elaborator's hole surface. Witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`.
 - `tactic::Tactic`, `hole::HoleId::spliced` and `hole::HoleOrigin::Spliced`: a splice's tactic, carried in its hole's name.
 - `hole::matched_thunk`, `matched_product` and `matched_sum` (answering `hole::Components`), `matched_static_pi`, `matched_list`, `matched_stack`, `matched_returner`, `matched_function` and `matched_with`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown; the witnesses are in each matcher's rustdoc.
-- `fill_hole`, `wrap_marks` and `substitute_environment`: filling by name, marking by node, and closing a suspended body over its environment. Witnesses: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`, `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`, `rewrite::tests::an_environment_substitution_replaces_every_free_index`.
-- `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers. Witnesses: `pattern::tests::a_pattern_names_its_parts_in_order`, `pattern::tests::a_conjunction_refutes_first_and_doubts_second`.
-- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint (`CoreArena::value_support` and its three siblings), a code wider than a word behind a `support::Slot` handle into a `support::WordArena`. Witnesses: `support::tests::placing_each_edge_recovers_its_child`, `support::tests::a_cover_refuses_every_forged_edge`, `support::tests::one_encoding_per_selection`, `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`.
+- `fill_hole`, `wrap_marks` and `substitute_environment`: filling by name, marking by node, and closing a suspended body over its environment; the witnesses are in each function's rustdoc.
+- `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers; the witnesses are in each item's rustdoc.
+- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint (`CoreArena::value_support` and its three siblings), a code wider than a word behind a `support::Slot` handle into a `support::WordArena`; the witnesses are in each item's rustdoc.
 
 ## Expected features
 
@@ -127,6 +128,11 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | The co-de Bruijn carrier, its tiered code and the fence; supports carried on arena nodes | [`support`](src/support.rs), [`arena`](src/arena.rs) |
 | Temporary access: hold, access, resume and abort | [`memory`](src/memory.rs) |
 | References and specification attributes | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
 
 ## License
 

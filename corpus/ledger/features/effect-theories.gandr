@@ -1,6 +1,6 @@
 /// `effect-theories`: Effects as theories with laws.
-/// Implemented: an effect as a theory of its operations whose laws the path order orients, a capability scope taking a theory as its interface and checked as a model of it, and a scope answered by a module that models the theory.
-/// Not implemented: the row's form and its normalisation by the laws; #2272 owes it.
+/// Implemented: an effect as a theory of its operations whose laws the path order orients, a capability scope taking a theory as its interface and checked as a model of it, a scope answered by a module that models the theory, and a scope's subject normalised by the theory's laws before it runs.
+/// Not implemented: the row's form, `-F [State with sort S = Integer] A`; #2844 owes it.
 // State as a theory: `get` passes the state to what runs after it, and `put`
 // replaces the state before what runs after it. The laws are the rules of
 // global state in Cooper, "The marriage of effects and rewrites" (2023),
@@ -67,4 +67,19 @@ theory StateGetGet {
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
   rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+}
+
+/// Reading twice under a scope over get-get: before it runs, the subject
+/// normalises by the law to one read, `b` bound to `a`, so the handler
+/// answers one `get` and the scope runs to four twice.
+@[ runs("8") ]
+def readTwice() -> Integer {
+  handle st : StateGetGet with sort S = Integer {
+    run a <- st.get();
+    run b <- st.get();
+    pure a + b
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4)
+  }
 }

@@ -6,16 +6,19 @@ use alloc::vec::Vec;
 
 use gandr_core_term::Binders;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::handler::subject::SubjectRule;
 use gandr_kernel_term::RuleIndex;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::RuleTurn;
 use quenchant_shape::shape::Maybe;
 
 use super::TheoryOperation;
 use super::laws;
 use super::operations;
+use super::rules;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
 use crate::model::InterfaceFault;
@@ -201,5 +204,49 @@ fn a_theory_s_laws_read_for_its_handler_2272()
         Some("putPut"),
         odd.get(usize::from(named.span.start()) .. usize::from(named.span.end())),
         "the refusal stands at the law's name"
+    );
+}
+
+/// The theory's laws read as rewrites of a scope's subject, each from the side
+/// its orientation puts above: get-get, put-get and put-put read at their
+/// places, and a law reordering a put and a get is left out; get-get marked
+/// turned is read from its right side, which grows, and is left out too
+/// (#2272).
+#[test]
+fn a_theory_s_laws_rewrite_its_scope_s_subject_2272()
+{
+    let fixed = fixing([Name::from("S")]);
+    let laws_of = r"theory StateLaws {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+  rule swap : put(s, get(bind t . k(t))) <=> get(bind t . put(s, k(t)));
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putPut : put(s, put(u, k)) <=> put(u, k);
+}";
+    let members_of = members(SourceText::from(laws_of));
+    let operations_of = operations(&members_of, &fixed).unwrap();
+    let read = |turns: &[RuleTurn]| -> Vec<RuleIndex> {
+        rules(&members_of, &operations_of, turns)
+            .iter()
+            .map(SubjectRule::rule)
+            .collect()
+    };
+    assert_eq!(
+        read(&[]),
+        [0_usize, 2, 3].map(RuleIndex::from),
+        "get-get, put-get and put-put, the reordering left out"
+    );
+    assert_eq!(
+        read(&[
+            RuleTurn::Turned,
+            RuleTurn::AsWritten,
+            RuleTurn::AsWritten,
+            RuleTurn::AsWritten,
+        ]),
+        [2_usize, 3].map(RuleIndex::from),
+        "get-get read from its right side grows"
     );
 }

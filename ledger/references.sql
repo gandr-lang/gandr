@@ -59,6 +59,7 @@ INSERT INTO reference VALUES('arXiv:2111.10968','theory-levitation','circuit','b
 INSERT INTO reference VALUES('arXiv:2205.06651','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2205.06651','core-checker','ua','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2302.02462','core-term','handler','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2302.02462','core-term','handler::subject','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2307.13519','theory-path-orders','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2307.13519','theory-path-orders','lpo','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2310.01530','surface-format','','background',NULL,NULL,NULL);
@@ -303,10 +304,14 @@ INSERT INTO reference VALUES('doi:10.4310/hha.2018.v20.n2.a11','theory-sites',''
 INSERT INTO reference VALUES('doi:10.46298/lmcs-18(1:10)2022','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-artifact','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-records','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-dispatcher','cells','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-driver','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-lowering','description','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-computads','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','core-term','handler::subject','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering','lower::capability::theory','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package','background','5aee1e13476e2a1c6203be828cbc35c3a5879417','2026-10-27','3176bdf4cbe2be5b1b9cc1cbfaa89f81bd62f15d');
 COMMIT;

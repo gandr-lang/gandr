@@ -1123,6 +1123,100 @@ fn a_scope_owes_its_theory_s_laws_2272()
     );
 }
 
+/// The theory `StateGetGet`: `State`'s read with get-get stated.
+const GET_GET: &str = concat!(
+    "theory StateGetGet {\n",
+    "  sort S : Type+;\n",
+    "  sort C : Type;\n",
+    "  oper get : (k : pi+ (s : S) . C) --> C;\n",
+    "  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));\n",
+    "}\n",
+);
+
+/// A scope's subject normalises by its theory's laws before it runs: over
+/// get-get, two reads lower to one, the second statement binding the first's
+/// reply where its request stood, the return at the request's origin and the
+/// bind still naming `b`, and the scope checks; over `State`, which states no
+/// law, the same subject keeps both reads (#2272).
+#[test]
+fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
+{
+    let mut arena = CoreArena::new();
+    let subject = "{ run a <- st.get(); run b <- st.get(); pure a * 10 + b }";
+    let source = alloc::format!(
+        "{STATE}{GET_GET}def once() -> -F Integer {{ handle st : StateGetGet with sort S = Integer {subject} with {{ pure(x) => pure x, oper get(k) => k(4) }} }}\ndef twice() -> -F Integer {{ handle st : State with sort S = Integer {subject} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    // Each step the scope's subject binds, outermost first.
+    let steps = |name: &str| -> Vec<(ComputationId, ComputationId)> {
+        let Some(&Computation::Scope { subject, .. }) =
+            arena.computation(tail_of(&module, &arena, name.into()))
+        else {
+            panic!("`{name}` is a scope");
+        };
+        let mut steps = Vec::new();
+        let mut at = subject;
+        while let Some(&Computation::Bind(bound, rest)) = arena.computation(at) {
+            steps.push((at, bound));
+            at = rest;
+        }
+        steps
+    };
+    let exercised = |name: &str| {
+        steps(name)
+            .iter()
+            .filter(|&&(_, bound)| {
+                matches!(arena.computation(bound), Some(Computation::Exercise { .. }))
+            })
+            .count()
+    };
+    assert_eq!(exercised("once"), 1, "get-get leaves one read");
+    assert_eq!(exercised("twice"), 2, "no law, no rewrite");
+    let Some(&(second, answered)) = steps("once").get(1)
+    else {
+        panic!("the second statement stays a bind");
+    };
+    let Some(&Computation::Ascribe { body: returned, .. }) = arena.computation(answered)
+    else {
+        panic!(
+            "the answer is ascribed the reply's type: {:?}",
+            arena.computation(answered)
+        );
+    };
+    assert!(
+        matches!(arena.computation(returned), Some(&Computation::Return(first)) if arena.value(first) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })),
+        "binding the first read's reply: {:?}",
+        arena.computation(returned)
+    );
+    let text = |origin: Maybe<crate::origin::Origin, _>| match origin {
+        Maybe::Present(origin) => source
+            .get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+            .map(String::from),
+        Maybe::Absent(_) => None,
+    };
+    assert_eq!(
+        text(module.origins().computation(answered)).as_deref(),
+        Some("st.get()"),
+        "the return answers at the request it stands for"
+    );
+    assert_eq!(
+        text(module.origins().binder(second)).as_deref(),
+        Some("b"),
+        "the rebuilt statement still binds `b`"
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["once", "twice"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "`{name}` checks: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}
+
 /// The theory `StatePutPut`: `State` with put-put stated.
 const PUT_PUT: &str = concat!(
     "theory StatePutPut {\n",
