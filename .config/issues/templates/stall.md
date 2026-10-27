@@ -25,6 +25,7 @@
 | Place | `located` | no — one repository |
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
+| Cost | `zero-cost` | no — a routing event adds nothing at run time |
 
 ## Concerns
 

@@ -18,6 +18,7 @@ Closes #n
 | Place | `located` | at which world a judgement or value is meaningful; what crosses worlds, and by what | |
 | Place | `resident` | representation, sharing, persistence; where integrity stops and replay decides | |
 | Dimension | `rewriting` | rules and normal forms; rewrites between rewrites; which coherence tier settles them | |
+| Cost | `zero-cost` | what the change adds at run time and what demands it: a grade above zero, a located crossing or a session branch (the program), or a recipe policy off by default (none of its bytes in an artifact built without it); what the grade erases; what a hand-written form would cost | |
 
 ## Concerns
 
