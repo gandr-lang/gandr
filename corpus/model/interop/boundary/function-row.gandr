@@ -18,7 +18,9 @@
 //   chosen through the layout, refused `Undecided`
 // - see: `model/specification/niche-realizability.gandr` — `deref_or`'s
 //   triple and the tagged layout's equivalence
-// - see: `model/layouts/rust-default.gandr` — Rust's default layout
+// - see: `library/std/src/boundary.gandr` — the row, the witness record and
+//   `admit`
+// - see: `library/std/src/layout.gandr` — Rust's default layout
 // - see: Wagner, Eisbach and Ahmed, _Realistic Realizability: Specifying ABIs
 //   You Can Count On_, OOPSLA 2024, doi:10.1145/3689755, § 3.1 and § 4.2
 
@@ -51,64 +53,15 @@
 // `Nat`.
 import "../../data/data-base.gandr";
 
-// `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout`.
-import "../../layouts/rust-default.gandr";
+// `Code`, `Codes`, `Row`, `Witness`, `Printed`, `Params`, `Declared`,
+// `Admission`, `summary`, `niched`, `admit`.
+import "../../../../library/std/src/boundary.gandr";
+
+// `U32`, `Ref`, `Field`, `Done`, `Variant`, `NoVariant`.
+import "../../../../library/std/src/layout.gandr";
 
 // `Heap`, `vOpt`, `vInt`, `keptOpt`, `derefOrWp`, `derefOrMeets`.
 import "../../specification/niche-realizability.gandr";
-
-/// A type at the row, as Rust's default layout codes it.
-pub data Code : Type {
-  /// A scalar.
-  Plain : (s : Scalar) --> Code;
-  /// An enum.
-  Sum : (vs : Variants) --> Code;
-}
-
-/// How a value is copied, moved, destroyed and relocated.
-pub data Handling : Type {
-  /// As its bytes: copied, moved and relocated by copying them, destroyed by
-  /// nothing.
-  Bitwise : Handling;
-}
-
-/// The witness record: size, stride, alignment, and how the value is handled.
-pub data Witness : Type {
-  /// The record.
-  Witness : (size : Integer, stride : Integer, align : Integer, handling : Handling) --> Witness;
-}
-
-/// A size rounded up to an alignment.
-def strideOf(size : Integer, align : Integer) -> Integer {
-  run q <- int.div(size + align - 1, align);
-  q * align
-}
-
-/// The record read off a code's layout. Every code here is a scalar, a
-/// reference or an enum of them, so every value is handled bitwise.
-pub def summary(c : Code) -> Witness {
-  case c {
-    Plain(s) => case structLayout(Field("0", s, Done)) {
-      Layout(size, align, _p) => Witness(size, strideOf(size, align), align, Bitwise)
-    },
-    Sum(vs) => case enumLayout(vs) {
-      EnumLayout(size, align, _d, _a) => Witness(size, strideOf(size, align), align, Bitwise)
-    }
-  }
-}
-
-/// Whether a code's layout keeps its discriminant in a niche.
-pub def niched(c : Code) -> Bool {
-  case c {
-    Plain(_s) => false,
-    Sum(vs) => case enumLayout(vs) {
-      EnumLayout(_size, _align, d, _a) => case d {
-        InNiche(_o) => true,
-        _ => false
-      }
-    }
-  }
-}
 
 /// `Option<&u32>`.
 pub def optRef : Code = Sum(Variant("Some", Field("0", Ref, Done), Variant("None", Done, NoVariant)));
@@ -128,135 +81,6 @@ def u32Summary() -> Witness { summary(u32) }
 /// are the null niche's.
 @[ runs("+{.0 = unit}") ]
 def optRefNiched() -> Bool { niched(optRef) }
-
-/// Argument codes in order.
-pub data Codes : Type {
-  /// No more arguments.
-  NoCode : Codes;
-  /// An argument's code, then the rest.
-  Arg : (c : Code, rest : Codes) --> Codes;
-}
-
-/// A function row: its arguments' codes and its result's.
-pub data Row : Type {
-  /// The row.
-  Row : (args : Codes, result : Code) --> Row;
-}
-
-/// A type's layout as rustc printed it: size, alignment, a niche, and whether
-/// it needs drop.
-pub data Printed : Type {
-  /// The printed layout.
-  Printed : (size : Integer, align : Integer, niched : Bool, drops : Bool) --> Printed;
-}
-
-/// An extern's parameters in order, each named, as rustc built them.
-pub data Params : Type {
-  /// No more parameters.
-  NoParam : Params;
-  /// A parameter's name and printed layout, then the rest.
-  Param : (name : String, p : Printed, rest : Params) --> Params;
-}
-
-/// An extern's declared signature: its parameters and its result.
-pub data Declared : Type {
-  /// The signature.
-  Declared : (params : Params, result : Printed) --> Declared;
-}
-
-/// Where a clause stands in the row.
-pub data Position : Type {
-  /// The argument at an index, from zero.
-  Argument : (index : Integer) --> Position;
-  /// The result.
-  Result : Position;
-}
-
-/// The clause of the row a declared signature breaks.
-pub data Clause : Type {
-  /// The extern takes a different number of arguments.
-  Arity : Clause;
-  /// A size differs.
-  Size : (place : Position) --> Clause;
-  /// An alignment differs.
-  Align : (place : Position) --> Clause;
-  /// One keeps its discriminant in a niche and the other does not.
-  Niche : (place : Position) --> Clause;
-  /// The declared type needs drop, and the row's value is handled bitwise.
-  Destroy : (place : Position) --> Clause;
-}
-
-/// What admission answers.
-pub data Admission : Type {
-  /// The declared signature realises the row.
-  Admitted : Admission;
-  /// It does not, by the first clause that fails.
-  Unrealised : (c : Clause) --> Admission;
-}
-
-/// Whether two booleans are equal.
-def agree(a : Bool, b : Bool) -> Bool {
-  case a {
-    true => b,
-    false => case b {
-      true => false,
-      false => true
-    }
-  }
-}
-
-/// One position of the row: the printed layout against the code's record,
-/// size, then alignment, then the niche, then the handling.
-pub def check(p : Printed, c : Code, place : Position) -> Admission {
-  case p {
-    Printed(size, align, inNiche, drops) => case summary(c) {
-      Witness(s, _stride, a, h) => case size == s {
-        false => Unrealised(Size(place)),
-        true => case align == a {
-          false => Unrealised(Align(place)),
-          true => case agree(inNiche, niched(c)) {
-            false => Unrealised(Niche(place)),
-            true => case h {
-              Bitwise => case drops {
-                true => Unrealised(Destroy(place)),
-                false => Admitted
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-/// The arguments from an index, in order, as many on each side.
-def rec admitArgs(ps : Params, cs : Codes, i : Integer) -> Admission {
-  case ps {
-    NoParam => case cs {
-      NoCode => Admitted,
-      Arg(_c, _rest) => Unrealised(Arity)
-    },
-    Param(_n, p, rest) => case cs {
-      NoCode => Unrealised(Arity),
-      Arg(c, more) => case check(p, c, Argument(i)) {
-        Admitted => admitArgs[<](rest, more, i + 1),
-        Unrealised(cl) => Unrealised(cl)
-      }
-    }
-  }
-}
-
-/// A declared signature against a row: the arguments, then the result.
-pub def admit(d : Declared, r : Row) -> Admission {
-  case d {
-    Declared(ps, res) => case r {
-      Row(cs, rc) => case admitArgs(ps, cs, 0) {
-        Admitted => check(res, rc, Result),
-        Unrealised(cl) => Unrealised(cl)
-      }
-    }
-  }
-}
 
 /// `f`'s row: `Option<&u32>` and `u32` to `u32`.
 pub def fRow : Row = Row(Arg(optRef, Arg(u32, NoCode)), u32);

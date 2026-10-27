@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 90266c344c1e42d4b276f74499685e0014317192204ce743ef57976f94371bef
+# blake3: f5fd3601f6bce3bc9cb3d4d203936316098232222514a848351dfb6f6c208c2e
 
 [package]
 name = "std"
@@ -9,5 +9,7 @@ licence = "MIT OR Apache-2.0"
 documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std"
 endpoint = "https://github.com/gandr-lang/gandr"
 modules = [
+  "boundary",
+  "layout",
   "package",
 ]

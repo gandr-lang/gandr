@@ -1,6 +1,6 @@
 # std
 
-The standard library: the package every gandr program can read, built and checked by the same verbs as any package (`gandr check library/std`). Its first module is `std.package`, the theories a project's manifest is read from. The rest of this page is the map the later modules land from, one unit each (#628).
+The standard library: the package every gandr program can read, built and checked by the same verbs as any package (`gandr check library/std`). Its first modules are `std.package`, the theories a project's manifest is read from, and `std.layout` and `std.boundary`, Rust's default layout and the foreign boundary's function rows. The rest of this page is the map the later modules land from, one unit each (#628).
 
 ## Host access is by capability
 
@@ -11,6 +11,8 @@ The standard library: the package every gandr program can read, built and checke
 | module | holds | absorbs | seam | status |
 | ------ | ----- | ------- | ---- | ------ |
 | `std.package` | `Versioned`, `Gandr.Package`, `Gandr.Workspace`, `Gandr.Module` with no model yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#533 p2, p3) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
+| `std.layout` | Rust's default layout as a program over codes: `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout` (#2804) | the program of `corpus/model/layouts/rust-default.gandr`, which keeps its rustc witnesses | none: no host access | landed |
+| `std.boundary` | a function row of the foreign boundary: `Code`, `Row`, the witness record `summary` reads off `std.layout`, `Printed`, `Declared` and `admit` with the `Clause` it names (#2900) | the row and `admit` of `corpus/model/interop/boundary/function-row.gandr`, which keeps its externs | none: no host access | landed |
 | `std.nix` | `Nix.Derivation`, `Nix.Attribute` | none | none: a type provider (#2763) | reserved |
 | `std.authority` | the ambient authority, `main`'s parameter, from which each host module's root capability is opened | none | `cap_std::ambient_authority`, `AmbientAuthority` | reserved |
 | `std.fs` | `Fs` under a directory capability: open, read, write, create and remove beneath it; temporary directories removed with their scope | `corpus/model/builtins/host-modules.gandr`, `corpus/model/control/capability-attenuate.gandr` | `cap_std::fs::Dir`, `cap_tempfile::TempDir`, `cap_primitives::fs::open_dir` (resolution beneath its start); rustix `fs` | reserved |
@@ -27,4 +29,4 @@ A module's interface is what its `pub` declarations state; a declaration is priv
 
 ## Importing it
 
-A project imports `std.package` by the relative path to its source, `library/std/src/package.gandr`, until a package imports another by name (#533 p3). A source under any root may import one under the strict root, so the corpus's fixtures read `std` as a package does, and `std`'s declarations settle as strictly as they do alone.
+A project imports a module of `std` by the relative path to its source, `library/std/src/<module>.gandr`, until a package imports another by name (#533 p3). A source under any root may import one under the strict root, so the corpus's fixtures read `std` as a package does, and `std`'s declarations settle as strictly as they do alone.

@@ -1,7 +1,7 @@
 // `std`: the standard library, a package like any other. Its modules and the
-// host seams they stand on are mapped in `../README.md`; `std.package` is the
-// first to land. Until a package imports another by name (#533 p3), a
-// project imports `std.package` by the relative path to its source.
+// host seams they stand on are mapped in `../README.md`. Until a package
+// imports another by name (#533 p3), a project imports a module of `std` by
+// the relative path to its source.
 import package (Gandr);
 
 /// The package: `std`, at the version `gandr.toml` records.
