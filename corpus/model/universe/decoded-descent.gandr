@@ -1,0 +1,74 @@
+// A recursion over the values a universe decodes. The universe is
+// inductive-recursive, after Dybjer and Setzer: the list code's decode is the
+// lists over its element code's decode, and the function code's second field
+// names the decoder. A fixpoint stages one parameter, and over a universe the
+// staged parameter is the code: the code's case answers at the decode it
+// names, a function taking the value. An element's recursion descends on the
+// code, whose field the element code is; a list's tail stands at the list
+// code itself, so its descent is the list's and no descent of the code, and
+// the recursion on it is handed to a function staged on the lists. Written
+// directly, the tail call at the same code, and the stage a decode would need
+// to carry, are refused in `../../pathological/universe/decoded-descent.gandr`
+// (#2862).
+
+// The naturals, their addition and the lists.
+import "../data/data-base.gandr";
+
+/// The universe and its decoder, one block: the function code's field names
+/// the decoder.
+rec {
+  /// The codes: the naturals, the lists over a coded element, and the
+  /// dependent functions from a coded domain to a family of codes over that
+  /// domain's decode.
+  @[ checks, form(explicit) ]
+  pub data UL : Type {
+    NatL : UL;
+    ListL : (a : UL) --> UL;
+    PiL : (a : UL, b : +U (elL(a) -> -F UL)) --> UL;
+  }
+
+  /// The decoder, recursing below the code.
+  @[ checks ]
+  pub def rec elL(u : UL) -> -F Type {
+    case u {
+      NatL => return Nat,
+      ListL(a) => {
+        run e <- elL[<](a);
+        return (List(e))
+      },
+      PiL(a, b) => return (+U ((x : elL[<](a)) -> -F elL[<](b(x))))
+    }
+  }
+}
+
+/// A list of an element code's values summed through `f`, recursing on the
+/// list: the stage is the list's, the element code and `f` held fixed.
+def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat {
+  case v {
+    Nil => Zero,
+    Cons(h, t) => plus(f(h), sumAt[<](a, f, t))
+  }
+}
+
+/// Every natural a decoded value holds, summed, a function's none. The code's
+/// case answers at the decode each arm names. The list code's arm hands its
+/// list to `sumAt`, whose stage is the list's own, with the element code's
+/// sum, which descends on the code.
+def rec total(c : UL) -> +U (elL(c) -> -F Nat) {
+  case c {
+    NatL => thunk { fn (v) { v } },
+    ListL(a) => thunk { fn (v) { sumAt(a, total[<](a), v) } },
+    PiL(a, b) => thunk { fn (f) { Zero } }
+  }
+}
+
+/// The lists of naturals [1] and [2].
+def lists : List(List(Nat));
+def lists = Cons(Cons(Succ(Zero), Nil), Cons(Cons(two, Nil), Nil));
+
+/// The lists summed at the list-of-lists code, whose decode they are: three.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def summed() -> Nat {
+  run sum <- total(ListL(ListL(NatL)));
+  sum(lists)
+}
