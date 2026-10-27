@@ -1353,7 +1353,9 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # fresh scratch repository as the agent identity, each with or without the
 # trailers and with or without a change, and states whether the range is
 # refused under its flag: a trailer-less copy of a merged commit is refused
-# (the regression: #2613 carried one), and an empty commit under `--empty`.
+# (the regression: #2613 carried one), an empty commit under `--empty`, and
+# a closing keyword anywhere but its own `Closes #n` line (#2980), since
+# GitHub closes the issue it names when the commit reaches main.
 ["check:commits"]
 description = "The commit rules over a range refuse a trailer-less commit and, asked, an empty one"
 tools.jq = "1.8.1"

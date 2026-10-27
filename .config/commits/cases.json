@@ -43,5 +43,29 @@
     ],
     "flag": "--empty",
     "exit": 1
+  },
+  {
+    "name": "#2980: a commit body putting a closing verb before an issue number in prose is refused, quoted or not",
+    "commits": [
+      {
+        "message": "fix(workflow): describe the epic close\n\nThe epics workflow `closed #628` when its one sub-issue closed.",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "#2980: a commit closing its issues on their own keyword lines passes",
+    "commits": [
+      {
+        "message": "fix(workflow): refuse a stray closing keyword\n\nThe verb before a number in prose closes the issue on merge.\n\nCloses #2980\nFixes #2972, #2977",
+        "trailers": true,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
   }
 ]
