@@ -1,0 +1,162 @@
+[
+  {
+    "name": "#3208: a reporting job of its own beside `reports` is refused for its container start",
+    "input": {
+      "ci-image-ref": {
+        "steps": [
+          {
+            "name": "git checkout"
+          }
+        ]
+      },
+      "sweeps": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "restore complete test state"
+          },
+          {
+            "name": "run the night's sweeps"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      },
+      "reports": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "setup rust"
+          },
+          {
+            "name": "report the dependencies",
+            "if": "${{ !cancelled() }}"
+          },
+          {
+            "name": "compare each lane with its budget",
+            "if": "${{ !cancelled() }}"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      },
+      "deps-report": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "report the dependencies"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      }
+    },
+    "output": "[\"`deps-report` starts the CI image and restores no build state: a container start is 20 to 25 s, so it is a step of `reports`, not a job (#3208)\"]"
+  },
+  {
+    "name": "one `reports` job beside the jobs that restore a state, and jobs off the image, holds",
+    "input": {
+      "template": {
+        "steps": [
+          {
+            "name": "git checkout"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      },
+      "ci-image-ref": {
+        "steps": [
+          {
+            "name": "git checkout"
+          }
+        ]
+      },
+      "sweeps": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "restore complete test state"
+          },
+          {
+            "name": "run the night's sweeps"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      },
+      "reports": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "setup rust"
+          },
+          {
+            "name": "report the dependencies",
+            "if": "${{ !cancelled() }}"
+          },
+          {
+            "name": "compare each lane with its budget",
+            "if": "${{ !cancelled() }}"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a `reports` step without `!cancelled()` is refused: a failing step before it would hide it",
+    "input": {
+      "reports": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "setup rust"
+          },
+          {
+            "name": "report the dependencies"
+          },
+          {
+            "name": "compare each lane with its budget",
+            "if": "${{ !cancelled() }}"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      }
+    },
+    "output": "[\"`reports` step `report the dependencies` runs only while every step before it passed: give it `if: ${{ !cancelled() }}` so a failing step hides none after it (#3208)\"]"
+  },
+  {
+    "name": "a step after the lane budget is refused: the budget's refusal comes last",
+    "input": {
+      "reports": {
+        "steps": [
+          {
+            "name": "git checkout"
+          },
+          {
+            "name": "setup rust"
+          },
+          {
+            "name": "compare each lane with its budget",
+            "if": "${{ !cancelled() }}"
+          },
+          {
+            "name": "report the dependencies",
+            "if": "${{ !cancelled() }}"
+          }
+        ],
+        "container": "${{ needs.ci-image-ref.outputs.ref }}"
+      }
+    },
+    "output": "[\"`reports` ends with `report the dependencies`: the lane budget, which refuses a night past its ceiling, runs last so its refusal hides no other step (#3208)\"]"
+  }
+]

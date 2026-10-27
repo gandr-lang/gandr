@@ -180,7 +180,7 @@ jobs:
   # enforcing state as the sweeps, in a job of its own beside them: the two
   # together outrun one job's fifteen minutes. Its causes and counts are the
   # job summary, the whole backlog visible whether or not it is filed; the
-  # report goes to `recovery-file`, which holds the write token.
+  # report goes to `reports`, which holds the write token.
   recovery:
     name: sweep the exemplars for recovery, specifications enforced
     needs: [ci-image-ref, freshness]
@@ -253,40 +253,20 @@ jobs:
       - name: run the night's crates' tests with every feature on
         run: mise run ci:all-features
 
+  # The night's reports and filings run as one job, each its own step, so
+  # one container start serves them (#3208): a start costs 20 to 25 s, and
+  # the lane budget, the recovery filing and the reports did a minute or less
+  # of work each once the dependency report read in one pass (#3192). The job
+  # waits on the recovery sweep for the causes it files. A failing step hides
+  # none after it: each runs unless the run was cancelled, and the lane
+  # budget, which refuses a night past the ceiling, runs last.
+  #
   # The recovery sweep's causes, filed (`mise run ci:recovery-file`): one
   # issue per first error and mutation kind, at most three new a night, a
   # cause already filed skipped. Only the scheduled run files; a dispatch
   # prints what it would file. The report comes from the recovery job, so
-  # this job builds nothing.
-  recovery-file:
-    name: file the recovery sweep's causes
-    needs: [ci-image-ref, recovery]
-    if: ${{ !cancelled() && needs.recovery.result != 'skipped' }}
-    runs-on: *linux
-    permissions:
-      contents: read
-      packages: read
-      issues: write
-    container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 5
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      RECOVERY_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
-      RECOVERY_REPORT: recovery.out/report.txt
-    steps:
-      - *git-checkout
-      - *trust-workspace
-      - *install-policy-tools
-      - name: download the recovery report
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: recovery-report
-          path: recovery.out
-      - name: file the causes
-        run: mise run ci:recovery-file
-
+  # filing builds nothing.
+  #
   # The dependency report (`mise run report:deps`, #2902): every open epic
   # set blocked by its open sub-issues, then each dependency an open issue
   # states (an `## After` item, prose naming an open issue, an epic's open
@@ -295,31 +275,8 @@ jobs:
   # #2886): how the month's merged pull requests answered their obligations,
   # by lane and week, on one `report: obligations, <month>` issue. Only the
   # scheduled run writes; a dispatch prints the reports. They read the
-  # tracker alone, so this job builds nothing.
-  deps-report:
-    name: report the dependencies GitHub does not record, and the obligations answered
-    needs: ci-image-ref
-    if: ${{ !cancelled() && !failure() }}
-    runs-on: *linux
-    permissions:
-      contents: read
-      packages: read
-      issues: write
-    container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 5
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      REPORT_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
-    steps:
-      - *git-checkout
-      - *trust-workspace
-      - *install-policy-tools
-      - name: report the dependencies
-        run: mise run report:deps
-      - name: report the obligations answered
-        run: mise run report:obligations
-
+  # tracker alone, so they build nothing.
+  #
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
   # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,
@@ -361,10 +318,10 @@ jobs:
   # the sweeps job. The hosted budget is this workflow's summed job time per
   # run (`--summed`): 15 minutes for its median, 20 the ceiling no night
   # passes; the table times every active workflow and reads the cache's usage.
-  lane-budget:
-    name: hold each CI lane to its budget
-    needs: ci-image-ref
-    if: ${{ !cancelled() && !failure() }}
+  reports:
+    name: report and file the night's findings
+    needs: [ci-image-ref, recovery]
+    if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
     runs-on: *linux
     permissions:
       contents: read
@@ -372,16 +329,36 @@ jobs:
       actions: read
       issues: write
     container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RECOVERY_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+      RECOVERY_REPORT: recovery.out/report.txt
+      REPORT_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
     steps:
       - *git-checkout
       - *trust-workspace
       - *install-policy-tools
       - *setup-rust
+      - name: download the recovery report
+        if: &recovered ${{ !cancelled() && needs.recovery.result != 'skipped' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recovery-report
+          path: recovery.out
+      - name: file the recovery sweep's causes
+        if: *recovered
+        run: mise run ci:recovery-file
+      - name: report the dependencies
+        if: &not-cancelled ${{ !cancelled() }}
+        run: mise run report:deps
+      - name: report the obligations answered
+        if: *not-cancelled
+        run: mise run report:obligations
       - name: compare each lane with its budget
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+        if: *not-cancelled
         run: >-
           mise run ci:lane-budget --issue "CI lane budgets"
           --budget "test enforcing targets (linux, dispatcher)=170"

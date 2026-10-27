@@ -1402,6 +1402,28 @@ description = "A restored build state dates only the sources it was built from t
 tools.jq = "1.8.1"
 run = ".config/build-state/restamp.bash"
 
+# The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
+# job that starts the CI image, restores no build state and so is a step of
+# `reports`, a `reports` step a failure before it would hide, and a step after
+# the lane budget. Each case in `.config/nightly/cases.json` gives its
+# refusals; then `.github/workflows/nightly.yml`'s own jobs, anchors expanded,
+# give none.
+["check:nightly"]
+description = "The nightly's reporting work runs as one job, each step after a failure still running and the lane budget last"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash nightly .config/nightly/cases.json --program .config/nightly/jobs.jq --mode c
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/nightly.yml | jq -r -f .config/nightly/jobs.jq | jq -r '.[] | ".github/workflows/nightly.yml: \(.)"')
+if [[ -n "$refusals" ]]; then
+  printf '%s\n' "$refusals" >&2
+  exit 1
+fi
+echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as recorded; the nightly's reporting work is one job"
+'''
+
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,
 # #2640), which `pr:open` and the pre-push tier run before a pull request
 # exists. Each case in `.config/commits/cases.json` commits its commits on a
