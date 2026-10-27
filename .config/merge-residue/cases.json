@@ -20,6 +20,16 @@
     "residue": true
   },
   {
+    "name": "#3217: the driver's annotation a formatter joined onto a list item",
+    "line": "- `vault:…` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts. // refused_by: statement_fold · collision: none (no common ancestor text)",
+    "residue": true
+  },
+  {
+    "name": "prose naming the annotation's key mid-line is no annotation",
+    "line": "the driver writes a `// refused_by:` line atop each side",
+    "residue": false
+  },
+  {
     "name": "a comment that names the word",
     "line": "// what refused_by means here",
     "residue": false
