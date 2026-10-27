@@ -407,6 +407,28 @@ fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 }
 
 #[test]
+fn an_operation_at_an_index_routes_nothing_2940()
+{
+    let source = "data N : Type {
+    Z : N;
+    S : (n : N) --> N;
+}
+data Skip : N -> Type {
+    Halt : Skip(Z);
+    oper skip(k : Skip(Z)) -> Skip(Z);
+    rule skip(k) ==> k;
+}
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_eq!(
+        rows(&module),
+        ["N Declared", "Skip Declared"],
+        "a route's port is a family at no index, so `Skip(Z)` routes nothing"
+    );
+}
+
+#[test]
 fn an_operation_calling_a_later_one_is_not_callable()
 {
     let source = "data Flag : Type {

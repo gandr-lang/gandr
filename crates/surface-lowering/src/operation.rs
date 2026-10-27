@@ -522,7 +522,9 @@ fn read_rule(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one family per port, looked up by its sort's name.
-/// - fails: [`RouteFault::PortSort`] for the first port no family sorts.
+/// - fails: [`RouteFault::PortSort`] for the first port no family sorts, or
+///   whose sort is applied to index terms: a route's port is a family at no
+///   index.
 /// - panics: none.
 ///
 /// # Errors
@@ -530,8 +532,10 @@ fn read_rule(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each port's family is found by its sort's name, so a
-///   two-output operation returns a two-component tuple.
+///   two-output operation returns a two-component tuple; a port at an indexed
+///   family's index routes nothing.
 /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
+/// - witness: `operation::tests::an_operation_at_an_index_routes_nothing_2940`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|found| found.len() == ports.len()))]
 fn families(
     ports: &[SortRef],
@@ -545,6 +549,7 @@ fn families(
                 .families
                 .get(&port.sort)
                 .copied()
+                .filter(|_| port.arguments.is_empty())
                 .ok_or_else(|| RouteFault::PortSort(port.sort.clone()))
         })
         .collect()

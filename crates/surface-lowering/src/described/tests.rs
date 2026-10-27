@@ -489,6 +489,106 @@ fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 }
 
 #[test]
+fn an_indexed_family_s_operation_answers_at_its_index_2940()
+{
+    let source = SourceText::from(
+        "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\ndata Skip : N -> Type {\n  Halt : \
+         Skip(Z);\n  oper skip(k : Skip(Z)) -> Skip(Z);\n  oper climb(c : Skip(Z)) -> \
+         Skip(S(Z));\n  rule skip(k) ==> k;\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+    let constructor = |value| match arena.value(value) {
+        Some(&gandr_core_term::Value::Constructor {
+            tag, ref fields, ..
+        }) => Some((usize::from(tag), fields.clone())),
+        Some(_) | None => None,
+    };
+    let natural = ty(entry(&types, span("Z :", "Z"), DescribedRole::Name));
+
+    let port = entry(&types, span("(k :", "k"), DescribedRole::Name);
+    let Some(ValueType::Data { ref arguments, .. }) = ty(port)
+    else {
+        panic!("a port answers at its family");
+    };
+    let [index] = **arguments
+    else {
+        panic!("the family at its one index");
+    };
+    assert_eq!(
+        constructor(index),
+        Some((0_usize, Vec::new())),
+        "the index the port writes, `Z`"
+    );
+    let written = entry(&types, span("skip(k : Skip(Z)", "Z"), DescribedRole::Term);
+    assert_eq!(ty(written), natural, "the index term at its own family");
+    let sort = entry(
+        &types,
+        span("skip(k : Skip(Z)", "Skip(Z)"),
+        DescribedRole::Type,
+    );
+    assert!(
+        matches!(ty(sort), Some(ValueType::Universe { .. })),
+        "the port's sort at its universe"
+    );
+
+    let climb = entry(&types, span("oper climb", "climb"), DescribedRole::Name);
+    let Some(ValueType::Data { ref arguments, .. }) = returned(&arena, climb.ty)
+    else {
+        panic!("the operation returns its family");
+    };
+    let [index] = **arguments
+    else {
+        panic!("the family at its one index");
+    };
+    let Some((1_usize, ref fields)) = constructor(index)
+    else {
+        panic!("the result's index is `S` applied");
+    };
+    let [field] = **fields
+    else {
+        panic!("`S` takes one field");
+    };
+    assert_eq!(constructor(field), Some((0_usize, Vec::new())), "`S(Z)`");
+    let applied = entry(&types, span("Skip(S(Z))", "S(Z)"), DescribedRole::Term);
+    assert_eq!(ty(applied), natural, "a nested index term at its family");
+
+    let operation = entry(&types, span("oper skip", "skip"), DescribedRole::Name);
+    let head = entry(&types, span("rule skip", "skip"), DescribedRole::Term);
+    assert_eq!(ty(head), ty(operation), "the rule's head at the operation");
+    // Each port mints its own index values, so a family is compared by the
+    // constructors its index values are.
+    let at_index = |entry: DescribedType| match ty(entry) {
+        Some(ValueType::Data {
+            declaration,
+            ref arguments,
+        }) => Some((
+            declaration,
+            arguments
+                .iter()
+                .map(|&argument| constructor(argument))
+                .collect::<Vec<_>>(),
+        )),
+        Some(_) | None => None,
+    };
+    let call = entry(&types, span("rule skip", "skip(k)"), DescribedRole::Term);
+    assert_eq!(
+        at_index(call),
+        at_index(port),
+        "the call at the family at its index"
+    );
+    let result = entry(&types, span("==> k", "k"), DescribedRole::Term);
+    assert_eq!(
+        at_index(result),
+        at_index(port),
+        "the rule's right side at its sort"
+    );
+}
+
+#[test]
 fn a_data_rule_answers_each_node_at_its_sort()
 {
     let source = SourceText::from(
