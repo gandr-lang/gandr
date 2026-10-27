@@ -1,7 +1,7 @@
 /// `interop-boundary` is the boundary with Rust: a gandr definition called from Rust, and a Rust function called from gandr.
 ///
-/// Implemented: a Rust caller holding a composed program calls a definition by name on values it builds and reads the answer back into its own arena; the arguments are applied in order, an answered function is left unforced, and a refused definition is unrunnable before a run.
-/// Not implemented: values crossing by Rust's default layout, `Option<&u32>` by its niche and a list in two layouts agreeing after transport; an `extern` declaration admitted against its function row when it is declared (#2901).
+/// Implemented: a Rust caller holding a composed program calls a definition by name on values it builds and reads the answer back into its own arena; the call applies the arguments in order and leaves an answered function unforced, and a refused definition never reaches a run.
+/// Not implemented: no value crosses by Rust's default layout yet, neither `Option<&u32>` by its niche nor a list in two layouts that agree after transport; and the checker admits no `extern` declaration against its function row where the declaration stands (#2901).
 ///
 /// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call below is one it makes.
 ///

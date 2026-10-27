@@ -21,7 +21,7 @@ pub def double(x : Integer) -> Integer { x + x }
 /// The first less the second: the arguments' order decides the answer.
 pub def less(x : Integer, y : Integer) -> Integer { x - y }
 
-/// The function adding `n`: a call answers it as a value, unapplied.
+/// The function that adds `n`: a call answers it as a value, unapplied.
 def adder(n : Integer) -> Integer => Integer {
   thunk { fn (x) { x + n } }
 }
