@@ -1393,6 +1393,15 @@ fi
 echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk"
 '''
 
+# A build state's sources, recorded when it is archived and restamped when it
+# is unpacked (#3206): `.config/build-state/restamp.bash` runs each case in
+# `.config/build-state/restamp.json` in a scratch repository and compares the
+# paths still dated now, those a build script watching them reads as changed.
+["check:build-state"]
+description = "A restored build state dates only the sources it was built from to before its build"
+tools.jq = "1.8.1"
+run = ".config/build-state/restamp.bash"
+
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,
 # #2640), which `pr:open` and the pre-push tier run before a pull request
 # exists. Each case in `.config/commits/cases.json` commits its commits on a

@@ -102,11 +102,15 @@ jobs:
         name: find the restored build state
         shell: bash
         run: if [[ -e "build-state-$CI_BUILD_STATE.tar.zst" ]]; then echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"; fi
+      # Each source unchanged since the state was built is dated before it,
+      # so a build script's inputs read as fresh (ci.yml's anchor, #3206).
       - &unpack-build-state
         name: unpack build state
         if: &state-found ${{ env.CI_BUILD_STATE_FOUND == 'true' }}
         shell: bash
-        run: zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+        run: |
+          zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
+          mise run --quiet ci:sources-restamp
       # The dependency cache also holds Cargo's registry; this fills it.
       - &fetch-dependencies
         name: fetch locked dependencies
