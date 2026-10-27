@@ -366,6 +366,82 @@ fn a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751()
     );
 }
 
+/// #2832: a call whose selected arm is another definition's call, stuck at a
+/// binder, `via(inj₀ 0, x)` selecting `pick(x)` with `pick` casing on `x`,
+/// runs to that call, which is itself rigid; the same call at an open
+/// selecting argument selects nothing and is rigid.
+#[test]
+fn a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832()
+{
+    // def pick = thunk λx. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+    // def via = thunk λw. λx. case w { _ => pick(x) ; _ => return ⌜Unit⌝ } ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let integer_code = arena.value_quote(integer);
+    let unit_code = arena.value_quote(unit_type);
+    let to_integer = arena.computation_return(integer_code);
+    let to_unit = arena.computation_return(unit_code);
+    let innermost = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let picked = arena.computation_case(innermost, &[to_integer, to_unit]);
+    let pick = arena.computation_lambda(picked);
+    let pick = arena.value_thunk(pick);
+    let call = |arena: &mut CoreArena, constant: usize, arguments: &[ValueId]| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let mut applied = arena.computation_force(head);
+        for &argument in arguments {
+            applied = arena.computation_application(applied, argument);
+        }
+        applied
+    };
+    // Under the arm's binder, `x` is one out and `w` two.
+    let x_in_arm = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let w = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let to_pick = call(&mut arena, 0, &[x_in_arm]);
+    let selected = arena.computation_case(w, &[to_pick, to_unit]);
+    let via = arena.computation_lambda(selected);
+    let via = arena.computation_lambda(via);
+    let via = arena.value_thunk(via);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(ConstantIndex::from(0_usize), pick);
+    definitions.define(ConstantIndex::from(1_usize), via);
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    let first = arena.value_injection(gandr_core_term::Summand::from(0_usize), zero);
+    let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let open_w = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let selecting = call(&mut arena, 1, &[first, x]);
+    let code = arena.value_returned(selecting);
+    let reached = call(&mut arena, 0, &[x]);
+    let written = arena.value_returned(reached);
+    let Maybe::Present(step) = definitions.reduce(&mut arena, code).unwrap()
+    else {
+        panic!("`via(inj₀ 0, x)` runs to the call its arm reached");
+    };
+    assert_eq!(step.unfolded(), Unfolded::Returned(code));
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, step.reduct(), written),
+        gandr_core_term::CertificateEquality::Equal,
+        "the run reads back to `pick(x)`: {:?}",
+        arena.value(step.reduct())
+    );
+    assert_eq!(
+        definitions.reduce(&mut arena, step.reduct()).unwrap(),
+        Maybe::Absent(unfolding::Absent::Rigid),
+        "the stuck call it reaches reads back to itself, so a weak head stops there"
+    );
+    assert!(
+        definitions.certify(&arena, step).is_ok(),
+        "the step is certified under its binders"
+    );
+    let unselecting = call(&mut arena, 1, &[open_w, x]);
+    let unselected = arena.value_returned(unselecting);
+    assert_eq!(
+        definitions.reduce(&mut arena, unselected).unwrap(),
+        Maybe::Absent(unfolding::Absent::Rigid),
+        "at an open selecting argument no arm is selected"
+    );
+}
+
 #[test]
 fn the_loose_reach_counts_only_binders_outside_the_root()
 {

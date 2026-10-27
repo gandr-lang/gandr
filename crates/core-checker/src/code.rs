@@ -1058,15 +1058,17 @@ impl CodeDefinitions
     ///   `return v`, with `v` either no returned code or a returned call of a
     ///   binder, one whose head, through applications, binds and ascriptions,
     ///   forces a variable, the step unfolding the returned code at `code` to
-    ///   `v`. [`unfolding::Absent::Rigid`] for any other node, for a run that
-    ///   waits on a binder in any other way before it returns a code — it reads
-    ///   back as a returned code — and for a run that reads back stuck; a run
-    ///   that is itself a call of a binder is stuck before its first step and
-    ///   is rigid without being run.
+    ///   `v`. A run that reads back to any other returned code waits on a
+    ///   binder, and is what [`Self::arm_call`] makes of it: the step to the
+    ///   call of another definition its head definition's selected arm makes,
+    ///   or [`unfolding::Absent::Rigid`]. Rigid too for any other node and for
+    ///   a run that reads back stuck; a run that is itself a call of a binder
+    ///   is stuck before its first step and is rigid without being run.
     /// - provides: the reduct of `El` as unquote: a function to a universe
     ///   returns a quote, and the type at the code position is the quoted one,
-    ///   open or closed; a definition that unfolds to a call of a binder
-    ///   reduces to that call, which then converts with the call written out.
+    ///   open or closed; a definition that unfolds to a call of a binder, or to
+    ///   another definition's stuck call, reduces to that call, which then
+    ///   converts with the call written out.
     /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
     ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
     ///   for a node `core` does not hold.
@@ -1087,10 +1089,12 @@ impl CodeDefinitions
     ///   source wrote, and an open decode forged to another quote is refused; a
     ///   call of a binder, bare and bound first, is rigid with no node minted;
     ///   a call of a definition that applies a binder steps to that
-    ///   application.
+    ///   application; a call whose arm reaches another definition's call stuck
+    ///   on a binder steps to it.
     /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
     /// - witness: `code::tests::a_call_of_a_binder_is_rigid_without_running_1369`
     /// - witness: `code::tests::a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751`
+    /// - witness: `code::tests::a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832`
     /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
@@ -1132,12 +1136,15 @@ impl CodeDefinitions
             body = core.computation_lambda(body);
         }
         let claim = core.value_thunk(body);
-        match self.read_back(core, claim, Recursion::Refolded) {
-            Ok(Readback::Returned { returned, .. }) => {
+        let definitions = self.reading(Recursion::Refolded);
+        let readback = Self::read_back(core, claim, definitions)
+            .map_err(|_undecided| CheckRefusal::Undecided { at: code })?;
+        match readback {
+            Readback::Returned { returned, .. } => {
                 if let Some(&Value::Returned(stuck)) = core.value(returned)
                     && !calls_a_binder(core, stuck)
                 {
-                    return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+                    return self.arm_call(core, code, run, reach);
                 }
                 Ok(Maybe::Present(Reduction {
                     unfolded: Unfolded::Returned(code),
@@ -1145,10 +1152,116 @@ impl CodeDefinitions
                     reduct: returned,
                 }))
             },
-            Ok(Readback::Stuck(_) | Readback::Unsuspended) => {
+            Readback::Stuck(_) | Readback::Unsuspended => {
                 Ok(Maybe::Absent(unfolding::Absent::Rigid))
             },
-            Err(_undecided) => Err(CheckRefusal::Undecided { at: code }),
+        }
+    }
+
+    /// The call of another definition the arm `code`'s head definition
+    /// selects makes, when the run `run` of `code` waits on a binder only
+    /// there: `viaZero(Zero, h)` selecting `emp(h)`, `emp` casing on `h`.
+    ///
+    /// # Specification
+    /// - requires: `code` is `returned(run)`, standing under `reach` binders,
+    ///   and its run reads back, every definition unfolded, to a returned code
+    ///   that is no call of a binder.
+    /// - ensures: for a `run` that applies a defined constant `f` to arguments,
+    ///   the run of `f`'s body at those arguments read back with every constant
+    ///   held rigid, the binders read as rigid variables: when that is `return
+    ///   v` with `v` a returned call of a constant other than `code`, the step
+    ///   unfolding `code` to `v`. [`unfolding::Absent::Rigid`] otherwise: a run
+    ///   of any other head, a body that waits on a binder before it selects an
+    ///   arm, and an arm that makes no call.
+    /// - provides: the step a call takes to the call its arm reached, which
+    ///   then converts with the call written out, or steps again.
+    /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
+    ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
+    ///   for a node `core` does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call whose arm reaches another definition's call
+    ///   stuck on a binder steps to it, and the call it reaches, casing at once
+    ///   on its binder, is rigid; one stuck on its own selecting argument is
+    ///   rigid.
+    /// - witness: `code::tests::a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
+            && step.redex() == code
+            && core.value(step.reduct()).is_some(),
+        | Ok(Maybe::Absent(_)) => true,
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: code }
+            || matches!(refusal, CheckRefusal::DanglingNode { .. }),
+    })]
+    fn arm_call(
+        &self,
+        core: &mut CoreArena,
+        code: ValueId,
+        run: ComputationId,
+        reach: BinderDepth,
+    ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
+    {
+        let rigid = Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        let calls_a_constant = |core: &CoreArena, run: ComputationId| {
+            let mut head = run;
+            while let Some(&Computation::Application(applied, _)) = core.computation(head) {
+                head = applied;
+            }
+            match core.computation(head) {
+                Some(&Computation::Force(forced)) => match core.value(forced) {
+                    Some(&Value::Constant(constant)) => Some(constant),
+                    _ => None,
+                },
+                _ => None,
+            }
+        };
+        let Some(constant) = calls_a_constant(core, run)
+        else {
+            return rigid;
+        };
+        let Maybe::Present(body) = self.body(constant)
+        else {
+            return rigid;
+        };
+        let mut arguments = Vec::new();
+        let mut head = run;
+        while let Some(&Computation::Application(applied, argument)) = core.computation(head) {
+            arguments.push(argument);
+            head = applied;
+        }
+        let mut unfolded = core.computation_force(body);
+        for &argument in arguments.iter().rev() {
+            unfolded = core.computation_application(unfolded, argument);
+        }
+        let opened = core.value_returned(unfolded);
+        let mut claimed = core.computation_return(opened);
+        for _binder in 0 .. usize::from(reach) {
+            claimed = core.computation_lambda(claimed);
+        }
+        let claim = core.value_thunk(claimed);
+        let held = self.reading(Recursion::Refolded).rigid();
+        let Readback::Returned { returned, .. } = Self::read_back(core, claim, held)
+            .map_err(|_undecided| CheckRefusal::Undecided { at: code })?
+        else {
+            return rigid;
+        };
+        match core.value(returned) {
+            Some(&Value::Returned(reached))
+                if calls_a_constant(core, reached).is_some()
+                    && equal_certificate_syntax(core, returned, code)
+                        != CertificateEquality::Equal =>
+            {
+                Ok(Maybe::Present(Reduction {
+                    unfolded: Unfolded::Returned(code),
+                    redex: code,
+                    reduct: returned,
+                }))
+            },
+            _ => rigid,
         }
     }
 
@@ -1659,7 +1772,7 @@ impl CodeDefinitions
     ) -> Result<Maybe<Evaluation, evaluated::Absent>, CheckRefusal>
     {
         let Readback::Returned { normal, returned } =
-            self.read_back(core, claim, Recursion::Unrolled)?
+            Self::read_back(core, claim, self.reading(Recursion::Unrolled))?
         else {
             return Ok(Maybe::Absent(evaluated::Absent::Stuck));
         };
@@ -1709,7 +1822,7 @@ impl CodeDefinitions
         claim: ValueId,
     ) -> Result<Reading, CheckRefusal>
     {
-        match self.read_back(core, claim, Recursion::Unrolled)? {
+        match Self::read_back(core, claim, self.reading(Recursion::Unrolled))? {
             Readback::Returned { normal, returned } => {
                 let decisions = self.claim_trace(core, claim, normal)?;
                 Ok(Reading::Returned(Evaluation {
@@ -1726,9 +1839,23 @@ impl CodeDefinitions
         }
     }
 
-    /// Read the closed claim `claim` back, round by round, until its body
-    /// returns or a round changes nothing, naming a definition's own recursion
-    /// in `recursion`.
+    /// The definitions a claim is read back under: every one this table holds
+    /// unfolding, a definition's own recursion named as `recursion` says.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reading(
+        &self,
+        recursion: Recursion,
+    ) -> Definitions<'_>
+    {
+        Definitions::new(&self.lowered, &self.environment, self.environment.root())
+            .reading_recursion(recursion)
+    }
+
+    /// Read the closed claim `claim` back under `definitions`, round by round,
+    /// until its body returns or a round changes nothing.
     ///
     /// # Specification
     /// - requires: as [`Self::evaluate_claim`].
@@ -1760,16 +1887,12 @@ impl CodeDefinitions
         | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
     })]
     fn read_back(
-        &self,
         core: &mut CoreArena,
         claim: ValueId,
-        recursion: Recursion,
+        definitions: Definitions<'_>,
     ) -> Result<Readback, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: claim };
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root())
-                .reading_recursion(recursion);
         let fuel = Fuel::from(CODE_FUEL);
         let mut current = claim;
         let mut rounds = 0_u32;

@@ -1,0 +1,55 @@
+// A definition whose selected arm is another definition's call, stuck at a
+// variable: `viaZero(Zero, h)` selects `emp(h)`, which cases on `h` and so
+// runs no further. The call converts with the call its arm reached, at any
+// depth of such arms, and the kernel replays each step (#2832). A family
+// computed by recursion on its index is unfolded only as far as the index's
+// constructors take it (Dybjer, _Inductive families_, Formal Aspects of
+// Computing 6, 1994, doi:10.1007/BF01211308).
+
+// The naturals that select the arm.
+import "./data-base.gandr";
+
+/// A heap: empty, or a cell at a location over the rest.
+pub data Heap : Type {
+  Emp : Heap;
+  Cell : (l : Nat, rest : Heap) --> Heap;
+}
+
+/// The heap is empty: inhabited at `Emp` alone.
+pub def emp(h : Heap) -> Type {
+  case h {
+    Emp => return Unit,
+    Cell(_l, _r) => return Void
+  }
+}
+
+/// At zero, the heap is empty; at a successor, never.
+pub def viaZero(w : Nat, h : Heap) -> Type {
+  case w {
+    Zero => emp(h),
+    Succ(_n) => return Void
+  }
+}
+
+/// One arm more: at zero, `viaZero` at the same natural.
+pub def viaZeroAgain(w : Nat, h : Heap) -> Type {
+  case w {
+    Zero => viaZero(w, h),
+    Succ(_n) => return Void
+  }
+}
+
+/// `viaZero(Zero, h)` is `emp(h)`, the call its arm reached.
+def atZero(h : Heap) -> (viaZero(Zero, h)) => emp(h) {
+  return fn (e) { e }
+}
+
+/// Two arms down, the call the last one reached.
+def twiceAtZero(h : Heap) -> (viaZeroAgain(Zero, h)) => emp(h) {
+  return fn (e) { e }
+}
+
+/// One arm down, the call that arm reached, itself an arm away from `emp(h)`.
+def onceAtZero(h : Heap) -> (viaZeroAgain(Zero, h)) => viaZero(Zero, h) {
+  return fn (e) { e }
+}
