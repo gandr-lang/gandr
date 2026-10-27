@@ -1,6 +1,6 @@
 /// `string-model`: A string written in the language.
 /// Implemented: a string written in the language: inline bytes or a counted buffer, UTF-8 code points, a C reading's trailing zero, copy-on-write, the in-place write a one-holder string licenses, and lent views.
-/// Not implemented: replacing the builtin `String` with it; #628 owes it.
+/// Not implemented: replacing the builtin `String` with it; #2971 owes it.
 // The strings subject's shared declarations, imported by every source that
 // reads them (`import "../../model/strings/string-base.gandr" ;`): where a string's bytes live,
 // and the byte lists every claim reads and builds. A string is a value: a copy
