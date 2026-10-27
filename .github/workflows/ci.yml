@@ -1100,7 +1100,8 @@ jobs:
   # the lanes' results and nothing else: no container, no checkout, nothing
   # between the slowest shard and the verdict but a runner pickup (#2148).
   # The recovery lane runs only when the change reaches the records, so its
-  # skip passes exactly when the run read no `parser` change.
+  # skip passes exactly when the run read no `parser` change. The prose lane
+  # is required here, in the queue, beside the tests (#3082).
   cargo-test:
     name: test the workspace (linux)
     needs:
@@ -1111,6 +1112,7 @@ jobs:
         cargo-test-docs,
         cargo-test-doctests,
         cargo-test-enforcing-shard,
+        prose-gate,
       ]
     if: ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
@@ -1122,9 +1124,10 @@ jobs:
       DOCS_RESULT: ${{ needs.cargo-test-docs.result }}
       DOCTESTS_RESULT: ${{ needs.cargo-test-doctests.result }}
       SHARDS_RESULT: ${{ needs.cargo-test-enforcing-shard.result }}
+      PROSE_RESULT: ${{ needs.prose-gate.result }}
     steps:
-      - name: require both test flavors, the recovery sweep, the documentation and its examples
-        run: test "$PLAIN_RESULT:$RECOVERY_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT" = success:success:success:success:success
+      - name: require both test flavors, the recovery sweep, the documentation and its examples, and the prose
+        run: test "$PLAIN_RESULT:$RECOVERY_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT:$PROSE_RESULT" = success:success:success:success:success:success
 
   # Skipped on a pull request, in the queue and on a push, which a skipped
   # job satisfies; in the daily run a failed macOS lane fails it there.
@@ -2003,6 +2006,52 @@ jobs:
               git log -1 --format=%B "$commit" | env COMMITLINT_COMMIT="$commit" mise exec -- commitlint
             fi
           done
+
+  # The prose check (#2919) is a merge-group gate (#3082): `main` took
+  # unledgered findings from pull requests gated before the check landed, so
+  # what `main` can fail is checked where `main` is decided. `cargo-test`
+  # requires it in the queue; a pull request reads it as information, and a
+  # push to main checks the landing and saves the tools. The check's own
+  # task pins Python, uv and spaCy with its model; their installs are cached
+  # by those pins and saved on main, where every ref can read them. The
+  # sentence parse is the spaCy venv's Python, so the lane builds only the
+  # `prose` binary.
+  prose-gate:
+    name: check the prose against its ledger
+    needs: *rust-needs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 15
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: locate the prose tools
+        id: prose-tools
+        shell: bash
+        run: |
+          printf 'installs=%s/installs\n' "${MISE_DATA_DIR:-$HOME/.local/share/mise}" >> "$GITHUB_OUTPUT"
+          printf 'pins=%s\n' "$(sed -n '/^\["check:prose"\]/,/^usage/p' .config/mise/tasks/mise-tasks-check.toml | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: restore the prose tools
+        id: prose-tools-restore
+        uses: *cache-restore
+        with:
+          path: &prose-tools |
+            ${{ steps.prose-tools.outputs.installs }}/python
+            ${{ steps.prose-tools.outputs.installs }}/github-astral-sh-uv
+            ${{ steps.prose-tools.outputs.installs }}/pipx-spacy
+          key: prose-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}
+      - name: check the prose against its ledger
+        run: mise run check:prose
+      - name: save the prose tools
+        if: ${{ !cancelled() && env.ACT != 'true' && github.event_name == 'push' && steps.prose-tools-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *prose-tools
+          key: ${{ steps.prose-tools-restore.outputs.cache-primary-key }}
 
   # Light lane: pull requests, the merge group, dispatch and a push no merge
   # group built. The changes filter keeps a Rust-only diff off this job. The

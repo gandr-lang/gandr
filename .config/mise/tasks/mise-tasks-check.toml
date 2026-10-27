@@ -1709,8 +1709,8 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # (crates/workflow-prose/README.md). spaCy parses under the venv these
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
 # finding refuses, a fixed one leaves a stale line, and `--write` rewrites
-# it. The local gate alone runs it: the interpreter is this task's tool, so
-# no CI image carries Python.
+# it. The merge group runs it too (`ci.yml`'s `prose-gate`, #3082): the
+# interpreter is this task's tool, installed there by the same pins.
 ["check:prose"]
 description = "The parsed sentence rules, against the prose ledger"
 tools.python = "3.14.9"
