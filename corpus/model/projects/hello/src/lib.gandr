@@ -5,6 +5,8 @@
 import text.greet (greeting);
 // The workspace above the package, whose model states its version.
 import "../../workspace.gandr";
+// The manifest theories, from `std.package` by its path (#533 p3).
+import "../../../../../library/std/src/package.gandr";
 
 /// The package: its name and its version, as `gandr.toml` records them.
 pub module Package : Model(Gandr.Package) {

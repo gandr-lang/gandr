@@ -1191,9 +1191,18 @@ fn a_malformed_invocation_exits_two()
     }
 }
 
-/// A package's library declaring its model, `name` and `version`.
+/// A package's library declaring its model, `name` and `version`, after
+/// [`STD_PACKAGE`].
 const LIBRARY: &str = "/// The package.\npub module Package : Model(Gandr.Package) {\n  def name = \
                        \"hello\";\n  def version = \"0.1.0\";\n}\n";
+
+/// The import of the manifest theories, `std.package`, by the absolute path
+/// to its source in the tree (#2767).
+const STD_PACKAGE: &str = concat!(
+    "import \"",
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../library/std/src/package.gandr\";\n"
+);
 
 /// #2687: `check`, `test` and `fmt` run with no path work on the package the
 /// working directory sits in, whole, from any directory in it; outside every
@@ -1202,7 +1211,10 @@ const LIBRARY: &str = "/// The package.\npub module Package : Model(Gandr.Packag
 fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
 {
     let scratch = Scratch::new(Path::new("no-path"));
-    let _library = scratch.file(Path::new("hello/src/lib.gandr"), Text::from(LIBRARY));
+    let _library = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
+    );
     let _leaf = scratch.file(
         Path::new("hello/src/text/greet.gandr"),
         Text::from("/// A greeting.\ndef greeting = \"hello, world\" ;\n"),
@@ -1252,7 +1264,10 @@ fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
 fn a_package_s_manifest_is_written_and_drift_refused_2687()
 {
     let scratch = Scratch::new(Path::new("manifest"));
-    let library = scratch.file(Path::new("hello/src/lib.gandr"), Text::from(LIBRARY));
+    let library = scratch.file(
+        Path::new("hello/src/lib.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
+    );
     let leaf = scratch.file(
         Path::new("hello/src/text/greet.gandr"),
         Text::from("def greeting = \"hello, world\" ;\n"),
@@ -1288,7 +1303,11 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     let again = checked();
     assert_eq!(code(&again), Code(0_i32));
     assert!(reconciled(&again).is_some_and(|line| line.ends_with(": unchanged")));
-    std::fs::write(&library, LIBRARY.replace("0.1.0", "0.2.0")).expect("the model changes");
+    std::fs::write(
+        &library,
+        format!("{STD_PACKAGE}{}", LIBRARY.replace("0.1.0", "0.2.0")),
+    )
+    .expect("the model changes");
     let rewritten = checked();
     assert_eq!(code(&rewritten), Code(0_i32));
     assert!(reconciled(&rewritten).is_some_and(|line| line.ends_with(": rewritten")));
@@ -1311,7 +1330,9 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     std::fs::remove_file(&manifest).expect("the manifest is removed");
     std::fs::write(
         &library,
-        "pub module Package : Model(Gandr.Package) {\n  def name = \"hello\";\n}\n",
+        format!(
+            "{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name = \"hello\";\n}}\n"
+        ),
     )
     .expect("the model loses its version");
     let unstated = checked();
@@ -1338,8 +1359,8 @@ fn a_workspace_checks_each_member_it_names_2687()
     let scratch = Scratch::new(Path::new("workspace"));
     let stated = |members: &str| {
         format!(
-            "pub module Workspace : Model(Gandr.Workspace) {{\n  def version = \"0.2.0\";\n}}\n\
-             pub def members : List(String) = {members};\n"
+            "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) {{\n  def version = \
+             \"0.2.0\";\n}}\npub def members : List(String) = {members};\n"
         )
     };
     let workspace = scratch.file(
@@ -1354,7 +1375,7 @@ fn a_workspace_checks_each_member_it_names_2687()
             Path::new(library),
             Text::from(
                 format!(
-                    "import \"{up}/workspace.gandr\";\npub module Package : \
+                    "{STD_PACKAGE}import \"{up}/workspace.gandr\";\npub module Package : \
                      Model(Gandr.Package) {{\n  def name = \"{name}\";\n  def version = \
                      Workspace.version;\n}}\n"
                 )

@@ -1,0 +1,49 @@
+// `std.package`: the theories a project's manifest is read from. A package's
+// `lib.gandr` declares `module Package : Model(Gandr.Package)`, a workspace's
+// `workspace.gandr` a `Model(Gandr.Workspace)`, and `gandr check` writes each
+// package's `gandr.toml` from its model (#533). No theory here states a law: an
+// operation of each is a field the manifest records, and no conversion relates
+// two of them.
+
+/// What a package and a workspace both state: the version they release at.
+/// `Gandr.Package` and `Gandr.Workspace` include it, so a member reads its
+/// version from its workspace's model.
+pub theory Versioned {
+  /// The version, as a package's manifest records it.
+  oper version : String;
+}
+
+/// A package: the project a `lib.gandr` roots, described by the model its
+/// `module Package : Model(Gandr.Package)` is, from which the checker writes
+/// the project's `gandr.toml`.
+pub theory Gandr.Package {
+  include Versioned;
+  /// The package's name, which the manifest records it by.
+  oper name : String;
+}
+
+/// A workspace: the packages a `workspace.gandr` gathers, described by the
+/// model its `module Workspace : Model(Gandr.Workspace)` is, beside the
+/// `members` it names. Its members' libraries import it and read what it
+/// states.
+pub theory Gandr.Workspace {
+  include Versioned;
+}
+
+/// A module of a package: a source below its library, named by its path from
+/// the package's root, `text.greet` of `text/greet.gandr`. The manifest lists
+/// each in `modules`; no source declares a model of it yet.
+pub theory Gandr.Module {
+  /// The module's path, its segments joined by `.`.
+  oper path : String;
+}
+
+/// A package another depends on, by its name and the local path its root
+/// stands at, relative to the dependent's. No source declares a model of it
+/// until dependencies resolve (#533 p3).
+pub theory Gandr.Dependency {
+  /// The name the dependency's manifest records.
+  oper name : String;
+  /// The path from the dependent's root to the dependency's.
+  oper path : String;
+}

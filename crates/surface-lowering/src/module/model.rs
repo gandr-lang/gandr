@@ -400,10 +400,10 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a theory a dotted name declares, read through the
-    ///   source's own module and through the prelude's; a private theory read
-    ///   through another source's module.
+    ///   source's own module and through the standard library's, imported; a
+    ///   private theory read through another source's module.
     /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
-    /// - witness: `tests::namespace::the_prelude_s_package_theory_is_read_by_its_path_2687`
+    /// - witness: `tests::namespace::the_standard_package_theory_is_read_by_its_path_2767`
     /// - witness: `tests::namespace::a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
     pub(crate) fn presented_theory_in(

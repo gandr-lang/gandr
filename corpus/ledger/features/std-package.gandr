@@ -1,0 +1,18 @@
+/// `std-package`: The standard library's manifest theories.
+/// Implemented: `std.package`, `library/std/src/package.gandr`, states `Versioned`, `Gandr.Package` and `Gandr.Workspace`, which a library's and a workspace's models are read from, and `Gandr.Module` and `Gandr.Dependency`, which no source models yet; a source imports it by the relative path to its source, from under any root.
+/// Not implemented: importing `std.package` by name, and a model of `Gandr.Dependency` resolved to a local package; #533 owes them.
+
+// The manifest theories, from `std.package` by its path.
+import "../../../library/std/src/package.gandr";
+
+/// A package's model, its `name` and its `version`.
+pub module Package : Model(Gandr.Package) {
+  /// The package's name, which the manifest records it by.
+  def name = "probe";
+  /// The version the package releases at.
+  def version = "0.1.0";
+}
+
+/// The version the model states, read by its path.
+@[ runs("\"0.1.0\"") ]
+def released = Package.version;

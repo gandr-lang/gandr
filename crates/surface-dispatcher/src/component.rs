@@ -1234,21 +1234,25 @@ impl Graph
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the graph names `target` as [`named_path`] names it. The
-    ///   position of the source at that path, appended when new: read as
-    ///   `shadows` holds it when it holds it, else from the file there as
-    ///   [`locate`] and [`Graph::fetch`] read it; [`Edge::Unresolved`] when
-    ///   neither `shadows` nor a readable file holds it, or it is classified
-    ///   under a root other than `root`.
+    ///   position of the source at that path, appended when new, under the root
+    ///   it is classified under: read as `shadows` holds it when it holds it,
+    ///   else from the file there as [`locate`] and [`Graph::fetch`] read it;
+    ///   [`Edge::Unresolved`] when neither `shadows` nor a readable file holds
+    ///   it, or it is classified under a root other than `root` and other than
+    ///   [`SourceRoot::Strict`].
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sibling, a second import of it, a missing path, and
-    ///   a sibling an editor holds, on disk and not yet written.
+    /// - hypothesis: L3 — a sibling, a second import of it, a missing path, a
+    ///   sibling an editor holds, on disk and not yet written, a strict source
+    ///   a fixture's source imports, and a fixture's source a strict one
+    ///   imports.
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::a_component_lays_each_source_once`
     /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
     /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
+    /// - witness: `component::tests::a_fixture_imports_a_strict_source_and_not_the_reverse_2767`
     #[spec(ensures: |ret| match ret {
         Edge::To(position) => position.0 < self.read.len(),
         Edge::Unresolved => true,
@@ -1260,10 +1264,20 @@ impl Graph
         shadows: &dyn Shadows,
     ) -> Edge
     {
+        // A source imports one under its own root, or one under the strict
+        // root, which holds every declaration to checking and owing nothing
+        // whatever imports it: a fixture reads the standard library as a
+        // package does. The imported source keeps its own root, so its
+        // declarations settle as strictly as they would alone.
+        let reachable = |found: SourceRoot| found == root || found == SourceRoot::Strict;
         let Located { named, disk } = locate(target, shadows);
         let _named = self.named.insert(named.clone());
         if let Some(&known) = self.index.get(&named) {
-            return if self.read.get(known.0).is_some_and(|read| read.root == root) {
+            return if self
+                .read
+                .get(known.0)
+                .is_some_and(|read| reachable(read.root))
+            {
                 Edge::To(known)
             }
             else {
@@ -1283,8 +1297,8 @@ impl Graph
                 OnDisk::Missing => return Edge::Unresolved,
             }
         };
-        if found == root {
-            Edge::To(self.admit(named, root, text))
+        if reachable(found) {
+            Edge::To(self.admit(named, found, text))
         }
         else {
             Edge::Unresolved
@@ -2776,6 +2790,89 @@ mod tests
                 "{reading:?}: a sibling set apart is unresolved, the importer laid out alone"
             );
         }
+    }
+
+    /// #2767: a fixture's source imports one under the strict root, as a
+    /// corpus project reads the standard library, and the strict source keeps
+    /// its root; a strict source importing a fixture's leaves it unresolved.
+    #[test]
+    fn a_fixture_imports_a_strict_source_and_not_the_reverse_2767()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let tree = Scratch::new(Path::new("roots"), &[]);
+        let library = SourceText::from("def three : Integer ;\ndef three = 3 ;");
+        let importer = SourceText::from(
+            "import \"../library/three.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;",
+        );
+        let back = SourceText::from(
+            "import \"../fixture/sibling.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;",
+        );
+        for (directory, file, text) in [
+            ("fixture", "importer.gandr", importer),
+            ("fixture", "sibling.gandr", library),
+            ("library", "three.gandr", library),
+            ("library", "back.gandr", back),
+        ] {
+            let directory = tree.0.join(directory);
+            std::fs::create_dir_all(&directory).expect("the root's directory is created");
+            std::fs::write(directory.join(file), <&str>::from(text))
+                .expect("the scratch source is written");
+        }
+        let importing = tree.0.join("fixture/importer.gandr");
+        let laid = lay_out(&grammar, &importing, SourceRoot::Fixture, importer);
+        assert_eq!(
+            (
+                laid.text,
+                laid.unit
+                    .target(SourceIndex::from(2_usize), PathImportOrdinal::from(0_usize))
+            ),
+            (
+                format!(
+                    "{}\n{}\n{}",
+                    prelude::TEXT,
+                    <&str>::from(library),
+                    <&str>::from(importer)
+                ),
+                ImportTarget::Source(SourceIndex::from(1_usize))
+            ),
+            "the strict source is laid out before the fixture's importer"
+        );
+        let grouped = group(
+            &grammar,
+            Vec::from([Given {
+                path: importing,
+                root: SourceRoot::Fixture,
+                text: String::from(<&str>::from(importer)),
+            }]),
+            Reading::Whole,
+            &BTreeSet::new(),
+        );
+        let [ref component] = *grouped.components.as_slice()
+        else {
+            panic!("one component: {:?}", grouped.components);
+        };
+        assert_eq!(
+            component
+                .sources
+                .iter()
+                .map(|source| source.root)
+                .collect::<Vec<_>>(),
+            [SourceRoot::Strict, SourceRoot::Fixture],
+            "each source keeps the root it sits under"
+        );
+        let reverse = lay_out(
+            &grammar,
+            &tree.0.join("library/back.gandr"),
+            SourceRoot::Strict,
+            back,
+        );
+        assert_eq!(
+            reverse
+                .unit
+                .target(SourceIndex::from(1_usize), PathImportOrdinal::from(0_usize)),
+            ImportTarget::Unresolved,
+            "a strict source reaches no fixture's source"
+        );
     }
 
     /// #844: a closure names every path its imports name, though only the
