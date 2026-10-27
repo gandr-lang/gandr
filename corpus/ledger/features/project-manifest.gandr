@@ -6,11 +6,10 @@
 import "../../../library/std/src/package.gandr";
 
 /// The model a library declares: what `gandr check` records in `gandr.toml`.
+/// Its fields are inert: only the manifest step reads them (#3029).
 pub module Package : Model(Gandr.Package) {
+  /// The name the manifest records.
+  @[ runs("\"hello\"") ]
   def name = "hello";
   def version = "0.1.0";
 }
-
-/// The name the manifest records, read by its path.
-@[ runs("\"hello\"") ]
-def recorded = Package.name;

@@ -49,13 +49,13 @@ use gandr_theory_graphs::WalkChainLength;
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
 /// the manifest tail a row entry takes, `-F [st : State with sort S = Integer]
 /// A`.
-const BUILT_IN_FINGERPRINT: u64 = 0x26e3_af07_9188_f3d9;
+const BUILT_IN_FINGERPRINT: u64 = 0x4fee_4289_4f9d_e266;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3243);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3255);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
@@ -73,13 +73,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 4),
     ("&&", 1),
     ("'", 2),
-    ("(", 218),
-    (")", 222),
+    ("(", 220),
+    (")", 224),
     ("*", 2),
     ("+", 7),
     ("++", 1),
     ("+U", 1),
-    (",", 241),
+    (",", 243),
     ("-", 4),
     ("-->", 27),
     ("->", 14),
@@ -96,7 +96,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 29),
     ("<>", 1),
-    ("=", 142),
+    ("=", 144),
     ("==", 1),
     ("==>", 29),
     ("=>", 23),
@@ -105,7 +105,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (">=", 1),
     (">>", 1),
     ("?", 4),
-    ("@[", 6),
+    ("@[", 7),
     ("Any", 1),
     ("Boolean", 1),
     ("Buf", 1),
@@ -123,7 +123,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Void", 1),
     ("[", 46),
     ("\\", 1),
-    ("]", 52),
+    ("]", 53),
     ("_", 44),
     ("abort", 1),
     ("access", 1),
@@ -173,7 +173,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 445),
+    ("identifier", 447),
     ("if", 2),
     ("import", 1),
     ("in", 2),

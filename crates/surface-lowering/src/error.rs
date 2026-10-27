@@ -1078,6 +1078,20 @@ pub enum LoweringRefusal<'source>
         reached: SurfaceName<'source>,
     },
 
+    /// A declaration reading a model's inert component, a field its theory's
+    /// operation marks `@[ inert ]`, when it is no inert component itself:
+    /// only the manifest step reads an inert field, so no other content
+    /// depends on it.
+    InertRead
+    {
+        /// The bytes the read covers.
+        span: ByteSpan,
+        /// The declaration the read is written in.
+        member: SurfaceName<'source>,
+        /// The inert component it reads.
+        reached: SurfaceName<'source>,
+    },
+
     /// A module that exports no member of this name: a path selecting a
     /// member the module hid or never declared, or a signature component no
     /// member supplies.
@@ -1948,6 +1962,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the type `{member}` depends on the value `{reached}`; a type is static and \
                  depends only on static members, never on a module's or a parameter's values"
             ),
+            Self::InertRead { member, reached, .. } => write!(
+                f,
+                "`{member}` reads `{reached}`, a field its theory marks inert; only the \
+                 manifest step and another inert field read an inert field"
+            ),
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
@@ -2385,6 +2404,7 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
+            | Self::InertRead { span, .. }
             | Self::UnknownMember { span, .. }
             | Self::UnprovenLaw { span, .. }
             | Self::PartialField { span, .. }
@@ -2501,7 +2521,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 72_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 73_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2600,6 +2620,11 @@ mod tests
                 span: s(83_usize, 84_usize),
                 member: SurfaceName::from("Q"),
                 reached: SurfaceName::from("n"),
+            },
+            LoweringRefusal::InertRead {
+                span: s(90_usize, 94_usize),
+                member: SurfaceName::from("named"),
+                reached: SurfaceName::from("name"),
             },
             LoweringRefusal::UnknownMember {
                 span: s(34_usize, 35_usize),
@@ -2857,6 +2882,7 @@ mod tests
             s(30_usize, 31_usize),
             s(32_usize, 33_usize),
             s(83_usize, 84_usize),
+            s(90_usize, 94_usize),
             s(34_usize, 35_usize),
             s(36_usize, 37_usize),
             s(38_usize, 39_usize),

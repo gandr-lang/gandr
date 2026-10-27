@@ -1,0 +1,55 @@
+// A theory's operation marked `@[ inert ]`, a field only the manifest step and
+// another inert field read.
+//
+// A package's name and version say what it is called, not what it is. An edit
+// to an inert field must move no other declaration's content.
+//
+// A model's component for an inert operation is inert, and an `include`
+// carries the mark. A model's inert component may read another model's.
+//
+// - see: #3029 — the mark and the refusal of a read
+// - see: `pathological/modules/inert-field.gandr` — the reads refused
+
+/// What a release states: its version, a field no content reads.
+theory Released {
+  /// The version.
+  @[ inert ]
+  oper version : String;
+}
+
+/// A named release: its name inert as its version is, and a greeting that is
+/// content.
+theory Named {
+  /// The release's version, inert here as there.
+  include Released;
+  /// The name.
+  @[ inert ]
+  oper name : String;
+  /// The greeting.
+  oper greeting : String;
+}
+
+/// The release a family of packages shares.
+module Family : Model(Released) {
+  /// The family's version.
+  @[ runs("\"0.1.0\"") ]
+  def version = "0.1.0";
+}
+
+/// One package of the family: its version read from the family's, inert from
+/// inert, and its greeting content.
+module Hello : Model(Named) {
+  /// The version, the family's.
+  @[ runs("\"0.1.0\"") ]
+  def version = Family.version;
+  /// The name.
+  @[ runs("\"hello\"") ]
+  def name = "hello";
+  /// The greeting.
+  @[ runs("\"hello, world\"") ]
+  def greeting = "hello, world";
+}
+
+/// The greeting, read by its path: content reads content.
+@[ runs("\"hello, world\"") ]
+def welcome = Hello.greeting;
