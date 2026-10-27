@@ -9,8 +9,8 @@
 // `native-primitives` row. So `niched(optRef)` does not convert to `true`, and
 // the chosen predicate does not unfold.
 //
-// - see: #2901 — not implemented: the check-time refusal of an extern
-//   declaration
+// - see: `ledger/diagnostics/BoundaryUnrealised.Niche.gandr` — an extern block
+//   refused at check time by the clause it fails
 // - see: `model/interop/boundary/function-row.gandr` — `optRefNiched`, the run
 //   to the niche
 
