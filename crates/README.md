@@ -20,11 +20,9 @@ workflow  repository tooling and gates
 
 ## Map
 
-An arrow is one category's dependencies on another. Its label counts the `[dependencies]` edges between their crates. Dev and build dependencies are not counted. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot), one node per crate, clustered by category. `mise run ledger:crate-map` generates both from `cargo metadata`. `mise run check:crate-map` fails while either is stale, while a crate lies outside the layering's categories, or while an edge points to a category listed after its own. A change that adds a crate or an edge between two crates regenerates the map in the same commit, so its diff shows the new edge.
+An arrow is one category's dependencies on another. Its label counts the `[dependencies]` edges between their crates. Dev and build dependencies are not counted. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot), one node per crate, clustered by category, each concern a dashed overlay through its crates.
 
-A concern is an interface that cuts across crates. [`ledger/concerns.sql`](../ledger/concerns.sql) records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. The per-crate map draws each concern as a dashed overlay through its crates. The check fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
-
-[`ledger/README.md` § Files](../ledger/README.md#files) states what each library's public items are for (`purposes.sql`) and which sources its documentation cites (`references.sql`).
+[`ledger/README.md` § Files](../ledger/README.md#files) states how both maps are generated and checked, the interfaces that cut across crates (`concerns.sql`), what each library's public items are for (`purposes.sql`) and which sources its documentation cites (`references.sql`).
 
 <!-- crate-map:begin -->
 ```mermaid
@@ -130,6 +128,15 @@ crates/
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins, and the `check:dylint` task states which of its lints deny and why, `spec_clause_traversal`'s cost rule among them.
 
 A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
+
+## Compilation
+
+_Projection_ is the compiler: it takes a _choreography_, one program over named _roles_, to an _endpoint_ per role, a closed program whose protocol and crossing data are fixed, and the endpoint is the artifact. A _recipe_ names a program's endpoints. A _deployment_ binds each role to a world key, an instance count and discovery, never entering an artifact's identity, so one artifact runs as two processes or a fleet. A _local artifact_ is a one-role choreography's endpoint: the degenerate case, and the only one built today. A runtime component no type demands is a recipe policy, off by default.
+
+- `surface-dispatcher`: the run stage, a checked source's `main` run as a local artifact.
+- `runtime-emitter`: an endpoint's code, patched into native code under a content cache, or the portable executor.
+- `runtime-net`: the network an endpoint holds for `Net`.
+- Projection and the recipe have no crate yet.
 
 ## Storage and distribution
 

@@ -129,11 +129,21 @@
 //! its focusing row; no parser syntax or coercion from `Flow_U` is implied
 //! here.
 //!
+//! # A run is a local artifact
+//!
+//! A source `gandr run` runs is a local artifact: the endpoint of a one-role
+//! choreography, deployed as the driver's own process. It is the degenerate
+//! case of projection, which takes a choreography to one endpoint per role
+//! (`crates/README.md` § Compilation).
+//!
 //! # References
 //!
 //! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures
 //!   design (§ futures-try-first) — the tree sum whose two cuts run on two
 //!   threads and whose writer runs from the store, run by this module's tests.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-vocabulary) — a source run here is a local
+//!   artifact, the one-role endpoint.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
