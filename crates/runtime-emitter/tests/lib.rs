@@ -17,6 +17,8 @@ mod closed;
 #[path = "../../runtime-stencils/tests/count.rs"]
 mod count;
 #[cfg(test)]
+mod crossing;
+#[cfg(test)]
 mod forms;
 #[cfg(test)]
 mod seam;

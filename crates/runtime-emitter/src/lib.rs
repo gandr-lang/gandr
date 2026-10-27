@@ -157,6 +157,7 @@
 
 extern crate alloc;
 
+pub mod crossing;
 mod executor;
 mod function;
 mod fuse;

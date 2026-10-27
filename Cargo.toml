@@ -435,6 +435,7 @@ default-features = false
 # - kernel-core
 # - kernel-term
 # - storage-artifact (dev)
+# - runtime-emitter
 # - surface-dispatcher
 # - surface-lowering
 # - surface-pretty
@@ -510,6 +511,7 @@ path = "crates/storage-artifact"
 # consumers:
 # - storage-records
 # - storage-store
+# - runtime-emitter
 # - storage-values
 [workspace.dependencies.gandr-storage-chunker]
 path = "crates/storage-chunker"
@@ -538,6 +540,7 @@ path = "crates/storage-store"
 # The content-addressed value plane: one value as a typed chunk DAG under
 # content pointers.
 # consumers:
+# - runtime-emitter
 # - storage-store
 # - surface-dispatcher
 [workspace.dependencies.gandr-storage-values]

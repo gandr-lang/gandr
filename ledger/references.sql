@@ -34,6 +34,7 @@ INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_seriali
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','memory','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','1b6091fc402781549385efd19a99c87b29c0fe2d');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','world','background','775f54d99d0fd78230b9e5afa51d674039fd0fd5','2026-10-27','1ed0fa5ee5623d4bb42b3ae9c5791ccaf6a2e722');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-emitter','','background','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','d8150135b225b465c511cb5e4903b465ad0e59ab');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-emitter','crossing','background','ba968b7bd03a0bd29f05ad99b32d70c06b24762f','2026-10-27','b469b75bad0b93856aed0708d93a2638dd9e9f21');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-emitter','run','background','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','6e43daa45e1e4fe8bb6e02cc6589637a9c65dcee');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-net','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-artifact','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','ef9bb00ebb8083a526b1a08c9c150047066064d8');
@@ -368,6 +369,7 @@ INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surfa
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','workspace','background','6a4b391e83941ecd2b396e4f4ae81d78988b9dad','2026-10-27','d11437f6c12b0561f8df34658b70aa16c65f4e09');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
+INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','ba968b7bd03a0bd29f05ad99b32d70c06b24762f','2026-10-27','b469b75bad0b93856aed0708d93a2638dd9e9f21');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','run','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','6e43daa45e1e4fe8bb6e02cc6589637a9c65dcee');
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::lock','background',NULL,NULL,NULL);

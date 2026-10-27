@@ -42,8 +42,9 @@ flowchart BT
   storage -->|6| theory
   storage -->|1| kernel
   runtime -->|1| theory
-  runtime -->|1| kernel
+  runtime -->|2| kernel
   runtime -->|3| core
+  runtime -->|2| storage
   surface -->|11| theory
   surface -->|12| kernel
   surface -->|23| core
@@ -132,7 +133,7 @@ A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README
 
 ## Storage and distribution
 
-The storage crates are one content-addressable memory, _the CAM_, and the runtime's stores location-addressable memories, _the LAMs_ (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Each world runs its own LAMs; all reach one logical CAM, addressed by digests of canonical bytes, one key space. A value crosses a world by `cam_commit` at the source and `cam_deref` at the destination when its type is `mobile`, the authority, and `Open`, holding no location. A digest proves integrity; validity is the checker's and the kernel's. Dashed: not built yet.
+The storage crates are one content-addressable memory, _the CAM_, and the runtime's stores location-addressable memories, _the LAMs_ (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Each world runs its own LAMs; all reach one logical CAM, addressed by digests of canonical bytes, one key space. A value crosses a world by `crossing::commit` and `crossing::deref` when its type is `mobile`, the authority, and `Open`, holding no location. A digest proves integrity; validity is the checker's and the kernel's. Dashed: not built yet.
 
 ```mermaid
 flowchart LR
@@ -155,8 +156,8 @@ flowchart LR
   world -.->|mobile, Open| sequent
   emitter -->|a Net operation| net
   net -.->|a commit's chunks| values
-  sequent -.->|cam_commit| values
-  values -.->|cam_deref| sequent
+  sequent -->|crossing::commit| values
+  values -->|crossing::deref| sequent
   chunker --> values
   chunker --> records
   records --> artifact
