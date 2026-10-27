@@ -1,0 +1,14 @@
+// The twin of `model/data/stuck-arm-call.gandr`: a call steps to the call its
+// arm reached only once an arm is selected, so one stuck on its own selecting
+// argument stays itself and is still told apart from that call (#2832).
+
+// `Nat`.
+import "../../model/data/data-base.gandr";
+// `Heap`, `emp` and `viaZero`.
+import "../../model/data/stuck-arm-call.gandr";
+
+/// No arm is selected at an open natural: `viaZero(w, h)` is not `emp(h)`.
+@[ refuses("TypeMismatch") ]
+def unselected(w : Nat, h : Heap) -> (viaZero(w, h)) => emp(h) {
+  return fn (e) { e }
+}
