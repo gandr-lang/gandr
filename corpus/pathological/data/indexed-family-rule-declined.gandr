@@ -1,0 +1,27 @@
+/// This source declares an indexed family whose data block writes a rule over its constructors.
+///
+/// It pins the refusal of a constructor rule on an indexed family. Before the refusal, the checker faulted on such a family.
+///
+/// The lowering reads the rules of a family after the description route. A rule whose left side a constructor heads is refused as `OutOfFragment.Indexed` over its two sides.
+///
+/// - see: #2865
+/// - see: #1314
+data N : Type {
+  /// The zero index.
+  Z : N;
+  /// The successor of an index.
+  S : (n : N) --> N;
+}
+
+/// An indexed family with a rule over its constructors is refused.
+@[ refuses("OutOfFragment.Indexed") ]
+data Prog : N -> Type {
+  /// The program that stops, at index zero.
+  Stop : Prog(Z);
+  /// A program that asks once, standing one index above its continuation.
+  Ask : (k : Prog(Z)) --> Prog(S(Z));
+  /// A program that tells an integer and continues at the same index.
+  Tell : (s : Integer, k : Prog(Z)) --> Prog(Z);
+  /// Two tells in a row keep only the second, a rule over the constructors.
+  rule Tell(s, Tell(u, k)) <=> Tell(u, k);
+}

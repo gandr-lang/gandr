@@ -1713,6 +1713,49 @@ fn an_indexed_family_lowers_its_indices()
     );
 }
 
+/// An indexed family presenting a rule over its constructors is declined over
+/// that rule's two sides, before either checker reads it (#2865); a rule over
+/// an operation rewrites a call, not the family's terms, and the family keeps
+/// its indices.
+#[test]
+fn an_indexed_family_presents_no_rule_2865()
+{
+    let source = "data N : Type { Z : N; S : (n : N) --> N; }\ndata Prog : N -> Type { Stop : Prog(Z); \
+                  Ask : (k : Prog(Z)) --> Prog(S(Z)); Tell : (s : Integer, k : Prog(Z)) --> \
+                  Prog(Z); rule Tell(s, Tell(u, k)) <=> Tell(u, k); }\ndata Skip : N -> Type { \
+                  Halt : Skip(Z); oper skip(k : Skip(Z)) -> Skip(Z); rule skip(k) ==> k; }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let written = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
+    let LoweringRefusal::OutOfFragment {
+        span,
+        form: FormName::RULE_MEMBER,
+        sort: FragmentSort::Declaration,
+        boundary: FragmentBoundary::Indexed,
+    } = refusal_of(&module, SurfaceName::from("Prog"))
+    else {
+        panic!("a family indexed by `N` presents no rule over its constructors");
+    };
+    assert_eq!(
+        written(span),
+        Some("Tell(s, Tell(u, k)) <=> Tell(u, k)"),
+        "the refusal stands over the rule's two sides"
+    );
+    let DeclarationOutcome::Data(skip) = outcome_of(&module, SurfaceName::from("Skip"))
+    else {
+        panic!("a rule over an operation leaves the family to lower");
+    };
+    let Maybe::Present(skip) = module.data(skip)
+    else {
+        panic!("the index names a signature");
+    };
+    assert_eq!(skip.indices().len(), 1_usize, "`Skip` keeps its index");
+    assert!(
+        skip.presentation().rules().is_empty(),
+        "the operation's rule rewrites a call, not the family's terms"
+    );
+}
+
 #[test]
 fn each_stated_index_is_framed_under_its_family_s_telescope_931()
 {
