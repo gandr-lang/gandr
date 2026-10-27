@@ -1,12 +1,26 @@
 [
   {
     "name": "#3078: a stack whose lower pull request landed squashed is restacked from the lower's head, replaying only its own commit",
-    "landed": true,
+    "lower": "squashed",
+    "held": true,
     "output": "moved: upper's own"
   },
   {
     "name": "#3078: with no landed head the restack replays the lower's first commit onto its squash and refuses, naming the branch and file, the branch unmoved",
-    "landed": false,
+    "lower": "squashed",
+    "held": false,
     "output": "refused: conflicts in upper (a.txt)"
+  },
+  {
+    "name": "#3115: an upper stacked on an open lower force-pushed since is replayed from the lower's earlier head onto its current one",
+    "lower": "rewritten",
+    "held": true,
+    "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
+  },
+  {
+    "name": "#3115: an upper holding none of the rewritten lower's heads is refused, naming both branches, the upper unmoved",
+    "lower": "rewritten",
+    "held": false,
+    "output": "refused: upper does not contain lower, the branch below it, nor any of its earlier heads"
   }
 ]

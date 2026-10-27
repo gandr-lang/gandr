@@ -166,32 +166,27 @@ stack_link() {
 # rebase runs in a scratch worktree, detached, so no seat's checkout is
 # touched: a branch checked out in another worktree moves on the server, and
 # its seat's next fetch reads it. Prints one line per branch that moved.
-# Refuses a stack whose branch does not contain the one below it, and stops
-# at a conflict, naming the branch and its conflicting files, with nothing
-# pushed. Only the stack's own commits are replayed (#3078): a bottom branch
+# Stops at a conflict, naming the branch and its conflicting files, with
+# nothing pushed. Only the stack's own commits are replayed. A bottom branch
 # still carrying commits of a pull request merged below it, as its earlier
-# heads held them, is replayed from the newest such head (`landed_fork`), so a
-# lower pull request restacked or squashed before it merged leaves nothing
-# of its own to conflict. The scratch is named
+# heads held them, is replayed from the newest such head (`landed_fork`,
+# #3078), so a lower pull request restacked or squashed before it merged
+# leaves nothing of its own to conflict. A branch that does not contain the
+# open one below it, because that one was force-pushed since (#3115), is
+# first replayed onto it from the newest head of the lower it holds
+# (`relink_fork`); a branch holding none of them is refused. The scratch is
+# named
 # for this process (`gandr-scratch-<pid>.`), and the caller's exit trap runs
 # `drop_scratch`, so a failure anywhere removes it; a scratch a hard kill
 # leaves, its process gone, is `wt:sweep`'s.
 restack() {
-  local stack=$1 heads head below fork merged scratch status=0 moved=() pushes=() leases=() old new
+  local stack=$1 heads head below fork merged held top scratch status=0 moved=() pushes=() leases=() old new
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   git fetch --quiet origin "$trunk" "${heads[@]}"
-  below=
-  for head in "${heads[@]}"; do
-    if [[ -n "$below" ]] && ! git merge-base --is-ancestor "origin/$below" "origin/$head"; then
-      echo "$head does not contain $below, the branch below it; rebase it onto $below first" >&2
-      return 1
-    fi
-    below=$head
-  done
   merged=$(git merge-base "origin/${heads[0]}" "origin/$trunk")
   fork=$(landed_fork "${heads[0]}" "$merged")
   if [[ $fork != "$merged" ]]; then
-    echo "${heads[0]}: $(git rev-list --count "$merged..$fork") commits a merged pull request below held are left out; $(git rev-list --count "$fork..origin/${heads[-1]}") are replayed"
+    echo "${heads[0]}: $(git rev-list --count "$merged..$fork") commits a merged pull request below held are left out"
   fi
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
   pr_stack_scratch=$scratch
@@ -199,7 +194,36 @@ restack() {
   for head in "${heads[@]::${#heads[@]}-1}"; do
     git -C "$scratch" branch --quiet --force "pr-stack/$head" "origin/$head"
   done
-  if ! git -C "$scratch" rebase --quiet --update-refs --onto "origin/$trunk" "$fork" > /dev/null; then
+  top=$(git rev-parse "origin/${heads[-1]}")
+  below=
+  for head in "${heads[@]}"; do
+    if [[ -n $below ]] && (( status == 0 )); then
+      new=$top
+      [[ $head == "${heads[-1]}" ]] || new=$(git -C "$scratch" rev-parse "pr-stack/$head")
+      if ! git -C "$scratch" merge-base --is-ancestor "pr-stack/$below" "$new"; then
+        held=$(relink_fork "$below" "$new")
+        if [[ -z $held ]]; then
+          echo "$head does not contain $below, the branch below it, nor any of its earlier heads; rebase it onto $below first" >&2
+          status=1
+        else
+          echo "$head: $(git -C "$scratch" rev-list --count "$held..$new") commits replayed from $below's earlier head ${held::12} onto its current one"
+          git -C "$scratch" checkout --quiet --detach "$new"
+          if ! git -C "$scratch" rebase --quiet --onto "pr-stack/$below" "$held" > /dev/null; then
+            echo "the replay of $head onto $below conflicts ($(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)); rebase $head onto $below by hand and land again" >&2
+            git -C "$scratch" rebase --abort || true
+            status=1
+          elif [[ $head == "${heads[-1]}" ]]; then
+            top=$(git -C "$scratch" rev-parse HEAD)
+          else
+            git -C "$scratch" branch --quiet --force "pr-stack/$head" HEAD
+          fi
+        fi
+      fi
+    fi
+    below=$head
+  done
+  git -C "$scratch" checkout --quiet --detach "$top"
+  if (( status == 0 )) && ! git -C "$scratch" rebase --quiet --update-refs --onto "origin/$trunk" "$fork" > /dev/null; then
     local stopped conflicted=${heads[-1]} files
     stopped=$(git -C "$scratch" rev-parse --verify --quiet REBASE_HEAD) || stopped=
     for head in "${heads[@]}"; do
@@ -250,11 +274,26 @@ landed_fork() {
   printf '%s\n' "$fork"
 }
 
+# The commit a restack replays the branch at `$2` (a commit) from onto the
+# open branch `$1` below it, when that branch was force-pushed after `$2`
+# was stacked on it (#3115): of the server's tip of `$1` and every head its
+# open pull request's force pushes replaced or set (`pushed_heads`), the
+# newest `$2` contains. Prints nothing when `$2` contains none.
+relink_fork() {
+  local below=$1 commit=$2 oid held=
+  while read -r oid; do
+    if git merge-base --is-ancestor "$oid" "$commit" 2> /dev/null \
+      && { [[ -z $held ]] || git merge-base --is-ancestor "$held" "$oid"; }; then
+      held=$oid
+    fi
+  done < <(git rev-parse "origin/$below"; pushed_heads "$below" OPEN)
+  [[ -z $held ]] || printf '%s\n' "$held"
+}
+
 # Every head a merged pull request below the open pull request of branch `$1`
 # ever had, one commit id a line: the branches its base was moved off (GitHub
 # retargets it when the base's pull request merges, or a hand does), and for
-# each the merged pull request's last head and every head a force push
-# replaced or set.
+# each the merged pull request's `pushed_heads`.
 landed_heads() {
   local branch=$1 base
   for base in $(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F head="$branch" -f query='
@@ -267,16 +306,23 @@ landed_heads() {
       }
     }' --jq '[.data.repository.pullRequests.nodes[].timelineItems.nodes[] | (.oldBase // .previousRefName) | values] | unique[]'); do
     [[ $base != "$trunk" ]] || continue
-    gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F head="$base" -f query='
-      query($owner: String!, $name: String!, $head: String!) {
-        repository(owner: $owner, name: $name) {
-          pullRequests(headRefName: $head, states: MERGED, last: 5) {
-            nodes { headRefOid timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) {
-              nodes { ... on HeadRefForcePushedEvent { beforeCommit { oid } afterCommit { oid } } } } }
-          }
-        }
-      }' --jq '.data.repository.pullRequests.nodes[] | .headRefOid, (.timelineItems.nodes[] | .beforeCommit.oid, .afterCommit.oid) | values'
+    pushed_heads "$base" MERGED
   done
+}
+
+# The heads the pull requests of branch `$1` in state `$2` (`OPEN` or
+# `MERGED`) had, one commit id a line: each one's last head and every head a
+# force push replaced or set.
+pushed_heads() {
+  gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F head="$1" -F state="$2" -f query='
+    query($owner: String!, $name: String!, $head: String!, $state: PullRequestState!) {
+      repository(owner: $owner, name: $name) {
+        pullRequests(headRefName: $head, states: [$state], last: 5) {
+          nodes { headRefOid timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT]) {
+            nodes { ... on HeadRefForcePushedEvent { beforeCommit { oid } afterCommit { oid } } } } }
+        }
+      }
+    }' --jq '.data.repository.pullRequests.nodes[] | .headRefOid, (.timelineItems.nodes[] | .beforeCommit.oid, .afterCommit.oid) | values'
 }
 
 # The scratch worktree `restack` made, removed; a no-op when there is none.
