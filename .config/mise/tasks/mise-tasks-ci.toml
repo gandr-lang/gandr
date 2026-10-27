@@ -1842,9 +1842,12 @@ echo "$url"
 # `Where` an open refactor issue observes adds its rows and a `from:` line to
 # that issue instead. Either pages the coordinator through the page command of
 # the stall configuration (`.config/stall/stall.bash`) to write the issue's
-# sections. An issue carrying the pull request's `from:` line is the filing,
-# so a second run files nothing. `pr:watch` runs it when its pull request
-# merges; `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
+# sections. A pull request that closes no issue, as one advancing an epic's
+# unit does, takes the area and epic of the issue its branch names
+# (`<lane>-<n>-…`), and failing that the lane's own `area:<lane>` label. An
+# issue carrying the pull request's `from:` line is the filing, so a second
+# run files nothing. `pr:watch` runs it when its pull request merges;
+# `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
 # decision and changes nothing.
 ["refactor:file"]
 description = "File a merged pull request's yes or maybe refactoring verdict as a kind:refactor issue and page the coordinator"
@@ -1865,7 +1868,7 @@ pr=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$numbe
   query($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
-        state body
+        state body headRefName
         closingIssuesReferences(first: 10) { nodes { number parent { number } labels(first: 30) { nodes { name } } } }
       }
     }
@@ -1874,6 +1877,17 @@ state=$(jq -r .state <<< "$pr")
 [[ $state == MERGED ]] || { echo "refactor:file: #$number is $state, not merged" >&2; exit 2; }
 area=$(jq -c '[.closingIssuesReferences.nodes[].labels.nodes[].name | select(startswith("area:")) | ltrimstr("area:")] | first' <<< "$pr")
 epic=$(jq -r '[.closingIssuesReferences.nodes[].parent.number | values] | first // empty' <<< "$pr")
+head=$(jq -r .headRefName <<< "$pr")
+if [[ $area == null && $head =~ ^[a-z]+-([1-9][0-9]*)- ]]; then
+  unit=$(gh api "repos/$repo/issues/${BASH_REMATCH[1]}" --jq '{area: ([.labels[].name | select(startswith("area:")) | ltrimstr("area:")] | first),
+    epic: ((.parent_issue_url // "" | capture("/issues/(?<n>[0-9]+)$").n) // "")}')
+  area=$(jq -c .area <<< "$unit")
+  [[ -n $epic ]] || epic=$(jq -r .epic <<< "$unit")
+fi
+lane=${head%%-*}
+if [[ $area == null ]] && gh label list -R "$repo" --search "area:$lane" --json name --jq '.[].name' | grep -Fxq "area:$lane"; then
+  area=$(jq -cn --arg lane "$lane" '$lane')
+fi
 issues=$(gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body)
 decision=$(jq -n --argjson number "$number" --argjson pr "$pr" --argjson area "$area" --argjson issues "$issues" \
   '{pr: {number: $number, body: $pr.body, area: $area}, issues: $issues}' | jq -c -L "$claims" -f "$claims/filing.jq")
