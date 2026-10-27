@@ -48,7 +48,7 @@ flowchart BT
   surface -->|12| kernel
   surface -->|23| core
   surface -->|7| storage
-  surface -->|1| runtime
+  surface -->|3| runtime
   workflow -->|4| surface
 ```
 <!-- crate-map:end -->
@@ -73,6 +73,7 @@ crates/
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands lowered and copy-and-patched into native code under a content cache, or built for the portable executor, and each outcome moved into the caller's store
+├── runtime-net/                   the network a host holds for `Net`: streams to peers named by their keys, over QUIC through iroh
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
@@ -140,6 +141,7 @@ flowchart LR
     memory[core-term::memory]
     emitter[runtime-emitter]
     sequent[core-sequent]
+    net[runtime-net]
   end
   subgraph CAM["the CAM"]
     chunker[storage-chunker]
@@ -151,6 +153,8 @@ flowchart LR
   memory -->|hold: a cell| emitter
   emitter -->|moves out| sequent
   world -.->|mobile, Open| sequent
+  emitter -->|a Net operation| net
+  net -.->|a commit's chunks| values
   sequent -.->|cam_commit| values
   values -.->|cam_deref| sequent
   chunker --> values
@@ -168,6 +172,7 @@ flowchart LR
 | `storage-artifact` | CAM | none | a kernel artifact as records | integrity, then validity |
 | `storage-store` | CAM | one host's directory; its roots never cross | chunks, nodes and named roots, a file each | integrity |
 | `runtime-emitter` | LAM | its thread | a run's regions | validity |
+| `runtime-net` | LAM | its process | a stream's frames | integrity |
 | `core-sequent` | LAM | its run | the `Store`, append-only | none |
 | `core-term::world` | world | `⊢_w`, `A at w` | — | validity |
 | `core-term::memory` | LAM | a hold's world | a held cell lent to a view | validity |

@@ -1,0 +1,59 @@
+// Two programs exchange a ping over `Net`, the host interface for streams to
+// peers named by their keys.
+//
+// One process serves and another pings it, the first step from one process
+// to programs that coordinate across hosts. The same `ping` runs under a
+// handler written here, a second model of the interface.
+//
+// `gandr run ping.gandr` serves, and `gandr run ping.gandr <key>@<ip:port>`
+// dials the server that key and socket name, then prints its answer. The
+// host binds its network on the run's first `Net` operation, at the socket
+// `--net-bind` names, under the key `GANDR_NET_SECRET` holds.
+//
+// - see: `crates/surface-driver/tests/net.rs` — the two processes
+// - see: `crates/runtime-net/README.md` — the network the host binds
+
+/// Accept one stream, read its ping, answer `pong`, disconnect, and return
+/// the ping.
+pub def serve() -> [Net] String {
+  run (peer, stream) <- Net.accept();
+  run ping <- Net.receive(stream);
+  Net.transmit(stream, "pong");
+  Net.disconnect(stream);
+  ping
+}
+
+/// Dial `peer`, send `ping`, read the answer, disconnect, and return the
+/// answer.
+pub def ping(peer : String) -> [Net] String {
+  run stream <- Net.connect(peer);
+  Net.transmit(stream, "ping");
+  run pong <- Net.receive(stream);
+  Net.disconnect(stream);
+  pong
+}
+
+/// `ping` under a handler written here, a second model of `Net` whose every
+/// received frame is `pong`. The same term returns what the server answers.
+@[ runs("\"pong\"") ]
+def pingAnswered() -> String {
+  handle n : Net {
+    ping("peer")
+  } with {
+    pure(x) => pure x,
+    oper connect(peer, k) => k(0),
+    oper accept(k) => k(("peer", 0)),
+    oper transmit(sent, k) => k(unit),
+    oper receive(stream, k) => k("pong"),
+    oper disconnect(stream, k) => k(unit)
+  }
+}
+
+/// The entry: serve with no argument, ping the peer the first argument
+/// names otherwise, print what came back, and exit with 0.
+def main(args : List(String)) -> [Net, Console] Integer {
+  case args {
+    [] => { run got <- serve(); Console.print(got); 0 },
+    [peer, .._] => { run got <- ping(peer); Console.print(got); 0 }
+  }
+}

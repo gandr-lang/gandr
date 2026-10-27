@@ -8,6 +8,7 @@ use super::ENV;
 use super::EXEC;
 use super::FS;
 use super::HostSignatures;
+use super::NET;
 use super::PROC;
 use super::declared;
 use crate::CertificateEquality;
@@ -23,7 +24,13 @@ fn an_operation_names_the_interface_offering_it()
 {
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).expect("host interfaces");
-    for (operation, interface) in [("read", FS), ("exit", PROC), ("get", ENV), ("exec", EXEC)] {
+    for (operation, interface) in [
+        ("read", FS),
+        ("exit", PROC),
+        ("get", ENV),
+        ("exec", EXEC),
+        ("transmit", NET),
+    ] {
         let Maybe::Present(found) = host.offering(&OperationName::from(operation))
         else {
             panic!("{operation} is offered");
@@ -36,11 +43,11 @@ fn an_operation_names_the_interface_offering_it()
         );
     }
     assert_eq!(
-        host.offering(&OperationName::from("send")),
+        host.offering(&OperationName::from("fetch")),
         Maybe::Absent(declared::Absent::Undeclared)
     );
     assert_eq!(
-        host.named(&EffectName::from("Net")),
+        host.named(&EffectName::from("Clock")),
         Maybe::Absent(declared::Absent::Undeclared)
     );
 
@@ -51,10 +58,10 @@ fn an_operation_names_the_interface_offering_it()
     ])
     .expect("one restriction per interface");
     assert_eq!(host.authority([&write, &exit, &read]), Ok(expected));
-    let send = OperationName::from("send");
+    let fetch = OperationName::from("fetch");
     assert_eq!(
-        host.authority([&read, &send]),
-        Err(AuthorityError::Undeclared(send))
+        host.authority([&read, &fetch]),
+        Err(AuthorityError::Undeclared(fetch))
     );
     assert_eq!(
         host.authority([&read, &read]),
@@ -80,6 +87,7 @@ fn host_interfaces_pin_names_payloads_and_replies()
     let status = arena.value_type_product(&[string, integer]);
     let output = arena.value_type_product(&[string, status]);
     let write = arena.value_type_product(&[string, string]);
+    let frame = arena.value_type_product(&[integer, string]);
     let expected = [
         (&host.exec, EXEC, alloc::vec![("exec", command, output)]),
         (&host.fs, FS, alloc::vec![
@@ -99,6 +107,13 @@ fn host_interfaces_pin_names_payloads_and_replies()
         ]),
         (&host.div, DIV, alloc::vec![]),
         (&host.console, CONSOLE, alloc::vec![("print", string, unit)]),
+        (&host.net, NET, alloc::vec![
+            ("accept", unit, status),
+            ("connect", string, integer),
+            ("disconnect", integer, unit),
+            ("receive", integer, string),
+            ("transmit", frame, unit),
+        ]),
     ];
     for (signature, name, operations) in expected {
         assert_eq!(signature.name().as_ref(), name);

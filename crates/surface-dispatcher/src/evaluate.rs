@@ -199,6 +199,7 @@ use quenchant_shape::shape::Maybe;
 mod console;
 mod entry;
 mod hole;
+mod net;
 
 pub use console::Captured;
 pub use console::Console;

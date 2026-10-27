@@ -276,6 +276,7 @@
 )]
 extern crate alloc;
 
+use core::net::SocketAddr;
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 #[cfg(unix)]
@@ -289,6 +290,10 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_runtime_net::Binding;
+use gandr_runtime_net::Lookup;
+use gandr_runtime_net::Net;
+use gandr_runtime_net::Secret;
 use gandr_storage_store::Store;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity;
@@ -610,10 +615,11 @@ enum Command
     /// unit, `def main() -> -F [Console] Unit`, for 0, and reads the
     /// arguments after the path when it takes them, `def main(args :
     /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`, and
-    /// `Console.print(s)` writes `s` as a line of standard output.
-    /// Exits with that code, its low byte; otherwise 1 when the run is blamed
-    /// on a goal or stops short of one, and 2 when the source never reaches
-    /// the machine or declares no `main`.
+    /// `Console.print(s)` writes `s` as a line of standard output. A `Net`
+    /// operation binds the program's network on first use, as the `--net-*`
+    /// flags say. Exits with that code, its low byte; otherwise 1 when the
+    /// run is blamed on a goal or stops short of one, and 2 when the source
+    /// never reaches the machine or declares no `main`.
     Run
     {
         /// The source file to run.
@@ -621,6 +627,10 @@ enum Command
         /// The arguments the program's `main` reads, in order.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         arguments: Vec<String>,
+        /// Where the program's network binds and what key it proves.
+        // Boxed: a key outweighs every other verb's flags.
+        #[command(flatten)]
+        net: Box<NetFlags>,
     },
     /// Check staging observer programs: build each, normalize every source,
     /// readmit every certificate and admit every family through one memo.
@@ -785,6 +795,53 @@ impl From<Jobs> for Width
         jobs.jobs.map_or(Self::PerformanceCores, |threads| {
             Self::Threads(Threads::from(threads))
         })
+    }
+}
+
+/// Where `gandr run` binds a program's network, the key it proves, and how
+/// it finds peers.
+#[derive(Debug, clap::Args)]
+struct NetFlags
+{
+    /// The secret key the network proves, as 64 hex digits; a fresh key when
+    /// absent. Prefer the environment variable: a command line is visible to
+    /// other users of the host.
+    #[arg(
+        long = "net-secret",
+        env = "GANDR_NET_SECRET",
+        hide_env_values = true,
+        value_name = "HEX"
+    )]
+    secret: Option<Secret>,
+    /// The socket the network binds, as `ip:port`; every interface on an
+    /// ephemeral port when absent.
+    #[arg(long = "net-bind", env = "GANDR_NET_BIND", value_name = "IP:PORT")]
+    bind: Option<SocketAddr>,
+    /// How the network finds a peer: only at the addresses its spelling
+    /// names, or also by multicast DNS on the local network.
+    #[arg(
+        long = "net-lookup",
+        env = "GANDR_NET_LOOKUP",
+        value_name = "LOOKUP",
+        default_value = "explicit"
+    )]
+    lookup: Lookup,
+}
+
+impl From<NetFlags> for Binding
+{
+    /// The binding `flags` describe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(flags: NetFlags) -> Self
+    {
+        let binding = Self::new(flags.secret.unwrap_or_else(Secret::generate)).lookup(flags.lookup);
+        match flags.bind {
+            Some(socket) => binding.at(socket),
+            None => binding,
+        }
     }
 }
 
@@ -1220,14 +1277,16 @@ enum Screen
 ///   `--recheck` keeps the kernel's verdicts as [`verdicts::install`] states,
 ///   and runs without them after one `gandr:` line on standard error when the
 ///   cache cannot be installed; `lock` rewrites each package's lock as [`lock`]
-///   states; `run` runs its script as [`script`] states, and `fmt` lays out its
-///   paths as [`fmt`] states. `lsp` serves and `lsp --capabilities` prints as
-///   [`lsp`] and [`capabilities`] state, `repl` runs as [`repl`] states, and
-///   `tui` as [`tui`] states. Every face writes its types and values in the
-///   spelling [`spelling`] resolves; a configuration file that cannot be read
-///   is `gandr: <path>: <fault>` on standard error and exits `2` before any
-///   verb runs. Output the driver cannot write is noted on standard error, when
-///   that is writable, and exits `2`.
+///   states; `run` runs its script as [`script`] states, its `Net` operations
+///   served on the network its `--net-bind`, `--net-secret` and `--net-lookup`
+///   flags bind, and `fmt` lays out its paths as [`fmt`] states. `lsp` serves
+///   and `lsp --capabilities` prints as [`lsp`] and [`capabilities`] state,
+///   `repl` runs as [`repl`] states, and `tui` as [`tui`] states. Every face
+///   writes its types and values in the spelling [`spelling`] resolves; a
+///   configuration file that cannot be read is `gandr: <path>: <fault>` on
+///   standard error and exits `2` before any verb runs. Output the driver
+///   cannot write is noted on standard error, when that is writable, and exits
+///   `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -1260,6 +1319,7 @@ enum Screen
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
 /// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
+/// - witness: `tests::net::two_processes_exchange_a_ping_3186`
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -1291,6 +1351,8 @@ fn main() -> ExitCode
     let _span = tracing::info_span!("driver").entered();
     // The packages a `check` reached, whose manifests it reconciles.
     let mut packages: Vec<Packaged> = Vec::new();
+    // The network a `run` gives its program, bound on first use.
+    let mut network = None;
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
         Some(Command::Check {
@@ -1371,7 +1433,12 @@ fn main() -> ExitCode
             Verbosity::from(verbosity),
         ),
         Some(Command::Lock { paths }) => return lock(paths),
-        Some(Command::Run { path, arguments }) => {
+        Some(Command::Run {
+            path,
+            arguments,
+            net,
+        }) => {
+            network = Some(Binding::from(*net));
             (Invocation::Run { path, arguments }, Verbosity::User)
         },
         Some(Command::Stage { jobs, programs }) => (
@@ -1518,6 +1585,7 @@ fn main() -> ExitCode
             spelling,
         },
         &packages,
+        network,
         &mut stdout,
         &mut stderr,
     );
@@ -2168,10 +2236,11 @@ fn unpathed(unpathed: &Unpathed) -> ExitCode
 ///   the lock and the manifest of each of `packages`, as [`run`] does. The
 ///   run's report and its verdict close standard output, and the exit code is
 ///   the verdict's, or a lock's or a manifest's when that is worse. A script
-///   follows [`script`]: what it prints goes to standard output, its
-///   diagnostics to standard error and its run status chooses the exit. A
-///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
-///   and a census [`cells`].
+///   follows [`script`], its entry's `Net` operations served on a network bound
+///   as `network` says: what it prints goes to standard output, its diagnostics
+///   to standard error and its run status chooses the exit. A staging follows
+///   [`stage`], a formatting [`fmt`], a ledger task [`ledger`], and a census
+///   [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -2203,6 +2272,7 @@ fn render(
     outcome: Outcome,
     printing: Printing,
     packages: &[Packaged],
+    network: Option<Binding>,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
@@ -2231,7 +2301,12 @@ fn render(
             stdout,
             stderr,
         ),
-        Outcome::Script(mut runnable) => script(&mut runnable, printing.spelling, stdout, stderr),
+        Outcome::Script(mut runnable) => {
+            if let Some(binding) = network {
+                runnable.network(Net::new(binding));
+            }
+            script(&mut runnable, printing.spelling, stdout, stderr)
+        },
         Outcome::Stage(staging) => {
             let pool = Pool::new(staging.width());
             stage(staging, &pool, stdout, stderr)

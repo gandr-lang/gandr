@@ -9,13 +9,23 @@
 //! The run cases, in a `cfg(test)` module so the crate's lint wall reads them
 //! as test code rather than as shipping code.
 
+use core::net::Ipv4Addr;
+use core::net::SocketAddr;
 use std::path::Path;
 use std::path::PathBuf;
+use std::thread;
 
 use anodized::spec;
+use gandr_runtime_net::Binding;
+use gandr_runtime_net::Endpoint;
+use gandr_runtime_net::Frame;
+use gandr_runtime_net::Net;
+use gandr_runtime_net::Peer;
+use gandr_runtime_net::Secret;
 use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Entered;
+use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::ExitStatus;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Ran;
@@ -356,4 +366,77 @@ fn run_source_file_surfaces_a_source_failure_unchanged()
             RunStatus::Unreached,
         );
     }
+}
+
+/// #3186: the ping exemplar run as a script with a network dials an endpoint
+/// on loopback, sends `ping`, prints the `pong` it reads back and exits 0;
+/// a `transmit` on a stream no network minted is declined, and the run is
+/// stuck at it.
+#[test]
+fn a_script_pings_over_its_network_3186()
+{
+    let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+    let mut server =
+        Endpoint::bind(&Binding::new(Secret::generate()).at(loopback)).expect("loopback binds");
+    let socket = server
+        .sockets()
+        .iter()
+        .copied()
+        .find(SocketAddr::is_ipv4)
+        .expect("the server reports its loopback socket");
+    let peer = Peer::new(server.node_id()).at(socket);
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/distribution/ping.gandr");
+    thread::scope(|scope| {
+        let serving = scope.spawn(move || {
+            let (_, stream) = server.accept().expect("the script dials");
+            let ping = server.recv(stream).expect("the script sends");
+            server
+                .send(stream, Frame::from(b"pong".to_vec()))
+                .expect("the answer is sent");
+            server.close(stream).expect("both ends close");
+            ping
+        });
+        let mut script = Script::new(exemplar.clone());
+        script.pass(vec![peer.to_string()]);
+        script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
+        let mut console = Captured::default();
+        let run = script.run(&mut console);
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(status),
+                        ..
+                    },
+                    ..
+                } if status == ExitStatus::from(0_u8)
+            ),
+            "the pinger exits 0: {run:?}"
+        );
+        assert_eq!(console.lines(), ["pong"], "the answer is printed");
+        assert_eq!(
+            serving.join().expect("the server ends"),
+            Frame::from(b"ping".to_vec())
+        );
+    });
+
+    let stray = Scratch::write(
+        Path::new("net-stray-3186"),
+        SourceText::from("def main() -> -F [Net] Integer { Net.transmit(7, \"lost\"); 0 }\n"),
+    );
+    let mut script = Script::new(stray.0.clone());
+    script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
+    let run = script.run(&mut Captured::default());
+    assert!(
+        matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Ended(Evaluation::Stuck(_)),
+                ..
+            },
+            ..
+        }),
+        "a stream no network minted is declined: {run:?}"
+    );
 }
