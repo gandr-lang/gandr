@@ -2581,12 +2581,17 @@ fi
 #
 # Before anything else the task sweeps the clone's landed worktrees and
 # refuses under the disk floor (`wt:sweep --guard`).
+#
+# `--hold "<reason>"` opens it held by the owner (#3253): a draft labelled
+# `hold:owner` with the reason commented (`pr:hold --owner`), unlinked,
+# which nothing lands until `pr:release`.
 ["pr:open"]
 description = "Open the pull request on the server's top once its body acknowledges every prose obligation"
 usage = '''
 arg "<title>" help="the pull request title: a conventional header"
 arg "<body>" help="the body file; its re-verification section is written in place"
 flag "--unblocks <number>" help="the open pull request this fix unblocks: open on main and queue on its own"
+flag "--hold <reason>" help="the owner holds it: open it as a draft labelled `hold:owner` (`pr:hold --owner`), unlinked"
 '''
 # `findings.jq` stops jq 1.8.2 at an assertion; the claim tasks pin 1.8.1.
 tools.jq = "1.8.1"
@@ -2751,7 +2756,7 @@ if git diff --no-renames --name-only "$measured" HEAD \
 fi
 # A second bottom is refused unless it unblocks the open stack: with any other
 # pull request open and not landing, the base is a branch of the stack.
-if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
+if [[ -z "$unblocks" && "$base" == "$trunk" && $(landable_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
   echo "$own would open a second bottom on $trunk while another pull request is open; run \`pr:open\` again to stack it on the top" >&2
   exit 2
 fi
@@ -2768,8 +2773,15 @@ fi
 # (`body:check`, #2530).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 git push --quiet --force-with-lease -u origin HEAD
-url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body")
+hold=${usage_hold:-}
+url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
 echo "$url"
+# Held from its opening (#3253): a held pull request is no member of a stack,
+# so it is not linked, and nothing lands it until `pr:release`.
+if [[ -n "$hold" ]]; then
+  mise run --quiet pr:hold --owner "${url##*/}" "$hold"
+  exit 0
+fi
 if [[ -n "$unblocks" ]]; then
   gh pr merge "${url##*/}" -R "$repo" --merge --auto
   echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the red stack restacks it onto main"
@@ -3149,12 +3161,16 @@ exit 2
 # draft with its reason (#2972): `pr:hold <n> "<reason>"` converts it and
 # comments the reason under a `<!-- hold -->` marker. A draft is no stall
 # (`stall:watch`), and neither `pr:watch` nor the `landing` workflow lands
-# it; `gh pr ready <n>` ends the hold, and the next watch lands it once green.
+# it, nor anything stacked above it (`rests.jq`, #3253). The owner's hold is
+# `--owner`: the draft also carries the `hold:owner` label, which holds it
+# still if the draft is taken back, and is never a chat note. `pr:release
+# <n>` ends either hold, and the next watch lands it once green.
 ["pr:hold"]
 description = "Hold a pull request on purpose: make it a draft and comment the reason"
 usage = '''
 arg "<number>" help="pull request number"
-arg "<reason>" help="why it is held: the base, ruling or sibling it waits on"
+arg "<reason>" help="why it is held: the base, ruling or sibling it waits on, or the owner's review"
+flag "--owner" help="the owner's hold: label it `hold:owner` as well"
 '''
 run = '''
 #!/usr/bin/env bash
@@ -3164,9 +3180,36 @@ reason=${usage_reason:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ -n "${reason// }" ]] || { echo 'pr:hold needs the reason it is held' >&2; exit 2; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-gh pr ready "$number" -R "$repo" --undo > /dev/null
-gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\n**Held** as a draft: %s\n\n`gh pr ready %s` ends the hold; its next `pr:watch` lands it once green.\n' "$reason" "$number")" > /dev/null
-echo "#$number held: $reason"
+who='as a draft'
+if [[ "${usage_owner:-false}" == true ]]; then
+  gh label create hold:owner -R "$repo" --color B60205 --description "Held by the owner: no landing queues it or the stack above it" --force > /dev/null
+  gh pr edit "$number" -R "$repo" --add-label hold:owner > /dev/null
+  who='by the owner'
+fi
+if [[ $(gh pr view "$number" -R "$repo" --json isDraft --jq .isDraft) != true ]]; then
+  gh pr ready "$number" -R "$repo" --undo > /dev/null
+fi
+gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\n**Held** %s: %s\n\n`mise run pr:release %s` ends the hold; its next `pr:watch` lands it once green, and the stack above it with it.\n' "$who" "$reason" "$number")" > /dev/null
+echo "#$number held $who: $reason"
+'''
+
+# The end of a hold (#3253): the draft taken back and the owner's
+# `hold:owner` label taken off, so the next watch lands it once green.
+["pr:release"]
+description = "End a pull request's hold: ready the draft and take off the owner's label"
+usage = '''
+arg "<number>" help="pull request number"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+number=${usage_number:?}
+[[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+IFS=$'\t' read -r draft owner < <(gh pr view "$number" -R "$repo" --json isDraft,labels --jq '[.isDraft, any(.labels[]; .name == "hold:owner")] | @tsv')
+if [[ "$owner" == true ]]; then gh pr edit "$number" -R "$repo" --remove-label hold:owner > /dev/null; fi
+if [[ "$draft" == true ]]; then gh pr ready "$number" -R "$repo" > /dev/null; fi
+echo "#$number released: its next \`pr:watch\` lands it once green"
 '''
 
 # The wake-up a seat arms after `pr:land`: it polls the pull request and its

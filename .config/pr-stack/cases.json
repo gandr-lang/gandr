@@ -131,6 +131,275 @@
     "output": "[]"
   },
   {
+    "name": "#3253: the owner's `hold:owner` label reads as the owner's hold, a draft as a draft's, the owner's first when both; a `landing` label or a bot is no hold",
+    "program": "open.jq",
+    "input": [
+      {
+        "number": 10,
+        "headRefName": "a",
+        "baseRefName": "main",
+        "isDraft": true,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": [
+            {
+              "name": "hold:owner"
+            }
+          ]
+        },
+        "stack": null,
+        "author": {
+          "__typename": "User"
+        }
+      },
+      {
+        "number": 11,
+        "headRefName": "b",
+        "baseRefName": "main",
+        "isDraft": true,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": []
+        },
+        "stack": null,
+        "author": {
+          "__typename": "User"
+        }
+      },
+      {
+        "number": 12,
+        "headRefName": "c",
+        "baseRefName": "main",
+        "isDraft": false,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": [
+            {
+              "name": "landing"
+            }
+          ]
+        },
+        "stack": null,
+        "author": {
+          "__typename": "User"
+        }
+      },
+      {
+        "number": 13,
+        "headRefName": "d",
+        "baseRefName": "main",
+        "isDraft": false,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": []
+        },
+        "stack": null,
+        "author": {
+          "__typename": "Bot"
+        }
+      }
+    ],
+    "output": "[{\"number\":10,\"head\":\"a\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":false,\"stack\":null,\"bot\":false,\"hold\":\"owner\"},{\"number\":11,\"head\":\"b\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":false,\"stack\":null,\"bot\":false,\"hold\":\"draft\"},{\"number\":12,\"head\":\"c\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":true,\"stack\":null,\"bot\":false,\"hold\":null},{\"number\":13,\"head\":\"d\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":false,\"stack\":null,\"bot\":true,\"hold\":null}]"
+  },
+  {
+    "name": "#3253: under the owner's hold in the middle of a stack, the pull request below it rests on no hold, so it lands",
+    "program": "rests.jq",
+    "args": {
+      "n": 3249,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 3249,
+        "head": "triage-3244-bsd-restamp",
+        "base": "main",
+        "created": "2026-10-27T20:50:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 3250,
+        "head": "readme-3247",
+        "base": "triage-3244-bsd-restamp",
+        "created": "2026-10-27T21:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": "owner"
+      },
+      {
+        "number": 3252,
+        "head": "triage-3246-zero-cost",
+        "base": "readme-3247",
+        "created": "2026-10-27T21:10:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "#3253: the owner's held pull request rests on its own hold, so nothing lands it",
+    "program": "rests.jq",
+    "args": {
+      "n": 3250,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 3249,
+        "head": "triage-3244-bsd-restamp",
+        "base": "main",
+        "created": "2026-10-27T20:50:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 3250,
+        "head": "readme-3247",
+        "base": "triage-3244-bsd-restamp",
+        "created": "2026-10-27T21:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": "owner"
+      },
+      {
+        "number": 3252,
+        "head": "triage-3246-zero-cost",
+        "base": "readme-3247",
+        "created": "2026-10-27T21:10:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":3250,\"hold\":\"owner\"}"
+  },
+  {
+    "name": "#3253: the pull request above the owner's hold rests on it, so it waits",
+    "program": "rests.jq",
+    "args": {
+      "n": 3252,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 3249,
+        "head": "triage-3244-bsd-restamp",
+        "base": "main",
+        "created": "2026-10-27T20:50:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 3250,
+        "head": "readme-3247",
+        "base": "triage-3244-bsd-restamp",
+        "created": "2026-10-27T21:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": "owner"
+      },
+      {
+        "number": 3252,
+        "head": "triage-3246-zero-cost",
+        "base": "readme-3247",
+        "created": "2026-10-27T21:10:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":3250,\"hold\":\"owner\"}"
+  },
+  {
+    "name": "#3253: the nearest hold below is the one named, a draft beneath an owner's hold no matter",
+    "program": "rests.jq",
+    "args": {
+      "n": 3,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "a",
+        "base": "main",
+        "hold": "draft"
+      },
+      {
+        "number": 2,
+        "head": "b",
+        "base": "a",
+        "hold": "owner"
+      },
+      {
+        "number": 3,
+        "head": "c",
+        "base": "b",
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":2,\"hold\":\"owner\"}"
+  },
+  {
+    "name": "#3253: a pull request not open rests on no hold",
+    "program": "rests.jq",
+    "args": {
+      "n": 9,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "a",
+        "base": "main",
+        "hold": "draft"
+      },
+      {
+        "number": 2,
+        "head": "b",
+        "base": "a",
+        "hold": "owner"
+      },
+      {
+        "number": 3,
+        "head": "c",
+        "base": "b",
+        "hold": null
+      }
+    ],
+    "output": "null"
+  },
+  {
     "name": "with nothing open a new pull request opens on main",
     "program": "top.jq",
     "args": {
@@ -2661,15 +2930,27 @@
   {
     "name": "#2984: landing on a `*/10` schedule alone, which GitHub ran hours late, is refused for the schedule and for each event it misses",
     "program": "triggers.jq",
-    "input": { "schedule": [{ "cron": "*/10 * * * *" }], "workflow_dispatch": {} },
+    "input": {
+      "schedule": [
+        {
+          "cron": "*/10 * * * *"
+        }
+      ],
+      "workflow_dispatch": {}
+    },
     "output": "[\"`schedule`: GitHub ran this repository's schedules four to five hours late, so a reading must follow events, never a cron (#2984)\",\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `dequeued`: no `CI` completion marks it, so it starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
   },
   {
     "name": "#2984: landing on `CI`'s completion, a dequeue and a draft taken back holds",
     "program": "triggers.jq",
     "input": {
-      "workflow_run": { "workflows": ["CI"], "types": ["completed"] },
-      "pull_request": { "types": ["dequeued", "ready_for_review"] },
+      "workflow_run": {
+        "workflows": ["CI"],
+        "types": ["completed"]
+      },
+      "pull_request": {
+        "types": ["dequeued", "ready_for_review"]
+      },
       "workflow_dispatch": {}
     },
     "output": "[]"
@@ -2678,8 +2959,13 @@
     "name": "#2984: `CI` read on `requested` rather than `completed`, and `ready_for_review` missing, are each refused",
     "program": "triggers.jq",
     "input": {
-      "workflow_run": { "workflows": ["CI"], "types": ["requested"] },
-      "pull_request": { "types": ["dequeued"] }
+      "workflow_run": {
+        "workflows": ["CI"],
+        "types": ["requested"]
+      },
+      "pull_request": {
+        "types": ["dequeued"]
+      }
     },
     "output": "[\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
   }
