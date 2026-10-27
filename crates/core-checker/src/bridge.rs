@@ -3746,6 +3746,7 @@ impl Positions
             },
             PrimitiveType::Text => arena.value_type_base(BaseType::String),
             PrimitiveType::Float64 => arena.value_type_base(BaseType::Float64),
+            PrimitiveType::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
         };
         let result = classifier(arena, primitive.result());
         let mut computation = arena.comp_type_returner(result);

@@ -1,6 +1,8 @@
 // Integers at a stated width: `u32`, `u64`, `i32` and `i64`, each an atom of
 // its own. A literal states its width with a suffix and its digits must fit
-// it, so no width is the integers and no width is another.
+// it, so no width is the integers and no width is another. A width converts
+// to `Integer` exactly, and an integer to a width by its remainder, as Rust's
+// `as` cast does.
 
 /// An unsigned word at a stated `u32`.
 def word32 : u32 = 7u32;
@@ -35,3 +37,41 @@ def narrowed_u64 : u32 = 1u64;
 /// One past the greatest `i32` does not fit the width it states.
 @[ refuses("MalformedLiteral") ]
 def overflowed_i32 = 2147483648i32;
+
+/// The greatest `u32`, as an integer.
+@[ runs("4294967295") ]
+def greatest_u32_integer() -> Integer { u32.to_integer(4294967295u32) }
+
+/// Minus one is the greatest `u64`, the remainder modulo two to the 64.
+@[ runs("18446744073709551615u64") ]
+def minus_one_u64() -> u64 { u64.from_integer(-1) }
+
+/// One past the greatest `i32` is the least.
+@[ runs("-2147483648i32") ]
+def past_greatest_i32() -> i32 { i32.from_integer(2147483648) }
+
+/// Two to the 32, plus five, is five at `u32`.
+@[ runs("5u32") ]
+def wrapped_u32() -> u32 { u32.from_integer(4294967301) }
+
+/// The least `i64` through `Integer` keeps its sign.
+@[ runs("-9223372036854775808") ]
+def least_i64_integer() -> Integer {
+  i64.to_integer(i64.from_integer(-9223372036854775808))
+}
+
+/// The greatest `u32` through `Integer` and back is itself.
+@[ runs("4294967295u32") ]
+def greatest_u32_round_trip() -> u32 {
+  u32.from_integer(u32.to_integer(4294967295u32))
+}
+
+/// A word's low two bits, the tag a packed layout reads.
+@[ runs("1") ]
+def packed_tag() -> Integer {
+  int.mod(u64.to_integer(13u64), 4)
+}
+
+/// A width converts from its own width only.
+@[ refuses("TypeMismatch") ]
+def converted_u32() -> Integer { u64.to_integer(7u32) }

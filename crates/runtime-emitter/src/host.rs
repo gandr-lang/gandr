@@ -419,8 +419,8 @@ impl<'run, 'host> Calls<'run, 'host>
         self.refused.as_ref()
     }
 
-    /// The integer, boolean, string or floating-point number the operand
-    /// `word` addresses.
+    /// The integer, boolean, string, floating-point number or width value the
+    /// operand `word` addresses.
     ///
     /// # Specification
     /// trivial.
@@ -448,7 +448,8 @@ impl<'run, 'host> Calls<'run, 'host>
                 Some(&Literal::Integer(ref integer)) => Ok(Scalar::Integer(integer.clone())),
                 Some(&Literal::Text(ref text)) => Ok(Scalar::Text(text.clone())),
                 Some(&Literal::Float64(float)) => Ok(Scalar::Float64(float)),
-                Some(&(Literal::Numeric(_) | Literal::Character(_) | Literal::Fixed(_))) | None => {
+                Some(&Literal::Fixed(fixed)) => Ok(Scalar::Fixed(fixed)),
+                Some(&(Literal::Numeric(_) | Literal::Character(_))) | None => {
                     Err(Refusal::Operands)
                 },
             },
@@ -676,6 +677,7 @@ impl<'run, 'host> Calls<'run, 'host>
             },
             Scalar::Text(text) => self.literal(runtime, Literal::Text(text)),
             Scalar::Float64(float) => self.literal(runtime, Literal::Float64(float)),
+            Scalar::Fixed(fixed) => self.literal(runtime, Literal::Fixed(fixed)),
             Scalar::Boolean(side) => {
                 let unit = Header::new(
                     Kind::Tuple,

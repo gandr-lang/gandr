@@ -20,6 +20,7 @@
 //! | Floating-point arithmetic | `float64.add`, `float64.sub`, `float64.mul`, `float64.div`, `float64.neg`, `float64.exp` | Float64 operands and result |
 //! | Floating-point comparison | `float64.eq`, `float64.ne`, `float64.lt`, `float64.le`, `float64.gt`, `float64.ge` | Float64 operands, boolean result |
 //! | Conversion | `float64.from_integer`, `float64.round` | Integer to Float64, Float64 to Integer |
+//! | Width conversion | `u32.to_integer`, `u64.to_integer`, `i32.to_integer`, `i64.to_integer`, `u32.from_integer`, `u64.from_integer`, `i32.from_integer`, `i64.from_integer` | a width to Integer, Integer to a width |
 //!
 //! Booleans are `Unit + Unit`, with the left injection true. Division truncates
 //! toward zero; remainder has the dividend's sign. Division and remainder by
@@ -35,6 +36,12 @@
 //! value; `float64.round` rounds to the nearest integer, ties to even, and
 //! refuses an infinity or a NaN as [`PrimitiveError::NotFinite`]. Every result
 //! NaN is the one canonical NaN the literal holds.
+//!
+//! A width's `to_integer` is exact. A width's `from_integer` reduces the
+//! integer modulo two to the width's bit count and reads the remainder in the
+//! width's two's complement, as Rust's `as` cast between integers does, so
+//! `u32.from_integer(-1)` is the greatest `u32` and `i32.from_integer` of one
+//! past the greatest `i32` is the least.
 //!
 //! **Choice.** `libm`, with defaults off, supplies `exp` and the rounding: its
 //! soft implementation runs alike on every platform, so a run's floating-point
@@ -96,13 +103,16 @@ use core::ops::Add as _;
 use core::ops::Mul as _;
 use core::ops::Neg as _;
 use core::ops::Rem as _;
+use core::ops::Shl as _;
 use core::ops::Sub as _;
 
 use anodized::spec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
@@ -172,6 +182,8 @@ pub enum PrimitiveType
     Text,
     /// An IEEE 754 binary64 floating-point number.
     Float64,
+    /// An integer width atom: `u32`, `u64`, `i32` or `i64`.
+    Fixed(IntegerWidth),
 }
 
 impl PrimitiveType
@@ -195,6 +207,7 @@ impl PrimitiveType
             },
             Self::Text => arena.value_type_base(BaseType::String),
             Self::Float64 => arena.value_type_base(BaseType::Float64),
+            Self::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
         }
     }
 }
@@ -255,6 +268,11 @@ enum Operation
     FromInteger,
     /// A floating-point number rounded to the nearest integer, ties to even.
     Round,
+    /// A width's value as the exact integer it is.
+    ToInteger,
+    /// An integer reduced modulo two to the result's width, in that width's
+    /// two's complement.
+    FromIntegerToWidth,
 }
 
 /// A law the host asserts of a primitive.
@@ -580,6 +598,62 @@ pub const PRELUDE: &[Primitive] = &[
         result: PrimitiveType::Integer,
         operation: Operation::Round,
     }),
+    Primitive(&Definition {
+        name: "u32.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::U32)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "u64.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::U64)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "i32.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::I32)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "i64.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::I64)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "u32.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::U32),
+        operation: Operation::FromIntegerToWidth,
+    }),
+    Primitive(&Definition {
+        name: "u64.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::U64),
+        operation: Operation::FromIntegerToWidth,
+    }),
+    Primitive(&Definition {
+        name: "i32.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::I32),
+        operation: Operation::FromIntegerToWidth,
+    }),
+    Primitive(&Definition {
+        name: "i64.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::I64),
+        operation: Operation::FromIntegerToWidth,
+    }),
 ];
 
 /// A native scalar supplied to or returned from the table evaluator.
@@ -594,6 +668,8 @@ pub enum Scalar<Integer = IntegerLiteral, Text = StringLiteral>
     Text(Text),
     /// An IEEE 754 binary64 number, its NaN canonical.
     Float64(Float64Literal),
+    /// A value of an integer width atom.
+    Fixed(FixedInteger),
 }
 
 /// Why a native evaluation cannot produce its result.
@@ -868,7 +944,9 @@ impl Primitive
     ///   strings are equal when their bytes are, and one is below another when
     ///   its bytes are lexicographically, a proper prefix below the text it
     ///   begins; floating-point rows are IEEE 754 binary64, ties to even, with
-    ///   `exp` from `libm` and every NaN canonical.
+    ///   `exp` from `libm` and every NaN canonical; a width converts to its
+    ///   exact integer, and an integer to a width modulo two to the width's bit
+    ///   count, in its two's complement.
     /// - fails: arity before argument classifiers, then zero division; invalid
     ///   decimal conversion is named separately; a floating-point number with
     ///   no nearest integer is not finite.
@@ -882,14 +960,16 @@ impl Primitive
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
     ///   beyond machine width, every boolean pair, two strings appended in both
-    ///   orders, two strings equal only byte for byte and two ordered by their
-    ///   bytes distinguish operation and error drift.
+    ///   orders, two strings equal only byte for byte, two ordered by their
+    ///   bytes, and each width's bounds converted both ways distinguish
+    ///   operation and error drift.
     /// - witness: `primitive::tests::exact_arithmetic_and_errors`
     /// - witness: `primitive::tests::comparisons_and_booleans`
     /// - witness: `primitive::tests::an_append_writes_the_first_string_then_the_second`
     /// - witness: `primitive::tests::a_string_equality_compares_the_texts_byte_for_byte`
     /// - witness: `primitive::tests::a_string_order_compares_the_texts_byte_for_byte`
     /// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
+    /// - witness: `primitive::tests::a_width_converts_exactly_and_an_integer_by_its_remainder`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| value.classifier() == self.0.result))]
     #[inline]
     pub fn evaluate(
@@ -914,6 +994,7 @@ impl Primitive
                 Scalar::Boolean(side) => Scalar::Boolean(side),
                 Scalar::Text(text) => Scalar::Text(text.clone()),
                 Scalar::Float64(float) => Scalar::Float64(float),
+                Scalar::Fixed(fixed) => Scalar::Fixed(fixed),
             });
         }
         // Only the `string` rows take text, the classifiers say: a text
@@ -960,11 +1041,27 @@ impl Primitive
                 | Operation::Not
                 | Operation::Exp
                 | Operation::FromInteger
-                | Operation::Round => Err(PrimitiveError::ArgumentType),
+                | Operation::Round
+                | Operation::ToInteger
+                | Operation::FromIntegerToWidth => Err(PrimitiveError::ArgumentType),
             };
         }
         if let Scalar::Float64(left) = *first {
             return float64(self.0.operation, left, arguments);
+        }
+        // Only the `to_integer` rows take a width, and they take it alone.
+        if let Scalar::Fixed(fixed) = *first {
+            if self.0.operation != Operation::ToInteger {
+                return Err(PrimitiveError::ArgumentType);
+            }
+            return scalar(&widened(fixed));
+        }
+        if self.0.operation == Operation::FromIntegerToWidth {
+            let PrimitiveType::Fixed(width) = self.0.result
+            else {
+                return Err(PrimitiveError::ArgumentType);
+            };
+            return narrowed(&first.integer()?, width).map(Scalar::Fixed);
         }
         if self.0.operation == Operation::FromInteger {
             let integer = first.integer()?;
@@ -998,7 +1095,9 @@ impl Primitive
                 | Operation::Append
                 | Operation::Exp
                 | Operation::FromInteger
-                | Operation::Round => return Err(PrimitiveError::ArgumentType),
+                | Operation::Round
+                | Operation::ToInteger
+                | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
             };
             return Ok(Scalar::Boolean(if answer {
                 Side::Left
@@ -1043,7 +1142,9 @@ impl Primitive
             | Operation::Append
             | Operation::Exp
             | Operation::FromInteger
-            | Operation::Round => {
+            | Operation::Round
+            | Operation::ToInteger
+            | Operation::FromIntegerToWidth => {
                 return Err(PrimitiveError::ArgumentType);
             },
         };
@@ -1102,6 +1203,7 @@ impl<Integer, Text> Scalar<Integer, Text>
             Self::Boolean(_) => PrimitiveType::Boolean,
             Self::Text(_) => PrimitiveType::Text,
             Self::Float64(_) => PrimitiveType::Float64,
+            Self::Fixed(fixed) => PrimitiveType::Fixed(fixed.width()),
         }
     }
 }
@@ -1161,6 +1263,7 @@ impl Scalar
             Self::Boolean(side) => Scalar::Boolean(side),
             Self::Text(ref text) => Scalar::Text(text),
             Self::Float64(float) => Scalar::Float64(float),
+            Self::Fixed(fixed) => Scalar::Fixed(fixed),
         }
     }
 
@@ -1183,6 +1286,7 @@ impl Scalar
             },
             Self::Text(text) => arena.value_literal(Literal::Text(text)),
             Self::Float64(float) => arena.value_literal(Literal::Float64(float)),
+            Self::Fixed(fixed) => arena.value_literal(Literal::Fixed(fixed)),
         }
     }
 }
@@ -1213,6 +1317,70 @@ fn scalar(value: &BigInt) -> Result<Scalar, PrimitiveError>
     let magnitude = Magnitude::from_decimal_text(value.magnitude().to_str_radix(10))
         .ok_or(PrimitiveError::InvalidInteger)?;
     Ok(Scalar::Integer(IntegerLiteral::new(sign, magnitude)))
+}
+
+/// The exact integer a width's value is.
+///
+/// # Specification
+/// - ensures: the value's magnitude and sign, which `narrowed` reads back as
+///   the value at its width.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each width's least and greatest values convert to their
+///   integers, a signed width's negatives negative.
+/// - witness: `primitive::tests::a_width_converts_exactly_and_an_integer_by_its_remainder`
+#[spec(ensures: |ref ret| narrowed(ret, fixed.width()) == Ok(fixed))]
+fn widened(fixed: FixedInteger) -> BigInt
+{
+    match fixed {
+        FixedInteger::U32(value) => BigInt::from(value),
+        FixedInteger::U64(value) => BigInt::from(value),
+        FixedInteger::I32(value) => BigInt::from(value),
+        FixedInteger::I64(value) => BigInt::from(value),
+    }
+}
+
+/// `value` reduced modulo two to `width`'s bit count, read in `width`'s two's
+/// complement: Rust's `as` cast from an integer to the width.
+///
+/// # Specification
+/// - ensures: the value of `width` congruent to `value` modulo two to its bit
+///   count.
+/// - fails: never; the remainder lies in the width by construction, and a
+///   pattern that did not is refused rather than truncated.
+/// - panics: none.
+///
+/// # Errors
+/// [`PrimitiveError::InvalidInteger`] for a remainder no width holds, which
+/// the reduction rules out.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negatives, one past each width's greatest value and
+///   integers beyond machine width each land on their remainder.
+/// - witness: `primitive::tests::a_width_converts_exactly_and_an_integer_by_its_remainder`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |fixed| fixed.width() == width))]
+fn narrowed(
+    value: &BigInt,
+    width: IntegerWidth,
+) -> Result<FixedInteger, PrimitiveError>
+{
+    let bits: u32 = match width {
+        IntegerWidth::U32 | IntegerWidth::I32 => 32,
+        IntegerWidth::U64 | IntegerWidth::I64 => 64,
+    };
+    let modulus = BigInt::from(1_u8).shl(bits);
+    // The remainder takes the dividend's sign; one modulus more is the least
+    // non-negative one.
+    let remainder = value.rem(&modulus);
+    let remainder = if remainder.sign() == num_bigint::Sign::Minus {
+        remainder.add(&modulus)
+    }
+    else {
+        remainder
+    };
+    let pattern = u64::try_from(&remainder).map_err(|_wide| PrimitiveError::InvalidInteger)?;
+    FixedInteger::try_from((width, pattern)).map_err(|_wider| PrimitiveError::InvalidInteger)
 }
 
 /// Evaluate a floating-point row whose first operand is `left` and whose
@@ -1282,7 +1450,9 @@ fn float64(
         | Operation::Or
         | Operation::Not
         | Operation::Append
-        | Operation::FromInteger => {},
+        | Operation::FromInteger
+        | Operation::ToInteger
+        | Operation::FromIntegerToWidth => {},
     }
     let Some(&Scalar::Float64(right)) = arguments.get(1)
     else {
@@ -1310,7 +1480,9 @@ fn float64(
         | Operation::Append
         | Operation::Exp
         | Operation::FromInteger
-        | Operation::Round => return Err(PrimitiveError::ArgumentType),
+        | Operation::Round
+        | Operation::ToInteger
+        | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
     };
     Ok(Scalar::Boolean(if answer {
         Side::Left
