@@ -1,0 +1,13 @@
+// The count a cell reports is of its right side alone: a rule whose left side
+// binds one hole twice is a copy the redex would have to compare, and the
+// rule is refused at admission whatever its right side writes, while the
+// family and its other members keep checking (#2788).
+
+/// Binary hedges, with an operation whose rule copies on its left side.
+data Hedge : Type {
+  Leaf : Hedge;
+  Node : (l : Hedge, r : Hedge) --> Hedge;
+  oper same(s : Hedge, t : Hedge) -> Hedge;
+  @[ refuses("RulesNonLinear") ]
+  rule same(t, t) ==> Node(t, t);
+}

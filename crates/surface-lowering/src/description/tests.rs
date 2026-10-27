@@ -66,10 +66,10 @@ fn a_graded_field_keeps_its_grade_in_the_code_1295()
     else {
         panic!("two fields")
     };
-    assert!(matches!(fields.next().unwrap().view(), CodeView::Field {
-        grade: DescriptionGrade::Finite(Multiplicity(1)),
-        ..
-    }));
+    assert!(
+        matches!(fields.next().unwrap().view(), CodeView::Field { grade, .. }
+        if *grade == DescriptionGrade::Finite(Multiplicity::from(1_u64)))
+    );
     assert!(matches!(fields.next().unwrap().view(), CodeView::Field {
         grade: DescriptionGrade::Omega,
         ..
@@ -100,10 +100,8 @@ fn codata_observations_preserve_their_codes()
         panic!("two observations")
     };
     assert_eq!(head.name.as_ref(), "head");
-    assert!(matches!(head.code.view(), CodeView::Field {
-        grade: DescriptionGrade::Finite(Multiplicity(1)),
-        ..
-    }));
+    assert!(matches!(head.code.view(), CodeView::Field { grade, .. }
+        if *grade == DescriptionGrade::Finite(Multiplicity::from(1_u64))));
     assert_eq!(tail.name.as_ref(), "tail");
     assert!(matches!(tail.code.view(), CodeView::Var(name) if name.as_ref() == "Stream"));
 }

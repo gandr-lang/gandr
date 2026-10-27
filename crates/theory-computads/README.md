@@ -8,6 +8,7 @@ The elaborator seam of the cell-rewriting stack: a levitated description's rules
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -117,6 +118,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Instantiation and the convexity supply point | [`instantiate`](src/instantiate.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | The closed tier, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — the cells this crate elaborates carry each hole's occurrence count.
 
 ## License
 

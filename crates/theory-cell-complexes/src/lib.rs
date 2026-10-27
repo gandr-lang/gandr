@@ -40,6 +40,15 @@
 //!   `doi:10.1145/351240.351262` — the command `⟨p | c⟩` of a producer against
 //!   a consumer, and the critical pair of the two binders that a cut's polarity
 //!   resolves.
+//! - `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems`
+//!   — primary: § 8.2's Lemma 9 bounds how far one step stretches the distance
+//!   between two instances of a hole by the number of times the contractum
+//!   writes it, over non-expansive symbols: the count
+//!   `CellContractumUse::occurrences` reports and `Multiplicity` carries.
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
+//!   — a cell keeps each hole's occurrence count in its contractum and a step's
+//!   growth the largest, recorded rather than refused, with the grade carrier
+//!   unchanged.
 //! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
 //!   University Press, 1998. `doi:10.1017/CBO9781139172752` — positions,
 //!   matching, syntactic unification with the occurs check, reduction orders
@@ -115,6 +124,7 @@ pub use crate::boundary::CellLinearity;
 pub use crate::boundary::CellStoreEmptyStatus;
 pub use crate::boundary::FiringPermission;
 pub use crate::boundary::GroundPatternStatus;
+pub use crate::boundary::Multiplicity;
 pub use crate::boundary::PatternSize;
 pub use crate::boundary::PositionRootStatus;
 pub use crate::boundary::PositionStep;

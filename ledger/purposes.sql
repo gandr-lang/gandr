@@ -1902,6 +1902,10 @@ INSERT INTO purpose VALUES('surface-diagnostics','verbosity::Verbosity','enum','
 INSERT INTO purpose VALUES('surface-dispatcher','Invocation','enum','One understood driver invocation, ready to route.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','Outcome','enum','What an invocation routed to, for the driver to render.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','StatusReport','struct','The toolchain-management status, rendered by the driver.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::CellRow','struct','One cell of a declaration a source writes, with each hole''s count.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::Census','struct','The cells verb over the paths it was given, reading its sources in order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusFault','enum','Why a path''s cells could not be read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusStep','enum','One step of a census.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Freshness','enum','How a read held of a file is known to be current.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Laid','struct','A source''s import closure laid out as one unit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ParsedBytes','struct','How many bytes of source text a run has parsed.',NULL,'fits','sound',NULL);
@@ -2306,7 +2310,6 @@ INSERT INTO purpose VALUES('surface-lowering','description::DescriptionGrade','e
 INSERT INTO purpose VALUES('surface-lowering','description::DescriptionReport','struct','Holds a description''s report, so the description''s well-formedness diagnostics are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::FamilyParameter','struct','Holds a family''s parameter, so the family''s parameters are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::MemberFault','enum','Names why a description''s member faults, so the refusal names the fault.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering','description::Multiplicity','struct','Names the multiplicity a description''s member carries, so the member''s multiplicity is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::NativeFamily','struct','Holds a family the native reading owns whole, so a face still answers at its constructors.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::elaborate_descriptions','function','Reads top-level `data`, `codata` and `theory` declarations into checked descriptions, so the declarations'' members are read into cells.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::written::RuleDirection','enum','Names the direction a written rule''s arrow takes, so the rule''s direction is read.',NULL,'fits','sound',NULL);
@@ -3009,6 +3012,7 @@ INSERT INTO purpose VALUES('theory-cell-complexes','boundary::CellLinearity','st
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::CellStoreEmptyStatus','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::FiringPermission','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::GroundPatternStatus','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes','boundary::Multiplicity','struct','How many times something is used: the bound a description field declares, or the number of times a cell''s right-hand side writes one hole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::PatternSize','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::PositionRootStatus','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::PositionStep','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);

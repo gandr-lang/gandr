@@ -14,11 +14,11 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Synopsis
 
-**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`, whose `StatusReport` states that toolchain management is not implemented. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given, the `Verb` it runs under and the `Width` it is visited at. `Walk::visit` reads every source under the paths and carries each import-connected component once through the composition — parse, lower once, `adapt`, judge, the kernel's re-derivation, the `Program` that runs an accepted declaration, and the settle comparison — and hands each source its share of the verdict, in walk order. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports. `Invocation::Run` routes to `Outcome::Script`: a `Script` of one path and its arguments, composed as `check` would, which runs the entry [`script`](src/script.rs) states, its `RunStatus` the exit code `gandr run` reports. `Invocation::Stage` routes to `Outcome::Stage`: a `Staging` of staged programs, each checked through the checker's program entry on a pool of the run's width, its `StageRun` carrying each program's check, the run's digest and its verdict.
+**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`, whose `StatusReport` states that toolchain management is not implemented. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given, the `Verb` it runs under and the `Width` it is visited at. `Walk::visit` reads every source under the paths and carries each import-connected component once through the composition — parse, lower once, `adapt`, judge, the kernel's re-derivation, the `Program` that runs an accepted declaration, and the settle comparison — and hands each source its share of the verdict, in walk order. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports. `Invocation::Run` routes to `Outcome::Script`: a `Script` of one path and its arguments, composed as `check` would, which runs the entry [`script`](src/script.rs) states, its `RunStatus` the exit code `gandr run` reports. `Invocation::Stage` routes to `Outcome::Stage`, a `Staging` checked as [`stage`](src/stage.rs) states.
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
 
-**How.** `dispatch` is a total match over the closed `Invocation` enum. `compose` is `lower_source` then `judge_module`, two short functions, and `judge_module` is `judge` then `Judged::admit`; the only call into the lowering sits in a private module that counts each source it lowers. How the walk reads, forks and judges is in [`walk`](src/walk.rs), and how a staging hands its programs to the checker in [`stage`](src/stage.rs).
+**How.** `dispatch` is a total match over the closed `Invocation` enum. How a source is composed is in [`compose`](src/compose.rs), how the walk reads, forks and judges in [`walk`](src/walk.rs), and how a staging hands its programs to the checker in [`stage`](src/stage.rs).
 
 ## Provided features
 
@@ -43,6 +43,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
+- `Census`, `CensusStep`, `CensusFault` and `CellRow`: the cells verb ([`cells`](src/cells.rs)).
 - `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 
@@ -59,7 +60,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 ## Expected features
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
-- **A file system.** `Walk::visit` lists directories and reads sources, and `Formatting::step` reads them and writes a changed layout back; every failure to do so is a fault step, never a panic.
+- **A file system.** `Walk::visit` lists directories and reads sources, `Formatting::step` reads them and writes a changed layout back, and `Census::step` reads them; every failure to do so is a fault step, never a panic.
 - **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process; its default width is the host's physical performance cores ([width](src/width.rs)).
 
 ## Examples
@@ -120,6 +121,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed manifests — metadata is gandr, so `gandr.toml` is output, never read.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — the census reports each cell's counts.
 
 ## License
 

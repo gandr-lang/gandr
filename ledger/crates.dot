@@ -182,6 +182,7 @@ digraph crates {
   "surface-dispatcher" -> "surface-parser";
   "surface-dispatcher" -> "surface-pretty";
   "surface-dispatcher" -> "surface-syntax";
+  "surface-dispatcher" -> "theory-cell-complexes";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";
   "surface-driver" -> "surface-format";

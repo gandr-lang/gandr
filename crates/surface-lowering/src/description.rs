@@ -83,6 +83,12 @@
 //! function or universe field, with its decoder and its readers, lets this
 //! route describe the family and lifts the rule-carrying case with it
 //! (`description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`).
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
+//!   — a member's finite grade and a cell's hole count are one count, the cell
+//!   layer's `Multiplicity`; the grade carrier is unchanged.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -95,6 +101,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_cell_complexes::Multiplicity;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::Code;
 use gandr_theory_levitation::CtorDesc;
@@ -121,11 +128,6 @@ use crate::form::shape_of;
 use crate::module::Visibility;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
-
-/// A finite multiplicity decorating a field.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Multiplicity(pub u64);
 
 /// A field's declared usage, retained in the description.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1330,7 +1332,7 @@ impl Reader<'_, '_>
             .map(|parameter| {
                 ParamDesc::new(
                     parameter.name.clone(),
-                    DescriptionGrade::Finite(Multiplicity(1)),
+                    DescriptionGrade::Finite(Multiplicity::from(1_u64)),
                     Attrs::empty(),
                 )
             })
@@ -1444,8 +1446,12 @@ impl Reader<'_, '_>
         else {
             let first = run.take()?;
             if run.eat(Spelling("-->")).0 {
-                match self.field(first, family, DescriptionGrade::Finite(Multiplicity(1)), &[
-                ]) {
+                match self.field(
+                    first,
+                    family,
+                    DescriptionGrade::Finite(Multiplicity::from(1_u64)),
+                    &[],
+                ) {
                     Ok((field, _written)) => fields.push(field),
                     Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
                         let _first = uncoded.get_or_insert(diagnostic);
@@ -1611,9 +1617,9 @@ impl Reader<'_, '_>
                 .0
                 .parse::<u64>()
                 .map_err(|_error| run.fault(DescriptionFault::Malformed))?;
-            return Ok(DescriptionGrade::Finite(Multiplicity(value)));
+            return Ok(DescriptionGrade::Finite(Multiplicity::from(value)));
         }
-        Ok(DescriptionGrade::Finite(Multiplicity(1)))
+        Ok(DescriptionGrade::Finite(Multiplicity::from(1_u64)))
     }
 
     /// Interpret a first-order field, recognizing the recursive family head,

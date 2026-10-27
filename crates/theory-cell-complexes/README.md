@@ -8,6 +8,7 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -27,10 +28,10 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 - `anti_unify_cmd`, `Generalization`, `GeneralizationPoint`, `GeneralizationArm`, `anti_unification::Absent`: the least general generalization of a family of command-pattern tuples, with one point per distinct disagreement and one arm per member at each, and its three refusals by name.
 - `reduction_cmp`, `path_order_cmp`: the guarded size comparison with the path order deciding ties, and the path order alone.
 - `CellAlphabet`, `SeamRole`, `PositionOrder`, `path_order`, `ConvexityDischarge`, `CommandSpliceRefusal`: the 24-method alphabet interface and the shared path order on child-index positions.
-- `SequentAlphabet`, `Orientation`, `CellProvenance`, `EtaKind`, `CellMeta`, `CellVarMeta`, `CellVariance`, `CellContractumUse`, `StepGrowth`, `frame_defining_cell`: the sequent inhabitant, its tags, its derived per-hole metadata and the η-polarity discipline.
+- `SequentAlphabet`, `Orientation`, `CellProvenance`, `EtaKind`, `CellMeta`, `CellVarMeta`, `CellVariance`, `CellContractumUse`, `StepGrowth`, `frame_defining_cell`: the sequent inhabitant, its tags, its derived per-hole metadata — each hole's contractum count, its Lipschitz constant under the step, among it — and the η-polarity discipline.
 - `Cell`, `CellStore`, `CellId`: cells with derived metadata, deduplicated on structure, addressed in insertion order.
 - `admit_linear_cell`, `copied_hole`, `NonLinearPattern`: the left-linearity admission and its alphabet-neutral copy search.
-- `Polarity` and the boundary wrappers (`PatternSize`, `PositionStep`, `SubstitutionDecision`, `CellInvertibility`, …): the cut's orientation and every count and verdict a signature here crosses.
+- `Polarity` and the boundary wrappers (`PatternSize`, `PositionStep`, `SubstitutionDecision`, `CellInvertibility`, `Multiplicity`, …): the cut's orientation and every count and verdict a signature here crosses.
 
 ## Expected features
 
@@ -128,6 +129,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Linearity admission | [`linearity`](src/linearity.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a cell keeps each hole's occurrence count, recorded rather than refused.
 
 ## License
 

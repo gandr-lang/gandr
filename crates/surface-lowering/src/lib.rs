@@ -278,6 +278,10 @@
 //! Each of the ten decisions, with the alternative it was chosen over and
 //! what would reverse it, is in the module that owns it.
 //!
+//! Every fragment row a witness exercises is parsed from source by
+//! `gandr-surface-parser` and lowered in the same test; a hand-built tree is
+//! used only for a shape the parser never emits.
+//!
 //! # References
 //!
 //! - Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." _Typed Lambda

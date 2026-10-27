@@ -303,5 +303,10 @@ INSERT INTO reference VALUES('doi:10.4310/hha.2018.v20.n2.a11','theory-sites',''
 INSERT INTO reference VALUES('doi:10.46298/lmcs-18(1:10)2022','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-artifact','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-records','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-dispatcher','cells','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-driver','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-lowering','description','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-cell-complexes','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-computads','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package','background','5aee1e13476e2a1c6203be828cbc35c3a5879417','2026-10-27','3176bdf4cbe2be5b1b9cc1cbfaa89f81bd62f15d');
 COMMIT;

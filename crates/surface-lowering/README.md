@@ -8,12 +8,13 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
 ## Synopsis
 
-**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the cross-tree keys (`NodeKey`) of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, a shared native `DataSignature`, a sealed abstract type, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by each declaration's `NodeKey`, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports bring a sibling source's declarations in, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
+**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the cross-tree keys (`NodeKey`) of its signature and definition forms, an origin token, and a `DeclarationOutcome`, whose variants ([`module`](src/module.rs)) name what became of it. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by each declaration's `NodeKey`, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports bring a sibling source's declarations in, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
@@ -83,7 +84,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
-The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-lowering` runs the crate's tests; every fragment row a witness exercises is parsed from source by `gandr-surface-parser` and lowered in the same test, and a hand-built tree is used only for a shape the parser never emits.
+The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-lowering` runs the crate's tests; how their witnesses build their trees is in the crate rustdoc.
 
 ## Where the detail lives
 
@@ -110,6 +111,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Attributes and documentation | [`attribute`](src/attribute.rs), [`doc`](src/doc.rs) |
 | Origins | [`origin`](src/origin.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
 
 ## License
 

@@ -46,6 +46,7 @@ use crate::alphabet::path_order;
 use crate::boundary::CellInvertibility;
 use crate::boundary::CellLinearity;
 use crate::boundary::FiringPermission;
+use crate::boundary::Multiplicity;
 use crate::boundary::PatternSize;
 use crate::boundary::PositionStep;
 use crate::boundary::SubstitutionDecision;
@@ -192,7 +193,11 @@ impl CellVariance
 /// the linearity discipline, beside [`CellVarMeta::linear`]'s redex-side
 /// count.
 ///
-/// `Once` preserves a hole, `Erased` weakens it away, `Repeated` contracts it.
+/// `Once` preserves a hole, `Erased` weakens it away, `Repeated` contracts it
+/// and keeps how many times. That number is the hole's Lipschitz constant
+/// under the step ([`CellContractumUse::occurrences`]): two instances of the
+/// redex whose subterms at the hole lie `d` apart step to contracta at most
+/// `n · d` apart when every symbol is non-expansive.
 /// The derivation reports these and refuses none: the admission boundary
 /// ([`crate::linearity::admit_linear_cell`]) governs the redex side alone.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -206,7 +211,45 @@ pub enum CellContractumUse
     Once,
     /// The pair occurs more than once on the right-hand side: the step
     /// duplicates the hole.
-    Repeated,
+    Repeated
+    {
+        /// How many times the pair occurs there: two or more.
+        count: Multiplicity,
+    },
+}
+
+impl CellContractumUse
+{
+    /// How many times the step writes the hole: its Lipschitz constant, the
+    /// most by which the step stretches a distance between two instances of
+    /// the hole, over non-expansive symbols (the crate's § References).
+    ///
+    /// # Specification
+    /// - ensures: zero for [`CellContractumUse::Erased`], one for
+    ///   [`CellContractumUse::Once`], and the count a
+    ///   [`CellContractumUse::Repeated`] carries.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one cell carrying all three uses, its repeat three
+    ///   times, reads zero, one and three; a constant fixed at two for every
+    ///   repeat, or one for a dropped hole, changes the reading.
+    /// - witness: `sequent::tests::the_contractum_use_reports_erased_once_and_repeated`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |output| u64::from(output) == match self {
+        Self::Erased => 0,
+        Self::Once => 1,
+        Self::Repeated { count } => u64::from(count),
+    })]
+    pub fn occurrences(self) -> Multiplicity
+    {
+        match self {
+            Self::Erased => Multiplicity::from(0_u64),
+            Self::Once => Multiplicity::from(1_u64),
+            Self::Repeated { count } => count,
+        }
+    }
 }
 
 /// The whole-step classification [`CellMeta::step_growth`] reports: the join
@@ -220,7 +263,12 @@ pub enum StepGrowth
     /// No hole is duplicated and at least one is dropped: the step weakens.
     Erasing,
     /// At least one hole is duplicated: the step can grow a term.
-    Duplicating,
+    Duplicating
+    {
+        /// The most times the right-hand side writes any one hole: the
+        /// largest of the holes' Lipschitz constants.
+        count: Multiplicity,
+    },
 }
 
 /// The derived metadata of one cell metavariable.
@@ -322,7 +370,7 @@ impl CellMeta
     ///   across both faces; it is linear exactly when its representative's
     ///   `(name, category)` pair occurs once in `lhs`; its contractum use is
     ///   erased, once or repeated as that pair occurs zero, one or more times
-    ///   in `rhs`. `invertible` is carried through.
+    ///   in `rhs`, a repeat carrying how many. `invertible` is carried through.
     /// - panics: none.
     /// - intension: quadratic in the occurrence count, which a cell face keeps
     ///   small.
@@ -347,7 +395,9 @@ impl CellMeta
             && match rhs.metavars().filter(|var| *var == &meta.var).count() {
                 0 => meta.contractum == CellContractumUse::Erased,
                 1 => meta.contractum == CellContractumUse::Once,
-                _ => meta.contractum == CellContractumUse::Repeated,
+                count => meta.contractum == CellContractumUse::Repeated {
+                    count: Multiplicity::from(u64::try_from(count).unwrap_or(u64::MAX)),
+                },
             }))]
     pub fn derive(
         lhs: &CmdPat,
@@ -380,7 +430,9 @@ impl CellMeta
             let contractum = match right_count {
                 0 => CellContractumUse::Erased,
                 1 => CellContractumUse::Once,
-                _ => CellContractumUse::Repeated,
+                _ => CellContractumUse::Repeated {
+                    count: Multiplicity::from(u64::try_from(right_count).unwrap_or(u64::MAX)),
+                },
             };
             vars.push(CellVarMeta {
                 var: var.clone(),
@@ -424,7 +476,8 @@ impl CellMeta
     ///
     /// # Specification
     /// - ensures: [`StepGrowth::Duplicating`] when any hole's contractum use is
-    ///   repeated, else [`StepGrowth::Erasing`] when any is erased, else
+    ///   repeated, carrying the largest count among them, else
+    ///   [`StepGrowth::Erasing`] when any is erased, else
     ///   [`StepGrowth::StrictlyLinear`] — a cell without metavariables
     ///   included.
     /// - panics: none.
@@ -432,7 +485,9 @@ impl CellMeta
     /// # Adequacy
     /// - hypothesis: L3 — the three outcomes are separated by the successor
     ///   cell, a cell dropping one of two holes, and a cell dropping one hole
-    ///   while duplicating another.
+    ///   while duplicating another; the carried count by a cell writing its
+    ///   three holes twice, three times and twice, so the first count or the
+    ///   last in place of the largest changes it.
     /// - witness: `sequent::tests::the_step_growth_join_names_duplication_erasure_and_strict_linearity`
     /// - witness: `sequent::tests::metadata_order_and_growth_include_empty_and_rhs_only_holes`
     #[inline]
@@ -445,8 +500,9 @@ impl CellMeta
         )
     )]
     #[spec(ensures: |output| match output {
-        StepGrowth::Duplicating => self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated),
-        StepGrowth::Erasing => !self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated)
+        StepGrowth::Duplicating { count } => self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated { count })
+            && self.vars.iter().all(|var| var.contractum.occurrences() <= count),
+        StepGrowth::Erasing => !self.vars.iter().any(|var| matches!(var.contractum, CellContractumUse::Repeated { .. }))
             && self.vars.iter().any(|var| var.contractum == CellContractumUse::Erased),
         StepGrowth::StrictlyLinear => self.vars.iter().all(|var| var.contractum == CellContractumUse::Once),
     })]
@@ -454,11 +510,20 @@ impl CellMeta
     {
         let mut growth = StepGrowth::StrictlyLinear;
         for var in &self.vars {
-            match var.contractum {
-                CellContractumUse::Repeated => return StepGrowth::Duplicating,
-                CellContractumUse::Erased => growth = StepGrowth::Erasing,
-                CellContractumUse::Once => {},
-            }
+            growth = match (var.contractum, growth) {
+                (
+                    CellContractumUse::Repeated { count },
+                    StepGrowth::Duplicating { count: most },
+                ) => StepGrowth::Duplicating {
+                    count: count.max(most),
+                },
+                (
+                    CellContractumUse::Repeated { count },
+                    StepGrowth::StrictlyLinear | StepGrowth::Erasing,
+                ) => StepGrowth::Duplicating { count },
+                (CellContractumUse::Erased, StepGrowth::StrictlyLinear) => StepGrowth::Erasing,
+                (CellContractumUse::Erased | CellContractumUse::Once, held) => held,
+            };
         }
         growth
     }
@@ -1454,7 +1519,9 @@ mod tests
                         MetaVar::producer("p"),
                         CellVariance::Producer,
                         false,
-                        CellContractumUse::Repeated
+                        CellContractumUse::Repeated {
+                            count: Multiplicity::from(2_u64)
+                        }
                     ),
                     (
                         MetaVar::producer("q"),
@@ -1478,7 +1545,12 @@ mod tests
                 observed
             );
             assert_eq!(invertible, bool::from(metadata.invertible()));
-            assert_eq!(StepGrowth::Duplicating, metadata.step_growth());
+            assert_eq!(
+                StepGrowth::Duplicating {
+                    count: Multiplicity::from(2_u64)
+                },
+                metadata.step_growth()
+            );
         }
     }
 
@@ -1722,8 +1794,8 @@ mod tests
     #[test]
     fn the_contractum_use_reports_erased_once_and_repeated()
     {
-        // One cell carrying all three uses: `x` preserved once, `y`
-        // duplicated, `z` dropped, and `alpha` kept.
+        // One cell carrying all three uses: `x` preserved once, `y` written
+        // three times, `z` dropped, and `alpha` kept.
         let lhs = CmdPat::cut(
             Polarity::Positive,
             ProdPat::ctor("T", [
@@ -1739,30 +1811,36 @@ mod tests
                 ProdPat::meta("x"),
                 ProdPat::meta("y"),
                 ProdPat::meta("y"),
+                ProdPat::meta("y"),
             ]),
             ConsPat::meta("alpha"),
         );
         let meta = CellMeta::derive(&lhs, &rhs, CellInvertibility::from(false));
-        assert_eq!(
-            CellContractumUse::Once,
-            entry(&meta, "x").contractum(),
-            "preserved once"
-        );
-        assert_eq!(
-            CellContractumUse::Repeated,
-            entry(&meta, "y").contractum(),
-            "duplicated"
-        );
-        assert_eq!(
-            CellContractumUse::Erased,
-            entry(&meta, "z").contractum(),
-            "dropped"
-        );
-        assert_eq!(
-            CellContractumUse::Once,
-            entry(&meta, "alpha").contractum(),
-            "the continuation is kept, per pair as ever"
-        );
+        let three = Multiplicity::from(3_u64);
+        for (hole, contractum, occurrences, reason) in [
+            ("x", CellContractumUse::Once, 1_u64, "preserved once"),
+            (
+                "y",
+                CellContractumUse::Repeated { count: three },
+                3,
+                "written three times, and the count is kept",
+            ),
+            ("z", CellContractumUse::Erased, 0, "dropped"),
+            (
+                "alpha",
+                CellContractumUse::Once,
+                1,
+                "the continuation is kept, per pair as ever",
+            ),
+        ] {
+            let used = entry(&meta, hole).contractum();
+            assert_eq!(contractum, used, "{reason}");
+            assert_eq!(
+                Multiplicity::from(occurrences),
+                used.occurrences(),
+                "{hole}'s constant: {reason}"
+            );
+        }
     }
 
     #[test]
@@ -1814,9 +1892,35 @@ mod tests
         );
         let duplicating = CellMeta::derive(&drop_lhs, &dup_rhs, CellInvertibility::from(false));
         assert_eq!(
-            StepGrowth::Duplicating,
+            StepGrowth::Duplicating {
+                count: Multiplicity::from(2_u64)
+            },
             duplicating.step_growth(),
             "a repeated hole makes the step grow, whatever else it drops"
+        );
+        // Three holes written twice, three times and twice: the step carries
+        // the largest count, neither the first nor the last.
+        let triple_lhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("T", [
+                ProdPat::meta("x"),
+                ProdPat::meta("y"),
+                ProdPat::meta("z"),
+            ]),
+            ConsPat::meta("alpha"),
+        );
+        let uneven_rhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("U", ["x", "x", "y", "y", "y", "z", "z"].map(ProdPat::meta)),
+            ConsPat::meta("alpha"),
+        );
+        let uneven = CellMeta::derive(&triple_lhs, &uneven_rhs, CellInvertibility::from(false));
+        assert_eq!(
+            StepGrowth::Duplicating {
+                count: Multiplicity::from(3_u64)
+            },
+            uneven.step_growth(),
+            "the step's count is its holes' largest"
         );
     }
 

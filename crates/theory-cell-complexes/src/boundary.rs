@@ -74,6 +74,20 @@ wrapper! {
 }
 
 wrapper! {
+    /// How many times something is used: the bound a description field
+    /// declares, or the number of times a cell's right-hand side writes one
+    /// hole.
+    ///
+    /// The second is the hole's Lipschitz constant under the step: a
+    /// contractum writing a hole `n` times stretches the distance between two
+    /// instances of it by at most `n` when every symbol is non-expansive (the
+    /// crate's § References). Lowering reads the first and this crate derives
+    /// the second, so the wrapper lives here.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Multiplicity(u64);
+}
+
+wrapper! {
     /// Whether a cell is an invertible joinability certificate rather than a
     /// directed optimization cell.
     ///
