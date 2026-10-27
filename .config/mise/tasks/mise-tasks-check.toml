@@ -482,6 +482,100 @@ quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
   --comment target/evidence/comment.md --selection target/evidence/selection
 '''
 
+# The recorded case of the re-verification lane (#2636), the witness the
+# features ledger's `re-verification` row names. `.config/obligations/` holds
+# a crate before and after one change: `edited.rs` changes `limit`'s body, and
+# `bump`'s prose clause names `limit`. The task builds the crate in a scratch
+# Git repository, its manifest carrying this workspace's Dylint libraries, so
+# the pinned policy library records it, and commits `base.rs`. With
+# `edited.rs` in its place, it writes the crate's records and rustdoc JSON as
+# `check:dylint` and `evidence:rustdoc` do, then runs `quenchant-gates
+# obligations` as the lane does, `--require-acknowledged`, three times:
+#   - over a body with no section, it exits 2 with `bump`'s clause open;
+#   - over that body with the clause's `still holds` box ticked, it exits 0
+#     with the clause held;
+#   - with `base.rs` back, it obliges nothing.
+# The builds keep their target under `target/obligations`, so a cached run
+# compiles nothing but the one-line change.
+["check:obligations"]
+description = "The re-verification lane obliges the recorded change, holds it once ticked and obliges nothing without it"
+depends = ["check:dylint", "workflow:install"]
+tools.jq = "1.8.1"
+env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
+env.CARGO_INCREMENTAL = "0"
+env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
+env.CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
+env.CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "dylint-link"
+env.CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "dylint-link"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+case_dir=.config/obligations
+target={{ config_root }}/target/obligations
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+repository=$scratch/repository
+mkdir -p "$repository/src" "$target/records"
+libraries=$(cargo metadata --no-deps --format-version 1 --locked | jq -r '
+  .metadata.dylint.libraries[]
+  | "[[workspace.metadata.dylint.libraries]]\ngit = \(.git | tojson)\nrev = \(.rev | tojson)\npattern = \(.pattern | tojson)\n"')
+printf '[package]\nname = "obligations-case"\nversion = "0.0.0"\nedition = "2024"\npublish = false\n\n[workspace]\n\n%s' \
+  "$libraries" > "$repository/Cargo.toml"
+cp rust-toolchain.toml "$repository/"
+cp "$case_dir/base.rs" "$repository/src/lib.rs"
+printf '/target\n/Cargo.lock\n' > "$repository/.gitignore"
+fixture_git() {
+  GIT_AUTHOR_NAME=case GIT_AUTHOR_EMAIL=case@example.invalid GIT_COMMITTER_NAME=case GIT_COMMITTER_EMAIL=case@example.invalid \
+    git -C "$repository" -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
+}
+fixture_git init --quiet
+fixture_git add --all
+fixture_git commit --quiet --message base
+cp "$case_dir/edited.rs" "$repository/src/lib.rs"
+# Cargo reads a scratch crate's build as fresh across scratch directories, and
+# a fresh build runs no lint pass and writes no records: the case crate alone
+# is cleaned first, in both target directories, and the policy library and
+# the dependencies stay built.
+rm -f "$target/records"/*.jsonl
+for built in "$target"/dylint/dylint/target/*/ "$target/rustdoc"; do
+  [[ -d $built ]] || continue
+  cargo clean --manifest-path "$repository/Cargo.toml" --target-dir "$built" --package obligations-case --quiet
+done
+DYLINT_TOML=$(printf '[quenchant-dylints]\nevidence_directory = "%s"\n' "$target/records") \
+  CARGO_TARGET_DIR="$target/dylint" \
+  CARGO_ENCODED_RUSTFLAGS=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no' \
+  cargo dylint --manifest-path "$repository/Cargo.toml" --lib quenchant_dylints --no-deps -- --lib --quiet
+RUSTDOCFLAGS="-Z unstable-options --output-format json" CARGO_TARGET_DIR="$target/rustdoc" \
+  cargo doc --manifest-path "$repository/Cargo.toml" --no-deps --document-private-items --offline --quiet
+printf '## What\n\nThe recorded change.\n' > "$scratch/body.md"
+obligations() {
+  quenchant-gates obligations --manifest-path "$repository/Cargo.toml" --base HEAD \
+    --records "$target/records" --rustdoc "$target/rustdoc/doc" \
+    --comment "$scratch/comment.md" --selection "$scratch/selection" --require-acknowledged "$@"
+}
+failed=0
+expect() {
+  local name=$1 want_status=$2 want_line=$3 status=0 report
+  shift 3
+  report=$(obligations "$@" 2>&1) || status=$?
+  if [[ $status != "$want_status" ]] || ! grep -qxF -- "$want_line" <<< "$report"; then
+    printf 'obligations case FAILED: %s\n  wanted exit %s and the line: %s\n  gave exit %s:\n%s\n' \
+      "$name" "$want_status" "$want_line" "$status" "$report" >&2
+    failed=1
+  fi
+}
+expect 'the change obliges the clause naming the changed item' 2 \
+  'prose: obligations_case::bump `ensures` names obligations_case::limit [open]' --body "$scratch/body.md"
+awk '{ sub(/- \[ \] still holds/, "- [x] still holds") } 1' "$scratch/body.md" > "$scratch/ticked.md"
+expect 'a ticked box holds the clause' 0 \
+  'prose: obligations_case::bump `ensures` names obligations_case::limit [still holds]' --previous "$scratch/ticked.md"
+cp "$case_dir/base.rs" "$repository/src/lib.rs"
+expect 'without the change nothing is obliged' 0 \
+  'obligations against HEAD: 0 changed items, 0 obligations, 0 witnesses to rerun'
+(( failed == 0 )) || exit 1
+echo "obligations check OK: the recorded change obliges bump's clause, a tick holds it, and without the change nothing is owed"
+'''
+
 # The obligated witnesses, under the enforcing gate's flags and target
 # directory so a restored enforcing build serves them. The selection names
 # each witness's package, so Cargo builds only those packages' tests, with
