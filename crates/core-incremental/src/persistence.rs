@@ -139,6 +139,42 @@ impl CheckpointAddress
     }
 }
 
+/// The name a record is published under: a digest in lowercase hexadecimal.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordName(String);
+
+impl RecordName
+{
+    /// The path of the record so named in `root`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn within(
+        &self,
+        root: &Path,
+    ) -> PathBuf
+    {
+        root.join(&self.0)
+    }
+}
+
+impl From<CheckpointAddress> for RecordName
+{
+    /// The name of the checkpoint record for `address`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(address: CheckpointAddress) -> Self
+    {
+        Self(address.to_hex())
+    }
+}
+
 /// The identity of the backend artifact that judged a checkpoint set.
 ///
 /// # Specification
@@ -921,8 +957,9 @@ impl CheckpointStore for FileCheckpointStore
     {
         let payload = crate::codec::encode_checkpoints(checkpoints)?;
         let artifact = artifact_bytes(address, backend, Bytes(payload.as_ref()))?;
-        let record = TemporaryRecord::write(&self.root, address, &artifact)?;
-        record.commit(&self.record_path(address))
+        let name = RecordName::from(address);
+        let record = TemporaryRecord::write(&self.root, &name, &artifact)?;
+        record.commit(&name.within(&self.root))
     }
 }
 
@@ -989,7 +1026,7 @@ fn failure_of(error: &std::io::Error) -> Failure
 /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
-struct TemporaryRecord
+pub struct TemporaryRecord
 {
     /// The private path the record was written to.
     path: PathBuf,
@@ -1009,7 +1046,8 @@ enum Publication
 
 impl TemporaryRecord
 {
-    /// Write `artifact` into a file created exclusively in `root`.
+    /// Write `artifact` into a file created exclusively in `root`, under a
+    /// private name leading with `name`.
     ///
     /// # Specification
     /// - requires: `root` is an existing directory.
@@ -1027,9 +1065,9 @@ impl TemporaryRecord
     /// # Adequacy
     /// - hypothesis: L3 — real publication, failed rename, a predictable-name
     ///   squatter and four concurrent publishers exercise private creation. The
-    ///   predicate checks lexical directory/address placement and an armed
-    ///   guard; it does not reread the artifact or force the random collision
-    ///   retry path.
+    ///   predicate checks lexical directory/name placement and an armed guard;
+    ///   it does not reread the artifact or force the random collision retry
+    ///   path.
     /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
     /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
     /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
@@ -1039,18 +1077,18 @@ impl TemporaryRecord
             | Ok(ref record) => {
                 record.published == Publication::Private
                     && record.path.parent() == Some(root)
-                    && record.path.file_name().is_some_and(|name| {
-                        let prefix = blake3::Hash::from_bytes(address.0).to_hex();
-                        name.as_encoded_bytes().get(.. 64) == Some(prefix.as_str().as_bytes())
-                            && name.as_encoded_bytes().get(64 .. 69) == Some(b".tmp-".as_slice())
+                    && record.path.file_name().is_some_and(|file| {
+                        name.0.len() == 64
+                            && file.as_encoded_bytes().strip_prefix(name.0.as_bytes())
+                                .is_some_and(|rest| rest.starts_with(b".tmp-"))
                     })
             },
             | Err(error) => error == CheckpointStoreError::Io,
         },
     )]
-    fn write(
+    pub fn write(
         root: &Path,
-        address: CheckpointAddress,
+        name: &RecordName,
         artifact: &ArtifactBytes,
     ) -> Result<Self, CheckpointStoreError>
     {
@@ -1059,10 +1097,7 @@ impl TemporaryRecord
             // A fresh nonce per attempt, so a retry resolves the collision it
             // met instead of meeting it again.
             let nonce = core::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), process);
-            let candidate = root.join(alloc::format!(
-                "{}.tmp-{process}-{nonce:016x}",
-                address.to_hex()
-            ));
+            let candidate = root.join(alloc::format!("{}.tmp-{process}-{nonce:016x}", name.0));
             let created = std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -1112,7 +1147,7 @@ impl TemporaryRecord
             | Err(error) => error == CheckpointStoreError::Io && self.published == before,
         },
     )]
-    fn commit(
+    pub fn commit(
         mut self,
         destination: &Path,
     ) -> Result<(), CheckpointStoreError>
@@ -1149,11 +1184,11 @@ impl Drop for TemporaryRecord
     }
 }
 
-/// A file record: header, then payload.
+/// A file record: a header, then what it frames.
 ///
 /// # Specification
 /// - executable: none — this nominal byte wrapper has no callable boundary;
-///   `artifact_bytes` establishes its framing contract.
+///   `artifact_bytes` and the verdict store's encoder establish its framing.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — real file round-trips and mutations of record integrity
@@ -1161,8 +1196,34 @@ impl Drop for TemporaryRecord
 ///   placement without a second digest computation.
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
+/// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
 #[repr(transparent)]
-struct ArtifactBytes(Vec<u8>);
+pub struct ArtifactBytes(Vec<u8>);
+
+impl ArtifactBytes
+{
+    /// The name of the record whose name is the BLAKE3 digest of these bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn named_by_digest(&self) -> RecordName
+    {
+        RecordName(String::from(blake3::hash(&self.0).to_hex().as_str()))
+    }
+}
+
+impl From<Vec<u8>> for ArtifactBytes
+{
+    /// The record holding exactly `bytes`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: Vec<u8>) -> Self
+    {
+        Self(bytes)
+    }
+}
 
 /// The file record of `payload`: magic, version, address, backend, payload
 /// length and payload digest, then the payload.

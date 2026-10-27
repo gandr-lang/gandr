@@ -42,12 +42,17 @@ required-features = ["hotpath"]
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. serde_json encodes the run's summary line
 # under `--verbosity json`; the dispatcher reads the user's configuration
-# file. `check` and `lock` open the storage tier's store, which a package's
-# lock commits through. hotpath profiles the benchmark report behind the
-# `hotpath` feature.
+# file's `[presentation]` table, and toml its `[kernel]` table. `check` and
+# `lock` open the storage tier's store, which a package's lock commits
+# through. hotpath profiles the benchmark report behind the `hotpath`
+# feature. A `check` keeps the kernel's verdicts: the kernel's key and
+# policy, the incremental checker's verdict store, and getrandom's entropy
+# for minting the key.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-core-incremental.workspace = true
+gandr-kernel-core.workspace = true
 gandr-storage-store.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
@@ -58,9 +63,11 @@ gandr-surface-mcp.workspace = true
 gandr-surface-render-terminal.workspace = true
 gandr-surface-repl.workspace = true
 gandr-surface-tui.workspace = true
+getrandom.workspace = true
 hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 

@@ -224,6 +224,7 @@ pub use crate::decode::decode_after;
 pub use crate::decode::decode_keeping;
 pub use crate::decode::decoded_prefix;
 pub use crate::encode::EncodedPrefix;
+pub use crate::encode::SegmentEncoder;
 pub use crate::encode::encode;
 pub use crate::encode::encode_after;
 pub use crate::encode::encode_prefix;

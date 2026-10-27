@@ -443,11 +443,16 @@
 //!   handling as the homomorphism the universal property of the free model
 //!   induces from the return clause, which the fold of a handled body's program
 //!   is for a theory of operations and no equations.
+//! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: §
+//!   kernel-verdict-reuse — a recorded readmission hands its environment on
+//!   without the verdicts it recalled, so a resumed run's receipt attests only
+//!   its own checks.
 //!
 //! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -485,6 +490,9 @@ use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::content_digest;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
+use gandr_kernel_core::verdict::NoVerdicts;
+use gandr_kernel_core::verdict::TrustPolicy;
+use gandr_kernel_core::verdict::VerdictSource;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
@@ -1590,10 +1598,13 @@ impl Crossed
     ///   follows the `from` resumed; as [`crossed::Absent::Unadmitted`] when an
     ///   entry is neither admitted nor static; as
     ///   [`crossed::Absent::Unaligned`] when a seal is open; otherwise the
-    ///   environment, the entries, and the positions with no core body and no
-    ///   open seal. A record made freezes the readmission's environment
-    ///   ([`Environment::freeze`]) before keeping it, so the record and every
-    ///   readmission [`Crossed::resume`] starts from it share its arena.
+    ///   environment handed on ([`Environment::handed_on`]: its key chain
+    ///   without the verdicts this readmission checked or recalled, which its
+    ///   own receipt answers for), the entries, and the positions with no core
+    ///   body and no open seal. A record made freezes the readmission's
+    ///   environment ([`Environment::freeze`]) before keeping it, so the record
+    ///   and every readmission [`Crossed::resume`] starts from it share its
+    ///   arena.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1631,7 +1642,7 @@ impl Crossed
         }
         environment.freeze();
         Maybe::Present(Self {
-            environment: environment.clone(),
+            environment: environment.handed_on(),
             positions: Positions {
                 native: positions.native.clone(),
                 assumed: positions.assumed.clone(),
@@ -1852,7 +1863,79 @@ pub fn readmit_resuming(
     crossed: Maybe<&Crossed, crossed::Absent>,
 ) -> (Readmission, Maybe<Crossed, crossed::Absent>)
 {
-    readmit_retiring(arena, report, boundary, crossed, &Unretired).whole()
+    readmit_retiring(
+        arena,
+        report,
+        (boundary, crossed),
+        &Recall::recheck(),
+        &Unretired,
+    )
+    .whole()
+}
+
+/// Whose recorded verdicts a fresh readmission believes, and where it reads
+/// them.
+///
+/// # Specification
+/// - ensures: a readmission under [`Recall::recheck`] checks every declaration
+///   it admits through the checked entry; under [`Recall::trusting`] it admits
+///   one on a verdict the source answers under a receipt from a signer the
+///   policy lists, as [`Environment::add_decl`] does. A readmission resumed
+///   from a [`Crossed`] record keeps the recall that record was made under.
+/// - executable: none — the policy and the source are data the kernel reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module readmitted under the receipt of its own cold
+///   readmission recalls every declaration that one checked, to the same
+///   artifact, and recalls nothing under another signer's key.
+/// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
+#[derive(Clone, Debug)]
+pub struct Recall
+{
+    /// Whose receipts are believed.
+    policy: TrustPolicy,
+    /// Where receipts are read.
+    source: Arc<dyn VerdictSource>,
+}
+
+impl Recall
+{
+    /// Check every declaration, recalling nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn recheck() -> Self
+    {
+        Self {
+            policy: TrustPolicy::Recheck,
+            source: Arc::new(NoVerdicts),
+        }
+    }
+
+    /// Recall the verdicts `source` answers under receipts `policy` trusts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn trusting(
+        policy: TrustPolicy,
+        source: Arc<dyn VerdictSource>,
+    ) -> Self
+    {
+        Self { policy, source }
+    }
+
+    /// An empty environment under this recall.
+    ///
+    /// # Specification
+    /// trivial.
+    fn environment(&self) -> Environment
+    {
+        Environment::recalling(self.policy.clone(), Arc::clone(&self.source))
+    }
 }
 
 /// What a readmission that polls retirement answers.
@@ -1866,20 +1949,21 @@ pub type Readmitting<Retired> = Polled<
     Maybe<Crossed, crossed::Absent>,
 >;
 
-/// [`readmit_resuming`], polling `retirement` before each declaration it
-/// crosses: retired, it stops there and answers the record of the
-/// declarations before it.
+/// [`readmit_resuming`] under `recall`, polling `retirement` before each
+/// declaration it crosses: retired, it stops there and answers the record of
+/// the declarations before it.
 ///
 /// # Specification
-/// - requires: as [`readmit_resuming`].
+/// - requires: as [`readmit_resuming`], of `leading`'s boundary and record.
 /// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
-///   with [`readmit_resuming`]'s answer. Retired before the declaration at
-///   index `k`, [`Polled::Retired`] with the retirement and the record of the
-///   first `k` declarations, made as [`readmit_resuming`] makes one at a
-///   boundary of `k`: present when it crossed at least one of them beyond those
-///   it resumed, every one was admitted or static, and no seal is open at `k`;
-///   absent otherwise. A mutual block crosses whole, so `k` never falls inside
-///   one; a poll is read only before a declaration, so `k` is always one of the
+///   with [`readmit_resuming`]'s answer, each declaration a fresh environment
+///   admits admitted under `recall`. Retired before the declaration at index
+///   `k`, [`Polled::Retired`] with the retirement and the record of the first
+///   `k` declarations, made as [`readmit_resuming`] makes one at a boundary of
+///   `k`: present when it crossed at least one of them beyond those it resumed,
+///   every one was admitted or static, and no seal is open at `k`; absent
+///   otherwise. A mutual block crosses whole, so `k` never falls inside one; a
+///   poll is read only before a declaration, so `k` is always one of the
 ///   report's.
 /// - provides: an admission a newer revision overtakes stops at its next
 ///   declaration, and the next one resumes what it crossed.
@@ -1888,8 +1972,10 @@ pub type Readmitting<Retired> = Polled<
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a readmission retired part way, then resumed from its
-///   record, answers what a whole readmission answers.
+///   record, answers what a whole readmission answers; one under the receipt of
+///   its own cold run recalls what that run checked.
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+/// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
 #[inline]
 #[spec(ensures: |ret| match ret {
     Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
@@ -1899,18 +1985,23 @@ pub type Readmitting<Retired> = Polled<
 pub fn readmit_retiring<Poll>(
     arena: &mut CoreArena,
     report: &ModuleReport,
-    boundary: LeadingCount,
-    crossed: Maybe<&Crossed, crossed::Absent>,
+    leading: (LeadingCount, Maybe<&Crossed, crossed::Absent>),
+    recall: &Recall,
     retirement: &Poll,
 ) -> Readmitting<Poll::Retired>
 where
     Poll: Retirement,
 {
+    let (boundary, crossed) = leading;
     readmit_from(
         arena,
         report,
         |certificate| certificate,
-        Resume::Leading { boundary, crossed },
+        Resume::Leading {
+            boundary,
+            crossed,
+            recall,
+        },
         retirement,
     )
 }
@@ -1950,7 +2041,7 @@ where
 #[derive(Clone, Copy, Debug)]
 enum Resume<'crossed>
 {
-    /// Cross every declaration and record nothing.
+    /// Cross every declaration, checking each, and record nothing.
     Whole,
     /// Resume what `crossed` recorded when it agrees with the report, and
     /// record what the first `boundary` declarations built.
@@ -1960,6 +2051,8 @@ enum Resume<'crossed>
         boundary: LeadingCount,
         /// An earlier readmission's record, when the caller holds one.
         crossed: Maybe<&'crossed Crossed, crossed::Absent>,
+        /// The recall a fresh environment admits under.
+        recall: &'crossed Recall,
     },
 }
 
@@ -2018,18 +2111,26 @@ where
         definitions: report.definitions(),
     };
     let judged_all = report.judged();
-    let (boundary, offered) = match resume {
-        Resume::Whole => (None, None),
-        Resume::Leading { boundary, crossed } => (Some(boundary.0), match crossed {
-            Maybe::Present(crossed) => Some(crossed),
-            Maybe::Absent(_) => None,
-        }),
+    let (boundary, offered, fresh) = match resume {
+        Resume::Whole => (None, None, Environment::new()),
+        Resume::Leading {
+            boundary,
+            crossed,
+            recall,
+        } => (
+            Some(boundary.0),
+            match crossed {
+                Maybe::Present(crossed) => Some(crossed),
+                Maybe::Absent(_) => None,
+            },
+            recall.environment(),
+        ),
     };
     let (mut environment, mut positions, mut readmitted) = offered
         .and_then(|crossed| crossed.resume(report))
         .unwrap_or_else(|| {
             (
-                Environment::new(),
+                fresh,
                 Positions::default(),
                 Vec::with_capacity(judged_all.len()),
             )

@@ -27,13 +27,14 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ codebruijn-carrier, § footprint-from-support) — what a node mentions is a function of its content, so its support is computed once, when the node is minted, and carried.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1 and 3) — the kernel derives every support from its own nodes rather than taking one across the bridge.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a presentation may declare a sort classified `Type[-]`.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a verdict key reads each declaration's canonical segment.
 
 ## Provided features
 
 - **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids, minted only by constructors over already-allocated children.
 - **A support carried on every node** (`Reads`, read by `TermArena::value_support` and its three siblings): the free de Bruijn indices the node mentions, computed from its children's supports when it is minted, so no consumer walks a term to learn which binders it reads.
 - **The admission watermark** (`ArenaWatermark`) and `DeclarationBuilder`, which ties content minting to it so an abandoned declaration truncates itself.
-- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries. `encode_prefix` and `encode_after` resume an encoding after a leading run of declarations (`EncodedPrefix`), and `decode_keeping` and `decode_after` a decode (`DecodedPrefix`), each answering as the whole one does.
+- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries. `encode_prefix` and `encode_after` resume an encoding after a leading run of declarations (`EncodedPrefix`), and `decode_keeping` and `decode_after` a decode (`DecodedPrefix`), each answering as the whole one does; `SegmentEncoder` writes the segments one declaration at a time, as the kernel's verdict key reads them.
 - **Structured names** (`StructuredName`, `NameSegment`) on every declaration.
 - **Canonical form enforced by re-encoding**, and **the amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, with `DecodeMetrics` from the same scan.
 - **The node-tag table** (`NODE_TAG_TABLE`): one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts.

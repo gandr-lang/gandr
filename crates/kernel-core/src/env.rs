@@ -125,6 +125,7 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
 
 use crate::check;
 use crate::encoding::ConstantName;
@@ -163,13 +164,20 @@ impl CheckedId
     }
 }
 
-/// How a declaration was admitted: through the checked choke point, or through
-/// the warned bypass. A single bit — never a trust lattice.
+/// How a declaration was admitted: checked here, recalled, or through the
+/// warned bypass.
+///
+/// A recalled declaration stands on a verdict a trusted kernel recorded for
+/// the same whole input. A provenance, never a trust lattice: a recalled
+/// admission was checked, by the kernel that signed its receipt.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Admission
 {
     /// Admitted through [`Environment::add_decl`], fully checked.
     Checked,
+    /// Admitted through [`Environment::add_decl`] on a recorded verdict whose
+    /// receipt a trusted signer gave.
+    Recalled,
     /// Admitted through [`Environment::add_decl_unchecked`], trusted and
     /// tracked.
     Unchecked,
@@ -1227,6 +1235,9 @@ pub struct Environment
     /// The atoms whose minting admission is open, ascending: what a
     /// declaration admitted now reads as its representation.
     manifest: Vec<ConstantIndex>,
+    /// The verdict state: the policy, the key chain, the receipts verified
+    /// and the verdicts checked here.
+    verdicts: crate::verdict::Verdicts,
 }
 
 impl Environment
@@ -1240,6 +1251,60 @@ impl Environment
     pub fn new() -> Self
     {
         Self::default()
+    }
+
+    /// An empty environment that keys its admissions and recalls the verdicts
+    /// `policy` trusts from `source`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn recalling(
+        policy: crate::verdict::TrustPolicy,
+        source: alloc::sync::Arc<dyn crate::verdict::VerdictSource>,
+    ) -> Self
+    {
+        Self {
+            verdicts: crate::verdict::Verdicts::under(policy, source),
+            ..Self::default()
+        }
+    }
+
+    /// This environment for a later run that resumes it: the same arena,
+    /// declarations and key chain, without the verdicts this run checked or
+    /// recalled, which its own receipt and [`Self::recalls`] answer for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every read of the declarations answers as `self` answers it,
+    ///   and a declaration admitted next is keyed as it would be in `self`;
+    ///   [`Self::receipt`] answers absent and [`Self::recalls`] zero until the
+    ///   copy admits a declaration.
+    /// - provides: the environment a readmission records for another to resume,
+    ///   so each receipt signs only what its own run checked.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses compare the copy's answers to every
+    ///   later admission with `self`'s, which no predicate over one call reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a copy handed on after a recorded run recalls a later
+    ///   declaration under the key the run would have given it, and neither
+    ///   signs nor counts what the run admitted.
+    /// - witness: `tests::verdicts::a_handed_on_environment_keys_on_and_signs_only_its_own`
+    #[inline]
+    #[must_use]
+    pub fn handed_on(&self) -> Self
+    {
+        Self {
+            arena: self.arena.clone(),
+            entries: self.entries.clone(),
+            admission_floor: self.admission_floor,
+            outstanding: self.outstanding.clone(),
+            manifest: self.manifest.clone(),
+            verdicts: self.verdicts.handed_on(),
+        }
     }
 
     /// Share the arena's nodes and the admitted declarations with every clone
@@ -1472,7 +1537,9 @@ impl Environment
         }
     }
 
-    /// Admit a declaration through the checked choke point.
+    /// Admit a declaration through the checked choke point, or on a verdict
+    /// recorded for the same whole input under a receipt this environment's
+    /// policy trusts.
     ///
     /// # Specification
     /// - requires: `staged` was built into this environment's arena through
@@ -1487,10 +1554,18 @@ impl Environment
     ///   On any failure the arena is truncated to this declaration's
     ///   content-start clamped into `[admission floor, checker-entry mark]`, so
     ///   every caller-observable face of the environment is exactly what it was
-    ///   before the call.
+    ///   before the call. When the environment keys its admissions
+    ///   ([`Self::recalling`] under a trusting policy) and every admission
+    ///   before was a lone keyed one, the declaration's key chains the previous
+    ///   key over its canonical segment. A key a verified receipt from a
+    ///   trusted signer attests admits the declaration as
+    ///   [`Admission::Recalled`] with the recorded reading and without the
+    ///   check; any other key is checked and, on success, recorded for
+    ///   [`Self::receipt`]. A rejection ends the chain.
     /// - provides: the one checked entry into the kernel. It takes **no memo**,
     ///   which is the structural form of the memo's one-call lifetime: nothing
-    ///   an earlier check recorded can reach a later one through this entry.
+    ///   an earlier check recorded can reach a later one through this entry. A
+    ///   recall happens only here, where the kernel computed the key itself.
     /// - fails: [`KernelError::OutstandingStagedContent`] when a declaration
     ///   staged after this one is still unresolved, since no clamp can preserve
     ///   a disjoint region and a rejection would otherwise truncate through
@@ -1509,13 +1584,20 @@ impl Environment
     ///   through the arena's own watermark, and the outstanding-content guard,
     ///   separated in both directions — the refusal fires with a later staging
     ///   live, and an in-order producer sees the guard and the clamp change
-    ///   nothing.
+    ///   nothing. A declaration recorded by a trusted signer is recalled under
+    ///   its own key, refused after one name changes, refused under an unlisted
+    ///   signer or a tampered record, and never recalled under
+    ///   [`TrustPolicy::Recheck`](crate::verdict::TrustPolicy::Recheck).
     /// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
     /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
     /// - witness: `env::tests::a_rejected_declaration_leaves_the_environment_unchanged`
     /// - witness: `env::tests::a_rejection_keeps_a_prior_admission_resolvable`
     /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
     /// - witness: `env::tests::an_in_order_producer_is_never_refused`
+    /// - witness: `tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
+    /// - witness: `tests::verdicts::an_unlisted_signer_recalls_nothing`
+    /// - witness: `tests::verdicts::a_tampered_record_recalls_nothing`
+    /// - witness: `tests::verdicts::a_rechecking_environment_recalls_nothing`
     // The predicate covers the two structural halves of the success
     // postcondition: exactly one entry is appended, and the admission floor
     // ends at the arena's own watermark — that is, the checker's intermediates
@@ -1560,24 +1642,42 @@ impl Environment
             Ok(levels) => levels,
             Err(error) => {
                 self.arena.truncate_to(rejected);
+                self.verdicts.end();
                 return Err(error);
             },
         };
-        let outcome = {
-            let Self {
-                ref mut arena,
-                ref entries,
-                ref manifest,
-                ..
-            } = *self;
-            check::check_declaration(
-                arena,
-                check::Judgement::new(entries, &levels).unsealing(manifest),
-                &declaration,
-            )
+        // A rejected declaration's nodes are truncated and their ids minted
+        // again, so the key chain, whose encoder remembers nodes by id, ends at
+        // the first rejection.
+        let key = self.verdicts.key(&self.arena, &declaration);
+        let recalled = match key {
+            Maybe::Present(key) => self.verdicts.recall(key),
+            Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
+        };
+        let (outcome, admission) = match recalled {
+            Maybe::Present(accessibility) => (Ok(accessibility), Admission::Recalled),
+            Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => {
+                let Self {
+                    ref mut arena,
+                    ref entries,
+                    ref manifest,
+                    ..
+                } = *self;
+                (
+                    check::check_declaration(
+                        arena,
+                        check::Judgement::new(entries, &levels).unsealing(manifest),
+                        &declaration,
+                    ),
+                    Admission::Checked,
+                )
+            },
         };
         match outcome {
             Ok(accessibility) => {
+                if let (Admission::Checked, Maybe::Present(key)) = (admission, key) {
+                    self.verdicts.checked(key, accessibility.clone());
+                }
                 // Keep this declaration's content; drop the intermediates that
                 // allocated past it.
                 self.arena.truncate_to(content_end);
@@ -1586,12 +1686,12 @@ impl Environment
                     declaration.content(),
                     declaration.laws(),
                     position,
-                    Admission::Checked,
+                    admission,
                 );
                 let key_name = self.definition_name(&declaration);
                 self.entries.push(AdmittedDeclaration {
                     declaration,
-                    admission: Admission::Checked,
+                    admission,
                     rested_on,
                     block: check::occurrence::Block::lone(position),
                     accessibility,
@@ -1604,9 +1704,49 @@ impl Environment
                 // Drop the intermediates and this declaration's content, down
                 // to the admission floor and no further.
                 self.arena.truncate_to(rejected);
+                self.verdicts.end();
                 Err(error)
             },
         }
+    }
+
+    /// A receipt `signer` gives over the verdicts this environment checked
+    /// itself under a key, and those verdicts: never one it recalled, so a
+    /// receipt attests only its own signer's checks.
+    ///
+    /// # Specification
+    /// - ensures: absent as
+    ///   [`stored::Absent::Unrecorded`](crate::verdict::stored::Absent::Unrecorded)
+    ///   when no keyed admission was checked here; otherwise the records of
+    ///   exactly those admissions and `signer`'s signature over them.
+    /// - provides: the one way a receipt is made, so a signature never covers a
+    ///   record the kernel did not produce.
+    /// - panics: none.
+    /// - executable: none — which admissions this environment checked rather
+    ///   than recalled is private to its verdicts, so no predicate reads it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a receipt an environment gave recalls its
+    ///   declarations in a fresh environment over the same input.
+    /// - witness: `tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
+    #[inline]
+    pub fn receipt(
+        &self,
+        signer: &crate::verdict::KernelSigner,
+    ) -> Maybe<crate::verdict::StoredReceipt, crate::verdict::stored::Absent>
+    {
+        self.verdicts.receipt(signer)
+    }
+
+    /// How many admissions a recorded verdict answered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn recalls(&self) -> crate::verdict::RecallCount
+    {
+        self.verdicts.recalls()
     }
 
     /// Admit a declaration through the **single warned bypass**, unchecked.
@@ -1662,6 +1802,7 @@ impl Environment
         // The bypass commits whatever content the arena holds, so the floor
         // rises to the current watermark. Without this a later rejection could
         // truncate through bypassed content.
+        self.verdicts.end();
         self.admission_floor = self.arena.watermark();
         let rested_on = self.transitive_rest(
             declaration.content(),
@@ -1801,6 +1942,7 @@ impl Environment
         content_end: ArenaWatermark,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
+        self.verdicts.end();
         let base = usize::from(self.entries.len());
         let first = ConstantIndex::from(base);
         let families = members

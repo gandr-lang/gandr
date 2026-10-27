@@ -368,6 +368,59 @@ impl Accessibility
             .copied()
             .unwrap_or(Variance::NotStrictlyPositive)
     }
+
+    /// Append this reading's verdict bytes to `out`: the stratification, the
+    /// counted parameter variances, then the parameter the result follows.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn write(
+        &self,
+        out: &mut crate::verdict::EncodedVerdict,
+    )
+    {
+        out.put_stratification(self.stratification);
+        out.put_variances(&self.parameters);
+        out.put_following(match self.result {
+            Maybe::Present(position) => Maybe::Present(position),
+            Maybe::Absent(super::recursion::Unstaged::Plain) => {
+                Maybe::Absent(crate::verdict::following::Absent::Plain)
+            },
+        });
+    }
+
+    /// The reading [`Accessibility::write`] wrote at the start of `image`,
+    /// which advances past it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn read(
+        image: &mut crate::verdict::VerdictImage<'_>
+    ) -> Maybe<Self, crate::verdict::verdict_image::Absent>
+    {
+        let Maybe::Present(stratification) = image.stratification()
+        else {
+            return Maybe::Absent(crate::verdict::verdict_image::Absent::Malformed);
+        };
+        let Maybe::Present(parameters) = image.variances()
+        else {
+            return Maybe::Absent(crate::verdict::verdict_image::Absent::Malformed);
+        };
+        let Maybe::Present(following) = image.following()
+        else {
+            return Maybe::Absent(crate::verdict::verdict_image::Absent::Malformed);
+        };
+        Maybe::Present(Self {
+            stratification,
+            parameters,
+            result: match following {
+                Maybe::Present(position) => Maybe::Present(position),
+                Maybe::Absent(crate::verdict::following::Absent::Plain) => {
+                    Maybe::Absent(super::recursion::Unstaged::Plain)
+                },
+            },
+        })
+    }
 }
 
 /// The accessibility of the families admitted before a walk, which a nested

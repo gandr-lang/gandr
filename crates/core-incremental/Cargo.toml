@@ -30,7 +30,8 @@ path = "tests/lib.rs"
 # The content table's interner indexes its nodes in a `hashbrown` table under
 # `foldhash`'s fixed seed, the grammar's label-index pair.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. The kernel's verdict vocabulary is what the
+# verdict store keeps on disk and answers the kernel with.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -38,6 +39,7 @@ foldhash.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
+gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true

@@ -53,6 +53,7 @@ INSERT INTO purpose VALUES('core-checker','bridge::Outcome','enum','What became 
 INSERT INTO purpose VALUES('core-checker','bridge::Readmission','struct','A module''s readmission: the kernel environment it built, one outcome per declaration, the artifact''s audit, and the declarations the kernel admitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Readmitted','struct','One declaration''s outcome, beside the position and origin the judgement echoed and the certificates its erasure replayed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Readmitting','type_alias','The declarations a readmitting run crossed before it, as a polled readmission beside what retired it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Recall','struct','Holds whose recorded kernel verdicts a fresh readmission believes and the source it reads them from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Refusal','enum','Whose fact a readmission''s refusal records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Replayed','struct','One certificate the kernel replayed for a declaration: what its step unfolded, the content of the instance it fired at, and the kernel''s verdict on its trace.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::readmit','function','Readmits a module''s report to the kernel.',NULL,'fits','sound',NULL);
@@ -344,6 +345,9 @@ INSERT INTO purpose VALUES('core-incremental','typing::Refusal','enum','Names wh
 INSERT INTO purpose VALUES('core-incremental','typing::Site','enum','Names where in its item a refusal stood, the node''s table index or its unreached absence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Typing','enum','Names an item''s typing: the checker''s verdict, projected free of arena ids and positions.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::project','function','Projects a checker''s verdict to an item''s typing, its ids and positions replaced by their content.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','verdicts::DamagedCount','struct','Counts the files a verdict store passed over because they did not read as a receipt.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','verdicts::FileVerdictStore','struct','Holds the kernel''s receipts in a directory, one file per receipt named by its digest, indexed by every key they hold.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','verdicts::VerdictStoreError','enum','Why a verdict store could not open its directory or write a receipt.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','arena::BranchSpan','struct','A half-open range of case-branch closures in one domain arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','arena::CompClosureId','struct','The id of a comp closure in the domain arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','arena::DomainArena','struct','The per-run arena owning every glued node one evaluation run produces.',NULL,'fits','sound',NULL);
@@ -1105,6 +1109,19 @@ INSERT INTO purpose VALUES('kernel-core','support::NodeOutcome','enum','What one
 INSERT INTO purpose VALUES('kernel-core','support::NodeSupport','struct','The complete support of one goal expansion, as the name of its goal record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportContext','struct','The state one checking session derives its memo keys against: the canonical content numbering, and the buffer one goal''s read binders are gathered in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportPlane','enum','Which of the two machines a support belongs to.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::EncodedVerdict','struct','Holds the canonical bytes of what one checked admission read of its declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::KernelIdentity','struct','Names a kernel installation by the public half of the key it signs receipts with.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::KernelSigner','struct','Holds an installation''s signing key, which signs only the verdicts its own kernel checked.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::NoVerdicts','struct','The verdict source holding no receipt, for a run that recalls nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::RecallCount','struct','Counts the admissions a recorded verdict answered.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::Receipt','struct','Holds a kernel''s signature over the records it checked, and the identity that signed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::ReceiptSignature','struct','Holds the Ed25519 signature a receipt carries over its records'' digest.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::StoredReceipt','struct','Holds a receipt beside the records it attests, as a store keeps and answers them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::TrustPolicy','enum','Says whose receipts a run believes: none, rechecking every declaration, or the listed signers.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::VerdictImage','struct','Holds bytes read as a recorded verdict, refused when they are not one whole.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::VerdictKey','struct','Names a declaration''s admission by the BLAKE3 chain over the kernel''s build and every segment admitted up to it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::VerdictRecord','struct','Holds one checked admission''s key beside what it read of its declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::VerdictSource','trait','Answers, for a key, the receipt whose records hold it, which the kernel verifies before believing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-strata','entail::Entailment','enum','Carries the entailment dichotomy as data: the claim holds with a replayable derivation, or it is refuted by a checkable countermodel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-strata','entail::EntailmentCountermodel','struct','Carries the negative entailment evidence: a model of the whole query system that covers the query seeds while refuting one recorded goal atom.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-strata','entail::EntailmentHolds','struct','Carries the decision of whether an entailment dichotomy is the positive branch.',NULL,'fits','sound',NULL);
@@ -1209,6 +1226,7 @@ INSERT INTO purpose VALUES('kernel-term','decode::decode','function','Decode an 
 INSERT INTO purpose VALUES('kernel-term','decode::decode_after','function','Decode of image, resuming after prefix when image''s declaration segments lead with prefix''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::decode_keeping','function','Decode of image, keeping what decoding its first end declarations left for decode_after to resume.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::EncodedPrefix','struct','The encoding of an admission-ordered sequence''s leading declarations, which an encoding of any sequence leading with them resumes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','encode::SegmentEncoder','struct','Encodes an admission-ordered sequence one declaration at a time, each as the segment the whole sequence''s encoding writes for it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::encode','function','Encode an admission-ordered declaration sequence over `arena` into canonical bytes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::encode_after','function','Encode of the sequence prefix''s declarations lead and after follows, writing prefix''s segments as they were encoded and encoding after''s alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::encode_prefix','function','The encoding of `declarations`, the leading declarations of a sequence over `arena`, for encode_after to resume.',NULL,'fits','sound',NULL);
@@ -2093,6 +2111,11 @@ INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::DeclaredHalf',
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::NameKind','enum','What a declared name names, which decides where it may be written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::Referent','struct','Where the unit writes what a use refers to: the source holding it, the name, and the whole binder or declaration form, each span in that source''s own text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::unrefused::Absent','enum','Why the table holds no refusal for a declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::AlreadyInstalled','struct','Says a process already installed its verdict cache.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct','Holds the policy, store, key and counts every readmission of a process recalls and records under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictTally','struct','Counts what a process''s verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_verdict_cache','function','Installs a process''s verdict cache before its walk, once.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::verdict_tally','function','Reads what the installed verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Reached','enum','What the traversal reached next, at the walk''s current path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::SourceFault','enum','Why a path could not be carried through the pipeline.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Standing','enum','How one source stands against the root it sits under.',NULL,'fits','sound',NULL);

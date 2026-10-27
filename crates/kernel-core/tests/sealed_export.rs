@@ -52,7 +52,7 @@ fn export(environment: &Environment) -> EncodedArtifact
         .iter()
         .map(|entry| {
             let mark = match entry.admission() {
-                Admission::Checked => AdmissionMark::Checked,
+                Admission::Checked | Admission::Recalled => AdmissionMark::Checked,
                 Admission::Unchecked => AdmissionMark::UncheckedBypass,
             };
             MarkedDeclaration::new(mark, entry.declaration().clone())

@@ -35,8 +35,8 @@ reason = "the build layer gandr owns"
 [[term]]
 name = "verdict"
 match = '\b(verdict cache|attest\w*|receipts?|verdict reuse|reused verdict)\b'
-owns = ["integrity-never-substitutes-validity.md", "#2799"]
-reason = "a hash never admits; a reused verdict is attested (§ kernel-verdict-reuse)"
+owns = ["crates/kernel-core/src/verdict.rs", "integrity-never-substitutes-validity.md", "#2797"]
+reason = "a hash never admits; a reused verdict is attested — the tree states the key, the receipt and the policy, the page why each is required and the narrowed key still owed (§ kernel-verdict-reuse)"
 
 [[term]]
 name = "grade"

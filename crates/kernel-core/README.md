@@ -23,6 +23,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
+- **Recorded verdicts.** `Environment::recalling` keys each lone checked admission by `VerdictKey`, a BLAKE3 chain over the kernel's build and every segment admitted before it, and admits a key a trusted signer's verified `Receipt` attests as `Admission::Recalled` without the check; `Environment::receipt` signs, with a `KernelSigner`, only what this kernel checked itself, and `handed_on` passes the chain to a resumed run without its records. `TrustPolicy`, `VerdictSource`, `StoredReceipt`, `VerdictRecord` and `KernelIdentity` in [`verdict`](src/verdict.rs). A rejection, a bypass, a mutual block or an open seal ends the chain; refusals are never recorded.
 - **Sealing.** An abstract type carries its representation and the extent of its minting admission: the declarations inside it are checked with the atom read as its representation, every later one against the bare atom (`seal`), and a replayed artifact re-derives both from the recorded extent.
 - **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`.
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
@@ -116,6 +117,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 2 and 10) — a key names the constants it reaches by content, in table-local records.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1 and 3) — the key reads the binders a goal reads off the support its node carries, derived by the kernel from its own nodes.
 - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ codebruijn-carrier, § footprint-from-support) — the syntactic layer of a goal's demanded context is carried on its node and read off it; the judgement does not return the layer conversion consults.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
 
 ## License
 
