@@ -1471,7 +1471,11 @@ list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading"
 # side writes, while a full copy of the build directory per worktree fills a
 # disk. A filesystem that cannot clone skips the copy, and the worktree's
 # first build is cold. Existing files are never overwritten, so the step is
-# safe to re-run.
+# safe to re-run. The probe that asks whether the filesystem clones is
+# written outside both trees (#3222): its source in the clone's git
+# directory, on the primary's filesystem, and its copy beside the worktree,
+# on the worktree's, so `git add -A` in either never meets it while the copy
+# runs.
 ["wt:warm"]
 description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone"
 run = '''
@@ -1480,16 +1484,18 @@ set -euo pipefail
 primary=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
 here=$(git rev-parse --show-toplevel)
 [[ "$(realpath "$primary")" != "$(realpath "$here")" ]] || exit 0
-probe=$(mktemp "$primary/.wt-warm-probe.XXXXXX")
-trap 'rm -f "$probe" "$here/.wt-warm-probe"' EXIT
+probe=$(mktemp "$(realpath "$(git rev-parse --git-common-dir)")/wt-warm-probe.XXXXXX")
+copy=$(mktemp -u "$(dirname "$here")/.wt-warm-probe.$(basename "$here").XXXXXX")
+trap 'rm -f "$probe" "$copy"' EXIT
 case "$(uname -s)" in
   Darwin) clone=(cp -c) ;;
   *) clone=(cp --reflink=always) ;;
 esac
-if ! "${clone[@]}" "$probe" "$here/.wt-warm-probe" 2> /dev/null; then
+if ! "${clone[@]}" "$probe" "$copy" 2> /dev/null; then
   echo "wt:warm: $here's filesystem cannot clone from $primary; skipping the copy, the first build is cold"
   exit 0
 fi
+rm -f "$probe" "$copy"
 wt step copy-ignored
 '''
 
@@ -2733,6 +2739,14 @@ fi
 # flattened, fails the format gate in the queue and holds the stack above it.
 COMMITLINT_BIN=$(mise which commitlint) "$(git rev-parse --show-toplevel)/.config/commits/lint.bash" "$measured" HEAD --empty \
   || { echo "drop or amend each commit above, so every own commit keeps the commit rules, then run \`pr:open\` again" >&2; exit 2; }
+# Nor does it add a file named as residue (`.config/merge-residue/names`):
+# a merge driver's backup, or a tool's leftover such as `wt:warm`'s clone
+# probe (#3222), staged by a `git add -A`.
+if foreign=$(git diff --no-renames --name-only --diff-filter=A "$measured" HEAD \
+  | grep -E -f "$(git rev-parse --show-toplevel)/.config/merge-residue/names"); then
+  printf 'the change adds files named as residue; drop them from its commits, then run `pr:open` again:\n%s\n' "$(sed 's/^/  /' <<< "$foreign")" >&2
+  exit 2
+fi
 status=0
 mise run evidence:obligations --body "$body" --require-acknowledged "$measured" || status=$?
 if (( status == 2 )); then

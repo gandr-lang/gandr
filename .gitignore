@@ -17,3 +17,6 @@ rustc-ice-*.txt
 # The features ledger database, built from the tracked `ledger/features.sql`.
 /ledger/features.db
 /ledger/features.db.new
+# `wt:warm`'s clone probe, written outside the tree since #3222; a branch
+# forked before it still writes it at the root while the copy runs.
+/.wt-warm-probe*

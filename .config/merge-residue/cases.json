@@ -61,5 +61,20 @@
     "residue": true
   },
   { "name": "a source named like the word", "path": "crates/x/src/origin.rs", "residue": false },
-  { "name": "an upper-case word in a name", "path": "docs/REMOTE_ACCESS.md", "residue": false }
+  { "name": "an upper-case word in a name", "path": "docs/REMOTE_ACCESS.md", "residue": false },
+  {
+    "name": "#3222: wt:warm's clone probe staged at the root",
+    "path": ".wt-warm-probe",
+    "residue": true
+  },
+  {
+    "name": "#3222: the probe under its temporary suffix",
+    "path": ".wt-warm-probe.Ab12Cd",
+    "residue": true
+  },
+  {
+    "name": "a page that names the probe is no probe",
+    "path": "docs/wt-warm-probe.md",
+    "residue": false
+  }
 ]
