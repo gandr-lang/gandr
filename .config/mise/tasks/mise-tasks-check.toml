@@ -1330,8 +1330,12 @@ FROM reference;"); keys read $resolved"
 # and the output it must give; `prefix.jq`'s and `state.jq`'s output is its
 # raw line, the others' compact JSON. `triggers.jq` also reads
 # `.github/workflows/landing.yml`'s own `on`, refusing what it refuses.
+# `.config/pr-stack/own-commits.bash` restacks a scratch repository's stack
+# whose lower branch landed squashed, once per case in
+# `.config/pr-stack/restacks.json`: only the upper's own commit is replayed,
+# and with no landed head the conflict names its file (#3078).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, and the landing watcher reads on events"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, and a restack replays only a stack's own commits"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1344,8 +1348,9 @@ if [[ -n "$triggers" ]]; then
   printf '%s\n' "$triggers" >&2
   failed=1
 fi
+.config/pr-stack/own-commits.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits"
 '''
 
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,
