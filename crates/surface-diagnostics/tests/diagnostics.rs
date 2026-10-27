@@ -2678,11 +2678,12 @@ fn a_signature_whose_definition_is_refused_is_a_note_2339()
         text,
         Verb::Check(Goals::Gated),
     );
-    let Some(signature) = printed.first()
+    let Some(signature) = printed
+        .iter()
+        .find(|diagnostic| diagnostic.severity == Severity::Note)
     else {
-        panic!("the source prints its diagnostics");
+        panic!("the signature is a note: {printed:?}");
     };
-    assert_eq!(signature.severity, Severity::Note, "{printed:?}");
     assert_eq!(
         signature.note,
         Maybe::Present(String::from(

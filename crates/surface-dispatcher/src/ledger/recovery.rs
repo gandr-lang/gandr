@@ -945,4 +945,59 @@ mod tests
             "the rest is still read against its site: {report}"
         );
     }
+
+    /// #2875: a mistake in a module member or a `rec` group's closing brace
+    /// leaves a refusal resting on the repair (the signature's member the
+    /// repair dropped, the name the early close moved out of the group)
+    /// admitted before the repaired form. Each of these mutants' first error
+    /// marks its mutation once refusals of form print first.
+    #[test]
+    fn a_refusal_resting_on_a_repair_does_not_mark_first_2875()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-resting",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "hold-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/hold-expression.gandr"),
+            ),
+            (
+                "rec-block.gandr",
+                include_str!("../../../../corpus/ledger/syntax/rec-block.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let missed = |miss: &str| Mutation::Missed(String::from(miss));
+        let resting = [
+            ("hold-expression.gandr", 127_usize, "{", missed("{{")),
+            ("hold-expression.gandr", 131, "type", missed("typ")),
+            ("hold-expression.gandr", 131, "type", Mutation::Deleted),
+            ("hold-expression.gandr", 143, "=", Mutation::Deleted),
+            ("hold-expression.gandr", 145, "String", Mutation::Deleted),
+            ("hold-expression.gandr", 151, ";", Mutation::Deleted),
+            ("rec-block.gandr", 276, "}", missed("}}")),
+            ("rec-block.gandr", 280, "}", missed("}}")),
+            ("rec-block.gandr", 284, "@[", missed("@")),
+            ("rec-block.gandr", 284, "@[", Mutation::Deleted),
+        ];
+        for (exemplar, at, tile, mutation) in resting {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == mutation
+                }),
+                "{exemplar}:{at}: `{tile}` {mutation} is reported first at its mutation: {report}"
+            );
+        }
+    }
 }
