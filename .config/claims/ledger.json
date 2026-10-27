@@ -113,5 +113,45 @@
       ]
     },
     "output": ""
+  },
+  {
+    "name": "#2848: a declined row naming only the issue its landing closes is refused, #2842's row",
+    "input": {
+      "pr": 2842,
+      "body": "Closes #2572\n\n## Ledger\n\n- `run-targets` is declined: \"Retired by #2572 …\"\n",
+      "rows": ["run-entry", "run-targets"],
+      "touched": [
+        {
+          "id": "run-targets",
+          "since": null,
+          "status": "declined",
+          "issue": "#2572"
+        }
+      ]
+    },
+    "output": "the declined row `run-targets` names only #2572, which this landing closes as completed: name its decision beside it, an issue closed as not planned, then run the task again"
+  },
+  {
+    "name": "#2848: a declined row naming its decision beside the closed issue goes, and an implemented row naming the closed issue",
+    "input": {
+      "pr": 2848,
+      "body": "Fixes #2572\n\n## Ledger\n\n- `run-targets` — the decision\n- `run-entry` — the entry\n",
+      "rows": ["run-entry", "run-targets"],
+      "touched": [
+        {
+          "id": "run-entry",
+          "since": "#2848",
+          "status": "implemented",
+          "issue": "#2572"
+        },
+        {
+          "id": "run-targets",
+          "since": null,
+          "status": "declined",
+          "issue": "#2572 #2846"
+        }
+      ]
+    },
+    "output": ""
   }
 ]

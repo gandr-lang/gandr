@@ -5,21 +5,27 @@
 #   pr       the pull request's number, or null before it has one (`pr:open`)
 #   body     the body's text
 #   rows     the ids of `ledger/features.sql` at the head
-#   touched  the rows the change adds, edits or removes: [{id, since, status}],
-#            `since` and `status` the head's (null for a removed row)
+#   touched  the rows the change adds, edits or removes:
+#            [{id, since, status, issue}], each the head's (null for a removed
+#            row)
 #
 # The body's `## Ledger` names a row by an item opening with its id,
 # `` - `<id>` — <witness> ``; `None.` or no section names none. A named row
 # must exist and be touched, and once the pull request has a number its
 # `since` carries `#<pr>` where the row has a `since`: an implemented or
 # partial row (a planned or declined one keeps `since` NULL, the table's
-# CHECK); a touched row the body does not name is refused.
+# CHECK); a touched row the body does not name is refused. A declined row the
+# change touches names its decision beside the issues the body closes
+# (`Closes`, `Fixes` or `Resolves` `#n`): the merge closes those as
+# completed, and `check:tracking` holds a declined row only by an issue open
+# or closed as not planned (#2848).
 
 include "sections";
 
 (.pr) as $pr
 | (.rows // []) as $rows
 | (.touched // []) as $touched
+| [.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s+#([0-9]+)") | .[0] | tonumber] as $closes
 | [(.body | section("Ledger") // []) | items | capture("^[-*] `(?<id>[a-z0-9][a-z0-9-]*)`").id] | unique as $named
 | ($named[]
     | . as $id
@@ -31,4 +37,9 @@ include "sections";
       end),
   ($touched[]
     | select(.id as $id | $named | index($id) | not)
-    | "the change touches the ledger row `\(.id)`, and `## Ledger` does not name it: add `- `\(.id)` — <witness>`, then run the task again")
+    | "the change touches the ledger row `\(.id)`, and `## Ledger` does not name it: add `- `\(.id)` — <witness>`, then run the task again"),
+  ($touched[]
+    | select(.status == "declined")
+    | [(.issue // "") | scan("(?:^|\\s)#([0-9]+)") | .[0] | tonumber] as $refs
+    | select(($refs | length) > 0 and all($refs[]; IN($closes[])))
+    | "the declined row `\(.id)` names only \($refs | map("#\(.)") | join(", ")), which this landing closes as completed: name its decision beside it, an issue closed as not planned, then run the task again")
