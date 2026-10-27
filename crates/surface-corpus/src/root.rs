@@ -156,6 +156,7 @@
 use core::fmt;
 
 use anodized::spec;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 
 use crate::expectation::ExpectationSchema;
@@ -291,6 +292,50 @@ impl fmt::Display for CorpusRoot
             Self::Strict => "strict",
             Self::Fixture => "fixture",
         })
+    }
+}
+
+/// The corpus root each declaration of a module is settled under, by where
+/// its bytes start: one root for a module one source wrote, and each source's
+/// own for a unit several sources were laid into.
+///
+/// # Specification
+/// - requires: `start` is a byte offset into the module's text.
+/// - ensures: [`Rooted::root_at`] is the root the declaration starting at
+///   `start` reads its expectations under.
+/// - panics: none.
+/// - executable: none — a trait; each implementation states its own clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module whose leading declarations sit under the strict
+///   root and the rest under the fixture root settles each under its own, a
+///   `refuses` refused before the boundary and read after it.
+/// - witness: `settle::tests::each_declaration_settles_under_the_root_its_bytes_start_in_3100`
+pub trait Rooted
+{
+    /// The root of the declaration whose bytes start at `start`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn root_at(
+        &self,
+        start: ByteOffset,
+    ) -> CorpusRoot;
+}
+
+impl Rooted for CorpusRoot
+{
+    /// This root, wherever the declaration starts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn root_at(
+        &self,
+        _start: ByteOffset,
+    ) -> CorpusRoot
+    {
+        *self
     }
 }
 

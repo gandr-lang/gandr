@@ -328,6 +328,7 @@ pub use crate::report::SettleCounts;
 pub use crate::report::SettleReport;
 pub use crate::report::Tally;
 pub use crate::root::CorpusRoot;
+pub use crate::root::Rooted;
 pub use crate::run::RunSpelling;
 pub use crate::run::Runner;
 pub use crate::settle::DeclarationReport;

@@ -53,7 +53,6 @@ use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
 use crate::expectation::Membership;
-use crate::root::CorpusRoot;
 use crate::settle::DeclarationReport;
 use crate::settle::Settlement;
 use crate::settle::Surviving;
@@ -885,10 +884,9 @@ impl fmt::Display for Tally
 /// # Specification
 /// - requires: the producer owns the correspondence between counts and the
 ///   declarations or runs represented.
-/// - ensures: Retains the supplied root, declaration sequence and checker
-///   ledger count. Reports produced by `settle` preserve module order;
-///   independently constructed reports retain the caller’s supplied
-///   association.
+/// - ensures: Retains the supplied declaration sequence and checker ledger
+///   count. Reports produced by `settle` preserve module order; independently
+///   constructed reports retain the caller’s supplied association.
 /// - panics: none.
 /// - executable: none — The record holds no original module or checker report;
 ///   `settle` establishes source correspondence and `tally` specifies
@@ -905,8 +903,6 @@ impl fmt::Display for Tally
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SettleReport<'source>
 {
-    /// The root the module was settled under.
-    root: CorpusRoot,
     /// One report per declared name, in admission order.
     declarations: Vec<DeclarationReport<'source>>,
     /// The ledger size of the module's verdicts.
@@ -915,35 +911,22 @@ pub struct SettleReport<'source>
 
 impl<'source> SettleReport<'source>
 {
-    /// The report of a run under `root` over `declarations`, whose verdicts
-    /// owe `ledger` obligations.
+    /// The report over `declarations`, whose verdicts owe `ledger`
+    /// obligations.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
     pub const fn new(
-        root: CorpusRoot,
         declarations: Vec<DeclarationReport<'source>>,
         ledger: ObligationCount,
     ) -> Self
     {
         Self {
-            root,
             declarations,
             ledger,
         }
-    }
-
-    /// The root the module was settled under.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn root(&self) -> CorpusRoot
-    {
-        self.root
     }
 
     /// One report per declared name, in admission order.
@@ -973,8 +956,8 @@ impl<'source> SettleReport<'source>
     ///
     /// # Specification
     /// - requires: `ledger` is what the kept declarations' verdicts owe.
-    /// - ensures: the root, the declarations whose span starts at or after
-    ///   `start` and at or before `end`, in admission order, and `ledger`.
+    /// - ensures: the declarations whose span starts at or after `start` and at
+    ///   or before `end`, in admission order, and `ledger`.
     /// - provides: one source's report over the unit it was judged in.
     /// - fails: never.
     /// - panics: none.
@@ -996,7 +979,6 @@ impl<'source> SettleReport<'source>
     ) -> Self
     {
         Self {
-            root: self.root,
             declarations: self
                 .declarations
                 .iter()

@@ -1856,6 +1856,7 @@ INSERT INTO purpose VALUES('surface-corpus','report::SettleCounts','struct','How
 INSERT INTO purpose VALUES('surface-corpus','report::SettleReport','struct','One settle run over a module: every declaration''s report and the ledger size.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::Tally','struct','The counts of a settle run: what a driver gates on and prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','root::CorpusRoot','enum','Which corpus root a source sits under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','root::Rooted','trait','The corpus root each declaration of a module settles under, by where its bytes start.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','run::RunSpelling','struct','A run outcome, spelled: what a `runs` payload states, and what a run produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','run::Runner','trait','What settling a `runs` expectation asks of the caller: run one declaration and spell its outcome.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::DeclarationReport','struct','One declared name, settled: what it states beside what it produced.',NULL,'fits','sound',NULL);

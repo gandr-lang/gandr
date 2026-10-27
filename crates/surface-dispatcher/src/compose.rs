@@ -210,6 +210,7 @@ use gandr_kernel_term::StructuredName;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Produced;
+use gandr_surface_corpus::Rooted;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
@@ -1985,7 +1986,8 @@ struct Record
 
 /// The inputs a module's judgement reads besides its own state: the lowered
 /// arena, the declarations and the module-wide tables the checker keeps,
-/// under a grant and root, after a closure of so many declarations or whole.
+/// under a grant, after a closure of so many declarations or whole. The
+/// corpus root is not among them: it is read only when the verdicts settle.
 ///
 /// # Specification
 /// trivial.
@@ -2006,8 +2008,6 @@ struct Read
     forgets: Vec<ConstantIndex>,
     /// The grant the judgement holds.
     grant: HostGrant,
-    /// The corpus root it judges under.
-    root: CorpusRoot,
     /// The declarations of the closure it continues, when it continues one.
     resumed: Option<usize>,
 }
@@ -2372,9 +2372,9 @@ where
     let last = Member {
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
+        root,
     };
     match judge_members(
-        root,
         (module, text),
         arena,
         (grant, checking),
@@ -2467,9 +2467,9 @@ where
     let last = Member {
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
+        root,
     };
     match judge_members(
-        root,
         (module, text),
         arena,
         (grant, checking),
@@ -2569,19 +2569,22 @@ type JudgedUnit<'source> = (
 ///
 /// # Specification
 /// - requires: as [`judge`]; `earlier` then `last` are the unit's sources' own
-///   bytes in `text`, in the unit's order.
+///   bytes in `text`, in the unit's order, each beside the corpus root it sits
+///   under.
 /// - ensures: the unit is judged, built and settled once, as [`judge`] judges a
-///   module. Each source's settled composition reports, of the declarations,
-///   refusals, shadowed builtins, inferred exits and inferred runs, those
-///   written in its own bytes — a refusal with no span in every source's — and
-///   of the ledger, the obligations its declarations owe; the spellings,
-///   origins, failures and program are the unit's, shared. A source that is the
-///   whole unit reports everything, nothing copied. A settle fault is every
-///   source's. The admission holds the arena, the verdicts and the unit's
-///   structured names. `spelled` advances once when the unit settles: its one
-///   spelling pass. The checker holds every hole the unit's patterns were
-///   written with, so a match whose tree leaves an arm to one is refused. Under
-///   [`Tabling::Tabled`], each declaration judged is decided as
+///   module, each declaration settled under the root of the source whose bytes
+///   it starts in, and the closure's under its first source's. Each source's
+///   settled composition reports, of the declarations, refusals, shadowed
+///   builtins, inferred exits and inferred runs, those written in its own bytes
+///   — a refusal with no span in every source's — and of the ledger, the
+///   obligations its declarations owe; the spellings, origins, failures and
+///   program are the unit's, shared. A source that is the whole unit reports
+///   everything, nothing copied. A settle fault is every source's. The
+///   admission holds the arena, the verdicts and the unit's structured names.
+///   `spelled` advances once when the unit settles: its one spelling pass. The
+///   checker holds every hole the unit's patterns were written with, so a match
+///   whose tree leaves an arm to one is refused. Under [`Tabling::Tabled`],
+///   each declaration judged is decided as
 ///   [`type_module`](gandr_core_checker::type_module) decides it, keeping the
 ///   first formation of every type the last source writes, and the table of the
 ///   last source is assembled from that run over copies of the module and the
@@ -2621,7 +2624,6 @@ type JudgedUnit<'source> = (
     true
 })]
 fn judge_members<'source, Poll>(
-    root: CorpusRoot,
     (mut module, text): (LoweredModule<'source>, SourceText<'source>),
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
@@ -2638,7 +2640,7 @@ where
     let after = match checking {
         Checking::After(closure) => Some(closure.judgement()).filter(|judgement| {
             judgement.grant == *grant
-                && judgement.root == root
+                && judgement.root == earlier.first().unwrap_or(&last).root
                 && judgement.entry == entry
                 && declarations.get(.. judgement.declarations.len())
                     == Some(judgement.declarations.as_slice())
@@ -2661,7 +2663,6 @@ where
         reducts: module.reducts().to_vec(),
         forgets: module.forgets().to_vec(),
         grant: grant.clone(),
-        root,
         resumed: after.map(|closure| closure.declarations.len()),
     });
     let answered = recorded
@@ -2728,15 +2729,16 @@ where
         || Program::new(&arena, &module, &verdicts),
         |closure| Program::after(closure.program.clone(), &arena, &module, &verdicts),
     );
+    let laid = Laid { earlier, last };
     let settled_report = match after {
         Some(closure) => closure
             .settled
             .as_ref()
             .map_err(|&fault| fault)
             .and_then(|earlier| {
-                settle_after(root, &arena, &module, &verdicts, &mut program, earlier)
+                settle_after(laid, &arena, &module, &verdicts, &mut program, earlier)
             }),
-        None => settle(root, &arena, &module, &verdicts, &mut program),
+        None => settle(laid, &arena, &module, &verdicts, &mut program),
     };
     let projected = match settled_report {
         Ok(report) => {
@@ -2817,6 +2819,43 @@ where
         table,
         after.map(|closure| bridge::LeadingCount::from(closure.declarations.len())),
     ))
+}
+
+/// A unit's sources as its settle reads their roots: each declaration under
+/// the root of the first source whose bytes end at or after its start, as
+/// [`SettleReport::within`] gives each source its share; one past every
+/// source, under the last's.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Laid<'members>
+{
+    /// The sources before the last, in the unit's order.
+    earlier: &'members [Member],
+    /// The last source.
+    last: Member,
+}
+
+impl Rooted for Laid<'_>
+{
+    /// The root of the source the declaration starting at `start` is written
+    /// in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn root_at(
+        &self,
+        start: ByteOffset,
+    ) -> CorpusRoot
+    {
+        self.earlier
+            .iter()
+            .find(|member| start <= member.end)
+            .unwrap_or(&self.last)
+            .root
+    }
 }
 
 /// What a judged unit holds once for all of its sources, read by [`share`].
@@ -3205,8 +3244,8 @@ fn settled<'source>(
 ///
 /// # Specification
 /// - requires: the lowering read `text`, the component's, whose sources' own
-///   bytes are `members` in the unit's order; `root` is the corpus root they
-///   sit under; under [`Checking::After`], the lowering is
+///   bytes are `members` in the unit's order, each beside the corpus root it
+///   sits under; under [`Checking::After`], the lowering is
 ///   [`lower_onto_closure`]'s after that closure.
 /// - ensures: one composition per source of `members`, in order. A module the
 ///   lowering read is judged, settled and admitted once and projected as
@@ -3245,7 +3284,6 @@ fn settled<'source>(
     Maybe::Absent(kept::Absent::Unasked) => keeping == Keeping::Composed,
 })]
 pub fn judge_component<'source>(
-    root: CorpusRoot,
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     (grant, checking): (&HostGrant, Checking<'source>),
     (members, spelled): (&[Member], &mut SpellingCount),
@@ -3263,7 +3301,6 @@ pub fn judge_component<'source>(
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
             let (projected, admission, _untabled, after) = judge_members(
-                root,
                 (module, text),
                 arena,
                 (grant, checking),
@@ -6913,10 +6950,12 @@ def delivered() -> -F Unit {
             Member {
                 start: ByteOffset::from(0_usize),
                 end: ByteOffset::from(first.len()),
+                root: CorpusRoot::Fixture,
             },
             Member {
                 start: base,
                 end: ByteOffset::from(text.len()),
+                root: CorpusRoot::Fixture,
             },
         ];
         let lowering = lower_parsed_unit(
@@ -6928,7 +6967,6 @@ def delivered() -> -F Unit {
         )
         .expect("the component lowers");
         let shares: Vec<(Vec<String>, usize, usize)> = judge_component(
-            CorpusRoot::Fixture,
             (lowering, SourceText::from(text.as_str())),
             (&HostGrant::UNBOUNDED, crate::compose::Checking::Whole),
             (&members, &mut SpellingCount::default()),
@@ -7005,6 +7043,7 @@ def delivered() -> -F Unit {
             members.push(Member {
                 start: ByteOffset::from(start),
                 end: ByteOffset::from(end),
+                root: CorpusRoot::Fixture,
             });
             start = end.saturating_add(1_usize);
         }
@@ -7031,7 +7070,6 @@ def delivered() -> -F Unit {
         )
         .expect("the component lowers");
         let unreached: Vec<Vec<&str>> = judge_component(
-            CorpusRoot::Fixture,
             (lowering, SourceText::from(text.as_str())),
             (&HostGrant::UNBOUNDED, crate::compose::Checking::Whole),
             (&members, &mut SpellingCount::default()),

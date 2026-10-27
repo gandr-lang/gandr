@@ -100,6 +100,7 @@ use crate::refusal::CorpusRefusal;
 use crate::refusal::Refusal;
 use crate::report::SettleReport;
 use crate::root::CorpusRoot;
+use crate::root::Rooted;
 use crate::run::RunSpelling;
 use crate::run::Runner;
 
@@ -993,9 +994,12 @@ impl Error for SettleFault
 {
 }
 
-/// Settle `verdicts` against `module` under `root`, reading expectation
-/// payloads out of `arena`, asking `runner` for each run outcome stated, and
-/// reading each normal form stated under its block's rules.
+/// Settle `verdicts` against `module`, each declaration under the root
+/// `roots` names for where its bytes start.
+///
+/// Expectation payloads are read out of `arena`, `runner` is asked for each
+/// run outcome stated, and each normal form stated is read under its block's
+/// rules.
 ///
 /// # Specification
 /// - requires: `runner` supplies the toolchain outcome for each requested
@@ -1046,7 +1050,7 @@ impl Error for SettleFault
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
-        report.root() == root && report.ledger() == verdicts.ledger().count()
+        report.ledger() == verdicts.ledger().count()
             && report.declarations().len() == module.declarations().len()
             && report
                 .declarations()
@@ -1060,7 +1064,7 @@ impl Error for SettleFault
                             Produced::Guarded(
                                 CorpusRefusal::ExpectationOutsideFixtureRoot { schema, .. },
                             ) => {
-                                root == CorpusRoot::Strict
+                                roots.root_at(lowered.span().start()) == CorpusRoot::Strict
                                     && matches!(
                                         schema, expectation::ExpectationSchema::Owes |
                                         expectation::ExpectationSchema::Refuses
@@ -1205,15 +1209,17 @@ impl Error for SettleFault
 },
 )]
 #[inline]
-pub fn settle<'source>(
-    root: CorpusRoot,
+pub fn settle<'source, Roots>(
+    roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
     runner: &mut dyn Runner,
 ) -> Result<SettleReport<'source>, SettleFault>
+where
+    Roots: Rooted + Copy,
 {
-    settle_after(root, arena, module, verdicts, runner, &[])
+    settle_after(roots, arena, module, verdicts, runner, &[])
 }
 
 /// [`settle`], the reports of `module`'s leading declarations given as
@@ -1222,7 +1228,7 @@ pub fn settle<'source>(
 ///
 /// # Specification
 /// - requires: as [`settle`]; `earlier` is the report [`settle`] answered under
-///   `root` for a module whose declarations lead `module`'s, its verdicts
+///   `roots` for a module whose declarations lead `module`'s, its verdicts
 ///   leading `verdicts` and its arena one `arena` extends.
 /// - ensures: what [`settle`] answers of `module`, `earlier` leading its
 ///   reports, the runner called only for the declarations after `earlier`'s.
@@ -1243,14 +1249,16 @@ pub fn settle<'source>(
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
-pub fn settle_after<'source>(
-    root: CorpusRoot,
+pub fn settle_after<'source, Roots>(
+    roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
     runner: &mut dyn Runner,
     earlier: &[DeclarationReport<'source>],
 ) -> Result<SettleReport<'source>, SettleFault>
+where
+    Roots: Rooted + Copy,
 {
     let (leading, later) = module
         .declarations()
@@ -1265,6 +1273,7 @@ pub fn settle_after<'source>(
     let mut declarations = Vec::with_capacity(module.declarations().len());
     declarations.extend_from_slice(earlier);
     for lowered in later {
+        let root = roots.root_at(lowered.span().start());
         let expectations = expected(root, arena, module, lowered)?;
         let (produced, owed) = match lowered.outcome() {
             DeclarationOutcome::Refused(refusal) => {
@@ -1427,11 +1436,7 @@ pub fn settle_after<'source>(
         });
     }
 
-    Ok(SettleReport::new(
-        root,
-        declarations,
-        verdicts.ledger().count(),
-    ))
+    Ok(SettleReport::new(declarations, verdicts.ledger().count()))
 }
 
 /// The names of the owed holes the suspended declaration at `constant` waits
@@ -2212,6 +2217,85 @@ mod tests
             Outcome::Refuses(RefusalName::ExpectationOutsideFixtureRoot),
             "naming the guard's own refusal produces it, and still states checks"
         );
+    }
+
+    /// #3100: a unit laid from a strict source and a fixture settled its
+    /// expectations under the root of whichever path was given first; each
+    /// declaration settles under the root its own bytes start in.
+    #[test]
+    fn each_declaration_settles_under_the_root_its_bytes_start_in_3100()
+    {
+        use crate::root::Rooted;
+
+        /// `before` up to `at`, `after` from it.
+        ///
+        /// # Specification
+        /// trivial.
+        #[derive(Clone, Copy)]
+        struct Split
+        {
+            /// Where the second root starts.
+            at: ByteOffset,
+            /// The root before `at`.
+            before: CorpusRoot,
+            /// The root from `at`.
+            after: CorpusRoot,
+        }
+
+        impl Rooted for Split
+        {
+            /// `before` up to `at`, `after` from it.
+            ///
+            /// # Specification
+            /// trivial.
+            fn root_at(
+                &self,
+                start: ByteOffset,
+            ) -> CorpusRoot
+            {
+                if start < self.at {
+                    self.before
+                }
+                else {
+                    self.after
+                }
+            }
+        }
+
+        let source = r#"@[ refuses("UnresolvedName") ] def a = z ; @[ refuses("UnresolvedName") ] def b = y ;"#;
+        let at = ByteOffset::from(source.find(" @[").expect("two declarations are written"));
+        for (before, after, settlements) in [
+            (CorpusRoot::Strict, CorpusRoot::Fixture, [
+                Settlement::Unsettled,
+                Settlement::Settled,
+            ]),
+            (CorpusRoot::Fixture, CorpusRoot::Strict, [
+                Settlement::Settled,
+                Settlement::Unsettled,
+            ]),
+        ] {
+            let report = settled(Split { at, before, after }, SourceText::from(source));
+            let read: Vec<Settlement> = report
+                .declarations()
+                .iter()
+                .map(DeclarationReport::settlement)
+                .collect();
+            assert_eq!(
+                read, settlements,
+                "under {before} then {after}, the strict `refuses` is refused and the fixture's \
+                 settles"
+            );
+            assert!(
+                report.declarations().iter().any(|declaration| matches!(
+                    declaration.produced(),
+                    Produced::Guarded(CorpusRefusal::ExpectationOutsideFixtureRoot {
+                        schema: ExpectationSchema::Refuses,
+                        ..
+                    })
+                )),
+                "the strict declaration's `refuses` is the corpus refusal"
+            );
+        }
     }
 
     #[test]

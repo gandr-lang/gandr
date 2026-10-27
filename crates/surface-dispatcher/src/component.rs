@@ -126,6 +126,7 @@ use std::sync::PoisonError;
 use std::time::SystemTime;
 
 use anodized::spec;
+use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::Address;
 use gandr_surface_lowering::ImportTarget;
@@ -572,10 +573,12 @@ pub struct MemberSource
     pub written: Vec<ImportPath>,
 }
 
-/// The bytes one source's own text covers in its unit's text.
+/// The bytes one source's own text covers in its unit's text, and the corpus
+/// root its expectations settle under.
 ///
 /// # Specification
-/// - requires: `start` is at or before `end`.
+/// - requires: `start` is at or before `end`; `root` is the corpus root of the
+///   source's own path.
 /// - ensures: the source's text is the unit's from `start` up to `end`.
 /// - panics: none.
 /// - executable: none — a data type; [`group`] and [`lay_out`] carry the
@@ -591,6 +594,8 @@ pub struct Member
     pub start: ByteOffset,
     /// Where it ends.
     pub end: ByteOffset,
+    /// The corpus root its own path sits under.
+    pub root: CorpusRoot,
 }
 
 /// Where one given source stands among the components.
@@ -1730,6 +1735,7 @@ impl Graph
             members.push(Member {
                 start,
                 end: ByteOffset::from(text.len()),
+                root: read.root.corpus_root(),
             });
             origins.push(MemberSource {
                 path: read.path.clone(),
@@ -1775,8 +1781,8 @@ impl Graph
         let mut text = String::from(prelude::TEXT);
         text.push('\n');
         let start = ByteOffset::from(text.len());
-        let (imports, origin) = self.read.get_mut(position.0).map_or_else(
-            || (Vec::new(), Vec::new()),
+        let (imports, origin, root) = self.read.get_mut(position.0).map_or_else(
+            || (Vec::new(), Vec::new(), CorpusRoot::Strict),
             |read| {
                 text.push_str(&read.text);
                 read.text = String::new();
@@ -1790,13 +1796,14 @@ impl Graph
                         root: read.root,
                         written: core::mem::take(&mut read.written),
                     }]),
+                    read.root.corpus_root(),
                 )
             },
         );
         let end = ByteOffset::from(text.len());
         Component {
             unit: Unit::preluded(Vec::from([UnitSource::new(start, imports)])).unwrap_or_default(),
-            members: Vec::from([Member { start, end }]),
+            members: Vec::from([Member { start, end, root }]),
             text,
             sources: origin,
             reading: self.reading,
