@@ -259,8 +259,13 @@
 //! weak head reduction, and the δ-step a stuck head naming a definition admits
 //! — and the normal forms enter `conv::convert_values` like any endpoint. One
 //! computation's reduction to its value chooses nothing, so the δ-step is
-//! evaluation, not a conversion rule. The witness is
-//! `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`.
+//! evaluation, not a conversion rule. Two endpoints that both stay stuck, as
+//! a checker's reduct holding a call in an arm and the type its run reached,
+//! are converted by the kernel's conversion with the same definitions
+//! unfolding, the left side's δ-step first, as a step's own reading converts
+//! them. The witnesses are
+//! `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch` and
+//! `check::tests::a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090`.
 //!
 //! A definition whose declared type and body's type relate compound path
 //! endpoints only through a constant's body carries the engine's dialogue for
