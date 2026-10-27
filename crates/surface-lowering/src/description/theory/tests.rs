@@ -294,6 +294,64 @@ fn a_port_name_on_both_sides_is_two_ports()
     );
 }
 
+/// An operation marked `@[ inert ]` is an inert component of the theory's
+/// models, and of every theory including it; an unmarked one is not. The mark
+/// on a sort, and any other name at a member, is refused malformed at the
+/// name (#3029).
+#[test]
+fn an_inert_operation_is_marked_on_its_presentation_3029()
+{
+    let report = described(
+        "theory Released { @[ inert ] oper version : String; }\ntheory Named { include Released; @[ inert ] oper name : String; oper greeting : String; }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let marks = |at: usize| {
+        let Maybe::Present(ref presentation) = report.declarations[at].presentation
+        else {
+            panic!("the theory presents its members")
+        };
+        crate::model::derive(presentation)
+            .unwrap()
+            .components
+            .iter()
+            .map(|component| (String::from(component.name.as_ref()), component.inert))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(marks(0), [(String::from("version"), true)]);
+    assert_eq!(marks(1), [
+        (String::from("version"), true),
+        (String::from("name"), true),
+        (String::from("greeting"), false),
+    ]);
+    for (source, name) in [
+        ("theory Sorted { @[ inert ] sort T : Type; }", "inert"),
+        ("theory Checked { @[ checks ] oper x : String; }", "checks"),
+        (
+            "theory Twice { @[ inert, inert ] oper x : String; }",
+            "inert",
+        ),
+    ] {
+        let report = described(source);
+        let spelled: Vec<_> = report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.fault.clone(),
+                    source.get(
+                        usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()),
+                    ),
+                )
+            })
+            .collect();
+        assert_eq!(
+            spelled,
+            [(DescriptionFault::Malformed, Some(name))],
+            "{source} is refused at its attribute"
+        );
+    }
+}
+
 /// `oper next : +U[ω] (T -> -F T)` reads as the operation `(_ : T) --> T`:
 /// one unnamed input per arrow, parentheses read through, the returner's
 /// type the one output, a builtin type a closed sort; a grade other than `ω`

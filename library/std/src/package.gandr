@@ -3,13 +3,16 @@
 // `workspace.gandr` a `Model(Gandr.Workspace)`, and `gandr check` writes each
 // package's `gandr.toml` from its model (#533). No theory here states a law: an
 // operation of each is a field the manifest records, and no conversion relates
-// two of them.
+// two of them. An operation marked `@[ inert ]` is a field only the manifest
+// step and another inert field read (#3029): a package's name and version say
+// what it is called, not what it is.
 
 /// What a package and a workspace both state: the version they release at.
 /// `Gandr.Package` and `Gandr.Workspace` include it, so a member reads its
 /// version from its workspace's model.
 pub theory Versioned {
   /// The version, as a package's manifest records it.
+  @[ inert ]
   oper version : String;
 }
 
@@ -19,6 +22,7 @@ pub theory Versioned {
 pub theory Gandr.Package {
   include Versioned;
   /// The package's name, which the manifest records it by.
+  @[ inert ]
   oper name : String;
 }
 

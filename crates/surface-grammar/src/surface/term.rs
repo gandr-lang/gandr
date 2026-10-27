@@ -2262,7 +2262,7 @@ fn binary(
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "@[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
-fn attr_block_inline() -> Regex
+pub(super) fn attr_block_inline() -> Regex
 {
     seq([t(TileLabel("@[")), comma1(attr_inline()), t(TileLabel("]"))])
 }

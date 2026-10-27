@@ -247,6 +247,7 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
+            | Self::InertRead { .. }
             | Self::UnknownMember { .. }
             | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
@@ -317,6 +318,7 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
+            | Self::InertRead { .. }
             | Self::UnknownMember { .. }
             | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
@@ -782,7 +784,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 74_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 75_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -881,6 +883,11 @@ mod tests
                 span: empty,
                 member: SurfaceName::from("Q"),
                 reached: SurfaceName::from("n"),
+            },
+            LoweringRefusal::InertRead {
+                span: empty,
+                member: SurfaceName::from("named"),
+                reached: SurfaceName::from("name"),
             },
             LoweringRefusal::UnknownMember {
                 span: empty,
@@ -1108,6 +1115,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

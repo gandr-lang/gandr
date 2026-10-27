@@ -1887,3 +1887,48 @@ fn a_member_an_include_also_lends_is_refused_2333()
         "`Pair` writes `point` and includes it: {found:?}"
     );
 }
+
+/// #3029: a model's component for an operation its theory marks `@[ inert ]`
+/// is read only by another inert component: a model's version read from
+/// another's stands, and the name read by its path, by a content member of
+/// its own model, or off a model binder is refused at the read.
+#[test]
+fn an_inert_field_is_read_only_by_another_3029()
+{
+    let source = "theory Released {\n  @[ inert ]\n  oper version : String;\n}\ntheory Named \
+                  {\n  include Released;\n  @[ inert ]\n  oper name : String;\n  oper greeting : \
+                  String;\n}\nmodule Family : Model(Released) {\n  def version = \"0.1\";\n}\nmodule \
+                  Hello : Model(Named) {\n  def version = Family.version;\n  def name = \
+                  \"hello\";\n  def greeting = name;\n}\ndef named = Hello.name;\ndef \
+                  versionOf(r : Model(Released)) -> String { r.version }\n";
+    let found = rows(&lower(source));
+    let refused = |path: &str| {
+        found
+            .iter()
+            .find(|&&(ref written, ..)| written == path)
+            .map(|&(_, _, amounts)| amounts)
+    };
+    let read = |member: &'static str, reached: &'static str, written: &str, at: usize| {
+        Some(Amounts::Refused(LoweringRefusal::InertRead {
+            span: span_of(source, written, at),
+            member: name(member),
+            reached: name(reached),
+        }))
+    };
+    assert!(
+        !matches!(refused("Hello.version"), Some(Amounts::Refused(_))),
+        "an inert component reads another: {found:?}"
+    );
+    assert_eq!(
+        refused("Hello.greeting"),
+        read("greeting", "name", "name", 2_usize)
+    );
+    assert_eq!(
+        refused("named"),
+        read("named", "name", "Hello.name", 0_usize)
+    );
+    assert_eq!(
+        refused("versionOf"),
+        read("versionOf", "version", "r.version", 0_usize)
+    );
+}

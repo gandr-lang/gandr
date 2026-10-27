@@ -675,6 +675,8 @@ pub enum RefusalName
     ForwardMemberReference,
     /// A type member, or a type a signature states, reading a value.
     PhaseDependence,
+    /// A declaration reading a model's inert field when it is none itself.
+    InertRead,
     /// A selection or a signature component a module does not supply.
     UnknownMember,
     /// A law of a module's model the module does not prove: missing, bare;
@@ -989,7 +991,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 219_usize] = [
+    pub const VOCABULARY: [Self; 220_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1080,6 +1082,7 @@ impl RefusalName
         Self::IllTypedPayload,
         Self::ForwardMemberReference,
         Self::PhaseDependence,
+        Self::InertRead,
         Self::UnknownMember,
         Self::UnprovenLaw(LawProof::Missing),
         Self::PartialField,
@@ -1287,7 +1290,7 @@ impl RefusalName
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
-        (Self::PhaseDependence, b"PhaseDependence") |
+        (Self::PhaseDependence, b"PhaseDependence") | (Self::InertRead, b"InertRead") |
         (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw(_), b"UnprovenLaw") | (Self::PartialField, b"PartialField")
         | (Self::NotAFunctor, b"NotAFunctor")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
@@ -1630,6 +1633,7 @@ impl RefusalName
             Self::IllTypedPayload => "IllTypedPayload",
             Self::ForwardMemberReference => "ForwardMemberReference",
             Self::PhaseDependence => "PhaseDependence",
+            Self::InertRead => "InertRead",
             Self::UnknownMember => "UnknownMember",
             Self::UnprovenLaw(_) => "UnprovenLaw",
             Self::PartialField => "PartialField",
@@ -2232,6 +2236,8 @@ impl Refusal<'_>
         RefusalName::ForwardMemberReference) |
         (Self::Lowering(LoweringRefusal::PhaseDependence { .. }),
         RefusalName::PhaseDependence) |
+        (Self::Lowering(LoweringRefusal::InertRead { .. }),
+        RefusalName::InertRead) |
         (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
         RefusalName::UnknownMember) |
         (Self::Lowering(LoweringRefusal::UnprovenLaw { .. }), RefusalName::UnprovenLaw(LawProof::Missing)) |
@@ -2520,7 +2526,8 @@ impl Refusal<'_>
         RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
         RefusalName::IllTypedPayload) | (LoweringRefusal::ForwardMemberReference { .. },
         RefusalName::ForwardMemberReference) | (LoweringRefusal::PhaseDependence { .. },
-        RefusalName::PhaseDependence) | (LoweringRefusal::UnknownMember { .. },
+        RefusalName::PhaseDependence) | (LoweringRefusal::InertRead { .. },
+        RefusalName::InertRead) | (LoweringRefusal::UnknownMember { .. },
         RefusalName::UnknownMember) | (LoweringRefusal::UnprovenLaw { .. },
         RefusalName::UnprovenLaw(_)) | (LoweringRefusal::PartialField { .. },
         RefusalName::PartialField) | (LoweringRefusal::NotAFunctor { .. },
@@ -2621,6 +2628,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::IllTypedPayload { .. } => RefusalName::IllTypedPayload,
         LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
         LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
+        LoweringRefusal::InertRead { .. } => RefusalName::InertRead,
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
         LoweringRefusal::UnprovenLaw { .. } => RefusalName::UnprovenLaw(LawProof::Missing),
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,

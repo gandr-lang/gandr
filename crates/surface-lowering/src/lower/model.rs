@@ -2129,6 +2129,12 @@ impl<'source> Lowerer<'_, 'source>
                 member: name,
             });
         };
+        if components
+            .get(index)
+            .is_some_and(|component| component.inert)
+        {
+            self.inert_read(site, super::inert::Read::Selected(name))?;
+        }
         let selected = arity::Observed {
             index,
             count: components.len(),
