@@ -24,9 +24,7 @@ An arrow is one category's dependencies on another. Its label counts the `[depen
 
 A concern is an interface that cuts across crates. [`ledger/concerns.sql`](../ledger/concerns.sql) records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. The per-crate map draws each concern as a dashed overlay through its crates. The check fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
 
-[`ledger/purposes.sql`](../ledger/purposes.sql) says what each library's public items, modules and root are for, with a naming and a documentation verdict, its schema defining each column. `mise run purposes:list <crate>` prints a crate's entries beside their rows; `mise run check:purposes` fails while a rowed crate has an item with no row, or a row names no item.
-
-[`ledger/references.sql`](../ledger/references.sql) maps each source the documentation cites to its module: a `# References` line, `` - `<key>` — <role>: <what it decides> ``, or a DOI or arXiv locator not yet keyed. `mise run ledger:references` writes it, `mise run refs:read` records a reading, `mise run refs:list` shows readings gone stale, and `mise run check:references` fails while it is not the tree's.
+[`ledger/README.md` § Files](../ledger/README.md#files) states what each library's public items are for (`purposes.sql`) and which sources its documentation cites (`references.sql`).
 
 <!-- crate-map:begin -->
 ```mermaid
@@ -49,7 +47,7 @@ flowchart BT
   surface -->|11| theory
   surface -->|10| kernel
   surface -->|22| core
-  surface -->|4| storage
+  surface -->|7| storage
   surface -->|1| runtime
   workflow -->|4| surface
 ```
@@ -80,6 +78,7 @@ crates/
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               the authenticated ordered-record plane
 ├── storage-schema/                the record plane as C-sets with checked equations
+├── storage-store/                 one store over both planes and named roots
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once, with their loci and the rules a refusal stood inside, for every face to project
@@ -147,6 +146,7 @@ flowchart LR
     values[storage-values]
     records[storage-records]
     artifact[storage-artifact]
+    store[storage-store]
   end
   memory -->|hold: a cell| emitter
   emitter -->|moves out| sequent
@@ -156,6 +156,8 @@ flowchart LR
   chunker --> values
   chunker --> records
   records --> artifact
+  values --> store
+  records --> store
 ```
 
 | Crate | Layer | Located | Resident | Wall |
@@ -164,6 +166,7 @@ flowchart LR
 | `storage-values` | CAM | none | a typed chunk DAG of `ContentPtr`s | integrity |
 | `storage-records` | CAM | none | records under a `TreeRoot` | integrity |
 | `storage-artifact` | CAM | none | a kernel artifact as records | integrity, then validity |
+| `storage-store` | CAM | one host's directory; its roots never cross | chunks, nodes and named roots, a file each | integrity |
 | `runtime-emitter` | LAM | its thread | a run's regions | validity |
 | `core-sequent` | LAM | its run | the `Store`, append-only | none |
 | `core-term::world` | world | `⊢_w`, `A at w` | — | validity |

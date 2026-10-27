@@ -42,10 +42,13 @@ required-features = ["hotpath"]
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. serde_json encodes the run's summary line
 # under `--verbosity json`; the dispatcher reads the user's configuration
-# file. hotpath profiles the benchmark report behind the `hotpath` feature.
+# file. `check` and `lock` open the storage tier's store, which a package's
+# lock commits through. hotpath profiles the benchmark report behind the
+# `hotpath` feature.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-storage-store.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-format.workspace = true

@@ -1,0 +1,33 @@
+[package]
+name = "gandr-storage-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "One store for the storage tier: the value plane, the record plane and named roots under one directory"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "storage"]
+categories = ["data-structures", "filesystem"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies the specification attributes; the
+# chunker supplies the committed cut parameters; the value plane and the
+# record plane are the two stores the facade holds; the shape library
+# supplies the typed absence a read names.
+[dependencies]
+anodized.workspace = true
+gandr-storage-chunker.workspace = true
+gandr-storage-records.workspace = true
+gandr-storage-values.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

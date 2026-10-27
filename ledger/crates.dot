@@ -50,6 +50,7 @@ digraph crates {
     "storage-chunker";
     "storage-records";
     "storage-schema";
+    "storage-store";
     "storage-values";
   }
   subgraph "cluster_runtime" {
@@ -153,6 +154,9 @@ digraph crates {
   "storage-records" -> "storage-chunker";
   "storage-records" -> "theory-spec-combinators";
   "storage-schema" -> "storage-records";
+  "storage-store" -> "storage-chunker";
+  "storage-store" -> "storage-records";
+  "storage-store" -> "storage-values";
   "storage-values" -> "storage-chunker";
   "storage-values" -> "theory-spec-combinators";
   "surface-corpus" -> "core-checker";
@@ -176,6 +180,8 @@ digraph crates {
   "surface-dispatcher" -> "kernel-strata";
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
+  "surface-dispatcher" -> "storage-store";
+  "surface-dispatcher" -> "storage-values";
   "surface-dispatcher" -> "surface-corpus";
   "surface-dispatcher" -> "surface-diagnostics";
   "surface-dispatcher" -> "surface-format";
@@ -185,6 +191,7 @@ digraph crates {
   "surface-dispatcher" -> "surface-pretty";
   "surface-dispatcher" -> "surface-syntax";
   "surface-dispatcher" -> "theory-cell-complexes";
+  "surface-driver" -> "storage-store";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";
   "surface-driver" -> "surface-format";

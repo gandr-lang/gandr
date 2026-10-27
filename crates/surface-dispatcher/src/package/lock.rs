@@ -11,16 +11,20 @@
 //! resolved before it is. A path met twice on one chain is a cycle, refused
 //! with the chain.
 //!
-//! # The lock records addresses, and the address never records a coordinate
+//! # The lock records pointers, and the address never records a coordinate
 //!
-//! `gandr.lock` at the package's root maps each alias to its coordinate, the
-//! dependency's address and its signature key, written once by `gandr check`
-//! and read back by every import through the alias. A lock that says another
-//! thing than what the dependencies resolve to is refused as drift, alias by
-//! alias, until `gandr lock` writes it again, so a dependency never changes
-//! under its dependent unseen. The package's own address digests the addresses
-//! its lock records and never their coordinates or aliases: where a dependency
-//! is found and what it is called are not what the package is.
+//! `gandr.lock` at the package's root maps each alias to its coordinate and a
+//! content pointer into the store, the one store of the storage tier a run
+//! opens: resolving a dependency commits its address and its signature key
+//! there, and the lock records the pointer the value plane returns, as
+//! `<digest>:<offset>`. The checker writes the lock once, and every import
+//! through the alias reads it back. A lock that says another thing than what
+//! the dependencies resolve to is refused as drift, alias by alias, until
+//! `gandr lock` writes it again, so a dependency never changes under its
+//! dependent unseen. The package's own address digests the addresses its
+//! lock's pointers name, read back through the store, and never their
+//! coordinates or aliases: where a dependency is found and what it is called
+//! are not what the package is.
 //!
 //! # References
 //!
@@ -28,6 +32,9 @@
 //!   reference is a content address and a separate coordinate never part of
 //!   identity, and resolution produces a lock mapping aliases to verified
 //!   addresses.
+//! - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: the storage
+//!   tier is the one store the lock, the build layer and the verdict cache
+//!   share.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -37,12 +44,28 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_storage_store::ContentPtr;
+use gandr_storage_store::Store;
+use gandr_storage_store::StoreError;
+use gandr_storage_store::Stored;
+use gandr_storage_values::CanonicalValue;
+use gandr_storage_values::CanonicalWord;
+use gandr_storage_values::ChunkDigest;
+use gandr_storage_values::CodecId;
+use gandr_storage_values::CodecIdentity;
+use gandr_storage_values::CodecVersion;
+use gandr_storage_values::ConstructorTag;
+use gandr_storage_values::TokenOffset;
+use gandr_storage_values::TokenReader;
+use gandr_storage_values::TokenSink;
+use gandr_storage_values::ValueError;
 use gandr_surface_lowering::SurfaceName;
 use quenchant_shape::shape::Maybe;
 
 use super::Authorship;
 use super::Basic;
 use super::DIGEST;
+use super::Identity;
 use super::Key;
 use super::Manifested;
 use super::Opening;
@@ -175,10 +198,92 @@ pub struct Locked
 {
     /// Where it is found.
     pub coordinate: Coordinate,
-    /// What it resolved to.
-    pub address: PackageAddress,
-    /// The interface its root exports.
-    pub signature: SignatureKey,
+    /// Where what it resolved to, its address and its signature key, stands
+    /// in the store.
+    pub pointer: ContentPtr,
+}
+
+/// The tag a package's identity opens with in the store.
+const IDENTITY: u8 = 0x1D_u8;
+
+impl CanonicalValue for Identity
+{
+    /// The identity as one constructor of eight words: the address, then the
+    /// signature key, each as four little-endian words.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn emit_tokens<Sink>(
+        &self,
+        sink: &mut Sink,
+    ) -> Result<(), ValueError>
+    where
+        Sink: TokenSink + ?Sized,
+    {
+        sink.open(ConstructorTag::from(IDENTITY))?;
+        for digest in [&self.address.0, &self.signature.0] {
+            for word in digest.as_chunks::<8>().0 {
+                sink.word(CanonicalWord::from(u64::from_le_bytes(*word)))?;
+            }
+        }
+        sink.close()
+    }
+
+    /// The identity [`Identity::emit_tokens`] wrote.
+    ///
+    /// # Specification
+    /// - requires: `reader` stands at an identity's constructor.
+    /// - ensures: the address and the signature key its eight words spell.
+    /// - provides: the read [`Lock::addresses`] makes through the store.
+    /// - fails: [`ValueError::UnexpectedConstructor`] for another constructor,
+    ///   and the reader's refusals.
+    /// - panics: none.
+    /// - executable: none — the reader's stream is the store's.
+    ///
+    /// # Errors
+    /// [`ValueError`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependency's address read back through the store
+    ///   digests into its dependent's, which moves with the dependency's
+    ///   content.
+    /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
+    #[inline]
+    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    {
+        let position = reader.position();
+        let found = reader.read_tag()?;
+        if found != ConstructorTag::from(IDENTITY) {
+            return Err(ValueError::UnexpectedConstructor { found, position });
+        }
+        let mut address = [0_u8; 32];
+        let mut signature = [0_u8; 32];
+        for digest in [&mut address, &mut signature] {
+            for word in digest.as_chunks_mut::<8>().0 {
+                *word = u64::from(reader.read_word()?).to_le_bytes();
+            }
+        }
+        reader.read_close()?;
+        Ok(Self {
+            address: PackageAddress(address),
+            signature: SignatureKey(signature),
+        })
+    }
+}
+
+impl Stored for Identity
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn codec() -> CodecIdentity
+    {
+        CodecIdentity::new(
+            CodecId::from(u16::from(IDENTITY)),
+            CodecVersion::from(1_u16),
+        )
+    }
 }
 
 /// A package's lock: each dependency by its alias.
@@ -212,16 +317,46 @@ impl Lock
         self.0.keys()
     }
 
-    /// The addresses the lock records, once each: what the package's own
-    /// address digests of its dependencies.
+    /// The addresses the lock records, once each, read back through `store`:
+    /// what the package's own address digests of its dependencies.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `store` holds what the lock's pointers name.
+    /// - ensures: the address of the identity each pointer names, once each, in
+    ///   order.
+    /// - provides: the dependencies' part of [`Package::identity`].
+    /// - fails: [`Unaddressed::Unstored`] at the first alias whose pointer the
+    ///   store cannot read back as an identity.
+    /// - panics: none.
+    /// - executable: none — the identities are the store's.
+    ///
+    /// # Errors
+    /// [`Unaddressed::Unstored`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependency's content edit moves its dependent's
+    ///   address, and a pointer the store cannot answer leaves the dependent
+    ///   unaddressed by the alias.
+    /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
+    /// - witness: `tests::package::a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157`
     #[inline]
-    #[must_use]
-    pub fn addresses(&self) -> BTreeSet<PackageAddress>
+    pub fn addresses(
+        &self,
+        store: &Store,
+    ) -> Result<BTreeSet<PackageAddress>, Unaddressed>
     {
-        self.0.values().map(|locked| locked.address).collect()
+        let mut addresses = BTreeSet::new();
+        for (alias, locked) in &self.0 {
+            let identity: Identity =
+                store
+                    .deref(locked.pointer)
+                    .map_err(|fault| Unaddressed::Unstored {
+                        alias: alias.clone(),
+                        fault: Box::new(fault),
+                    })?;
+            let _fresh = addresses.insert(identity.address);
+        }
+        Ok(addresses)
     }
 
     /// The lock as the checker writes it: the header, then the body.
@@ -231,11 +366,11 @@ impl Lock
     /// - ensures: the [`WRITTEN`] line, the digest line carrying the BLAKE3
     ///   digest of the body in lowercase hexadecimal, then the body: a
     ///   `[dependencies]` table holding one line per alias in order, `alias = {
-    ///   path = "…", address = "…", signature = "…" }`, the alias bare when it
+    ///   path = "…", pointer = "<digest>:<offset>" }`, the alias bare when it
     ///   is a TOML bare key and a basic string otherwise, the path a basic
-    ///   string and the two digests lowercase hexadecimal. The same lock
-    ///   renders the same bytes wherever it is rendered, and [`Lock::read`]
-    ///   reads the render back as the lock.
+    ///   string, the digest lowercase hexadecimal and the offset decimal. The
+    ///   same lock renders the same bytes wherever it is rendered, and
+    ///   [`Lock::read`] reads the render back as the lock.
     /// - provides: the file [`reconcile_lock`] and [`relock`] write.
     /// - fails: never.
     /// - panics: none.
@@ -255,11 +390,11 @@ impl Lock
             let Coordinate::Path(ref path) = locked.coordinate;
             let _written = writeln!(
                 body,
-                "{} = {{ path = {}, address = \"{}\", signature = \"{}\" }}",
+                "{} = {{ path = {}, pointer = \"{}:{}\" }}",
                 Key(&alias.0),
                 Basic(path),
-                locked.address,
-                locked.signature
+                locked.pointer.digest(),
+                locked.pointer.offset()
             );
         }
         format!(
@@ -322,15 +457,17 @@ fn parsed(body: Text<'_>) -> Option<Lock>
             (String::from(alias), Text(line.get(alias.len() ..)?))
         };
         let (path, Text(rest)) = Text(rest.strip_prefix(" = { path = ")?).basic()?;
-        let (address, Text(rest)) = Text(rest.strip_prefix(", address = \"")?).digest()?;
-        let (signature, Text(rest)) = Text(rest.strip_prefix("\", signature = \"")?).digest()?;
-        if rest != "\" }" {
+        let (digest, Text(rest)) = Text(rest.strip_prefix(", pointer = \"")?).digest()?;
+        let (offset, rest) = rest.strip_prefix(':')?.split_once('"')?;
+        let parsed: u32 = offset.parse().ok()?;
+        let canonical = offset.bytes().all(|digit| digit.is_ascii_digit())
+            && (offset == "0" || !offset.starts_with('0'));
+        if rest != " }" || !canonical {
             return None;
         }
         let _first = lock.insert(Alias(alias), Locked {
             coordinate: Coordinate::Path(path),
-            address: PackageAddress(address.0),
-            signature: SignatureKey(signature.0),
+            pointer: ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
         });
     }
     Some(Lock(lock))
@@ -484,11 +621,12 @@ impl Package
     ///   the same way first, depth first with an explicit stack of the packages
     ///   being resolved, and the lock standing at its root, which must be the
     ///   one they resolve to — none at all when it has none; then its address
-    ///   over its own items and that lock's addresses, and its signature key,
-    ///   as [`Package::identity`] gives them. Each dependency is locked under
-    ///   its alias at its coordinate. The lock is a function of the packages'
-    ///   contents and coordinates alone, whatever directory the process runs
-    ///   in.
+    ///   over its own items and that lock's addresses, read back through
+    ///   `store`, and its signature key, as [`Package::identity`] gives them,
+    ///   committed to `store` together. Each dependency is locked under its
+    ///   alias at its coordinate by the pointer the commit returns. The lock is
+    ///   a function of the packages' contents and coordinates alone, whatever
+    ///   directory the process runs in and whatever the store held.
     /// - provides: the lock `gandr check` reconciles and `gandr lock` writes.
     /// - fails: [`Unresolved`], at the first dependency that does not resolve.
     /// - panics: none.
@@ -500,7 +638,8 @@ impl Package
     /// [`Unresolved::Cycle`] for a root met twice on one chain,
     /// [`Unresolved::Unlocked`] for a dependency whose own lock is missing or
     /// stale, [`Unresolved::Twice`] for an alias declared twice,
-    /// [`Unresolved::Unaddressed`] for a dependency with no address, and
+    /// [`Unresolved::Unaddressed`] for a dependency with no address,
+    /// [`Unresolved::Unstored`] for an identity the store cannot commit, and
     /// [`Unresolved::Undeclared`] as [`Package::dependencies`].
     ///
     /// # Adequacy
@@ -515,6 +654,7 @@ impl Package
     pub fn resolve(
         &self,
         grammar: &gandr_surface_grammar::Pbg,
+        store: &mut Store,
     ) -> Result<Lock, Unresolved>
     {
         let mut open = BTreeSet::from([self.root.clone()]);
@@ -569,10 +709,16 @@ impl Package
                 });
             }
             let identity = package
-                .identity(grammar, &Unshadowed, &own)
+                .identity(grammar, &Unshadowed, &own, store)
                 .map_err(|fault| Unresolved::Unaddressed {
                     alias: alias.clone(),
                     fault,
+                })?;
+            let pointer = store
+                .commit(&identity)
+                .map_err(|fault| Unresolved::Unstored {
+                    alias: alias.clone(),
+                    fault: Box::new(fault),
                 })?;
             let twice = Unresolved::Twice {
                 alias: alias.clone(),
@@ -581,8 +727,7 @@ impl Package
                 .entries
                 .insert(alias, Locked {
                     coordinate,
-                    address: identity.address,
-                    signature: identity.signature,
+                    pointer,
                 })
                 .is_some()
             {
@@ -700,6 +845,14 @@ pub enum Unresolved
         /// Why it has none.
         fault: Unaddressed,
     },
+    /// A dependency's identity cannot be committed to the store.
+    Unstored
+    {
+        /// The dependency.
+        alias: Alias,
+        /// Why the store refused it.
+        fault: Box<StoreError>,
+    },
 }
 
 impl core::fmt::Display for Unresolved
@@ -759,6 +912,10 @@ impl core::fmt::Display for Unresolved
                 ref alias,
                 ref fault,
             } => write!(f, "the dependency `{alias}` has no address: {fault}"),
+            Self::Unstored {
+                ref alias,
+                ref fault,
+            } => write!(f, "the dependency `{alias}` cannot be locked: {fault}"),
         }
     }
 }

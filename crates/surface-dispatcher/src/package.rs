@@ -766,27 +766,30 @@ impl Package
     /// modules in [`modules`] order, read as `shadows` holds it, laid out over
     /// its imports and lowered, and each of the source's own items digested in
     /// admission order as its path and its content key, a model's inert
-    /// component and the library's `dependencies` left out; then the
-    /// addresses `lock` records; and the paths the library exports, keyed.
+    /// component and the library's `dependencies` left out; then the addresses
+    /// `lock`'s pointers read back through `store`; and the paths the library
+    /// exports, keyed.
     ///
     /// # Specification
     /// - requires: `grammar` is the grammar the package's sources are read
-    ///   under, and `lock` the lock its dependencies resolve to.
+    ///   under, `lock` the lock its dependencies resolve to, and `store` the
+    ///   store that lock's pointers were committed to.
     /// - ensures: the address is the BLAKE3 digest, over the sources in that
     ///   order and each one's own items in its unit's admission order, of each
     ///   item that is no [`Inertness::Inert`] declaration and not the library's
     ///   top-level `dependencies`, as its path's dotted spelling prefixed by
     ///   its length and then its content key's bytes, followed by each address
-    ///   of [`Lock::addresses`] in order, prefixed by `u64::MAX`. An item of an
-    ///   import is the importer's to leave out: only the declarations each
-    ///   source writes are digested, so each enters once. Equal content at
-    ///   equal paths over equal dependencies is one address, whatever the inert
-    ///   fields state and wherever and under whatever alias each dependency is
-    ///   found. The signature key is the BLAKE3 digest of each dotted path of a
-    ///   [`Visibility::Public`] item the library digests, ascending, prefixed
-    ///   by its length.
-    /// - provides: the identity p3's lock carries for the package.
-    /// - fails: [`Unaddressed`] at the first source or item that has no key.
+    ///   of [`Lock::addresses`] read back through `store` in order, prefixed by
+    ///   `u64::MAX`. An item of an import is the importer's to leave out: only
+    ///   the declarations each source writes are digested, so each enters once.
+    ///   Equal content at equal paths over equal dependencies is one address,
+    ///   whatever the inert fields state and wherever and under whatever alias
+    ///   each dependency is found. The signature key is the BLAKE3 digest of
+    ///   each dotted path of a [`Visibility::Public`] item the library digests,
+    ///   ascending, prefixed by its length.
+    /// - provides: the identity a dependent's lock commits to the store.
+    /// - fails: [`Unaddressed`] at the first source or item that has no key, or
+    ///   at the first dependency whose pointer `store` cannot read back.
     /// - panics: none.
     /// - executable: none — the address is a digest of the lowering's content,
     ///   which a predicate could only restate by lowering again; the witnesses
@@ -794,8 +797,8 @@ impl Package
     ///
     /// # Errors
     /// [`Unaddressed`]: a source that does not read or lower, a declaration of
-    /// the package the lowering refused, or an item whose content holds an
-    /// unresolved node.
+    /// the package the lowering refused, an item whose content holds an
+    /// unresolved node, or a dependency whose pointer `store` cannot read back.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — in a two-source package, an edit to an inert field
@@ -803,16 +806,19 @@ impl Package
     ///   edit to a content item moves the address; every corpus package's inert
     ///   fields, each edited, leave its address unchanged; a dependency's
     ///   content edit moves its dependent's address, and its inert edit does
-    ///   not.
+    ///   not; a lock whose pointer the store never held leaves the dependent
+    ///   unaddressed by the alias.
     /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
     /// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
+    /// - witness: `tests::package::a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157`
     #[inline]
     pub fn identity(
         &self,
         grammar: &Pbg,
         shadows: &dyn Shadows,
         lock: &Lock,
+        store: &gandr_storage_store::Store,
     ) -> Result<Identity, Unaddressed>
     {
         let mut hasher = blake3::Hasher::new();
@@ -827,7 +833,7 @@ impl Package
         for source in modules(self.sources()).into_values() {
             digested(grammar, &source, shadows, &mut hasher, None)?;
         }
-        for address in lock.addresses() {
+        for address in lock.addresses(store)? {
             let _digested = hasher.update(&u64::MAX.to_le_bytes()).update(&address.0);
         }
         let mut signed = blake3::Hasher::new();
@@ -849,12 +855,14 @@ impl Package
 /// # Specification
 /// - requires: as [`Package::identity`].
 /// - ensures: as [`Package::identity`], for this one source.
-/// - fails: as [`Package::identity`].
+/// - fails: [`Unaddressed`] at the first item of this source that has no key;
+///   it reads no store.
 /// - panics: none.
 /// - executable: none — as [`Package::identity`].
 ///
 /// # Errors
-/// As [`Package::identity`].
+/// [`Unaddressed`]: the source does not read or lower, a declaration of it the
+/// lowering refused, or an item whose content holds an unresolved node.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Package::identity`].
@@ -981,6 +989,15 @@ pub enum Unaddressed
         /// Its path.
         item: String,
     },
+    /// A dependency whose locked pointer the store cannot read back as an
+    /// identity.
+    Unstored
+    {
+        /// The dependency.
+        alias: lock::Alias,
+        /// Why the store cannot.
+        fault: Box<gandr_storage_store::StoreError>,
+    },
 }
 
 impl core::fmt::Display for Unaddressed
@@ -1027,6 +1044,14 @@ impl core::fmt::Display for Unaddressed
                 "`{item}` in `{}` holds an unresolved node, so no content key names it and the \
                  package has no address",
                 source.display()
+            ),
+            Self::Unstored {
+                ref alias,
+                ref fault,
+            } => write!(
+                f,
+                "the dependency `{alias}` is locked to a pointer the store cannot read back, so \
+                 the package has no address: {fault}; run `gandr lock` to lock it again"
             ),
         }
     }

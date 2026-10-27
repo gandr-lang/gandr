@@ -12,6 +12,9 @@ use anodized::spec;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::content_keys;
+use gandr_storage_store::Store;
+use gandr_storage_store::StoreError;
+use gandr_storage_values::ValueError;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_dispatcher::Alias;
@@ -19,6 +22,7 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Coordinate;
 use gandr_surface_dispatcher::Dependency;
 use gandr_surface_dispatcher::Field;
+use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::LOCK;
 use gandr_surface_dispatcher::Lock;
 use gandr_surface_dispatcher::LockFault;
@@ -94,6 +98,24 @@ fn scratch(
     directory
         .canonicalize()
         .expect("the scratch directory canonicalizes")
+}
+
+/// A fresh store named for `test` and this process, any stale one of the same
+/// name removed first.
+///
+/// # Specification
+/// trivial.
+fn stored(test: &Path) -> Store
+{
+    let directory = std::env::temp_dir().join(format!(
+        "gandr-dispatcher-store-{}-{}",
+        test.display(),
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).expect("a stale store is removed");
+    }
+    Store::open(&directory).expect("the store opens")
 }
 
 /// The root and library of the package `from` sits in, or none.
@@ -904,9 +926,10 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
         panic!("the package is found");
     };
     let grammar = built_in().expect("the built-in grammar builds");
+    let store = stored(Path::new("inert"));
     let address = |held: &Held| {
         package
-            .identity(&grammar, held, &Lock::default())
+            .identity(&grammar, held, &Lock::default(), &store)
             .expect("the package addresses")
             .address
     };
@@ -1106,6 +1129,7 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
         "`Gandr.Package`'s fields are read: {fields:?}"
     );
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let store = stored(Path::new("inert-corpus"));
     for library in [
         "corpus/model/projects/hello/src/lib.gandr",
         "corpus/model/projects/tools/lib.gandr",
@@ -1121,7 +1145,7 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
         };
         let address = |held: &Held| {
             package
-                .identity(&grammar, held, &Lock::default())
+                .identity(&grammar, held, &Lock::default(), &store)
                 .map(|identity| identity.address)
         };
         let before = address(&Held::default()).expect("the package addresses");
@@ -1281,11 +1305,12 @@ fn rooted(root: &Path) -> Package
     }
 }
 
-/// #3072: a library's `dependencies` runs before its lock is written, the
-/// use through the alias alone refused; the lock records the dependency's
-/// coordinate, address and signature key, is written once, read back equal
-/// and unchanged on a second run, and is the same bytes resolved from another
-/// directory; with it, the use reads the dependency.
+/// #3072, #3157: a library's `dependencies` runs before its lock is written,
+/// the use through the alias alone refused; the lock records the dependency's
+/// coordinate and the pointer its identity commits to, is written once, read
+/// back equal and unchanged on a second run, and is the same bytes resolved
+/// from another directory into another store; with it, the use reads the
+/// dependency.
 #[test]
 fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
 {
@@ -1304,23 +1329,31 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         }])),
         "the dependencies run before any lock stands"
     );
-    let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default());
+    let mut store = stored(Path::new("lock"));
+    let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default(), &store);
     assert!(
         matches!(unlocked, Err(Unaddressed::Refused { ref item, .. }) if item == "greeting"),
         "with no lock, the use through the alias is refused, and only it: {unlocked:?}"
     );
-    let lock = sibling.resolve(&grammar).expect("the dependencies resolve");
+    let lock = sibling
+        .resolve(&grammar, &mut store)
+        .expect("the dependencies resolve");
     let own = hello
-        .identity(&grammar, &Held::default(), &Lock::default())
+        .identity(&grammar, &Held::default(), &Lock::default(), &store)
         .expect("hello addresses");
+    let pointer = store.commit(&own).expect("hello's identity commits");
     assert_eq!(
         lock.locked(&Alias::new(String::from("hello"))),
         Some(&Locked {
             coordinate: Coordinate::Path(String::from("../hello")),
-            address: own.address,
-            signature: own.signature,
+            pointer,
         }),
-        "the lock records hello's coordinate and identity"
+        "the lock records hello's coordinate and the pointer its identity commits to"
+    );
+    assert_eq!(
+        store.deref::<Identity>(pointer),
+        Ok(own),
+        "and the pointer reads back as hello's identity"
     );
     assert!(
         matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
@@ -1333,7 +1366,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "the lock reads back as it was written"
     );
     assert_eq!(
-        sibling.resolve(&grammar).as_ref(),
+        sibling.resolve(&grammar, &mut store).as_ref(),
         Ok(&lock),
         "a second resolution is the same lock"
     );
@@ -1347,18 +1380,21 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "the lock stands byte for byte"
     );
     let locked = sibling
-        .identity(&grammar, &Held::default(), &lock)
+        .identity(&grammar, &Held::default(), &lock, &store)
         .expect("with the lock, the use reads `hello.welcome`");
     let elsewhere = siblings(Path::new("lock-elsewhere"), Hello {
         version: "0.1.0",
         welcome: "hello",
     });
     let other = rooted(&elsewhere.join("sibling"));
-    let relocked = other.resolve(&grammar).expect("the copy resolves");
+    let mut fresh = stored(Path::new("lock-elsewhere"));
+    let relocked = other
+        .resolve(&grammar, &mut fresh)
+        .expect("the copy resolves");
     assert_eq!(
         relocked.render(),
         written,
-        "the lock is the same bytes resolved from another directory"
+        "the lock is the same bytes resolved from another directory into another store"
     );
     assert!(
         matches!(reconcile_lock(&other, &relocked), Ok(Reconciled::Written)),
@@ -1366,13 +1402,16 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     );
     assert_eq!(
         other
-            .identity(&grammar, &Held::default(), &relocked)
+            .identity(&grammar, &Held::default(), &relocked, &fresh)
             .map(|identity| identity.address),
         Ok(locked.address),
         "the dependent's address is the same from another directory"
     );
     for scratch in [directory, elsewhere] {
         std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+    }
+    for scratch in [store.root(), fresh.root()] {
+        std::fs::remove_dir_all(scratch).expect("the store is removed");
     }
 }
 
@@ -1390,7 +1429,10 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
     });
     let sibling = rooted(&directory.join("sibling"));
     let path = directory.join("sibling").join(LOCK);
-    let lock = sibling.resolve(&grammar).expect("the dependencies resolve");
+    let mut store = stored(Path::new("drift"));
+    let lock = sibling
+        .resolve(&grammar, &mut store)
+        .expect("the dependencies resolve");
     assert!(
         matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
         "the lock is written"
@@ -1402,7 +1444,10 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
     });
     assert!(
         matches!(
-            reconcile_lock(&sibling, &sibling.resolve(&grammar).expect("it resolves")),
+            reconcile_lock(
+                &sibling,
+                &sibling.resolve(&grammar, &mut store).expect("it resolves")
+            ),
             Ok(Reconciled::Unchanged)
         ),
         "an inert edit to the dependency leaves the lock"
@@ -1411,14 +1456,19 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         version: "0.2.0",
         welcome: "howdy",
     });
-    let moved = sibling.resolve(&grammar).expect("it resolves");
-    assert_ne!(
-        moved
-            .locked(&Alias::new(String::from("hello")))
-            .map(|locked| locked.address),
+    let moved = sibling.resolve(&grammar, &mut store).expect("it resolves");
+    let address = |lock: &Lock| {
         lock.locked(&Alias::new(String::from("hello")))
-            .map(|locked| locked.address),
-        "a content edit moves the dependency's address"
+            .map(|locked| {
+                store
+                    .deref::<Identity>(locked.pointer)
+                    .map(|identity| identity.address)
+            })
+    };
+    assert_ne!(
+        address(&moved),
+        address(&lock),
+        "a content edit moves the dependency's address, and the pointer its identity commits to"
     );
     let drifted = reconcile_lock(&sibling, &moved);
     assert!(
@@ -1454,6 +1504,73 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         "a hand edit is refused"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+    std::fs::remove_dir_all(store.root()).expect("the store is removed");
+}
+
+/// #3157: the lock records a pointer into the store its run committed to;
+/// read against a store that never held it, the dependent's address is
+/// refused by the dependency's alias, naming the pointer the store cannot
+/// answer, and a run that commits again answers it.
+#[test]
+fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = siblings(Path::new("unstored"), Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    let sibling = rooted(&directory.join("sibling"));
+    let mut committed = stored(Path::new("unstored"));
+    let lock = sibling
+        .resolve(&grammar, &mut committed)
+        .expect("the dependencies resolve");
+    assert!(
+        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        "the lock is written, so the use through the alias reads it"
+    );
+    let pointer = lock
+        .locked(&Alias::new(String::from("hello")))
+        .expect("hello is locked")
+        .pointer;
+    let mut empty = stored(Path::new("unstored-empty"));
+    let unaddressed = sibling.identity(&grammar, &Held::default(), &lock, &empty);
+    assert_eq!(
+        unaddressed,
+        Err(Unaddressed::Unstored {
+            alias: Alias::new(String::from("hello")),
+            fault: Box::new(StoreError::Value(ValueError::UnknownChunk {
+                digest: pointer.digest()
+            })),
+        }),
+        "a store that never held the pointer leaves the dependent unaddressed by the alias"
+    );
+    assert!(
+        unaddressed
+            .map_err(|fault| fault.to_string())
+            .err()
+            .is_some_and(|said| said.starts_with(
+                "the dependency `hello` is locked to a pointer the store cannot read back"
+            )),
+        "the refusal names the dependency"
+    );
+    assert_eq!(
+        sibling.resolve(&grammar, &mut empty).as_ref(),
+        Ok(&lock),
+        "resolving into the empty store commits the same pointer"
+    );
+    assert_eq!(
+        sibling
+            .identity(&grammar, &Held::default(), &lock, &empty)
+            .map(|identity| identity.address),
+        sibling
+            .identity(&grammar, &Held::default(), &lock, &committed)
+            .map(|identity| identity.address),
+        "and the store then answers it alike"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+    for scratch in [committed.root(), empty.root()] {
+        std::fs::remove_dir_all(scratch).expect("the store is removed");
+    }
 }
 
 /// #3072: two packages depending on each other by path are refused as a
@@ -1477,7 +1594,7 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
         )
         .expect("the library is written");
     }
-    let resolved = rooted(&directory.join("a")).resolve(&grammar);
+    let resolved = rooted(&directory.join("a")).resolve(&grammar, &mut stored(Path::new("cycle")));
     assert_eq!(
         resolved,
         Err(Unresolved::Cycle {

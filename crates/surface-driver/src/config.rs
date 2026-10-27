@@ -39,6 +39,17 @@
 //! when it names an absolute path, and `$HOME/.cache` otherwise, by the same
 //! rule. The directory is a cache: removing it costs the next open a whole
 //! judgement, and nothing else.
+//!
+//! # The store under the XDG data directory
+//!
+//! `gandr check` and `gandr lock` open the storage tier's store at
+//! `gandr/store` under the user's data directory: `$XDG_DATA_HOME` when it
+//! names an absolute path, and `$HOME/.local/share` otherwise, by the same
+//! rule. A package's lock commits each dependency's identity there and records
+//! the pointer. A pointer is a function of the identity alone, and each check
+//! commits every identity again before it reads one, so removing the
+//! directory costs the next check those commits and leaves every lock as it
+//! stands.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -158,6 +169,58 @@ pub fn checkpoints() -> Option<PathBuf>
     )
 }
 
+/// The directory the store is rooted at, under `home`, the XDG data home, or
+/// under `fallback`, the user's home directory, when `home` names none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<home>/gandr/store` when `home` is an absolute path, else
+///   `<fallback>/.local/share/gandr/store` when `fallback` is present, else
+///   absent.
+/// - provides: the one path rule the store is rooted at.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an absolute home, a relative one beside a fallback, and
+///   neither are each resolved.
+/// - witness: `config::tests::the_store_sits_under_the_xdg_data_home_3157`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|path| path.ends_with("gandr/store")))]
+fn stored(
+    home: Option<PathBuf>,
+    fallback: Option<PathBuf>,
+) -> Option<PathBuf>
+{
+    Some(
+        directory(home, fallback, Path::new(".local/share"))?
+            .join("gandr")
+            .join("store"),
+    )
+}
+
+/// The directory the store is rooted at, as [`stored`] names it under the
+/// process's environment.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`stored`] of `$XDG_DATA_HOME` and `$HOME`.
+/// - provides: where `gandr check` and `gandr lock` open the store.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment, which the
+///   clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`stored`].
+/// - witness: `config::tests::the_store_sits_under_the_xdg_data_home_3157`
+pub fn store() -> Option<PathBuf>
+{
+    stored(
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
 /// The user's configuration, read from the file [`located`] names under the
 /// process's environment.
 ///
@@ -193,6 +256,7 @@ mod tests
 
     use super::checkpointed;
     use super::located;
+    use super::stored;
 
     #[test]
     fn the_file_sits_under_the_xdg_configuration_home()
@@ -236,6 +300,30 @@ mod tests
         assert_eq!(
             directory(None, Some("/home/user")),
             Some(PathBuf::from("/home/user/.cache/gandr/checkpoints"))
+        );
+        assert_eq!(directory(None, None), None);
+    }
+
+    /// #3157: the store is rooted under the XDG data home by the
+    /// configuration's own rule.
+    #[test]
+    fn the_store_sits_under_the_xdg_data_home_3157()
+    {
+        let directory = |home: Option<&str>, fallback: Option<&str>| {
+            stored(home.map(PathBuf::from), fallback.map(PathBuf::from))
+        };
+        assert_eq!(
+            directory(Some("/xdg"), Some("/home/user")),
+            Some(PathBuf::from("/xdg/gandr/store"))
+        );
+        assert_eq!(
+            directory(Some("relative"), Some("/home/user")),
+            Some(PathBuf::from("/home/user/.local/share/gandr/store")),
+            "a relative XDG_DATA_HOME is ignored, as the specification asks"
+        );
+        assert_eq!(
+            directory(None, Some("/home/user")),
+            Some(PathBuf::from("/home/user/.local/share/gandr/store"))
         );
         assert_eq!(directory(None, None), None);
     }

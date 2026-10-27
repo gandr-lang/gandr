@@ -33,7 +33,9 @@ path = "tests/lib.rs"
 # its items' content keys, which the incremental checker's program states.
 # A closure's judgement is held in a self_cell with the closure's lowering,
 # whose names it borrows. A `[presentation]` table, the user's configuration
-# file's and a package manifest's alike, is read through toml.
+# file's and a package manifest's alike, is read through toml. A package's
+# lock commits each dependency's identity through the storage tier's store,
+# and records the pointer the value plane returns.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a closure's lowering and
 # judgement, the prelude's among them, for the benchmark report.
@@ -48,6 +50,8 @@ gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true
+gandr-storage-store.workspace = true
+gandr-storage-values.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-format.workspace = true
