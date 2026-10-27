@@ -570,9 +570,9 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: one [`Plicity::Instance`] entry per label naming no entry
     ///   before it and no name of `staged`, in written order, its binder the
     ///   label's tile and its declared tile the interface's name; nothing for a
-    ///   result writing no row or a row writing no label. A label naming a
-    ///   region binder `@[r : Region]` is that binder's instance, bound
-    ///   already.
+    ///   result writing no row or a row writing no label. The sorts an entry
+    ///   fixes, `with sort x = A`, are passed over. A label naming a region
+    ///   binder `@[r : Region]` is that binder's instance, bound already.
     /// - fails: a form fault reading the result's pieces.
     /// - panics: none.
     ///
@@ -580,10 +580,12 @@ impl<'source> Collector<'_, 'source>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::merged_telescope`], and a label naming the
-    ///   telescope's region binder binds nothing.
+    /// - hypothesis: L3 — as [`Self::merged_telescope`], a label naming the
+    ///   telescope's region binder binds nothing, and a label after an entry
+    ///   fixing a theory's sort is an instance.
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     /// - witness: `lower::implicit::tests::a_row_label_naming_a_region_binder_is_its_instance_2271`
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(captures: before = entries.len(), ensures: |ret| ret.is_err() || entries.len() >= before)]
     fn row_labels(
         &self,
@@ -639,6 +641,13 @@ impl<'source> Collector<'_, 'source>
                     at = at.saturating_add(1);
                 },
                 _ => break,
+            }
+            // An entry's manifest tail, `with sort x = A`, five pieces a
+            // time, stands between it and the next entry's `,`.
+            while let Some((with, _)) = tile(at)
+                && with == TileName::WITH
+            {
+                at = at.saturating_add(5);
             }
             match tile(at) {
                 Some((comma, _)) if comma == TileName::COMMA => at = at.saturating_add(1),

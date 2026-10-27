@@ -2,6 +2,11 @@
 //! [`PayloadVerdict`] each schema returns, and the [`AttributeTable`] a lowered
 //! module carries beside its declarations.
 //!
+//! Its public types: `AttributeRegistry`, `AttributeSchema`,
+//! `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`,
+//! `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and
+//! `AttributedCount`.
+//!
 //! # The side table is keyed by content identity
 //!
 //! An entry is filed under the [`UnitKey`] of the declaration form the

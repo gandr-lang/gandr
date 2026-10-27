@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xf4b6637b4780d609`
+- Grammar fingerprint: `0x26e3af079188f3d9`
 - Rules: 167 — 166 committed, 1 internal
-- Molds: 3227
+- Molds: 3243
 - Attributes: 14
 
 ## Reading a form
@@ -197,8 +197,8 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`moded_type`](../corpus/ledger/syntax/moded-type.gandr) | `‹type_variable› TYPE` | `type.arrow` | `moded_type` * | admitted | TypeVariable |
 | [`capability_type`](../corpus/ledger/syntax/capability-type.gandr) | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` or `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | admitted | TypeBuiltin, Other, Number, Member |
 | [`number.type`](../corpus/ledger/syntax/number.type.gandr) | `‹number›` | `type.atom` | `number` | admitted | Number |
-| [`f_type.row.labelled`](../corpus/ledger/syntax/f-type.row.labelled.gandr) | `-F [ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Operator |
-| [`f_type.result.labelled`](../corpus/ledger/syntax/f-type.result.labelled.gandr) | `[ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Operator |
+| [`f_type.row.labelled`](../corpus/ledger/syntax/f-type.row.labelled.gandr) | `-F [ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Operator |
+| [`f_type.result.labelled`](../corpus/ledger/syntax/f-type.result.labelled.gandr) | `[ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Keyword, Operator |
 
 ## `instantiation` — 5 rules
 

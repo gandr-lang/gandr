@@ -233,7 +233,9 @@
 //! and the nested modules it exports, in export order, its manifest type
 //! components with the types they lowered to, the abstract components it
 //! sealed with the positions of their atoms, and whether matching coerced its
-//! body.
+//! body. The types it is read through: `ValueComponent`, `ManifestComponent`,
+//! `manifest_type`, `Coerced`, `Container`, `Role`, `StructureIndex` and
+//! `AscriptionForm`.
 //!
 //! `LoweredModule::structured_names` exports declared and sealed abstract
 //! positions only: witness and held slots take no entry, and any path

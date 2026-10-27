@@ -3461,6 +3461,10 @@ struct Lowerer<'run, 'source>
             gandr_core_term::effect::capability::RegionBinder,
         ),
     >,
+    /// The theory at the sorts its row entry fixes, of each instance parameter
+    /// whose label names a theory, by its binder tile: what its capability
+    /// type mints its signature from.
+    instance_theories: BTreeMap<NodeIndex, Arc<capability::TheoryInterface>>,
     /// The region each capability type written at a scope, a hold or a
     /// region binder lives in, by the capability type's node.
     regions: BTreeMap<NodeIndex, gandr_core_term::effect::capability::Region>,
@@ -5083,6 +5087,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             answered: BTreeMap::new(),
             labelled: BTreeMap::new(),
             instance_parameters: BTreeMap::new(),
+            instance_theories: BTreeMap::new(),
             regions: BTreeMap::new(),
             resumptions: BTreeSet::new(),
             described_types: BTreeMap::new(),
@@ -17133,16 +17138,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// region binder it lives at.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: every type a theory instance's row entry fixes is already
+    ///   minted or absent.
     /// - ensures: `Cap {I} at r` at `origin` for the instance of `I` living at
-    ///   the region binder `r`; none for a binder binding no instance, or an
-    ///   interface the host does not declare.
+    ///   the region binder `r`, `I` the theory at the sorts its row entry fixes
+    ///   when its label names one ([`Self::interface_signature`]); none for a
+    ///   binder binding no instance, an interface the host does not declare and
+    ///   no row entry read as a theory, or a fixed type that did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_signature`].
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(ensures: |ret| ret.is_none_or(|id| sink.origins.value_type(id) == Maybe::Present(origin)))]
     fn mint_instance(
         &self,
@@ -17152,7 +17161,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Option<ValueTypeId>
     {
         let &(ref interface, region) = self.instance_parameters.get(&binder)?;
-        let Maybe::Present(signature) = sink.signature(interface, origin)
+        let signature = match self.instance_theories.get(&binder) {
+            Some(theory) => self.interface_signature(
+                &capability::Interface::Theory(Arc::clone(theory)),
+                sink,
+                origin,
+            ),
+            None => sink.signature(interface, origin),
+        };
+        let Maybe::Present(signature) = signature
         else {
             return None;
         };
