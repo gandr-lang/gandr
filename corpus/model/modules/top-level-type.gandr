@@ -24,3 +24,18 @@ pub type Twice(a : Type) = a * a;
 
 /// The set's bounds as a pair.
 def bounds : Twice(Integer) = (200000, 800000);
+
+/// A computation type, named as a member: a run returning an integer.
+pub type Reading = -F Integer;
+
+/// The set's width, read by a run of the member's type.
+@[ runs("600000") ]
+def readWidth() -> Reading { width(setBand) }
+
+/// A run returning a value of the parameter's type, a family of computation
+/// types.
+pub type Returning(a : Type) = -F a;
+
+/// The set's low bound, at the family's integer instance.
+@[ runs("200000") ]
+def low() -> Returning(Integer) { 200000 }

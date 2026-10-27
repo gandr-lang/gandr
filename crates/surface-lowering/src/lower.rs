@@ -3023,6 +3023,10 @@ struct Lowerer<'run, 'source>
     /// its span and the frame it is read under: the application answers as
     /// the type it expands to, which the member's own body mints.
     expansions: BTreeMap<NodeIndex, (ByteSpan, Frame)>,
+    /// Each type member's definition, by its node, that is a computation
+    /// type ([`Self::member_reading`]): a name or an application reaching
+    /// the member stands where a computation type is read.
+    computation_members: BTreeSet<NodeIndex>,
     /// Each exported value component's full path, with the member's slot.
     exported: BTreeMap<NamePath, SlotIndex>,
     /// Each exported type component's full path, with what it reads.
@@ -3477,9 +3481,12 @@ struct Lowerer<'run, 'source>
     /// argument type it could not read: built during the mint sweep, before
     /// the first type written after the application mints.
     renamings: Vec<Result<Renaming, LoweringRefusal<'source>>>,
-    /// Each manifest type an instance exports, by its application and the
-    /// template's type: that type, renamed by the application.
+    /// Each manifest value type an instance exports, by its application and
+    /// the template's type: that type, renamed by the application.
     instance_types: BTreeMap<(InstanceIndex, NodeIndex), ValueTypeId>,
+    /// Each manifest computation type an instance exports, keyed and renamed
+    /// as [`Self::instance_types`].
+    instance_computations: BTreeMap<(InstanceIndex, NodeIndex), CompTypeId>,
     /// Each slot of an application — a witness or an image of its functor's
     /// body — with the declaration it amounts to.
     instantiated: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
@@ -4975,6 +4982,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scopes,
             manifests: Vec::new(),
             expansions: BTreeMap::new(),
+            computation_members: BTreeSet::new(),
             exported: BTreeMap::new(),
             exported_types: BTreeMap::new(),
             witnessed: BTreeMap::new(),
@@ -5100,6 +5108,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             presented: BTreeMap::new(),
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),
+            instance_computations: BTreeMap::new(),
             instantiated: BTreeMap::new(),
             capabilities: BTreeSet::new(),
             theory_capabilities: BTreeMap::new(),
@@ -5844,10 +5853,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut seeds: Vec<(NodeIndex, Reading)> = Vec::new();
         let mut payloads: Vec<NodeIndex> = Vec::new();
         let from = self.current;
+        let mut members: Vec<NodeIndex> = Vec::new();
         for structure in self.collected.structures.iter().skip(from.structures) {
             for stated in structure.types.iter().chain(&structure.type_members) {
                 if let TypeMeaning::Manifest(defined) = stated.meaning {
-                    seeds.push((defined.node, Reading::ValueType(Frame::Outermost)));
+                    members.push(defined.node);
                 }
             }
             for record in &structure.stated_at {
@@ -5859,8 +5869,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .type_members_in(Container::TopLevel(from.source))
         {
             if let TypeMeaning::Manifest(defined) = stated.meaning {
-                seeds.push((defined.node, Reading::ValueType(Frame::Outermost)));
+                members.push(defined.node);
             }
+        }
+        for defined in members {
+            let reading = self.member_reading(defined, Frame::Outermost)?;
+            seeds.push((defined, reading));
         }
         for recorded in self
             .collected
@@ -5952,7 +5966,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.seed_data(&mut seeds);
-        self.seed_families(&mut seeds);
+        self.seed_families(&mut seeds)?;
         self.seed_descriptions(&mut seeds)?;
         self.sign_definitions()?;
         for (position, reading) in seeds {
@@ -11347,9 +11361,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration the head belongs to.
     /// - provides: the one reading of a stated type, whether named bare or by a
     ///   path.
-    /// - fails: yields the wrong-sort refusal where the position reads no value
-    ///   type, and [`LoweringRefusal::ForwardMemberReference`] for an atom or
-    ///   an instance's type the referring declaration does not follow.
+    /// - fails: yields the wrong-sort refusal where the position reads no type
+    ///   of the stated type's sort, a computation type for a manifest or an
+    ///   instance's type whose definition is one and a value type otherwise,
+    ///   and [`LoweringRefusal::ForwardMemberReference`] for an atom or an
+    ///   instance's type the referring declaration does not follow.
     /// - panics: none.
     ///
     /// # Errors
@@ -11361,6 +11377,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration before its module is refused by position.
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     #[spec(
         captures: before = self.manifests.len(),
@@ -11382,7 +11399,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
         stated: TypeComponent<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::ValueType)?;
+        let produced = match stated.meaning {
+            TypeMeaning::Manifest(defined) | TypeMeaning::Instantiated { defined, .. }
+                if self.computation_members.contains(&defined.node) =>
+            {
+                Produced::CompType
+            },
+            TypeMeaning::Manifest(_)
+            | TypeMeaning::Sealed
+            | TypeMeaning::Instantiated { .. }
+            | TypeMeaning::Family(_) => Produced::ValueType,
+        };
+        let _frame = self.require(site, produced)?;
         let plan = match stated.meaning {
             TypeMeaning::Manifest(defined) => Plan::Transparent(defined.node),
             TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
@@ -14486,8 +14514,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the plan is carried out once, as [`Self::mint_at`] states,
     ///   and kept; a type a term quotes is carried from its telescope into the
     ///   term's context before the quote wraps it, while a value a type reads
-    ///   stays in the type's telescope; a node with no plan, or whose plan was
-    ///   carried out, is left as it is.
+    ///   stays in the type's telescope; a member's name standing for a value
+    ///   type is recorded as its stand-in, and one standing for a computation
+    ///   type labelled with it; a node with no plan, or whose plan was carried
+    ///   out, is left as it is.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -14500,6 +14530,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
     /// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
         captures: before = (
             matches!(
@@ -14553,6 +14584,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let minted = self.mint_plan(plan, sink, origin);
         if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
             sink.origins.record_stand_in(id, origin);
+        }
+        // A member's computation type is closed, so it reads under no binder.
+        if stands_in && let Maybe::Present(Lowered::CompType(ty)) = minted {
+            sink.origins.record_label(Label {
+                span: origin.span(),
+                labelled: Labelled::CompType {
+                    ty,
+                    context: Vec::new(),
+                },
+            });
         }
         if let Maybe::Present(Lowered::Value(head)) = minted
             && let Some(&(caller, ref planned)) = self.planned_supplies.get(&position)
@@ -14757,6 +14798,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         captures: promised = (
             match *plan {
+                | Plan::Expansion(family, _) if self.family_produced(family) == Produced::CompType => {
+                    Some(Produced::CompType)
+                },
+                | Plan::Instantiated(_, defined) if self.computation_members.contains(&defined) => {
+                    Some(Produced::CompType)
+                },
                 | Plan::Variable(..)
                 | Plan::ValueHole(_)
                 | Plan::Constant(_)
@@ -14967,13 +15014,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(sink.value(id, origin))
             },
             Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
-            Plan::Instantiated(instance, defined) => self
-                .instance_types
-                .get(&(instance, defined))
-                .copied()
-                .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
-                    Maybe::Present(Lowered::ValueType(id))
-                }),
+            Plan::Instantiated(instance, defined) => {
+                match self.instance_computations.get(&(instance, defined)) {
+                    Some(&id) => Maybe::Present(Lowered::CompType(id)),
+                    None => self
+                        .instance_types
+                        .get(&(instance, defined))
+                        .copied()
+                        .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
+                            Maybe::Present(Lowered::ValueType(id))
+                        }),
+                }
+            },
             Plan::Sealed(atom) => {
                 let id = sink.arena.value_type_abstract(atom);
                 sink.origins.record_value_type(id, origin);
@@ -15042,19 +15094,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Expansion(family, arguments) => {
                 let expanded = self.mint_expansion(family, arguments, sink, origin);
-                if let Maybe::Present(Lowered::ValueType(ty)) = expanded
-                    && let Some(&(span, frame)) = self.expansions.get(&origin.node())
-                {
-                    let context = self
+                let context = |lowerer: &Self, frame| -> Vec<String> {
+                    lowerer
                         .scope
-                        .telescope_names(frame, self.telescope_at(origin.node()))
+                        .telescope_names(frame, lowerer.telescope_at(origin.node()))
                         .into_iter()
                         .map(|name| String::from(name.as_ref()))
-                        .collect();
-                    sink.origins.record_label(Label {
-                        span,
-                        labelled: Labelled::ValueType { ty, context },
-                    });
+                        .collect()
+                };
+                if let Some(&(span, frame)) = self.expansions.get(&origin.node()) {
+                    let labelled = match expanded {
+                        Maybe::Present(Lowered::ValueType(ty)) => Some(Labelled::ValueType {
+                            ty,
+                            context: context(self, frame),
+                        }),
+                        Maybe::Present(Lowered::CompType(ty)) => Some(Labelled::CompType {
+                            ty,
+                            context: context(self, frame),
+                        }),
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
+                    };
+                    if let Some(labelled) = labelled {
+                        sink.origins.record_label(Label { span, labelled });
+                    }
                 }
                 expanded
             },
@@ -19443,9 +19505,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   and nested modules it exports in export order — a value component with
     ///   the constant a reference reads, the witness an opaque ascription
     ///   exports in its member's place — each exported type component that
-    ///   reads a type with the type it lowered to, each sealed one with its
-    ///   atom, and whether matching coerced its body; a hidden member appears
-    ///   in no item.
+    ///   reads a type with the value type it lowered to, or the reason it has
+    ///   none ([`Self::manifest_value`]), each sealed one with its atom, and
+    ///   whether matching coerced its body; a hidden member appears in no item.
     /// - provides: the stratum half of [`LoweredModule`].
     /// - fails: never.
     /// - panics: none.
@@ -19453,13 +19515,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested paths retain their member names, an ascription
     ///   exports only its selected values and modules, manifest components keep
-    ///   their lowered type or their explicit Unlowered status, and a sealed
-    ///   module exports its atoms and its witnesses.
+    ///   their lowered type or their explicit Unlowered or Computation status,
+    ///   and a sealed module exports its atoms and its witnesses.
     /// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
     /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
         ensures: |ret| {
             ret.len() == self.collected.structures.len()
@@ -19505,22 +19568,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let mut types = lowered.types().iter();
                         let mut sealed = lowered.sealed().iter();
                         let stated = structure.exported_types().iter().all(|component| match component.meaning {
-                            | TypeMeaning::Manifest(defined) => types.next().is_some_and(|lowered| {
-                                lowered.name == component.name
-                                    && lowered.defined
-                                        == match self.value_type_at(defined.node) {
-                                            | Maybe::Present(id) => Maybe::Present(id),
-                                            | Maybe::Absent(_) => Maybe::Absent(manifest_type::Absent::Unlowered),
-                                        }
+                            | TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. } => types.next().is_some_and(|lowered| {
+                                lowered.name == component.name && lowered.defined == self.manifest_value(component.meaning)
                             }),
                             | TypeMeaning::Sealed => sealed.next().is_some_and(|lowered| {
                                 lowered.name == component.name
                                     && usize::from(lowered.atom) == usize::from(component.held)
-                            }),
-                            | TypeMeaning::Instantiated { defined, instance } => types.next().is_some_and(|lowered| {
-                                lowered.name == component.name
-                                    && lowered.defined
-                                        == self.instance_types.get(&(instance, defined.node)).copied().map_or(Maybe::Absent(manifest_type::Absent::Unlowered), Maybe::Present)
                             }),
                             | TypeMeaning::Family(_) => true,
                         });
@@ -19563,13 +19616,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let mut sealed = Vec::new();
             for component in structure.exported_types() {
                 match component.meaning {
-                    TypeMeaning::Manifest(defined) => types.push(ManifestComponent {
-                        name: component.name,
-                        defined: match self.value_type_at(defined.node) {
-                            Maybe::Present(id) => Maybe::Present(id),
-                            Maybe::Absent(_) => Maybe::Absent(manifest_type::Absent::Unlowered),
-                        },
-                    }),
+                    TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. } => {
+                        types.push(ManifestComponent {
+                            name: component.name,
+                            defined: self.manifest_value(component.meaning),
+                        });
+                    },
                     TypeMeaning::Sealed => {
                         if let Some(atom) = self.collected.slots.get(usize::from(component.held)) {
                             sealed.push(SealedComponent {
@@ -19577,19 +19629,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 atom: atom.constant,
                             });
                         }
-                    },
-                    TypeMeaning::Instantiated { defined, instance } => {
-                        types.push(ManifestComponent {
-                            name: component.name,
-                            defined: self
-                                .instance_types
-                                .get(&(instance, defined.node))
-                                .copied()
-                                .map_or(
-                                    Maybe::Absent(manifest_type::Absent::Unlowered),
-                                    Maybe::Present,
-                                ),
-                        });
                     },
                     TypeMeaning::Family(_) => {},
                 }
@@ -19608,6 +19647,66 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         lowered
+    }
+
+    /// The value type a manifest or an instance's type component reads, or
+    /// why it has none.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: the value type the component's definition lowered to, its
+    ///   template's renamed by the application for an instance's; the
+    ///   computation reason for a definition that lowered to a computation
+    ///   type; the unlowered reason otherwise, a sealed or family component
+    ///   too.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value member exports its type, a computation member
+    ///   its reason, and a refused member the unlowered reason.
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(_) => matches!(meaning, TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. }),
+        Maybe::Absent(manifest_type::Absent::Computation) => matches!(
+            meaning,
+            TypeMeaning::Manifest(defined) | TypeMeaning::Instantiated { defined, .. }
+                if self.computation_members.contains(&defined.node)
+        ),
+        Maybe::Absent(manifest_type::Absent::Unlowered) => true,
+    })]
+    fn manifest_value(
+        &self,
+        meaning: TypeMeaning,
+    ) -> Maybe<ValueTypeId, manifest_type::Absent>
+    {
+        let unlowered = Maybe::Absent(manifest_type::Absent::Unlowered);
+        let computation = Maybe::Absent(manifest_type::Absent::Computation);
+        match meaning {
+            TypeMeaning::Manifest(defined) => match self.value_type_at(defined.node) {
+                Maybe::Present(id) => Maybe::Present(id),
+                Maybe::Absent(_) => match self.comp_type_at(defined.node) {
+                    Maybe::Present(_) if self.computation_members.contains(&defined.node) => {
+                        computation
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => unlowered,
+                },
+            },
+            TypeMeaning::Instantiated { defined, instance } => {
+                match self.instance_types.get(&(instance, defined.node)) {
+                    Some(&id) => Maybe::Present(id),
+                    None if self
+                        .instance_computations
+                        .contains_key(&(instance, defined.node)) =>
+                    {
+                        computation
+                    },
+                    None => unlowered,
+                }
+            },
+            TypeMeaning::Sealed | TypeMeaning::Family(_) => unlowered,
+        }
     }
 
     /// The binders in scope at each node the lowering read under a binder:

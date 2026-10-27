@@ -2456,6 +2456,113 @@ fn a_top_level_type_member_names_its_type_for_the_source_1834()
 }
 
 #[test]
+fn a_type_member_names_a_computation_type_3080()
+{
+    let source = "module M { type C = -F Integer; def one() -> C { return 1 } }\ntype D = -F \
+                  Integer;\ndef two() -> D { return 2 }\nmodule Fam { type T(a : Type) = -F a; \
+                  def some1() -> T(Integer) { return 1 } }\ntype G = Integer -> -F Integer;\ndef \
+                  inc() -> G { fn (n) { return n } }";
+    let mut lowered = lower(source);
+    assert_eq!(
+        rows(&lowered),
+        [
+            row("M.one", Role::Declared, Amounts::Completed),
+            row("two", Role::Declared, Amounts::Completed),
+            row("Fam.some1", Role::Declared, Amounts::Completed),
+            row("inc", Role::Declared, Amounts::Completed),
+        ],
+        "a returner, a family into returners and a function into one each lower as a member"
+    );
+    assert_eq!(
+        verdicts(&mut lowered),
+        [
+            judged(1_usize, Judgement::Checked),
+            judged(3_usize, Judgement::Checked),
+            judged(5_usize, Judgement::Checked),
+            judged(7_usize, Judgement::Checked),
+        ],
+        "and each declaration naming one checks at the computation type it names"
+    );
+    assert!(
+        matches!(
+            *lowered.module.structures().first().expect("module").types(),
+            [ref member] if member.name == name("C")
+                && member.defined == Maybe::Absent(gandr_surface_lowering::manifest_type::Absent::Computation)
+        ),
+        "the module exports the member as a computation type, not as one that did not lower"
+    );
+
+    let mistyped = "type D = -F Integer;\ndef two() -> D { return \"two\" }";
+    assert_eq!(
+        verdicts(&mut lower(mistyped)),
+        [judged(1_usize, Judgement::Mismatched)],
+        "a body returning another type is refused at the member's computation type"
+    );
+
+    let misread = "type D = -F Integer;\ndef bad(x : D) -> -F Integer { return 1 }";
+    assert!(
+        matches!(
+            rows(&lower(misread)).as_slice(),
+            [(_, Role::Declared, Amounts::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }))] if *span == span_of(misread, "D", 1_usize)
+        ),
+        "a computation member named where a value type is read is refused at the name"
+    );
+
+    let sealed = "module S :> #{ type T, v : T } { type T = -F Integer; def v = 1; }";
+    let representation = Amounts::Refused(LoweringRefusal::OutOfFragment {
+        span: span_of(sealed, "-F Integer", 0_usize),
+        form: FormName::from(NamedKind("f_type")),
+        sort: FragmentSort::ValueType,
+        boundary: FragmentBoundary::WrongSort,
+    });
+    assert_eq!(
+        rows(&lower(sealed)),
+        [
+            row("S.T", Role::Abstract, representation),
+            row("S.v", Role::Declared, representation),
+        ],
+        "a seal over a computation member is refused at its definition, and its atom's \
+         readers with it"
+    );
+
+    let instance = "module Pt :> #{ type V, v : V } { type V = Integer; def v = 3; }\nmodule \
+                    Mk(S : #{ type V, v : V }) { type K = -F S.V; def k() -> K { return S.v } \
+                    }\nmodule I = Mk(Pt);\ndef through() -> I.K { I.k() }\ndef lie() -> I.K { \
+                    return true }";
+    let judgements = verdicts(&mut lower(instance));
+    assert_eq!(
+        judgements
+            .iter()
+            .rev()
+            .take(2_usize)
+            .map(|&(_, judgement)| judgement)
+            .collect::<Vec<_>>(),
+        [Judgement::Refused, Judgement::Checked],
+        "an instance's computation member reads its template's renamed to the argument's \
+         atom: the instance's run inhabits it and a boolean does not"
+    );
+
+    let argued = "module Q { type V = -F Integer; }\nmodule Mk(S : #{ type V }) { def one() -> \
+                  Integer { 1 } }\nmodule J = Mk(Q);";
+    assert!(
+        rows(&lower(argued)).iter().any(|found| matches!(
+            *found,
+            (ref path, Role::Witness, Amounts::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            })) if path == "J.V" && span == span_of(argued, "-F Integer", 0_usize)
+        )),
+        "a computation member argued for a functor's abstract parameter refuses its witness"
+    );
+}
+
+#[test]
 fn a_type_member_is_named_only_after_it_is_written()
 {
     let source = "module M { type T = Integer; def value : T; def value = 1; module N { def \
