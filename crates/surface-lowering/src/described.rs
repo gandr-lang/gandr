@@ -30,7 +30,9 @@
 //!   and each binder's name at its sort. A law relating a term at such a port
 //!   has no component: a field `bind x .` names its variable at the sort the
 //!   port binds it at, and each occurrence of that variable, an instantiation's
-//!   argument among them, answers there.
+//!   argument among them, answers there. An operation whose index applies a
+//!   binding port, `Below(k(x), l(x))`, has no component either: its ports read
+//!   as written, `k(x)` at `k`'s sort and `x` at the sort its port binds.
 //! - **A data family's** constructors, operations and rules read over the
 //!   module's own unparameterised families: a constant constructor's name
 //!   answers at its family, one with fields at `+U (A₁ -> … -> -F F)`, each
@@ -117,6 +119,7 @@ use crate::model::Presentation;
 use crate::model::PresentedOperation;
 use crate::model::SortTerm;
 use crate::model::Tail;
+use crate::model::Variable;
 use crate::model::dependence;
 use crate::model::derive_members;
 use crate::model::variable_dependence;
@@ -1227,13 +1230,21 @@ impl Typer<'_>
         self.path(scope, elaborated)
     }
 
-    /// Record the ports of `operation`, one of whose ports abstracts an atom,
-    /// written as `member`, under `scope`. `Model(S)` states no component for
-    /// it, so its name answers nowhere; its ports read as the written
-    /// telescope states them, each under every port before it.
+    /// Record the ports of `operation`, written as `member`, under `scope`,
+    /// when `Model(S)` states no component for it: one of its ports abstracts
+    /// an atom, or an index applies a binding port, `Below(k(x), l(x))`. Its
+    /// name answers nowhere; its ports read as the written telescope states
+    /// them, each under every port before it, a binding port taking its
+    /// variables.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation whose index applies a binding port
+    ///   answers at each binder's sort and each index term, so an operation
+    ///   read only for its sorts' heads shows.
+    /// - witness: `described::tests::an_unelaborated_operation_s_ports_answer_as_written_2969`
     fn binding(
         &mut self,
         scope: &mut Scope,
@@ -1247,7 +1258,14 @@ impl Typer<'_>
             .iter()
             .map(|port| Binder {
                 name: port.name.clone(),
-                over: Vec::new(),
+                over: port
+                    .binders
+                    .iter()
+                    .map(|variable| Variable {
+                        name: variable.name.clone(),
+                        sort: variable.sort.clone(),
+                    })
+                    .collect(),
                 sort: port.sort.clone(),
             })
             .collect();
@@ -1265,9 +1283,10 @@ impl Typer<'_>
     /// Record one port `port` of an abstracting operation, written as
     /// `written`, under `scope`: a first-order port as [`Self::port`] does; a
     /// bound or abstracting port's atoms and binders each at its sort, their
-    /// sorts and its own at their universe, and their index terms. Such a
-    /// port's name answers nowhere: no core type states a `bind` port. No
-    /// derivation elaborates these sorts, so each is read as written.
+    /// sorts and its own at their universe, and their index terms, its own
+    /// sort's under the variables it binds. Such a port's name answers
+    /// nowhere: no core type states a `bind` port. No derivation elaborates
+    /// these sorts, so each is read as written.
     ///
     /// # Specification
     /// trivial.
@@ -1277,6 +1296,7 @@ impl Typer<'_>
     ///   answers at its atom sort and its own name nowhere, so an abstracting
     ///   port read as first-order, or not read at all, shows.
     /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
+    /// - witness: `described::tests::an_unelaborated_operation_s_ports_answer_as_written_2969`
     fn bound(
         &mut self,
         scope: &Scope,
@@ -1306,10 +1326,13 @@ impl Typer<'_>
                 &at.sort,
             );
         }
+        // The port's own sort reads under the variables it binds: `x` in
+        // `q : pi+ (x : V) . Below(k(x), l(x))` is `q`'s.
+        let under: Vec<Binder> = telescope.iter().chain(&port.binders).cloned().collect();
         self.occurrence(&written.sort, &port.sort.sort, &declared.sorts);
         self.indices(
             scope,
-            telescope,
+            &under,
             declared,
             &port.sort,
             &port.sort,
@@ -1485,7 +1508,12 @@ impl Typer<'_>
                     self.port(&scope, &[], &declared, &raw.sort, sort, port);
                 }
             }
-            else if matches!(form, Some(&Err(ModelFault::Abstraction))) {
+            else if matches!(
+                form,
+                Some(&Err(ModelFault::Abstraction
+                    | ModelFault::Binding
+                    | ModelFault::UnknownHead))
+            ) {
                 self.binding(&mut scope, operation, member, &declared);
             }
             else if let Some(&Ok(ModelForm::Nested(_))) = form {
@@ -1648,7 +1676,10 @@ impl Typer<'_>
     /// the port it stands at, an abstraction's atom at the atom sort its port
     /// abstracts there, a field's variable at the representable sort its port
     /// binds there, and an atom's or a field variable's occurrence at the sort
-    /// of the port it stands at or else of its binder.
+    /// of the port it stands at or else of its binder. A binding port of
+    /// `telescope` applied to as many terms as it takes variables, `k(x)` in a
+    /// sort read as written, answers at the port's sort, its head at the
+    /// function the port binds.
     ///
     /// # Specification
     /// - requires: an elaboration, when present, is `side` with each
@@ -1671,12 +1702,14 @@ impl Typer<'_>
     ///   `arrow(a, b)` at `CTy`; `let(u, t)`, `u` and `t(u)` at `Tm`; the atom
     ///   of `bind a . p` at `Name`; `a` in `out(a, nil())` at `Name`; `k(d, c)`
     ///   under `bind d .` and `bind c .` at the port's `C`, and `d` and `c`
-    ///   there at the sorts their ports bind them at.
+    ///   there at the sorts their ports bind them at; `k(x)` in `mono`'s index
+    ///   at `k`'s sort `C`, and `k` at the function from `V`.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binding_port_answers_at_the_function_from_its_variables_765`
     /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
     /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
     /// - witness: `described::tests::an_occurrence_answers_at_its_port`
+    /// - witness: `described::tests::an_unelaborated_operation_s_ports_answer_as_written_2969`
     /// - witness: `described::tests::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
     fn law_side(
         &mut self,
@@ -1815,6 +1848,31 @@ impl Typer<'_>
                         && let Some(ty) = self.sort(scope, sort)
                     {
                         self.emit(written.span, DescribedRole::Term, ty, context);
+                    }
+                    // A binding port applied to its variables, `k(x)` in a sort
+                    // read as written: the call at the port's sort, its head at
+                    // the function the port binds, minted where its sort names
+                    // none of its variables.
+                    else if let Some(taken) =
+                        telescope.iter().rev().find(|binder| binder.name == *name)
+                        && !taken.over.is_empty()
+                        && taken.over.len() == args.len()
+                        && let Some(result) = self.sort(scope, &taken.sort)
+                    {
+                        self.emit(written.span, DescribedRole::Term, result, context);
+                        let dependent = variable_dependence(&taken.over, &taken.sort);
+                        let domains: Option<Vec<ValueTypeId>> = taken
+                            .over
+                            .iter()
+                            .map(|variable| self.sort(scope, &variable.sort))
+                            .collect();
+                        if let Maybe::Present(head) = written.head
+                            && dependent.iter().all(|binds| !binds.0)
+                            && let Some(domains) = domains
+                        {
+                            let ty = self.quantified(&domains, &dependent, result);
+                            self.emit(head, DescribedRole::Term, ty, context);
+                        }
                     }
                     let images = images.unwrap_or_default();
                     let implicit = images.len().saturating_sub(args.len());
