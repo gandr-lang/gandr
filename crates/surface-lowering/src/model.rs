@@ -112,6 +112,9 @@ use quenchant_shape::shape::Maybe;
 
 use crate::description::DescriptionGrade;
 use crate::form::Placed;
+use crate::resolve::SurfaceName;
+use crate::resolve::TypeAtom;
+use crate::resolve::type_atom;
 
 mod infer;
 #[cfg(test)]
@@ -161,28 +164,52 @@ pub struct SortTerm
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a sort term names no universe of the host.
-    pub mod host_universe {
-        /// The reason a sort term names no universe of the host.
+    /// Why a sort term names no builtin of the host.
+    pub mod builtin_sort {
+        /// The reason a sort term names no builtin.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// The term names a sort or a builtin type, or applies its head to
-            /// index terms.
+            /// The term applies its head to index terms.
+            Indexed,
+            /// The term's name is neither `Type` nor a builtin type.
             Named,
         }
     }
 }
 
+/// A builtin of the host a sort term names: a builtin type, or the universe of
+/// the host's types at a ground sort.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the atom a builtin type's name spells, or the ground sort a bare
+///   `Type` ranges over.
+/// - executable: none — a builtin sort is data its readers match on.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SortTerm::builtin`].
+/// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
+/// - witness: `model::tests::a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum BuiltinSort
+{
+    /// A builtin type: `Integer`, `String`.
+    Atom(TypeAtom),
+    /// The universe of the host's types at a ground sort: `Type`.
+    Universe(GroundSort),
+}
+
 impl SortTerm
 {
-    /// The ground sort of the host universe the term names: the value types
-    /// for a bare `Type`, the sort an index of a sort indexed by host types
-    /// ranges over.
+    /// The builtin of the host the term names: the value types for a bare
+    /// `Type`, the sort an index of a sort indexed by host types ranges over,
+    /// or the builtin type an unindexed name spells.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the value sort exactly when the term is `Type` applied to no
-    ///   index term.
+    /// - ensures: [`BuiltinSort::Universe`] at the value sort exactly when the
+    ///   term is `Type` applied to no index term; [`BuiltinSort::Atom`] when it
+    ///   is a builtin type's name applied to none.
     /// - fails: never; every other term is an absence.
     /// - panics: none.
     /// - executable: none — the clause would read the name again, which is the
@@ -190,16 +217,21 @@ impl SortTerm
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a sort indexed at `Type` derives its family over the
-    ///   universe, and a theory sort beside it keeps its own head.
+    ///   universe, and a theory sort beside it keeps its own head; a sort
+    ///   indexed at a builtin type derives its family over that type.
     /// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
-    pub(crate) fn host_universe(&self) -> Maybe<GroundSort, host_universe::Absent>
+    /// - witness: `model::tests::a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079`
+    pub(crate) fn builtin(&self) -> Maybe<BuiltinSort, builtin_sort::Absent>
     {
-        if self.indices.is_empty() && self.sort.as_ref() == crate::form::TileName::UNIVERSE.as_ref()
-        {
-            Maybe::Present(GroundSort::Value)
+        if !self.indices.is_empty() {
+            return Maybe::Absent(builtin_sort::Absent::Indexed);
         }
-        else {
-            Maybe::Absent(host_universe::Absent::Named)
+        if self.sort.as_ref() == crate::form::TileName::UNIVERSE.as_ref() {
+            return Maybe::Present(BuiltinSort::Universe(GroundSort::Value));
+        }
+        match type_atom(SurfaceName::from(self.sort.as_ref())) {
+            Maybe::Present(atom) => Maybe::Present(BuiltinSort::Atom(atom)),
+            Maybe::Absent(_) => Maybe::Absent(builtin_sort::Absent::Named),
         }
     }
 }
@@ -1088,9 +1120,9 @@ pub(crate) fn derive_laws(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one component per presented sort and operation, in that order,
-///   each group in written order, and each one's head by its name, the host
-///   universe a sort's index ranges over and a builtin type a port names held
-///   as closed sorts.
+///   each group in written order, and each one's head by its name, every
+///   builtin a sort's index or a port names — the host universe or a builtin
+///   type — held as a closed sort.
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
 /// - executable: none — as [`derive_members`].
@@ -1114,14 +1146,17 @@ fn derive_heads(
         .map(|sort| &sort.name)
         .collect();
     let computational = |port: &Port| computations.contains(&port.sort.sort);
+    let close = |heads: &mut BTreeMap<Name, Result<infer::Head, ModelFault>>, term: &SortTerm| {
+        if let Maybe::Present(_) = term.builtin()
+            && !heads.contains_key(&term.sort)
+        {
+            let closed = infer::derive_head(heads, infer::HeadKind::Sort, &[], &[]);
+            let _first = heads.insert(term.sort.clone(), closed);
+        }
+    };
     for sort in &members.sorts {
         for index in &sort.indices {
-            if let Maybe::Present(_) = index.sort.host_universe()
-                && !heads.contains_key(&index.sort.sort)
-            {
-                let closed = infer::derive_head(&heads, infer::HeadKind::Sort, &[], &[]);
-                let _first = heads.insert(index.sort.sort.clone(), closed);
-            }
+            close(&mut heads, &index.sort);
         }
         let head = if sort.indices.iter().any(computational) {
             Err(ModelFault::Computation)
@@ -1146,16 +1181,7 @@ fn derive_heads(
         .iter()
         .flat_map(|operation| operation.inputs.iter().chain(&operation.outputs));
     for port in ports {
-        let builtin = port.sort.indices.is_empty()
-            && !heads.contains_key(&port.sort.sort)
-            && matches!(
-                crate::resolve::type_atom(port.sort.sort.as_ref().into()),
-                Maybe::Present(_)
-            );
-        if builtin {
-            let closed = infer::derive_head(&heads, infer::HeadKind::Sort, &[], &[]);
-            let _first = heads.insert(port.sort.sort.clone(), closed);
-        }
+        close(&mut heads, &port.sort);
     }
     for operation in &members.operations {
         let head = if operation

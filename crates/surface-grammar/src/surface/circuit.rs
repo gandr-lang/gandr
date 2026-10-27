@@ -746,18 +746,14 @@ fn theory_member() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn sort_indices() -> Regex
 {
-    seq([
-        t(TileLabel("(")),
-        opt(comma1(alt([
-            parameter(),
-            seq([
-                t(TileLabel("type_identifier")),
-                t(TileLabel(":")),
-                h(Sort::Type),
-            ]),
-        ]))),
-        t(TileLabel(")")),
-    ])
+    parenthesized_list(alt([
+        parameter(),
+        seq([
+            t(TileLabel("type_identifier")),
+            t(TileLabel(":")),
+            h(Sort::Type),
+        ]),
+    ]))
 }
 
 /// Build a circuit signature: `ports <arrow> ports`, or the bare boundary that
@@ -837,11 +833,7 @@ fn parameter_side() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn parameter_group() -> Regex
 {
-    seq([
-        t(TileLabel("(")),
-        opt(comma1(parameter())),
-        t(TileLabel(")")),
-    ])
+    parenthesized_list(parameter())
 }
 
 /// Build the **result** side of a signature: a bare sort (sugar) or a
@@ -891,7 +883,7 @@ fn result_side() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn result_group() -> Regex
 {
-    seq([t(TileLabel("(")), opt(comma1(port())), t(TileLabel(")"))])
+    parenthesized_list(port())
 }
 
 /// Build one parameter-list entry.
@@ -1193,11 +1185,7 @@ fn application() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn port_tuple() -> Regex
 {
-    seq([
-        t(TileLabel("(")),
-        opt(comma1(port_name())),
-        t(TileLabel(")")),
-    ])
+    parenthesized_list(port_name())
 }
 
 /// Build a rule preserving its PBG-only provenance.
@@ -1294,6 +1282,29 @@ fn comma1(element: Regex) -> Regex
         repeat(seq([t(TileLabel(",")), element])),
         opt(t(TileLabel(","))),
     ])
+}
+
+/// Build a parenthesized, possibly empty, comma-separated list of `entry`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an opening parenthesis, an optional [`comma1`] list of `entry`
+///   and a closing parenthesis.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
+fn parenthesized_list(entry: Regex) -> Regex
+{
+    seq([t(TileLabel("(")), opt(comma1(entry)), t(TileLabel(")"))])
 }
 
 #[cfg(test)]

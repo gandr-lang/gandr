@@ -20,6 +20,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
+use super::InstanceType;
 use super::Lowerer;
 use super::Sink;
 use super::Site;
@@ -604,11 +605,12 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value_type(id, origin);
                 Ok(id)
             },
-            TypeMeaning::Instantiated { defined, instance } => self
-                .instance_types
-                .get(&(instance, defined.node))
-                .copied()
-                .ok_or_else(unlowered),
+            TypeMeaning::Instantiated { defined, instance } => {
+                match self.instance_types.get(&(instance, defined.node)) {
+                    Some(&InstanceType::Value(id)) => Ok(id),
+                    Some(&InstanceType::Computation(_)) | None => Err(unlowered()),
+                }
+            },
             TypeMeaning::Family(_) => Err(unlowered()),
         }
     }
@@ -619,10 +621,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the instance's renaming is built.
     /// - ensures: every manifest component of every module of the instance
-    ///   whose template's type lowered has its renamed type recorded, a
-    ///   computation type among the instance's computation types and a value
-    ///   type among its value types, every node the renaming minted carrying
-    ///   the origin of the node it was renamed from.
+    ///   whose template's type lowered has its renamed type recorded at the
+    ///   template's sort, every node the renaming minted carrying the origin of
+    ///   the node it was renamed from.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -632,8 +633,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::a_transparent_result_reads_the_argument_through`
     /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     #[spec(
-        captures: before = (self.instance_types.len(), self.instance_computations.len()),
-        ensures: self.instance_types.len() >= before.0 && self.instance_computations.len() >= before.1,
+        captures: before = self.instance_types.len(),
+        ensures: self.instance_types.len() >= before,
     )]
     fn instance_manifests(
         &mut self,
@@ -666,11 +667,7 @@ impl<'source> Lowerer<'_, 'source>
             return;
         };
         for defined in written {
-            if self.instance_types.contains_key(&(index, defined.node))
-                || self
-                    .instance_computations
-                    .contains_key(&(index, defined.node))
-            {
+            if self.instance_types.contains_key(&(index, defined.node)) {
                 continue;
             }
             if self.computation_members.contains(&defined.node) {
@@ -682,8 +679,8 @@ impl<'source> Lowerer<'_, 'source>
                 let renamed = rename_value(sink, &renaming, code, origin);
                 if let Some(&Value::QuoteComputation(renamed)) = sink.arena.value(renamed) {
                     let _fresh = self
-                        .instance_computations
-                        .insert((index, defined.node), renamed);
+                        .instance_types
+                        .insert((index, defined.node), InstanceType::Computation(renamed));
                 }
                 continue;
             }
@@ -692,7 +689,9 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let renamed = rename_type(sink, &renaming, template, origin);
-            let _fresh = self.instance_types.insert((index, defined.node), renamed);
+            let _fresh = self
+                .instance_types
+                .insert((index, defined.node), InstanceType::Value(renamed));
         }
     }
 

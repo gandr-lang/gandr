@@ -246,6 +246,31 @@ fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
     );
 }
 
+/// A sort indexed at a builtin type derives the family from that type, as one
+/// indexed at `Type` derives it from the universe, and an operation over it
+/// binds the index at the builtin type first.
+#[test]
+fn a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079()
+{
+    let model = derived(
+        r"theory Counted {
+  sort T(n : Integer) : Type;
+  oper same : (x : T(n)) --> T(n);
+}",
+    );
+
+    assert_eq!(
+        spelled(&model, "T"),
+        "type T : (n : Integer) => Type",
+        "an index at a builtin type is a binder at that type"
+    );
+    assert_eq!(
+        spelled(&model, "same"),
+        "same : (n : Integer, x : T(n)) => T(n)",
+        "the index the port's sort names is bound at the builtin type first"
+    );
+}
+
 /// A `Type[-]` sort derives a type or a family into the computation types,
 /// beside a `Type` sort's family into the value types; a sort indexed by a
 /// computation sort, and an operation with a port at one, keep their fault.

@@ -2965,6 +2965,29 @@ impl Site
     }
 }
 
+/// A manifest type an instance exports: its template's type renamed by the
+/// application, at the template's sort.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a value type for a value template, a computation type for a
+///   computation template.
+/// - executable: none — a renamed type is data its readers match on.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a transparent functor's manifest result reads the
+///   argument's type at each instance, a computation type too.
+/// - witness: `tests::modules::functors::a_transparent_result_reads_the_argument_through`
+/// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InstanceType
+{
+    /// A renamed value type.
+    Value(ValueTypeId),
+    /// A renamed computation type.
+    Computation(CompTypeId),
+}
+
 /// The lowering's working state, shared by both sweeps.
 ///
 /// # Specification
@@ -3483,12 +3506,10 @@ struct Lowerer<'run, 'source>
     /// argument type it could not read: built during the mint sweep, before
     /// the first type written after the application mints.
     renamings: Vec<Result<Renaming, LoweringRefusal<'source>>>,
-    /// Each manifest value type an instance exports, by its application and
-    /// the template's type: that type, renamed by the application.
-    instance_types: BTreeMap<(InstanceIndex, NodeIndex), ValueTypeId>,
-    /// Each manifest computation type an instance exports, keyed and renamed
-    /// as [`Self::instance_types`].
-    instance_computations: BTreeMap<(InstanceIndex, NodeIndex), CompTypeId>,
+    /// Each manifest type an instance exports, by its application and the
+    /// template's type: that type, renamed by the application, at the
+    /// template's sort.
+    instance_types: BTreeMap<(InstanceIndex, NodeIndex), InstanceType>,
     /// Each slot of an application — a witness or an image of its functor's
     /// body — with the declaration it amounts to.
     instantiated: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
@@ -5113,7 +5134,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             presented: BTreeMap::new(),
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),
-            instance_computations: BTreeMap::new(),
             instantiated: BTreeMap::new(),
             capabilities: BTreeSet::new(),
             theory_capabilities: BTreeMap::new(),
@@ -15026,15 +15046,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
             Plan::Instantiated(instance, defined) => {
-                match self.instance_computations.get(&(instance, defined)) {
-                    Some(&id) => Maybe::Present(Lowered::CompType(id)),
-                    None => self
-                        .instance_types
-                        .get(&(instance, defined))
-                        .copied()
-                        .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
-                            Maybe::Present(Lowered::ValueType(id))
-                        }),
+                match self.instance_types.get(&(instance, defined)) {
+                    Some(&InstanceType::Computation(id)) => Maybe::Present(Lowered::CompType(id)),
+                    Some(&InstanceType::Value(id)) => Maybe::Present(Lowered::ValueType(id)),
+                    None => Maybe::Absent(lowered::Absent::Unminted),
                 }
             },
             Plan::Sealed(atom) => {
@@ -19720,13 +19735,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             TypeMeaning::Instantiated { defined, instance } => {
                 match self.instance_types.get(&(instance, defined.node)) {
-                    Some(&id) => Maybe::Present(id),
-                    None if self
-                        .instance_computations
-                        .contains_key(&(instance, defined.node)) =>
-                    {
-                        computation
-                    },
+                    Some(&InstanceType::Value(id)) => Maybe::Present(id),
+                    Some(&InstanceType::Computation(_)) => computation,
                     None => unlowered,
                 }
             },

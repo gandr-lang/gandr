@@ -84,6 +84,7 @@ use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
 
 use super::Code;
+use super::InstanceType;
 use super::LabelRead;
 use super::Lowered;
 use super::Lowerer;
@@ -118,6 +119,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::model::Binder;
+use crate::model::BuiltinSort;
 use crate::model::Dependent;
 use crate::model::ModelComponent;
 use crate::model::ModelFault;
@@ -148,7 +150,6 @@ use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
-use crate::resolve::type_atom;
 use crate::unbuilt::Unbuilt;
 
 /// Why a derived type could not be minted.
@@ -739,9 +740,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the family's type and every argument are minted or absent.
-    /// - ensures: as [`Self::expand`] over the arguments' values for a family
-    ///   into value types, and as [`Self::expand_computation`] for one into
-    ///   computation types; nothing when an argument did not lower.
+    /// - ensures: as [`Self::expand`] over the arguments' values; nothing when
+    ///   an argument did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -770,14 +770,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
 
-        if self.family_produced(family) == Produced::CompType {
-            self.expand_computation(family, &values, sink, origin)
-                .map(Lowered::CompType)
-        }
-        else {
-            self.expand(family, &values, sink, origin)
-                .map(Lowered::ValueType)
-        }
+        self.expand(family, &values, sink, origin)
     }
 
     /// The sort a family's applications stand at: [`Produced::CompType`] for a
@@ -839,30 +832,40 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The type of the family `family` with `arguments` for its parameters.
+    /// The type of the family `family` with `arguments` for its parameters, at
+    /// the sort its definition stands at.
     ///
     /// # Specification
     /// - requires: every argument is a value of the context the result is read
     ///   in.
-    /// - ensures: the family's type with the parameter at place `i` replaced by
-    ///   `arguments[i]`, each node the substitution mints carrying the origin
-    ///   of the node it rewrote, or `origin` for one it built; nothing when the
-    ///   type did not lower or the count is not the family's.
+    /// - ensures: the family's value type, or its computation type for a family
+    ///   whose definition is a computation member, with the parameter at place
+    ///   `i` replaced by `arguments[i]`, each node the substitution mints
+    ///   carrying the origin of the node it rewrote, or `origin` for one it
+    ///   built; nothing when the type did not lower or the count is not the
+    ///   family's.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Hom(a, a)` is the member's type with both parameters
-    ///   at `a`.
+    ///   at `a`, and `T(Integer)` the member's `-F Maybe(a)` with its parameter
+    ///   at `Integer`.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(Lowered::ValueType(id)) => sink.arena.value_type(id).is_some(),
+        Maybe::Present(Lowered::CompType(id)) => sink.arena.comp_type(id).is_some(),
+        Maybe::Present(Lowered::Value(_) | Lowered::Computation(_) | Lowered::Function { .. }) => false,
+        Maybe::Absent(_) => true,
+    })]
     fn expand(
         &self,
         family: FamilyIndex,
         arguments: &[ValueId],
         sink: &mut Sink<'_>,
         origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
+    ) -> Maybe<Lowered, lowered::Absent>
     {
         let Some(member) = self.collected.families.get(family.0)
         else {
@@ -871,71 +874,26 @@ impl<'source> Lowerer<'_, 'source>
         if member.parameters.len() != arguments.len() {
             return Maybe::Absent(lowered::Absent::Unminted);
         }
-        let defined = match self.value_type_at(member.defined.node) {
-            Maybe::Present(defined) => defined,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
         let mark = sink.arena.watermark();
-        let code = sink.arena.value_quote(defined);
+        let code = match self.member_ground(member.defined) {
+            GroundSort::Computation => match self.comp_type_at(member.defined.node) {
+                Maybe::Present(defined) => sink.arena.value_quote_computation(defined),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            GroundSort::Value => match self.value_type_at(member.defined.node) {
+                Maybe::Present(defined) => sink.arena.value_quote(defined),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+        };
         let substituted = match substitute_arguments(code, mark, arguments, sink, origin) {
             Maybe::Present(substituted) => substituted,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let Some(&Value::Quote(expanded)) = sink.arena.value(substituted)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-
-        Maybe::Present(expanded)
-    }
-
-    /// The computation type of the family `family` with `arguments` for its
-    /// parameters.
-    ///
-    /// # Specification
-    /// - requires: every argument is a value of the context the result is read
-    ///   in.
-    /// - ensures: as [`Self::expand`], for a family whose definition lowered to
-    ///   a computation type; nothing when it did not.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `T(Integer)` is the member's `-F Maybe(a)` with its
-    ///   parameter at `Integer`.
-    /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
-    fn expand_computation(
-        &self,
-        family: FamilyIndex,
-        arguments: &[ValueId],
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<CompTypeId, lowered::Absent>
-    {
-        let Some(member) = self.collected.families.get(family.0)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        if member.parameters.len() != arguments.len() {
-            return Maybe::Absent(lowered::Absent::Unminted);
+        match sink.arena.value(substituted) {
+            Some(&Value::Quote(expanded)) => Maybe::Present(Lowered::ValueType(expanded)),
+            Some(&Value::QuoteComputation(expanded)) => Maybe::Present(Lowered::CompType(expanded)),
+            Some(_) | None => Maybe::Absent(lowered::Absent::Unminted),
         }
-        let defined = match self.comp_type_at(member.defined.node) {
-            Maybe::Present(defined) => defined,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let mark = sink.arena.watermark();
-        let code = sink.arena.value_quote_computation(defined);
-        let substituted = match substitute_arguments(code, mark, arguments, sink, origin) {
-            Maybe::Present(substituted) => substituted,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let Some(&Value::QuoteComputation(expanded)) = sink.arena.value(substituted)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-
-        Maybe::Present(expanded)
     }
 
     /// Mint the type every model half derives, and refuse each one naming a
@@ -1380,17 +1338,17 @@ impl<'source> Lowerer<'_, 'source>
             })
             .copied()
         else {
-            if let Maybe::Present(ground) = sort.host_universe() {
-                let id = sink.arena.value_type_universe(
-                    Sort::Ground(ground),
-                    Level::constant(Universe::FUSS_FREE.level),
-                );
-                sink.origins.record_value_type(id, minting.origin);
-                return Ok(id);
-            }
-            let builtin = match type_atom(SurfaceName::from(sort.sort.as_ref())) {
-                Maybe::Present(atom) if sort.indices.is_empty() => sink.atom(atom, minting.origin),
-                Maybe::Present(_) | Maybe::Absent(_) => return Err(Missing::Unlowered),
+            let builtin = match sort.builtin() {
+                Maybe::Present(BuiltinSort::Universe(ground)) => {
+                    let id = sink.arena.value_type_universe(
+                        Sort::Ground(ground),
+                        Level::constant(Universe::FUSS_FREE.level),
+                    );
+                    sink.origins.record_value_type(id, minting.origin);
+                    return Ok(id);
+                },
+                Maybe::Present(BuiltinSort::Atom(atom)) => sink.atom(atom, minting.origin),
+                Maybe::Absent(_) => return Err(Missing::Unlowered),
             };
             return match builtin {
                 Lowered::ValueType(id) => Ok(id),
@@ -1422,19 +1380,26 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value_type(id, minting.origin);
                 Ok(id)
             },
-            (TypeMeaning::Instantiated { defined, instance }, true) => self
-                .instance_types
-                .get(&(instance, defined.node))
-                .copied()
-                .ok_or(Missing::Unlowered),
+            (TypeMeaning::Instantiated { defined, instance }, true) => {
+                match self.instance_types.get(&(instance, defined.node)) {
+                    Some(&InstanceType::Value(id)) => Ok(id),
+                    Some(&InstanceType::Computation(_)) | None => Err(Missing::Unlowered),
+                }
+            },
             (TypeMeaning::Family(family), false) => {
                 let mut arguments = Vec::with_capacity(sort.indices.len());
                 for index in &sort.indices {
                     arguments.push(self.term_value(index, context, minting, sink)?);
                 }
                 match self.expand(family, &arguments, sink, minting.origin) {
-                    Maybe::Present(id) => Ok(id),
-                    Maybe::Absent(_) => Err(Missing::Unlowered),
+                    Maybe::Present(Lowered::ValueType(id)) => Ok(id),
+                    Maybe::Present(
+                        Lowered::Value(_)
+                        | Lowered::Computation(_)
+                        | Lowered::CompType(_)
+                        | Lowered::Function { .. },
+                    )
+                    | Maybe::Absent(_) => Err(Missing::Unlowered),
                 }
             },
             (
@@ -3424,7 +3389,10 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(_) => return None,
             },
             TypeMeaning::Instantiated { defined, instance } => {
-                *self.instance_types.get(&(instance, defined.node))?
+                match self.instance_types.get(&(instance, defined.node)) {
+                    Some(&InstanceType::Value(id)) => id,
+                    Some(&InstanceType::Computation(_)) | None => return None,
+                }
             },
             TypeMeaning::Sealed | TypeMeaning::Family(_) => return None,
         };
