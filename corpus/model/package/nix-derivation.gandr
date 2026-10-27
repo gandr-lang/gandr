@@ -1,0 +1,76 @@
+/// `hello`'s derivation, as `nix derivation show` prints it, read into a record type and a value.
+///
+/// The Nix type provider reads a derivation into a record type the checker admits. No check-time site performs that read yet, so this source states the provider's answer by hand.
+///
+/// `nix/hello.drv.json` is the read's JSON for this one derivation, each field of `Derivation` one of its keys. A map whose keys are no labels, as the outputs, the input derivations and the environment are, reads as a list of pairs, each key first. `inputs` reads as two fields, and the environment keeps its 17 variables holding a value, for a value prints at most 32 formers deep.
+///
+/// - see: #2763
+/// - see: #2991
+/// - see: #2993
+/// - see: #3010
+/// - see: `corpus/model/package/nix/hello.drv.json`
+
+/// An output of a derivation: its name, then the store path it is built at.
+pub type Output = String * String;
+
+/// A derivation a derivation depends on: its store path, then the outputs it reads.
+pub type InputDerivation = String * List(String);
+
+/// One variable of a builder's environment: its name, then its value.
+pub type Variable = String * String;
+
+/// A derivation, as format version 4 of `nix derivation show` prints one.
+pub type Derivation = #{
+  name : String,
+  system : String,
+  builder : String,
+  args : List(String),
+  env : List(Variable),
+  inputDrvs : List(InputDerivation),
+  inputSrcs : List(String),
+  outputs : List(Output),
+  version : Integer
+};
+
+/// `hello`'s derivation, `lpg53dvkfq377crcw2kr64cflmm2q8k8-hello-2.12.2.drv`, field by field, its empty variables left out.
+def helloDerivation : Derivation = #{
+  name = "hello-2.12.2",
+  system = "x86_64-linux",
+  builder = "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash",
+  args = [
+    "-e",
+    "/nix/store/l622p70vy8k5sh7y5wizi5f2mic6ynpg-source-stdenv.sh",
+    "/nix/store/shkw4qm9qcw5sc5n1k5jznc83ny02r39-default-builder.sh"
+  ],
+  env = [
+    ("NIX_CFLAGS_COMPILE", " -ggdb -Og"),
+    ("NIX_MAIN_PROGRAM", "hello"),
+    ("NIX_RUSTFLAGS", " -g -C opt-level=0 -C strip=none"),
+    ("builder", "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash"),
+    ("doCheck", "1"),
+    ("doInstallCheck", "1"),
+    ("dontStrip", "1"),
+    ("name", "hello-2.12.2"),
+    ("nativeBuildInputs", "/nix/store/qfdf0si45105mh5576w07wgkb8i90hf1-version-check-hook"),
+    ("out", "/nix/store/lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2"),
+    ("outputs", "out"),
+    ("pname", "hello"),
+    ("postInstallCheck", "stat \"\${!outputBin}/bin/hello\"\n"),
+    ("src", "/nix/store/dw402azxjrgrzrk6j0p66wkqrab5mwgw-hello-2.12.2.tar.gz"),
+    ("stdenv", "/nix/store/s3w5m3spa1g71hx0yb82lvk6394j3w5j-stdenv-linux"),
+    ("system", "x86_64-linux"),
+    ("version", "2.12.2")
+  ],
+  inputDrvs = [
+    ("dkd7x68qnzz99f3dvmf50ig8xwpvaax8-version-check-hook.drv", ["out"]),
+    ("iadiya7abzbls67alm9nj7prs68dig6k-hello-2.12.2.tar.gz.drv", ["out"]),
+    ("pnjvpwgka59d6fwpp9fnz42ll2ai4ffm-stdenv-linux.drv", ["out"]),
+    ("vwmk63kc9sysjif65h7fdwnqr5h8jfm6-bash-5.3p3.drv", ["out"])
+  ],
+  inputSrcs = [
+    "l622p70vy8k5sh7y5wizi5f2mic6ynpg-source-stdenv.sh",
+    "shkw4qm9qcw5sc5n1k5jznc83ny02r39-default-builder.sh"
+  ],
+  outputs = [("out", "lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2")],
+  version = 4
+};

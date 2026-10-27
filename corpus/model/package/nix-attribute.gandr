@@ -1,0 +1,86 @@
+/// The `nixpkgs` attribute `hello`, as `nix eval --json` prints its `meta` and `outputs`, read into a record type and a value.
+///
+/// The Nix type provider reads an attribute of the local `nixpkgs` checkout into a record type the checker admits. No check-time site performs that read yet, so this source states the provider's answer by hand.
+///
+/// `nix/hello.meta.json` and `nix/hello.outputs.json` are the reads' JSON at `nixpkgs` revision `3ec636362e18`. The meta keeps the fields a package's description and its platforms need, and drops the maintainers and the positions in the checkout. It keeps the first twelve of the 79 platforms, since the printer spells a value at most 32 formers deep.
+///
+/// - see: #2763
+/// - see: #2991
+/// - see: `corpus/model/package/nix/hello.meta.json`
+/// - see: `corpus/model/package/nix-derivation.gandr`
+
+/// A package's license, as `nixpkgs`' `lib.licenses` records one.
+pub type License = #{
+  deprecated : Bool,
+  free : Bool,
+  fullName : String,
+  licenseType : String,
+  redistributable : Bool,
+  shortName : String,
+  spdxId : String,
+  url : String
+};
+
+/// An attribute's `meta`, the fields `hello`'s carries that this source keeps.
+pub type Meta = #{
+  available : Bool,
+  broken : Bool,
+  changelog : String,
+  description : String,
+  homepage : String,
+  insecure : Bool,
+  license : License,
+  longDescription : String,
+  mainProgram : String,
+  name : String,
+  outputsToInstall : List(String),
+  platforms : List(String),
+  unfree : Bool,
+  unsupported : Bool
+};
+
+/// An attribute: its `meta` and the names of its outputs.
+pub type Attribute = #{meta : Meta, outputs : List(String)};
+
+/// `hello` at revision `3ec636362e18`, field by field, its platforms the first twelve.
+def helloAttribute : Attribute = #{
+  meta = #{
+    available = true,
+    broken = false,
+    changelog = "https://git.savannah.gnu.org/cgit/hello.git/plain/NEWS?h=v2.12.3",
+    description = "Program that produces a familiar, friendly greeting",
+    homepage = "https://www.gnu.org/software/hello/manual/",
+    insecure = false,
+    license = #{
+      deprecated = false,
+      free = true,
+      fullName = "GNU General Public License v3.0 or later",
+      licenseType = "simple",
+      redistributable = true,
+      shortName = "gpl3Plus",
+      spdxId = "GPL-3.0-or-later",
+      url = "https://spdx.org/licenses/GPL-3.0-or-later.html"
+    },
+    longDescription = "GNU Hello is a program that prints \"Hello, world!\" when you run it.\nIt is fully customizable.\n",
+    mainProgram = "hello",
+    name = "hello-2.12.3",
+    outputsToInstall = ["out"],
+    platforms = [
+      "x86_64-linux",
+      "aarch64-darwin",
+      "aarch64-linux",
+      "i686-cygwin",
+      "x86_64-cygwin",
+      "i686-freebsd",
+      "x86_64-freebsd",
+      "aarch64-freebsd",
+      "aarch64-genode",
+      "i686-genode",
+      "x86_64-genode",
+      "x86_64-solaris"
+    ],
+    unfree = false,
+    unsupported = false
+  },
+  outputs = ["out"]
+};
