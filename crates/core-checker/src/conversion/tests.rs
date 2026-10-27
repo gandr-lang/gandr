@@ -1160,6 +1160,79 @@ fn invariant_capabilities_agree_on_authority_grade_and_region()
     }
 }
 
+/// A capability whose row fixes a sort to an omitted implicit is read at the
+/// implicit's solution (#2944): a scope at the integers solves the implicit
+/// as the integers' code and then grants the row at it, and a scope at the
+/// unit type grants less than the row at the solved implicit.
+#[test]
+fn a_capability_at_an_implicit_sort_is_read_at_its_solution_2944()
+{
+    use gandr_core_term::Value;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let hole = HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name");
+    let at = arena.value_hole(hole);
+    let decoded = arena.value_type_element(at, Level::zero());
+    let [asked, at_integer, at_unit] = [decoded, integer, unit].map(|reply| {
+        let state = EffectSig::new(EffectName::from("State"), alloc::vec![EffectOp {
+            name: OperationName::from("get"),
+            payload: unit,
+            reply
+        }])
+        .unwrap();
+        let row = EffectRow::from_signatures([state]).unwrap();
+        arena.value_type_capability(row, CapabilityGrade::Durable, Region::Held)
+    });
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context
+        .deferrals_mut()
+        .open(crate::elaboration::Collecting::On);
+    context.nominate(at, hole).unwrap();
+    for (found, agreement, what) in [
+        (
+            at_integer,
+            Agreement::Convertible,
+            "a scope at the integers solves the implicit",
+        ),
+        (
+            at_integer,
+            Agreement::Convertible,
+            "and grants the row at the solved implicit",
+        ),
+        (
+            at_unit,
+            Agreement::Amplified,
+            "a scope at the unit type grants less",
+        ),
+    ] {
+        assert_eq!(
+            convert(&mut context, Pairing::SubValues(found.into(), asked.into())),
+            Ok(agreement),
+            "{what}"
+        );
+    }
+    let solutions = context.deferrals().solutions(context.arena());
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| {
+            solved.get(&hole).is_some_and(|&(code, _)| {
+            matches!(context.arena().value(code), Some(&Value::Quote(quoted)) if quoted == integer)
+        })
+        }),
+        "the implicit is solved as the integers' code: {solutions:?}"
+    );
+}
+
 /// Kept types agree on their region exactly, and a kept type is a subtype
 /// of another only where its region outlives the other's, and of the plain
 /// type it keeps; a value held at a world and a world's capability agree

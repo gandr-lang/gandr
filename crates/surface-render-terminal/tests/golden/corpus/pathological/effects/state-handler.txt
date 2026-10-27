@@ -97,3 +97,21 @@ error[ModelAmbiguous]: more than one module in scope is a model of `State` answe
     │ ┗━━━┛ a model implicit more than one module answers
     │
     ╰ note: `ambiguousInScope` is refused with ModelAmbiguous, as its expectation states
+
+error[CapabilityAmplified]: this capability grants less than the one expected here
+    ╭▸ corpus/pathological/effects/state-handler.gandr:138:5
+    │
+136 │ ┌  def amplifiedAtImplicit() -> Integer {
+137 │ │┌   handle s : State with sort S = Bool {
+138 │ ││     readGivenAt(0)
+    │ ││     ━━━━━━━━━━━━━━ a capability granting less: expected `Cap {get, put} at s`, found `Cap {get, put}`
+139 │ ││   } with {
+140 │ ││     pure(y) => pure y,
+141 │ ││     oper get(k) => k(true),
+142 │ ││     oper put(v, k) => k()
+143 │ ││   }
+    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds s : Cap {get, put}
+144 │ │  }
+    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+    │
+    ╰ note: `amplifiedAtImplicit` is refused with CapabilityAmplified, as its expectation states
