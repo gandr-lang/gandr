@@ -266,6 +266,7 @@ struct Group<'source>
 /// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
 /// - witness: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`
 /// - witness: `tests::format::a_continuation_line_indents_under_its_statement`
+/// - witness: `tests::format::a_member_after_a_column_zero_comment_starts_a_statement_2950`
 /// - witness: `tests::format::the_printer_decides_every_inner_space`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
@@ -771,7 +772,8 @@ enum Continuation
 /// separates, so the commas inside a statement, as in a rule's
 /// `where a # q, b # q`, stay on its line. An item the source started on a
 /// new line, after no separator and indented deeper than the statement before
-/// it, continues that statement.
+/// it, continues that statement; a comment is no statement, so code after a
+/// comment the group opens with starts one wherever the comment stands.
 ///
 /// # Specification
 /// trivial.
@@ -786,7 +788,7 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
     let mut continuation = Continuation::Statement;
     let mut base: Option<Indent> = placed
         .first()
-        .filter(|first| first.gap.breaks() == Breaks::Yes)
+        .filter(|first| first.gap.breaks() == Breaks::Yes && first.element.kind() == Kind::Code)
         .map(|first| first.indent);
     for (index, current) in placed.iter().enumerate() {
         let breaks = current.gap.breaks() == Breaks::Yes;
