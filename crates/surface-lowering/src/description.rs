@@ -1640,9 +1640,10 @@ impl Reader<'_, '_>
     /// # Specification
     /// - requires: `bound` holds the binders of the fields before this one.
     /// - ensures: self references become recursive code, whatever their indices
-    ///   name, and other fields retain symbolic types; a field `Ā => B` is the
-    ///   function former over `Ā` and `B`'s own reading, each `=>` to the right
-    ///   one former more; the written term is the innermost result's, as
+    ///   name, and other fields retain symbolic types; a field `Ā => B`, or the
+    ///   thunked arrow `+U (Ā -> -F B)` it abbreviates, is the function former
+    ///   over `Ā` and `B`'s own reading, each `=>` or thunked arrow to the
+    ///   right one former more; the written term is the innermost result's, as
     ///   [`Self::type_reference`] keeps it.
     /// - fails: unreadable type forms return their located refusal, and a
     ///   symbolic type or domain naming a binder of `bound` refuses as
@@ -1655,18 +1656,21 @@ impl Reader<'_, '_>
     ///
     /// # Termination
     /// - reason: the function spaces are peeled by a `loop` over the field's
-    ///   written operands, each pass one `=>` to the right, not recursion.
-    /// - measure: the `=>` tiles written to the right of `at`.
+    ///   written operands, each pass one function space to the right, not
+    ///   recursion.
+    /// - measure: the `=>` tiles and thunked arrows written to the right of
+    ///   `at`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — recursive and primitive fields distinguish var from
     ///   field, and a field naming the one before it is told from one naming a
     ///   parameter; a function field over one domain, over a list of two and
     ///   nested to the right reads its domains in order and its result as a
-    ///   field would be read.
+    ///   field would be read, in either spelling.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
     /// - witness: `description::tests::a_value_function_field_is_the_function_former`
+    /// - witness: `description::tests::the_thunked_arrow_is_the_function_former_it_spells_3194`
     #[spec(ensures: |result| result.as_ref().map_or(true, |&(ref code, _)| code.recursive_sorts().all(|sort| sort == family)))]
     fn field(
         &self,
@@ -1680,6 +1684,11 @@ impl Reader<'_, '_>
         let mut result = at;
         let pieces = loop {
             let pieces = self.pieces(result)?;
+            if let Some((domains, codomain)) = self.thunked_arrow(&pieces, bound)? {
+                layers.push(domains);
+                result = codomain;
+                continue;
+            }
             let [
                 Piece::Operand(domain),
                 Piece::Tile { ref label, .. },
@@ -1707,6 +1716,132 @@ impl Reader<'_, '_>
             .rev()
             .fold(body, |body, domains| Code::fun(domains, body));
         Ok((code, written))
+    }
+
+    /// The domains and the result of the thunked arrow `+U (Ā -> -F B)` that
+    /// `pieces` write, the explicit spelling of the value function space
+    /// `Ā => B`.
+    ///
+    /// # Specification
+    /// - requires: `bound` holds the binders of the fields before the field
+    ///   `pieces` are read from.
+    /// - ensures: when `pieces` are `+U` over a parenthesised chain of zero or
+    ///   more `->` ending in `-F B`, each domain left to right and `B` past its
+    ///   parentheses; nothing for any other form, whose domains are not read.
+    /// - fails: a domain that is not a first-order type returns its located
+    ///   refusal, and one naming a binder of `bound` refuses as dependent.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// `Malformed`.
+    ///
+    /// # Termination
+    /// - reason: a `loop` steps once per `->` and once per parenthesis pair,
+    ///   each a strictly smaller operand of a finite tree.
+    /// - measure: the nodes under the thunk's operand.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the formatter's explicit spelling of a field over one
+    ///   domain, over two, over none and nested to the right reads as the `=>`
+    ///   spelling does.
+    /// - witness: `description::tests::the_thunked_arrow_is_the_function_former_it_spells_3194`
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
+    fn thunked_arrow(
+        &self,
+        pieces: &[Piece],
+        bound: &[Placed],
+    ) -> Result<Option<(Vec<ValueTypeRef>, Placed)>, DescriptionDiagnostic>
+    {
+        let [Piece::Tile { ref label, .. }, Piece::Operand(thunked)] = *pieces
+        else {
+            return Ok(None);
+        };
+        if label.as_ref() != "+U" {
+            return Ok(None);
+        }
+        let mut written = Vec::new();
+        let mut at = thunked;
+        let returned = loop {
+            let pieces = self.pieces(at)?;
+            match *pieces.as_slice() {
+                [
+                    Piece::Tile {
+                        label: ref open, ..
+                    },
+                    Piece::Operand(inner),
+                    Piece::Tile {
+                        label: ref close, ..
+                    },
+                ] if open.as_ref() == "(" && close.as_ref() == ")" => at = inner,
+                [
+                    Piece::Operand(domain),
+                    Piece::Tile { ref label, .. },
+                    Piece::Operand(rest),
+                ] if label.as_ref() == "->" => {
+                    written.push(domain);
+                    at = rest;
+                },
+                [Piece::Tile { ref label, .. }, Piece::Operand(returned)]
+                    if label.as_ref() == "-F" =>
+                {
+                    break returned;
+                },
+                _ => return Ok(None),
+            }
+        };
+        let mut domains = Vec::with_capacity(written.len());
+        for domain in written {
+            domains.push(self.domain(domain, self.pieces(domain)?, bound)?);
+        }
+        Ok(Some((domains, self.unparenthesised(returned)?)))
+    }
+
+    /// `at` past the parentheses written around it.
+    ///
+    /// # Specification
+    /// - ensures: the innermost operand of the parenthesis pairs `at` is
+    ///   written in, or `at` itself when it is written in none.
+    /// - fails: an unreadable form returns its located refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `Malformed`.
+    ///
+    /// # Termination
+    /// - reason: a `loop` steps once per parenthesis pair, each a strictly
+    ///   smaller operand of a finite tree.
+    /// - measure: the nodes under `at`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a result nested to the right, written in parentheses
+    ///   after `-F`, is read past them.
+    /// - witness: `description::tests::the_thunked_arrow_is_the_function_former_it_spells_3194`
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::Malformed), |_| true))]
+    fn unparenthesised(
+        &self,
+        mut at: Placed,
+    ) -> Result<Placed, DescriptionDiagnostic>
+    {
+        loop {
+            let pieces = self.pieces(at)?;
+            let [
+                Piece::Tile {
+                    label: ref open, ..
+                },
+                Piece::Operand(inner),
+                Piece::Tile {
+                    label: ref close, ..
+                },
+            ] = *pieces.as_slice()
+            else {
+                return Ok(at);
+            };
+            if open.as_ref() != "(" || close.as_ref() != ")" {
+                return Ok(at);
+            }
+            at = inner;
+        }
     }
 
     /// The domains a value function space's domain operand writes, left to
