@@ -1557,24 +1557,22 @@ fi
 # states, without asking (#2533). `claim:next <area>` reads the open issues
 # once, with their bodies, and the sub-issue order of each open epic holding a
 # candidate; the pick is `.config/claims/next.jq`, its cases held by
-# `check:claims`. Only an issue `unit:check` passes is picked (#2744): each
-# candidate ranked ahead of the pick that lacks a unit's sections is printed
-# on stderr as `needs sections: #n`, followed by the question of each axis
-# whose reading is bare. A pick whose readings still hold the migration's
-# `unstated` placeholder is claimed (#2955), and the claim opens with one
-# `restate: `<axis>`: <question>` line per such axis: the seat restates those
-# rows on the issue as its first act, and `pr:open` refuses the landing until
-# it has. An issue with an open `blocked by`
-# dependency is not picked (#2902): each one ranked ahead of the pick is
-# printed on stderr as `blocked: #n by #a, #b`, its open blockers read from
-# GitHub. Each `collector` in the area is printed first, on stderr, as
-# `collector: #n (k open rows)` (#3111): never a candidate, it shows the
-# carving due. Each candidate in the area a filer marked
-# `status:unsectioned` and still lacking its sections follows, on stderr, as
-# `unsectioned: #n` (#3112), ahead of the `needs sections:` lines: the
-# sections the coordinator owes. It adds `status:claimed` and prints the
-# claim as `#n <title>`; `--dry-run` prints it without claiming. No candidate
-# prints `no claim: <area>` and exits 1.
+# `check:claims`. The pick is the first candidate in order, sectioned or not
+# (#3134): sectioning is the claim's first obligation, so each section the
+# pick lacks opens the claim as `sections due: #n — <finding>` (`unit:check`'s
+# findings). The seat writes them, runs `## Try first` before `## The shape`
+# is final, passes `unit:check`, and pages the coordinator `sections #n:
+# <the shape's first line>` for `shape:signed`; it works on meanwhile, and
+# `pr:open` refuses the landing until the label stands. A pick whose readings
+# still hold the migration's `unstated` placeholder is claimed (#2955), and
+# the claim opens with one `restate: `<axis>`: <question>` line per such
+# axis. An issue with an open `blocked by` dependency is not picked (#2902):
+# each one ranked ahead of the pick is printed on stderr as `blocked: #n by
+# #a, #b`, its open blockers read from GitHub. Each `collector` in the area
+# is printed first, on stderr, as `collector: #n (k open rows)` (#3111):
+# never a candidate, it shows the carving due. It adds `status:claimed` and
+# prints the claim as `#n <title>`; `--dry-run` prints it without claiming.
+# No candidate prints `no claim: <area>` and exits 1.
 ["claim:next"]
 description = "Claim the next item in an area's claim order"
 usage = '''
@@ -1611,13 +1609,11 @@ concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger
 lines=$(jq -n --arg area "$area" --slurpfile issues "$board/issues.json" --argjson order "$order" '{area: $area, issues: $issues[0], order: $order}' \
   | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
 awk '/^collector: /' <<< "$lines" >&2
-awk '/^unsectioned: /' <<< "$lines" >&2
-awk '/^needs sections: /' <<< "$lines" >&2
 while read -r _ issue; do
   echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
-awk '/^restate: /' <<< "$lines"
-pick=$(awk '!/^(collector|unsectioned|needs sections|blocked|restate): /' <<< "$lines")
+awk '/^(sections due|restate): /' <<< "$lines"
+pick=$(awk '!/^(collector|blocked|sections due|restate): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $area" >&2
   exit 1
@@ -1781,7 +1777,10 @@ echo "body check OK: nothing on the private-names list in ${usage_title:+the tit
 # appends `.config/issues/templates/<filer>.md` to the body, the filer's
 # observation, each `{{field}}` filled from `--fields` (`template.jq`), and
 # a `kind:defect` that is no `collector` and fails `unit:check` is refused
-# unless it carries `status:unsectioned`, the coordinator's to section.
+# unless it carries `status:unsectioned`, its claiming seat's to section
+# (#3134). A unit filed whole is sectioned before its claim, so it is signed
+# by construction: `issue:file` labels it `shape:signed`, the label
+# `pr:open` waits for (`signed.jq`).
 ["issue:file"]
 description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
@@ -1841,12 +1840,13 @@ if [[ $unit == true || $defect == true ]]; then
     if [[ $unit == true ]]; then
       printf 'issue:file: the body is a unit (it has `## Sources`) and lacks what a unit issue carries (units.md § units-issue):\n' >&2
     else
-      printf 'issue:file: a kind:defect is filed as a unit or marked (tracker.md § tracker-filing): fill its sections from its filer'"'"'s template (--template, .config/issues/templates/), or label it status:unsectioned for the coordinator; it lacks:\n' >&2
+      printf 'issue:file: a kind:defect is filed as a unit or marked (tracker.md § tracker-filing): fill its sections from its filer'"'"'s template (--template, .config/issues/templates/), or label it status:unsectioned for its claiming seat; it lacks:\n' >&2
     fi
     printf '%s\n' "$findings" | sed 's/^/  - /' >&2
     exit 1
   fi
   unit=true
+  labels+=(shape:signed)
 fi
 plan=$(labels_plan "$(printf '%s\n' "${labels[@]}" | jq -R . | jq -s -c 'map(select(. != ""))')" "$(labels_defaults)")
 refused=$(awk -F'\t' '$1 == "refuse" { print "  - " $2 }' <<< "$plan")
@@ -1888,10 +1888,11 @@ echo "$url"
 # and `status:unsectioned`, linked under the unit's epic); a `maybe` whose
 # `Where` an open refactor issue observes adds its rows and a `from:` line to
 # that issue instead. Either pages the coordinator through the page command of
-# the stall configuration (`.config/stall/stall.bash`) to write the issue's
-# sections. A pull request that closes no issue, as one advancing an epic's
-# unit does, takes the area and epic of the issue its branch names
-# (`<lane>-<n>-…`), and failing that the lane's own `area:<lane>` label. An
+# the stall configuration (`.config/stall/stall.bash`); the seat that claims
+# the issue writes its sections (#3134). A pull request that closes no issue,
+# as one advancing an epic's unit does, takes the area and epic of the issue
+# its branch names (`<lane>-<n>-…`), and failing that the lane's own
+# `area:<lane>` label. An
 # issue carrying the pull request's `from:` line is the filing, so a second
 # run files nothing. `pr:watch` runs it when its pull request merges;
 # `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
@@ -1964,7 +1965,7 @@ case $(jq -r .act <<< "$decision") in
     mapfile -t labels < <(jq -r '.labels[]' <<< "$decision")
     url=$(mise run --quiet issue:file "$(jq -r .title <<< "$decision")" "$body" "${labels[@]}" ${epic:+--epic "$epic"})
     issue=${url##*/}
-    line="refactor #$issue filed from #$number's verdict; write its sections"
+    line="refactor #$issue filed from #$number's verdict; its claiming seat sections it"
     ;;
 esac
 echo "refactor:file: $line"
@@ -2517,6 +2518,10 @@ fi
 # has built it. The rule is
 # `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
+# Each issue the body works, an epic or a `collector` aside, passes
+# `unit:check` and carries the coordinator's `shape:signed` (#3134,
+# `.config/claims/signed.jq`): the seat that sections an issue on its claim
+# pages for the label and works on, and the landing waits for it.
 #
 # Vault pages are cited by their mint (#2793). With the vault checkout
 # `$XDG_CONFIG_HOME/gandr/references` names, the task writes each page's
@@ -2536,6 +2541,8 @@ arg "<title>" help="the pull request title: a conventional header"
 arg "<body>" help="the body file; its re-verification section is written in place"
 flag "--unblocks <number>" help="the open pull request this fix unblocks: open on main and queue on its own"
 '''
+# `findings.jq` stops jq 1.8.2 at an assertion; the claim tasks pin 1.8.1.
+tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -2613,6 +2620,10 @@ findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$i
   --slurpfile vault "$vaultdir/vault.json" \
   '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, vault: $vault[0]}' \
   | jq -r -L "$claims" -f "$claims/opening.jq")
+# Each issue the body works is sectioned and signed (#3134, `signed.jq`).
+signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
+  | jq -r -L "$claims" --argjson concerns "$(jq -c .ids <<< "$concerns")" -f "$claims/signed.jq")
+if [[ -n $signed ]]; then findings=${findings:+$findings$'\n'}$signed; fi
 rm -rf "$vaultdir"
 if [[ -n "$findings" ]]; then
   echo "$findings" >&2
