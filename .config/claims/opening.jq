@@ -40,10 +40,18 @@
 # key rule of #2542. A page that decided nothing in the code is marked
 # `read: <what it informed>` in `## Sources read`, which answers it.
 #
-# The body answers the reading axes its issues select (#2522): its
-# `## Readings` table, `Family · Axis · Status`, gives each selected axis
-# `answered: <exemplar or site>` or `none: <reason>`, and every row a status
-# from that vocabulary or `not selected`, on one of the six axes.
+# The body answers every reading axis (#2522, #2955): when an issue it works
+# carries a `## Readings`, or the body has one, its `## Readings` table,
+# `Family · Axis · Status`, gives each of the six axes one of four forms,
+# each with its clause: `answered: <exemplar or site>`, `trivial: <what it
+# reduces to>`, `not applicable: <what the change lacks that the axis asks
+# about>` or `deferred: #n`. `not selected`, a blank and a bare form are
+# refused naming the axis and quoting its question. An axis an issue selects
+# `yes` answered other than `answered:` needs a `departed:` item keyed by the
+# axis in `## Sources read`. An issue it works whose reading is still the
+# migration's `unstated` placeholder, or bare, is refused until the seat
+# restates the row on the issue: `claim:next` claims such a unit and prints
+# the questions, and the landing is where the restating is required.
 #
 # The body names each concern it touches (#2523): an item of its
 # `## Concerns`, `` - `<id>` — <verdict> ``, names a concern of the ledger
@@ -74,8 +82,8 @@ include "sections";
 include "vault";
 
 def vocabulary: "`taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>`, `read: <what it informed>` or `n/a: <reason>`";
-def statuses: "`answered: <exemplar or site>`, `none: <reason>` or `not selected`";
-def answered: test("^(answered|none):\\s*\\S");
+def statuses: "`answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`";
+def answered: test("^(answered|trivial|not applicable):\\s*\\S") or test("^deferred:\\s*#[0-9]+");
 
 # The refusal when the body does not work the branch's issue, or works none.
 def claim:
@@ -138,23 +146,47 @@ def citations:
   | select(any(($vault.cited[$crate] // [])[]; . == "vault:\($page.mint)") | not)
   | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or mark the page `read: <what it informed>` in `## Sources read` if it decided nothing in the code, then run `pr:open` again";
 
-# The refusals of `## Readings` against the axes the issues select.
+# The refusals of `## Readings`: every axis answered in one of the four forms
+# once a unit is worked, and a selected axis left unanswered departed from.
+# A unit is worked when an issue the body works has a `## Readings` row
+# naming an axis, or the body has a `## Readings` of its own.
 def readings:
   [(.issues // [])[] | .number as $n | .body | selected[] | {n: $n, axis: .}] as $asked
+  | (any((.issues // [])[]; .body // "" | marks)
+      or ((.body | section("Readings")) != null)) as $unit
+  | [(.body | section("Sources read") // []) | items | keyed | select(. != null and (.text | test("^departed:\\s*\\S"))) | .keys[]] as $departed
   | [(.body | section("Readings") // [] | lead) | rows | select((.cells[1] // "" | ascii_downcase) != "axis")] as $rows
-  | ($asked
-      | map(select(.axis as $axis | [$rows[] | select(.cells[1] == $axis and (.cells[2] // "" | answered))] | length == 0))
-      | unique_by(.axis)
+  | ($rows[]
+      | select(.cells[1] // "" | IN(axes[]) | not)
+      | "the `## Readings` row `\(.line)` names no axis: its second cell is one of `\(axes | join("`, `"))`, then run `pr:open` again"),
+    (select($unit)
+      | [axes[]
+          | . as $axis
+          | [$rows[] | select(.cells[1] == $axis)] as $mine
+          | if ($mine | length) == 0 then "  - `\($axis)`, no row: \(questions[$axis])"
+            elif ([$mine[] | select(.cells[2] // "" | answered)] | length) == 0 then "  - `\($axis)`, \($mine[0].cells[2] // "" | if . == "" then "blank" else "`\(.)`" end): \(questions[$axis])"
+            else empty
+            end]
       | if length == 0 then empty
-        else "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n" + (map("  - `\(.axis)` (#\(.n)'s `## Readings`)") | join("\n"))
+        else "the body's `## Readings` leaves an axis unanswered: give each one \(statuses), the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n" + join("\n")
         end),
-    ($rows[]
-      | (.cells[1] // "") as $axis
-      | (.cells[2] // "") as $status
-      | if ($axis | IN(axes[]) | not) then "the `## Readings` row `\(.line)` names no axis: its second cell is one of `\(axes | join("`, `"))`, then run `pr:open` again"
-        elif ($status | answered) or $status == "not selected" or ([$asked[].axis] | index($axis)) then empty
-        else "the `## Readings` row `\(.line)` has a status outside \(statuses): write one, then run `pr:open` again"
-        end);
+    (select($unit)
+      | [axes[]
+          | . as $axis
+          | select(any($asked[]; .axis == $axis))
+          | select(any($rows[]; .cells[1] == $axis and (.cells[2] // "" | answered)))
+          | select(any($rows[]; .cells[1] == $axis and (.cells[2] // "" | test("^answered:"))) | not)
+          | select($departed | index($axis) | not)
+          | "  - `\($axis)` (#\(first($asked[] | select(.axis == $axis)).n)'s `## Readings`)"]
+      | if length == 0 then empty
+        else "an axis the issue selects is answered other than `answered:`: add `- `<axis>` — departed: <the recorded design, the change, why>` to `## Sources read` for each, then run `pr:open` again:\n" + join("\n")
+        end),
+    ((.issues // [])[]
+      | .number as $n
+      | [.body // "" | marks | select(.mark != null and (.reason == null or (.reason | unstated)))] as $unstated
+      | select($unstated | length > 0)
+      | "#\($n)'s `## Readings` still leaves an axis unstated: restate each row on the issue as `yes — <what it gives this unit>` or `no — <why it does not reach it>`, then run `pr:open` again:\n"
+        + ([axes[] | . as $axis | select(any($unstated[]; .axis == $axis)) | "  - `\($axis)`: \(questions[$axis])"] | join("\n")));
 
 # An added source path's module as {path, crate, name}: its last segment, or
 # for a crate root the crate's name past its category; null for a test file

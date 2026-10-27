@@ -7,7 +7,9 @@
 #
 # - `## Sources`: items `` - `<key>` — <what it decides> ``, each marked
 #   primary or secondary;
-# - `## Readings`: a table marking each of the six axes `yes` or `no`;
+# - `## Readings`: a table answering each of the six axes `yes — <what it
+#   gives this unit>` or `no — <why it does not reach it>`, a reason on both
+#   (#2955); a refused row quotes the axis's question;
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
 #   `yes` or `no` (#2795);
 # - `## Ledger` and `## Not in this slice`;
@@ -40,8 +42,11 @@ def findings:
     (if section("Readings") == null then "`## Readings` is missing"
      else [marks] as $marks
      | (axes[] | . as $axis
-         | if ([$marks[] | select(.axis == $axis)] | length) == 0 then "`## Readings` has no row for `\($axis)`"
-           elif ([$marks[] | select(.axis == $axis and .mark != null)] | length) == 0 then "`## Readings` marks `\($axis)` neither `yes` nor `no`"
+         | [$marks[] | select(.axis == $axis)] as $rows
+         | if ($rows | length) == 0 then "`## Readings` has no row for `\($axis)`; the axis asks \(questions[$axis])"
+           elif ([$rows[] | select(.mark != null)] | length) == 0 then "`## Readings` marks `\($axis)` neither `yes` nor `no`; the axis asks \(questions[$axis])"
+           elif ([$rows[] | select(.mark != null and .reason != null)] | length) == 0 then
+             "`## Readings` marks `\($axis)` `\(first($rows[] | select(.mark != null)).mark)` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks \(questions[$axis])"
            else empty
            end)
      end),

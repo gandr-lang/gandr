@@ -17,6 +17,11 @@ exclude = [
   ".rumdl_cache",
 ]
 
+# The pull request template is the opening of a pull request's body, which
+# GitHub titles itself; a heading on its first line would be a second title.
+[per-file-ignores]
+".github/pull_request_template.md" = ["MD041"]
+
 # MD003
 [heading-style]
 style = "atx"

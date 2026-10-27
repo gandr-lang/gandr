@@ -1555,7 +1555,12 @@ fi
 # candidate; the pick is `.config/claims/next.jq`, its cases held by
 # `check:claims`. Only an issue `unit:check` passes is picked (#2744): each
 # candidate ranked ahead of the pick that lacks a unit's sections is printed
-# on stderr as `needs sections: #n`. An issue with an open `blocked by`
+# on stderr as `needs sections: #n`, followed by the question of each axis
+# whose reading is bare. A pick whose readings still hold the migration's
+# `unstated` placeholder is claimed (#2955), and the claim opens with one
+# `restate: `<axis>`: <question>` line per such axis: the seat restates those
+# rows on the issue as its first act, and `pr:open` refuses the landing until
+# it has. An issue with an open `blocked by`
 # dependency is not picked (#2902): each one ranked ahead of the pick is
 # printed on stderr as `blocked: #n by #a, #b`, its open blockers read from
 # GitHub. It adds `status:claimed` and prints the
@@ -1600,7 +1605,8 @@ awk '/^needs sections: /' <<< "$lines" >&2
 while read -r _ issue; do
   echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
-pick=$(awk '!/^(needs sections|blocked): /' <<< "$lines")
+awk '/^restate: /' <<< "$lines"
+pick=$(awk '!/^(needs sections|blocked|restate): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $area" >&2
   exit 1
@@ -2112,10 +2118,15 @@ fi
 # it works request (#2499): every key an issue's `## Sources` names has an
 # item in the body's `## Sources read` with a disposition and its evidence,
 # and a `supersedes` item is refused while a tracked line still names the old
-# key without marking it demoted. It answers the reading axes the issues
-# select (#2522): each selected axis's row in the body's `## Readings` reads
-# `answered: <exemplar or site>` or `none: <reason>`, and every row's status
-# is from that vocabulary or `not selected`. It names each concern it touches
+# key without marking it demoted. It answers every reading axis once it works
+# a unit (#2522, #2955): each axis's row in the body's `## Readings` reads
+# `answered: <exemplar or site>`, `trivial: <what it reduces to>`,
+# `not applicable: <what the change lacks that the axis asks about>` or
+# `deferred: #n`, never `not selected` or a bare form, and an axis an issue
+# selects answered other than `answered:` takes a `departed:` item keyed by
+# the axis in `## Sources read`; an issue it works whose reading is still the
+# migration's `unstated` placeholder is refused until the seat restates it
+# on the issue. It names each concern it touches
 # (#2523): each `## Concerns` item names a concern of `ledger/concerns.sql`
 # with `within`, `consolidated: <what merged>` or `new concern: <why none
 # fits>`, the last for a row the change adds, and a module or crate the change

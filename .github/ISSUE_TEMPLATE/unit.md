@@ -12,16 +12,16 @@ title: "<area>: <what the unit lands>"
 
 ## Readings
 
-<!-- Mark each axis yes or no; a yes may carry its reason: `yes — <why>`. -->
+<!-- Answer every axis, a reason on both marks: `yes — <what the axis gives this unit>` or `no — <why it does not reach it>`. A bare `yes` or `no` is refused by `unit:check`. -->
 
-| Family | Axis | Selected |
-| ------ | ---- | -------- |
-| Identity | `univalent` | |
-| Locality | `oracle` | |
-| Locality | `descent` | |
-| Place | `located` | |
-| Place | `resident` | |
-| Dimension | `rewriting` | |
+| Family | Axis | Question | Selected |
+| ------ | ---- | -------- | -------- |
+| Identity | `univalent` | what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence | |
+| Locality | `oracle` | which part is decided by certificate replay and which is computed; which modality or dominance classifies it | |
+| Locality | `descent` | the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left | |
+| Place | `located` | at which world a judgement or value is meaningful; what crosses worlds, and by what | |
+| Place | `resident` | representation, sharing, persistence; where integrity stops and replay decides | |
+| Dimension | `rewriting` | rules and normal forms; rewrites between rewrites; which coherence tier settles them | |
 
 ## Concerns
 

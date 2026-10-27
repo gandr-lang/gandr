@@ -191,42 +191,70 @@
     "output": "the `## Sources read` item `- supersedes: `Girard-1993-lu` —` gives no confirmation: write `- supersedes: `<old key>` — <confirmation>`, then run `pr:open` again"
   },
   {
-    "name": "a selected axis left blank is refused, the axis listed",
+    "name": "an axis with no row, a blank, `not selected`, a bare form or `none:` is refused, naming the axis and its question, as is a row naming no axis (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Place | `resident` |  |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` |  |\n| Locality | `descent` | not selected |\n| Place | `located` | trivial: |\n| Place | `resident` | none: no representation moves |\n| Identity | `univalence` | answered: `transport.rs` |\n",
       "issues": [
         {
           "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes |\n| Locality | `oracle` | no |\n| Place | `resident` | yes |\n"
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
         }
       ]
     },
-    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `resident` (#2522's `## Readings`)"
+    "output": "the `## Readings` row `| Identity | `univalence` | answered: `transport.rs` |` names no axis: its second cell is one of `univalent`, `oracle`, `descent`, `located`, `resident`, `rewriting`, then run `pr:open` again\nthe body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `oracle`, blank: which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n  - `descent`, `not selected`: the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left\n  - `located`, `trivial:`: at which world a judgement or value is meaningful; what crosses worlds, and by what\n  - `resident`, `none: no representation moves`: representation, sharing, persistence; where integrity stops and replay decides\n  - `rewriting`, no row: rules and normal forms; rewrites between rewrites; which coherence tier settles them"
   },
   {
-    "name": "a selected axis marked `not selected` is refused, as is a status or an axis outside the vocabulary",
+    "name": "every axis answered in one of the four forms opens, and a subsection's table is not read as axes (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | not selected |\n| Place | `resident` | none: no representation moves |\n| Locality | `oracle` | maybe |\n| Identity | `univalence` | not selected |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n",
       "issues": [
         {
           "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes |\n| Locality | `oracle` | no |\n| Place | `resident` | yes |\n"
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
         }
       ]
     },
-    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `univalent` (#2522's `## Readings`)\nthe `## Readings` row `| Locality | `oracle` | maybe |` has a status outside `answered: <exemplar or site>`, `none: <reason>` or `not selected`: write one, then run `pr:open` again\nthe `## Readings` row `| Identity | `univalence` | not selected |` names no axis: its second cell is one of `univalent`, `oracle`, `descent`, `located`, `resident`, `rewriting`, then run `pr:open` again"
+    "output": ""
   },
   {
-    "name": "every selected axis answered opens, an unselected one answered too, and a subsection's table is not read as axes",
+    "name": "an axis the issue selects answered other than `answered:` is refused until `## Sources read` departs from it (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Place | `resident` | none: no representation moves |\n| Locality | `oracle` | answered: `strata::order` |\n| Locality | `descent` | not selected |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | not applicable: no type gains a second representation |\n| Dimension | `rewriting` | not applicable: no rule is added |\n",
       "issues": [
         {
           "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes |\n| Locality | `oracle` | no |\n| Place | `resident` | yes |\n"
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
+        }
+      ]
+    },
+    "output": "an axis the issue selects is answered other than `answered:`: add `- `<axis>` — departed: <the recorded design, the change, why>` to `## Sources read` for each, then run `pr:open` again:\n  - `resident` (#2522's `## Readings`)"
+  },
+  {
+    "name": "an issue the body works whose readings are still the migration's `unstated` placeholder is refused until the seat restates them on the issue, each axis's question quoted (#2955)",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — unstated (migrated 2026-10-26) |\n| Locality | `descent` | no — unstated (migrated 2026-10-26) |\n| Place | `resident` | yes — the layout is a representation |\n"
+        }
+      ]
+    },
+    "output": "#2522's `## Readings` still leaves an axis unstated: restate each row on the issue as `yes — <what it gives this unit>` or `no — <why it does not reach it>`, then run `pr:open` again:\n  - `oracle`: which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n  - `descent`: the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left"
+  },
+  {
+    "name": "a `departed:` item keyed by the axis answers a selected axis answered other than `answered:` (#2955)",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Sources read\n\n- `resident` — departed: the issue expected a layout, and the change found none to move\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | not applicable: no type gains a second representation |\n| Dimension | `rewriting` | not applicable: no rule is added |\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
         }
       ]
     },
@@ -236,7 +264,7 @@
     "name": "an issue selecting an axis by an item asks for it",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `descent` | not selected |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | trivial: one source, one task |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n",
       "issues": [
         {
           "number": 2522,
@@ -244,17 +272,31 @@
         }
       ]
     },
-    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `descent` (#2522's `## Readings`)"
+    "output": "an axis the issue selects is answered other than `answered:`: add `- `<axis>` — departed: <the recorded design, the change, why>` to `## Sources read` for each, then run `pr:open` again:\n  - `descent` (#2522's `## Readings`)"
   },
   {
-    "name": "an issue selecting no axis asks for none",
+    "name": "a unit's body with no `## Readings` is refused every axis (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
       "body": "Closes #2522\n",
       "issues": [
         {
           "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n"
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — no identity is touched |\n"
+        }
+      ]
+    },
+    "output": "the body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `univalent`, no row: what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence\n  - `oracle`, no row: which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n  - `descent`, no row: the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left\n  - `located`, no row: at which world a judgement or value is meaningful; what crosses worlds, and by what\n  - `resident`, no row: representation, sharing, persistence; where integrity stops and replay decides\n  - `rewriting`, no row: rules and normal forms; rewrites between rewrites; which coherence tier settles them"
+  },
+  {
+    "name": "a body working an issue with no readings table, and with none of its own, is asked for none",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "Text.\n"
         }
       ]
     },
@@ -688,20 +730,6 @@
       "added": ["crates/surface-dispatcher/src/fork.rs"]
     },
     "output": ""
-  },
-  {
-    "name": "#2580: a `yes — <why>` cell selects its axis, so its `not selected` row is refused",
-    "input": {
-      "branch": "workflow-2580-selected-cell",
-      "body": "Closes #2580\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `oracle` | not selected |\n| Place | `resident` | none: no representation moves |\n",
-      "issues": [
-        {
-          "number": 2580,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Place | `resident` | yes |\n"
-        }
-      ]
-    },
-    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `oracle` (#2580's `## Readings`)"
   },
   {
     "name": "#2524: a defect closed with neither observation nor regression is refused, naming both",
