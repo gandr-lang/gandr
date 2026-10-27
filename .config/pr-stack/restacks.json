@@ -1,0 +1,12 @@
+[
+  {
+    "name": "#3078: a stack whose lower pull request landed squashed is restacked from the lower's head, replaying only its own commit",
+    "landed": true,
+    "output": "moved: upper's own"
+  },
+  {
+    "name": "#3078: with no landed head the restack replays the lower's first commit onto its squash and refuses, naming the branch and file, the branch unmoved",
+    "landed": false,
+    "output": "refused: conflicts in upper (a.txt)"
+  }
+]
