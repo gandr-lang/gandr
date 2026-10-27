@@ -18,6 +18,7 @@ use crate::SurfaceName;
 use crate::error::LoweringRefusal;
 use crate::module::Container;
 use crate::module::DeclarationSlot;
+use crate::module::Inertness;
 use crate::module::Role;
 use crate::module::SlotIndex;
 
@@ -38,15 +39,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::inert_read`].
     /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
-    #[spec(ensures: |ret| !ret.0 || matches!(slot.role, Role::Declared))]
-    fn inert_component(
+    #[spec(ensures: |ret| ret == Inertness::Content || matches!(slot.role, Role::Declared))]
+    pub(super) fn inert_component(
         &self,
         slot: &DeclarationSlot<'_>,
-    ) -> Inert
+    ) -> Inertness
     {
         let (Role::Declared, Container::Module(module)) = (slot.role, slot.container)
         else {
-            return Inert(false);
+            return Inertness::Content;
         };
         let Some(Maybe::Present(model)) = self
             .collected
@@ -54,18 +55,23 @@ impl<'source> Lowerer<'_, 'source>
             .get(usize::from(module))
             .map(|structure| structure.model)
         else {
-            return Inert(false);
+            return Inertness::Content;
         };
-        Inert(
-            self.collected
-                .models
-                .get(usize::from(model))
-                .is_some_and(|signature| {
-                    signature.components.iter().any(|component| {
-                        component.inert && component.name.as_ref() == slot.name.as_ref()
-                    })
-                }),
-        )
+        let inert = self
+            .collected
+            .models
+            .get(usize::from(model))
+            .is_some_and(|signature| {
+                signature.components.iter().any(|component| {
+                    component.inert && component.name.as_ref() == slot.name.as_ref()
+                })
+            });
+        if inert {
+            Inertness::Inert
+        }
+        else {
+            Inertness::Content
+        }
     }
 
     /// Refuse the read, at `site`, of `reached` when it is an inert component
@@ -108,7 +114,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let read = match reached {
             Read::Slot(slot) => match self.collected.slots.get(usize::from(slot)) {
-                Some(entry) if self.inert_component(entry).0 => entry.name,
+                Some(entry) if self.inert_component(entry) == Inertness::Inert => entry.name,
                 Some(_) | None => return Ok(()),
             },
             Read::Selected(name) => name,
@@ -118,20 +124,17 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(_) => None,
         };
         match reader {
-            Some(entry) if !self.inert_component(entry).0 => Err(LoweringRefusal::InertRead {
-                span: site.at.span,
-                member: entry.name,
-                reached: read,
-            }),
+            Some(entry) if self.inert_component(entry) == Inertness::Content => {
+                Err(LoweringRefusal::InertRead {
+                    span: site.at.span,
+                    member: entry.name,
+                    reached: read,
+                })
+            },
             Some(_) | None => Ok(()),
         }
     }
 }
-
-/// Whether a slot is a model's inert component.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Inert(bool);
 
 /// What a read resolved to, for [`Lowerer::inert_read`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

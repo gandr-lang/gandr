@@ -169,6 +169,7 @@ digraph crates {
   "surface-diagnostics" -> "surface-pretty";
   "surface-diagnostics" -> "surface-syntax";
   "surface-dispatcher" -> "core-checker";
+  "surface-dispatcher" -> "core-incremental";
   "surface-dispatcher" -> "core-nbe";
   "surface-dispatcher" -> "core-sequent";
   "surface-dispatcher" -> "core-term";

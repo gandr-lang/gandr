@@ -794,6 +794,30 @@ pub enum Role
     Admitted,
 }
 
+/// Whether a declaration is a model's inert component: a field only the
+/// manifest step and another inert field read, which a package's address
+/// leaves out (#3030).
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: [`Inertness::Inert`] marks a member declared in a module ascribed
+///   `Model(T)` under the name of an operation `T` marks `@[ inert ]`; every
+///   other declaration is [`Inertness::Content`].
+/// - executable: none — a data type; the lowering's assembly states it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model's inert component and its content component are
+///   told apart.
+/// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Inertness
+{
+    /// Content: what the declaration states enters its package's address.
+    Content,
+    /// A model's inert component, left out of its package's address.
+    Inert,
+}
+
 /// One member of a module's body, or one component it exports.
 ///
 /// # Specification
@@ -10002,6 +10026,8 @@ pub struct DeclarationParts<'source>
     pub halves: Halves,
     /// What the name's declarations amount to.
     pub outcome: DeclarationOutcome<'source>,
+    /// Whether the name is a model's inert component.
+    pub inertness: Inertness,
 }
 
 /// One declared name, lowered.
@@ -10197,6 +10223,18 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn outcome(&self) -> DeclarationOutcome<'source>
     {
         self.parts.outcome
+    }
+
+    /// Whether the name is a model's inert component, which its package's
+    /// address leaves out.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn inertness(&self) -> Inertness
+    {
+        self.parts.inertness
     }
 }
 

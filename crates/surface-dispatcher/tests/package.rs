@@ -4,29 +4,41 @@
 //! The package cases, in a `cfg(test)` module so the crate's lint wall reads
 //! them as test code rather than as shipping code.
 
+use alloc::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_incremental::ContentKey;
+use gandr_core_incremental::ItemKey;
+use gandr_core_incremental::content_keys;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Field;
+use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Manifest;
 use gandr_surface_dispatcher::ManifestFault;
 use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Reconciled;
+use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Unmanifested;
 use gandr_surface_dispatcher::Unmembered;
 use gandr_surface_dispatcher::Unpathed;
 use gandr_surface_dispatcher::Workspace;
+use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::compose;
+use gandr_surface_dispatcher::item_program;
+use gandr_surface_dispatcher::lay_out_shadowed;
+use gandr_surface_dispatcher::lower_source;
+use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_dispatcher::package_root;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
 use gandr_surface_dispatcher::workspace_root;
+use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -404,42 +416,65 @@ fn manifest_of(source: SourceText<'static>) -> Result<Manifest, Unmanifested>
     Manifest::of(&mut program, &report, &package)
 }
 
-/// #2687: a manifest reads the `Package` model's `name` and `version`, each
-/// run to its string and decoded; a model missing a field, and one whose
-/// field is not a string, are refused at that field.
+/// The model fields every case below states beside its `name` and its
+/// `version`, a string each.
+macro_rules! rest {
+    () => {
+        "def authors = \"Ada, Grace\" ; def licence = \"MIT\" ; def documentation = \
+         \"https://d.example\" ; def endpoint = \"https://e.example\" ;"
+    };
+}
+
+/// The manifest body the fields [`rest`] states render to after `name` and
+/// `version`.
+const REST: &str = "authors = \"Ada, Grace\"\nlicence = \"MIT\"\ndocumentation = \
+                    \"https://d.example\"\nendpoint = \"https://e.example\"\n";
+
+/// #2687, #3030: a manifest reads each field of the `Package` model, each run
+/// to its string and decoded; a model missing a field, and one whose field is
+/// not a string, whether the first or a later one, are refused at that field.
 #[test]
 fn a_manifest_reads_the_package_model_2687()
 {
-    let read = manifest_of(SourceText::from(
-        "module Package { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; }",
-    ))
-    .expect("both fields are strings");
+    let read = manifest_of(SourceText::from(concat!(
+        "module Package { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
+        rest!(),
+        " }"
+    )))
+    .expect("every field is what it states");
     assert_eq!(
         read.render(),
-        manifest_of(SourceText::from(
-            "module Package { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; }"
-        ))
+        manifest_of(SourceText::from(concat!(
+            "module Package { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
+            rest!(),
+            " }"
+        )))
         .expect("the same model")
         .render()
     );
     assert!(
-        read.render().ends_with(
-            "\n[package]\nname = \"a \\\"quoted\\\" name\"\nversion = \"0.1.0\"\nmodules = []\n"
-        ),
+        read.render().ends_with(&format!(
+            "\n[package]\nname = \"a \\\"quoted\\\" name\"\nversion = \"0.1.0\"\n{REST}modules = \
+             []\n"
+        )),
         "the decoded name, quoted again for TOML: {}",
         read.render()
     );
     assert_eq!(
-        manifest_of(SourceText::from(
-            "module Package { def name = \"hello\" ; }"
-        )),
+        manifest_of(SourceText::from(concat!(
+            "module Package { def name = \"hello\" ; ",
+            rest!(),
+            " }"
+        ))),
         Err(Unmanifested::Undeclared(Field::Version)),
         "a missing version"
     );
     assert_eq!(
-        manifest_of(SourceText::from(
-            "module Package { def name = 3 ; def version = \"0.1.0\" ; }"
-        )),
+        manifest_of(SourceText::from(concat!(
+            "module Package { def name = 3 ; def version = \"0.1.0\" ; ",
+            rest!(),
+            " }"
+        ))),
         Err(Unmanifested::Unstrung {
             field: Field::Name,
             came: String::from("3"),
@@ -448,8 +483,20 @@ fn a_manifest_reads_the_package_model_2687()
     );
     assert_eq!(
         manifest_of(SourceText::from(
-            "def name = \"hello\" ; def version = \"0.1.0\" ;"
+            "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; def authors = 3 ; \
+             def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" ; }"
         )),
+        Err(Unmanifested::Unstrung {
+            field: Field::Authors,
+            came: String::from("3"),
+        }),
+        "authors that are no string"
+    );
+    assert_eq!(
+        manifest_of(SourceText::from(concat!(
+            "def name = \"hello\" ; def version = \"0.1.0\" ; ",
+            rest!()
+        ))),
         Err(Unmanifested::Undeclared(Field::Name)),
         "top-level fields are not the package's"
     );
@@ -462,12 +509,14 @@ fn a_manifest_reads_the_package_model_2687()
 #[test]
 fn a_manifest_renders_its_digest_and_its_table_2687()
 {
-    let rendered = manifest_of(SourceText::from(
-        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; }",
-    ))
+    let rendered = manifest_of(SourceText::from(concat!(
+        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        rest!(),
+        " }"
+    )))
     .expect("the model reads")
     .render();
-    let body = "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\nmodules = []\n";
+    let body = format!("\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\n{REST}modules = []\n");
     assert_eq!(
         rendered,
         format!(
@@ -476,9 +525,11 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
             blake3::hash(body.as_bytes()).to_hex()
         )
     );
-    let escaped = manifest_of(SourceText::from(
-        "module Package { def name = \"back\\\\slash\\nline\\ttab\" ; def version = \"1\" ; }",
-    ))
+    let escaped = manifest_of(SourceText::from(concat!(
+        "module Package { def name = \"back\\\\slash\\nline\\ttab\" ; def version = \"1\" ; ",
+        rest!(),
+        " }"
+    )))
     .expect("the model reads")
     .render();
     assert!(
@@ -505,9 +556,11 @@ fn a_manifest_lists_the_modules_its_sources_make_2687()
     else {
         panic!("the package is found");
     };
-    let (mut program, report) = settled_of(SourceText::from(
-        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; }",
-    ));
+    let (mut program, report) = settled_of(SourceText::from(concat!(
+        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        rest!(),
+        " }"
+    )));
     let rendered = Manifest::of(&mut program, &report, &package)
         .expect("the model reads")
         .render();
@@ -526,13 +579,17 @@ fn a_manifest_is_written_rewritten_and_refused_as_drift_2687()
 {
     let directory = scratch(Path::new("reconciled"), &[]);
     let path = directory.join("gandr.toml");
-    let first = manifest_of(SourceText::from(
-        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; }",
-    ))
+    let first = manifest_of(SourceText::from(concat!(
+        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        rest!(),
+        " }"
+    )))
     .expect("the model reads");
-    let second = manifest_of(SourceText::from(
-        "module Package { def name = \"hello\" ; def version = \"0.2.0\" ; }",
-    ))
+    let second = manifest_of(SourceText::from(concat!(
+        "module Package { def name = \"hello\" ; def version = \"0.2.0\" ; ",
+        rest!(),
+        " }"
+    )))
     .expect("the model reads");
     let outcome = |manifest: &Manifest| match reconcile(&path, manifest) {
         Ok(reconciled) => Ok(reconciled),
@@ -554,4 +611,395 @@ fn a_manifest_is_written_rewritten_and_refused_as_drift_2687()
     assert_eq!(outcome(&first), Err("drifted"), "a file with no header");
     assert_eq!(on_disk(), headless, "left as it stands");
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+#[test]
+fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut lowerings = LoweringCount::default();
+    let lowering = lower_source(
+        &grammar,
+        SourceText::from(
+            "def first : Integer ; def first = 1 ; def broken = missing ; def owed : String ; def last = first ;",
+        ),
+        &mut lowerings,
+    )
+    .expect("lowers");
+    let Lowered::Module { module, arena } = lowering.into_lowered()
+    else {
+        panic!("the module is read");
+    };
+    let program = item_program(&module, arena).expect("positions ascend");
+    let keys: Vec<&ItemKey> = program
+        .items()
+        .iter()
+        .map(gandr_core_incremental::Item::key)
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            &ItemKey::from("first"),
+            &ItemKey::from("owed"),
+            &ItemKey::from("last")
+        ],
+        "one item per unrefused declaration, keyed by its name, in admission order"
+    );
+}
+
+/// The texts a case holds for a package's sources in place of their files,
+/// by the canonical path each is named by.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct Held(BTreeMap<PathBuf, String>);
+
+impl Shadows for Held
+{
+    /// The text held at `named`, if any.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shadowed(
+        &self,
+        named: &Path,
+    ) -> Option<SourceText<'_>>
+    {
+        self.0
+            .get(named)
+            .map(|text| SourceText::from(text.as_str()))
+    }
+}
+
+/// Each item of the unit the source at `source` lays out to, as `shadows`
+/// holds it, by its key, with its content key when it has one.
+///
+/// # Specification
+/// - requires: the source reads and lowers to a module under `grammar`.
+/// - ensures: the unit's items in admission order, each its item key and its
+///   content key, `None` for an item whose content holds an unresolved node.
+/// - fails: never on the admitted domain.
+/// - panics: a source that does not read or lower violates the precondition.
+/// - executable: none — the keys are the lowering's, which a predicate could
+///   only restate by lowering again; the cases compare two of them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the address cases below compare the keys an edit leaves.
+/// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
+fn keyed(
+    grammar: &Pbg,
+    source: &Path,
+    shadows: &dyn Shadows,
+) -> Vec<(ItemKey, Option<ContentKey>)>
+{
+    let text = shadows.shadowed(source).map_or_else(
+        || std::fs::read_to_string(source).expect("the source reads"),
+        |held| String::from(held.as_ref()),
+    );
+    let laid = lay_out_shadowed(
+        grammar,
+        source,
+        classify(source),
+        SourceText::from(text.as_str()),
+        shadows,
+    );
+    let mut lowerings = LoweringCount::default();
+    let lowering = lower_unit_source(
+        grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        &mut lowerings,
+    )
+    .expect("the unit lowers");
+    let Lowered::Module { module, arena } = lowering.into_lowered()
+    else {
+        panic!("the unit is read as a module");
+    };
+    let program = item_program(&module, arena).expect("positions ascend");
+    program
+        .items()
+        .iter()
+        .map(|item| item.key().clone())
+        .zip(content_keys(&program).into_iter().map(|key| match key {
+            Maybe::Present(key) => Some(key),
+            Maybe::Absent(_) => None,
+        }))
+        .collect()
+}
+
+/// The import of `std.package` by the absolute path to its source.
+const STD_PACKAGE: &str = concat!(
+    "import \"",
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../library/std/src/package.gandr\";\n"
+);
+
+/// #3030: in a package of a library and one module, an edit to an inert
+/// field of the model leaves the package's address and the key of every item
+/// but the field's where they were, and an edit to the module's item moves
+/// the address.
+#[test]
+fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
+{
+    let directory = scratch(Path::new("address"), &[
+        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/text/greet.gandr"),
+    ]);
+    let library = directory.join("hello/src/lib.gandr");
+    let leaf = directory.join("hello/src/text/greet.gandr");
+    let stated = |name: &str| {
+        format!(
+            "import text.greet (greeting);\n{STD_PACKAGE}pub module Package : \
+             Model(Gandr.Package) {{\n  def name : String = \"{name}\";\n  def version = \
+             \"0.1.0\";\n  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation \
+             = \"d\";\n  def endpoint = \"e\";\n}}\npub def welcome = greeting;\n"
+        )
+    };
+    std::fs::write(&library, stated("hello")).expect("the library is written");
+    std::fs::write(&leaf, "pub def greeting = \"hello, world\";\n").expect("the leaf is written");
+    let Maybe::Present(package) = Package::discover(&library)
+    else {
+        panic!("the package is found");
+    };
+    let grammar = built_in().expect("the built-in grammar builds");
+    let address = |held: &Held| {
+        package
+            .address(&grammar, held)
+            .expect("the package addresses")
+    };
+    let before = address(&Held::default());
+    let renamed = Held(BTreeMap::from([(library.clone(), stated("howdy"))]));
+    assert_eq!(
+        address(&renamed),
+        before,
+        "an edit to `name` leaves the address"
+    );
+    let unrenamed = keyed(&grammar, &library, &Held::default());
+    let swept = keyed(&grammar, &library, &renamed);
+    let renamed_items = moved(&unrenamed, &swept);
+    assert!(
+        !renamed_items.is_empty() && renamed_items.iter().all(|key| key == "name"),
+        "only the field's own key moves, and every other item's key stays: {renamed_items:?}"
+    );
+    let regreeted = Held(BTreeMap::from([(
+        leaf,
+        String::from("pub def greeting = \"hello, there\";\n"),
+    )]));
+    assert_ne!(
+        address(&regreeted),
+        before,
+        "an edit to the module's item moves the address"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+/// The keys, spelled, of the items whose content key differs between
+/// `before` and `after`, two keyings of one unit.
+///
+/// # Specification
+/// - requires: `before` and `after` key the same items in the same order.
+/// - ensures: each position's item key, spelled lossily as UTF-8, where the two
+///   content keys differ, in order.
+/// - fails: never on the admitted domain.
+/// - panics: when the two key different items at a position.
+/// - executable: none — the cases compare the list it gives.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the address cases below name what an edit moved.
+/// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
+fn moved(
+    before: &[(ItemKey, Option<ContentKey>)],
+    after: &[(ItemKey, Option<ContentKey>)],
+) -> Vec<String>
+{
+    assert_eq!(before.len(), after.len(), "one item per declaration");
+    before
+        .iter()
+        .zip(after)
+        .filter_map(|(&(ref key, was), &(ref again, now))| {
+            assert_eq!(key, again, "the same item at each position");
+            (was != now).then(|| String::from_utf8_lossy(key.as_ref()).into_owned())
+        })
+        .collect()
+}
+
+/// Each inert operation of `Gandr.Package`, the ones it includes from
+/// `Versioned` among them, as `std.package` states it, by name.
+///
+/// # Specification
+/// - requires: `std.package` writes each operation as `oper <name> : <type>;`
+///   on one line, an `@[ inert ]` mark on the line before it, and each theory
+///   as `pub theory <name> {` closed by a line `}`.
+/// - ensures: the operations of `Versioned` and `Gandr.Package` marked inert,
+///   in the order the source states them.
+/// - fails: never on the admitted domain.
+/// - panics: a source that cannot be read.
+/// - executable: none — the fields are the source's, which the sweep reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sweep edits each field this names in every corpus
+///   package, so a field added to the theory is swept with no edit here.
+/// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
+fn inert_fields() -> Vec<String>
+{
+    let source = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/package.gandr"),
+    )
+    .expect("`std.package` reads");
+    let mut fields = Vec::new();
+    let mut theory = "";
+    let mut marked = false;
+    for line in source.lines().map(str::trim) {
+        if let Some(named) = line
+            .strip_prefix("pub theory ")
+            .and_then(|rest| rest.strip_suffix(" {"))
+        {
+            theory = named;
+        }
+        else if line == "}" {
+            theory = "";
+        }
+        else if let Some((name, _)) = line
+            .strip_prefix("oper ")
+            .and_then(|rest| rest.split_once(" : "))
+            && marked
+            && matches!(theory, "Versioned" | "Gandr.Package")
+        {
+            fields.push(String::from(name));
+        }
+        marked = line == "@[ inert ]" || (marked && line.starts_with("///"));
+    }
+    fields
+}
+
+/// How many times the sweep replaced one field's body.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Replaced(usize);
+
+/// The text of the library at `library` with the body of each of `fields` in
+/// its `Package` model replaced by another string, and how many times each
+/// was replaced.
+///
+/// # Specification
+/// - requires: the library reads; the model opens on a line starting with `pub
+///   module Package : Model(Gandr.Package)` and closes on a line `}`, each
+///   component on one line as `def <name> ... = <body>;`, and each field is a
+///   string.
+/// - ensures: the text with each named component's body `"swept"`, and every
+///   other line as it stood, beside each field's count of replacements.
+/// - fails: never on the admitted domain.
+/// - panics: a library that cannot be read violates the precondition.
+/// - executable: none — the sweep counts each field's replacements.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus package's model is swept whole.
+/// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
+fn swept(
+    library: &Path,
+    fields: &[String],
+) -> (String, BTreeMap<String, Replaced>)
+{
+    let stated = std::fs::read_to_string(library).expect("the library reads");
+    let mut text = String::new();
+    let mut counts = BTreeMap::new();
+    let mut within = false;
+    for line in stated.lines() {
+        let trimmed = line.trim();
+        let field = fields.iter().find(|name| {
+            trimmed
+                .strip_prefix("def ")
+                .and_then(|rest| rest.strip_prefix(name.as_str()))
+                .is_some_and(|rest| rest.starts_with([' ', ':']))
+        });
+        match (within, field, line.rsplit_once(" = ")) {
+            (true, Some(name), Some((head, _))) => {
+                let count: &mut Replaced = counts.entry(name.clone()).or_default();
+                count.0 = count.0.saturating_add(1);
+                text.push_str(head);
+                text.push_str(" = \"swept\";");
+            },
+            _ => text.push_str(line),
+        }
+        text.push('\n');
+        if trimmed.starts_with("pub module Package : Model(Gandr.Package)") {
+            within = true;
+        }
+        else if trimmed == "}" {
+            within = false;
+        }
+    }
+    (text, counts)
+}
+
+/// #3030: every corpus package — the witness workspace's two members and
+/// `std` — keeps its address and every item key when each inert field of its
+/// model is edited to another value of its type, and a declaration added to
+/// its library moves the address.
+#[test]
+fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let fields = inert_fields();
+    assert!(
+        fields.len() >= 6,
+        "`Gandr.Package`'s fields are read: {fields:?}"
+    );
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for library in [
+        "corpus/model/projects/hello/src/lib.gandr",
+        "corpus/model/projects/tools/lib.gandr",
+        "library/std/src/lib.gandr",
+    ] {
+        let library = tree
+            .join(library)
+            .canonicalize()
+            .expect("the library exists");
+        let Maybe::Present(package) = Package::discover(&library)
+        else {
+            panic!("`{}` roots a package", library.display());
+        };
+        let before = package
+            .address(&grammar, &Held::default())
+            .expect("the package addresses");
+        let stated = std::fs::read_to_string(&library).expect("the library reads");
+        let (edited, counts) = swept(&library, &fields);
+        for field in &fields {
+            assert_eq!(
+                counts.get(field),
+                Some(&Replaced(1)),
+                "`{}` states `{field}` once",
+                library.display()
+            );
+        }
+        let held = Held(BTreeMap::from([(library.clone(), edited)]));
+        assert_eq!(
+            package.address(&grammar, &held),
+            Ok(before),
+            "`{}`'s inert fields, swept, leave its address; the items moved: {:?}",
+            library.display(),
+            moved(
+                &keyed(&grammar, &library, &Held::default()),
+                &keyed(&grammar, &library, &held)
+            )
+        );
+        let keys = |keyed: Vec<(ItemKey, Option<ContentKey>)>| {
+            keyed.into_iter().map(|(key, _)| key).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            keys(keyed(&grammar, &library, &held)),
+            keys(keyed(&grammar, &library, &Held::default())),
+            "`{}`'s item keys stay",
+            library.display()
+        );
+        let added = Held(BTreeMap::from([(
+            library.clone(),
+            format!("{stated}\n/// A declaration the sweep adds.\npub def swept = 1;\n"),
+        )]));
+        assert_ne!(
+            package.address(&grammar, &added),
+            Ok(before),
+            "`{}`'s address moves with its content",
+            library.display()
+        );
+    }
 }

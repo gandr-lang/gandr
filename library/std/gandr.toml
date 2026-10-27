@@ -1,9 +1,13 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: a23a730a4e7da640e58ba3a5a7f358fba81ac3026c6e3197d7060bbe99c07609
+# blake3: 90266c344c1e42d4b276f74499685e0014317192204ce743ef57976f94371bef
 
 [package]
 name = "std"
 version = "0.1.0"
+authors = "The gandr authors"
+licence = "MIT OR Apache-2.0"
+documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std"
+endpoint = "https://github.com/gandr-lang/gandr"
 modules = [
   "package",
 ]

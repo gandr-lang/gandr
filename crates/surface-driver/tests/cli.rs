@@ -1191,10 +1191,23 @@ fn a_malformed_invocation_exits_two()
     }
 }
 
-/// A package's library declaring its model, `name` and `version`, after
-/// [`STD_PACKAGE`].
-const LIBRARY: &str = "/// The package.\npub module Package : Model(Gandr.Package) {\n  def name = \
-                       \"hello\";\n  def version = \"0.1.0\";\n}\n";
+/// The fields of a package's model past its `name` and its `version`, each a
+/// line of a model's body.
+macro_rules! fields {
+    () => {
+        "  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation = \
+         \"https://d.example\";\n  def endpoint = \"https://e.example\";\n"
+    };
+}
+
+/// A package's library declaring its model, `name`, `version` and the
+/// fields [`fields`] states, after [`STD_PACKAGE`].
+const LIBRARY: &str = concat!(
+    "/// The package.\npub module Package : Model(Gandr.Package) {\n  def name = \"hello\";\n  def \
+     version = \"0.1.0\";\n",
+    fields!(),
+    "}\n"
+);
 
 /// The import of the manifest theories, `std.package`, by the absolute path
 /// to its source in the tree (#2767).
@@ -1256,10 +1269,12 @@ fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
     }
 }
 
-/// #2687: `check` writes a package's `gandr.toml` from its model, leaves it
-/// unchanged when the model is, rewrites it when the model changes, and
-/// refuses a hand edit as drift, leaving it as it stands; a library that
-/// states no `version`, and one that does not settle, write none.
+/// #2687, #3030: `check` writes a package's `gandr.toml` from its model,
+/// leaves it unchanged when the model is, rewrites it when the model changes,
+/// and refuses a hand edit as drift, leaving it as it stands; a library that
+/// states no `version`, and one that does not settle, write none. Each
+/// reconciled manifest's line carries the package's address, which an edit to
+/// an inert field leaves and an edit to a module's item moves.
 #[test]
 fn a_package_s_manifest_is_written_and_drift_refused_2687()
 {
@@ -1282,37 +1297,71 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
         stdout(output)
             .lines()
             .find_map(|line| line.strip_prefix("manifest: "))
-            .map(String::from)
+            .and_then(|line| line.strip_suffix(')'))
+            .and_then(|line| line.split_once(" (address "))
+            .map(|(reconciled, address)| (String::from(reconciled), String::from(address)))
     };
     let written = checked();
     assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
+    let Some((line, address)) = reconciled(&written)
+    else {
+        panic!("a manifest line with an address: {}", stdout(&written));
+    };
     assert_eq!(
-        reconciled(&written),
-        Some(format!(
+        line,
+        format!(
             "{}: written",
             manifest.canonicalize().expect("written").display()
-        ))
+        )
+    );
+    assert!(
+        address.len() == 64 && address.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "a BLAKE3 digest in hex: {address}"
     );
     let first = std::fs::read_to_string(&manifest).expect("the manifest is written");
     assert!(
         first.ends_with(
-            "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\nmodules = [\n  \"text.greet\",\n]\n"
+            "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\nauthors = \"Ada\"\nlicence = \
+             \"MIT\"\ndocumentation = \"https://d.example\"\nendpoint = \
+             \"https://e.example\"\nmodules = [\n  \"text.greet\",\n]\n"
         ),
         "{first}"
     );
     let again = checked();
     assert_eq!(code(&again), Code(0_i32));
-    assert!(reconciled(&again).is_some_and(|line| line.ends_with(": unchanged")));
+    assert!(
+        reconciled(&again)
+            .is_some_and(|(line, again)| line.ends_with(": unchanged") && again == address)
+    );
     std::fs::write(
         &library,
-        format!("{STD_PACKAGE}{}", LIBRARY.replace("0.1.0", "0.2.0")),
+        format!(
+            "{STD_PACKAGE}{}",
+            LIBRARY
+                .replace("0.1.0", "0.2.0")
+                .replace("MIT", "Apache-2.0")
+        ),
     )
     .expect("the model changes");
     let rewritten = checked();
     assert_eq!(code(&rewritten), Code(0_i32));
-    assert!(reconciled(&rewritten).is_some_and(|line| line.ends_with(": rewritten")));
+    assert!(
+        reconciled(&rewritten)
+            .is_some_and(|(line, inert)| line.ends_with(": rewritten") && inert == address),
+        "an edit to inert fields leaves the address: {}",
+        stdout(&rewritten)
+    );
     let second = std::fs::read_to_string(&manifest).expect("the manifest is rewritten");
     assert!(second.contains("version = \"0.2.0\""), "{second}");
+    std::fs::write(&leaf, "def greeting = \"hello, there\" ;\n").expect("the module changes");
+    let moved = checked();
+    assert_eq!(code(&moved), Code(0_i32), "{}", stderr(&moved));
+    assert!(
+        reconciled(&moved)
+            .is_some_and(|(line, moved)| line.ends_with(": unchanged") && moved != address),
+        "an edit to a module's item moves the address: {}",
+        stdout(&moved)
+    );
     let edited = second.replace("hello", "howdy");
     std::fs::write(&manifest, &edited).expect("the hand edit is written");
     let drifted = checked();
@@ -1377,7 +1426,8 @@ fn a_workspace_checks_each_member_it_names_2687()
                 format!(
                     "{STD_PACKAGE}import \"{up}/workspace.gandr\";\npub module Package : \
                      Model(Gandr.Package) {{\n  def name = \"{name}\";\n  def version = \
-                     Workspace.version;\n}}\n"
+                     Workspace.version;\n{}}}\n",
+                    fields!()
                 )
                 .as_str(),
             ),
@@ -1440,7 +1490,7 @@ fn the_witness_project_s_manifest_is_its_model_s_2687()
     assert!(
         reconciled
             .iter()
-            .all(|line| line.ends_with("gandr.toml: unchanged")),
+            .all(|line| line.contains("gandr.toml: unchanged (address ")),
         "{printed}"
     );
 }

@@ -45,8 +45,9 @@
 //! [`judge_module`](gandr_surface_dispatcher::judge_module) — the two halves
 //! of the composition — so its verdicts are exactly the ones `gandr check`
 //! gives the same text, and hands the same lowered declarations, through
-//! [`program`], to the incremental checker, which adopts what still answers
-//! and persists the checkpoints.
+//! [`item_program`](gandr_surface_dispatcher::item_program), to the
+//! incremental checker, which adopts what still answers and persists the
+//! checkpoints.
 //!
 //! # An edit judges what its supports touch
 //!
@@ -210,7 +211,6 @@ pub use crate::item_source::Revision;
 pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;
 pub use crate::item_source::fault_span;
-pub use crate::item_source::program;
 pub use crate::live_match::MatchAnalysis;
 pub use crate::live_match::MatchCheckpoint;
 pub use crate::live_match::MatchRun;

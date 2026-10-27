@@ -3,19 +3,15 @@
 //!
 //! # One item per declaration the lowering did not refuse
 //!
-//! The checker's input for a module is the dispatcher's [`adapt`]: every
-//! declaration the lowering did not refuse, in admission order. The item
-//! source keys each of those by its declared name and leaves the refused ones
-//! out, so the program the incremental checker resumes over holds exactly the
-//! declarations the batch judgement checks, at the same admission positions.
+//! The checker's input for a module is the dispatcher's `adapt`: every
+//! declaration the lowering did not refuse, in admission order. The
+//! dispatcher's `item_program` keys each of those by its declared name and
+//! leaves the refused ones out, so the program the incremental checker
+//! resumes over holds exactly the declarations the batch judgement checks, at
+//! the same admission positions.
 //!
 //! # The item source
 //!
-//! `program` keys each declaration the lowering did not refuse by its name as
-//! written and carries exactly the declaration the dispatcher's `adapt` gives
-//! the checker, in admission order; refused declarations are left out and the
-//! admission positions skip them. The incremental checker therefore resumes
-//! over the declarations the batch judgement checks and no other.
 //! `SurfaceItems` is the same lowering behind `gandr-core-incremental`'s
 //! `ItemSource`; because that seam's error cannot borrow the revision, a
 //! whole-revision refusal crosses it as its failure class and span.
@@ -23,21 +19,16 @@
 use core::fmt;
 
 use anodized::spec;
-use gandr_core_incremental::Item;
-use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::ItemSource;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::ProgramError;
-use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
-use gandr_surface_dispatcher::adapt;
+use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_grammar::Pbg;
-use gandr_surface_lowering::DeclarationOutcome;
-use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -53,113 +44,6 @@ quenchant_shape::reason_enum! {
             Run,
         }
     }
-}
-
-/// The program `module` lowers to, over the `arena` it was minted in.
-///
-/// # Specification
-/// - requires: `module` was lowered into `arena`.
-/// - ensures: one item per declaration the lowering did not refuse, in
-///   admission order, keyed by the declaration's name as written and carrying
-///   exactly the declaration [`adapt`] gives the checker for it.
-/// - provides: the program the incremental checker resumes over, which holds
-///   the declarations the batch judgement checks and no other.
-/// - fails: [`ProgramError::PositionOrder`] when two kept declarations'
-///   admission positions do not ascend.
-/// - panics: none.
-///
-/// # Errors
-/// - [`ProgramError::PositionOrder`]: the lowering assigned positions out of
-///   order.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a lowered module with a refused middle declaration, an
-///   explicit signature and an owed body; exact name keys, skipped admission
-///   positions and declaration payloads distinguish retaining refusals,
-///   reordering, misnaming and losing signature/body/origin data. Arena
-///   provenance is a caller premise, not inferred from local identifiers.
-/// - witness: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`
-#[spec(
-    ensures: |ret| match ret {
-    Ok(ref result) => {
-        result.items().len()
-            == module
-                .declarations()
-                .iter()
-                .filter(|lowered| {
-                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
-                })
-                .count()
-            && result
-                .items()
-                .iter()
-                .zip(
-                    module
-                        .declarations()
-                        .iter()
-                        .filter(|lowered| {
-                            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
-                        }),
-                )
-                .all(|(item, lowered)| {
-                    let declaration = item.declaration();
-                    item.key().as_ref() == lowered.name().as_ref().as_bytes()
-                        && declaration.constant() == lowered.constant()
-                        && usize::from(declaration.origin())
-                            == usize::from(lowered.origin())
-                        && match (lowered.outcome(),declaration.content()) {
-                            (DeclarationOutcome::Completed {declared_type,body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Present(value)}) => signature == declared_type && value == body,
-                            (DeclarationOutcome::Uncompleted {declared_type},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Absent(_)}) => signature == declared_type,
-                            (DeclarationOutcome::Bodied {body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(_),body:Maybe::Present(value)}) => value == body,
-                            (DeclarationOutcome::Data(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
-                            (DeclarationOutcome::Codata(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Codata(ref held) if module.codata(index) == Maybe::Present(held)),
-                            (DeclarationOutcome::Abstract(sealing),&gandr_core_checker::DeclarationContent::Abstract(sealed)) => sealed.kind() == sealing.kind && sealed.representation() == sealing.representation && sealed.extent() == sealing.extent,
-                            (DeclarationOutcome::World, &gandr_core_checker::DeclarationContent::World) => true,
-                            _ => false,
-                        }
-                })
-    }
-    Err(ProgramError::PositionOrder { ordinal, position, previous }) => {
-        position <= previous
-            && module
-                .declarations()
-                .iter()
-                .filter(|lowered| {
-                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
-                })
-                .nth(usize::from(ordinal))
-                .is_some_and(|lowered| lowered.constant() == position)
-            && usize::from(ordinal)
-                .checked_sub(1_usize)
-                .and_then(|before| {
-                    module
-                        .declarations()
-                        .iter()
-                        .filter(|lowered| {
-                            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
-                        })
-                        .nth(before)
-                })
-                .is_some_and(|lowered| lowered.constant() == previous)
-    }
-},
-)]
-#[inline]
-pub fn program(
-    module: &LoweredModule<'_>,
-    arena: CoreArena,
-) -> Result<Program, ProgramError>
-{
-    let keys = module
-        .declarations()
-        .iter()
-        .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
-        .map(|lowered| ItemKey::from(lowered.name().as_ref()));
-    let items = keys
-        .zip(adapt(module))
-        .map(|(key, declaration)| Item::new(key, declaration))
-        .collect();
-    Program::new(arena, items)
 }
 
 /// One revision of a source, as the item source reads it: its full text.
@@ -379,10 +263,10 @@ impl ItemSource for SurfaceItems
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the revision parsed and lowered once by the dispatcher's
-    ///   [`lower_source`], and the module's [`program`].
+    ///   [`lower_source`], and the module's [`item_program`].
     /// - fails: [`RevisionFault::Faulted`] when the parser cannot commit its
     ///   tree; [`RevisionFault::Refused`] when the lowering refuses the
-    ///   revision as a whole; [`RevisionFault::Unordered`] as [`program`].
+    ///   revision as a whole; [`RevisionFault::Unordered`] as [`item_program`].
     /// - panics: none.
     ///
     /// # Errors
@@ -393,9 +277,8 @@ impl ItemSource for SurfaceItems
     ///   expression refused whole; exact admitted keys and refusal class/span
     ///   distinguish stale revision input, invented names and misplaced
     ///   diagnostics. The predicate checks source membership and span validity
-    ///   without replaying parse or lowering; program specifies exact
+    ///   without replaying parse or lowering; [`item_program`] specifies exact
     ///   lowered-item correspondence.
-    /// - witness: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`
     /// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
     #[spec(
         ensures: |ret| match ret {
@@ -440,7 +323,7 @@ impl ItemSource for SurfaceItems
         };
         match lowering.into_lowered() {
             Lowered::Module { module, arena } => {
-                program(&module, arena).map_err(RevisionFault::Unordered)
+                item_program(&module, arena).map_err(RevisionFault::Unordered)
             },
             Lowered::Refused(ref refusal) => Err(RevisionFault::refused(refusal)),
         }

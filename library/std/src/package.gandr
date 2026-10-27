@@ -4,8 +4,9 @@
 // package's `gandr.toml` from its model (#533). No theory here states a law: an
 // operation of each is a field the manifest records, and no conversion relates
 // two of them. An operation marked `@[ inert ]` is a field only the manifest
-// step and another inert field read (#3029): a package's name and version say
-// what it is called, not what it is.
+// step and another inert field read (#3029), and a package's address leaves
+// out (#3030): a package's name, version, authors and licence, and where it is
+// documented and fetched from, say what it is called, not what it is.
 
 /// What a package and a workspace both state: the version they release at.
 /// `Gandr.Package` and `Gandr.Workspace` include it, so a member reads its
@@ -18,12 +19,26 @@ pub theory Versioned {
 
 /// A package: the project a `lib.gandr` roots, described by the model its
 /// `module Package : Model(Gandr.Package)` is, from which the checker writes
-/// the project's `gandr.toml`.
+/// the project's `gandr.toml`. Every field is inert: what a package is called,
+/// who wrote it and where it is documented leave its address alone (#3030).
 pub theory Gandr.Package {
   include Versioned;
   /// The package's name, which the manifest records it by.
   @[ inert ]
   oper name : String;
+  /// Who wrote the package, as one line, `Name <address>, Name <address>`: a
+  /// list once an operation's port can be one (#2993).
+  @[ inert ]
+  oper authors : String;
+  /// The package's licence, an SPDX expression.
+  @[ inert ]
+  oper licence : String;
+  /// Where the package's documentation is read.
+  @[ inert ]
+  oper documentation : String;
+  /// Where the package is fetched from, a hint the resolver may try first.
+  @[ inert ]
+  oper endpoint : String;
 }
 
 /// A workspace: the packages a `workspace.gandr` gathers, described by the

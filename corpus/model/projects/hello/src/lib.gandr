@@ -8,10 +8,21 @@ import "../../workspace.gandr";
 // The manifest theories, from `std.package` by its path (#533 p3).
 import "../../../../../library/std/src/package.gandr";
 
-/// The package: its name and its version, as `gandr.toml` records them.
+/// The package: its name, its version and the rest of what `gandr.toml`
+/// records.
 pub module Package : Model(Gandr.Package) {
+  /// The name the manifest records.
   def name = "hello";
+  /// The version, the workspace's.
   def version = Workspace.version;
+  /// The package's authors.
+  def authors = "The gandr authors";
+  /// The licence, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the package's documentation stands at.
+  def documentation = "https://github.com/gandr-lang/gandr";
+  /// The address a resolver may fetch the package from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
 }
 
 /// The greeting, read from the module `text.greet` by its path.

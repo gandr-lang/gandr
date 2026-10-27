@@ -1,9 +1,13 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 05f9d8e75c076185752b53938e6ca5d45438401bc475886e300a321d34c36c45
+# blake3: 745e79d5696032a2f0869b030ba261bef6753f4bc6e7119d4df2de8b431c1005
 
 [package]
 name = "hello"
 version = "0.1.0"
+authors = "The gandr authors"
+licence = "MIT OR Apache-2.0"
+documentation = "https://github.com/gandr-lang/gandr"
+endpoint = "https://github.com/gandr-lang/gandr"
 modules = [
   "text.greet",
 ]

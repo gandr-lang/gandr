@@ -1,16 +1,24 @@
 /// `std-package`: The standard library's manifest theories.
-/// Implemented: `std.package`, `library/std/src/package.gandr`, states `Versioned`, `Gandr.Package` and `Gandr.Workspace`, which a library's and a workspace's models are read from, and `Gandr.Module` and `Gandr.Dependency`, which no source models yet; a package's `name` and `version` are inert, read only by the manifest step and another inert field (#3029); a source imports it by the relative path to its source, from under any root.
-/// Not implemented: importing `std.package` by name, and a model of `Gandr.Dependency` resolved to a local package; #533 owes them.
+/// Implemented: `std.package`, `library/std/src/package.gandr`, states `Versioned`, `Gandr.Package` and `Gandr.Workspace`, which a library's and a workspace's models are read from, and `Gandr.Module` and `Gandr.Dependency`, which no source models yet; every field of a package, its `name`, `version`, `authors`, `licence`, `documentation` and `endpoint`, is inert, read only by the manifest step and another inert field (#3029); a source imports it by the relative path to its source, from under any root.
+/// Not implemented: importing `std.package` by name, and a model of `Gandr.Dependency` resolved to a local package, which #533 owes; `authors` as a list, which #2993 owes.
 
 // The manifest theories, from `std.package` by its path.
 import "../../../library/std/src/package.gandr";
 
-/// A package's model, its `name` and its `version`, both inert: only the
-/// manifest step reads them (#3029).
+/// A package's model, every field inert: only the manifest step reads them
+/// (#3029).
 pub module Package : Model(Gandr.Package) {
   /// The package's name, which the manifest records it by.
   def name = "probe";
   /// The version the package releases at.
   @[ runs("\"0.1.0\"") ]
   def version = "0.1.0";
+  /// The package's authors.
+  def authors = "The gandr authors";
+  /// The licence, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the package's documentation stands at.
+  def documentation = "https://github.com/gandr-lang/gandr";
+  /// The address a resolver may fetch the package from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
 }

@@ -330,8 +330,10 @@ use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Unaddressed;
 use gandr_surface_dispatcher::Unmanifested;
 use gandr_surface_dispatcher::Unpathed;
+use gandr_surface_dispatcher::Unshadowed;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
@@ -343,6 +345,7 @@ use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
 use gandr_surface_grammar::Spelling;
+use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_render_terminal::RenderStyle;
@@ -2422,17 +2425,22 @@ fn run(
     })
 }
 
-/// Reconcile `package`'s manifest with what its library states, printing what
-/// came of it, and the verdict it leaves the run at.
+/// Reconcile `package`'s manifest with what its library states, and address
+/// the package, printing what came of each, and the verdict it leaves the run
+/// at.
 ///
 /// # Specification
 /// - requires: `manifest` is what `package`'s library states.
 /// - ensures: a library that states no manifest is `gandr: <library>: <why>` on
 ///   standard error and unsettles the run. Otherwise the manifest is reconciled
 ///   at `package`'s root: written, rewritten or unchanged is `manifest: <path>:
-///   <what>` on standard output, at the JSON level an object whose `level` is
-///   `manifest`, and settles; drift is `gandr: <path>: <why>` on standard error
-///   and unsettles; a file that cannot be read or written likewise, and faults.
+///   <what> (address <hex>)` on standard output, the package's
+///   [`Package::address`] under the built-in grammar, at the JSON level an
+///   object whose `level` is `manifest` carrying `address`, and settles. A
+///   package with no address prints the line without it, then `gandr:
+///   <library>: <why>` on standard error, and unsettles; drift is `gandr:
+///   <path>: <why>` on standard error and unsettles; a file that cannot be read
+///   or written likewise, and faults.
 /// - provides: the manifest step `run` takes for each package.
 /// - fails: the first write error on either stream.
 /// - panics: none.
@@ -2444,7 +2452,8 @@ fn run(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a manifest written, unchanged, rewritten and drifted, and
-///   a library stating no version, each print and exit as stated.
+///   a library stating no version, each print and exit as stated; the address
+///   stays across an inert edit and moves with a content one.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 fn manifested(
     package: &Package,
@@ -2468,18 +2477,44 @@ fn manifested(
     let path = package.manifest();
     match reconcile(&path, &manifest) {
         Ok(reconciled) => {
+            let address = match built_in() {
+                Ok(grammar) => package.address(&grammar, &Unshadowed),
+                Err(error) => Err(Unaddressed::Unlowered {
+                    source: package.library().to_path_buf(),
+                    why: error.to_string(),
+                }),
+            };
+            let shown = address.as_ref().map(ToString::to_string).ok();
             if verbosity == Verbosity::Json {
                 let line = serde_json::json!({
                     "level": "manifest",
                     "path": path.display().to_string(),
                     "reconciled": reconciled.to_string(),
+                    "address": shown,
                 });
                 writeln!(stdout, "{line}")?;
+            }
+            else if let Some(ref shown) = shown {
+                writeln!(
+                    stdout,
+                    "manifest: {}: {reconciled} (address {shown})",
+                    path.display()
+                )?;
             }
             else {
                 writeln!(stdout, "manifest: {}: {reconciled}", path.display())?;
             }
-            Ok(RunVerdict::Settled)
+            match address {
+                Ok(_) => Ok(RunVerdict::Settled),
+                Err(unaddressed) => {
+                    writeln!(
+                        stderr,
+                        "gandr: {}: {unaddressed}",
+                        package.library().display()
+                    )?;
+                    Ok(RunVerdict::Unsettled)
+                },
+            }
         },
         Err(fault) => {
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;

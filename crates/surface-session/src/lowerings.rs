@@ -37,13 +37,13 @@ use gandr_core_term::CoreArena;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::JudgedClosure;
+use gandr_surface_dispatcher::item_program;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
 
 use crate::edit::Snapshot;
-use crate::item_source::program;
 
 /// The most closures [`LOWERINGS`] holds before it lets the one asked for
 /// longest ago go: the closures of the few documents an editor has open.
@@ -143,7 +143,7 @@ impl Led
     pub fn of(judged: &JudgedClosure) -> Option<Self>
     {
         let (module, _) = judged.lowering().alone()?;
-        let mut items = program(&module, judged.arena().clone()).ok()?;
+        let mut items = item_program(&module, judged.arena().clone()).ok()?;
         let (_, leading) = lead(&mut items, CheckBudget::DEFAULT).ok()?;
         // Each revision lowers onto a copy of this arena, which the freeze
         // makes cost the revision's own nodes alone.

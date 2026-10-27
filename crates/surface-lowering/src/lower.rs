@@ -18771,6 +18771,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     definition: slot.definition.map(half_at),
                 },
                 outcome,
+                inertness: self.inert_component(slot),
             }));
         }
 

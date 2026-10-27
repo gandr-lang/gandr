@@ -10,4 +10,12 @@ pub module Package : Model(Gandr.Package) {
   def name = "std";
   /// The version `std` releases at.
   def version = "0.1.0";
+  /// The authors of `std`.
+  def authors = "The gandr authors";
+  /// The licence `std` carries, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the documentation of `std` stands at.
+  def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std";
+  /// The address a resolver may fetch `std` from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
 }

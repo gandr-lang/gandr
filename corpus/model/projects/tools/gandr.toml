@@ -1,7 +1,11 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 6acd112e83dfb223512c219f235ff557c549a25c771a4d671f417ca2071007a5
+# blake3: 9a5aac15dc07b82455c5fb3de45830d3bafe847bfdce82487354ba9c04d07cb5
 
 [package]
 name = "tools"
 version = "0.1.0"
+authors = "The gandr authors"
+licence = "MIT OR Apache-2.0"
+documentation = "https://github.com/gandr-lang/gandr"
+endpoint = "https://github.com/gandr-lang/gandr"
 modules = []

@@ -31,6 +31,7 @@
 //!   metadata is written in gandr rather than in a manifest language, so the
 //!   manifest is the checker's output and is never read back.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::fmt::Write as _;
 use std::io;
@@ -38,16 +39,28 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_incremental::content_keys;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::SettleReport;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Inertness;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::decode_escapes;
 use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::component::Shadows;
+use crate::component::lay_out_shadowed;
+use crate::compose::Lowered;
+use crate::compose::LoweringCount;
+use crate::compose::item_program;
+use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
 use crate::evaluate::Program;
 use crate::evaluate::declaration_name;
+use crate::root::classify;
 use crate::workspace::Unmembered;
 use crate::workspace::WORKSPACE;
 use crate::workspace::Workspace;
@@ -391,24 +404,32 @@ pub struct Manifest
     name: String,
     /// `Package.version`.
     version: String,
-    /// Each module of the package but its root, by its path.
-    modules: BTreeSet<String>,
+    /// `Package.authors`.
+    authors: String,
+    /// `Package.licence`.
+    licence: String,
+    /// `Package.documentation`.
+    documentation: String,
+    /// `Package.endpoint`.
+    endpoint: String,
+    /// Each module of the package but its root, by its path, in order.
+    modules: Vec<String>,
 }
 
 impl Manifest
 {
-    /// The manifest `program`'s `Package` model states: its `name` and its
-    /// `version`, each run to its string; and the modules of `package`.
+    /// The manifest `program`'s `Package` model states, each of its fields run
+    /// to its string, and the modules of `package`.
     ///
     /// # Specification
     /// - requires: `program` is the program of the package's library, and `own`
     ///   the report of the library's own declarations.
     /// - ensures: each field read by its path among the declarations `own`
-    ///   reports, `Package.name` then `Package.version`, run once, and its
-    ///   string decoded from the value's spelling; the first field none of them
-    ///   declares is [`Unmanifested::Undeclared`], and the first whose run is
-    ///   no string [`Unmanifested::Unstrung`] with what it came to. The modules
-    ///   are [`modules`] of `package`'s sources.
+    ///   reports, in [`Field`] order, run once, and its string decoded from the
+    ///   value's spelling; the first field none of them declares is
+    ///   [`Unmanifested::Undeclared`], and the first whose run is no string
+    ///   [`Unmanifested::Unstrung`] with what it came to. The modules are
+    ///   [`modules`] of `package`'s sources, in order.
     /// - provides: the manifest `gandr check` writes.
     /// - fails: a field undeclared, or run to no string.
     /// - panics: none.
@@ -420,8 +441,8 @@ impl Manifest
     /// The first field that is undeclared, or does not run to a string.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a model holding both fields, one of them escaped,
-    ///   reads both; one missing `version` and one whose name is an integer are
+    /// - hypothesis: L3 — a model holding every field, one of them escaped,
+    ///   reads each; one missing `version` and one whose name is an integer are
     ///   refused at that field.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
     #[inline]
@@ -431,46 +452,14 @@ impl Manifest
         package: &Package,
     ) -> Result<Self, Unmanifested>
     {
-        let mut field = |field: Field| {
-            let path = field.path();
-            let constant = match program.named_among(
-                path,
-                own.declarations().iter().map(DeclarationReport::constant),
-            ) {
-                Maybe::Present(constant) => constant,
-                Maybe::Absent(declaration_name::Absent::Undeclared) => {
-                    return Err(Unmanifested::Undeclared(field));
-                },
-            };
-            match program.evaluate(constant) {
-                Evaluation::Value(value) => {
-                    let spelled = value.to_string();
-                    let decoded = spelled
-                        .strip_prefix('"')
-                        .and_then(|rest| rest.strip_suffix('"'))
-                        .map(|content| decode_escapes(SourceFragment::from(content)));
-                    decoded.ok_or(Unmanifested::Unstrung {
-                        field,
-                        came: spelled,
-                    })
-                },
-                ref other @ (Evaluation::Sealed(_)
-                | Evaluation::Blamed(_)
-                | Evaluation::Holed { .. }
-                | Evaluation::Stuck(_)
-                | Evaluation::Unfinished(_)
-                | Evaluation::Unrunnable(_)) => Err(Unmanifested::Unstrung {
-                    field,
-                    came: other.to_string(),
-                }),
-            }
-        };
-        let name = field(Field::Name)?;
-        let version = field(Field::Version)?;
         Ok(Self {
-            name,
-            version,
-            modules: modules(package.sources()),
+            name: strung(program, own, Field::Name)?,
+            version: strung(program, own, Field::Version)?,
+            authors: strung(program, own, Field::Authors)?,
+            licence: strung(program, own, Field::Licence)?,
+            documentation: strung(program, own, Field::Documentation)?,
+            endpoint: strung(program, own, Field::Endpoint)?,
+            modules: modules(package.sources()).into_keys().collect(),
         })
     }
 
@@ -480,11 +469,12 @@ impl Manifest
     /// - requires: nothing.
     /// - ensures: the [`WRITTEN`] line, the digest line carrying the BLAKE3
     ///   digest of the body in lowercase hexadecimal, then the body: a
-    ///   `[package]` table with `name` and `version` as TOML basic strings,
-    ///   each `"`, `\` and control character escaped, and `modules` an array of
-    ///   the modules' paths, one per line, in order, or `[]` when there are
-    ///   none, as the tree's TOML formatter writes it. The same manifest
-    ///   renders the same bytes.
+    ///   `[package]` table with `name`, `version`, `authors`, `licence`,
+    ///   `documentation` and `endpoint` as TOML basic strings, each `"`, `\`
+    ///   and control character escaped, and `modules` an array of the modules'
+    ///   paths, one per line, in order, or `[]` when there are none, as the
+    ///   tree's TOML formatter writes it. The same manifest renders the same
+    ///   bytes.
     /// - provides: the file [`reconcile`] writes.
     /// - fails: never.
     /// - panics: none.
@@ -500,9 +490,14 @@ impl Manifest
     pub fn render(&self) -> String
     {
         let body = format!(
-            "\n[package]\nname = {}\nversion = {}\nmodules = {}\n",
+            "\n[package]\nname = {}\nversion = {}\nauthors = {}\nlicence = {}\ndocumentation = \
+             {}\nendpoint = {}\nmodules = {}\n",
             Basic(&self.name),
             Basic(&self.version),
+            Basic(&self.authors),
+            Basic(&self.licence),
+            Basic(&self.documentation),
+            Basic(&self.endpoint),
             Listed(&self.modules)
         );
         format!(
@@ -512,18 +507,331 @@ impl Manifest
     }
 }
 
+/// The string `field` runs to on `program`, decoded from its spelling.
+///
+/// # Specification
+/// - requires: as [`Manifest::of`].
+/// - ensures: the field read by its path among the declarations `own` reports
+///   and run once: its value's spelling, a quoted string, its escapes decoded;
+///   [`Unmanifested::Undeclared`] when none declares it, and
+///   [`Unmanifested::Unstrung`] with what it came to when it runs to anything
+///   else.
+/// - fails: an undeclared field, or one run to no string.
+/// - panics: none.
+/// - executable: none — as [`Manifest::of`].
+///
+/// # Errors
+/// [`Unmanifested::Undeclared`] and [`Unmanifested::Unstrung`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Manifest::of`].
+/// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
+fn strung(
+    program: &mut Program<'_>,
+    own: &SettleReport<'_>,
+    field: Field,
+) -> Result<String, Unmanifested>
+{
+    let constant = match program.named_among(
+        field.path(),
+        own.declarations().iter().map(DeclarationReport::constant),
+    ) {
+        Maybe::Present(constant) => constant,
+        Maybe::Absent(declaration_name::Absent::Undeclared) => {
+            return Err(Unmanifested::Undeclared(field));
+        },
+    };
+    let came = match program.evaluate(constant) {
+        Evaluation::Value(value) => value.to_string(),
+        ref other @ (Evaluation::Sealed(_)
+        | Evaluation::Blamed(_)
+        | Evaluation::Holed { .. }
+        | Evaluation::Stuck(_)
+        | Evaluation::Unfinished(_)
+        | Evaluation::Unrunnable(_)) => {
+            return Err(Unmanifested::Unstrung {
+                field,
+                came: other.to_string(),
+            });
+        },
+    };
+    came.strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .map(|content| decode_escapes(SourceFragment::from(content)))
+        .ok_or(Unmanifested::Unstrung { field, came })
+}
+
+/// A package's address: the BLAKE3 digest of its items' content keys, every
+/// inert component of its models left out (#533 § p2). It says what the
+/// package is, never where it is, and no manifest carries it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PackageAddress([u8; 32]);
+
+impl core::fmt::Display for PackageAddress
+{
+    /// The digest in lowercase hexadecimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
+impl Package
+{
+    /// The package's address: each of its sources, its library then its
+    /// modules in [`modules`] order, read as `shadows` holds it, laid out over
+    /// its imports and lowered, and each of the source's own items digested in
+    /// admission order as its path and its content key, a model's inert
+    /// component left out.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the grammar the package's sources are read
+    ///   under.
+    /// - ensures: the BLAKE3 digest, over the sources in that order and each
+    ///   one's own items in its unit's admission order, of each item that is no
+    ///   [`Inertness::Inert`] declaration, as its path's dotted spelling
+    ///   prefixed by its length and then its content key's bytes. An item of an
+    ///   import is the importer's to leave out: only the declarations each
+    ///   source writes are digested, so each enters once. Equal content at
+    ///   equal paths is one address, whatever the inert fields state.
+    /// - provides: the identity p3's lock carries for the package.
+    /// - fails: [`Unaddressed`] at the first source or item that has no key.
+    /// - panics: none.
+    /// - executable: none — the address is a digest of the lowering's content,
+    ///   which a predicate could only restate by lowering again; the witnesses
+    ///   observe it moving and staying.
+    ///
+    /// # Errors
+    /// [`Unaddressed`]: a source that does not read or lower, a declaration of
+    /// the package the lowering refused, or an item whose content holds an
+    /// unresolved node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — in a two-source package, an edit to an inert field
+    ///   leaves the address and every other item's key where they were, and an
+    ///   edit to a content item moves the address; every corpus package's inert
+    ///   fields, each edited, leave its address unchanged.
+    /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
+    /// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
+    #[inline]
+    pub fn address(
+        &self,
+        grammar: &Pbg,
+        shadows: &dyn Shadows,
+    ) -> Result<PackageAddress, Unaddressed>
+    {
+        let mut hasher = blake3::Hasher::new();
+        for source in
+            core::iter::once(self.library.clone()).chain(modules(self.sources()).into_values())
+        {
+            digested(grammar, &source, shadows, &mut hasher)?;
+        }
+        Ok(PackageAddress(*hasher.finalize().as_bytes()))
+    }
+}
+
+/// Digest into `hasher` the own items of the source at `source`, as
+/// [`Package::address`] states.
+///
+/// # Specification
+/// - requires: as [`Package::address`].
+/// - ensures: as [`Package::address`], for this one source.
+/// - fails: as [`Package::address`].
+/// - panics: none.
+/// - executable: none — as [`Package::address`].
+///
+/// # Errors
+/// As [`Package::address`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Package::address`].
+/// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
+fn digested(
+    grammar: &Pbg,
+    source: &Path,
+    shadows: &dyn Shadows,
+    hasher: &mut blake3::Hasher,
+) -> Result<(), Unaddressed>
+{
+    let unlowered = |why: String| Unaddressed::Unlowered {
+        source: source.to_path_buf(),
+        why,
+    };
+    let text = match shadows.shadowed(source) {
+        Some(text) => String::from(text.as_ref()),
+        None => std::fs::read_to_string(source).map_err(|error| Unaddressed::Unread {
+            source: source.to_path_buf(),
+            message: error.to_string(),
+        })?,
+    };
+    let laid = lay_out_shadowed(
+        grammar,
+        source,
+        classify(source),
+        SourceText::from(text.as_str()),
+        shadows,
+    );
+    let mut lowerings = LoweringCount::default();
+    let lowering = lower_unit_source(
+        grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        &mut lowerings,
+    )
+    .map_err(|fault| unlowered(fault.to_string()))?;
+    let (module, arena) = match lowering.into_lowered() {
+        Lowered::Module { module, arena } => (module, arena),
+        Lowered::Refused(refusal) => return Err(unlowered(refusal.to_string())),
+    };
+    let program = item_program(&module, arena).map_err(|fault| unlowered(fault.to_string()))?;
+    let mut keys = content_keys(&program).into_iter();
+    let mut path = String::new();
+    for declaration in module.declarations() {
+        let own = declaration.span().start() >= laid.base;
+        let refused = matches!(declaration.outcome(), DeclarationOutcome::Refused(_));
+        let key = if refused { None } else { keys.next() };
+        if !own || (!refused && declaration.inertness() == Inertness::Inert) {
+            continue;
+        }
+        path.clear();
+        for (index, segment) in module.path_of(declaration).iter().enumerate() {
+            if index > 0 {
+                path.push('.');
+            }
+            let segment: &str = segment.as_ref();
+            path.push_str(segment);
+        }
+        if refused {
+            return Err(Unaddressed::Refused {
+                source: source.to_path_buf(),
+                item: path,
+            });
+        }
+        let Some(Maybe::Present(key)) = key
+        else {
+            return Err(Unaddressed::Opaque {
+                source: source.to_path_buf(),
+                item: path,
+            });
+        };
+        let length = u64::try_from(path.len()).unwrap_or(u64::MAX);
+        let _digested = hasher.update(&length.to_le_bytes()).update(path.as_bytes());
+        key.digest_into(hasher);
+    }
+    Ok(())
+}
+
+/// Why a package has no address.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unaddressed
+{
+    /// A source of the package could not be read.
+    Unread
+    {
+        /// The source.
+        source: PathBuf,
+        /// Why it could not be read.
+        message: String,
+    },
+    /// A source of the package does not lower to a module.
+    Unlowered
+    {
+        /// The source.
+        source: PathBuf,
+        /// Why it does not.
+        why: String,
+    },
+    /// A declaration of the package the lowering refused, which no content
+    /// key names.
+    Refused
+    {
+        /// The source declaring it.
+        source: PathBuf,
+        /// Its path.
+        item: String,
+    },
+    /// An item whose content holds an unresolved node, which no content key
+    /// names.
+    Opaque
+    {
+        /// The source declaring it.
+        source: PathBuf,
+        /// Its path.
+        item: String,
+    },
+}
+
+impl core::fmt::Display for Unaddressed
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Unread {
+                ref source,
+                ref message,
+            } => write!(
+                f,
+                "`{}` cannot be read, so the package has no address: {message}",
+                source.display()
+            ),
+            Self::Unlowered {
+                ref source,
+                ref why,
+            } => write!(
+                f,
+                "`{}` does not lower, so the package has no address: {why}",
+                source.display()
+            ),
+            Self::Refused {
+                ref source,
+                ref item,
+            } => write!(
+                f,
+                "`{item}` in `{}` is refused, so no content key names it and the package has no \
+                 address",
+                source.display()
+            ),
+            Self::Opaque {
+                ref source,
+                ref item,
+            } => write!(
+                f,
+                "`{item}` in `{}` holds an unresolved node, so no content key names it and the \
+                 package has no address",
+                source.display()
+            ),
+        }
+    }
+}
+
 /// Every module the sources under `sources` make but the root, each named by
-/// its path from `sources`: `text/greet.gandr` is `text.greet`.
+/// its path from `sources`, `text/greet.gandr` as `text.greet`, beside the
+/// source that makes it.
 ///
 /// # Specification
 /// - requires: `sources` is a package's sources directory.
-/// - ensures: one name per `.gandr` file under `sources`, its directories and
+/// - ensures: one entry per `.gandr` file under `sources`, its directories and
 ///   its file stem joined by `.`, the root module `lib.gandr` beside `sources`
 ///   left out; a directory holding a `lib.gandr` of its own is another
 ///   package's, and nothing under it is named. A directory that does not list
 ///   names nothing.
-/// - provides: the membership the manifest records: a module is a file, and
-///   nothing declares it.
+/// - provides: the membership the manifest records, a module being a file that
+///   nothing declares, and the sources a package's address reads after its
+///   library.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause reads the file system again.
@@ -532,9 +840,9 @@ impl Manifest
 /// - hypothesis: L3 — a package with a nested module and a nested package lists
 ///   the module alone.
 /// - witness: `tests::package::a_manifest_lists_the_modules_its_sources_make_2687`
-fn modules(sources: &Path) -> BTreeSet<String>
+fn modules(sources: &Path) -> BTreeMap<String, PathBuf>
 {
-    let mut named = BTreeSet::new();
+    let mut named = BTreeMap::new();
     let mut pending = Vec::from([sources.to_path_buf()]);
     while let Some(directory) = pending.pop() {
         listed(sources, &directory, &mut pending, &mut named);
@@ -552,7 +860,7 @@ fn listed(
     sources: &Path,
     directory: &Path,
     pending: &mut Vec<PathBuf>,
-    named: &mut BTreeSet<String>,
+    named: &mut BTreeMap<String, PathBuf>,
 )
 {
     let Ok(entries) = std::fs::read_dir(directory)
@@ -571,7 +879,7 @@ fn listed(
             && path != sources.join(LIBRARY)
             && let Some(module) = module_path(sources, &path)
         {
-            let _fresh = named.insert(module);
+            let _fresh = named.insert(module, path);
         }
     }
 }
@@ -594,7 +902,8 @@ fn module_path(
     Some(names?.join("."))
 }
 
-/// A field of the `Package` model the manifest records.
+/// A field of the `Package` model the manifest records, in the order it
+/// records them.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Field
 {
@@ -602,6 +911,14 @@ pub enum Field
     Name,
     /// `Package.version`.
     Version,
+    /// `Package.authors`.
+    Authors,
+    /// `Package.licence`.
+    Licence,
+    /// `Package.documentation`.
+    Documentation,
+    /// `Package.endpoint`.
+    Endpoint,
 }
 
 impl Field
@@ -615,6 +932,10 @@ impl Field
         SurfaceName::from(match self {
             Self::Name => "Package.name",
             Self::Version => "Package.version",
+            Self::Authors => "Package.authors",
+            Self::Licence => "Package.licence",
+            Self::Documentation => "Package.documentation",
+            Self::Endpoint => "Package.endpoint",
         })
     }
 }
@@ -883,11 +1204,11 @@ impl core::fmt::Display for Basic<'_>
     }
 }
 
-/// Module paths written as a TOML array: `[]` when there are none, else
-/// one line per path, each a basic string indented two spaces and followed
+/// Strings written as a TOML array, in order: `[]` when there are none, else
+/// one line per string, each a basic string indented two spaces and followed
 /// by a comma, between `[` and `]` on lines of their own.
 #[repr(transparent)]
-struct Listed<'modules>(&'modules BTreeSet<String>);
+struct Listed<'strings>(&'strings [String]);
 
 impl core::fmt::Display for Listed<'_>
 {
@@ -902,8 +1223,8 @@ impl core::fmt::Display for Listed<'_>
             return f.write_str("[]");
         }
         f.write_str("[\n")?;
-        for module in self.0 {
-            writeln!(f, "  {},", Basic(module))?;
+        for string in self.0 {
+            writeln!(f, "  {},", Basic(string))?;
         }
         f.write_char(']')
     }
