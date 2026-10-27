@@ -1041,33 +1041,44 @@ impl Machine<'_, '_>
         Ok(Step::Ascend(Produced::Checked))
     }
 
-    /// The case a structural fixpoint opens with past its `leading` binders,
-    /// read as the fixpoint against its type's rules.
+    /// The case a structural fixpoint opens with past its `leading` binders
+    /// and any binders after the one it recurses on, read as the fixpoint
+    /// against its type's rules.
     ///
     /// # Specification
     /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
     ///   evidence stages its parameter at `leading` at `expected`.
-    /// - ensures: the case under the body's `leading + 1` lambdas beside
-    ///   [`Reading::Fold`] naming the fixpoint, `leading`, the domain of the
-    ///   arrow `expected` holds past `leading` plain arrows, read as its words
-    ///   where it is a path at a looped point, and that arrow, when that case's
-    ///   scrutinee is the innermost lambda's argument;
-    ///   [`root::Absent::NotOverCase`] otherwise, and where a leading arrow is
-    ///   dependent.
+    /// - ensures: the case under the body's `leading + 1` lambdas and the
+    ///   lambdas directly beneath them beside [`Reading::Fold`] naming the
+    ///   fixpoint, `leading`, the domain of the arrow `expected` holds past
+    ///   `leading` plain arrows, read as its words where it is a path at a
+    ///   looped point, and that arrow, when that case's scrutinee is the
+    ///   argument of the `leading + 1`th lambda; [`root::Absent::NotOverCase`]
+    ///   otherwise, and where a leading arrow is dependent.
     /// - fails: as [`crate::context::CheckingContext::identified`].
     /// - panics: none.
     ///
     /// # Errors
     /// As `fails`.
     ///
+    /// # Termination
+    /// - reason: a `for` loop over the leading binders and a `while` loop down
+    ///   the lambdas beneath the staged one, both finite.
+    /// - measure: the leading binders left, then the lambdas left above the
+    ///   case.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold reading
     ///   admits a fixpoint over the circle that a bare reading of its case
     ///   would refuse, a fold over a path at a looped point respects its words'
-    ///   cancellations, and a fold over the integers past an accumulator
-    ///   respects the cancellations the accumulator meets.
+    ///   cancellations, a fold over the integers past an accumulator respects
+    ///   the cancellations the accumulator meets, and a fold whose case sits
+    ///   beneath a parameter after the one it recurses on is read as the
+    ///   fixpoint: admitted where its call meets itself at both sides of the
+    ///   rule, refused where its arm tells them apart.
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    /// - witness: `tests::native_formers::a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint`
     /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, leading: past, .. } if marked == fixpoint && past == leading), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
     pub(super) fn fold_root(
@@ -1099,17 +1110,22 @@ impl Machine<'_, '_>
         else {
             return not_over_case;
         };
-        let Some(&Computation::Lambda(case)) = arena.computation(body)
+        let Some(&Computation::Lambda(mut case)) = arena.computation(body)
         else {
             return not_over_case;
         };
+        let mut trailing = 0_u32;
+        while let Some(&Computation::Lambda(inner)) = arena.computation(case) {
+            case = inner;
+            trailing = trailing.saturating_add(1);
+        }
         let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(case)
         else {
             return not_over_case;
         };
         let argument = gandr_core_term::Value::Variable {
             zone: Zone::Intuitionistic,
-            index: DeBruijnIndex::from(0_u32),
+            index: DeBruijnIndex::from(trailing),
         };
         if arena.value(scrutinee) != Some(&argument) {
             return not_over_case;

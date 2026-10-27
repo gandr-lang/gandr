@@ -316,13 +316,14 @@
 //! obligation on every case over the type, decided once its branches check:
 //! `F(l)` converts with `F(r)`, `l` and `r` built over one fresh variable per
 //! pattern variable, by the same forced replay. `F` is the structural fixpoint
-//! itself when the case is its root, `fix f. λy. case y { … }`, so a recursive
-//! call unfolds at a constructor field and meets its twin stuck at a variable;
-//! any other case is `F` with each side in its scrutinee's place. A case that
-//! fails is refused `RuleNotRespected`, naming the first such rule; the
-//! checker decides the same obligation δ-free and refuses by the same name,
-//! with both sides. The obligation is re-derived on readmission, so no trace
-//! records it and the artifact format is unchanged.
+//! itself when the case is its root, `fix f. λy. case y { … }` or, past
+//! parameters after the one it recurses on, `fix f. λy. λs. case y { … }`, so
+//! a recursive call unfolds at a constructor field and meets its twin stuck at
+//! a variable; any other case is `F` with each side in its scrutinee's place.
+//! A case that fails is refused `RuleNotRespected`, naming the first such
+//! rule; the checker decides the same obligation δ-free and refuses by the
+//! same name, with both sides. The obligation is re-derived on readmission, so
+//! no trace records it and the artifact format is unchanged.
 //!
 //! **Choice.** The fold form, the obligation a quotient puts on any map out
 //! of it, decided by conversion. **Alternatives.** Refusing every case over a
