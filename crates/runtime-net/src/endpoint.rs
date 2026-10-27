@@ -17,6 +17,11 @@
 //!   then it closes the connection. Both ends closing is a rendezvous.
 //! - A frame longer than [`MAX_FRAME`] is refused before it is sent, and one
 //!   announced longer than it closes the stream it arrived on.
+//! - The endpoint serves its [`Chunks`] under [`CHUNKS_ALPN`] whatever its
+//!   owner is doing, and [`Endpoint::fetch`] asks a peer for a value's chunks
+//!   on a connection of its own; neither touches a stream the owner holds.
+//!
+//! [`CHUNKS_ALPN`]: crate::CHUNKS_ALPN
 
 mod driver;
 
@@ -28,7 +33,12 @@ use std::sync::mpsc;
 use std::thread;
 
 use anodized::spec;
+use gandr_storage_values::ValueError;
+use gandr_storage_values::ValueManifest;
 
+use crate::chunks::Chunks;
+use crate::chunks::Fetched;
+use crate::chunks::Framed;
 use crate::peer::NodeId;
 use crate::peer::Peer;
 use crate::peer::Secret;
@@ -186,7 +196,7 @@ impl Error for LookupError
 }
 
 /// What an endpoint binds with: the secret it proves, the sockets it binds,
-/// and how it finds peers.
+/// how it finds peers, and the chunks it serves.
 #[derive(Clone, Debug)]
 pub struct Binding
 {
@@ -197,6 +207,8 @@ pub struct Binding
     sockets: Vec<SocketAddr>,
     /// How it finds a peer.
     lookup: Lookup,
+    /// The chunks it serves and fetches into.
+    chunks: Chunks,
 }
 
 impl Binding
@@ -208,12 +220,13 @@ impl Binding
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(secret: Secret) -> Self
+    pub fn new(secret: Secret) -> Self
     {
         Self {
             secret,
             sockets: Vec::new(),
             lookup: Lookup::Explicit,
+            chunks: Chunks::new(),
         }
     }
 
@@ -245,6 +258,21 @@ impl Binding
     ) -> Self
     {
         self.lookup = lookup;
+        self
+    }
+
+    /// Serve `chunks`, and fetch into them, in place of a store of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn serving(
+        mut self,
+        chunks: Chunks,
+    ) -> Self
+    {
+        self.chunks = chunks;
         self
     }
 
@@ -300,6 +328,29 @@ pub enum Fault
     },
     /// The endpoint has minted every stream name.
     Exhausted,
+    /// A fetch's connection failed, or the holder closed it unanswered.
+    Fetch
+    {
+        /// The holder asked.
+        peer: NodeId,
+        /// What failed.
+        reason: String,
+    },
+    /// A holder's answer this protocol does not frame.
+    Malformed
+    {
+        /// The holder.
+        peer: NodeId,
+    },
+    /// A fetched chunk did not verify against its digest, or the value's
+    /// closure is not held whole.
+    Refused
+    {
+        /// The holder.
+        peer: NodeId,
+        /// The value plane's refusal, naming the chunk.
+        refusal: ValueError,
+    },
     /// The endpoint's thread is gone.
     Driver,
 }
@@ -329,6 +380,13 @@ impl fmt::Display for Fault
             Self::Ended(stream) => write!(f, "the peer finished {stream}"),
             Self::Stream { stream, ref reason } => write!(f, "{stream} failed: {reason}"),
             Self::Exhausted => write!(f, "every stream name is spent"),
+            Self::Fetch { peer, ref reason } => {
+                write!(f, "the fetch from {peer} failed: {reason}")
+            },
+            Self::Malformed { peer } => write!(f, "{peer} answered a fetch unframed"),
+            Self::Refused { peer, refusal } => {
+                write!(f, "the value fetched from {peer} was refused: {refusal}")
+            },
             Self::Driver => write!(f, "the endpoint's thread is gone"),
         }
     }
@@ -564,6 +622,52 @@ impl Endpoint
     ) -> Result<(), Fault>
     {
         self.ask(|reply| driver::Request::Close(stream, reply))
+    }
+
+    /// Fetch the chunks of `wanted` that this endpoint's store lacks from
+    /// `peer`, naming each of `held` as a value whose chunks it holds whole.
+    ///
+    /// # Specification
+    /// - requires: nothing; a value named held whose closure the store lacks
+    ///   leaves the walk to refuse the chunk missing.
+    /// - ensures: the store holds `wanted`'s whole closure, and the count is of
+    ///   the chunks the answer carried: the wanted closure less the held
+    ///   closures `peer` holds whole. One request and one answer, on a
+    ///   connection under [`CHUNKS_ALPN`] closed before this returns.
+    /// - fails: [`Fault::Fetch`] when the dial or the connection fails;
+    ///   [`Fault::Malformed`] for an answer that does not frame;
+    ///   [`Fault::Refused`] for a chunk that does not verify, with nothing
+    ///   inserted, or for the first chunk of the closure neither end holds;
+    ///   [`Fault::Oversized`] for a manifest longer than a frame;
+    ///   [`Fault::Driver`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failures above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list of 888 integers fetched whole, then with one
+    ///   element edited and the first named held, carries exactly the chunks
+    ///   the edit added, inside the locality bound, and both read back equal; a
+    ///   tampered chunk and an unframed part are refused with nothing kept; a
+    ///   value the holder lacks is refused by its root chunk.
+    /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
+    /// - witness: `tests::chunks::an_answer_that_does_not_verify_or_frame_is_refused_before_any_chunk_is_kept`
+    /// - witness: `tests::chunks::a_value_the_holder_lacks_is_refused_by_its_first_chunk`
+    ///
+    /// [`CHUNKS_ALPN`]: crate::CHUNKS_ALPN
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fetched| fetched.bytes >= u64::try_from(usize::from(fetched.chunks)).unwrap_or(u64::MAX)))]
+    #[inline]
+    pub fn fetch(
+        &mut self,
+        peer: &Peer,
+        wanted: &ValueManifest,
+        held: &[ValueManifest],
+    ) -> Result<Fetched, Fault>
+    {
+        let request = Framed::request(wanted, held)?;
+        let (id, dialed, wanted) = (peer.id(), peer.endpoint_addr(), *wanted);
+        self.ask(|reply| driver::Request::Fetch(id, dialed, (wanted, request), reply))
     }
 
     /// Hand the thread the request `make` builds around a reply channel, and

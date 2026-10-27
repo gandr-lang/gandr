@@ -54,6 +54,7 @@ INSERT INTO site VALUES('sharing','kernel-core','encoding','implements','increme
 INSERT INTO site VALUES('sharing','kernel-core','verdict','implements','incremental-memo','The verdict key, chaining the kernel''s build and each admitted declaration, read by every later run over the same prefix.');
 INSERT INTO site VALUES('sharing','runtime-emitter','crossing','consumes','content-chunks','`crossing::commit`: a store''s value written to the value plane however the store shares it, a subtree written twice stored once by content; `crossing::deref` lays a tree.');
 INSERT INTO site VALUES('sharing','runtime-emitter','lower','implements','heap-reuse','The reuse token: a scrutinee whose fields an arm took is rebuilt in place by the constructor the ownership reading pairs with it.');
+INSERT INTO site VALUES('sharing','runtime-net','chunks','consumes','content-chunks','The chunk wire: a fetch naming the values its asker holds carries only the chunks their closures lack, so a chunk two sends share crosses once.');
 INSERT INTO site VALUES('sharing','storage-chunker','typed','implements','content-chunks','The typed scanner: a value''s chunk cut where a residue divides kappa or the cap fires, at a boundary constructor''s exit.');
 INSERT INTO site VALUES('sharing','storage-values','commit','defines','content-chunks','`cam_commit`: a value cut at its boundary constructors into chunks named by digest, the boundary and alias classification deciding where a cut falls.');
 COMMIT;

@@ -340,6 +340,7 @@ path = "crates/core-nbe"
 # the store a run answers into, and reading a run's terminal back.
 # consumers:
 # - runtime-emitter
+# - runtime-net (dev)
 # - runtime-stencils (dev)
 # - surface-dispatcher
 [workspace.dependencies.gandr-core-sequent]
@@ -456,6 +457,7 @@ path = "crates/kernel-strata"
 # - core-unify
 # - kernel-core
 # - runtime-emitter
+# - runtime-net (dev)
 # - runtime-stencils (dev)
 # - storage-artifact
 # - surface-corpus
@@ -478,6 +480,7 @@ default-features = false
 # native tier's policy, falling back to the portable executor.
 # consumers:
 # - core-sequent (dev)
+# - runtime-net (dev)
 # - runtime-stencils (dev)
 # - surface-dispatcher
 [workspace.dependencies.gandr-runtime-emitter]
@@ -512,6 +515,7 @@ path = "crates/storage-artifact"
 # - storage-records
 # - storage-store
 # - runtime-emitter
+# - runtime-net (dev)
 # - storage-values
 [workspace.dependencies.gandr-storage-chunker]
 path = "crates/storage-chunker"
@@ -541,6 +545,7 @@ path = "crates/storage-store"
 # content pointers.
 # consumers:
 # - runtime-emitter
+# - runtime-net
 # - storage-store
 # - surface-dispatcher
 [workspace.dependencies.gandr-storage-values]

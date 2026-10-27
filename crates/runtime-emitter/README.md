@@ -30,13 +30,14 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `Racordon-2020-formal_definition_swifts_value_semantics` — background: Dimitri Racordon, "A Formal Definition of Swift's Value Semantics", 2020 — value semantics as copies, the independence a rebuild in place must keep.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — LAM as the value representation's specification, and `storage-conjecture-exclusivity`.
 - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime's representation question (§ runtime-question-what-runtime-means).
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: verdict reuse (§ kernel-verdict-reuse) — a host's reply read from verified chunks is checked for integrity alone; its reply type stays the host's to keep.
 
 ## Provided features
 
 - `lower`, `Lowered`, `Function`, `Form`: the lowering, its closure sites and reified frames, the function it builds and the form it refuses.
 - `lower_unfused`, `Rule`, `Fused`, `replay`, `FusionRefusal`, `dispatches`: the lowering before its adjacent pairs run as superinstructions, the rules that fuse them, the trace a fused function carries, the replay that re-derives it and its cost in dispatches.
 - `evaluate`, `evaluate_on`, `evaluate_unfused_on`, `Tier`, `Declined`, `TransferRefusal`: a run under the policy or on one tier, fused or unfused, its outcome moved into the caller's store, or why it gave none.
-- `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each.
+- `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each, and may commit a payload to the value plane or deref a value from it as a reply.
 - `evaluate_closed_on`, `lower_suspended`: a command binding one covariable run over the values a store environment binds, laid out on the run's heap first: a cut's writer run apart from its reader's heap.
 - `crossing::{commit, deref, profile, CrossingRefusal, Uncrossable}`: a store's value committed to the value plane and read back into another store, fresh there: a literal or a constructor over crossing fields crosses, sharing unfolded, and a thunk, a closure, a stack, a code, a capability, an opaque constant or a session's record is refused by name.
 - World forms run: `hold v` delivers `v`, `leta` binds the handle's content, and `migrate [w] { t }` runs `t` on a thread and over a store of its own, its captures crossed in and its answer crossed back by `crossing` through the one chunk store the process holds; a value that does not cross, or a body that answers nothing, is `Declined::Migration`.

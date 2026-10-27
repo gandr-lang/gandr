@@ -4,6 +4,8 @@
 //! area it belongs to (`tests::endpoint::…`) instead of a file.
 
 #[cfg(test)]
+mod chunks;
+#[cfg(test)]
 mod endpoint;
 #[cfg(test)]
 mod net;

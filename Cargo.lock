@@ -1334,6 +1334,11 @@ dependencies = [
 name = "gandr-runtime-net"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-sequent",
+ "gandr-kernel-term",
+ "gandr-runtime-emitter",
+ "gandr-storage-chunker",
+ "gandr-storage-values",
  "iroh",
  "iroh-mdns-address-lookup",
  "quenchant-anodized",

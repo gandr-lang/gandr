@@ -150,6 +150,7 @@ digraph crates {
   "runtime-emitter" -> "storage-chunker";
   "runtime-emitter" -> "storage-values";
   "runtime-emitter" -> "theory-cell-complexes";
+  "runtime-net" -> "storage-values";
   "storage-artifact" -> "kernel-term";
   "storage-artifact" -> "storage-records";
   "storage-artifact" -> "theory-cell-complexes";
@@ -332,6 +333,7 @@ digraph crates {
   "core-nbe" -> "kernel-check-memo" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "kernel-check-memo" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "kernel-core" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
-  "runtime-emitter" -> "storage-chunker" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "runtime-emitter" -> "runtime-net" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "runtime-net" -> "storage-chunker" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "storage-chunker" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
 }

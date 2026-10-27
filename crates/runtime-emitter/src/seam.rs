@@ -7,13 +7,14 @@
 //! an exercise names a capability no handler of the run introduced. The
 //! payload is moved into the caller's store and offered with the
 //! operation's inline interface; [`HostValues`] lets the host inspect it,
-//! allocate a reply over it and read either back, never touch a frame. A
-//! reply resumes the operation's continuation once: the host call answers
-//! it, and the perform's continuation receives it as any value. A reply
-//! naming a value the run moved out is that value again — a thunk or a
-//! function keeps its identity — and a reply the host built is laid out on
-//! the run's heap as the run lays out its own. [`HostReply::Abort`] stops
-//! the run without resuming; [`HostReply::Decline`] leaves
+//! allocate a reply over it, read either back and move either across by
+//! content, never touch a frame. A reply resumes the operation's
+//! continuation once: the host call answers it, and the perform's
+//! continuation receives it as any value. A reply naming a value the run
+//! moved out is that value again — a thunk or a function keeps its identity
+//! — and a reply the host built is laid out on the run's heap as the run
+//! lays out its own. [`HostReply::Abort`] stops the run without resuming;
+//! [`HostReply::Decline`] leaves
 //! [`Stuck::PerformNoHandler`](gandr_core_sequent::Stuck::PerformNoHandler)
 //! at the operation. The host owns external effects, reply typing and
 //! policy; a run performs no host I/O itself.
@@ -27,6 +28,13 @@
 //! the host a second calling convention for the same frames. **Reversal.**
 //! A host that must observe or alter frames — a debugger — needs a frame
 //! capability this seam does not grant.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: integrity never
+//!   substitutes validity, § kernel-verdict-reuse: a reply a host derefs from
+//!   chunks is the value their digests name, and that it has the operation's
+//!   reply type stays the host's obligation, as for any reply.
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::HeapValue;
@@ -40,6 +48,12 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
+use gandr_storage_chunker::TypedChunkerParams;
+use gandr_storage_values::ChunkStore;
+use gandr_storage_values::ValueManifest;
+
+use crate::crossing;
+use crate::crossing::CrossingRefusal;
 
 /// An operation no handler of the run claims.
 ///
@@ -120,8 +134,8 @@ pub trait HostHandler
     ) -> HostReply<Self::Abort>;
 }
 
-/// The host's value capability over the caller's store: inspect, allocate
-/// and read back, never alter frames.
+/// The host's value capability over the caller's store: inspect, allocate,
+/// read back and cross by content, never alter frames.
 #[derive(Debug)]
 pub struct HostValues<'run>
 {
@@ -203,6 +217,51 @@ impl<'run> HostValues<'run>
     ) -> Result<ValueId, ReadbackRefusal>
     {
         read_back_value(self.arena, self.store, value, core)
+    }
+
+    /// Commit a value the store holds, a payload or a reply allocated
+    /// before, to `chunks` under the crossing's profile at `params`: the
+    /// value leaves the run by content, as [`crossing::commit`] writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`crossing::commit`]'s refusal: a value that does not cross is named,
+    /// and nothing is written.
+    #[inline]
+    pub fn commit<Chunks>(
+        &self,
+        value: HeapValueId,
+        params: TypedChunkerParams,
+        chunks: &mut Chunks,
+    ) -> Result<ValueManifest, CrossingRefusal>
+    where
+        Chunks: ChunkStore + ?Sized,
+    {
+        crossing::commit(self.store, value, params, chunks)
+    }
+
+    /// Read the value `manifest` commits out of `chunks` into the store, at
+    /// addresses fresh there, as [`crossing::deref()`] lays it: a reply the
+    /// host may resume with.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`crossing::deref()`]'s refusal: a profile other than the crossing's
+    /// at `params`, a chunk `chunks` lacks or refuses, or an allocation the
+    /// store refuses.
+    #[inline]
+    pub fn deref(
+        &mut self,
+        manifest: &ValueManifest,
+        params: TypedChunkerParams,
+        chunks: &dyn ChunkStore,
+    ) -> Result<HeapValueId, CrossingRefusal>
+    {
+        crossing::deref(manifest, params, chunks, self.store)
     }
 }
 
