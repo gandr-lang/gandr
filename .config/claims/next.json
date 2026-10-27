@@ -138,7 +138,7 @@
     "output": "61\tdefect\tissue 61"
   },
   {
-    "name": "then a defect in any area, the oldest first",
+    "name": "#3111: a defect in another area, or in none, is not offered; the next bucket is claimed",
     "input": {
       "area": "area:workflow",
       "issues": [
@@ -273,7 +273,7 @@
         "100": [30, 25, 33]
       }
     },
-    "output": "58\tdefect\ta defect with no area"
+    "output": "50\tperformance\tissue 50"
   },
   {
     "name": "then a performance issue in any area, a deferred one skipped",
@@ -672,7 +672,7 @@
       ],
       "order": {}
     },
-    "output": "9\tdefect\tthe next defect"
+    "output": "collector: #5 (0 open rows)\n9\tdefect\tthe next defect"
   },
   {
     "name": "#2621: a board of collectors alone gives no claim",
@@ -703,7 +703,7 @@
       ],
       "order": {}
     },
-    "output": ""
+    "output": "collector: #5 (0 open rows)\ncollector: #7 (0 open rows)"
   },
   {
     "name": "#2744: a defect lacking its sections is skipped and named once, the next sectioned candidate picked",
@@ -890,14 +890,14 @@
         {
           "number": 60,
           "title": "issue 60",
-          "labels": ["kind:defect", "area:surface"],
+          "labels": ["kind:defect", "area:workflow"],
           "parent": null,
           "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
         },
         {
           "number": 61,
           "title": "issue 61",
-          "labels": ["kind:defect", "area:workflow"],
+          "labels": ["kind:defect", "area:workflow", "effort:easy"],
           "parent": null,
           "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
           "blocked": 2
@@ -1029,7 +1029,7 @@
         {
           "number": 60,
           "title": "issue 60",
-          "labels": ["kind:defect", "area:surface", "priority:high"],
+          "labels": ["kind:defect", "area:workflow", "priority:high"],
           "parent": null,
           "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
         },
@@ -1050,7 +1050,7 @@
         {
           "number": 58,
           "title": "a defect with no area",
-          "labels": ["kind:defect", "priority:medium"],
+          "labels": ["kind:defect", "area:workflow", "priority:medium"],
           "parent": null,
           "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
         }
@@ -1248,7 +1248,7 @@
     "output": "70\trefactor\tfold the two readers"
   },
   {
-    "name": "any defect is claimed before a refactor (#2884)",
+    "name": "a defect in the area is claimed before a refactor (#2884)",
     "input": {
       "area": "area:workflow",
       "issues": [
@@ -1263,7 +1263,7 @@
         {
           "number": 80,
           "title": "broken",
-          "labels": ["kind:defect", "area:core"],
+          "labels": ["kind:defect", "area:workflow"],
           "parent": null,
           "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
           "blocked": null
@@ -1298,5 +1298,65 @@
       "order": {}
     },
     "output": "60\tperformance\tslow"
+  },
+  {
+    "name": "#3111: among high defects the easy one is claimed before an older medium-effort one",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 10,
+          "title": "an older, larger defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:medium"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        },
+        {
+          "number": 12,
+          "title": "a ten-minute fix",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "12\tdefect\ta ten-minute fix"
+  },
+  {
+    "name": "#3111: a collector in the area prints with its open rows, a landed or fixed row and a checked item not counted; another area's does not print",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 20,
+          "title": "recovery: a cause",
+          "labels": ["kind:defect", "area:workflow", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "The causes.\n\n- [ ] `break-expression`\n- [x] `loop-expression`\n- [ ] `return-expression`\n\n| mutant | verdict |\n| --- | --- |\n| `a` | unwitnessed |\n| `b` | landed in #9 |\n| `c` | fixed — passed at `d` |\n"
+        },
+        {
+          "number": 21,
+          "title": "perf: elsewhere",
+          "labels": ["kind:performance", "area:core", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "- [ ] `x`\n"
+        },
+        {
+          "number": 22,
+          "title": "the defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "collector: #20 (3 open rows)\n22\tdefect\tthe defect"
   }
 ]
