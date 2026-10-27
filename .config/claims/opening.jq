@@ -15,6 +15,11 @@
 #             and `.config` cases: [{path, text}]
 #   surface   the paths the change touches under `crates/surface-parser/`,
 #             `crates/surface-grammar/` and `crates/surface-syntax/`
+#   vault     the vault pages and the crates' citations (#2793), or null where
+#             no vault checkout is configured: {pages, tree, touched, cited},
+#             `pages` and `tree` as `vault.jq` reads them, `touched` the
+#             crates whose sources the change touches, `cited` each such
+#             crate's `# References` keys at the head
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -27,6 +32,13 @@
 # evidence. A `supersedes` item is refused while the tree still names the old
 # key on a line that does not mark it demoted. An issue's `## Sources` line
 # that names no key is noted, not refused.
+#
+# A primary source that is a vault page is cited where the change decides
+# something by it (#2793): when an issue's `## Sources` marks a vault page
+# primary and the change touches a crate's sources, each such crate carries a
+# `# References` line `` - `vault:<mint>` — <role>: <what it decides> ``, the
+# key rule of #2542. A page that decided nothing in the code is marked
+# `read: <what it informed>` in `## Sources read`, which answers it.
 #
 # The body answers the reading axes its issues select (#2522): its
 # `## Readings` table, `Family · Axis · Status`, gives each selected axis
@@ -59,8 +71,9 @@
 
 include "targets";
 include "sections";
+include "vault";
 
-def vocabulary: "`taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`";
+def vocabulary: "`taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>`, `read: <what it informed>` or `n/a: <reason>`";
 def statuses: "`answered: <exemplar or site>`, `none: <reason>` or `not selected`";
 def answered: test("^(answered|none):\\s*\\S");
 
@@ -101,13 +114,29 @@ def sources:
           end
         else keyed as $item
         | if $item == null then "the `## Sources read` item `\($line)` names no source: write `- `<key>` — <disposition>`, the disposition \(vocabulary), then run `pr:open` again"
-          else ($item.text | capture("^(?<disposition>taken|departed|declined|n/a):\\s*(?<evidence>.*)$") // null) as $answer
+          else ($item.text | capture("^(?<disposition>taken|departed|declined|read|n/a):\\s*(?<evidence>.*)$") // null) as $answer
           | if $answer == null then "the `## Sources read` item `\($line)` has no disposition: end it with \(vocabulary), then run `pr:open` again"
             elif $answer.evidence == "" then "the `## Sources read` item `\($line)` leaves its `\($answer.disposition)` blank: give its evidence, \(vocabulary), then run `pr:open` again"
             else empty
             end
           end
         end);
+
+# The refusals of a primary vault page the crates the change touches leave
+# uncited.
+def citations:
+  .vault as $vault
+  | select($vault != null)
+  | [(.body | section("Sources read") // []) | items | keyed | select(. != null and (.text | test("^read:\\s*\\S"))) | .keys[]] as $read
+  | [(.issues // [])[] | .number as $n | .body | section("Sources") // [] | vault_sources($vault.pages; $vault.tree)
+      | select(.primary and .verdict == "resolved") | . + {n: $n}]
+  | unique_by(.mint)[]
+  | . as $page
+  | select(any($read[]; . == $page.name or . == "vault:\($page.mint)") | not)
+  | $vault.touched[]
+  | . as $crate
+  | select(any(($vault.cited[$crate] // [])[]; . == "vault:\($page.mint)") | not)
+  | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or mark the page `read: <what it informed>` in `## Sources read` if it decided nothing in the code, then run `pr:open` again";
 
 # The refusals of `## Readings` against the axes the issues select.
 def readings:
@@ -225,4 +254,4 @@ def surface:
   | select(length > 0)
   | "the change touches the parser (\($paths[:3] | map("`\(.)`") | join(", "))\(if ($paths | length) > 3 then ", …" else "" end)) and the body lacks \(join(", and ")) (#2527); add it, then run `pr:open` again";
 
-claim, sources, readings, concerns, defects, surface
+claim, sources, citations, readings, concerns, defects, surface

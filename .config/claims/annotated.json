@@ -1,0 +1,38 @@
+[
+  {
+    "name": "each resolved vault page an item of `## Sources read` keys gets its mint beside the filename, once; an ambiguous or unminted name and other sections are left (#2793)",
+    "input": {
+      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` § layers — taken: `vault.jq`\n- `bicontextual-core.md` `vault:01a12317-453f-7980-9c86-68f75917f3a6` — read: the two contexts\n- `deep-inference.md` — declined: not this unit's\n- `units.md` — taken: the sections\n\n## Readings\n\n- `core-kernel-reassessment.md` — named outside the section\n",
+      "pages": {
+        "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+        "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"],
+        "deep-inference.md": [
+          "01a11ef7-a774-7403-9461-2b9fa2bd804d",
+          "01a178aa-87c3-72e2-bc2c-29df16a60b06"
+        ],
+        "units.md": [null],
+        "README.md": [null, null]
+      },
+      "tree": "README.md\nlib.rs\nunits-notes.md\n"
+    },
+    "output": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `vault.jq`\n- `bicontextual-core.md` `vault:01a12317-453f-7980-9c86-68f75917f3a6` — read: the two contexts\n- `deep-inference.md` — declined: not this unit's\n- `units.md` — taken: the sections\n\n## Readings\n\n- `core-kernel-reassessment.md` — named outside the section"
+  },
+  {
+    "name": "a body without `## Sources read` is left as it is (#2793)",
+    "input": {
+      "body": "Closes #2793\n\nNo sources.\n",
+      "pages": {
+        "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+        "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"],
+        "deep-inference.md": [
+          "01a11ef7-a774-7403-9461-2b9fa2bd804d",
+          "01a178aa-87c3-72e2-bc2c-29df16a60b06"
+        ],
+        "units.md": [null],
+        "README.md": [null, null]
+      },
+      "tree": "README.md\nlib.rs\nunits-notes.md\n"
+    },
+    "output": "Closes #2793\n\nNo sources."
+  }
+]

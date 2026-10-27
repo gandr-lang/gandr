@@ -1,0 +1,38 @@
+[
+  {
+    "name": "each vault page a `## Sources` line names resolves to its mint, a misspelt one is refused and a tree file is the tree's (#2793)",
+    "input": {
+      "body": "## Sources\n\n- `core-kernel-reassessment.md` § layers — **primary**: the layer the unit sits in\n- `bicontextual-core.md` — secondary: the two contexts\n- `deep-inference.md` — primary: the calculus\n- `units.md` — secondary: the unit shape\n- `README.md` — secondary: the crate's own page\n- `kernel-reasessment.md` — primary: a misspelt page\n- `crates/core-sequent/src/lib.rs` — primary: the site\n",
+      "pages": {
+        "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+        "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"],
+        "deep-inference.md": [
+          "01a11ef7-a774-7403-9461-2b9fa2bd804d",
+          "01a178aa-87c3-72e2-bc2c-29df16a60b06"
+        ],
+        "units.md": [null],
+        "README.md": [null, null]
+      },
+      "tree": "README.md\nlib.rs\nunits-notes.md\n"
+    },
+    "output": "show\t`core-kernel-reassessment.md` → `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec`\nshow\t`bicontextual-core.md` → `vault:01a12317-453f-7980-9c86-68f75917f3a6`\nshow\t`deep-inference.md` → 2 vault pages carry it, so no one mint\nshow\t`units.md` → a vault page with no `mint:`\nrefuse\t`## Sources` line `- `kernel-reasessment.md` — primary: a misspelt page` names `kernel-reasessment.md`, which no vault page carries: name the vault page by its filename, or the tree's file by its path"
+  },
+  {
+    "name": "an issue naming no vault page shows nothing (#2793)",
+    "input": {
+      "body": "## Sources\n\n- `docs/agents/units.md` — primary: the shape\n",
+      "pages": {
+        "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+        "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"],
+        "deep-inference.md": [
+          "01a11ef7-a774-7403-9461-2b9fa2bd804d",
+          "01a178aa-87c3-72e2-bc2c-29df16a60b06"
+        ],
+        "units.md": [null],
+        "README.md": [null, null]
+      },
+      "tree": "README.md\nlib.rs\nunits-notes.md\n"
+    },
+    "output": ""
+  }
+]

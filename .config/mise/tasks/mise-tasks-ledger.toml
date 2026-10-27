@@ -166,7 +166,10 @@ sqlite3 "$fresh/fresh.db" .dump > ledger/references.sql
 # Each row of `ledger/references.sql`, of the named crate or of every crate:
 # one tab-separated line per source and site under a header, its status
 # `unread` until the site is read, then `current` while the module's source
-# is the blob it was read against, `stale` once it has changed.
+# is the blob it was read against, `stale` once it has changed. A `vault:`
+# key shows its page's filename beside the mint, read through the vault
+# checkout `$XDG_CONFIG_HOME/gandr/references` names (#2793), so a reader
+# never meets a bare uuid; without the checkout the key is shown alone.
 ["refs:list"]
 description = "List the sources the crates cite, each at each site, with the status of its last reading"
 usage = '''
@@ -176,6 +179,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 source .config/references/ledger.bash
+source .config/references/vault.bash
 crate=${usage_crate:-}
 if [[ -n $crate && ! ( $crate =~ ^[a-z][a-z0-9-]*$ && -d crates/$crate ) ]]; then
   echo "$crate: no crate under crates/ has that directory" >&2
@@ -184,11 +188,13 @@ fi
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 references_load "$fresh/references.db"
+vault_pages | jq -r 'if . == null then empty else to_entries[] | .key as $name | .value[] | select(. != null) | "vault:\(.)\t\($name)" end' > "$fresh/pages.tsv"
+sqlite3 -bail -tabs "$fresh/references.db" 'CREATE TABLE page(key TEXT, name TEXT);' ".import $fresh/pages.tsv page"
 sqlite3 -bail -header -separator $'\t' "$fresh/references.db" "
-  SELECT r.key, r.role, r.crate, r.module,
+  SELECT r.key || coalesce(' (' || p.name || ')', '') AS key, r.role, r.crate, r.module,
     CASE WHEN r.read_blob IS NULL THEN 'unread' WHEN r.read_blob = s.blob THEN 'current' ELSE 'stale' END AS status,
     substr(r.read_commit, 1, 12) AS read_commit, r.read_date
-  FROM reference r LEFT JOIN source s USING (crate, module)
+  FROM reference r LEFT JOIN source s USING (crate, module) LEFT JOIN (SELECT key, min(name) AS name FROM page GROUP BY key) p ON p.key = r.key
   WHERE '$crate' IN ('', r.crate)
   ORDER BY r.key, r.crate, r.module;"
 '''
