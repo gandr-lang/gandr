@@ -34,7 +34,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `former_of`, `Former`, `FormName` and `Repair`: the named-kind dispatch and the names a diagnostic writes forms as.
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
 - `LoweringRefusal::classify` and `FailureClass`, the latter re-exported from `gandr-core-term`, which every producer of refusals in the core pipeline classifies into: the classifier.
-- `AttributeRegistry`, `AttributeSchema`, `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`, `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and `AttributedCount`: the closed registry, its five diagnostics and the side table, filed for refused declarations too.
+- The closed attribute registry, its five diagnostics and the side table, filed for refused declarations too; [`attribute`](src/attribute.rs) names its types.
 - `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's or a module's documentation read from both spellings into one text, filed under its form's `NodeKey`, its links resolved; the whole filing, for a consumer that keeps it past the lowering.
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
 - Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
@@ -43,7 +43,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: a computation written where a value is read, held for the checker to run or suspend, and each run it inferred, listed for the `explicit-runs` lint.
 - `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`.
 - `lower_unit`, `Unit`, `SourceIndex`, `ImportTarget` and the `Import*` types: sources lowered into one arena, each reading its siblings through its imports; `ClosureLowering`: a closure lowered once, resumed per document; its `alone`, `resume_onto` and `Onto`: its own module, and a document lowered onto the arena it was judged over.
-- `LoweredStructure`, `ValueComponent`, `ManifestComponent`, `manifest_type`, `Coerced`, `Container`, `Role`, `StructureIndex`, `AscriptionForm`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names.
+- `LoweredStructure`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names; [`module`](src/module.rs) names the types they are read through.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from the `Theory` value `theory S` defines, a module ascribed `: Model(S)` checked against it, packed by `pack M at Model(S)`, and a theory's description and presentation handed to later passes; type members with parameters (`module::model`).
@@ -117,6 +117,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
 - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — a scope's subject normalises by its theory's laws.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
+- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design — what `with sort x = A` fixes.
+- `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax bikeshed — the row entry's spelling.
 
 ## License
 

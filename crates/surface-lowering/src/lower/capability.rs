@@ -47,6 +47,12 @@
 //! already carries what qualifies it. Reversal: row polymorphism, whose row
 //! variable needs a spelling of its own.
 //!
+//! An entry names a host interface or a theory at the sorts it fixes,
+//! `-F [st : State with sort S = Integer] A`, read as a capability scope reads
+//! its interface: the manifest's types substitute into the theory's
+//! operations, and a scope over the theory at the same sorts discharges the
+//! entry's instance.
+//!
 //! # An exercise is decided by the written type
 //!
 //! `c.op(v)` is a call whose head selects `op` off a name whose binder or
@@ -143,6 +149,15 @@
 //!   so its own tail calls do not run in constant continuation.
 //! - reversal: relocatable continuation marks, with which the `return` becomes
 //!   a jump to the body's own continuation and no reset is minted.
+//!
+//! # References
+//!
+//! - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories
+//!   design (§ theories-models-manifest-sorts): what `with sort x = A` fixes,
+//!   which the row's reading substitutes into the theory's operations.
+//! - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax
+//!   bikeshed (row "An effect whose sort is fixed at a type"): the row entry's
+//!   spelling, `T with sort x = A`, which [`Lowerer::returner_row`] reads.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -217,7 +232,6 @@ use crate::origin::Labelled;
 use crate::origin::Origin;
 use crate::origin::WrittenModel;
 use crate::resolve::Frame;
-use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
 use crate::unbuilt::Unbuilt;
@@ -350,7 +364,7 @@ enum Performer
 }
 
 /// The interface a form names: a host interface, or a theory a capability
-/// scope handles.
+/// scope handles or a row names at the sorts it fixes.
 ///
 /// # Specification
 /// trivial.
@@ -359,8 +373,24 @@ pub(super) enum Interface
 {
     /// The host interface of this name.
     Host(EffectName),
-    /// The theory a capability scope reads as an interface.
+    /// The theory a capability scope or a row reads as an interface.
     Theory(Arc<TheoryInterface>),
+}
+
+impl Interface
+{
+    /// The name a row keys the interface's default instance by: the host
+    /// interface's, or the theory's.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn name(&self) -> &EffectName
+    {
+        match *self {
+            Self::Host(ref name) => name,
+            Self::Theory(ref theory) => &theory.name,
+        }
+    }
 }
 
 /// An exercise `c.op(v, …)` or a perform `I.op(v, …)`, as the classification
@@ -395,21 +425,27 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`, as the
-/// classification read it.
+/// A returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`, each
+/// entry a host interface or a theory at the sorts it fixes, `[T with sort x
+/// = A]`, as the classification read it.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WrittenRow
 {
-    /// The interfaces the row names whole, each its default instance.
-    interfaces: BTreeSet<EffectName>,
+    /// The interfaces the row names whole, each its default instance, in
+    /// name order.
+    interfaces: Vec<Interface>,
     /// Each label `a : I` the row writes, its tile beside its interface.
-    labels: Vec<(Placed, EffectName)>,
+    labels: Vec<(Placed, Interface)>,
     /// Each label's instance, its interface at the region its name resolves
     /// to, once the row is planned under its frame.
-    placed: Vec<(EffectName, Region)>,
+    placed: Vec<(Interface, Region)>,
+    /// Each type a theory entry fixes a sort to, read as the row is planned.
+    fixed: Vec<Placed>,
+    /// Each theory entry's name, beside the theory it resolves to.
+    named: Vec<(ByteSpan, ConstantIndex)>,
     /// The operand the row stays open through, read as a row value.
     tail: Maybe<NodeIndex, tail::Absent>,
 }
@@ -797,14 +833,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `entry` is an [`Plicity::Instance`](crate::module::Plicity)
     ///   entry of the function's merged telescope.
     /// - ensures: the label bound in a frame extending `frame`, recorded as an
-    ///   instance of its interface living at a region binder of the
-    ///   declaration's own, named as the label and numbered after every one the
-    ///   declaration binds before it, and pushed as a parameter whose type is
-    ///   that instance's capability; the frame it bound is returned.
-    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] for an interface the
-    ///   host does not declare, at the name; a binder's own refusal; a fault at
-    ///   the label when the declaration has no owner or its region binders
-    ///   overflow their width.
+    ///   instance of its interface — a host interface, or a theory, whose sorts
+    ///   the row fixes when it is planned ([`Self::effectful`]) — living at a
+    ///   region binder of the declaration's own, named as the label and
+    ///   numbered after every one the declaration binds before it, and pushed
+    ///   as a parameter whose type is that instance's capability; the frame it
+    ///   bound is returned.
+    /// - fails: the refusals of [`crate::module::Collected::presented_theory`]
+    ///   for an interface neither the host nor a theory answers, at the name; a
+    ///   binder's own refusal; a fault at the label when the declaration has no
+    ///   owner or its region binders overflow their width.
     /// - panics: none.
     ///
     /// # Errors
@@ -813,8 +851,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a function whose row labels two instances of one
     ///   interface takes them as two capability parameters at two region
-    ///   binders, after its explicit parameter.
+    ///   binders, after its explicit parameter; one labelling a theory's
+    ///   instance takes the theory's capability.
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(
         captures: before = self.parameters.len(),
         ensures: |ret| ret.is_err() || self.parameters.len() == before.saturating_add(1),
@@ -833,15 +873,12 @@ impl<'source> Lowerer<'_, 'source>
         };
         let named = self.name_at(written);
         let table = host(site)?;
-        let Maybe::Present(interface) = table.named(&EffectName::from(named.as_ref()))
-        else {
-            return Err(LoweringRefusal::UnresolvedTypeHead {
-                span: written.span,
-                name: named,
-                arity: HeadArity::Nullary,
-            });
-        };
-        let interface = interface.name().clone();
+        let interface = EffectName::from(named.as_ref());
+        if let Maybe::Absent(_) = table.named(&interface) {
+            let _presented =
+                self.collected
+                    .presented_theory(written.span.start(), written.span, named)?;
+        }
         let Maybe::Present(slot) = self.collected.owner_of(site.at.node)
         else {
             return Err(misplaced);
@@ -991,16 +1028,20 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read a returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`,
-    /// past its `[`.
+    /// each entry's name followed by the sorts it fixes, `[T with sort x =
+    /// A]`, past its `[`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the row's `[`.
-    /// - ensures: the interfaces the row names whole, in host order, each label
+    /// - ensures: the interfaces the row names whole, in name order, each label
     ///   it writes beside its interface, in written order, and the operand it
     ///   stays open through when one is written, the cursor past the `]`; a row
-    ///   names an interface, a label or a tail.
-    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] for an interface the
-    ///   host does not declare, at the name;
+    ///   names an interface, a label or a tail. Each entry's name is read as a
+    ///   capability scope reads its interface's ([`Self::handled`]): the host
+    ///   interface of the name, or the theory it names at the sorts the entry
+    ///   fixes, each fixed type kept to be read with the row.
+    /// - fails: the refusals of [`Self::handled`] at an entry, the unresolved
+    ///   head among them for a name neither the host nor a theory answers;
     ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named whole
     ///   again, or a label written again, at the second, since a row holds each
     ///   label once; a misplaced-tile fault for a row out of shape or a label
@@ -1013,13 +1054,16 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a row of two interfaces and an undeclared one, each
     ///   asserted as the minted returner or the exact refusal, a row open
-    ///   through a tail after its interfaces and alone, each minted over it,
-    ///   and a row naming two instances of one interface apart.
+    ///   through a tail after its interfaces and alone, each minted over it, a
+    ///   row naming two instances of one interface apart, and a row naming a
+    ///   theory at its sort, whole and by a label, beside each refusal its
+    ///   manifest meets.
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
     /// - witness: `lower::capability::tests::a_row_names_each_interface_once`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.interfaces.is_empty() || !row.labels.is_empty() || matches!(row.tail, Maybe::Present(_))))]
     pub(super) fn returner_row(
         &self,
@@ -1035,18 +1079,22 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
                 closed(site, cursor, TileName::BRACKET_CLOSE)?;
                 return Ok(WrittenRow {
-                    interfaces: BTreeSet::new(),
+                    interfaces: Vec::new(),
                     labels: Vec::new(),
                     placed: Vec::new(),
+                    fixed: Vec::new(),
+                    named: Vec::new(),
                     tail: Maybe::Present(written.node),
                 });
             }
             first = Some(self.label_of(site, written)?);
         }
-        let table = host(site)?;
-        let mut row = BTreeMap::new();
-        let mut labels: Vec<(Placed, EffectName)> = Vec::new();
+        let mut row: BTreeMap<EffectName, (ByteSpan, Interface)> = BTreeMap::new();
+        let mut labels: Vec<(Placed, Interface)> = Vec::new();
         let mut labelled_at = BTreeMap::new();
+        let mut manifest: Vec<(Placed, NodeIndex)> = Vec::new();
+        let mut fixed = Vec::new();
+        let mut named = Vec::new();
         loop {
             let label = match first.take() {
                 Some(label) => Some(label),
@@ -1063,36 +1111,43 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            let name = self.name_at(written);
-            let Maybe::Present(interface) = table.named(&EffectName::from(name.as_ref()))
-            else {
-                return Err(LoweringRefusal::UnresolvedTypeHead {
-                    span: written.span,
-                    name,
-                    arity: HeadArity::Nullary,
-                });
-            };
+            manifest.clear();
+            while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
+                closed(site, cursor, TileName::SORT)?;
+                let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+                else {
+                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                };
+                closed(site, cursor, TileName::EQUALS)?;
+                let ty = site.one(cursor.operands())?;
+                manifest.push((sort, ty.node));
+                fixed.push(ty);
+            }
+            let interface = self.handled(site, written, written.node, &manifest)?;
+            if let Interface::Theory(ref theory) = interface {
+                named.push((written.span, theory.theory));
+            }
             if let Some(label) = label {
-                let named = self.name_at(label);
-                if let Some(&first) = labelled_at.get(&named) {
+                let label_name = self.name_at(label);
+                if let Some(&first) = labelled_at.get(&label_name) {
                     return Err(LoweringRefusal::DuplicateDefinition {
                         span: label.span,
-                        name: named,
+                        name: label_name,
                         first,
                     });
                 }
-                let _first = labelled_at.insert(named, label.span);
-                labels.push((label, interface.name().clone()));
+                let _first = labelled_at.insert(label_name, label.span);
+                labels.push((label, interface));
             }
             else {
-                if let Some(&first) = row.get(interface.name()) {
+                if let Some(&(first, _)) = row.get(interface.name()) {
                     return Err(LoweringRefusal::DuplicateDefinition {
                         span: written.span,
-                        name,
+                        name: self.name_at(written),
                         first,
                     });
                 }
-                let _first = row.insert(interface.name().clone(), written.span);
+                let _first = row.insert(interface.name().clone(), (written.span, interface));
             }
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;
@@ -1111,9 +1166,11 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, cursor, TileName::BRACKET_CLOSE)?;
 
         Ok(WrittenRow {
-            interfaces: row.into_keys().collect(),
+            interfaces: row.into_values().map(|(_, interface)| interface).collect(),
             labels,
             placed: Vec::new(),
+            fixed,
+            named,
             tail,
         })
     }
@@ -1157,9 +1214,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - ensures: the returner stands as a computation type, its row's tail
-    ///   read as a value and its argument as a value type under its frame, each
-    ///   label of its row placed at the region its name names there
-    ///   ([`Self::region_named`]), planned over both.
+    ///   read as a value, each type a theory entry fixes a sort to and its
+    ///   argument as value types under its frame, the fixed types minted ahead
+    ///   of the sweep, each label of its row placed at the region its name
+    ///   names there ([`Self::region_named`]), a label of a theory's instance
+    ///   recorded as that theory's capability, and each theory entry's name
+    ///   resolved to the theory's declaration, planned over both.
     /// - fails: the wrong-sort refusal where no computation type is read;
     ///   [`LoweringRefusal::UnresolvedName`] at a label naming no region.
     /// - panics: none.
@@ -1172,6 +1232,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument))]
     pub(super) fn effectful(
         &mut self,
@@ -1181,6 +1242,16 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::CompType)?;
+        // Every operation exercised in the function's body reads the types the
+        // row fixes, and the body stands deeper in the tree than the row.
+        for &ty in &row.fixed {
+            self.read(ty.node, Reading::ValueType(frame));
+            self.fixed_carriers.push(ty);
+        }
+        for &(span, theory) in &row.named {
+            self.resolutions
+                .push((span, crate::Resolution::Declaration(theory)));
+        }
         for &(label, ref interface) in &row.labels {
             let name = self.name_at(label);
             let Some(region) = self.region_named(site, frame, name)
@@ -1190,6 +1261,20 @@ impl<'source> Lowerer<'_, 'source>
                     name,
                 });
             };
+            if let Interface::Theory(ref theory) = *interface {
+                // The label's instance exercises the theory's operations, and
+                // the parameter it binds is the theory's capability.
+                if let Ok(Maybe::Present(Resolved::Binder(bound))) =
+                    self.resolve_name(site, frame, name)
+                {
+                    let _first = self
+                        .theory_capabilities
+                        .insert(bound.binder, Arc::clone(theory));
+                }
+                let _first = self
+                    .instance_theories
+                    .insert(label.node, Arc::clone(theory));
+            }
             row.placed.push((interface.clone(), region));
         }
         if let Maybe::Present(tail) = row.tail {
@@ -1799,7 +1884,7 @@ impl<'source> Lowerer<'_, 'source>
             manifest.push((sort, ty.node));
             stated.push((sort, ty));
         }
-        let interface = self.handled(site, written, &manifest)?;
+        let interface = self.handled(site, written, site.at.node, &manifest)?;
         let held = self.bind(binder, frame)?;
         let _first = self.capabilities.insert(held);
         match interface {
@@ -2010,15 +2095,16 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The interface a capability scope names at `written`, the value sorts
-    /// `manifest` fixes each beside the node of the type it writes.
+    /// The interface a capability scope or a row entry names at `written`, the
+    /// value sorts `manifest` fixes each beside the node of the type it
+    /// writes, a theory's signature minted once for the form at `at`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the host interface of the name, where the host declares one
     ///   and the manifest is empty; otherwise the theory the name resolves to
-    ///   where the scope stands, read as an interface whose value sorts the
-    ///   manifest fixes ([`theory::operations`]), held for the scope.
+    ///   where the form stands, read as an interface whose value sorts the
+    ///   manifest fixes ([`theory::operations`]), held for the form at `at`.
     /// - fails: [`LoweringRefusal::UnresolvedName`] at a manifest sort the
     ///   interface does not declare, a host interface declaring none;
     ///   [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest fixes
@@ -2041,11 +2127,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
     /// - witness: `lower::capability::tests::a_scope_s_manifest_names_only_its_theory_s_sorts_2272`
     /// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
-    #[spec(ensures: |ret| ret.is_err() || manifest.is_empty() || matches!(ret, Ok(Interface::Theory(_))))]
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    #[spec(ensures: |ret| ret.is_err() || manifest.is_empty() || matches!(ret, Ok(Interface::Theory(ref theory)) if theory.scope == at))]
     fn handled(
         &self,
         site: Site,
         written: Placed,
+        at: NodeIndex,
         manifest: &[(Placed, NodeIndex)],
     ) -> Result<Interface, LoweringRefusal<'source>>
     {
@@ -2135,7 +2223,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnownedScope)));
         };
         Ok(Interface::Theory(Arc::new(TheoryInterface {
-            scope: site.at.node,
+            scope: at,
             name: EffectName::from(handled.as_ref()),
             theory,
             rules: theory::rules(&members, &operations, &turns),
@@ -2288,10 +2376,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `argument` and the row's tail are already minted or absent.
     /// - ensures: `F^⟨row⟩ A` at `origin`, each interface named whole at its
-    ///   default label and each label's instance at its region, its tail
-    ///   standing for the row the tail's value denotes; the argument's or the
-    ///   tail's absence when it did not lower, and the unminted absence when
-    ///   two labels name one instance.
+    ///   default label and each label's instance at its region, each a host's
+    ///   signature or a theory's at the types its entry fixes
+    ///   ([`Self::interface_signature`]), its tail standing for the row the
+    ///   tail's value denotes; the argument's, a fixed type's or the tail's
+    ///   absence when it did not lower, and the unminted absence when two
+    ///   labels name one instance.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2300,6 +2390,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::CompType(id)) => sink.origins.comp_type(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -2338,7 +2429,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .map(|&(ref interface, region)| (interface, region));
         for (interface, region) in interfaces.chain(labels) {
-            match sink.signature(interface, origin) {
+            match self.interface_signature(interface, sink, origin) {
                 Maybe::Present(signature) => placed.push((signature, region)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -2423,7 +2514,7 @@ impl<'source> Lowerer<'_, 'source>
         },
         | Maybe::Absent(_) => true,
     })]
-    fn interface_signature(
+    pub(super) fn interface_signature(
         &self,
         interface: &Interface,
         sink: &mut Sink<'_>,

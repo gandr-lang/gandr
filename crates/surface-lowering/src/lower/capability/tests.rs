@@ -21,6 +21,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
@@ -1049,6 +1050,197 @@ fn a_scope_s_manifest_names_only_its_theory_s_sorts_2272()
             ),
             "{name}: {:?}",
             outcome_of(&module, name.into())
+        );
+    }
+}
+
+/// A returner's row names `State` with `S` fixed at `Integer`. Labelled, the
+/// label's capability and the row's instance carry one signature, `get`
+/// replying an integer and `put` sending one, a label after the entry's
+/// manifest is an instance too, and a scope over `State` at `Integer`
+/// discharges the call; whole, beside a host interface, it is a default
+/// instance. Each refusal a scope's manifest meets, the row's meets at the
+/// entry, and a name neither the host nor a theory answers is an unresolved
+/// head.
+#[test]
+fn a_row_names_a_theory_at_the_sorts_it_fixes_2844()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}",
+            "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get() }}\n",
+            "def after() -> -F [st : State with sort S = Integer, out : Console] Integer {{ out.print(\"x\"); st.get() }}\n",
+            "def whole() -> -F [State with sort S = Integer, Console] Unit {{ Console.print(\"x\") }}\n",
+            "def discharged() -> -F Integer {{ handle s : State with sort S = Integer {{ labelled() }} with {{ pure(x) => pure x, oper get(k) => k(7), oper put(v, k) => k(unit) }} }}\n",
+            "def undeclared() -> -F [st : State with sort T = Integer] Integer {{ st.get() }}\n",
+            "def hosted() -> -F [Console with sort S = Integer] Unit {{ pure unit }}\n",
+            "def twice() -> -F [st : State with sort S = Integer with sort S = Integer] Integer {{ st.get() }}\n",
+            "def again() -> -F [State with sort S = Integer, State with sort S = Integer] Unit {{ pure unit }}\n",
+            "def unfixed() -> -F [st : State] Integer {{ st.get() }}\n",
+            "def unknown() -> -F [Nothing with sort S = Integer] Unit {{ pure unit }}\n",
+        ),
+        state = STATE,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Completed { declared_type, .. } =
+        outcome_of(&module, "labelled".into())
+    else {
+        panic!(
+            "labelled: the function lowers: {:?}",
+            outcome_of(&module, "labelled".into())
+        );
+    };
+    let Some(&ValueType::Thunk(at)) = arena.value_type(declared_type)
+    else {
+        panic!("labelled: a function's type is a thunk");
+    };
+    let Some(&(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain })) =
+        arena.comp_type(at)
+    else {
+        panic!("labelled: the label is a parameter");
+    };
+    let Some(&CompType::Returner { ref effects, .. }) = arena.comp_type(codomain)
+    else {
+        panic!("labelled: a returner ends the type");
+    };
+    let (authority, grade, region) = capability(&arena, domain);
+    let instances: Vec<(Region, &EffectSig)> = effects
+        .instances()
+        .map(|(label, signature)| (label.region(), signature))
+        .collect();
+    let &[(placed, signature)] = instances.as_slice()
+    else {
+        panic!("labelled: the row holds the label's instance alone: {instances:?}");
+    };
+    assert_eq!(
+        placed, region,
+        "the capability lives where the instance does"
+    );
+    assert_eq!(grade, CapabilityGrade::Durable);
+    assert_eq!(
+        authority.signatures().collect::<Vec<_>>(),
+        [signature],
+        "the capability holds the instance's signature"
+    );
+    assert_eq!(signature.name().as_ref(), "State");
+    let integer = ValueType::Base(BaseType::Integer);
+    let operations: Vec<(&str, Option<&ValueType>, Option<&ValueType>)> = signature
+        .operations()
+        .map(|operation| {
+            (
+                operation.name.as_ref(),
+                arena.value_type(operation.payload),
+                arena.value_type(operation.reply),
+            )
+        })
+        .collect();
+    assert_eq!(
+        operations,
+        [
+            ("get", Some(&ValueType::unit()), Some(&integer)),
+            ("put", Some(&integer), Some(&ValueType::unit())),
+        ],
+        "`get` replies the fixed sort and `put` sends it"
+    );
+    let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "after".into())
+    else {
+        panic!(
+            "after: the function lowers: {:?}",
+            outcome_of(&module, "after".into())
+        );
+    };
+    let Some(&ValueType::Thunk(mut at)) = arena.value_type(declared_type)
+    else {
+        panic!("after: a function's type is a thunk");
+    };
+    let mut held = Vec::new();
+    while let Some(&(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain })) =
+        arena.comp_type(at)
+    {
+        let (authority, ..) = capability(&arena, domain);
+        held.extend(
+            authority
+                .signatures()
+                .map(|signature| signature.name().as_ref()),
+        );
+        at = codomain;
+    }
+    assert_eq!(
+        held,
+        ["State", "Console"],
+        "the label after the manifest is an instance too"
+    );
+    let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "whole".into())
+    else {
+        panic!(
+            "whole: the function lowers: {:?}",
+            outcome_of(&module, "whole".into())
+        );
+    };
+    let Some(&ValueType::Thunk(at)) = arena.value_type(declared_type)
+    else {
+        panic!("whole: a function's type is a thunk");
+    };
+    let Some(&CompType::Returner { ref effects, .. }) = arena.comp_type(at)
+    else {
+        panic!("whole: a returner is the type");
+    };
+    let mut names: Vec<&str> = effects
+        .signatures()
+        .map(|signature| signature.name().as_ref())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["Console", "State"], "each named whole");
+    for (name, sort) in [("undeclared", "T"), ("hosted", "S")] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name: refused, .. })
+                    if refused == SurfaceName::from(sort)
+            ),
+            "{name}: `{sort}` is no value sort of the interface: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    for (name, again) in [("twice", "S"), ("again", "State")] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { name: refused, .. })
+                    if refused == SurfaceName::from(again)
+            ),
+            "{name}: `{again}` is written once: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "unfixed".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UninterfacedMember { name, fault, .. })
+                if name == SurfaceName::from("S") && fault == InterfaceFault::Unfixed
+        ),
+        "a value sort the row leaves unfixed: {:?}",
+        outcome_of(&module, "unfixed".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "unknown".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead { name, .. })
+                if name == SurfaceName::from("Nothing")
+        ),
+        "neither the host nor a theory answers: {:?}",
+        outcome_of(&module, "unknown".into())
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["labelled", "after", "whole", "discharged"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
         );
     }
 }

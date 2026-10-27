@@ -113,6 +113,9 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `Kovács-2022-staged_compilation_twolevel_type_theorya` — lineage: András Kovács, "Staged Compilation with Two-Level Type Theory", _ICFP_, 2022, `doi:10.1145/3547641` — the splice `~t`.
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-one-kind) — a row entry takes `Model(T) with sort`'s refinement.
+- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design (§ theories-models-manifest-sorts) — the tail `with sort x = A`.
+- `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — lineage: the syntax bikeshed — the row entry's spelling, `T with sort x = A`.
 
 ## License
 

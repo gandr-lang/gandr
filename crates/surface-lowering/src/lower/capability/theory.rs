@@ -68,31 +68,34 @@ use crate::model::PresentedOperation;
 #[cfg(test)]
 mod tests;
 
-/// A theory read as an effect interface, at the scope that handles it.
+/// A theory read as an effect interface, at the scope that handles it or the
+/// row entry that names it at the sorts it fixes.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::lower) struct TheoryInterface
 {
-    /// The capability scope handling the theory, whose signature the mint
-    /// keeps for every form naming it.
+    /// The capability scope handling the theory, or the name of the row
+    /// entry naming it, whose signature the mint keeps for every form naming
+    /// it.
     pub scope: NodeIndex,
     /// The interface's name: the theory's.
     pub name: EffectName,
-    /// The theory's declaration, which the scope's written name refers to.
+    /// The theory's declaration, which the written name refers to.
     pub theory: ConstantIndex,
     /// Each operation, in the theory's order.
     pub operations: Vec<TheoryOperation>,
-    /// Each law, in the theory's order, read for the scope's clauses.
+    /// Each law, in the theory's order, read for a scope's clauses.
     pub laws: Vec<TheoryLaw>,
-    /// Each law the theory's order orients as a rewrite of the scope's
-    /// subject, in the theory's order.
+    /// Each law the theory's order orients as a rewrite of a scope's subject,
+    /// in the theory's order.
     pub rules: Vec<SubjectRule>,
-    /// Each sort the scope's manifest fixes beside the node of the type it
-    /// writes, in the order written.
+    /// Each sort the manifest fixes beside the node of the type it writes, in
+    /// the order written.
     pub manifest: Vec<(Name, NodeIndex)>,
-    /// The declaration whose body holds the scope, which owes the laws.
+    /// The declaration whose body or signature holds the form; for a scope,
+    /// the one that owes the laws.
     pub owner: ConstantIndex,
 }
 

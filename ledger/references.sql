@@ -305,7 +305,12 @@ INSERT INTO reference VALUES('doi:10.4310/hha.2018.v20.n2.a11','theory-sites',''
 INSERT INTO reference VALUES('doi:10.46298/lmcs-18(1:10)2022','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-artifact','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.5281/zenodo.20315616','storage-records','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-dispatcher','cells','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-driver','','background',NULL,NULL,NULL);
