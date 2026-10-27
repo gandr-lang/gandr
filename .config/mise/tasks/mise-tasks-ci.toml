@@ -2203,6 +2203,99 @@ else
 fi
 {% endraw %}'''
 
+# How the pull request obligations are answered (#2886): over the pull
+# requests merged in a period and the unit issues they close, five tables,
+# the lane (the closed unit's first `area:`) as the row and the ISO week of
+# the merge as the column: the unit's Concerns marked `no`, the Sources read
+# items by disposition, the Readings selected and answered at a site, the
+# Refactoring verdicts, the Ledger rows moved. The rule is
+# `.config/claims/obligations.jq`, reading the sections through
+# `sections.jq` as the checks do, its cases held by `check:claims`. No figure
+# is a gate: the coordinator reads the report, and a figure that calls for a
+# change becomes a unit.
+#
+# The period is the month so far (`--since`, `--until` for a hand run,
+# `--lane` to keep one lane). With REPORT_FILE set the nightly writes it on
+# one `collector` issue per month, `report: obligations, <YYYY-MM>`, and
+# closes the previous month's once its last full update is written;
+# without, the report is printed. GH_REPO names the repository.
+["report:obligations"]
+description = "Report how the merged pull requests answer their obligations, by lane and week, on one issue a month"
+usage = '''
+flag "--since <date>" help="the first merge date read, YYYY-MM-DD; the month's first day by default"
+flag "--until <date>" help="the last merge date read, YYYY-MM-DD; today by default"
+flag "--lane <area>" help="keep one lane, its area without the `area:` prefix"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+claims=$root/.config/claims
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+write=${REPORT_FILE:-}
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+# The report for merges from `$1` to `$2` (YYYY-MM-DD),
+# written to `$scratch/body.md`. GitHub's search answers at most 1000
+# results a query, fewer than a month's merges, so the period is read a day
+# at a time.
+render() {
+  local day=$1
+  : > "$scratch/nodes.jsonl"
+  while [[ ! $day > $2 ]]; do
+    gh api graphql --paginate -F q="repo:$repo is:pr is:merged merged:$day" -f query='
+      query($q: String!, $endCursor: String) {
+        search(query: $q, type: ISSUE, first: 50, after: $endCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ... on PullRequest { number mergedAt body
+            closingIssuesReferences(first: 5) { nodes { number body labels(first: 20) { nodes { name } } } } } }
+        }
+      }' --jq '.data.search.nodes[]' >> "$scratch/nodes.jsonl"
+    day=$(date -u -d "$day +1 day" +%Y-%m-%d)
+  done
+  jq -s -c --arg lane "${usage_lane:-}" '[.[]
+      | (.closingIssuesReferences.nodes | map(select(any(.labels.nodes[]; .name | startswith("area:")))) | first) as $unit
+      | {number, merged: .mergedAt, body: (.body // ""), issue: ($unit.body // null),
+         lane: (if $unit == null then "none" else first($unit.labels.nodes[].name | select(startswith("area:")) | ltrimstr("area:")) end)}
+      | select($lane == "" or .lane == $lane)] | sort_by(.merged)' "$scratch/nodes.jsonl" > "$scratch/prs.json"
+  jq -n -c --arg since "$1" --arg until "$2" --slurpfile prs "$scratch/prs.json" \
+    '{since: $since, until: $until, prs: $prs[0]}' \
+    | jq -r -L "$claims" -f "$claims/obligations.jq" > "$scratch/body.md"
+}
+# The open issue titled `$1`, or nothing.
+filed() {
+  gh issue list --repo "$repo" --state open --label collector --search "\"$1\" in:title" --json number,title \
+    | jq -r --arg title "$1" 'first(.[] | select(.title == $title)) | .number'
+}
+since=${usage_since:-$(date -u +%Y-%m-01)}
+until=${usage_until:-$(date -u +%Y-%m-%d)}
+title="report: obligations, ${since::7}"
+if [[ -z $write ]]; then
+  render "$since" "$until"
+  cat "$scratch/body.md"
+  exit 0
+fi
+previous_since=$(date -u -d "${since::7}-01 -1 month" +%Y-%m-01)
+previous_title="report: obligations, ${previous_since::7}"
+previous=$(filed "$previous_title")
+if [[ -n $previous ]]; then
+  render "$previous_since" "$(date -u -d "${since::7}-01 -1 day" +%Y-%m-%d)"
+  gh issue edit "$previous" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  gh issue close "$previous" --repo "$repo" --reason completed > /dev/null
+  echo "closed #$previous: ${previous_since::7} in full"
+fi
+render "$since" "$until"
+number=$(filed "$title")
+if [[ -z $number ]]; then
+  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
+else
+  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  echo "updated #$number"
+fi
+{% endraw %}'''
+
 # The bootstrap census (#2896, rung 0 of #2895): `ledger/census.md`'s block
 # between its `census` markers, the record that picks the first crate to
 # rewrite in gandr. Each workspace crate with a library is read from its

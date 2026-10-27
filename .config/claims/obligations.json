@@ -1,0 +1,42 @@
+[
+  {
+    "name": "#2886: each table has the closed unit's lane as its row and the merge's ISO week as its column; Concerns and Readings read the unit issue, Sources read, Refactoring and Ledger the pull request; a pull request closing no unit counts as `none`, its unit-side cells `—`",
+    "input": {
+      "since": "2026-10-19",
+      "until": "2026-10-27",
+      "prs": [
+        {
+          "number": 10,
+          "merged": "2026-10-20T10:00:00Z",
+          "lane": "workflow",
+          "body": "Closes #5\n\n## Sources read\n\n- `a.jq` — taken: `decide` in `a.jq`\n- `b.md` — taken: the rule\n- `#4` — read: the earlier unit\n- `c.md` — n/a: no surface\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `descent` | answered: `fact` per pull request |\n| Dimension | `rewriting` | answered: no site named |\n\n## Refactoring\n\nno\n\n## Ledger\n\n- `row-a` — implemented\n",
+          "issue": "Brief.\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — none |\n| Locality | `oracle` | no — none |\n| Locality | `descent` | yes — the parts |\n| Place | `located` | no — none |\n| Place | `resident` | no — none |\n| Dimension | `rewriting` | yes — the rule |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — the replay |\n| `sharing` | no |\n"
+        },
+        {
+          "number": 11,
+          "merged": "2026-10-26T10:00:00Z",
+          "lane": "workflow",
+          "body": "Closes #6\n\n## Sources read\n\n- `d.md` — departed: the old shape\n\n## Refactoring\n\nmaybe — one copy\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `x.rs` | two copies |\n\n## Ledger\n\nNone.\n",
+          "issue": null
+        },
+        {
+          "number": 12,
+          "merged": "2026-10-27T09:00:00Z",
+          "lane": "none",
+          "body": "Closes #7\n\nA fix with no sections.\n",
+          "issue": null
+        }
+      ]
+    },
+    "output": "Obligation answers on the pull requests merged from 2026-10-19 to 2026-10-27, by lane (the unit's `area:`) and ISO week of the merge (#2886): 3 pull requests, 1 with a sectioned unit issue. Written each night by `mise run report:obligations`; no figure here is a gate.\n\n### Concerns answered `no`\n\nThe unit issue's `## Concerns` rows marked `no`, of all its rows.\n\n| Lane | 2026-W43 | 2026-W44 |\n| --- | --- | --- |\n| none |  | — |\n| workflow | 2 of 3 no | — |\n\n### Sources read, by disposition\n\nThe pull request's `## Sources read` items by disposition; a `taken:` at a site names it in backquotes.\n\n| Lane | 2026-W43 | 2026-W44 |\n| --- | --- | --- |\n| none |  | — |\n| workflow | taken 2 (1 at a site) · read 1 · n/a 1 | departed 1 |\n\n### Readings selected\n\nThe axes the unit issue selects `yes`, and those the pull request's `## Readings` answers naming a site.\n\n| Lane | 2026-W43 | 2026-W44 |\n| --- | --- | --- |\n| none |  | — |\n| workflow | 2 selected, 1 answered at a site | — |\n\n### Refactoring verdicts\n\nThe pull request's `## Refactoring` verdict; `absent` where it has none.\n\n| Lane | 2026-W43 | 2026-W44 |\n| --- | --- | --- |\n| none |  | absent 1 |\n| workflow | no 1 | maybe 1 |\n\n### Ledger rows moved\n\nThe rows the pull request's `## Ledger` names.\n\n| Lane | 2026-W43 | 2026-W44 |\n| --- | --- | --- |\n| none |  | 0 rows, 1 pull request |\n| workflow | 1 row, 1 pull request | 0 rows, 1 pull request |"
+  },
+  {
+    "name": "#2886: a period with no merge gives its summary line and says so, no empty tables",
+    "input": {
+      "since": "2026-11-01",
+      "until": "2026-11-01",
+      "prs": []
+    },
+    "output": "Obligation answers on the pull requests merged from 2026-11-01 to 2026-11-01, by lane (the unit's `area:`) and ISO week of the merge (#2886): 0 pull requests, 0 with a sectioned unit issue. Written each night by `mise run report:obligations`; no figure here is a gate.\n\nNo pull request merged in the period."
+  }
+]

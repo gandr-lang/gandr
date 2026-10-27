@@ -287,10 +287,13 @@ jobs:
   # set blocked by its open sub-issues, then each dependency an open issue
   # states (an `## After` item, prose naming an open issue, an epic's open
   # sub-issue) that GitHub does not record, on one `report: dependencies`
-  # issue. Only the scheduled run writes; a dispatch prints the report. It
-  # reads the tracker alone, so this job builds nothing.
+  # issue. Then the obligations report (`mise run report:obligations`,
+  # #2886): how the month's merged pull requests answered their obligations,
+  # by lane and week, on one `report: obligations, <month>` issue. Only the
+  # scheduled run writes; a dispatch prints the reports. They read the
+  # tracker alone, so this job builds nothing.
   deps-report:
-    name: report the dependencies GitHub does not record
+    name: report the dependencies GitHub does not record, and the obligations answered
     needs: ci-image-ref
     if: ${{ !cancelled() && !failure() }}
     runs-on: *linux
@@ -310,6 +313,8 @@ jobs:
       - *install-policy-tools
       - name: report the dependencies
         run: mise run report:deps
+      - name: report the obligations answered
+        run: mise run report:obligations
 
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
