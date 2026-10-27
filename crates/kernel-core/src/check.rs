@@ -619,6 +619,54 @@ fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
     .identifying(judgement.entries)
 }
 
+/// `ty`, or the type its code quotes when `ty` decodes a returned code that
+/// normalizes to a quote at the judgement's unfoldings: a decode of a call is
+/// read to the type the call returns.
+///
+/// # Specification
+/// - requires: `ty`, and the body of every definition among the judgement's
+///   entries, live in `arena`.
+/// - ensures: what [`read_decode`] reads the code to when `ty` is a decode of a
+///   returned code it reads to a type; `ty` otherwise.
+/// - provides: the check's one reading of a decode it must see the head of, for
+///   a rule that reads the head of the type a value checks at or is scrutinized
+///   at: the identity at `El(⟨R a b⟩)` is the identity at the type `R a b`
+///   returns, and a binder a case refined to a call returning a data type is
+///   cased on at that data type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a data case on a binder whose type decodes a call
+///   returning a data type's quote is a case over that data type, and one
+///   returning `⌜Unit⌝` is refused with the data shape; a reflexivity at the
+///   diagonal of a relation returning an identity's code checks at the identity
+///   the code quotes.
+/// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| (ret == ty && arena.watermark() == before)
+        || (arena.value_type(ret).is_some()
+            && matches!(arena.value_type(ty), Some(&ValueType::Element { code, .. })
+                if matches!(arena.value(code), Some(Value::Returned(_))))),
+)]
+fn read_returned_decode(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    ty: ValueTypeId,
+) -> ValueTypeId
+{
+    let Some(&ValueType::Element { code, .. }) = arena.value_type(ty)
+    else {
+        return ty;
+    };
+    if !matches!(arena.value(code), Some(Value::Returned(_))) {
+        return ty;
+    }
+    let unfoldings = entry_unfoldings(judgement);
+    read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
+}
+
 /// The shape an introduction form needs of the type it checks at, for the
 /// forms whose check reads that type's head: a record, a list, an injection,
 /// a tuple, a thunk and a reflexivity. Every other value checks by synthesis
@@ -3284,17 +3332,7 @@ where
                     // The decode of a returned code is read to the type the code
                     // quotes, as an introduction form reads it: the identity at
                     // `El(⟨R a b⟩)` is the identity at the type `R a b` returns.
-                    let domain = if let Some(&ValueType::Element { code, .. }) =
-                        arena.value_type(domain)
-                        && matches!(arena.value(code), Some(Value::Returned(_)))
-                    {
-                        let unfoldings = entry_unfoldings(judgement);
-                        read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
-                            .unwrap_or(domain)
-                    }
-                    else {
-                        domain
-                    };
+                    let domain = read_returned_decode(arena, judgement, domain);
                     if mode == crate::identity_recursion::Mode::Bridge {
                         goal = Goal::CheckValue(
                             id,
@@ -4311,10 +4349,14 @@ where
                     produced = Produced::CompType(arena.comp_type_returner(part));
                 },
                 Frame::DataCase { case, motive: at } => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes: a binder a case refined to a call returning a
+                    // data type is cased on at that data type.
+                    let scrutinee = produced.value_type()?;
+                    let scrutinee = read_returned_decode(arena, judgement, scrutinee);
                     // A scrutinee at a stage opens one below it, and a
                     // scrutinee at a looped point's path is split over the
                     // words its free cells mint.
-                    let scrutinee = produced.value_type()?;
                     let (scrutinee_type, opened) =
                         recursion::open_case(arena, judgement.entries, &mut stages, scrutinee)?;
                     // A stratified value at no stage is read at a fresh root,
@@ -8286,6 +8328,98 @@ mod tests
                 })
             ),
             "a fibre decoding to the integers refuses the empty tuple"
+        );
+    }
+
+    /// Admit `Two`, of two constants, then `Σ (t : U (Unit → F Type)).
+    /// U (El(⟨force t ()⟩) → F Unit)` at the pair `(thunk λ_. return
+    /// ⌜quoted⌝, thunk λv. case v { return (), return () })`, with `quoted`
+    /// minted by `quote` from `Two`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_decoded_case(
+        quote: impl FnOnce(&mut TermArena, ValueTypeId) -> ValueTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let two = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            let declaration = staging.data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![]],
+                kind,
+            );
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let code_arrow = mint.comp_type_arrow(unit, returns_code);
+            let first = mint.value_type_thunk(code_arrow);
+            let family = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let forced = mint.computation_force(family);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let code = mint.value_returned(call);
+            let decoded = mint.value_type_element(code, zero);
+            let returns_unit_type = mint.comp_type_returner(unit);
+            let case_arrow = mint.comp_type_arrow(decoded, returns_unit_type);
+            let second = mint.value_type_thunk(case_arrow);
+            let declared = mint.value_type_sigma(first, second);
+
+            let data = mint.value_type_data(two, vec![]);
+            let quoted = quote(mint, data);
+            let quoted = mint.value_quote(quoted);
+            let returns_quote = mint.computation_return(quoted);
+            let code_arm = mint.computation_lambda(returns_quote);
+            let code_thunk = mint.value_thunk(code_arm);
+            let unit_value = mint.value_unit();
+            let returns_unit = mint.computation_return(unit_value);
+            let scrutinee = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let case = mint.computation_data_case(scrutinee, returns_unit_type, vec![
+                returns_unit,
+                returns_unit,
+            ]);
+            let case_arm = mint.computation_lambda(case);
+            let case_thunk = mint.value_thunk(case_arm);
+            let pair = mint.value_tuple(&[code_thunk, case_thunk]);
+            staging.def(LevelSignature::monomorphic(), declared, pair)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A data case on a binder whose type decodes a call returning a data
+    /// type's quote is a case over that data type: the check reads the code
+    /// to the quote it returns before it reads the scrutinee's shape (#2872).
+    /// A call returning `⌜Unit⌝` is no data type, and the case is refused
+    /// with the data shape, so the reading is the one that separates the two.
+    #[test]
+    fn a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|_mint, data| data),
+            "the binder decodes to the data type its code returns"
+        );
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit());
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Data,
+                    ..
+                })
+            ),
+            "a binder decoding to the unit type is no data case's: {refused:?}"
         );
     }
 
