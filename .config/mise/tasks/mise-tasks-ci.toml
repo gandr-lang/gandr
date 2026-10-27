@@ -1581,8 +1581,9 @@ printf '#%s %s\n' "$number" "$title"
 # change from `<base>` to the head (`HEAD` by default) adds, edits or removes
 # in `ledger/features.sql`, and the rows the body's `## Ledger` names, and
 # prints one refusal per row out of step (`.config/claims/ledger.jq`): a
-# named row untouched or unknown, a touched row unnamed, and with `--pr` a
-# named row whose `since` lacks `#<n>`. Exits 1 on a refusal. `pr:land` runs
+# named row untouched or unknown, a touched row unnamed, a touched declined
+# row naming only issues the body closes (#2848), and with `--pr` a named row
+# whose `since` lacks `#<n>`. Exits 1 on a refusal. `pr:land` runs
 # it on the pull request with its number and refuses; `pr:open` runs it
 # without one and prints each line as a note. The tables reach jq through
 # files, never as arguments: a table past the argument limit (#2671) would
@@ -1612,7 +1613,7 @@ findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null
   '($base | add // []) as $base | ($head | add // []) as $head
    | (INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
    | {pr: $pr, body: $body, rows: [$head[].id],
-      touched: ([$head[] | select($was[.id] != .) | {id, since, status}] + [$base[] | select($now[.id] == null) | {id, since: null, status: null}])}' \
+      touched: ([$head[] | select($was[.id] != .) | {id, since, status, issue}] + [$base[] | select($now[.id] == null) | {id, since: null, status: null, issue: null}])}' \
   | jq -r -L "$root/.config/claims" -f "$root/.config/claims/ledger.jq")
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''
