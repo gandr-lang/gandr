@@ -29,7 +29,8 @@ path = "tests/lib.rs"
 # source above its crossover through memmap2. The `ledger` verb writes the
 # syntax ledger's machine form through serde_json. A package's manifest
 # carries the BLAKE3 digest of its body, through blake3, so the checker
-# tells its own file from a hand edit.
+# tells its own file from a hand edit; its address is the BLAKE3 digest of
+# its items' content keys, which the incremental checker's program states.
 # A closure's judgement is held in a self_cell with the closure's lowering,
 # whose names it borrows.
 # The pinned anodized facade supplies core-only specification helpers;
@@ -39,6 +40,7 @@ path = "tests/lib.rs"
 anodized.workspace = true
 blake3.workspace = true
 gandr-core-checker.workspace = true
+gandr-core-incremental.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true

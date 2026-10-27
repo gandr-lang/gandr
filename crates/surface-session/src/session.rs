@@ -6,8 +6,8 @@
 //! A submission lowers its revision once. The lowered module goes two ways:
 //! the dispatcher's [`judge`](gandr_surface_dispatcher::judge) judges and
 //! settles it, which is the report — the same verdicts `gandr check` gives the
-//! text — and the item source's [`program`] offers the same declarations to the
-//! incremental checker, which adopts every checkpoint that still answers,
+//! text — and the dispatcher's [`item_program`] offers the same declarations to
+//! the incremental checker, which adopts every checkpoint that still answers,
 //! judges the rest and persists the set. A revision the lowering refuses as a
 //! whole is reported and leaves the session as it was.
 //!
@@ -347,6 +347,7 @@ use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::judge_member;
 use gandr_surface_dispatcher::judge_member_after_retiring;
 use gandr_surface_dispatcher::judge_member_tabled_retiring;
@@ -389,7 +390,6 @@ use crate::edit::Snapshot;
 use crate::edit::diff;
 use crate::forms::FormCensus;
 use crate::forms::FormStore;
-use crate::item_source::program;
 use crate::lowerings;
 use crate::lowerings::Closure;
 use crate::lowerings::Held;
@@ -2007,7 +2007,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 ),
                 Lowered::Module { module, arena } => {
                     let deprecations = deprecations_of(&module, &arena, SourceIndex::from(0_usize));
-                    let program = program(&module, arena).map_err(SessionFault::Unordered)?;
+                    let program = item_program(&module, arena).map_err(SessionFault::Unordered)?;
                     let address = address_of(&program).map_err(SessionFault::Store)?;
                     let restored = match restore(&mut store, &program, address, backend, &mut Quiet)
                         .map_err(SessionFault::Store)?
@@ -2787,7 +2787,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         // nodes when it lowered onto a judged closure's frozen arena; the
         // reversal is a report assembled from the resume's own verdicts, which
         // retires the whole-module judgement and this copy with it.
-        let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
+        let mut items = item_program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
         let deprecations = deprecations_of(&module, &arena, own);

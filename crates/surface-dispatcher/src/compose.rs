@@ -3958,6 +3958,116 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
     declarations
 }
 
+/// The program `module` lowers to, over the `arena` it was minted in: the
+/// items the incremental checker resumes over and a package's address is
+/// digested from.
+///
+/// # Specification
+/// - requires: `module` was lowered into `arena`.
+/// - ensures: one item per declaration the lowering did not refuse, in
+///   admission order, keyed by the declaration's name as written and carrying
+///   exactly the declaration [`adapt`] gives the checker for it.
+/// - provides: the program the incremental checker resumes over, which holds
+///   the declarations the batch judgement checks and no other, and whose items'
+///   content keys a package's address digests.
+/// - fails: [`gandr_core_incremental::ProgramError::PositionOrder`] when two
+///   kept declarations' admission positions do not ascend.
+/// - panics: none.
+///
+/// # Errors
+/// - [`gandr_core_incremental::ProgramError::PositionOrder`]: the lowering
+///   assigned positions out of order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lowered module with a refused middle declaration, an
+///   explicit signature and an owed body; exact name keys, skipped admission
+///   positions and declaration payloads distinguish retaining refusals,
+///   reordering, misnaming and losing signature/body/origin data. Arena
+///   provenance is a caller premise, not inferred from local identifiers.
+/// - witness: `tests::package::each_unrefused_declaration_is_one_item_keyed_by_its_name`
+#[spec(
+    ensures: |ret| match ret {
+    Ok(ref result) => {
+        result.items().len()
+            == module
+                .declarations()
+                .iter()
+                .filter(|lowered| {
+                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .count()
+            && result
+                .items()
+                .iter()
+                .zip(
+                    module
+                        .declarations()
+                        .iter()
+                        .filter(|lowered| {
+                            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                        }),
+                )
+                .all(|(item, lowered)| {
+                    let declaration = item.declaration();
+                    item.key().as_ref() == lowered.name().as_ref().as_bytes()
+                        && declaration.constant() == lowered.constant()
+                        && usize::from(declaration.origin())
+                            == usize::from(lowered.origin())
+                        && match (lowered.outcome(),declaration.content()) {
+                            (DeclarationOutcome::Completed {declared_type,body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Present(value)}) => signature == declared_type && value == body,
+                            (DeclarationOutcome::Uncompleted {declared_type},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Absent(_)}) => signature == declared_type,
+                            (DeclarationOutcome::Bodied {body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(_),body:Maybe::Present(value)}) => value == body,
+                            (DeclarationOutcome::Data(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
+                            (DeclarationOutcome::Codata(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Codata(ref held) if module.codata(index) == Maybe::Present(held)),
+                            (DeclarationOutcome::Abstract(sealing),&gandr_core_checker::DeclarationContent::Abstract(sealed)) => sealed.kind() == sealing.kind && sealed.representation() == sealing.representation && sealed.extent() == sealing.extent,
+                            (DeclarationOutcome::World, &gandr_core_checker::DeclarationContent::World) => true,
+                            _ => false,
+                        }
+                })
+    }
+    Err(gandr_core_incremental::ProgramError::PositionOrder { ordinal, position, previous }) => {
+        position <= previous
+            && module
+                .declarations()
+                .iter()
+                .filter(|lowered| {
+                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .nth(usize::from(ordinal))
+                .is_some_and(|lowered| lowered.constant() == position)
+            && usize::from(ordinal)
+                .checked_sub(1_usize)
+                .and_then(|before| {
+                    module
+                        .declarations()
+                        .iter()
+                        .filter(|lowered| {
+                            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                        })
+                        .nth(before)
+                })
+                .is_some_and(|lowered| lowered.constant() == previous)
+    }
+},
+)]
+#[inline]
+pub fn item_program(
+    module: &LoweredModule<'_>,
+    arena: CoreArena,
+) -> Result<gandr_core_incremental::Program, gandr_core_incremental::ProgramError>
+{
+    let keys = module
+        .declarations()
+        .iter()
+        .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
+        .map(|lowered| gandr_core_incremental::ItemKey::from(lowered.name().as_ref()));
+    let items = keys
+        .zip(adapt(module))
+        .map(|(key, declaration)| gandr_core_incremental::Item::new(key, declaration))
+        .collect();
+    gandr_core_incremental::Program::new(arena, items)
+}
+
 /// The checker's abstract type for the sealing the lowering recorded: its
 /// kind, representation and extent, at the site its sealing module and
 /// component number, mobile exactly when its signature marks it, relating

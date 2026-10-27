@@ -44,7 +44,6 @@ use gandr_surface_session::Snapshot;
 use gandr_surface_session::SourceEdit;
 use gandr_surface_session::apply;
 use gandr_surface_session::diff;
-use gandr_surface_session::program;
 use gandr_surface_session::resumed;
 use gandr_surface_syntax::SourceText;
 use proptest::prelude::ProptestConfig;
@@ -108,7 +107,7 @@ fn snapshot<'text>(text: impl Into<Text<'text>>) -> Snapshot
     else {
         panic!("the lowering reads a module: {text:?}");
     };
-    let program = program(&module, arena).expect("positions ascend");
+    let program = gandr_surface_dispatcher::item_program(&module, arena).expect("positions ascend");
     Snapshot::of(&program, module.origins())
 }
 

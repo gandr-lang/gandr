@@ -1845,6 +1845,26 @@ fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentKey(ContentDigest);
 
+impl ContentKey
+{
+    /// Feed the key to `hasher` as its sixteen bytes: its digest's high word,
+    /// then its low word, each little-endian, as the key was read off the
+    /// content's hash.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn digest_into(
+        self,
+        hasher: &mut blake3::Hasher,
+    )
+    {
+        let _digested = hasher
+            .update(&u64::from(self.0.high()).to_le_bytes())
+            .update(&u64::from(self.0.low()).to_le_bytes());
+    }
+}
+
 /// The content key of each of `program`'s items, in order: what a pool keys
 /// the work on an item by, so that work whose item's key a newer revision
 /// keeps need not be retired.

@@ -1943,6 +1943,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::SpellingCount','struct
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Unheld','enum','Why an import closure''s lowering is not held for the documents laid after it: each such document is lowered with its closure, whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::adapt','function','The checker''s input for `module`: every declaration the lowering did not refuse, in admission order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::compose','function','Carry one source through the pipeline: parse, lower, adapt, check, settle.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::item_program','function','Key each declaration the lowering did not refuse by its name: the program the incremental checker resumes over and a package''s address digests.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::judge','function','Judge and settle one lowered module, its kernel admission left to run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::judge_member','function','Judge and settle one lowered unit, reporting the source that starts at `base`: judge projected onto the unit''s last source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::judge_member_after','function','Judge_member of a module checked as `checking` says.',NULL,'fits','sound',NULL);
@@ -2008,10 +2009,12 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryRepor
 INSERT INTO purpose VALUES('surface-dispatcher','package::Field','enum','A field of the `Package` model a manifest records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::LIBRARY','constant','The file name of a package''s library, the source that declares the package''s model.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::MANIFEST','constant','The file name of the manifest the checker writes at a package''s root.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::Manifest','struct','What a package''s model states for its manifest: its name and its version.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Manifest','struct','What a package''s model states for its manifest: its name, its version and the inert fields beside them, and its modules.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::ManifestFault','enum','Why a manifest was not reconciled: it was edited by hand, or could not be read or written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Package','struct','A package: its library and the root its manifest is written at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::PackageAddress','struct','A package''s address: the digest of its items'' content keys, its models'' inert components left out.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Reconciled','enum','What reconciling a manifest did to it: written, rewritten or left unchanged.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Unaddressed','enum','Why a package has no address: a source that does not read or lower, or an item the lowering refused or no content key names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unmanifested','enum','Why a library''s model gives no manifest: a field it does not declare, or one that runs to no string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unpathed','enum','Why a verb has no paths to walk: no path given in no package and no workspace, or a workspace naming no packages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package and a workspace''s directory to its members, and the packages they reach.',NULL,'fits','sound',NULL);
@@ -2438,6 +2441,7 @@ INSERT INTO purpose VALUES('surface-lowering','module::FlattenedSlot','struct','
 INSERT INTO purpose VALUES('surface-lowering','module::Forgetting','struct','Holds a forgetting, so the forgetting''s sorts are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::HalfAt','struct','Holds a declaration''s half at a position, so the half''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::Halves','struct','Holds a declaration''s halves, so the halves'' positions are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::Inertness','enum','Names whether a declaration is a model''s inert component, so a package''s address leaves it out.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::LoweredDeclaration','struct','Holds a lowered declaration, so the declaration''s outcome is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::LoweredModule','struct','Holds a lowered module, so the module''s declarations are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::LoweredStructure','struct','Holds a lowered structure, so the structure''s components are read.',NULL,'fits','sound',NULL);
@@ -2933,7 +2937,6 @@ INSERT INTO purpose VALUES('surface-session','forms::FormCount','struct','Names 
 INSERT INTO purpose VALUES('surface-session','item_source::Revision','struct','Holds a revision''s items, so the items'' declarations are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::RevisionFault','enum','Names why a revision''s item source faults, so the fault''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::SurfaceItems','struct','Holds the same lowering behind the incremental checker''s item source, so the items'' declarations are read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-session','item_source::program','function','Keys each declaration the lowering did not refuse by its name, so the program the incremental checker resumes over is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','live_match::MatchAnalysis','struct','Holds a match''s analysis, so the analysis''s arms are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','live_match::MatchCheckpoint','struct','Holds an evaluated scrutinee, so the checkpoint''s value is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','live_match::MatchRun','enum','Names a match''s run, so the run''s kind is read.',NULL,'fits','sound',NULL);

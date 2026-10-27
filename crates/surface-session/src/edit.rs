@@ -4226,6 +4226,7 @@ mod tests
     use gandr_core_incremental::ItemOrdinal;
     use gandr_surface_dispatcher::Lowered;
     use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::item_program;
     use gandr_surface_dispatcher::lower_source;
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::ByteSpan;
@@ -4239,7 +4240,6 @@ mod tests
     use super::SourceEdit;
     use super::children;
     use super::located;
-    use crate::item_source::program;
 
     /// The snapshot of `text`, which the lowering must read as a module.
     ///
@@ -4275,7 +4275,7 @@ mod tests
         else {
             panic!("the lowering reads a module: {text:?}");
         };
-        let program = program(&module, arena).expect("positions ascend");
+        let program = item_program(&module, arena).expect("positions ascend");
         Snapshot::of(&program, module.origins())
     }
 
@@ -5034,7 +5034,7 @@ def body = 1 ;
             else {
                 panic!("the lowering reads a module: {text:?}");
             };
-            let program = program(&module, arena).expect("positions ascend");
+            let program = item_program(&module, arena).expect("positions ascend");
             (program, module)
         };
         let (first, first_module) = read(

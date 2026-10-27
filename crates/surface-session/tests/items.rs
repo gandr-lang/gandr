@@ -4,61 +4,21 @@
 use core::fmt;
 use core::fmt::Write as _;
 
-use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::ItemSource as _;
 use gandr_core_incremental::ProgramError;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
-use gandr_surface_dispatcher::Lowered;
-use gandr_surface_dispatcher::LoweringCount;
-use gandr_surface_dispatcher::lower_source;
 use gandr_surface_session::Revision;
 use gandr_surface_session::RevisionFault;
 use gandr_surface_session::SurfaceItems;
 use gandr_surface_session::fault_span;
-use gandr_surface_session::program;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::common::RefusingWriter;
 use crate::common::grammar;
-
-#[test]
-fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
-{
-    let grammar = &*crate::common::GRAMMAR;
-    let mut lowerings = LoweringCount::default();
-    let lowering = lower_source(
-        grammar,
-        SourceText::from(
-            "def first : Integer ; def first = 1 ; def broken = missing ; def owed : String ; def last = first ;",
-        ),
-        &mut lowerings,
-    )
-    .expect("lowers");
-    let Lowered::Module { module, arena } = lowering.into_lowered()
-    else {
-        panic!("the module is read");
-    };
-    let program = program(&module, arena).expect("positions ascend");
-    let keys: Vec<&ItemKey> = program
-        .items()
-        .iter()
-        .map(gandr_core_incremental::Item::key)
-        .collect();
-    assert_eq!(
-        keys,
-        vec![
-            &ItemKey::from("first"),
-            &ItemKey::from("owed"),
-            &ItemKey::from("last")
-        ],
-        "one item per unrefused declaration, keyed by its name, in admission order"
-    );
-}
 
 #[test]
 fn the_item_source_offers_a_revision_or_names_its_fault()

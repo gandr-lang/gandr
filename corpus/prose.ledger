@@ -140,7 +140,7 @@ corpus/ledger/features/implicit-arguments.gandr Tense 9dd4a82be3a4ae21
 corpus/ledger/features/indexed-data.gandr Tense e2e49454b338544c
 corpus/ledger/features/indexed-sorts.gandr Tense a8801bb6141675f7
 corpus/ledger/features/indexed-sorts.gandr Tense d971dc37d6967020
-corpus/ledger/features/inert-fields.gandr Passive cc52da0840205b86
+corpus/ledger/features/inert-fields.gandr Passive 043a50d62f5e763a
 corpus/ledger/features/inert-fields.gandr Tense 4362c9f11e50da5b
 corpus/ledger/features/invertible-cells.gandr Passive 96dd4374b9a7f198
 corpus/ledger/features/invertible-cells.gandr Tense 9290f5a021daca19

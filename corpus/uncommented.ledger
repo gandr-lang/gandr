@@ -2258,8 +2258,6 @@ model/programs/env-guard-exit.gandr:comment:298c937263d948a8 unshaped:ItemShape
 model/projects/hello/src/lib.gandr:<file> unshaped:HeadParagraphs
 model/projects/hello/src/lib.gandr:<file> unshaped:ReferenceOutsideReferences
 model/projects/hello/src/lib.gandr:<file> unshaped:Semicolon
-model/projects/hello/src/lib.gandr:Package.name:0f0046983eef4f6b uncommented
-model/projects/hello/src/lib.gandr:Package.version:8305a12205f387d3 uncommented
 model/projects/hello/src/text/greet.gandr:<file> unshaped:HeadParagraphs
 model/projects/hello/src/text/greet.gandr:<file> unshaped:ReferenceOutsideReferences
 model/projects/hello/src/text/greet.gandr:<file> unshaped:Semicolon
@@ -2267,8 +2265,6 @@ model/projects/hello/src/text/greet.gandr:<file> unshaped:SentenceLength
 model/projects/hello/src/text/greet.gandr:<file> unshaped:WhatLength
 model/projects/tools/lib.gandr:<file> unshaped:HeadParagraphs
 model/projects/tools/lib.gandr:<file> unshaped:ReferenceOutsideReferences
-model/projects/tools/lib.gandr:Package.name:2158cf86606a9f25 uncommented
-model/projects/tools/lib.gandr:Package.version:8305a12205f387d3 uncommented
 model/projects/workspace.gandr:<file> unshaped:HeadParagraphs
 model/projects/workspace.gandr:<file> unshaped:ReferenceOutsideReferences
 model/projects/workspace.gandr:<file> unshaped:SentenceLength

@@ -467,6 +467,7 @@ pub use crate::module::Forgetting;
 pub use crate::module::FunctorIndex;
 pub use crate::module::HalfAt;
 pub use crate::module::Halves;
+pub use crate::module::Inertness;
 pub use crate::module::InstanceIndex;
 pub use crate::module::LoweredDeclaration;
 pub use crate::module::LoweredModule;
