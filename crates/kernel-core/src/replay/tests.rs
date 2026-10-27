@@ -1565,6 +1565,57 @@ fn a_projection_runs_its_side_of_a_pairing()
     );
 }
 
+/// #2833: a partial fixpoint whose body never reads its own binder is a
+/// definition, and unfolds at its gate. `isZero`, with no recursive call, at
+/// `Zero` converts with `return unit`; the same fixpoint naming itself in its
+/// zero arm still declines.
+#[test]
+fn a_partial_fixpoint_that_never_reads_itself_unfolds_at_its_gate_2833()
+{
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let unit = arena.value_unit();
+    let motive = arena.comp_type_returner(nat);
+    let returns_unit = arena.computation_return(unit);
+    let on_successor = arena.computation_lambda(returns_unit);
+    let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let cases =
+        arena.computation_data_case(argument, motive, alloc::vec![returns_unit, on_successor]);
+    let body = arena.computation_lambda(cases);
+    let unread = arena.computation_fixpoint(body, FixpointEvidence::Partial);
+    let applied = arena.computation_application(unread, zero);
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(applied, returns_unit),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Convertible
+    );
+    // Under the fixpoint's lambda its own binder is index 1.
+    let own = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let again = arena.computation_force(own);
+    let again = arena.computation_application(again, zero);
+    let reading = arena.computation_data_case(argument, motive, alloc::vec![again, on_successor]);
+    let reading = arena.computation_lambda(reading);
+    let read = arena.computation_fixpoint(reading, FixpointEvidence::Partial);
+    let applied = arena.computation_application(read, zero);
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(applied, returns_unit),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Declined(ReplayDecline::PartialFixpoint)
+    );
+}
+
 #[test]
 fn a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first()
 {
