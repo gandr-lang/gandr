@@ -10960,9 +10960,18 @@ impl Walk<'_, '_>
                 let second = self.pop()?;
                 let first = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let label = match self.free_label(written) {
-                    Some(name) => self.leaf(Glyphs(name.0.as_str()))?,
-                    None => self.binder(OpenBinders(1_usize))?,
+                let label = if let Some(name) = self.free_label(written) {
+                    self.leaf(Glyphs(name.0.as_str()))?
+                }
+                else {
+                    // Unrecorded, the label is the first generated name no
+                    // binder around the pair, nor the pair's own, holds: the
+                    // position past the pair's binder opens none, so what a
+                    // binder inside the pair last left there names nothing
+                    // here (#3278).
+                    self.names
+                        .truncate(self.opened.len().saturating_add(1_usize));
+                    self.binder(OpenBinders(1_usize))?
                 };
                 let open = self.leaf(Glyphs("#{"))?;
                 let colon = self.leaf(Glyphs(" : "))?;

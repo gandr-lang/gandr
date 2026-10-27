@@ -23,6 +23,7 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_diagnostics::Families;
+use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::model_slots;
 use gandr_surface_diagnostics::telescopes;
@@ -868,6 +869,28 @@ struct Read
     unfaithful: Vec<String>,
 }
 
+/// Each pair of `named` with the name `text` writes at its span, ascending by
+/// pair.
+///
+/// # Specification
+/// trivial.
+fn written_at<'text>(
+    named: &[(ValueTypeId, ByteSpan)],
+    text: SourceText<'text>,
+) -> Vec<(ValueTypeId, Name<'text>)>
+{
+    let text: &str = text.into();
+    let mut written: Vec<(ValueTypeId, Name<'text>)> = named
+        .iter()
+        .filter_map(|&(pair, span)| {
+            text.get(usize::from(span.start()) .. usize::from(span.end()))
+                .map(|name| (pair, Name::from(name)))
+        })
+        .collect();
+    written.sort_by_key(|&(pair, _)| pair);
+    written
+}
+
 /// Each completed declaration `written` writes as a `def`, read by the
 /// printer in both forms; nothing when the source does not lower. A
 /// `theory` block is left out: the parity writes a declaration back as a
@@ -993,8 +1016,14 @@ fn read(
     maps.sort_by_key(|&(map, _)| map);
     let implicits = telescopes(&module);
     let slots = model_slots(&module);
+    // Each dependent pair's binder and second label as the source writes
+    // them, as the language server's spellings name them (#3278).
+    let naming = Naming::of(&module, SourceText::from(text.as_str()));
+    let pairs = written_at(naming.pairs(), SourceText::from(text.as_str()));
+    let seconds = written_at(naming.seconds(), SourceText::from(text.as_str()));
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
+        .naming_pairs(&pairs, &seconds)
         .crossing(&crossings)
         .forgetting(&forgettings)
         .forgetting_maps(&maps)
