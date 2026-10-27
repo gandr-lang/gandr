@@ -1993,6 +1993,17 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::ShownFeature'
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum','Where a feature stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Field','enum','A field of the `Package` model a manifest records.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::LIBRARY','constant','The file name of a package''s library, the source that declares the package''s model.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::MANIFEST','constant','The file name of the manifest the checker writes at a package''s root.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Manifest','struct','What a package''s model states for its manifest: its name and its version.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::ManifestFault','enum','Why a manifest was not reconciled: it was edited by hand, or could not be read or written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Package','struct','A package: its library and the root its manifest is written at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Reconciled','enum','What reconciling a manifest did to it: written, rewritten or left unchanged.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Unmanifested','enum','Why a library''s model gives no manifest: a field it does not declare, or one that runs to no string.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Unpackaged','struct','A verb run with no path from a directory in no package.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package, and the packages they reach.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a package''s manifest to what its model states, refusing one edited by hand.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The driver''s worker threads: one pool at one width, started on the first fork that has two items or more and reused by every later fork.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::PoolFault','struct','Why the driver''s pool could not start.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Goals','enum','What `check` does with a declaration unsettled by its obligations alone.',NULL,'fits','sound',NULL);
@@ -2359,6 +2370,7 @@ INSERT INTO purpose VALUES('surface-lowering','lower::LoweringBudget','struct','
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::CarriedOrigins','struct','Holds the origins a closure''s lowering carries, so the closure''s origins are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::ClosureLowering','struct','Holds a closure''s lowering, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::Onto','enum','Names the target a closure''s lowering lowers onto, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','lower::decode_escapes','function','Decode a string literal''s escapes into the text its content stands for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::entry::Arguments','enum','Names the arguments an entry''s shape takes, so the entry''s shape is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::entry::ENTRY','constant','Names the entry''s shape, so the entry''s shape is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::entry::entry_shape','function','Names the shape an entry takes, so the entry''s shape is read.',NULL,'fits','sound',NULL);

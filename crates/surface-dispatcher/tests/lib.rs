@@ -16,6 +16,8 @@ mod differential;
 #[cfg(test)]
 mod entries;
 #[cfg(test)]
+mod package;
+#[cfg(test)]
 mod parity;
 #[cfg(test)]
 mod run;

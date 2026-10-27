@@ -910,6 +910,7 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "gandr-core-checker",
  "gandr-core-nbe",
  "gandr-core-sequent",
