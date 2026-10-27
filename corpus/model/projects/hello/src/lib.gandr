@@ -1,7 +1,7 @@
 // #2687: a package is the sources beside its library, `src/lib.gandr`,
 // rooted at the directory above `src`. The library declares the package's
 // model, and `gandr check` writes `gandr.toml` at the root from it.
-import text.greet;
+import text.greet (greeting);
 
 /// The package: its name and its version, as `gandr.toml` records them.
 pub module Package : Model(Gandr.Package) {
@@ -12,3 +12,7 @@ pub module Package : Model(Gandr.Package) {
 /// The greeting, read from the module `text.greet` by its path.
 @[ runs("\"hello, world\"") ]
 pub def welcome = text.greet.greeting;
+
+/// The greeting again, by the name the import lists.
+@[ runs("\"hello, world\"") ]
+pub def hello = greeting;

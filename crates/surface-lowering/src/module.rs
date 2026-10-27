@@ -310,6 +310,7 @@ use crate::import::ImportIndex;
 use crate::import::ImportResolution;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
+use crate::import::Opens;
 use crate::lower::ElidableExit;
 use crate::lower::Fuel;
 use crate::lower::InferredExit;
@@ -1786,7 +1787,8 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the slot one source `source` imports unqualified declares at
-    ///   its top level under `name` and exports, with that import's bytes; two
+    ///   its top level under `name` and exports, with that import's bytes; an
+    ///   import with a list imports unqualified only the names it lists. Two
     ///   such imports answering two slots are [`Ambiguity`], naming both
     ///   imports; an import whose address did not resolve to a source of the
     ///   unit answers nothing, and neither does a declaration its source keeps
@@ -1822,7 +1824,7 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(SlotIndex, ByteSpan), imported::Absent>, Ambiguity>
     {
-        self.through_imports(source, |target| {
+        self.through_imports(source, name, |target| {
             self.by_name
                 .get(&(Container::TopLevel(target), name))
                 .copied()
@@ -1859,8 +1861,8 @@ impl<'source> Collected<'source>
     {
         let mut found = Maybe::Absent(imported::Absent::Unbound);
         for import in self.imports.of(source) {
-            let (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target))) =
-                (import.binding(), import.resolution())
+            let (ImportResolution::Path(ImportTarget::Source(target)), Opens(true)) =
+                (import.resolution(), import.opens(name))
             else {
                 continue;
             };
@@ -1881,6 +1883,63 @@ impl<'source> Collected<'source>
             }
         }
         found
+    }
+
+    /// What `name`, listed by an import of `target`, names among `target`'s
+    /// top level: its visibility and the bytes of the name it is declared
+    /// by.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first of a top-level declaration, a constructor, a type
+    ///   component and a module of `target` named `name`, with the visibility
+    ///   [`Self::slot_visibility`] or [`Self::structure_visibility`] reads for
+    ///   it, a constructor its family's; none when `target` declares no such
+    ///   name.
+    /// - provides: the check of an import list's names.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the receiver's tables,
+    ///   which a clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a listed name its module lacks, and one it keeps
+    ///   private, are each refused at the list.
+    /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
+    pub(crate) fn listed_in(
+        &self,
+        target: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Option<(Visibility, ByteSpan)>
+    {
+        let slot_at = |slot: SlotIndex| {
+            self.slots
+                .get(usize::from(slot))
+                .map(|found| (self.slot_visibility(slot), found.named.span))
+        };
+        let top = Container::TopLevel(target);
+        self.by_name
+            .get(&(top, name))
+            .and_then(|&slot| slot_at(slot))
+            .or_else(|| {
+                self.constructors
+                    .get(&(target, name))
+                    .map(|found| (self.slot_visibility(found.family), found.named.span))
+            })
+            .or_else(|| {
+                let member = self
+                    .type_members_in(top)
+                    .filter(|member| member.name == name)
+                    .last()?;
+                slot_at(member.held)
+            })
+            .or_else(|| {
+                self.modules.get(&(top, name)).and_then(|&module| {
+                    self.structures
+                        .get(module.0)
+                        .map(|entry| (self.structure_visibility(module), entry.named.span))
+                })
+            })
     }
 
     /// Whether the source declaring `slot` exports it: a `pub` mark precedes
@@ -1989,11 +2048,12 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the slot of the unit's `Theory` when `source`, a source one
-    ///   of its unqualified imports resolves to, or the unit's prelude, stands
-    ///   among [`Self::theory_sources`]; [`theory_slot::Absent::Unminted`] when
-    ///   the unit holds no code; [`theory_slot::Absent::Unseen`] otherwise. The
-    ///   answer does not depend on which of those sources minted the code, so a
-    ///   source names `Theory` alike whatever the unit lays before it.
+    ///   of its imports opening `Theory` resolves to, or the unit's prelude,
+    ///   stands among [`Self::theory_sources`];
+    ///   [`theory_slot::Absent::Unminted`] when the unit holds no code;
+    ///   [`theory_slot::Absent::Unseen`] otherwise. The answer does not depend
+    ///   on which of those sources minted the code, so a source names `Theory`
+    ///   alike whatever the unit lays before it.
     /// - provides: the fallback that resolves `Theory` in a source whose block
     ///   took the code another source minted, and in its importers.
     /// - fails: never.
@@ -2019,10 +2079,9 @@ impl<'source> Collected<'source>
         let holds = |held: SourceIndex| self.theory_sources.contains(&held);
         let imported = self.imports.of(source).any(|import| {
             matches!(
-                (import.binding(), import.resolution()),
-                (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target)))
-                    if holds(target)
-            )
+                import.resolution(),
+                ImportResolution::Path(ImportTarget::Source(target)) if holds(target)
+            ) && import.opens(SurfaceName::from(THEORY_CODE)).0
         }) || self.unit.prelude().is_some_and(holds);
         if holds(source) || imported {
             Maybe::Present(theory.slot)
@@ -2069,7 +2128,7 @@ impl<'source> Collected<'source>
     ) -> Result<Maybe<(Constructor, ByteSpan), imported::Absent>, Ambiguity>
     {
         let prelude = self.unit.prelude();
-        self.through_imports(source, |target| {
+        self.through_imports(source, name, |target| {
             self.constructors
                 .get(&(target, name))
                 .copied()
@@ -2110,7 +2169,7 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(TypeComponent<'source>, ByteSpan), imported::Absent>, Ambiguity>
     {
-        self.through_imports(source, |target| {
+        self.through_imports(source, name, |target| {
             self.type_members_in(Container::TopLevel(target))
                 .filter(|member| member.name == name)
                 .last()
@@ -2149,7 +2208,7 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(StructureIndex, ByteSpan), imported::Absent>, Ambiguity>
     {
-        self.through_imports(source, |target| {
+        self.through_imports(source, name, |target| {
             self.modules
                 .get(&(Container::TopLevel(target), name))
                 .copied()
@@ -2161,13 +2220,15 @@ impl<'source> Collected<'source>
         })
     }
 
-    /// What `lookup` answers in the sources `source` imports unqualified, the
-    /// unit's prelude among them after every written import.
+    /// What `lookup` answers for `name` in the sources `source` imports
+    /// unqualified, the unit's prelude among them after every written import.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], `lookup` standing for the table
-    ///   read in each imported source and deciding what it keeps private.
+    ///   read in each imported source and deciding what it keeps private; an
+    ///   import is read only where it opens `name` ([`ImportDeclaration`]'s
+    ///   opening: every export, or the names its list lists).
     /// - fails: [`Ambiguity`] for two imports answering two values.
     /// - panics: none.
     ///
@@ -2185,6 +2246,7 @@ impl<'source> Collected<'source>
     fn through_imports<Found, Lookup>(
         &self,
         source: SourceIndex,
+        name: SurfaceName<'source>,
         lookup: Lookup,
     ) -> Result<Maybe<(Found, ByteSpan), imported::Absent>, Ambiguity>
     where
@@ -2194,8 +2256,8 @@ impl<'source> Collected<'source>
         let mut answered: Maybe<(Found, ByteSpan), imported::Absent> =
             Maybe::Absent(imported::Absent::Unbound);
         for import in self.imports.of(source) {
-            let (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target))) =
-                (import.binding(), import.resolution())
+            let (ImportResolution::Path(ImportTarget::Source(target)), Opens(true)) =
+                (import.resolution(), import.opens(name))
             else {
                 continue;
             };
@@ -2230,9 +2292,9 @@ impl<'source> Collected<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the bytes of the first unqualified import of `source`
-    ///   resolving to a source among [`Self::theory_sources`]; none when
-    ///   `source` stands among them itself or no import reaches one.
+    /// - ensures: the bytes of the first import of `source` that opens the name
+    ///   `Theory` and resolves to a source among [`Self::theory_sources`]; none
+    ///   when `source` stands among them itself or no import reaches one.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is a search of the receiver's imports.
@@ -2253,10 +2315,10 @@ impl<'source> Collected<'source>
             .of(source)
             .find(|import| {
                 matches!(
-                    (import.binding(), import.resolution()),
-                    (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target)))
+                    import.resolution(),
+                    ImportResolution::Path(ImportTarget::Source(target))
                         if self.theory_sources.contains(&target)
-                )
+                ) && import.opens(SurfaceName::from(THEORY_CODE)).0
             })
             .map(ImportDeclaration::span)
     }
@@ -3719,6 +3781,9 @@ pub struct WrittenImport
     pub uri: ImportUri,
     /// The alias, when one is written.
     pub alias: Maybe<Placed, unaliased::Absent>,
+    /// The names the import's list binds by their own names, in the order
+    /// written; empty when no list is written.
+    pub listed: Vec<Placed>,
     /// The bytes the import covers.
     pub span: ByteSpan,
     /// The bytes between the address's quotes, as written, escapes included;
@@ -3747,11 +3812,12 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - requires: `pieces` is the reading of the import `import`.
-/// - ensures: the import the tiles `import " … " (as name)? ;` spell, in that
-///   order with nothing after them, its address read between the quotes; or the
-///   tiles `import name (. name)* (as name)? ;`, its address the module path's
-///   file, as [`module_file`] names it, and bound under the path when no alias
-///   is written.
+/// - ensures: the import the tiles `import " … " (as name)? (( names ))? ;`
+///   spell, in that order with nothing after them, its address read between the
+///   quotes; or the tiles `import name (. name)* (as name)? (( names ))? ;`,
+///   its address the module path's file, as [`module_file`] names it, and bound
+///   under the path when no alias is written. `names` is one name or more,
+///   separated by commas, a trailing one admitted, each kept in `listed`.
 /// - provides: the reading the collection and [`written_imports`] share.
 /// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
 ///   inside the import that holds it or else `form`, as
@@ -3853,6 +3919,27 @@ fn read_import<'source>(
         Maybe::Absent(_) if address == Address::Module => Maybe::Absent(unaliased::Absent::Pathed),
         Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
     };
+    let mut listed = Vec::new();
+    if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
+        loop {
+            match cursor.tile(TileName::IDENTIFIER) {
+                Maybe::Present(name) => listed.push(name),
+                Maybe::Absent(_) => match cursor.tile(TileName::TYPE_IDENTIFIER) {
+                    Maybe::Present(name) => listed.push(name),
+                    Maybe::Absent(_) => break,
+                },
+            }
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                break;
+            }
+        }
+        if listed.is_empty() {
+            return Err(out_of_place(&cursor));
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+            return Err(out_of_place(&cursor));
+        }
+    }
     if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
         return Err(out_of_place(&cursor));
     }
@@ -3863,6 +3950,7 @@ fn read_import<'source>(
     Ok(WrittenImport {
         uri,
         alias,
+        listed,
         span: import.span,
         addressed,
         address,
@@ -3962,10 +4050,11 @@ pub fn written_imports<'source>(
 /// # Specification
 /// - requires: `tree` was molded under `pbg`, and `unit` lays out its text.
 /// - ensures: for each source written under `roots`, the targets of its
-///   unaliased path imports that `unit` resolves to a source; an import that
-///   does not read, a scheme address and an unresolved path add nothing, the
-///   collection refusing or binding them as it does. Every source of the unit
-///   but its prelude also imports the prelude, which no source writes.
+///   unaliased quoted path imports with no list that `unit` resolves to a
+///   source; an import that does not read, a scheme address, an unresolved
+///   path, a module path and a list add nothing, the collection refusing or
+///   binding them as it does. Every source of the unit but its prelude also
+///   imports the prelude, which no source writes.
 /// - provides: the sources whose `theory` blocks an `include` may name.
 /// - fails: never.
 /// - panics: none.
@@ -4020,8 +4109,11 @@ pub fn unqualified_imports(
             let ordinal = ordinals.entry(source).or_default();
             let target = unit.target(source, *ordinal);
             *ordinal = ordinal.next();
-            if let (Maybe::Absent(unaliased::Absent::Unqualified), ImportTarget::Source(target)) =
-                (written.alias, target)
+            if let (
+                Maybe::Absent(unaliased::Absent::Unqualified),
+                ImportTarget::Source(target),
+                true,
+            ) = (written.alias, target, written.listed.is_empty())
             {
                 let _fresh = seen.entry(source).or_default().insert(target);
             }
@@ -5337,23 +5429,32 @@ impl<'source> Collector<'_, 'source>
                 ImportResolution::Path(target)
             },
         };
+        let spelled = self
+            .tree
+            .spanned(written.addressed)
+            .map_or_else(|| SurfaceName::from(""), SurfaceName::from);
         let binding = match written.alias {
             Maybe::Present(alias) => ImportBinding::Aliased(self.name_of(alias)),
-            Maybe::Absent(unaliased::Absent::Pathed) => ImportBinding::Qualified(
-                self.tree
-                    .spanned(written.addressed)
-                    .map_or_else(|| SurfaceName::from(""), SurfaceName::from),
-            ),
+            Maybe::Absent(unaliased::Absent::Pathed) => ImportBinding::Qualified(spelled),
             Maybe::Absent(unaliased::Absent::Unqualified) => ImportBinding::Unqualified,
         };
 
-        self.collected.imports.bind(ImportDeclaration::new(
-            written.uri,
-            binding,
-            import.span,
-            source,
-            resolution,
-        ))
+        let declaration =
+            ImportDeclaration::new(written.uri, binding, import.span, source, resolution);
+        let declaration = if written.listed.is_empty() {
+            declaration
+        }
+        else {
+            declaration.listing(
+                spelled,
+                written
+                    .listed
+                    .iter()
+                    .map(|&listed| (self.name_of(listed), listed.span))
+                    .collect(),
+            )
+        };
+        self.collected.imports.bind(declaration)
     }
 
     /// Read one declaration form's pieces into its slot in `container`,

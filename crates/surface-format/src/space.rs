@@ -15,13 +15,14 @@ use gandr_surface_grammar::StepSym;
 use gandr_surface_syntax::SourceFragment;
 
 /// The rules a `(` or `[` opens an operand of its own in: a parenthesised
-/// term or type, a tuple pattern, a list.
-const OPERANDS: [&str; 5] = [
+/// term or type, a tuple pattern, a list, an import's list of names.
+const OPERANDS: [&str; 6] = [
     "parenthesized_expression",
     "parenthesized_type",
     "tuple_pattern",
     "list_expression",
     "list_pattern",
+    "import_declaration",
 ];
 
 /// The rules a `[` stands apart from the word before it in, as an operand's
@@ -92,8 +93,8 @@ pub enum Context
 {
     /// A `(` or `[` standing apart from the word before it: one opening an
     /// operand of its own (a parenthesised term or type, a tuple pattern, a
-    /// list), an effect row, a migration's or a package's world, a theory's
-    /// or a data type's bracketed parameters.
+    /// list, an import's list of names), an effect row, a migration's or a
+    /// package's world, a theory's or a data type's bracketed parameters.
     Operand,
     /// An operator touching what follows it: a negation, a session's `!` or
     /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's

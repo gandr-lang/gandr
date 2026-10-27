@@ -2373,6 +2373,7 @@ INSERT INTO purpose VALUES('surface-lowering','import::ImportIndex','struct','Na
 INSERT INTO purpose VALUES('surface-lowering','import::ImportResolution','enum','Names an import''s resolution, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportUri','struct','Holds an import''s URI, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ModuleImports','struct','Holds a module''s imports, so the imports'' targets are resolved.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::Opening','enum','Names which of a module''s names an import binds by their own names, so an import list binds only what it lists.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::Fuel','struct','Names the fuel a lowering''s budget spends, so the budget''s fuel is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::LoweringBudget','struct','Holds the budget that bounds a lowering, so the lowering''s fuel is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::CarriedOrigins','struct','Holds the origins a closure''s lowering carries, so the closure''s origins are read.',NULL,'fits','sound',NULL);
