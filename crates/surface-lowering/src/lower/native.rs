@@ -363,6 +363,7 @@ use super::recursion;
 use super::stretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
+use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
 use crate::form::Piece;
@@ -7072,7 +7073,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   is written, its origin the declaration form — and the rules of its
     ///   presented reading ([`Self::presentation`]), pushed onto the module's
     ///   list, its index recorded by the declaration's position in the
-    ///   collection's data list.
+    ///   collection's data list; an indexed declaration whose presented reading
+    ///   writes a rule mints nothing and holds
+    ///   [`LoweringRefusal::OutOfFragment`] at [`FragmentBoundary::Indexed`],
+    ///   over the first such rule's two sides.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data)
     ///   outcome's signature.
@@ -7082,9 +7086,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two declarations, one with parameters and one without
     ///   a written universe, lower to their own signatures; a vector lowers its
-    ///   length index and the length each constructor states.
+    ///   length index and the length each constructor states; an indexed
+    ///   family's constructor rule is declined, its operation rule kept.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    /// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
     #[spec(captures: [data = self.data.len(), signed = self.signatures.len()], ensures: self.data.len() >= data && self.signatures.len() >= signed)]
     pub(super) fn mint_data(
         &mut self,
@@ -7185,9 +7191,24 @@ impl<'source> Lowerer<'_, 'source>
             if !complete {
                 continue;
             }
+            let (presentation, written) = self.presentation(form);
+            // An indexed family presents no rules: the checkers read a
+            // presented type's rules over its terms at no index, so the family
+            // is declined at its first rule.
+            if let (false, Some(&span)) = (form.indices.is_empty(), written.first()) {
+                let _first = self
+                    .faults
+                    .insert(form.slot, LoweringRefusal::OutOfFragment {
+                        span,
+                        form: FormName::RULE_MEMBER,
+                        sort: FragmentSort::Declaration,
+                        boundary: FragmentBoundary::Indexed,
+                    });
+                continue;
+            }
             let index = DataIndex::from(self.data.len());
-            let signature = DataSignature::new(parameters, constructors, kind)
-                .presented(self.presentation(form));
+            let signature =
+                DataSignature::new(parameters, constructors, kind).presented(presentation);
             let signature = if form.indices.is_empty() {
                 signature
             }
@@ -7498,7 +7519,8 @@ impl<'source> Lowerer<'_, 'source>
     /// The rules a data declaration's presented reading writes over its own
     /// constructors, as the checkers read a presented type: each side in
     /// pre-order, a constructor by its tag and a variable by the order its
-    /// first occurrence on the left takes.
+    /// first occurrence on the left takes; beside them, the bytes each rule's
+    /// two sides cover.
     ///
     /// # Specification
     /// - requires: the description route has read the declaration's cells.
@@ -7507,7 +7529,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   the declaration's own constructors and whose right side names only
     ///   variables the left binds; the empty presentation when the declaration
     ///   has no presented reading. A face applying an operation rewrites a
-    ///   call, not the type's terms, and is left to its operation.
+    ///   call, not the type's terms, and is left to its operation. The spans
+    ///   are parallel to the rules.
     /// - provides: the rules [`DataSignature::presented`] carries to both
     ///   checkers, which validate them against the constructor table.
     /// - fails: never.
@@ -7515,19 +7538,23 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's two cancellations lower to the rules
-    ///   both checkers rewrite its words by, and a family without rules lowers
-    ///   to the free signature.
+    ///   both checkers rewrite its words by, a family without rules lowers to
+    ///   the free signature, and an indexed family's rule is declined where it
+    ///   is written.
     /// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
-    #[spec(ensures: |ret| ret.rules().len() <= self.collected.descriptions.get(&form.declaration.node)
-        .map_or(0, |described| described.description.rules.len()))]
+    /// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
+    #[spec(ensures: |ret| ret.0.rules().len() == ret.1.len()
+        && ret.1.len() <= self.collected.descriptions.get(&form.declaration.node)
+            .map_or(0, |described| described.description.rules.len()))]
     fn presentation(
         &self,
         form: &crate::module::DataForm,
-    ) -> gandr_core_term::Presentation
+    ) -> (gandr_core_term::Presentation, Vec<ByteSpan>)
     {
+        let none = || (gandr_core_term::Presentation::default(), Vec::new());
         let Some(described) = self.collected.descriptions.get(&form.declaration.node)
         else {
-            return gandr_core_term::Presentation::default();
+            return none();
         };
         let Some(cells) = self
             .collected
@@ -7536,11 +7563,11 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .find(|cells| cells.at.node == form.declaration.node)
         else {
-            return gandr_core_term::Presentation::default();
+            return none();
         };
         let Maybe::Present(ref presented) = cells.presented
         else {
-            return gandr_core_term::Presentation::default();
+            return none();
         };
         let names: Vec<SourceFragment<'source>> = form
             .generators
@@ -7548,6 +7575,7 @@ impl<'source> Lowerer<'_, 'source>
             .map(|generator| self.text_at(generator.named))
             .collect();
         let mut rules = Vec::new();
+        let mut spans = Vec::new();
         let faces = if cells.oriented.is_empty() {
             described.description.rules.as_ref()
         }
@@ -7556,14 +7584,19 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mut variables = Vec::new();
         for &(index, _cell) in &presented.faces {
-            let Some(face) = faces.get(usize::from(index))
+            let (Some(face), Some(written)) = (
+                faces.get(usize::from(index)),
+                described.written.faces.get(usize::from(index)),
+            )
             else {
                 continue;
             };
             variables.clear();
-            let (Maybe::Present(left), Maybe::Present(right)) = (
+            let (Maybe::Present(left), Maybe::Present(right), Some(from), Some(to)) = (
                 rule_side(&face.lhs, &names, &mut variables, Binding::Binds),
                 rule_side(&face.rhs, &names, &mut variables, Binding::Reads),
+                written.left.nodes.first(),
+                written.right.nodes.first(),
             )
             else {
                 continue;
@@ -7573,9 +7606,10 @@ impl<'source> Lowerer<'_, 'source>
                 Some(gandr_core_term::RuleNode::Constructor(_))
             ) {
                 rules.push(gandr_core_term::PresentedRule::new(left, right));
+                spans.push(from.span.join(to.span));
             }
         }
-        gandr_core_term::Presentation::new(rules)
+        (gandr_core_term::Presentation::new(rules), spans)
     }
 
     /// Mint the nominal type of the family at `constant` over the arguments
