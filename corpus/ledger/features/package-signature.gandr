@@ -1,0 +1,15 @@
+/// `package-signature`: An import at a signature.
+/// Implemented: an import writes a theory after its address, `import … : S ;`, and the lowering matches `S` against the `pub` interface of its source, member by member, by name and by the type each declaration writes. An import at fewer members than its source exports binds those members alone, and a member the interface lacks makes the lowering refuse the importer `SignatureMismatch`, naming the member.
+
+/// What this source reads of the one it imports: one answer, an integer.
+pub theory Answering {
+  /// The answer the source exports.
+  oper answer : Integer;
+}
+
+// The source's interface holds `answer : Integer`, so the import settles.
+import "../syntax/pub-declaration.gandr" as declared : Answering;
+
+/// The answer, read through the import at its signature.
+@[ runs("42") ]
+pub def relayed = declared.answer;

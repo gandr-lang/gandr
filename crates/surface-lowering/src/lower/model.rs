@@ -4315,6 +4315,8 @@ mod forget;
 
 mod reduct;
 
+mod signed;
+
 pub(super) use self::flattened::ComponentPlace;
 pub(super) use self::flattened::Flattened;
 pub(super) use self::flattened::ModelSlot;

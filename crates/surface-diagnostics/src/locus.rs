@@ -477,8 +477,9 @@ impl Annotations
     ///   with what those bytes are, and is absent for the two refusals about
     ///   the run rather than a position; a duplicate declaration, import alias
     ///   or attribute marks its first occurrence as context, a member named
-    ///   before its declaration marks that declaration, and a pair of rules
-    ///   that part, or whose joining went undecided, marks the earlier rule.
+    ///   before its declaration marks that declaration, a pair of rules that
+    ///   part, or whose joining went undecided, marks the earlier rule, and an
+    ///   import's unmatched signature marks the theory it names.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
     /// - fails: never.
@@ -511,6 +512,7 @@ impl Annotations
                 | LoweringRefusal::UnexportedName { declared, .. }
                 | LoweringRefusal::ImportUnresolved { refused: declared, .. }
                 | LoweringRefusal::ImportCycle { refused: declared, .. }
+                | LoweringRefusal::SignatureMismatch { refused: declared, .. }
                 | LoweringRefusal::BareFeedback { rule: declared, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
                 LoweringRefusal::ImportShadows { import, .. } =>
@@ -558,6 +560,9 @@ impl Annotations
                 refused: declared, ..
             }
             | LoweringRefusal::ImportCycle {
+                refused: declared, ..
+            }
+            | LoweringRefusal::SignatureMismatch {
                 refused: declared, ..
             }
             | LoweringRefusal::BareFeedback { rule: declared, .. } => Maybe::Present(Annotation {

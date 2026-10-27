@@ -29,6 +29,7 @@ use gandr_surface_lowering::ImportUri;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::ModuleImports;
 use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::SourceIndex;
@@ -3103,6 +3104,144 @@ fn a_name_read_through_an_unlocked_alias_is_refused_at_it_3072()
         "a declaration reading nothing through the alias stands: {:?}",
         outcome("one")
     );
+}
+
+/// #3098: an import written at a signature naming fewer members than its
+/// source exports settles, and binds the signature's members and no other:
+/// a member the source exports and the signature does not state is no
+/// member of the import, qualified or not.
+#[test]
+fn an_import_at_a_narrower_signature_settles_3098()
+{
+    let pbg = grammar();
+    let exported = "pub def welcome : String = \"hi\" ;\npub def count : Integer = 3 ;";
+    let theory = "theory Greeting { oper welcome : String ; }\n";
+    let outcomes = |importer: &str| {
+        let (text, unit) = laid(&[
+            (SourceText::from(exported), &[]),
+            (SourceText::from(importer), &[ImportTarget::Source(
+                SourceIndex::from(0_usize),
+            )]),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        module
+            .declarations()
+            .iter()
+            .skip(2)
+            .map(|declaration| {
+                let refused = if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                    if let LoweringRefusal::UnknownMember { member, .. } = refusal {
+                        Some(format!("UnknownMember {member}"))
+                    }
+                    else {
+                        Some(format!("{refusal:?}"))
+                    }
+                }
+                else {
+                    None
+                };
+                (String::from(declaration.name().as_ref()), refused)
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let qualified = outcomes(&format!(
+        "{theory}import \"./base.gandr\" as base : Greeting ;\ndef one : String ;\ndef one = \
+         base.welcome ;\ndef two : Integer ;\ndef two = base.count ;"
+    ));
+    assert!(
+        matches!(
+            qualified.as_slice(),
+            [.., (greeting, None), (one, None), (two, Some(refused))]
+                if greeting == "Greeting" && one == "one" && two == "two"
+                    && refused == "UnknownMember count"
+        ),
+        "the signature's member reads and the source's other export is no member: \
+         {qualified:?}"
+    );
+
+    let unqualified = outcomes(&format!(
+        "{theory}import \"./base.gandr\" : Greeting ;\ndef one : String ;\ndef one = welcome \
+         ;\ndef two : Integer ;\ndef two = count ;"
+    ));
+    assert!(
+        matches!(
+            unqualified.as_slice(),
+            [.., (one, None), (two, Some(_))] if one == "one" && two == "two"
+        ),
+        "an unqualified import at a signature binds its members alone: {unqualified:?}"
+    );
+}
+
+/// #3098: an import written at a signature its source does not answer
+/// refuses every declaration of the importing source at the signature,
+/// naming the member: one the source exports no `pub` declaration of, one it
+/// exports at another type, and one whose declaration writes no type.
+#[test]
+fn an_import_at_a_wider_signature_refuses_its_source_3098()
+{
+    let pbg = grammar();
+    let exported = "pub def welcome : String = \"hi\" ;\ndef hidden : String = \"no\" ;\npub \
+                    def bare = \"bare\" ;";
+    let refused = |members: &str| {
+        let importer = format!(
+            "theory Wanted {{ {members} }}\nimport \"./base.gandr\" as base : Wanted ;\ndef \
+             one : Integer ;\ndef one = 1 ;"
+        );
+        let (text, unit) = laid(&[
+            (SourceText::from(exported), &[]),
+            (SourceText::from(importer.as_str()), &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+            ]),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        let at = text.rfind("Wanted ;").expect("the signature is written");
+        module
+            .declarations()
+            .iter()
+            .skip(3)
+            .map(|declaration| {
+                if let DeclarationOutcome::Refused(LoweringRefusal::SignatureMismatch {
+                    span,
+                    signature,
+                    member,
+                    fault,
+                    ..
+                }) = declaration.outcome()
+                    && span == bytes(at, at + "Wanted".len())
+                    && signature.as_ref() == "Wanted"
+                {
+                    Some((String::from(member.as_ref()), fault))
+                }
+                else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for (members, member, fault) in [
+        (
+            "oper welcome : String ; oper extra : String ;",
+            "extra",
+            MatchFault::Missing,
+        ),
+        ("oper hidden : String ;", "hidden", MatchFault::Missing),
+        ("oper welcome : Integer ;", "welcome", MatchFault::Sort),
+        ("oper bare : String ;", "bare", MatchFault::Unstated),
+    ] {
+        let found = refused(members);
+        assert!(
+            !found.is_empty()
+                && found.iter().all(|refusal| refusal
+                    .as_ref()
+                    .is_some_and(|&(ref named, faulted)| named == member && faulted == fault)),
+            "`{members}` refuses every declaration of the importer at the signature, naming \
+             `{member}` as {fault:?}: {found:?}"
+        );
+    }
 }
 
 #[test]

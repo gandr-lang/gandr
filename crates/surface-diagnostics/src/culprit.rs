@@ -72,6 +72,7 @@ use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
@@ -156,6 +157,11 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
         LoweringRefusal::ImportCycle { .. } => "leads back to this source",
         LoweringRefusal::UnlockedDependency { .. } => "no module or locked dependency of this name",
+        LoweringRefusal::SignatureMismatch { fault, .. } => match fault {
+            MatchFault::Missing => "states a member the source does not export",
+            MatchFault::Sort => "states a member the source exports at another type",
+            MatchFault::Unstated => "states a member the match reads no type for",
+        },
         LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
         LoweringRefusal::UnexportedName {
             reason: Unexported::Undefined,
@@ -521,6 +527,7 @@ mod tests
     use gandr_surface_lowering::LoopExit;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::MatchFault;
     use gandr_surface_lowering::Offer;
     use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
@@ -603,6 +610,11 @@ mod tests
             LoweringRefusal::ImportCycle { .. } => "leads back to this source",
             LoweringRefusal::UnlockedDependency { .. } => {
                 "no module or locked dependency of this name"
+            },
+            LoweringRefusal::SignatureMismatch { fault, .. } => match fault {
+                MatchFault::Missing => "states a member the source does not export",
+                MatchFault::Sort => "states a member the source exports at another type",
+                MatchFault::Unstated => "states a member the match reads no type for",
             },
             LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
             LoweringRefusal::UnexportedName {

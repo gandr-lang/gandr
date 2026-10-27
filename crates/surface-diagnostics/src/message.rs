@@ -57,6 +57,7 @@ use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unexported;
@@ -267,6 +268,25 @@ fn lowered(
             f,
             "`{alias}` is no module of this package and no dependency its `gandr.lock` records: declare it in `dependencies` and run `gandr lock`"
         ),
+        LoweringRefusal::SignatureMismatch {
+            signature,
+            member,
+            fault,
+            ..
+        } => match fault {
+            MatchFault::Missing => write!(
+                f,
+                "this import is written at `{signature}`, whose `{member}` its source exports no `pub` declaration of, so this source's declarations are not read"
+            ),
+            MatchFault::Sort => write!(
+                f,
+                "this import is written at `{signature}`, whose `{member}` its source exports at another type, so this source's declarations are not read"
+            ),
+            MatchFault::Unstated => write!(
+                f,
+                "this import is written at `{signature}`, whose `{member}` the match reads no type for: give the source's declaration a signature, or state only operations"
+            ),
+        },
         LoweringRefusal::ImportShadows { name, .. } => {
             write!(f, "`{name}` is bound by an import and again in this source")
         },
@@ -1473,6 +1493,7 @@ mod tests
     use gandr_surface_lowering::HeadArity;
     use gandr_surface_lowering::LoopExit;
     use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::MatchFault;
     use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
     use gandr_surface_lowering::SurfaceName;
@@ -1549,6 +1570,13 @@ mod tests
                 refused: span,
             },
             LoweringRefusal::UnlockedDependency { span, alias: name },
+            LoweringRefusal::SignatureMismatch {
+                span,
+                signature: name,
+                member: name,
+                fault: MatchFault::Sort,
+                refused: span,
+            },
             LoweringRefusal::ImportShadows {
                 span,
                 name,

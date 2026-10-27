@@ -444,6 +444,12 @@ fn declarations(
     // A parenthesised list after the address and its alias, `import text.greet
     // (greeting, Mood) ;`, binds the names it lists by their own names as
     // well.
+    //
+    // A signature after the address and its alias, `import hello : Greeting
+    // ;`, a type path as `Model(Gandr.Package)` writes one, is the theory the
+    // source's `pub` interface is matched against (#3098). The `:` after the
+    // address, the alias or nothing opens it, so the choice stays one token
+    // deep.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),
@@ -459,6 +465,14 @@ fn declarations(
                 ]),
             ]),
             opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
+            opt(seq([
+                t(TileLabel(":")),
+                t(TileLabel("type_identifier")),
+                repeat(seq([
+                    t(TileLabel(".")),
+                    alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+                ])),
+            ])),
             opt(seq([
                 t(TileLabel("(")),
                 comma1(alt([

@@ -39,6 +39,28 @@
 //! list binds only those. A listed type does not bring its constructors: each
 //! name the importer reads unqualified is listed.
 //!
+//! # An import at a signature
+//!
+//! `import hello : Greeting ;` (#3098) writes the theory the importer reads
+//! its source at, after the address and its alias and before its list. The
+//! source's interface is its `pub` declarations, each at the type it is
+//! written at; no stated interface is read. The match is by name and written
+//! type: each operation or constant of the theory's model signature names a
+//! `pub` declaration of the source whose written type is the member's derived
+//! type, syntactically. A signature naming fewer members than the source
+//! exports settles, and the import binds the signature's members and no
+//! other, so a source's other exports are not members of the import,
+//! qualified or not.
+//!
+//! - Choice: the interface is inferred from `pub`, and the match compares the
+//!   written types, so a mismatch names one member and nothing is elaborated.
+//! - Alternatives: a stated interface, a file or an ascription of the root
+//!   (#587's); a coercive match reading the type the checker synthesises, which
+//!   settles an unsigned declaration but runs the checker over the source
+//!   before its importer's names resolve.
+//! - Reversal: a stated interface replaces the inferred one as the source's
+//!   side; the importer's side stays.
+//!
 //! # Refusals by name
 //!
 //! - `ImportUnresolved` and `ImportCycle`: every declaration of a source whose
@@ -53,6 +75,11 @@
 //! - `UnknownMember` and `UnexportedName`: a listed name its module does not
 //!   declare, or keeps private, refuses every declaration of the importing
 //!   source at the name, as an import naming nothing does.
+//! - `SignatureMismatch.Missing`, `.Sort` and `.Unstated`: an import at a
+//!   signature whose member the source exports no `pub` declaration of, exports
+//!   at another type, or that the match reads no type for (a declaration with
+//!   no signature; a sort, a law or a nested model of the theory) refuses every
+//!   declaration of the importing source at the signature, naming the member.
 //! - `DuplicateImportAlias`: of two imports binding one alias, the second is
 //!   refused, naming the first, rather than silently hiding it. The refusal is
 //!   the import's own: the rest of the source lowers against the first import's
@@ -98,9 +125,11 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
+use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::LoweringRefusal;
+use crate::form::Placed;
 use crate::namespace::Binding;
 use crate::namespace::Collision;
 use crate::namespace::EventKind;
@@ -238,6 +267,51 @@ pub enum ImportResolution
     Path(ImportTarget),
 }
 
+/// The signature an import is written at, `import hello : Greeting ;` (#3098).
+///
+/// The theory its source's `pub` interface is matched against, named by the
+/// modules before its name as `Model(Gandr.Package)` names one, and the names
+/// of its model signature's components once its source is collected.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ImportSignature<'source>
+{
+    /// Each module before the theory's name, with its bytes.
+    pub prefix: Vec<(ByteSpan, SurfaceName<'source>)>,
+    /// The theory's name tile.
+    pub named: Placed,
+    /// The theory's name.
+    pub name: SurfaceName<'source>,
+    /// The names the theory's model signature states: none for a theory that
+    /// does not resolve or derive.
+    pub stated: Maybe<Vec<Name>, unread::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a signature's stated names are not held.
+    pub mod unread {
+        /// The reason none are held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The importing source is still being collected, so the theory
+            /// is not read yet, and the import narrows nothing.
+            Collecting,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an import is written at no signature.
+    pub mod unsigned {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `:` follows the import's address and alias, so its source's
+            /// whole interface is bound.
+            Unwritten,
+        }
+    }
+}
+
 /// One `import "URI" ;` or `import "URI" as name ;`, as the source wrote it,
 /// with what its address came to.
 ///
@@ -271,6 +345,8 @@ pub struct ImportDeclaration<'source>
     resolution: ImportResolution,
     /// Which names it binds by their own names.
     opening: Opening<'source>,
+    /// The signature the import is written at.
+    signature: Maybe<ImportSignature<'source>, unsigned::Absent>,
 }
 
 impl<'source> ImportDeclaration<'source>
@@ -302,6 +378,7 @@ impl<'source> ImportDeclaration<'source>
             source,
             resolution,
             opening,
+            signature: Maybe::Absent(unsigned::Absent::Unwritten),
         }
     }
 
@@ -379,6 +456,64 @@ impl<'source> ImportDeclaration<'source>
         }
     }
 
+    /// The import, written at the signature `signature`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn signed(
+        self,
+        signature: ImportSignature<'source>,
+    ) -> Self
+    {
+        Self {
+            signature: Maybe::Present(signature),
+            ..self
+        }
+    }
+
+    /// The signature the import is written at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn signature(&self) -> &Maybe<ImportSignature<'source>, unsigned::Absent>
+    {
+        &self.signature
+    }
+
+    /// Whether the signature the import is written at lets it bind `name`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Opens`] true for an import at no signature, or at one whose
+    ///   names are not read yet, and otherwise for a name the signature states.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the stated names' membership, which a
+    ///   clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name the signature states answers through the
+    ///   import and one its source exports beyond it does not.
+    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    #[inline]
+    #[must_use]
+    pub(crate) fn states(
+        &self,
+        name: SurfaceName<'_>,
+    ) -> Opens
+    {
+        Opens(match self.signature {
+            Maybe::Present(ImportSignature {
+                stated: Maybe::Present(ref stated),
+                ..
+            }) => stated.iter().any(|held| held.as_ref() == name.as_ref()),
+            Maybe::Present(_) | Maybe::Absent(_) => true,
+        })
+    }
+
     /// Which names of the module the import binds by their own names.
     ///
     /// # Specification
@@ -396,15 +531,17 @@ impl<'source> ImportDeclaration<'source>
     /// - requires: nothing.
     /// - ensures: [`Opens`] true for every name when [`Opening::Every`], for
     ///   none when [`Opening::Nothing`], and for a name the list holds when
-    ///   [`Opening::Listed`].
+    ///   [`Opening::Listed`], each narrowed by [`Self::states`].
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is the list's membership, which a clause
     ///   would restate whole.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a listed name answers and an unlisted one does not.
+    /// - hypothesis: L3 — a listed name answers and an unlisted one does not; a
+    ///   name an import's signature does not state does not.
     /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
+    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     #[inline]
     #[must_use]
     pub(crate) fn opens(
@@ -412,13 +549,15 @@ impl<'source> ImportDeclaration<'source>
         name: SurfaceName<'_>,
     ) -> Opens
     {
-        Opens(match self.opening {
-            Opening::Every => true,
-            Opening::Nothing => false,
-            Opening::Listed { ref listed, .. } => listed
-                .iter()
-                .any(|&(held, _)| held.as_ref() == name.as_ref()),
-        })
+        Opens(
+            match self.opening {
+                Opening::Every => true,
+                Opening::Nothing => false,
+                Opening::Listed { ref listed, .. } => listed
+                    .iter()
+                    .any(|&(held, _)| held.as_ref() == name.as_ref()),
+            } && self.states(name).0,
+        )
     }
 }
 
@@ -616,6 +755,40 @@ impl<'source> ModuleImports<'source>
         self.declarations
             .iter()
             .filter(move |declaration| declaration.source == source)
+    }
+
+    /// Record `stated` as the names the signature of the import at `position`
+    /// states.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the import at `position`, when it is written at a signature,
+    ///   holds `stated` as its names, and narrows by them from here on; every
+    ///   other import, and one at no signature, is left as it was.
+    /// - fails: never; a position past the end records nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ImportDeclaration::states`].
+    /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    #[inline]
+    #[spec(
+        captures: before = self.declarations.len(),
+        ensures: self.declarations.len() == before,
+    )]
+    pub(crate) fn state(
+        &mut self,
+        position: ImportIndex,
+        stated: Vec<Name>,
+    )
+    {
+        if let Some(&mut ImportDeclaration {
+            signature: Maybe::Present(ref mut signature),
+            ..
+        }) = self.declarations.get_mut(usize::from(position))
+        {
+            signature.stated = Maybe::Present(stated);
+        }
     }
 
     /// Keep `declaration`, binding its alias or its module path, when it has

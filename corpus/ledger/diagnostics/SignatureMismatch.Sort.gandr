@@ -1,0 +1,11 @@
+/// `SignatureMismatch.Sort`: an import at a signature that states a member its source exports at another type.
+@[ refuses("SignatureMismatch.Sort") ]
+theory Spelled {
+  oper answer : String;
+}
+
+// The source writes `answer : Integer`.
+import "../syntax/pub-declaration.gandr" as declared : Spelled;
+
+@[ refuses("SignatureMismatch.Sort") ]
+def relayed = declared.answer;

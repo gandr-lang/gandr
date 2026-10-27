@@ -2382,6 +2382,7 @@ INSERT INTO purpose VALUES('surface-lowering','error::FragmentBoundary','enum','
 INSERT INTO purpose VALUES('surface-lowering','error::FragmentSort','enum','Names the sort a form''s position demanded, so the refusal names the sort.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::LoopExit','enum','Names a loop''s exit, so a `break` or a `continue` on no path through a loop''s body is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::LoweringRefusal','enum','Names the crate''s typed refusal vocabulary, so a refusal''s span is named.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','error::MatchFault','enum','Names how an import''s signature misses its source''s interface, so a missing member, one at another type and one with no written type are refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::TelescopeFault','enum','Names a telescope''s fault, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::Unexported','enum','Names why an imported name is not exported, so a private name and an undefined one are refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::refusal_span::Absent','enum','Names why a refusal''s span is absent, so the refusal names no span.',NULL,'fits','sound',NULL);
@@ -2401,9 +2402,12 @@ INSERT INTO purpose VALUES('surface-lowering','import::ImportBinding','enum','Na
 INSERT INTO purpose VALUES('surface-lowering','import::ImportDeclaration','struct','Holds an import declaration, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportIndex','struct','Names the index of an import, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportResolution','enum','Names an import''s resolution, so the import''s target is resolved.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::ImportSignature','struct','Holds the theory an import is written at and the names it states, so the import binds those names alone and its source is matched against it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportUri','struct','Holds an import''s URI, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ModuleImports','struct','Holds a module''s imports, so the imports'' targets are resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::Opening','enum','Names which of a module''s names an import binds by their own names, so an import list binds only what it lists.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::unread::Absent','enum','Names why a signature''s stated names are not held, so an import narrows nothing while its source is collected.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::unsigned::Absent','enum','Names why an import is written at no signature, so it binds its source''s whole interface.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::Fuel','struct','Names the fuel a lowering''s budget spends, so the budget''s fuel is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::LoweringBudget','struct','Holds the budget that bounds a lowering, so the lowering''s fuel is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::CarriedOrigins','struct','Holds the origins a closure''s lowering carries, so the closure''s origins are read.',NULL,'fits','sound',NULL);

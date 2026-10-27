@@ -1,0 +1,21 @@
+error[SignatureMismatch.Sort]: this import is written at `Spelled`, whose `answer` its source exports at another type, so this source's declarations are not read
+  ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Sort.gandr:8:56
+  │
+3 │ theory Spelled {
+  │        ─────── declared here
+  ‡
+8 │ import "../syntax/pub-declaration.gandr" as declared : Spelled;
+  │                                                        ━━━━━━━ states a member the source exports at another type
+  │
+  ╰ note: `Spelled` is refused with SignatureMismatch.Sort, as its expectation states
+
+error[SignatureMismatch.Sort]: this import is written at `Spelled`, whose `answer` its source exports at another type, so this source's declarations are not read
+   ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Sort.gandr:8:56
+   │
+ 8 │ import "../syntax/pub-declaration.gandr" as declared : Spelled;
+   │                                                        ━━━━━━━ states a member the source exports at another type
+   ‡
+11 │ def relayed = declared.answer;
+   │     ─────── declared here
+   │
+   ╰ note: `relayed` is refused with SignatureMismatch.Sort, as its expectation states

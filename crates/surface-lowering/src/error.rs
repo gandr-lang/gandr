@@ -345,6 +345,22 @@ pub enum Unexported
     Undefined,
 }
 
+/// Why the interface an import's source infers does not hold a member of the
+/// signature the import is written at (#3098).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MatchFault
+{
+    /// The source declares no `pub` declaration of the member's name.
+    Missing,
+    /// The source's declaration of the member's name is written at another
+    /// type than the signature states.
+    Sort,
+    /// One side states no type the match reads: the source's declaration
+    /// writes no signature, or the member is a sort, a law or a nested
+    /// model.
+    Unstated,
+}
+
 impl fmt::Display for FragmentBoundary
 {
     /// Writes the way the form left the fragment.
@@ -879,6 +895,23 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
         /// The alias, the head of the import's module path.
         alias: SurfaceName<'source>,
+    },
+
+    /// An import written at a signature, `import hello : Greeting ;`, whose
+    /// source's `pub` interface does not hold one of the signature's members:
+    /// every declaration of the importing source is refused at the member.
+    SignatureMismatch
+    {
+        /// The bytes of the signature's name in the import.
+        span: ByteSpan,
+        /// The signature, the theory the import names.
+        signature: SurfaceName<'source>,
+        /// The member the interface does not hold.
+        member: SurfaceName<'source>,
+        /// How it does not hold it.
+        fault: MatchFault,
+        /// The bytes of the refused declaration's name.
+        refused: ByteSpan,
     },
 
     /// A name two sources bind for one source: an unqualified import binding
@@ -1894,6 +1927,25 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "`{alias}` names no module of this package and no dependency its `gandr.lock` records"
             ),
+            Self::SignatureMismatch {
+                signature,
+                member,
+                fault,
+                ..
+            } => match fault {
+                MatchFault::Missing => write!(
+                    f,
+                    "the import's source exports no `{member}`, which the signature `{signature}` states"
+                ),
+                MatchFault::Sort => write!(
+                    f,
+                    "the import's source exports `{member}` at another type than the signature `{signature}` states"
+                ),
+                MatchFault::Unstated => write!(
+                    f,
+                    "the match of `{member}` against the signature `{signature}` reads no type: the source's declaration writes none, or the member is not an operation"
+                ),
+            },
             Self::ImportShadows { name, .. } => write!(
                 f,
                 "`{name}` is bound by an import and by another binding of this source"
@@ -2403,6 +2455,7 @@ impl LoweringRefusal<'_>
             | Self::ImportUnresolved { span, .. }
             | Self::ImportCycle { span, .. }
             | Self::UnlockedDependency { span, .. }
+            | Self::SignatureMismatch { span, .. }
             | Self::ImportShadows { span, .. }
             | Self::UnexportedName { span, .. }
             | Self::ShadowedBuiltin { span, .. }
@@ -2496,6 +2549,7 @@ mod tests
     use super::FragmentSort;
     use super::LoopExit;
     use super::LoweringRefusal;
+    use super::MatchFault;
     use super::TelescopeFault;
     use super::Unexported;
     use super::refusal_span;
@@ -2537,7 +2591,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 74_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 75_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2871,6 +2925,13 @@ mod tests
                 span: s(137_usize, 138_usize),
                 alias: SurfaceName::from("hello"),
             },
+            LoweringRefusal::SignatureMismatch {
+                span: s(139_usize, 140_usize),
+                signature: SurfaceName::from("Greeting"),
+                member: SurfaceName::from("welcome"),
+                fault: MatchFault::Missing,
+                refused: s(141_usize, 142_usize),
+            },
         ]
     }
 
@@ -2956,6 +3017,7 @@ mod tests
             s(133_usize, 134_usize),
             s(135_usize, 136_usize),
             s(137_usize, 138_usize),
+            s(139_usize, 140_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

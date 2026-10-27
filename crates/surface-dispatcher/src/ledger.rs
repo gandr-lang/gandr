@@ -2140,8 +2140,9 @@ mod tests
         assert_eq!(
             form("import_declaration"),
             "import ⦅ \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ‖ ‹identifier› ⦅ . \
-             ‹identifier› ⦆* ⦆ ⦅ as ‹identifier› ⦆? ⦅ ( ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ \
-             , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ) ⦆? ;"
+             ‹identifier› ⦆* ⦆ ⦅ as ‹identifier› ⦆? ⦅ : ‹type_identifier› ⦅ . ⦅ \
+             ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦆? ⦅ ( ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ \
+             ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ) ⦆? ;"
         );
         assert_eq!(form("binary_expression.or"), "EXPRESSION || EXPRESSION");
         assert_eq!(form("boolean.expression"), "true ‖ false");
