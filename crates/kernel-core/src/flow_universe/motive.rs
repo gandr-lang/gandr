@@ -25,7 +25,6 @@ use crate::replay::ReplayBudget;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_value;
 use crate::rewrite::shift_value_type;
-use crate::support::LooseDepths;
 
 /// Where an occurrence of the moving binder stands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -352,7 +351,7 @@ fn reach_value(
 ) -> Reach
 {
     let index = u32::from(at);
-    if u32::from(LooseDepths::new().value_reach(arena, value)) <= index {
+    if u32::from(arena.value_support(value).depth()) <= index {
         return Reach::Clear;
     }
     let Some(past) = index.checked_add(1)
@@ -405,7 +404,7 @@ fn reach_type(
 ) -> Reach
 {
     let index = u32::from(at);
-    if u32::from(LooseDepths::new().value_type_reach(arena, ty)) <= index {
+    if u32::from(arena.value_type_support(ty).depth()) <= index {
         return Reach::Clear;
     }
     let Some(past) = index.checked_add(1)

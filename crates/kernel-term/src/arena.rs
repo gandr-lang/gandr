@@ -68,6 +68,7 @@ use gandr_kernel_strata::Level;
 
 use crate::base::BaseType;
 use crate::base::Literal;
+use crate::support::Reads;
 use crate::term::Computation;
 use crate::term::ConstantIndex;
 use crate::term::DeBruijnIndex;
@@ -610,9 +611,11 @@ impl ArenaWatermark
 /// The append-only arena owning every term and type node of one environment.
 ///
 /// The four families are parallel append-only vectors and a node's children are
-/// ids into the same arena. The node enums derive shallow clone and drop, so
-/// cloning or dropping a whole arena is a flat per-family vector operation,
-/// total on any term depth.
+/// ids into the same arena. Beside each family runs a column of the supports
+/// its nodes carry, each gathered when its node is minted (the support
+/// module), so the column holds exactly one support per node. The node enums
+/// derive shallow clone and drop, so cloning or dropping a whole arena is a
+/// flat per-family vector operation, total on any term depth.
 ///
 /// # Specification
 /// - requires: callers retain only live reachable ids when truncating and
@@ -643,12 +646,20 @@ pub struct TermArena
 {
     /// The value nodes, in allocation order, which is child-before-parent.
     values: Family<Value>,
+    /// The support each value node carries, at its node's offset.
+    value_supports: Family<Reads>,
     /// The computation nodes.
     computations: Family<Computation>,
+    /// The support each computation node carries.
+    computation_supports: Family<Reads>,
     /// The value-type nodes.
     value_types: Family<ValueType>,
+    /// The support each value-type node carries.
+    value_type_supports: Family<Reads>,
     /// The computation-type nodes.
     comp_types: Family<CompType>,
+    /// The support each computation-type node carries.
+    comp_type_supports: Family<Reads>,
     /// The empty endpoint dialogues every reflexivity minted without a
     /// dialogue shares, so minting one allocates no evidence.
     unrelated: alloc::sync::Arc<crate::EndpointDialogues>,
@@ -982,9 +993,13 @@ impl TermArena
     pub fn freeze(&mut self)
     {
         self.values.freeze();
+        self.value_supports.freeze();
         self.computations.freeze();
+        self.computation_supports.freeze();
         self.value_types.freeze();
+        self.value_type_supports.freeze();
         self.comp_types.freeze();
+        self.comp_type_supports.freeze();
     }
 }
 
@@ -1149,11 +1164,18 @@ impl TermArena
     )
     {
         self.values.truncate(ArenaLength(watermark.values));
+        self.value_supports.truncate(ArenaLength(watermark.values));
         self.computations
+            .truncate(ArenaLength(watermark.computations));
+        self.computation_supports
             .truncate(ArenaLength(watermark.computations));
         self.value_types
             .truncate(ArenaLength(watermark.value_types));
+        self.value_type_supports
+            .truncate(ArenaLength(watermark.value_types));
         self.comp_types.truncate(ArenaLength(watermark.comp_types));
+        self.comp_type_supports
+            .truncate(ArenaLength(watermark.comp_types));
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -1281,6 +1303,112 @@ impl TermArena
         self.comp_types.get(id_offset(ArenaIndex(id.0)))
     }
 
+    /// The support a value carries: the free de Bruijn indices it mentions,
+    /// read off its column, never a walk below it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: the support gathered when the node `id` names was minted, and
+    ///   every binder when `id` dangles, so a gap widens what a reader takes
+    ///   into account and never narrows it.
+    /// - provides: the one read of a value's support.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values on both sides of the word's width, a binder
+    ///   former of each kind, and an id truncated away, each support read back
+    ///   exactly.
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.value(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn value_support(
+        &self,
+        id: ValueId,
+    ) -> &Reads
+    {
+        self.value_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// The support a computation carries; see [`Self::value_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: as [`Self::value_support`], on the computation family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `support::tests::every_binding_former_closes_what_it_binds`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.computation(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn computation_support(
+        &self,
+        id: ComputationId,
+    ) -> &Reads
+    {
+        self.computation_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// The support a value type carries; see [`Self::value_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: as [`Self::value_support`], on the value-type family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `support::tests::a_type_reads_through_its_codes`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.value_type(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn value_type_support(
+        &self,
+        id: ValueTypeId,
+    ) -> &Reads
+    {
+        self.value_type_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
+    /// The support a computation type carries; see [`Self::value_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: as [`Self::value_support`], on the computation-type family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `support::tests::a_type_reads_through_its_codes`
+    /// - witness: `support::tests::an_unresolved_node_reads_every_binder`
+    #[spec(ensures: |ret| self.comp_type(id).is_some() || *ret == crate::support::WIDEST)]
+    #[inline]
+    #[must_use]
+    pub fn comp_type_support(
+        &self,
+        id: CompTypeId,
+    ) -> &Reads
+    {
+        self.comp_type_supports
+            .get(id_offset(ArenaIndex(id.0)))
+            .unwrap_or(&crate::support::WIDEST)
+    }
+
     /// Append a value node and return the id that names it.
     ///
     /// # Specification
@@ -1339,7 +1467,9 @@ impl TermArena
     ) -> ValueId
     {
         let id = ValueId(id_index(self.values.len()).0);
+        let support = self.value_carried(&value);
         self.values.push(value);
+        self.value_supports.push(support);
         id
     }
 
@@ -1396,7 +1526,9 @@ impl TermArena
     ) -> ComputationId
     {
         let id = ComputationId(id_index(self.computations.len()).0);
+        let support = self.computation_carried(&computation);
         self.computations.push(computation);
+        self.computation_supports.push(support);
         id
     }
 
@@ -1448,7 +1580,9 @@ impl TermArena
     ) -> ValueTypeId
     {
         let id = ValueTypeId(id_index(self.value_types.len()).0);
+        let support = self.value_type_carried(&value_type);
         self.value_types.push(value_type);
+        self.value_type_supports.push(support);
         id
     }
 
@@ -1489,7 +1623,9 @@ impl TermArena
     ) -> CompTypeId
     {
         let id = CompTypeId(id_index(self.comp_types.len()).0);
+        let support = self.comp_type_carried(&comp_type);
         self.comp_types.push(comp_type);
+        self.comp_type_supports.push(support);
         id
     }
 

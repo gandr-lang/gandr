@@ -13,6 +13,7 @@ use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::Dialogue;
+use gandr_kernel_term::LooseDepth;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -36,9 +37,6 @@ use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_value;
-use crate::support::LooseDepth;
-use crate::support::Reach as _;
-use crate::support::Reaches;
 
 /// Validate a quoted code's complete first-order graph.
 ///
@@ -128,11 +126,10 @@ pub fn data_signature<'entries>(
     {
         return None;
     }
-    let mut reaches = Reaches::<LooseDepth>::new();
     if constructors
         .iter()
         .flatten()
-        .any(|&field| reaches.value_type_reach(arena, field) != LooseDepth::closed())
+        .any(|&field| arena.value_type_support(field).depth() != LooseDepth::default())
     {
         return None;
     }

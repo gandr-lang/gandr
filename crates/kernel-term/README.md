@@ -24,10 +24,13 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 
 - Simon L. Peyton Jones. _The Implementation of Functional Programming Languages_. Prentice Hall, 1987. `isbn:978-0134533339` — the graph representation and maximal sharing this format's stored plane realizes statically.
 - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §6.4 builds the hash-consed subterm DAG as a pre-pass; this format hands a consumer that DAG already built, so transcription is a pass over a table.
+- `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ codebruijn-carrier, § footprint-from-support) — what a node mentions is a function of its content, so its support is computed once, when the node is minted, and carried.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1 and 3) — the kernel derives every support from its own nodes rather than taking one across the bridge.
 
 ## Provided features
 
 - **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids, minted only by constructors over already-allocated children.
+- **A support carried on every node** (`Reads`, read by `TermArena::value_support` and its three siblings): the free de Bruijn indices the node mentions, computed from its children's supports when it is minted, so no consumer walks a term to learn which binders it reads.
 - **The admission watermark** (`ArenaWatermark`) and `DeclarationBuilder`, which ties content minting to it so an abandoned declaration truncates itself.
 - **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries. `encode_prefix` and `encode_after` resume an encoding after a leading run of declarations (`EncodedPrefix`), and `decode_keeping` and `decode_after` a decode (`DecodedPrefix`), each answering as the whole one does.
 - **Structured names** (`StructuredName`, `NameSegment`) on every declaration.
@@ -83,6 +86,7 @@ Mechanism, decisions and specification detail live in the rustdoc beside the cod
 | ----- | ------ |
 | The four decisions, canonical form, sharing and compression, specification attributes | [`src/lib.rs`](src/lib.rs) |
 | The arena, its disciplines and the watermark | [`src/arena.rs`](src/arena.rs) |
+| The binders a node reads, and how each former closes the ones it binds | [`src/support.rs`](src/support.rs) |
 | Declarations, structured names and the builder | [`src/decl.rs`](src/decl.rs) |
 | Universe families, static operators, n-ary products and sums | [`src/types.rs`](src/types.rs) |
 | Nominal data, structural records and fixpoint evidence | [`src/term.rs`](src/term.rs) |

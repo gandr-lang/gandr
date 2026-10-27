@@ -602,7 +602,6 @@ pub(crate) fn slot_table(
     constructors: &[Vec<ValueTypeId>],
 ) -> Vec<Vec<RuleSlot<ValueTypeId>>>
 {
-    let mut reaches = crate::support::LooseDepths::new();
     constructors
         .iter()
         .map(|fields| {
@@ -614,8 +613,8 @@ pub(crate) fn slot_table(
                         RuleSlot::Own
                     },
                     _ if index != 0
-                        && reaches.value_type_reach(arena, field)
-                            != crate::support::LooseDepth::default() =>
+                        && arena.value_type_support(field).depth()
+                            != gandr_kernel_term::LooseDepth::default() =>
                     {
                         RuleSlot::Dependent
                     },

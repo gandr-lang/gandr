@@ -390,7 +390,6 @@ use crate::rewrite::substitute_computation;
 use crate::rewrite::substitute_outer_value_type;
 use crate::rewrite::substitute_value;
 use crate::rewrite::substitute_value_type;
-use crate::support::LooseDepths;
 use crate::witness::value_type_witness;
 
 #[cfg(test)]
@@ -626,7 +625,7 @@ fn require_folded(
     if arena.value_type(domain).is_none() {
         return Err(KernelError::ArenaFault);
     }
-    let reach = u32::from(LooseDepths::new().value_type_reach(arena, domain));
+    let reach = u32::from(arena.value_type_support(domain).depth());
     if reach != 0 {
         return Err(KernelError::Identity(IdentityError::NeutralFibre));
     }
@@ -1729,9 +1728,8 @@ pub(crate) fn evaluation_obligations(
 {
     let (mode, domain, left, right) = related_parts(arena, expected)?;
     require_read(arena, interfaces, mode, domain)?;
-    let mut reach = LooseDepths::new();
-    if u32::from(reach.value_reach(arena, left)) != 0
-        || u32::from(reach.value_reach(arena, right)) != 0
+    if u32::from(arena.value_support(left).depth()) != 0
+        || u32::from(arena.value_support(right).depth()) != 0
     {
         return Err(KernelError::Identity(IdentityError::OpenFunctions));
     }
@@ -1802,9 +1800,8 @@ pub(crate) fn quantified_obligations(
 {
     let (mode, domain, left, right) = related_parts(arena, expected)?;
     require_read(arena, interfaces, mode, domain)?;
-    let mut reach = LooseDepths::new();
-    if u32::from(reach.value_reach(arena, left)) != 0
-        || u32::from(reach.value_reach(arena, right)) != 0
+    if u32::from(arena.value_support(left).depth()) != 0
+        || u32::from(arena.value_support(right).depth()) != 0
     {
         return Err(KernelError::Identity(IdentityError::OpenFunctions));
     }
@@ -3257,16 +3254,9 @@ pub(crate) enum BinderUse
 /// - hypothesis: L3 — a Bool motive and one over an outer variable are
 ///   constant; `El(x)` reads its binder.
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        spec_clause_traversal,
-        reason = "parity: the body computes the family's reach from a fresh table first; the capture walks the same family once"
-    )
-)]
 #[spec(captures: closed = match family {
-        Family::Type(ty) => u32::from(LooseDepths::new().value_type_reach(arena, ty)) == 0,
-        Family::Value(value) => u32::from(LooseDepths::new().value_reach(arena, value)) == 0,
+        Family::Type(ty) => u32::from(arena.value_type_support(ty).depth()) == 0,
+        Family::Value(value) => u32::from(arena.value_support(value).depth()) == 0,
     },
     ensures: |ret| !closed || ret == BinderUse::Ignored)]
 pub(crate) fn binder_use<M>(
@@ -3278,11 +3268,13 @@ pub(crate) fn binder_use<M>(
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let mut reach = LooseDepths::new();
-    let before = u32::from(match family {
-        Family::Type(ty) => reach.value_type_reach(arena, ty),
-        Family::Value(value) => reach.value_reach(arena, value),
-    });
+    let before = u32::from(
+        match family {
+            Family::Type(ty) => arena.value_type_support(ty),
+            Family::Value(value) => arena.value_support(value),
+        }
+        .depth(),
+    );
     if before == 0 {
         return BinderUse::Ignored;
     }
@@ -3290,17 +3282,19 @@ where
         return BinderUse::Read;
     }
     let fresh = arena.value_variable(DeBruijnIndex::from(before));
-    let mut reach = LooseDepths::new();
-    let after = u32::from(match family {
-        Family::Type(ty) => {
-            let instantiated = substitute_value_type(arena, table, memo, ty, fresh);
-            reach.value_type_reach(arena, instantiated)
-        },
-        Family::Value(value) => {
-            let instantiated = substitute_value(arena, table, memo, value, fresh);
-            reach.value_reach(arena, instantiated)
-        },
-    });
+    let after = u32::from(
+        match family {
+            Family::Type(ty) => {
+                let instantiated = substitute_value_type(arena, table, memo, ty, fresh);
+                arena.value_type_support(instantiated)
+            },
+            Family::Value(value) => {
+                let instantiated = substitute_value(arena, table, memo, value, fresh);
+                arena.value_support(instantiated)
+            },
+        }
+        .depth(),
+    );
     if after > before {
         BinderUse::Read
     }
