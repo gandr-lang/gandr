@@ -147,6 +147,32 @@ const identityTrailers = (parsed) => {
   return [true, ""];
 };
 
+// A closing keyword only on its own line (#2980). GitHub closes the issue a
+// keyword names when a commit carrying it reaches the default branch,
+// wherever in the message it stands, so the verb in prose shuts an issue the
+// commit only mentions. A keyword (close, fix or resolve in any tense, before
+// `#n` or `owner/name#n`, the grammar of `.config/claims/targets.jq`) is
+// refused anywhere but a line that is exactly `Closes #n`, `Fixes #n` or
+// `Resolves #n`, more issues after commas, quoted as code or not, as
+// `pr:open` refuses one in a pull request body.
+const CLOSING_KEYWORD =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+(?:#\d+|[\w.-]+\/[\w.-]+#\d+)\b/gi;
+const KEYWORD_LINE = /^(?:closes|fixes|resolves):? #\d+(?:, #\d+)*\.?$/i;
+
+const noStrayClosingKeyword = (parsed) => {
+  const raw = parsed.raw ?? [parsed.header, parsed.body, parsed.footer].filter(Boolean).join("\n");
+  const strays = raw
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => !KEYWORD_LINE.test(line))
+    .flatMap((line) => line.match(CLOSING_KEYWORD) ?? []);
+  if (strays.length === 0) return [true, ""];
+  return [
+    false,
+    `a closing keyword closes the issue it names when the commit reaches main: ${strays.join(", ")}; name the issue without the verb, or close it on its own \`Closes #n\` line`,
+  ];
+};
+
 export default {
   extends: ["@commitlint/config-conventional"],
   // Off only for a landed commit; see AUTOSQUASH_MARKER above.
@@ -158,6 +184,7 @@ export default {
         "no-harness-trailer": noHarnessTrailer,
         "identity-trailers": identityTrailers,
         "no-autosquash-marker": noAutosquashMarker,
+        "no-stray-closing-keyword": noStrayClosingKeyword,
       },
     },
   ],
@@ -176,6 +203,7 @@ export default {
     "no-harness-trailer": [2, "always"],
     "identity-trailers": [TITLE ? 0 : 2, "always"],
     "no-autosquash-marker": [2, "always"],
+    "no-stray-closing-keyword": [2, "always"],
     // Stock conventional types plus config, for changes to the repository's
     // configuration surfaces (lint vocabularies, tool settings).
     "type-enum": [
