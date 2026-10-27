@@ -1,0 +1,17 @@
+error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
+  ╭▸ corpus/ledger/diagnostics/ViewEscaped.gandr:5:25
+  │
+3 │ ┌ def leak() -> -F Integer {
+4 │ │   hold c = 0;
+  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+5 │ │   access c as v { force thunk { resume(v, 1) } };
+  │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━━━──
+  │ │   │               │     │
+  │ │   │               │     a view outliving its access
+  │ │   │               synthesised; while forcing this
+  │ │   checked against `-F Integer`; while checking the body of this access
+6 │ │   pure c
+7 │ │ }
+  │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `leak` is refused with ViewEscaped, as its expectation states

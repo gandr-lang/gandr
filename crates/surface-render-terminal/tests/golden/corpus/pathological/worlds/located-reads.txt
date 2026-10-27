@@ -1,0 +1,77 @@
+error[Elsewhere]: this value lives at another world; open it there with `leta`
+   ╭▸ corpus/pathological/worlds/located-reads.gandr:15:8
+   │
+13 │   def readHere(report : Seat.Report at seat) -> Seat.Report {
+   │   │            ────── checked against `Seat.Report at seat -> -F Seat.Report`; while checking the body of this function; binds report : Seat.Report at seat
+   │ ┌─┘
+   │ │
+14 │ │   leta written = report;
+   │ │   ──── checked against `-F Seat.Report`; while checking the rest under the value this opens; binds written : Seat.Report
+15 │ │   pure written
+   │ │   ┬────┯━━━━━━
+   │ │   │    │
+   │ │   │    a value bound at another world
+   │ │   checked against `-F Seat.Report`; while judging the value this returns
+16 │ │ }
+   │ └─┘ checked against `Seat.Report at seat => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `readHere` is refused with Elsewhere, as its expectation states
+
+error[HoldElsewhere]: `hold` makes a handle at the world it runs at; migrate there to hold a value of that world
+   ╭▸ corpus/pathological/worlds/located-reads.gandr:23:4
+   │
+22 │ ┌ def forged() -> -F (Seat.Report at seat) {
+23 │ │   (hold Seat.progress)
+   │ │    ━━━━━━━━━━━━━━━━━━ a hold wanted at another world
+24 │ │ }
+   │ └─┘ checked against `() => Seat.Report at seat`; while checking the body of this thunk
+   │
+   ╰ note: `forged` is refused with HoldElsewhere, as its expectation states
+
+error[Unlocated]: this stands at the host's own world, where no handle is made or opened: state the declaration's world with `@[ entry(w) ]`
+   ╭▸ corpus/pathological/worlds/located-reads.gandr:30:4
+   │
+29 │ ┌ def unplaced() -> -F (Seat.Report at seat) {
+30 │ │   (hold Seat.progress)
+   │ │    ━━━━━━━━━━━━━━━━━━ a handle made or opened at the host's own world
+31 │ │ }
+   │ └─┘ checked against `() => Seat.Report at seat`; while checking the body of this thunk
+   │
+   ╰ note: `unplaced` is refused with Unlocated, as its expectation states
+
+error[UndeclaredWorld]: this names no world; declare one with `world w ;`
+   ╭▸ corpus/pathological/worlds/located-reads.gandr:38:3
+   │
+37 │ ┌ def toAValue() -> Seat.Report {
+38 │ │   migrate [collect] { pure Seat.progress }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ no world declaration
+39 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `toAValue` is refused with UndeclaredWorld, as its expectation states
+
+error[NotAHandle]: `leta` opens a handle at a world, and this value is none
+   ╭▸ corpus/pathological/worlds/located-reads.gandr:45:3
+   │
+44 │ ┌ def unhandled() -> Seat.Report {
+45 │ │   leta written = Seat.progress;
+   │ │   ━━━━ not a handle at a world
+46 │ │   pure written
+47 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `unhandled` is refused with NotAHandle, as its expectation states
+
+error[EntryNamed]: this declaration is an entry, which only the host runs; it cannot be named here
+   ╭▸ corpus/pathological/worlds/located-reads.gandr:54:3
+   │
+53 │ ┌ def relayed() -> Seat.Report {
+54 │ │   collect()
+   │ │   ┯━━━━━━──
+   │ │   │
+   │ │   an entry named from another declaration
+   │ │   checked against `-F Seat.Report`; while forcing this
+55 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `relayed` is refused with EntryNamed, as its expectation states

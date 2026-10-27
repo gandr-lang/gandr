@@ -1,0 +1,16 @@
+error[RoundTripDistinct]: `equiv` needs each round trip to return its input
+   ╭▸ corpus/pathological/identity/equiv-data.gandr:21:17
+   │
+21 │ def flattened = equiv(Shapes.toFigure, rounded);
+   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ translators that are not inverse
+   │
+   ╰ note: `flattened` is refused with RoundTripDistinct, as its expectation states
+
+error[EquivUnsupported]: `equiv` needs two closed pure translators between types built from units, integers, strings, tuples, sums, lists and data types that do not hold themselves
+   ╭▸ corpus/pathological/identity/equiv-data.gandr:27:19
+   │
+27 │ def renumbering = equiv(Renumber.step, Renumber.step);
+   │                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Nat`
+   │
+   ├ note: `renumbering` is refused with EquivUnsupported, as its expectation states
+   ╰ note: tracked by #1316 <https://github.com/gandr-lang/gandr/issues/1316>

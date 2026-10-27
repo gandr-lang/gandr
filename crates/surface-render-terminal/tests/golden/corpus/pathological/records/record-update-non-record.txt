@@ -1,0 +1,10 @@
+error[ShapeMismatch]: expected a record type
+   ╭▸ corpus/pathological/records/record-update-non-record.gandr:10:17
+   │
+10 │ def updated = #{n | x = 1};
+   │               ┬─┯─────────
+   │               │ │
+   │               │ its type is not of the required shape: found `Integer`
+   │               synthesised; while synthesising the record this update writes into
+   │
+   ╰ note: `updated` is refused with ShapeMismatch, as its expectation states

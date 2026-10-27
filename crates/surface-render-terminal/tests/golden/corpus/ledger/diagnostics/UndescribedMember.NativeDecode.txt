@@ -1,0 +1,10 @@
+error[UndescribedMember.NativeDecode]: this member has no interpretation the native description reading gives
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NativeDecode.gandr:8:1
+   │
+ 8 │ ┏ codata Holder : Type[-] {
+ 9 │ ┃   held : Big;
+10 │ ┃ }
+   │ ┗━┛ a member the description does not read
+   │
+   ├ note: `Holder` is refused with UndescribedMember.NativeDecode, as its expectation states
+   ╰ note: tracked by #2665 <https://github.com/gandr-lang/gandr/issues/2665>

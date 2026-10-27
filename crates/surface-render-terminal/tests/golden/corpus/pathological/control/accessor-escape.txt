@@ -1,0 +1,33 @@
+error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
+  ╭▸ corpus/pathological/control/accessor-escape.gandr:6:25
+  │
+4 │ ┌ def leak() -> Integer {
+5 │ │   hold c = 0;
+  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+6 │ │   access c as v { force thunk { resume(v, 1) } };
+  │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━━━──
+  │ │   │               │     │
+  │ │   │               │     a view outliving its access
+  │ │   │               synthesised; while forcing this
+  │ │   checked against `-F Integer`; while checking the body of this access
+7 │ │   pure c
+8 │ │ }
+  │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `leak` is refused with ViewEscaped, as its expectation states
+
+error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
+   ╭▸ corpus/pathological/control/accessor-escape.gandr:17:9
+   │
+15 │ ┌ def stash() -> Integer {
+16 │ │   hold c = 0;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+17 │ │   force thunk { pure c }
+   │ │   ┬─────┯━━━━━━━━━━━━━━━
+   │ │   │     │
+   │ │   │     a held value that may be held other than once
+   │ │   checked against `-F Integer`; while forcing this
+18 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `stash` is expected to be refused with HeldCaptured and run to 0, and it is refused with HeldCaptured and runs to 0

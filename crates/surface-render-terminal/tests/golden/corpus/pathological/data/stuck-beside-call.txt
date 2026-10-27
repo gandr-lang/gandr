@@ -1,0 +1,43 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/stuck-beside-call.gandr:17:3
+   │
+12 │   def walkTwiceOvershot(b : Nat, c1 : Nat, c2 : Nat) -> Path(
+   │   │                     ┬        ┬─        ── checked against `(c2 : Nat) -> -F Path(Nat, walk(Succ(walk(b, c1)), c2), Succ(walk(walk(b, c1), succ(succ(c2)))))`; while checking the body of this function; binds c2 : Nat
+   │   │                     │        │
+   │   │                     │        checked; while checking the body of this function; binds c1 : Nat
+   │ ┌─┘                     checked; while checking the body of this function; binds b : Nat
+   │ │
+13 │ │   Nat,
+14 │ │   walk(Succ(walk(b, c1)), c2),
+   │ │   ─────────────────────────── an endpoint the point does not convert to
+15 │ │   Succ(walk(walk(b, c1), succ(succ(c2))))
+   │ │   ─────────────────────────────────────── an endpoint the point does not convert to
+16 │ │ ) {
+17 │ │   here(Succ(walk(walk(b, c1), succ(succ(c2)))))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+18 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `walkTwiceOvershot` is refused with EndpointMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/stuck-beside-call.gandr:27:3
+   │
+22 │   def walkTwiceInner(b : Nat, c1 : Nat, c2 : Nat) -> Path(
+   │   │                  ┬        ┬─        ── checked against `(c2 : Nat) -> -F Path(Nat, walk(Succ(walk(b, c1)), c2), Succ(walk(walk(b, succ(c1)), succ(c2))))`; while checking the body of this function; binds c2 : Nat
+   │   │                  │        │
+   │   │                  │        checked; while checking the body of this function; binds c1 : Nat
+   │ ┌─┘                  checked; while checking the body of this function; binds b : Nat
+   │ │
+23 │ │   Nat,
+24 │ │   walk(Succ(walk(b, c1)), c2),
+   │ │   ─────────────────────────── an endpoint the point does not convert to
+25 │ │   Succ(walk(walk(b, succ(c1)), succ(c2)))
+   │ │   ─────────────────────────────────────── an endpoint the point does not convert to
+26 │ │ ) {
+27 │ │   here(Succ(walk(walk(b, succ(c1)), succ(c2))))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+28 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `walkTwiceInner` is refused with EndpointMismatch, as its expectation states

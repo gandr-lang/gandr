@@ -1,0 +1,7 @@
+error[UnknownAttribute]: there is no attribute `dco`; did you mean `doc`?
+  ╭▸ corpus/ledger/diagnostics/UnknownAttribute.gandr:3:3
+  │
+3 │ @[dco("oops")]
+  │   ━━━━━━━━━━━ unknown attribute
+  │
+  ╰ note: `f` is refused with UnknownAttribute, as its expectation states

@@ -1,0 +1,28 @@
+error[RulesUnoriented]: this rule may rewrite forever: its right side is not smaller than its left in the order the block's calls induce, so the block's rules are refused
+   ╭▸ corpus/pathological/effects/state.gandr:13:3
+   │
+13 │   rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
+   │
+   ╰ note: `StateObserved` is refused with RulesUnoriented, as its expectation states
+
+error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping terms, one of them applies a variable a binding port binds, and the overlap rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/pathological/effects/state.gandr:26:3
+   │
+25 │   rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
+   │   ──────────────────────────────────────────────────────── the rule it overlaps
+26 │   rule putFirst : put(s, put(u, k)) <=> put(s, k);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
+   │
+   ╰ note: `StatePutKeepsFirst` is refused with RulesOverlapSecondOrder, as its expectation states
+
+error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/pathological/effects/state.gandr:40:3
+   │
+38 │   rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
+   │   ──────────────────────────────────────────────────────── the rule it overlaps
+39 │   rule putPut : put(s, put(u, k)) <=> put(u, k);
+40 │   rule getPut : get(bind s. put(s, k)) <=> k;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+   │
+   ╰ note: `StateAllLaws` is refused with RulesOverlapCondition, as its expectation states

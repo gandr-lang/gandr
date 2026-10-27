@@ -1,0 +1,7 @@
+error[NotSynthesisable]: the type of a list cannot be inferred where it stands
+  ╭▸ corpus/pathological/basics/unannotated-list.gandr:7:13
+  │
+7 │ def three = [1, 2, 3];
+  │             ━━━━━━━━━ needs a type to be checked against
+  │
+  ╰ note: `three` is refused with NotSynthesisable, as its expectation states

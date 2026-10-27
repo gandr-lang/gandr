@@ -1,0 +1,13 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/equiv-fibres.gandr:38:65
+   │
+38 │ def collapsed : Two ≃ One = (collapse, ((pick, thunk { fn (x) { here(x) } }), (pick, single)));
+   │                 ┬────────              ┬───────┬───────┬────────┯━━━━━━──────────────────────
+   │                 │                      │       │       │        │
+   │                 │                      │       │       │        not both endpoints of the path
+   │                 │                      │       │       checked against `(a : Two) -> -F Path(Two, pick(collapse(a)), a)`; while checking the body of this function; binds x : Two
+   │                 │                      │       checked against `(a : Two) => Path(Two, pick(collapse(a)), a)`; while checking the body of this thunk
+   │                 │                      checked; while checking the next premise of this
+   │                 an endpoint the point does not convert to
+   │
+   ╰ note: `collapsed` is refused with EndpointMismatch, as its expectation states

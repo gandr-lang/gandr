@@ -1,0 +1,7 @@
+error[UnlockedDependency]: `circle` is no module of this package and no dependency its `gandr.lock` records: declare it in `dependencies` and run `gandr lock`
+   ╭▸ corpus/ledger/diagnostics/UnlockedDependency.gandr:10:14
+   │
+10 │ def radius = circle.radius;
+   │              ━━━━━━ no module or locked dependency of this name
+   │
+   ╰ note: `radius` is refused with UnlockedDependency, as its expectation states

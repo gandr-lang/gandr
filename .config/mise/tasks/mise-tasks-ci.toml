@@ -292,18 +292,20 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-sp
 description = "Every corpus source cut short and with each token dropped, against its recovery record"
 run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
 
-# The goldens a corpus source carries beside it — its recovery record and its
-# role golden — rewritten for every source. The records are a sweep and run
-# whole under the `sweeps` profile: under a pull-request profile the 30 s
-# bound cuts the rewrite short and leaves a partial record. The role golden
-# reads every source under any profile. A new or changed source runs this
-# once, then the check.
+# The goldens a corpus source carries beside it — its recovery record, its
+# role golden and, for a refusing source, its rendered refusals — rewritten
+# for every source. The records are a sweep and run whole under the `sweeps`
+# profile: under a pull-request profile the 30 s bound cuts the rewrite short
+# and leaves a partial record. The role golden and the rendered refusals read
+# every source under any profile. A new or changed source runs this once,
+# then the check.
 ["corpus:goldens"]
-description = "Rewrite every corpus source's recovery record and role golden"
+description = "Rewrite every corpus source's recovery record, role golden and rendered refusals"
 env.UPDATE_EXPECT = "1"
 run = [
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'",
   ".config/mise/scope cargo nextest run --locked --package gandr-surface-grammar --test tests -E 'test(=highlight::corpus_roles_match_the_golden)'",
+  ".config/mise/scope cargo nextest run --locked --package gandr-surface-render-terminal --test tests -E 'test(=corpus::every_refusing_source_renders_as_its_golden)'",
 ]
 
 # The nightly sweeps with specifications enforced, under the `nightly`

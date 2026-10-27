@@ -1,0 +1,8 @@
+error[OutOfFragment.pack_model_expression]: the pack model expression is not supported yet
+   ╭▸ corpus/pathological/packages/model-pack-sealed.gandr:25:14
+   │
+25 │ def hidden = pack Hidden at Model(Counter);
+   │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `hidden` is refused with OutOfFragment.pack_model_expression, as its expectation states
+   ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>

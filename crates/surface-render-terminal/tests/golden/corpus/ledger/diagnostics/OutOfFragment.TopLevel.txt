@@ -1,0 +1,7 @@
+error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit { … }`, or name it with a definition
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.TopLevel.gandr:6:1
+  │
+6 │ 1 + 2;
+  │ ━━━━━ an expression where only declarations stand
+  │
+  ╰ note: `1` is refused with OutOfFragment.TopLevel, as its expectation states

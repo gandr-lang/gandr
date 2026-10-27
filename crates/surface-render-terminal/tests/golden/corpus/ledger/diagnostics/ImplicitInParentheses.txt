@@ -1,0 +1,7 @@
+error[ImplicitInParentheses]: `same`'s implicit `a` is supplied by name, `same[a = …](…)`, not among the parentheses
+  ╭▸ corpus/ledger/diagnostics/ImplicitInParentheses.gandr:9:29
+  │
+9 │ def inParentheses = thunk { same(Integer, 3) } ;
+  │                             ━━━━━━━━━━━━━━━━ an implicit among the arguments
+  │
+  ╰ note: `inParentheses` is refused with ImplicitInParentheses, as its expectation states

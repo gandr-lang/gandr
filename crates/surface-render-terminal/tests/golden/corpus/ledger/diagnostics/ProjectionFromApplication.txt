@@ -1,0 +1,7 @@
+error[ProjectionFromApplication]: an application of `MkCounter` is read before it is bound; bind it with `module A = MkCounter(…) ;` and read `A`
+   ╭▸ corpus/ledger/diagnostics/ProjectionFromApplication.gandr:15:17
+   │
+15 │ def projected = MkCounter(Seed).seed ;
+   │                 ━━━━━━━━━━━━━━━ an application read before it is bound
+   │
+   ╰ note: `projected` is refused with ProjectionFromApplication, as its expectation states

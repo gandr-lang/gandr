@@ -1,0 +1,13 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/basics/trailing-statement.gandr:8:3
+  │
+7 │   def unitAnswered() -> Integer {
+  │   │                     ─────── the type it is checked against
+  │ ┌─┘
+  │ │
+8 │ │   pure unit;
+  │ │   ━━━━━━━━━ its type does not convert: expected `Integer`, found `Unit`
+9 │ │ }
+  │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `unitAnswered` is refused with TypeMismatch, as its expectation states

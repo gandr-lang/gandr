@@ -1,0 +1,7 @@
+error[UnresolvedName]: `k` is not defined
+  ╭▸ corpus/pathological/control/handler-resume-outside.gandr:4:5
+  │
+4 │     k(unit)
+  │     ━ not found in this scope
+  │
+  ╰ note: `stray` is refused with UnresolvedName, as its expectation states

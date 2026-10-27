@@ -1,0 +1,7 @@
+error[InertRead]: `shown` reads the inert field `label`; only another inert field reads one
+   ╭▸ corpus/ledger/diagnostics/InertRead.gandr:13:13
+   │
+13 │ def shown = Box.label;
+   │             ━━━━━━━━━ an inert field read
+   │
+   ╰ note: `shown` is refused with InertRead, as its expectation states

@@ -1,0 +1,14 @@
+error[HeldConsumed]: a method whose receiver is `consumed` takes the held value and ends its hold; the value cannot be read, accessed or consumed after that call
+   ╭▸ corpus/ledger/diagnostics/HeldConsumed.gandr:16:3
+   │
+13 │ ┌ def readAfterTaken() -> -F Integer {
+14 │ │   hold n = 3;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+15 │ │   run m <- n.take();
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds m : Integer
+16 │ │   n.look()
+   │ │   ━━━━━━━━ a held value a consumed receiver already took
+17 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `readAfterTaken` is refused with HeldConsumed, as its expectation states

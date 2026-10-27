@@ -1,0 +1,31 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/unfolded-arm.gandr:15:3
+   │
+14 │   def callDropped(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(n)) {
+   │   │               ┬                     ┬──────────────  ────────── an endpoint the point does not convert to
+   │   │               │                     │
+   │   │               │                     an endpoint the point does not convert to
+   │ ┌─┘               checked against `(n : Nat) -> -F Path(Nat, double(Succ(n)), plusTwo(n))`; while checking the body of this function; binds n : Nat
+   │ │
+15 │ │   here(plusTwo(n))
+   │ │   ━━━━━━━━━━━━━━━━ not both endpoints of the path
+16 │ │ }
+   │ └─┘ checked against `(n : Nat) => Path(Nat, double(Succ(n)), plusTwo(n))`; while checking the body of this thunk
+   │
+   ╰ note: `callDropped` is refused with EndpointMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/unfolded-arm.gandr:21:3
+   │
+20 │   def overshot(n : Nat) -> Path(Nat, double(Succ(n)), Succ(plusTwo(double(n)))) {
+   │   │            ┬                     ┬──────────────  ──────────────────────── an endpoint the point does not convert to
+   │   │            │                     │
+   │   │            │                     an endpoint the point does not convert to
+   │ ┌─┘            checked against `(n : Nat) -> -F Path(Nat, double(Succ(n)), Succ(plusTwo(double(n))))`; while checking the body of this function; binds n : Nat
+   │ │
+21 │ │   here(Succ(plusTwo(double(n))))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+22 │ │ }
+   │ └─┘ checked against `(n : Nat) => Path(Nat, double(Succ(n)), Succ(plusTwo(double(n))))`; while checking the body of this thunk
+   │
+   ╰ note: `overshot` is refused with EndpointMismatch, as its expectation states

@@ -1,0 +1,7 @@
+error[ModelUnanswered]: no module in scope answers the model implicit `p` this call to `pointOf` omits; supply one as `pointOf[p = …](…)`
+   ╭▸ corpus/ledger/diagnostics/ModelUnanswered.gandr:15:31
+   │
+15 │ def unanswered() -> Integer { pointOf(3) }
+   │                               ━━━━━━━━━━ a model implicit no module answers
+   │
+   ╰ note: `unanswered` is refused with ModelUnanswered, as its expectation states

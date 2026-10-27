@@ -1,0 +1,10 @@
+error[ImportShadows]: `Circle` is bound by an import and again in this source
+   ╭▸ corpus/pathological/modules/import-shadows.gandr:11:6
+   │
+ 7 │ import "../../model/identity/circle-base.gandr";
+   │ ──────────────────────────────────────────────── first written here
+   ‡
+11 │ data Circle : Type {
+   │      ━━━━━━ bound here and by an import
+   │
+   ╰ note: `Circle` is refused with ImportShadows, as its expectation states

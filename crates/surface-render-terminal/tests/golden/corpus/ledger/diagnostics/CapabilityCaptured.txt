@@ -1,0 +1,14 @@
+error[CapabilityCaptured]: this `migrate` stands inside a thunk, which may spend its capability other than once
+   ╭▸ corpus/ledger/diagnostics/CapabilityCaptured.gandr:37:16
+   │
+36 │ ┌ def suspended() -> -F (() => Seat.Report) {
+37 │ │   pure thunk { migrate [seat] { pure Seat.progress } }
+   │ │   ┬────┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
+   │ │   │    │       │
+   │ │   │    │       a migration that may run other than once
+   │ │   │    checked against `() => Seat.Report`; while checking the body of this thunk
+   │ │   checked against `-F (() => Seat.Report)`; while judging the value this returns
+38 │ │ }
+   │ └─┘ checked against `() => () => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `suspended` is refused with CapabilityCaptured, as its expectation states

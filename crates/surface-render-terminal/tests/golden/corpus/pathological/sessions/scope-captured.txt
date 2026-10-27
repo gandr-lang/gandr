@@ -1,0 +1,21 @@
+error[CapturedEndpoint]: the endpoint is used inside a continuation a handler or a shift may resume, which may run it other than once
+   ╭▸ corpus/pathological/sessions/scope-captured.gandr:11:3
+   │
+ 9 │ ┌  def closedInScope() -> Unit {
+10 │ │    fork (seat : end) { close(seat) } as desk;
+   │ │    ┬───
+   │ │    │
+   │ │    the endpoint was opened by this fork
+   │ │    checked against `-F Unit`; while checking the rest of this fork's parent
+11 │ │┏   handle c : Proc {
+12 │ │┃     c.exit(1);
+13 │ │┃     close(desk)
+14 │ │┃   } with {
+15 │ │┃     pure(v) => pure v,
+16 │ │┃     oper exit(code, k) => pure unit
+17 │ │┃   }
+   │ │┗━━━┛ an endpoint that may be used other than once
+18 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `closedInScope` is refused with CapturedEndpoint, as its expectation states

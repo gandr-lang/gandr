@@ -1,0 +1,16 @@
+error[ViewMoved]: the view's value was read out, so the view ends with `resume`, which writes a value back; `abort` would leave the held slot empty
+   ╭▸ corpus/ledger/diagnostics/ViewMoved.gandr:10:38
+   │
+ 8 │ ┌ def moved_then_aborted() -> -F Integer {
+ 9 │ │   hold[1] c = 0;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+10 │ │   access c as v { run n <- succ(v) ; abort(v) ; pure n } unwind { pure unit }
+   │ │   ┬───────────────┬──────────────────┯━━━━━━━────────────────────────────────
+   │ │   │               │                  │
+   │ │   │               │                  an abort after the value was moved out
+   │ │   │               checked against `-F Integer`; while checking the body under this binding; binds n : Integer
+   │ │   checked against `-F Integer`; while checking the body of this access
+11 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `moved_then_aborted` is refused with ViewMoved, as its expectation states

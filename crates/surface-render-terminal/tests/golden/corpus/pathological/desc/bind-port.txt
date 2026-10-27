@@ -1,0 +1,27 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/desc/bind-port.gandr:23:3
+   │
+23 │   oper new : (body : pi+ (x : Val). bind (c : Name). Proc) --> Proc;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
+   │
+   ╰ note: `InnerAbstraction` is refused with MalformedForm, as its expectation states
+
+error[IllFormedDescription]: the port `t` abstracts an atom of the sort `Tm`, which is not an atom sort
+   ╭▸ corpus/pathological/desc/bind-port.gandr:11:1
+   │
+11 │ ┏ theory OrdinaryAbstraction {
+12 │ ┃   sort Tm : Type;
+13 │ ┃   oper nu : (t : bind (a : Tm). Tm) --> Tm;
+14 │ ┃ }
+   │ ┗━┛ what the description check refuses
+   │
+   ╰ note: `OrdinaryAbstraction` is refused with IllFormedDescription, as its expectation states
+
+error[UnstatedComponent.Abstraction]: the model signature cannot state `nu`, which abstracts an atom over a port, whose models are nominal sets'
+   ╭▸ corpus/pathological/desc/bind-port.gandr:30:30
+   │
+30 │ def restrictionModel : Model(Restriction);
+   │                              ━━━━━━━━━━━ the signature this model derives
+   │
+   ├ note: `restrictionModel` is refused with UnstatedComponent.Abstraction, as its expectation states
+   ╰ note: tracked by #1561 <https://github.com/gandr-lang/gandr/issues/1561>

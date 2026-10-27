@@ -1,0 +1,19 @@
+error[FunextUnsupported]: `funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
+  ╭▸ corpus/ledger/diagnostics/FunextUnsupported.gandr:8:3
+  │
+3 │   def open(f : Unit + Unit => Unit + Unit) -> -F Path(
+  │   │        ┬   ────────────────────────── the type it synthesises
+  │   │        │
+  │ ┌─┘        checked against `(f : Bool => Bool) -> -F Path(Bool => Bool, f, f)`; while checking the body of this function; binds f : Bool => Bool
+  │ │
+4 │ │   Unit + Unit => Unit + Unit,
+5 │ │   f,
+6 │ │   f
+7 │ │ ) {
+8 │ │   funext(f, f)
+  │ │   ━━━━━━━━━━━━ functions past the first-order boundary: found `Bool => Bool`
+9 │ │ }
+  │ └─┘ checked against `(f : Bool => Bool) => Path(Bool => Bool, f, f)`; while checking the body of this thunk
+  │
+  ├ note: `open` is refused with FunextUnsupported, as its expectation states
+  ╰ note: tracked by #1315 <https://github.com/gandr-lang/gandr/issues/1315>

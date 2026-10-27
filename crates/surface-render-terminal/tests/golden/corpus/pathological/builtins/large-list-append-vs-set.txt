@@ -1,0 +1,17 @@
+error[OutOfFragment.projection_expression]: the projection expression is not supported yet
+   ╭▸ corpus/pathological/builtins/large-list-append-vs-set.gandr:10:13
+   │
+10 │ def grown = list.append(xs, [10, 11, 12]);
+   │             ━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `grown` is refused with OutOfFragment.projection_expression, as its expectation states
+   ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>
+
+error[OutOfFragment.projection_expression]: the projection expression is not supported yet
+   ╭▸ corpus/pathological/builtins/large-list-append-vs-set.gandr:15:11
+   │
+15 │ def set = list.set(grown, 11, 99);
+   │           ━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `set` is refused with OutOfFragment.projection_expression, as its expectation states
+   ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>

@@ -1,0 +1,14 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/identity/compound-endpoint-body-mismatch.gandr:7:3
+  │
+6 │   def refuted(x : Integer) -> Path(Integer, dbl(x), x) {
+  │   │           ┬               ──────────────────────── the type it is checked against
+  │   │           │
+  │ ┌─┘           checked against `(x : Integer) -> -F Path(Integer, dbl(x), x)`; while checking the body of this function; binds x : Integer
+  │ │
+7 │ │   5
+  │ │   ━ its type does not convert: expected `Path(Integer, dbl(x), x)`, found `Integer`
+8 │ │ }
+  │ └─┘ checked against `(x : Integer) => Path(Integer, dbl(x), x)`; while checking the body of this thunk
+  │
+  ╰ note: `refuted` is refused with TypeMismatch, as its expectation states

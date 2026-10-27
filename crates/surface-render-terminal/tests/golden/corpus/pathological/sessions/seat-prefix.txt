@@ -1,0 +1,28 @@
+error[RunNotAdmitted]: the protocol does not admit this run
+   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:16:37
+   │
+16 │ def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress"));
+   │                                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a run that stops before the protocol ends
+   │
+   ╰ note: `reporting` is refused with RunNotAdmitted, as its expectation states
+
+error[RunNotAdmitted]: the protocol does not admit this run
+   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:21:38
+   │
+21 │ def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next));
+   │                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move in the other direction
+   │
+   ╰ note: `crossed` is refused with RunNotAdmitted, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:28:36
+   │
+24 │ def opened : Prefix(Seat.SeatEnd) = recorded(received("task"));
+   │              ──────────────────── the type it synthesises
+   ‡
+28 │ def promoted : Run(Seat.SeatEnd) = opened;
+   │                ┬────────────────   ━━━━━━ its type does not convert: expected `Run(?String. mu t. +{handoff : !String. end, report : !String. &{next : t, retire : end}})`, found `Prefix(?String. mu t. +{handoff : !String. end, report : !String. &{next : t, retire : end}})`
+   │                │
+   │                the type it is checked against
+   │
+   ╰ note: `promoted` is refused with TypeMismatch, as its expectation states

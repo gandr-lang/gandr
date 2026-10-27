@@ -1,0 +1,10 @@
+error[RulesDiverge]: this rule and an earlier one rewrite one term to two different constructor terms, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/rules-diverge-below-the-root.gandr:12:3
+   │
+10 │   rule Loop(Unloop(x)) ==> x;
+   │   ────────────────────────── the rule it overlaps
+11 │   rule Unloop(Loop(x)) ==> x;
+12 │   rule Loop(Loop(x)) ==> x;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term to another constructor term
+   │
+   ╰ note: `Circle` is refused with RulesDiverge, as its expectation states

@@ -1,0 +1,28 @@
+error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
+   ╭▸ corpus/pathological/data/descent.gandr:19:25
+   │
+16 │    def rec again(n : Nat) -> Nat {
+   │    │             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+17 │ │┌   case n {
+18 │ ││     Zero => Zero,
+19 │ ││     Succ(p) => again[<](n)
+   │ ││                ┬────────┯─
+   │ ││                │        │
+   │ ││                │        not below the stage its recursion wants
+   │ ││                checked against `-F Nat`; while checking the argument of this application
+20 │ ││   }
+   │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds p : Nat
+21 │ │  }
+   │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds again : Nat => Nat
+   │
+   ╰ note: `again` is refused with StageNotBelow, as its expectation states
+
+error[DescentOnSeveralParameters]: this call descends on `m`, and an earlier one on `n`; a recursive definition descends on one parameter, the one its matches take apart
+   ╭▸ corpus/pathological/data/descent.gandr:32:16
+   │
+32 │     Succ(p) => both[<](p, n)
+   │                ━━━━━━━ descends on another parameter
+   │
+   ╰ note: `both` is refused with DescentOnSeveralParameters, as its expectation states

@@ -1,0 +1,14 @@
+error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two normal forms, and each rule completion derives to join them wraps the one before, so completion never ends and the block's rules are refused
+   ╭▸ corpus/ledger/diagnostics/RulesNeverComplete.gandr:3:1
+   │
+ 3 │ ┏ theory Extrusion {
+ 4 │ ┃   sort Proc : Type;
+ 5 │ ┃   oper nil : () --> Proc;
+ 6 │ ┃   oper par : (p : Proc, q : Proc) --> Proc;
+   ‡ ┃
+ 9 │ ┃   rule scope : par(nu(p), q) ==> nu(par(p, q));
+   │ ┃   ──────────────────────────────────────────── the rule it overlaps
+10 │ ┃ }
+   │ ┗━┛ rules whose completion never ends
+   │
+   ╰ note: `Extrusion` is refused with RulesNeverComplete, as its expectation states

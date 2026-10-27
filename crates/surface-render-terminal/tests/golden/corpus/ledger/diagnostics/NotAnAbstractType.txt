@@ -1,0 +1,16 @@
+error[MarkUnfounded]: this type is marked `mobile`, but its representation cannot cross to another world
+  ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:7:17
+  │
+7 │   type Report = +U (Integer -> -F Integer);
+  │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━ a representation that does not cross
+  │
+  ╰ note: `Report` is refused with MarkUnfounded, as its expectation states
+
+error[NotAnAbstractType]: this names an abstract type that was not admitted
+  ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:8:3
+  │
+8 │ ┏   @[ refuses("NotAnAbstractType") ]
+9 │ ┃   def progress = thunk { fn (x) { return x } };
+  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ not an abstract type
+  │
+  ╰ note: `progress` is refused with NotAnAbstractType, as its expectation states

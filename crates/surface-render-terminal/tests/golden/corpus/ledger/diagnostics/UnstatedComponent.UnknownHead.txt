@@ -1,0 +1,15 @@
+error[IllFormedDescription]: a rule applies `succ`, which the signature does not declare
+  ╭▸ corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.gandr:8:3
+  │
+8 │   rule stray : succ(zero()) ==> zero();
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+  │
+  ╰ note: `T` is refused with IllFormedDescription, as its expectation states
+
+error[UnstatedComponent.UnknownHead]: the model signature cannot state `stray`, which names a sort or an operation the theory does not declare
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.gandr:12:19
+   │
+12 │ def model : Model(T) ;
+   │                   ━ the signature this model derives
+   │
+   ╰ note: `model` is refused with UnstatedComponent.UnknownHead, as its expectation states

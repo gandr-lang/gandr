@@ -1,0 +1,7 @@
+error[FamilyArity]: the type operator takes 1 arguments but is given 2
+  ╭▸ corpus/ledger/diagnostics/FamilyArity.gandr:7:14
+  │
+7 │ def over(p : twice(Integer, Integer)) -> -F Integer {
+  │              ━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of arguments
+  │
+  ╰ note: `over` is refused with FamilyArity, as its expectation states

@@ -1,0 +1,7 @@
+error[UnprovenLaw]: the module `Unproven` neither proves nor admits its model's law `refl`
+   ╭▸ corpus/ledger/diagnostics/UnprovenLaw.gandr:12:25
+   │
+12 │ module Unproven : Model(Reflexive) with sort Carrier = Integer {
+   │                         ━━━━━━━━━ a law this module does not prove
+   │
+   ╰ note: `refl` is refused with UnprovenLaw, as its expectation states

@@ -1,0 +1,78 @@
+error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against; supply it as `twice[combine = …](…)`
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:18:33
+   │
+18 │ def undetermined() -> Integer { twice(3) }
+   │                                 ━━━━━━━━ an implicit left unsolved
+   │
+   ╰ note: `undetermined` is refused with ImplicitUnsolved, as its expectation states
+
+error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against; supply it as `chosen[x = …](…)`
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:23:29
+   │
+23 │ def unchosen() -> Integer { chosen(Integer) }
+   │                             ━━━━━━━━━━━━━━━ an implicit left unsolved
+   │
+   ╰ note: `unchosen` is refused with ImplicitUnsolved, as its expectation states
+
+error[ImplicitUnsolved]: the solver cannot determine the implicit `b` this call to `konst` omits: its solution would name a binder the call does not stand under; supply it as `konst[b = …](…)`
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:29:29
+   │
+29 │ def escaping() -> Integer { konst(fn (t) { fn (y) { y } }) }
+   │                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
+   │
+   ╰ note: `escaping` is refused with ImplicitUnsolved, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:34:29
+   │
+34 │ def disagreeing() -> Unit { same(3) }
+   │ ┬────────────────────┬──────┯━━━━━━──
+   │ │                    │      │
+   │ │                    │      its type does not convert: expected `-F Unit`, found `-F ?`
+   │ │                    the type it is checked against
+   │ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `disagreeing` is refused with TypeMismatch, as its expectation states
+
+error[ImplicitInParentheses]: `same`'s implicit `a` is supplied by name, `same[a = …](…)`, not among the parentheses
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:39:29
+   │
+39 │ def inParentheses = thunk { same(Integer, 3) };
+   │                             ━━━━━━━━━━━━━━━━ an implicit among the arguments
+   │
+   ╰ note: `inParentheses` is refused with ImplicitInParentheses, as its expectation states
+
+error[UnresolvedName]: `b` is not defined
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:44:34
+   │
+44 │ def strayResident = thunk { same[b = Integer](3) };
+   │                                  ━ not found in this scope
+   │
+   ╰ note: `strayResident` is refused with UnresolvedName, as its expectation states
+
+error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `same[a = …](…)`
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:49:17
+   │
+49 │ def sameNamed = same;
+   │                 ━━━━ an implicit left unsupplied
+   │
+   ╰ note: `sameNamed` is refused with ImplicitUnsupplied, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:54:51
+   │
+54 │ def chosenStanding : Type => Integer = chosen[x = 7];
+   │                                        ┬──────────┯─
+   │                                        │          │
+   │                                        │          its type does not convert: expected `?`, found `Integer`
+   │                                        checked against `Type => Integer`; while checking the argument of this application; binds _ : Type
+   │
+   ╰ note: `chosenStanding` is refused with TypeMismatch, as its expectation states
+
+error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither can come first
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:58:1
+   │
+58 │ def tangled @[a : b, b : a] (x : a) -> -F a { return x }
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
+   │
+   ╰ note: `tangled` is refused with TelescopeCycle, as its expectation states

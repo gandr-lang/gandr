@@ -1,0 +1,8 @@
+error[UndescribedMember.TopLevelOperation]: this member is an operation declared outside a theory, which no signature reads yet
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.TopLevelOperation.gandr:3:1
+  │
+3 │ oper split : (b : Bit) --> (_ : Bit, _ : Bit)
+  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ├ note: `split` is refused with UndescribedMember.TopLevelOperation, as its expectation states
+  ╰ note: tracked by #1507 <https://github.com/gandr-lang/gandr/issues/1507>

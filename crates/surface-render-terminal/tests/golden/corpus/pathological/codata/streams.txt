@@ -1,0 +1,63 @@
+error[MalformedForm]: an operand is missing in this lazy record expression
+   ╭▸ corpus/pathological/codata/streams.gandr:48:3
+   │
+48 │   &{.x => return n, .y => return n}
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an operand is missing here
+   │
+   ╰ note: `shallow` is refused with MalformedForm, as its expectation states
+
+error[CodataKindNotUniverse]: a codata declaration's kind must be a computation universe
+   ╭▸ corpus/pathological/codata/streams.gandr:17:16
+   │
+17 │ codata Point : Type {
+   │                ━━━━ a codata kind that is no computation universe
+   │
+   ╰ note: `Point` is refused with CodataKindNotUniverse, as its expectation states
+
+error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
+   ╭▸ corpus/pathological/codata/streams.gandr:27:10
+   │
+27 │   tail : Swap(b, a);
+   │          ━━━━━━━━━━ the codata type named off an observation's result
+   │
+   ╰ note: `Swap` is refused with CodataOccurrence, as its expectation states
+
+error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
+   ╭▸ corpus/pathological/codata/streams.gandr:35:10
+   │
+35 │   tail : Twisted(Twisted(a));
+   │          ━━━━━━━━━━━━━━━━━━━ the codata type named off an observation's result
+   │
+   ╰ note: `Twisted` is refused with CodataOccurrence, as its expectation states
+
+error[UnresolvedName]: `z` is not defined
+   ╭▸ corpus/pathological/codata/streams.gandr:54:38
+   │
+54 │   &{.x => return n, .y => return n, .z => return n}
+   │                                      ━ not found in this scope
+   │
+   ╰ note: `stray` is refused with UnresolvedName, as its expectation states
+
+error[UnguardedCorecursion]: `fibs[>](…)` must be the whole arm of a copattern block, so each observation yields before `fibs` runs again
+   ╭▸ corpus/pathological/codata/streams.gandr:82:27
+   │
+82 │     .tail => sums(thunk { fibs[>](n) }, thunk { fibs[>](n) })
+   │                           ━━━━━━━ not the whole arm of a copattern
+   │
+   ╰ note: `fibs` is refused with UnguardedCorecursion, as its expectation states
+
+error[UnguardedCorecursion]: `deferred[>](…)` must be the whole arm of a copattern block, so each observation yields before `deferred` runs again
+   ╭▸ corpus/pathological/codata/streams.gandr:89:40
+   │
+89 │   &{.head => return n, .tail => become deferred[>](n)}
+   │                                        ━━━━━━━━━━━ not the whole arm of a copattern
+   │
+   ╰ note: `deferred` is refused with UnguardedCorecursion, as its expectation states
+
+error[UnguardedCorecursion]: `bare[>](…)` must be the whole arm of a copattern block, so each observation yields before `bare` runs again
+   ╭▸ corpus/pathological/codata/streams.gandr:96:3
+   │
+96 │   bare[>](n)
+   │   ━━━━━━━ not the whole arm of a copattern
+   │
+   ╰ note: `bare` is refused with UnguardedCorecursion, as its expectation states

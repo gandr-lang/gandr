@@ -1,0 +1,7 @@
+error[UnstatedComponent.Unbound]: the model signature cannot state `loose`, which names a variable its statement does not bind once
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unbound.gandr:12:19
+   │
+12 │ def model : Model(Loose) ;
+   │                   ━━━━━ the signature this model derives
+   │
+   ╰ note: `model` is refused with UnstatedComponent.Unbound, as its expectation states

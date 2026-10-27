@@ -1,0 +1,11 @@
+error[UnknownGenerator]: a `ua` translator record must name the generators of its description
+   ╭▸ corpus/ledger/diagnostics/UnknownGenerator.gandr:28:16
+   │
+28 │   def misspelt = ua[
+   │ ┏━━━━━━━━━━━━━━━━┛
+29 │ ┃   1,
+30 │ ┃   4
+31 │ ┃ ](Magma, Magma, #{.mul = exchange, .zero = keep}, #{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ no generator of the description
+   │
+   ╰ note: `misspelt` is refused with UnknownGenerator, as its expectation states

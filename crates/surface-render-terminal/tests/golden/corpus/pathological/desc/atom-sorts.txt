@@ -1,0 +1,23 @@
+error[IllFormedDescription]: the operation `fresh` returns `Name`, an atom sort, which is compared and swapped, never produced
+   ╭▸ corpus/pathological/desc/atom-sorts.gandr:7:1
+   │
+ 7 │ ┏ theory Minting {
+ 8 │ ┃   sort Name : Atom;
+ 9 │ ┃   sort Tm : Type;
+10 │ ┃   oper fresh : (t : Tm) --> Name;
+11 │ ┃ }
+   │ ┗━┛ what the description check refuses
+   │
+   ╰ note: `Minting` is refused with IllFormedDescription, as its expectation states
+
+error[IllFormedDescription]: the port `t` binds a variable of the sort `Name`, which is not representable
+   ╭▸ corpus/pathological/desc/atom-sorts.gandr:17:1
+   │
+17 │ ┏ theory AtomBinder {
+18 │ ┃   sort Name : Atom;
+19 │ ┃   sort Tm : Type;
+20 │ ┃   oper abs : (t : pi+ (x : Name). Tm) --> Tm;
+21 │ ┃ }
+   │ ┗━┛ what the description check refuses
+   │
+   ╰ note: `AtomBinder` is refused with IllFormedDescription, as its expectation states

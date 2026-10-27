@@ -1,0 +1,9 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/flow-universe.gandr:13:41
+   │
+13 │ def unshift : Schema.New ⇝ Schema.Old = forward(Schema.toNew);
+   │               ┬──────────────────────   ━━━━━━━━━━━━━━━━━━━━━ its type does not convert: expected `Integer * String * Bool ⇝ String * Integer`, found `Flow(Type, String * Integer, Integer * String * Bool)`
+   │               │
+   │               the type it is checked against
+   │
+   ╰ note: `unshift` is refused with TypeMismatch, as its expectation states

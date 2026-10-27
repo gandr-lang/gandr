@@ -1,0 +1,17 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/data/nested-call-tells-apart.gandr:17:3
+   │
+16 │    def rec tell(n : Int) -> Int {
+   │    │            ─ checked against `Int -> -F Int`; while checking the body of this function; binds n : Int
+   │ ┌──┘
+   │ │
+17 │ │┏   case n {
+18 │ │┃     Z => Z,
+19 │ │┃     S(x) => S(tell[<](x)),
+20 │ │┃     P(x) => S(tell[<](x))
+21 │ │┃   }
+   │ │┗━━━┛ a case its datatype's rules do not admit
+22 │ │  }
+   │ └──┘ checked against `Int => Int`; while checking the body of this function; binds tell : Int => Int
+   │
+   ╰ note: `tell` is refused with RuleNotRespected, as its expectation states

@@ -1,0 +1,15 @@
+error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
+  ╭▸ corpus/ledger/diagnostics/HeldCaptured.gandr:5:9
+  │
+3 │ ┌ def stash() -> -F Integer {
+4 │ │   hold c = 0;
+  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+5 │ │   force thunk { pure c }
+  │ │   ┬─────┯━━━━━━━━━━━━━━━
+  │ │   │     │
+  │ │   │     a held value that may be held other than once
+  │ │   checked against `-F Integer`; while forcing this
+6 │ │ }
+  │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `stash` is expected to be refused with HeldCaptured and run to 0, and it is refused with HeldCaptured and runs to 0

@@ -1,0 +1,101 @@
+error[HeldConsumed]: a method whose receiver is `consumed` takes the held value and ends its hold; the value cannot be read, accessed or consumed after that call
+   ╭▸ corpus/pathological/strings/methods.gandr:16:3
+   │
+13 │ ┌ def readAfterTaken() -> Integer {
+14 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+15 │ │   run bs <- s.bytes();
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds bs : List(Integer)
+16 │ │   s.len()
+   │ │   ━━━━━━━ a held value a consumed receiver already took
+17 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `readAfterTaken` is refused with HeldConsumed, as its expectation states
+
+error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
+   ╭▸ corpus/pathological/strings/methods.gandr:24:33
+   │
+22 │ ┌ def readInThunk() -> Integer {
+23 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+24 │ │   run k : () => Integer <- pure thunk { s.len() };
+   │ │   ┬──                      ┬────┯━━━━━━━━━━━━━━━━
+   │ │   │                        │    │
+   │ │   │                        │    a held value that may be held other than once
+   │ │   │                        checked against `-F (() => Integer)`; while judging the value this returns
+   │ │   checked against `-F Integer`; while finishing the type of this
+25 │ │   force k
+26 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `readInThunk` is refused with HeldCaptured, as its expectation states
+
+error[OutOfFragment.Held]: an `access` lends a held value: a name a `hold` statement holds
+   ╭▸ corpus/pathological/strings/methods.gandr:31:3
+   │
+31 │   t.push(33)
+   │   ━ not a value a hold holds
+   │
+   ╰ note: `pushedUnheld` is refused with OutOfFragment.Held, as its expectation states
+
+error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
+   ╭▸ corpus/pathological/strings/methods.gandr:38:28
+   │
+36 │ ┌ def readWhileLent() -> Unit {
+37 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+38 │ │   access s as v { run n <- s.len(); resume(v, v) }
+   │ │   ┬───────────────┬────────┯━━━━━━────────────────
+   │ │   │               │        │
+   │ │   │               │        a held value lent to an access
+   │ │   │               checked against `-F Unit`; while synthesising the computation this binds
+   │ │   checked against `-F Unit`; while checking the body of this access
+39 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `readWhileLent` is refused with HeldLent, as its expectation states
+
+error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
+   ╭▸ corpus/pathological/strings/methods.gandr:46:26
+   │
+44 │ ┌ def pushedWhileRead() -> Integer {
+45 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+46 │ │   access shared s as w { s.push(33); run bs <- bytes(w); count(bs) }
+   │ │   ┬──────────────────────┯━━━━━━━━━─────────────────────────────────
+   │ │   │                      │
+   │ │   │                      a held value lent to an access
+   │ │   checked against `-F Integer`; while checking the body of this access
+47 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `pushedWhileRead` is refused with HeldLent, as its expectation states
+
+error[HeldConsumed]: a method whose receiver is `consumed` takes the held value and ends its hold; the value cannot be read, accessed or consumed after that call
+   ╭▸ corpus/pathological/strings/methods.gandr:59:3
+   │
+53 │   def readAfterTakenInOneArm(t : Repr) -> Integer {
+   │   │                          ─ checked against `Repr -> -F Integer`; while checking the body of this function; binds t : Repr
+   │ ┌─┘
+   │ │
+54 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+55 │ │   run xs <- case t -> -F List(Integer) {
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds xs : List(Integer)
+56 │ │     Inline(bs) => s.bytes(),
+   ‡ │
+59 │ │   s.len()
+   │ │   ━━━━━━━ a held value a consumed receiver already took
+60 │ │ }
+   │ └─┘ checked against `Repr => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `readAfterTakenInOneArm` is refused with HeldConsumed, as its expectation states
+
+error[StrayReceiverMode]: `shared` is a receiver's mode: only a module member's first parameter is written with it, `self : shared T`
+   ╭▸ corpus/pathological/strings/methods.gandr:64:14
+   │
+64 │ def lent(t : shared Repr) -> -F Integer {
+   │              ━━━━━━ a mode off a receiver
+   │
+   ╰ note: `lent` is refused with StrayReceiverMode, as its expectation states

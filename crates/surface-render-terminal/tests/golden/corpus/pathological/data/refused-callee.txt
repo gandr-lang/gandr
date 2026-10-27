@@ -1,0 +1,15 @@
+error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a computation is expected
+   ╭▸ corpus/pathological/data/refused-callee.gandr:14:15
+   │
+14 │   run held <- (Cons(1, xs) : List(Integer));
+   │               ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form of another sort than this position takes
+   │
+   ╰ note: `refused` is refused with OutOfFragment.WrongSort, as its expectation states
+
+error[OutOfFragment.Unannotated]: the constructor needs a type annotation
+   ╭▸ corpus/pathological/data/refused-callee.gandr:21:43
+   │
+21 │ def calls() -> -F List(Integer) { refused(Nil) }
+   │                                           ━━━ needs a stated type
+   │
+   ╰ note: `calls` is refused with OutOfFragment.Unannotated, as its expectation states

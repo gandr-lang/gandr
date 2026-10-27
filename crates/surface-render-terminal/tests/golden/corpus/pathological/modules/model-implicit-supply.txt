@@ -1,0 +1,31 @@
+error[UnresolvedName]: `Nowhere` is not defined
+   ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:39:43
+   │
+39 │ def nowhere() -> -F Integer { stepped[s = Nowhere](4) }
+   │                                           ━━━━━━━ not found in this scope
+   │
+   ╰ note: `nowhere` is refused with UnresolvedName, as its expectation states
+
+error[UnknownMember]: the module `Mute` has no member `read`
+   ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:43:40
+   │
+43 │ def mute() -> -F Integer { stepped[s = Mute](4) }
+   │                                        ━━━━ no member of this name
+   │
+   ╰ note: `mute` is refused with UnknownMember, as its expectation states
+
+error[ModelImplicitValue]: the model implicit `s` is its components, never a value; read them as `s.x`, and supply the slot by a module's name or a model implicit's, `f[s = M]`
+   ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:47:42
+   │
+47 │ def packed() -> -F Integer { stepped[s = pack Mute at Model(Stepper)](4) }
+   │                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a model implicit as a value
+   │
+   ╰ note: `packed` is refused with ModelImplicitValue, as its expectation states
+
+error[ModelImplicitValue]: the model implicit `s` is its components, never a value; read them as `s.x`, and supply the slot by a module's name or a model implicit's, `f[s = M]`
+   ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:51:67
+   │
+51 │ def alone @[s : Model(Stepper)] (c : s.C) -> -F Integer { observe(s) }
+   │                                                                   ━ a model implicit as a value
+   │
+   ╰ note: `alone` is refused with ModelImplicitValue, as its expectation states

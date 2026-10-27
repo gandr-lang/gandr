@@ -1,0 +1,7 @@
+error[UndescribedMember.ResultArity]: this member returns a number of results other than its operation's outputs
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.ResultArity.gandr:6:3
+  │
+6 │   rule whole : divmod(m, n) ==> m;
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ╰ note: `Divide` is refused with UndescribedMember.ResultArity, as its expectation states

@@ -1,0 +1,7 @@
+error[UnguardedCorecursion]: `ahead[>](…)` must be the whole arm of a copattern block, so each observation yields before `ahead` runs again
+   ╭▸ corpus/ledger/diagnostics/UnguardedCorecursion.gandr:12:16
+   │
+12 │     Succ(p) => ahead[>](p)
+   │                ━━━━━━━━ not the whole arm of a copattern
+   │
+   ╰ note: `ahead` is refused with UnguardedCorecursion, as its expectation states

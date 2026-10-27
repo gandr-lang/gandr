@@ -1,0 +1,16 @@
+error[ShapeMismatch]: expected a universe-path classifier `Path_U a b`
+   ╭▸ corpus/pathological/sessions/payload-univalence.gandr:13:33
+   │
+12 │   def anyProtocol(e : Bit ≃ Answer) -> Path(Type, Ask.Coded, Ask.Decoded) {
+   │   │               ─ checked against `(Bit ≃ Answer) -> -F Path(Type, ?Bit. end, ?Answer. end)`; while checking the body of this function; binds e : Bit ≃ Answer
+   │ ┌─┘
+   │ │
+13 │ │   bisim(Ask.Coded, Ask.Decoded, ua(e))
+   │ │   ┬─────────────────────────────┯━━━━─
+   │ │   │                             │
+   │ │   │                             its type is not of the required shape: found `Path(Type, Bit, Answer)`
+   │ │   checked against `-F Path(Type, ?Bit. end, ?Answer. end)`; while checking the payload paths of this session equivalence
+14 │ │ }
+   │ └─┘ checked against `(Bit ≃ Answer) => Path(Type, ?Bit. end, ?Answer. end)`; while checking the body of this thunk
+   │
+   ╰ note: `anyProtocol` is refused with ShapeMismatch, as its expectation states

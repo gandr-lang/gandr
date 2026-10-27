@@ -1,0 +1,8 @@
+error[UndescribedMember.HigherCell]: this member is a rule between rules, a higher cell with no circuit body
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.HigherCell.gandr:6:3
+  │
+6 │   rule involutive : (b : Bit) <=> (c : Bit);
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ├ note: `Invertible` is refused with UndescribedMember.HigherCell, as its expectation states
+  ╰ note: tracked by #1508 <https://github.com/gandr-lang/gandr/issues/1508>

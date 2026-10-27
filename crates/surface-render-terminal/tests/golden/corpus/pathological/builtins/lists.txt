@@ -1,0 +1,10 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/builtins/lists.gandr:7:18
+  │
+7 │ def mixed = ([1, "two"] : List(Integer));
+  │              ┬───┯━━━━─        ─────── the type it is checked against
+  │              │   │
+  │              │   its type does not convert: expected `Integer`, found `String`
+  │              checked against `List(Integer)`; while checking the first part of this list cell or dependent record
+  │
+  ╰ note: `mixed` is refused with TypeMismatch, as its expectation states

@@ -113,6 +113,7 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::RefusalName;
+use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
 use gandr_surface_lowering::DeprecatedUse;
@@ -1429,8 +1430,9 @@ impl fmt::Display for NoteText<'_>
     ///   to its stated outcome, or to be refused and run, or that its
     ///   expectation states nothing and why; says the refusal is what leaves it
     ///   unsettled, or for a refusal and a run what it was refused with and ran
-    ///   to; then the surviving obligations exactly when the ledger is
-    ///   nonempty.
+    ///   to, or, for a settled declaration whose refusal is the one it states,
+    ///   that it is refused as stated; then the surviving obligations exactly
+    ///   when the ledger is nonempty.
     /// - provides: the note after a refused declaration's snippet.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1441,6 +1443,7 @@ impl fmt::Display for NoteText<'_>
     ///   obligations and one expecting another refusal each say what they
     ///   expected, with their counts and names.
     /// - witness: `tests::diagnostics::the_settle_note_says_what_was_expected_in_words`
+    /// - witness: `tests::diagnostics::a_refusal_its_expectation_states_is_noted_as_stated`
     #[inline]
     fn fmt(
         &self,
@@ -1460,6 +1463,14 @@ impl fmt::Display for NoteText<'_>
                 "`{name}` is expected to check owing {owing} obligations, and this refusal leaves \
                  it unsettled"
             )?,
+            Stated::Verdict(Outcome::Refuses(expected))
+                if self.0.settlement() == Settlement::Settled =>
+            {
+                write!(
+                    f,
+                    "`{name}` is refused with {expected}, as its expectation states"
+                )?;
+            },
             Stated::Verdict(Outcome::Refuses(expected)) => write!(
                 f,
                 "`{name}` is expected to be refused with {expected}, and this refusal is not \

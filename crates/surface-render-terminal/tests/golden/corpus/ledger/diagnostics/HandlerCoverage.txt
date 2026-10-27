@@ -1,0 +1,14 @@
+error[HandlerCoverage]: the handler must handle every operation of its interface exactly once
+  ╭▸ corpus/ledger/diagnostics/HandlerCoverage.gandr:4:3
+  │
+3 │ ┌  def asked() -> -F Integer {
+4 │ │┏   handle c : Proc {
+5 │ │┃     pure 1
+6 │ │┃   } with {
+7 │ │┃     pure(x) => pure x
+8 │ │┃   }
+  │ │┗━━━┛ not every operation once
+9 │ │  }
+  │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `asked` is refused with HandlerCoverage, as its expectation states

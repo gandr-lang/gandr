@@ -1,0 +1,7 @@
+error[NotSynthesisable]: the type of a computation written where a value is read cannot be inferred where it stands
+  ╭▸ corpus/ledger/diagnostics/NotSynthesisable.gandr:3:16
+  │
+3 │ def in_infix = ? + 1;
+  │                ━━━━━ needs a type to be checked against
+  │
+  ╰ note: `in_infix` is refused with NotSynthesisable, as its expectation states

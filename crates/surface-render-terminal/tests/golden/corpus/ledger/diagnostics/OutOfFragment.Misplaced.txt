@@ -1,0 +1,7 @@
+error[OutOfFragment.Misplaced]: the representable universe type classifies a theory's sort member, and stands nowhere else
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Misplaced.gandr:3:23
+  │
+3 │ def universeOutside : Type+ ;
+  │                       ━━━━━ a form admitted only as a theory's sort member
+  │
+  ╰ note: `universeOutside` is refused with OutOfFragment.Misplaced, as its expectation states

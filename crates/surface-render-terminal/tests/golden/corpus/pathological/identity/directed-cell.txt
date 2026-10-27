@@ -1,0 +1,7 @@
+error[DirectedCell]: a cell between two terms is written `<->`; a directed cell `-->` between terms is not supported yet
+  ╭▸ corpus/pathological/identity/directed-cell.gandr:9:15
+  │
+9 │   loop : Base --> Base;
+  │               ━━━ a directed cell between terms
+  │
+  ╰ note: `Circle` is refused with DirectedCell, as its expectation states

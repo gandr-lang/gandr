@@ -1,0 +1,19 @@
+error[NonExhaustiveMatch]: this match does not cover every value it can be given
+  ╭▸ corpus/pathological/builtins/list-patterns.gandr:7:3
+  │
+7 │ ┏   case xs {
+8 │ ┃     [a, ..rest] => return a
+9 │ ┃   }
+  │ ┗━━━┛ some value matches no arm
+  │
+  ╰ note: `unmatched` is refused with NonExhaustiveMatch, as its expectation states
+
+error[MismatchedPattern]: this pattern matches another type than the first arm's pattern at its place
+   ╭▸ corpus/pathological/builtins/list-patterns.gandr:17:5
+   │
+16 │     [] => return 0,
+   │     ── the arm it disagrees with
+17 │     3 => return 1,
+   │     ━ a pattern of another type
+   │
+   ╰ note: `mixed` is refused with MismatchedPattern, as its expectation states

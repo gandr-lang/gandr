@@ -1,0 +1,9 @@
+error[MissingRecordField]: the record is missing a field
+  ╭▸ corpus/ledger/diagnostics/MissingRecordField.gandr:4:9
+  │
+3 │ def r : #{ a : Integer, b : Integer } ;
+  │         ───────────────────────────── the type it is checked against
+4 │ def r = #{.a = 1} ;
+  │         ━━━━━━━━━ a required field is missing
+  │
+  ╰ note: `r` is refused with MissingRecordField, as its expectation states

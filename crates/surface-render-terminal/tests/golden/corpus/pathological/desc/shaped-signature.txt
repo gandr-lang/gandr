@@ -1,0 +1,29 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:24:3
+   │
+24 │   shape Line : 2 {};
+   │   ━━━━━━━━━━━━━━━━━ out of place
+   │
+   ╰ note: `TwoShapes` is refused with MalformedForm, as its expectation states
+
+error[IllFormedDescription]: the face `far` holds a point outside the shape `Square`
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:7:1
+   │
+ 7 │ ┏ theory Past {
+ 8 │ ┃   shape Square : 4 { far = {1, 4}; };
+ 9 │ ┃   sort Cell : Type;
+10 │ ┃ }
+   │ ┗━┛ what the description check refuses
+   │
+   ╰ note: `Past` is refused with IllFormedDescription, as its expectation states
+
+error[IllFormedDescription]: the shape `Square` names the face `left` twice
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:15:1
+   │
+15 │ ┏ theory Twice {
+16 │ ┃   shape Square : 4 { left = {0, 2}; left = {1, 3}; };
+17 │ ┃   sort Cell : Type;
+18 │ ┃ }
+   │ ┗━┛ what the description check refuses
+   │
+   ╰ note: `Twice` is refused with IllFormedDescription, as its expectation states

@@ -1,0 +1,10 @@
+error[FamilyArgumentClassifier]: argument 0 of the type operator has the wrong kind
+  ╭▸ corpus/ledger/diagnostics/FamilyArgumentClassifier.gandr:7:21
+  │
+3 │ def twice : Type -> Type ;
+  │             ──── the type it is checked against
+  ‡
+7 │ def wrong(p : twice(1)) -> -F Integer {
+  │                     ━ outside its parameter's domain: expected `Type`, found `Integer`
+  │
+  ╰ note: `wrong` is refused with FamilyArgumentClassifier, as its expectation states

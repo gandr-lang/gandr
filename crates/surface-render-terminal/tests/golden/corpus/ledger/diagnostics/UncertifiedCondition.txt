@@ -1,0 +1,12 @@
+error[UncertifiedCondition]: `ua` needs a catalogue whose site meets the corolla and Segal conditions
+   ╭▸ corpus/ledger/diagnostics/UncertifiedCondition.gandr:28:13
+   │
+28 │   def empty = ua[
+   │ ┏━━━━━━━━━━━━━┛
+29 │ ┃   1,
+30 │ ┃   0
+31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a catalogue failing the corolla or Segal condition
+   │
+   ├ note: `empty` is refused with UncertifiedCondition, as its expectation states
+   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

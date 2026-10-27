@@ -1,0 +1,7 @@
+error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self[i] }`
+  ╭▸ corpus/ledger/diagnostics/ViewNotPlace.gandr:5:54
+  │
+5 │   def valued @[m : Mode] (self : m List(Integer)) -> -F Integer { self[0] }
+  │                                                      ━━━━━━━━━━ no place of the receiver
+  │
+  ╰ note: `valued` is refused with ViewNotPlace, as its expectation states

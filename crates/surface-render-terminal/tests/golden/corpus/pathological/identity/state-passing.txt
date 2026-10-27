@@ -1,0 +1,34 @@
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/identity/state-passing.gandr:12:3
+   │
+11 │    def rec storesCounted(p : Stores, n : Integer) -> Integer {
+   │    │                     ┬           ─ checked against `Integer -> -F Integer`; while checking the body of this function; binds n : Integer
+   │    │                     │
+   │ ┌──┘                     checked against `Stores -> Integer -> -F Integer`; while checking the body of this function; binds p : Stores
+   │ │
+12 │ │┏   case p {
+13 │ │┃     End(_x) => n,
+14 │ │┃     Store(_t, k) => storesCounted[<](k, n + 1)
+15 │ │┃   }
+   │ │┗━━━┛ a case its datatype's rules do not admit
+16 │ │  }
+   │ └──┘ checked against `(Stores, Integer) => Integer`; while checking the body of this function; binds storesCounted : (Stores, Integer) => Integer
+   │
+   ╰ note: `storesCounted` is refused with RuleNotRespected, as its expectation states
+
+error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
+   ╭▸ corpus/pathological/identity/state-passing.gandr:22:3
+   │
+21 │    def rec storeCount(p : Stores) -> Integer {
+   │    │                  ─ checked against `Stores -> -F Integer`; while checking the body of this function; binds p : Stores
+   │ ┌──┘
+   │ │
+22 │ │┏   case p {
+23 │ │┃     End(_x) => 0,
+24 │ │┃     Store(_t, k) => storeCount[<](k) + 1
+25 │ │┃   }
+   │ │┗━━━┛ a case its datatype's rules do not admit
+26 │ │  }
+   │ └──┘ checked against `Stores => Integer`; while checking the body of this function; binds storeCount : Stores => Integer
+   │
+   ╰ note: `storeCount` is refused with RuleNotRespected, as its expectation states

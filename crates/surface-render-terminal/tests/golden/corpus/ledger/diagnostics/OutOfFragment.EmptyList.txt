@@ -1,0 +1,7 @@
+error[OutOfFragment.EmptyList]: `()` is an empty list, never the unit; write the unit value as `unit` and its type as `Unit`
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.EmptyList.gandr:3:15
+  │
+3 │ def nothing = () ;
+  │               ━━ an empty list, not the unit
+  │
+  ╰ note: `nothing` is refused with OutOfFragment.EmptyList, as its expectation states

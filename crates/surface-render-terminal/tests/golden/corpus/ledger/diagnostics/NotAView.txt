@@ -1,0 +1,12 @@
+error[NotAView]: `resume` and `abort` need the view an `access` opened
+  ╭▸ corpus/ledger/diagnostics/NotAView.gandr:5:3
+  │
+3 │ ┌ def resumed() -> -F Unit {
+4 │ │   hold n = 1;
+  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+5 │ │   resume(n, 1)
+  │ │   ━━━━━━━━━━━━ no view here
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `resumed` is refused with NotAView, as its expectation states

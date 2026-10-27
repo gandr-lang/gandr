@@ -1,0 +1,32 @@
+error[Immobile]: this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead
+   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:16:3
+   │
+15 │ ┌ def unmarkedBack() -> Seat.Dispatch {
+16 │ │   migrate [seat] { pure Seat.task }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type does not cross
+17 │ │ }
+   │ └─┘ checked against `() => Seat.Dispatch`; while checking the body of this thunk
+   │
+   ╰ note: `unmarkedBack` is refused with Immobile, as its expectation states
+
+error[Immobile]: this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead
+   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:25:3
+   │
+24 │ ┌ def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
+25 │ │   migrate [seat] { (hold Seat.task) }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type does not cross
+26 │ │ }
+   │ └─┘ checked against `() => Seat.Dispatch at seat`; while checking the body of this thunk
+   │
+   ╰ note: `unmarkedHandle` is refused with Immobile, as its expectation states
+
+error[Immobile]: this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead
+   ╭▸ corpus/pathological/worlds/immobile-crossing.gandr:33:3
+   │
+32 │ ┌ def suspendedBack() -> () => Seat.Report {
+33 │ │   migrate [seat] { pure thunk { pure Seat.progress } }
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type does not cross
+34 │ │ }
+   │ └─┘ checked against `() => () => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `suspendedBack` is refused with Immobile, as its expectation states

@@ -1,0 +1,44 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/universe/closed.gandr:30:35
+   │
+30 │ def one : el(Arrow(NatC, NatC)) = Succ(Zero);
+   │           ┬────────────────────   ┯━━━━━━━━━
+   │           │                       │
+   │           │                       its type does not convert: expected `el(Arrow(NatC, NatC))`, found `Nat`
+   │           │                       the type it synthesises
+   │           the type it is checked against
+   │
+   ╰ note: `one` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/universe/closed.gandr:35:49
+   │
+35 │ def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
+   │ ┬────────┬──────┬───────────────────────────────┯──
+   │ │        │      │                               │
+   │ │        │      │                               its type does not convert: expected `el(Arrow(c, c))`, found `el(c)`
+   │ │        │      checked against `el(c) -> -F el(Arrow(c, c))`; while checking the body of this function; binds v : el(c)
+   │ │        checked against `(c : U) -> el(c) -> -F el(Arrow(c, c))`; while checking the body of this function; binds c : U
+   │ checked against `(c : U, el(c)) => el(Arrow(c, c))`; while checking the body of this thunk
+   │
+   ╰ note: `idAt` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/universe/closed.gandr:46:35
+   │
+46 │ def miscoded : Coded = Pack(NatC, NatC);
+   │                        ┬──────────┯━━━─
+   │                        │          │
+   │                        │          its type does not convert: expected `el(NatC)`, found `U`
+   │                        │          the type it synthesises
+   │                        checked against `Coded`; while finishing the type of this
+   │
+   ╰ note: `miscoded` is refused with TypeMismatch, as its expectation states
+
+error[OutOfFragment.Arity]: the type variable cannot take 0 operands
+   ╭▸ corpus/pathological/universe/closed.gandr:52:28
+   │
+52 │ def unapplied(c : U) -> -F el { return c }
+   │                            ━━ the wrong number of operands
+   │
+   ╰ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states

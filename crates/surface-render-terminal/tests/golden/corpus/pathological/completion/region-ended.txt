@@ -1,0 +1,16 @@
+error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
+   ╭▸ corpus/pathological/completion/region-ended.gandr:19:3
+   │
+16 │ ┌ def regionEnded() -> Unit {
+17 │ │   hold buf = Ring.read;
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+18 │ │   run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } };
+   │ │   ─── checked against `-F Unit`; while checking the body under this binding; binds buffer : (() => Ring.Sqe) at buf
+19 │ │   fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {
+   │ │   ━━━━ a value kept in the scope's own region
+   ‡ │
+26 │ │   close(ring)
+27 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `regionEnded` is refused with KeptEscaped, as its expectation states

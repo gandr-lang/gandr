@@ -1,0 +1,26 @@
+error[IllFormedDescription]: a rule names the atom `a` under no abstraction of it, or where no port of its sort stands; an atom is named only inside `bind `a` . t`, at a port of the sort it abstracts
+   ╭▸ corpus/pathological/desc/atom-occurrence.gandr:19:3
+   │
+19 │   rule stray : nu(bind a. par(a, nil())) ==> nil();
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ╰ note: `Misplaced` is refused with IllFormedDescription, as its expectation states
+
+error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/atom-occurrence.gandr:36:3
+   │
+35 │   rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where a # q;
+   │   ──────────────────────────────────────────────────────────────────────── the rule it overlaps
+36 │   rule vacant : nu(bind a. nil()) <=> nil();
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+   │
+   ╰ note: `Vacant` is refused with RulesOverlapCondition, as its expectation states
+
+error[IllFormedDescription]: the rule holds only of an instance of `p` that does not name the atom it crosses, and the operation `out` takes an atom, so a term can name one: no rewriting step decides that condition yet
+   ╭▸ corpus/pathological/desc/atom-occurrence.gandr:50:3
+   │
+50 │   rule split : par(nu(bind a. p), p) ==> p where a # p;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ├ note: `Split` is refused with IllFormedDescription, as its expectation states
+   ╰ note: tracked by #1934 <https://github.com/gandr-lang/gandr/issues/1934>

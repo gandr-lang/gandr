@@ -1,0 +1,13 @@
+error[AbsentTupleComponent]: the tuple has no such component
+  ╭▸ corpus/ledger/diagnostics/AbsentTupleComponent.gandr:4:3
+  │
+3 │   def none(u : Unit) -> -F Unit {
+  │   │        ─ checked against `Unit -> -F Unit`; while checking the body of this function; binds u : Unit
+  │ ┌─┘
+  │ │
+4 │ │   u.0
+  │ │   ━━━ no component of the product type
+5 │ │ }
+  │ └─┘ checked against `Unit => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `none` is refused with AbsentTupleComponent, as its expectation states

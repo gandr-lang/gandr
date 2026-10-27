@@ -1,0 +1,15 @@
+error[LoopNotRespected]: this case might tell a loop apart from staying put: carried along the loop, its answer at the loop's point is not that answer
+   ╭▸ corpus/ledger/diagnostics/LoopNotRespected.gandr:9:3
+   │
+ 8 │    def contractible(x : Circle) -> -F Path(Circle, Base, x) {
+   │    │                ─ checked against `(x : Circle) -> -F Path(Circle, Base, x)`; while checking the body of this function; binds x : Circle
+   │ ┌──┘
+   │ │
+ 9 │ │┏   case x {
+10 │ │┃     Base => here(Base)
+11 │ │┃   }
+   │ │┗━━━┛ a case its sort's loops do not admit
+12 │ │  }
+   │ └──┘ checked against `(x : Circle) => Path(Circle, Base, x)`; while checking the body of this thunk
+   │
+   ╰ note: `contractible` is refused with LoopNotRespected, as its expectation states

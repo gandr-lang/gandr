@@ -1,0 +1,15 @@
+error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+  ╭▸ corpus/ledger/diagnostics/HeldCopied.gandr:5:8
+  │
+3 │ ┌ def read_held() -> -F Integer {
+4 │ │   hold[1] c = 0;
+  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+5 │ │   pure c
+  │ │   ┬────┯
+  │ │   │    │
+  │ │   │    a copy of a value held at grade one
+  │ │   checked against `-F Integer`; while judging the value this returns
+6 │ │ }
+  │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `read_held` is refused with HeldCopied, as its expectation states

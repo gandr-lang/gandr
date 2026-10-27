@@ -1,0 +1,27 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/dependent-instantiation-capture-accepts.gandr:22:25
+   │
+14 │ ┌ def captured(
+15 │ │   a : Type,
+   │ │   ─ checked against `(a : Type) -> Type -> Type -> (d : Type) -> (a => d) -> (d => d) -> -F (a => d)`; while checking the body of this function; binds a : Type
+16 │ │   b : Type,
+   │ │   ─ checked against `Type -> Type -> (d : Type) -> (a => d) -> (d => d) -> -F (a => d)`; while checking the body of this function; binds b : Type
+17 │ │   c : Type,
+   │ │   ─ checked against `Type -> (c : Type) -> (a => c) -> (c => c) -> -F (a => c)`; while checking the body of this function; binds c : Type
+18 │ │   d : Type,
+   │ │   ─ checked against `(d : Type) -> (a => d) -> (d => d) -> -F (a => d)`; while checking the body of this function; binds d : Type
+19 │ │   u : a => d,
+   │ │   ─ checked against `(a => d) -> (d => d) -> -F (a => d)`; while checking the body of this function; binds u : a => d
+20 │ │   h : d => d
+   │ │   ─ checked against `(d => d) -> -F (a => d)`; while checking the body of this function; binds h : d => d
+21 │ │ ) -> a => d {
+22 │ │   thunk { comp(a, c, d, u, h) }
+   │ │   ┬───────┬─────────────┯──────
+   │ │   │       │             │
+   │ │   │       │             its type does not convert: expected `a => c`, found `a => d`
+   │ │   │       checked against `a -> -F d`; while checking the argument of this application
+   │ │   checked against `-F (a => d)`; while checking the body of this thunk
+23 │ │ }
+   │ └─┘ checked against `(a : Type, Type, Type, d : Type, a => d, d => d) => a => d`; while checking the body of this thunk
+   │
+   ╰ note: `captured` is refused with TypeMismatch, as its expectation states

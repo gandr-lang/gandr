@@ -1,0 +1,39 @@
+error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits; supply one as `stepped[s = …](…)`
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:19:31
+   │
+19 │ def nothingYet() -> Integer { stepped(4) }
+   │                               ━━━━━━━━━━ a model implicit no module answers
+   │
+   ╰ note: `nothingYet` is refused with ModelUnanswered, as its expectation states
+
+error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at the types its arguments force: `Up` and `Tens` do not; supply one as `stepped[s = …](…)`
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:45:28
+   │
+45 │ def textual() -> Integer { stepped("four") }
+   │                            ━━━━━━━━━━━━━━━ a model implicit no module answers
+   │
+   ╰ note: `textual` is refused with ModelUnanswered, as its expectation states
+
+error[ModelAmbiguous]: more than one module in scope answers the model implicit `s` this call to `stepped` omits: `Up` and `Tens`; supply the one meant as `stepped[s = …](…)`
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:49:25
+   │
+49 │ def twin() -> Integer { stepped(4) }
+   │                         ━━━━━━━━━━ a model implicit more than one module answers
+   │
+   ╰ note: `twin` is refused with ModelAmbiguous, as its expectation states
+
+error[ModelAmbiguous]: more than one module in scope answers the model implicit `s` this call to `fromZero` omits: `Up` and `Tens`; supply the one meant as `fromZero[s = …](…)`
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:62:29
+   │
+62 │ def manifest() -> Integer { fromZero() }
+   │                             ━━━━━━━━━━ a model implicit more than one module answers
+   │
+   ╰ note: `manifest` is refused with ModelAmbiguous, as its expectation states
+
+error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `fromText` omits at the types its arguments force: `Up` and `Tens` do not; supply one as `fromText[s = …](…)`
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:71:30
+   │
+71 │ def textTally() -> Integer { fromText() }
+   │                              ━━━━━━━━━━ a model implicit no module answers
+   │
+   ╰ note: `textTally` is refused with ModelUnanswered, as its expectation states

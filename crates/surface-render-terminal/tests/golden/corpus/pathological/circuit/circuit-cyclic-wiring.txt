@@ -1,0 +1,10 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/circuit/circuit-cyclic-wiring.gandr:7:3
+   │
+ 7 │ ┏   rule spin : (data x : Nat) ==> (z : Nat) {
+ 8 │ ┃     node : f(w) --> (z);
+ 9 │ ┃     node : g(z) --> (w);
+10 │ ┃   };
+   │ ┗━━━┛ out of place
+   │
+   ╰ note: `Loop` is refused with MalformedForm, as its expectation states

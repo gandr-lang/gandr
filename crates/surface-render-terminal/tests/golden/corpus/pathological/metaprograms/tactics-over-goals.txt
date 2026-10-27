@@ -1,0 +1,43 @@
+error[OutOfFragment.WrongSort]: a splice expression cannot stand where a computation is expected
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:27:12
+   │
+27 │   run y <- ~assumption;
+   │            ━━━━━━━━━━━ a form of another sort than this position takes
+   │
+   ╰ note: `ranSplice` is refused with OutOfFragment.WrongSort, as its expectation states
+
+error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binder in scope has
+  ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:8:33
+  │
+8 │ def none(u : Unit) -> Integer { ~assumption }
+  │ ┬────────┬──────────────────────┯━━━━━━━━━━──
+  │ │        │                      │
+  │ │        │                      a splice its tactic does not answer
+  │ │        checked against `Unit -> -F Integer`; while checking the body of this function; binds u : Unit
+  │ checked against `Unit => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `none` is refused with TacticRefused, as its expectation states
+
+error[TacticRefused]: the tactic `intro(assumption)` introduces a binder where the goal is no function
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:12:22
+   │
+12 │ def flat : Integer = ~intro(assumption);
+   │                      ━━━━━━━━━━━━━━━━━━ a splice its tactic does not answer
+   │
+   ╰ note: `flat` is refused with TacticRefused, as its expectation states
+
+error[TacticRefused]: the splice running `assumption` stands where no type is known to check it against; state the type it stands at
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:16:13
+   │
+16 │ def loose = ~assumption;
+   │             ━━━━━━━━━━━ a splice its tactic does not answer
+   │
+   ╰ note: `loose` is refused with TacticRefused, as its expectation states
+
+error[UnknownTactic]: a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under fewer than 32 introductions
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:21:38
+   │
+21 │ def named(x : Integer) -> Integer { ~x }
+   │                                      ━ a splice of no tactic
+   │
+   ╰ note: `named` is refused with UnknownTactic, as its expectation states

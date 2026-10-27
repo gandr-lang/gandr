@@ -23,7 +23,7 @@ The terminal face of the diagnostics model: one `Diagnostic` laid out as the loc
 
 | Surface | Behavior and evidence |
 | ------- | --------------------- |
-| `render` and `Rendered` | One diagnostic at each verbosity; goldens under `tests/golden/` for each causal shape, a missing terminator, an unclosed string, an unlocated rule and each other kind. |
+| `render` and `Rendered` | One diagnostic at each verbosity; goldens under `tests/golden/` for each causal shape, a missing terminator, an unclosed string, an unlocated rule and each other kind; and under `tests/golden/corpus/`, at each source's corpus path, the refusals each pathological twin and each refusal name's exemplar prints, an expected refusal printed as an unexpected one is. |
 | `RenderStyle` and `TerminalCapability` | Plain or styled output, following the caller's statement of whether its output is a terminal. |
 
 ## Expected features

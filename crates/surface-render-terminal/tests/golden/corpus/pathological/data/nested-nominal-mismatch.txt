@@ -1,0 +1,23 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/nested-nominal-mismatch.gandr:17:16
+   │
+17 │ def listed = ([Cel(20)] : List(Fahrenheit));
+   │               ┬┯━━━━━━─        ────────── the type it is checked against
+   │               ││
+   │               │its type does not convert: expected `Fahrenheit`, found `Celsius`
+   │               │the type it synthesises
+   │               checked against `List(Fahrenheit)`; while checking the first part of this list cell or dependent record
+   │
+   ╰ note: `listed` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/nested-nominal-mismatch.gandr:22:15
+   │
+22 │ def again = ([Cel(20)] : List(Fahrenheit));
+   │              ┬┯━━━━━━─        ────────── the type it is checked against
+   │              ││
+   │              │its type does not convert: expected `Fahrenheit`, found `Celsius`
+   │              │the type it synthesises
+   │              checked against `List(Fahrenheit)`; while checking the first part of this list cell or dependent record
+   │
+   ╰ note: `again` is refused with TypeMismatch, as its expectation states

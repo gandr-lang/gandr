@@ -1,0 +1,13 @@
+error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
+  ╭▸ corpus/ledger/diagnostics/OpenSessionPayload.gandr:6:43
+  │
+5 │   def open_payload = transport(
+  │ ┌────────────────────┘
+6 │ │   \X. Path(Type, type(?String. end), type(?X. end)),
+  │ │                                           ━━━━━━━ a session payload open over a binder
+7 │ │   here(String),
+8 │ │   here(type(?String. end))
+9 │ │ ) ;
+  │ └─┘ checked against `Path(Type, ?String. end, ?String. end)`; while forming this type under its binder; binds _ : Type
+  │
+  ╰ note: `open_payload` is refused with OpenSessionPayload, as its expectation states

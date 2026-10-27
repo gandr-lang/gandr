@@ -1,0 +1,12 @@
+error[ViewUnended]: the body of this `access` must end its view with `resume` or `abort`
+  ╭▸ corpus/ledger/diagnostics/ViewUnended.gandr:5:3
+  │
+3 │ ┌ def unended() -> -F Unit {
+4 │ │   hold c = 0;
+  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+5 │ │   access c as v { pure unit }
+  │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a view neither resumed nor aborted
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `unended` is refused with ViewUnended, as its expectation states

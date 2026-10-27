@@ -1,0 +1,17 @@
+error[OutOfFragment.WrongSort]: a module declaration cannot stand where a module is expected
+   ╭▸ corpus/pathological/modules/model-nested.gandr:14:27
+   │
+14 │ module Unascribed : Model(Faceted) {
+   │                           ━━━━━━━ a form of another sort than this position takes
+   │
+   ╰ note: `inner` is refused with OutOfFragment.WrongSort, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/modules/model-nested.gandr:27:24
+   │
+27 │ def leaked : Integer = Sealed.inner.zero;
+   │              ┬──────   ━━━━━━━━━━━━━━━━━ its type does not convert: expected `Integer`, found `Sealed.inner.T`
+   │              │
+   │              the type it is checked against
+   │
+   ╰ note: `leaked` is refused with TypeMismatch, as its expectation states

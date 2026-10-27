@@ -1,0 +1,9 @@
+error[ShapeMismatch]: expected a sum type `A + B`
+  ╭▸ corpus/pathological/basics/booleans.gandr:6:25
+  │
+6 │ def counted : Integer = true;
+  │               ┬──────   ━━━━ its type is not of the required shape: found `Integer`
+  │               │
+  │               the type met, where a sum type `A + B` is required
+  │
+  ╰ note: `counted` is refused with ShapeMismatch, as its expectation states

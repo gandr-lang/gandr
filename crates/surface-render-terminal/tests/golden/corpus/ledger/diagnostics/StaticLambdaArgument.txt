@@ -1,0 +1,11 @@
+error[StaticLambdaArgument]: a type operator is given where a value is needed
+  ╭▸ corpus/ledger/diagnostics/StaticLambdaArgument.gandr:8:42
+  │
+8 │ def at_a_dynamic_parameter = thunk { use(\X. #{X, X}) } ;
+  │                              ┬───────┬───┯━━━━━━━━━━───
+  │                              │       │   │
+  │                              │       │   a type operator where a value is needed
+  │                              │       checked against `-F Unit`; while checking the argument of this application
+  │                              checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `at_a_dynamic_parameter` is refused with StaticLambdaArgument, as its expectation states

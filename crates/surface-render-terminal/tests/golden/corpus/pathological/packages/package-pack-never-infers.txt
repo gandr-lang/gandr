@@ -1,0 +1,16 @@
+error[OutOfFragment.pack_expression]: the pack expression is not supported yet
+  ╭▸ corpus/pathological/packages/package-pack-never-infers.gandr:7:19
+  │
+7 │ def unannotated = pack [Integer] thunk { return #{seed = 7} };
+  │                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `unannotated` is refused with OutOfFragment.pack_expression, as its expectation states
+  ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>
+
+error[UnknownConstant]: this names a declaration whose type is not known
+   ╭▸ corpus/pathological/packages/package-pack-never-infers.gandr:12:13
+   │
+12 │ def again = unannotated;
+   │             ━━━━━━━━━━━ no declaration with a type
+   │
+   ╰ note: `again` is refused with UnknownConstant, as its expectation states

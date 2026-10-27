@@ -1,0 +1,39 @@
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/data/curry.gandr:27:19
+   │
+25 │    def bad(b : Bad) -> Empty {
+   │    │       ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
+   │ ┌──┘
+   │ │
+26 │ │┌   case b {
+27 │ ││     MkBad(f) => f(b)
+   │ ││                 ┬─┯─
+   │ ││                 │ │
+   │ ││                 │ not below the stage its recursion wants
+   │ ││                 checked against `-F Empty`; while checking the argument of this application
+28 │ ││   }
+   │ │└───┘ checked against `-F Empty`; while checking the body of this function; binds f : Bad => Empty
+29 │ │  }
+   │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
+   │
+   ╰ note: `bad` is refused with StageNotBelow, as its expectation states
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/data/curry.gandr:36:23
+   │
+34 │    def smuggled(b : Bad) -> Empty {
+   │    │            ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
+   │ ┌──┘
+   │ │
+35 │ │┌   case b {
+36 │ ││     MkBad(f) => apply(f, b)
+   │ ││                 ┬─────┯────
+   │ ││                 │     │
+   │ ││                 │     not below the stage its recursion wants
+   │ ││                 checked against `-F Empty`; while checking the argument of this application
+37 │ ││   }
+   │ │└───┘ checked against `-F Empty`; while checking the body of this function; binds f : Bad => Empty
+38 │ │  }
+   │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
+   │
+   ╰ note: `smuggled` is refused with StageNotBelow, as its expectation states

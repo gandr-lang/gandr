@@ -1,0 +1,7 @@
+error[UnresolvedName]: `missing` is not defined
+  ╭▸ corpus/ledger/diagnostics/UnresolvedName.gandr:3:14
+  │
+3 │ def broken = missing ;
+  │              ━━━━━━━ not found in this scope
+  │
+  ╰ note: `broken` is refused with UnresolvedName, as its expectation states

@@ -1,0 +1,15 @@
+error[ForwardUnsupported]: `forward` cannot image this translator at every input
+  ╭▸ corpus/ledger/diagnostics/ForwardUnsupported.gandr:4:3
+  │
+3 │   def lift(t : Type, f : t => t) -> -F Flow(Type, t, t) {
+  │   │        ┬         ─ checked against `(t => t) -> -F Flow(Type, t, t)`; while checking the body of this function; binds f : t => t
+  │   │        │
+  │ ┌─┘        checked against `(t : Type) -> (t => t) -> -F Flow(Type, t, t)`; while checking the body of this function; binds t : Type
+  │ │
+4 │ │   forward(f)
+  │ │   ━━━━━━━━━━ a translator the rule cannot image
+5 │ │ }
+  │ └─┘ checked against `(t : Type, t => t) => Flow(Type, t, t)`; while checking the body of this thunk
+  │
+  ├ note: `lift` is refused with ForwardUnsupported, as its expectation states
+  ╰ note: tracked by #1835 <https://github.com/gandr-lang/gandr/issues/1835>

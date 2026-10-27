@@ -1,0 +1,23 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/vectors.gandr:15:3
+   │
+14 │   def overstated() -> Vec(Integer, Succ(Succ(Zero))) {
+   │   │                   ────────────────────────────── the type it is checked against
+   │ ┌─┘
+   │ │
+15 │ │   VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert: expected `Vec(Integer, Succ(Succ(Zero)))`, found `Vec(Integer, Succ(Zero))`
+16 │ │ }
+   │ └─┘ checked against `() => Vec(Integer, Succ(Succ(Zero)))`; while checking the body of this thunk
+   │
+   ╰ note: `overstated` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/vectors.gandr:21:37
+   │
+20 │ data Misindexed(a : Type) : Nat -> Type {
+   │                             ─── the type it is checked against
+21 │   Wrong : (x : a) --> Misindexed(a, x);
+   │                                     ━ its type does not convert: expected `Nat`, found `?`
+   │
+   ╰ note: `Misindexed` is refused with TypeMismatch, as its expectation states

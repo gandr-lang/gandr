@@ -1,0 +1,7 @@
+error[CorollaCardinality]: the two descriptions have different numbers of generators at a corolla
+   ╭▸ corpus/ledger/diagnostics/CorollaCardinality.gandr:32:14
+   │
+32 │ def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow}) ;
+   │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ species of different sizes at a corolla
+   │
+   ╰ note: `uneven` is refused with CorollaCardinality, as its expectation states

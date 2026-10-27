@@ -1,0 +1,16 @@
+error[EndpointAsValue]: an endpoint can be used only by a session action
+  ╭▸ corpus/ledger/diagnostics/EndpointAsValue.gandr:4:28
+  │
+3 │ ┌ def seat_returned() -> -F Unit {
+4 │ │   fork (seat : end) { pure seat } as desk;
+  │ │   ┬───                ┬────┯━━━
+  │ │   │                   │    │
+  │ │   │                   │    an endpoint read as a value
+  │ │   │                   checked against `-F Unit`; while judging the value this returns
+  │ │   the endpoint was opened by this fork
+  │ │   checked against `-F Unit`; while checking the child this forks
+5 │ │   close(desk)
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `seat_returned` is refused with EndpointAsValue, as its expectation states

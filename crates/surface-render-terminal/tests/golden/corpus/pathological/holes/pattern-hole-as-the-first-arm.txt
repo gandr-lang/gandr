@@ -1,0 +1,15 @@
+error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
+   ╭▸ corpus/pathological/holes/pattern-hole-as-the-first-arm.gandr:15:3
+   │
+14 │    def classify(c : Color) -> Integer {
+   │    │            ─ checked against `Color -> -F Integer`; while checking the body of this function; binds c : Color
+   │ ┌──┘
+   │ │
+15 │ │┏   case c {
+16 │ │┃     ?branch => 1
+17 │ │┃   }
+   │ │┗━━━┛ an arm left to a pattern hole
+18 │ │  }
+   │ └──┘ checked against `Color => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `classify` is refused with UndecidedCoverage, as its expectation states

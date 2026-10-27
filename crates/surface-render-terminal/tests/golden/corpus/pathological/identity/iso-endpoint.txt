@@ -1,0 +1,10 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/iso-endpoint.gandr:15:69
+   │
+15 │ def wrongEndpoint : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (retr, retr)));
+   │                                                                    ┬┯━━━───────
+   │                                                                    ││
+   │                                                                    │its type does not convert: expected `(a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)), a)`, found `(n : Int) => Path(Int, wind(spin(n)), n)`
+   │                                                                    checked; while checking the next premise of this
+   │
+   ╰ note: `wrongEndpoint` is refused with TypeMismatch, as its expectation states

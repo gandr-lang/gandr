@@ -1,0 +1,15 @@
+error[HeldShared]: `hold[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
+   ╭▸ corpus/pathological/strings/unique-write.gandr:20:15
+   │
+17 │ ┌ def heldCopy() -> [Div] Integer {
+18 │ │   run s <- force long;
+   │ │   ─── checked against `-F [Div] Integer`; while checking the body under this binding; binds s : Repr
+19 │ │   run c <- copy(s);
+   │ │   ─── checked against `-F [Div] Integer`; while checking the body under this binding; binds c : Repr
+20 │ │   hold[1] h = c;
+   │ │               ━ a value that may have another holder
+21 │ │   access h as v { run w <- pushInPlace(v, 33); run t <- written(w); resume(v, t); copies(w) }
+22 │ │ }
+   │ └─┘ checked against `+U (-F [Div] Integer)`; while checking the body of this thunk
+   │
+   ╰ note: `heldCopy` is refused with HeldShared, as its expectation states

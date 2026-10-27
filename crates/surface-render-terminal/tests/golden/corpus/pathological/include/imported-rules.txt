@@ -1,0 +1,18 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/include/imported-rules.gandr:21:3
+   │
+21 │   include Unwritten;
+   │   ━━━━━━━━━━━━━━━━━ out of place
+   │
+   ╰ note: `Orphan` is refused with MalformedForm, as its expectation states
+
+error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
+   ╭▸ corpus/pathological/include/imported-rules.gandr:15:3
+   │
+13 │   include Monoid;
+   │   ────────────── the rule it overlaps
+14 │   oper pair : (x : M, y : M) --> M;
+15 │   rule swap : mul(one(), pair(x, y)) ==> pair(y, x);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
+   │
+   ╰ note: `Swapping` is refused with RulesUncompleted, as its expectation states

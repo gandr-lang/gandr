@@ -1,0 +1,7 @@
+error[UnresolvedName]: `Lam` is not defined
+   ╭▸ corpus/pathological/desc/theory-constructor-qualified.gandr:14:10
+   │
+14 │     Tree.Lam(body) => 1,
+   │          ━━━ not found in this scope
+   │
+   ╰ note: `lambda` is refused with UnresolvedName, as its expectation states

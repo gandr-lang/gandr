@@ -1968,6 +1968,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::lower_unit_source','fu
 INSERT INTO purpose VALUES('surface-dispatcher','compose::tabled::Absent','enum','Why a judgement holds no type table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','dispatch','function','Route one invocation to its outcome.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Entries','struct','The diagnostics of one step, in the order its verb prints them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::Refusals','enum','Which of a step''s refusals its declarations print.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::entries','function','What `step` prints under `verb`, in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Engine','enum','The engine a run takes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Evaluation','enum','What running one declaration came to.',NULL,'fits','sound',NULL);

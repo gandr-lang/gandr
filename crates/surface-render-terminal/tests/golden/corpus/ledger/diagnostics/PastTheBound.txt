@@ -1,0 +1,11 @@
+error[PastTheBound]: a generator stands at a corolla past the `ua` catalogue bound
+   ╭▸ corpus/ledger/diagnostics/PastTheBound.gandr:28:13
+   │
+28 │   def short = ua[
+   │ ┏━━━━━━━━━━━━━┛
+29 │ ┃   1,
+30 │ ┃   3
+31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a generator past the catalogue's bound
+   │
+   ╰ note: `short` is refused with PastTheBound, as its expectation states

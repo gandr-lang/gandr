@@ -51,6 +51,7 @@ use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Refusals;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
@@ -2276,6 +2277,30 @@ fn the_settle_note_says_what_was_expected_in_words()
             "the note says what was expected and why it did not happen"
         );
     }
+}
+
+#[test]
+fn a_refusal_its_expectation_states_is_noted_as_stated()
+{
+    let step = unsettled(
+        Path::new("stated.gandr"),
+        SourceRoot::Fixture,
+        SourceText::from("@[ refuses(\"UnresolvedName\") ] def d = missing ;\n"),
+    );
+    let held: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+        .refusals(Refusals::Every)
+        .collect();
+    let [ref diagnostic] = *held.as_slice()
+    else {
+        panic!("the expected refusal prints once: {held:?}");
+    };
+    assert_eq!(
+        diagnostic.note,
+        Maybe::Present(String::from(
+            "`d` is refused with UnresolvedName, as its expectation states"
+        )),
+        "a refusal its expectation states is not called another one"
+    );
 }
 
 #[test]

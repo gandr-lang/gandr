@@ -1,0 +1,9 @@
+error[CompoundEndpoint]: a path endpoint must compute a value without effects
+  ╭▸ corpus/ledger/diagnostics/CompoundEndpoint.gandr:9:49
+  │
+9 │ def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two {
+  │                            ┬─────────────       ━━━━ an endpoint that returns no pure value: found `Two -> -F Type`
+  │                            │
+  │                            the type it synthesises
+  │
+  ╰ note: `curried` is refused with CompoundEndpoint, as its expectation states

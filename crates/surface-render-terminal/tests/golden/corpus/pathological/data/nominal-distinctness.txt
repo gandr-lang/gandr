@@ -1,0 +1,35 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/nominal-distinctness.gandr:23:17
+   │
+23 │ def ascribed = (Cel(20) : Fahrenheit);
+   │                 ┯━━━━━━   ────────── the type it is checked against
+   │                 │
+   │                 its type does not convert: expected `Fahrenheit`, found `Celsius`
+   │                 the type it synthesises
+   │
+   ╰ note: `ascribed` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/nominal-distinctness.gandr:27:16
+   │
+18 │ type Temp = Fahrenheit;
+   │             ────────── the type it is checked against
+   ‡
+27 │ def aliased = (Cel(20) : Temp);
+   │                ┯━━━━━━
+   │                │
+   │                its type does not convert: expected `Fahrenheit`, found `Celsius`
+   │                the type it synthesises
+   │
+   ╰ note: `aliased` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/nominal-distinctness.gandr:32:20
+   │
+32 │ def mislabelled = (Cel(20) : Fahrenheit);
+   │                    ┯━━━━━━   ────────── the type it is checked against
+   │                    │
+   │                    its type does not convert: expected `Fahrenheit`, found `Celsius`
+   │                    the type it synthesises
+   │
+   ╰ note: `mislabelled` is refused with TypeMismatch, as its expectation states

@@ -1,0 +1,10 @@
+error[IllFormedDescription]: the face `far` holds a point outside the shape `Square`
+  ╭▸ corpus/ledger/diagnostics/IllFormedDescription.gandr:3:1
+  │
+3 │ ┏ theory Past {
+4 │ ┃   shape Square : 4 { far = {1, 4}; };
+5 │ ┃   sort Cell : Type;
+6 │ ┃ }
+  │ ┗━┛ what the description check refuses
+  │
+  ╰ note: `Past` is refused with IllFormedDescription, as its expectation states

@@ -1,0 +1,13 @@
+error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory it handles
+   ╭▸ corpus/ledger/diagnostics/HandlerUnlawful.gandr:13:3
+   │
+13 │ ┏   handle st : Stored with sort S = Integer {
+14 │ ┃     st.put(1);
+15 │ ┃     run a <- st.get();
+16 │ ┃     pure a
+   ‡ ┃
+20 │ ┃     oper put(s, k) => k(unit)
+21 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ╰ note: `forgetful` is refused with HandlerUnlawful, as its expectation states

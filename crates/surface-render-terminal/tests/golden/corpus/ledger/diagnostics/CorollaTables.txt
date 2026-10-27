@@ -1,0 +1,7 @@
+error[CorollaTables]: `ua` needs exactly one translator per corolla on each side
+   ╭▸ corpus/ledger/diagnostics/CorollaTables.gandr:19:13
+   │
+19 │ def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename}) ;
+   │             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a corolla translated other than once
+   │
+   ╰ note: `twice` is refused with CorollaTables, as its expectation states

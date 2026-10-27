@@ -1,0 +1,7 @@
+error[PartialField]: the constructor `Dot` declares no field `start`, so `start` is not read off every value of the type
+  ╭▸ corpus/ledger/diagnostics/PartialField.gandr:9:9
+  │
+9 │   shape.start
+  │         ━━━━━ a field some constructor lacks
+  │
+  ╰ note: `startOf` is refused with PartialField, as its expectation states

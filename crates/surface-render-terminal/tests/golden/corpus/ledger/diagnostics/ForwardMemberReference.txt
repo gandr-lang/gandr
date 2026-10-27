@@ -1,0 +1,10 @@
+error[ForwardMemberReference]: the member `second` is used before it is declared
+  ╭▸ corpus/ledger/diagnostics/ForwardMemberReference.gandr:4:15
+  │
+4 │   def first = second + 1;
+  │               ━━━━━━ named before it is declared
+5 │   @[ runs("2") ]
+6 │   def second = 2;
+  │       ────── declared here
+  │
+  ╰ note: `first` is refused with ForwardMemberReference, as its expectation states

@@ -1,0 +1,9 @@
+error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
+   ╭▸ corpus/pathological/extension/zero-fiber.gandr:24:3
+   │
+23 │   rule boundary : out0(e) ==> zero();
+   │   ────────────────────────────────── the rule it overlaps
+24 │   rule betaLeft : out0(ins(x, y)) ==> x;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
+   │
+   ╰ note: `FreeFiber` is refused with RulesUncompleted, as its expectation states

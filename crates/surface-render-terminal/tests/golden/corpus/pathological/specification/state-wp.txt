@@ -1,0 +1,13 @@
+error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory it handles
+   ╭▸ corpus/pathological/specification/state-wp.gandr:12:3
+   │
+12 │ ┏   handle st : StateLaws with sort S = Integer {
+13 │ ┃     run n <- st.get();
+14 │ ┃     st.put(n + 1);
+15 │ ┃     pure fn (q) { fn (s) { q(unit, s) } }
+   ‡ ┃
+19 │ ┃     oper put(_s, k) => pure fn (q) { fn (old) { run w <- k(unit); w(q, old) } }
+20 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ╰ note: `incrForgetful` is refused with HandlerUnlawful, as its expectation states

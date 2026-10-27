@@ -1,0 +1,8 @@
+error[OutOfFragment.Indexed]: the rule member reads a family at an index, which the fragment does not read here
+   ╭▸ corpus/pathological/data/indexed-family-rule-declined.gandr:26:8
+   │
+26 │   rule Tell(s, Tell(u, k)) <=> Tell(u, k);
+   │        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a family applied to an index
+   │
+   ├ note: `Prog` is refused with OutOfFragment.Indexed, as its expectation states
+   ╰ note: tracked by #1314 <https://github.com/gandr-lang/gandr/issues/1314>

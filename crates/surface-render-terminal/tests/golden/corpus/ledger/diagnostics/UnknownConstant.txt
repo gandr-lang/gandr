@@ -1,0 +1,15 @@
+error[UnresolvedName]: `c` is not defined
+  ╭▸ corpus/ledger/diagnostics/UnknownConstant.gandr:4:9
+  │
+4 │ def b = c ;
+  │         ━ not found in this scope
+  │
+  ╰ note: `b` is refused with UnresolvedName, as its expectation states
+
+error[UnknownConstant]: this names a declaration whose type is not known
+  ╭▸ corpus/ledger/diagnostics/UnknownConstant.gandr:7:9
+  │
+7 │ def a = b ;
+  │         ━ no declaration with a type
+  │
+  ╰ note: `a` is refused with UnknownConstant, as its expectation states

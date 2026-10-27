@@ -1,0 +1,29 @@
+error[OutOfFragment.unpack_statement]: the unpack statement is not supported yet
+  ╭▸ corpus/pathological/packages/package-abstraction-leak.gandr:9:3
+  │
+9 │   unpack m : package [T] +U[ω] (-F #{seed : T}) = p;
+  │   ━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `leak` is refused with OutOfFragment.unpack_statement, as its expectation states
+  ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>
+
+error[OutOfFragment.package_type]: the package type is not supported yet
+   ╭▸ corpus/pathological/packages/package-abstraction-leak.gandr:16:15
+   │
+16 │ def counter : package [T] +U[ω] (-F #{seed : T});
+   │               ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `counter` is refused with OutOfFragment.package_type, as its expectation states
+   ╰ note: tracked by #1108 <https://github.com/gandr-lang/gandr/issues/1108>
+
+error[UnknownConstant]: this names a declaration whose type is not known
+   ╭▸ corpus/pathological/packages/package-abstraction-leak.gandr:22:27
+   │
+22 │ def leaked() -> Integer { leak(counter) }
+   │ ┬─────────────────────────┯━━━───────────
+   │ │                         │
+   │ │                         no declaration with a type
+   │ │                         checked against `-F Integer`; while synthesising the function this applies
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `leaked` is refused with UnknownConstant, as its expectation states

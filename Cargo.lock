@@ -1103,6 +1103,7 @@ name = "gandr-surface-render-terminal"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "expect-test",
  "gandr-core-checker",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",

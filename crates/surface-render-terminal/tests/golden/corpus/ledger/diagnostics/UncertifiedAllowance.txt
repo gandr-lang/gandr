@@ -1,0 +1,12 @@
+error[UncertifiedAllowance]: `ua` enumerates catalogues of bound 5 at most
+   ╭▸ corpus/ledger/diagnostics/UncertifiedAllowance.gandr:28:12
+   │
+28 │   def wide = ua[
+   │ ┏━━━━━━━━━━━━┛
+29 │ ┃   1,
+30 │ ┃   6
+31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a catalogue past the checker's allowance
+   │
+   ├ note: `wide` is refused with UncertifiedAllowance, as its expectation states
+   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

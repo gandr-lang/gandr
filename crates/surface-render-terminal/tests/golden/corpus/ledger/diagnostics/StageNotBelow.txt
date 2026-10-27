@@ -1,0 +1,16 @@
+error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
+  ╭▸ corpus/ledger/diagnostics/StageNotBelow.gandr:4:11
+  │
+3 │   def rec fact(n: Integer) -> -F Integer {
+  │   │            ─ checked against `Integer -> -F Integer`; while checking the body of this function; binds n : Integer
+  │ ┌─┘
+  │ │
+4 │ │   fact[<](n)
+  │ │   ┬───────┯─
+  │ │   │       │
+  │ │   │       not below the stage its recursion wants
+  │ │   checked against `-F Integer`; while checking the argument of this application
+5 │ │ }
+  │ └─┘ checked against `Integer => Integer`; while checking the body of this function; binds fact : Integer => Integer
+  │
+  ╰ note: `fact` is refused with StageNotBelow, as its expectation states

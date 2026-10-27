@@ -1,0 +1,7 @@
+error[CodataWithoutObservations]: a codata declaration needs at least one observation
+  ╭▸ corpus/ledger/diagnostics/CodataWithoutObservations.gandr:3:16
+  │
+3 │ codata Empty : Type[-] {
+  │                ━━━━━━━ a codata declaration with no observation
+  │
+  ╰ note: `Empty` is refused with CodataWithoutObservations, as its expectation states

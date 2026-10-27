@@ -1,0 +1,10 @@
+error[SessionCodeExpected]: a session identity relates two session types
+  ╭▸ corpus/ledger/diagnostics/SessionCodeExpected.gandr:4:22
+  │
+4 │ def notSession = sim(Integer, Integer) ;
+  │                  ┬───┯━━━━━━──────────
+  │                  │   │
+  │                  │   not a session code
+  │                  checked against `Flow(Type, Integer, Integer)`; while relating the two protocols of this session statement
+  │
+  ╰ note: `notSession` is refused with SessionCodeExpected, as its expectation states

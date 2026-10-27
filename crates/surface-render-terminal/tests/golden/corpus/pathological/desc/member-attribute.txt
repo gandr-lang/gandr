@@ -1,0 +1,10 @@
+error[RulesNonLinear]: this rule's left side names one variable twice: a rule matches each variable once, since copying a matched value needs a comonoid its sort may not have, so the rule is refused
+   ╭▸ corpus/pathological/desc/member-attribute.gandr:14:3
+   │
+14 │   rule minus(x, x) ==> Zero;
+   │   ┯━━━━━━━━━━━━━┬━━━━━━━━━━
+   │   │             │
+   │   │             the variable matched again
+   │   a rule matching one variable twice
+   │
+   ╰ note: `NatSub` is refused with RulesNonLinear, as its expectation states

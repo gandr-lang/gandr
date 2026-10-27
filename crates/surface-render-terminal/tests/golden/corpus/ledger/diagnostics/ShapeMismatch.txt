@@ -1,0 +1,10 @@
+error[ShapeMismatch]: expected an eager product `A * B`
+  ╭▸ corpus/ledger/diagnostics/ShapeMismatch.gandr:5:32
+  │
+3 │ def single_is_not_its_member : Integer;
+  │                                ─────── the type met, where an eager product `A * B` is required
+4 │
+5 │ def single_is_not_its_member = (1,);
+  │                                ━━━━ its type is not of the required shape: found `Integer`
+  │
+  ╰ note: `single_is_not_its_member` is refused with ShapeMismatch, as its expectation states

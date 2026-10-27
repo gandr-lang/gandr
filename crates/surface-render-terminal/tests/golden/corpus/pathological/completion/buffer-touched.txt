@@ -1,0 +1,23 @@
+error[UsedAfterClose]: the endpoint is used after `close`
+   ╭▸ corpus/pathological/completion/buffer-touched.gandr:21:3
+   │
+12 │ ┌ def bufferTouched() -> Unit {
+13 │ │   fork (owner : Ring.Buffer) { close(owner) } as buffer;
+   │ │   ┬───
+   │ │   │
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the rest of this fork's parent
+14 │ │   fork (kernel : Ring.Moving) {
+   │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
+15 │ │     recv(kernel) as held;
+   ‡ │
+20 │ │   send(ring, buffer);
+   │ │   ────────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+21 │ │   close(buffer);
+   │ │   ━━━━━━━━━━━━━ an endpoint already closed
+22 │ │   recv(ring) as cqe;
+23 │ │   close(ring)
+24 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `bufferTouched` is refused with UsedAfterClose, as its expectation states

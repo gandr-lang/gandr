@@ -1,0 +1,11 @@
+error[NotAHandle]: `leta` opens a handle at a world, and this value is none
+   ╭▸ corpus/ledger/diagnostics/NotAHandle.gandr:37:3
+   │
+36 │ ┌ def unhandled() -> -F Seat.Report {
+37 │ │   leta written = Seat.progress;
+   │ │   ━━━━ not a handle at a world
+38 │ │   pure written
+39 │ │ }
+   │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `unhandled` is refused with NotAHandle, as its expectation states

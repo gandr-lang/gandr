@@ -1,0 +1,15 @@
+error[UnenclosedRun]: a computation read as a value runs before the computation around it, and none stands around this one
+   ╭▸ corpus/pathological/modules/module-reordered-signature.gandr:14:16
+   │
+14 │   def second = first + 1;
+   │                ━━━━━━━━━ a run with no computation to run before
+   │
+   ╰ note: `second` is refused with UnenclosedRun, as its expectation states
+
+error[UnenclosedRun]: a computation read as a value runs before the computation around it, and none stands around this one
+   ╭▸ corpus/pathological/modules/module-reordered-signature.gandr:17:15
+   │
+17 │   def third = second + 1;
+   │               ━━━━━━━━━━ a run with no computation to run before
+   │
+   ╰ note: `third` is refused with UnenclosedRun, as its expectation states

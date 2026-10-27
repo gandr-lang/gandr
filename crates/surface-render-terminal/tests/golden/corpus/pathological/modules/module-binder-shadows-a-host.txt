@@ -1,0 +1,8 @@
+error[OutOfFragment.projection_expression]: the projection expression is not supported yet
+  ╭▸ corpus/pathological/modules/module-binder-shadows-a-host.gandr:3:3
+  │
+3 │   env.get("HOME")
+  │   ━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `lookup` is refused with OutOfFragment.projection_expression, as its expectation states
+  ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>

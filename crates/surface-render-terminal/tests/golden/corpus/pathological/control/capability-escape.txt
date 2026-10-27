@@ -1,0 +1,19 @@
+error[CapabilityEscaped]: a capability its scope introduced would outlive the scope here
+  ╭▸ corpus/pathological/control/capability-escape.gandr:4:12
+  │
+2 │ ┌  def leak() -> Cap { exit } {
+3 │ │┌   handle c : Proc {
+4 │ ││     return c
+  │ ││     ┬──────┯
+  │ ││     │      │
+  │ ││     │      a capability outliving its scope: found `Cap {exit}`
+  │ ││     checked against `-F [Proc, c : Proc] Cap {exit}`; while judging the value this returns; binds _ : Stack(-F [Proc, c : Proc] Cap {exit}, -F Cap {exit})
+5 │ ││   } with {
+6 │ ││     pure(x) => x,
+7 │ ││     oper exit(code, k) => k(unit)
+8 │ ││   }
+  │ │└───┘ checked against `-F Cap {exit}`; while checking the subject of this scope under its capability; binds c : Cap {exit}
+9 │ │  }
+  │ └──┘ checked against `() => Cap {exit}`; while checking the body of this reset
+  │
+  ╰ note: `leak` is refused with CapabilityEscaped, as its expectation states

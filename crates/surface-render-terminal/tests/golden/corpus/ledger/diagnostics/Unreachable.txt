@@ -1,0 +1,7 @@
+error[Unreachable]: this code never runs: every path before it leaves the body
+  ╭▸ corpus/ledger/diagnostics/Unreachable.gandr:5:3
+  │
+5 │   return m
+  │   ━━━━━━━━ no path reaches this
+  │
+  ╰ note: `early` is refused with Unreachable, as its expectation states

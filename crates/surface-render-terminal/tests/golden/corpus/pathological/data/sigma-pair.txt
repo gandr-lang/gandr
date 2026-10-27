@@ -1,0 +1,24 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/data/sigma-pair.gandr:7:47
+  │
+7 │ def skewed : #{n : Integer, w : Ix(n)} = (2, (MkIx : Ix(3)));
+  │                                               ┯━━━   ───── the type it synthesises
+  │                                               │
+  │                                               its type does not convert: expected `Ix(2)`, found `Ix(3)`
+  │
+  ╰ note: `skewed` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/sigma-pair.gandr:18:36
+   │
+13 │ def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
+   │                ───────────────────────── the type it is checked against
+   ‡
+18 │ def unpaired() -> Integer { tag_of(loose) }
+   │ ┬───────────────────────────┬──────┯━━━━───
+   │ │                           │      │
+   │ │                           │      its type does not convert: expected `#{n : Integer, w : Ix(n)}`, found `Integer * Ix(2)`
+   │ │                           checked against `-F Integer`; while checking the argument of this application
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `unpaired` is refused with TypeMismatch, as its expectation states

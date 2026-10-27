@@ -1,0 +1,20 @@
+error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Circuit.gandr:8:3
+   │
+ 8 │ ┏   rule twice : (data x : Nat) ==> (o : Nat) {
+ 9 │ ┃     node : f(x) --> (m);
+10 │ ┃     node : f(m) --> (o);
+11 │ ┃   };
+   │ ┗━━━┛ a member the description does not read
+   │
+   ├ note: `T` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ╰ note: tracked by #1510 <https://github.com/gandr-lang/gandr/issues/1510>
+
+error[UnstatedComponent.Circuit]: the model signature cannot state `twice`, which is a circuit rule, whose sphere a model does not read yet
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Circuit.gandr:15:19
+   │
+15 │ def model : Model(T) ;
+   │                   ━ the signature this model derives
+   │
+   ├ note: `model` is refused with UnstatedComponent.Circuit, as its expectation states
+   ╰ note: tracked by #1323 <https://github.com/gandr-lang/gandr/issues/1323>

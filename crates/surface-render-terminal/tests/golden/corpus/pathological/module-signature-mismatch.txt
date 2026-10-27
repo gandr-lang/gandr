@@ -1,0 +1,10 @@
+error[TypeMismatch]: mismatched types
+  ╭▸ corpus/pathological/module-signature-mismatch.gandr:3:11
+  │
+1 │ module Bad : #{ x : String } {
+  │                     ────── the type it is checked against
+2 │   @[ refuses("TypeMismatch") ]
+3 │   def x = 1;
+  │           ━ its type does not convert: expected `String`, found `Integer`
+  │
+  ╰ note: `x` is refused with TypeMismatch, as its expectation states

@@ -1,0 +1,7 @@
+error[RuleNotPresentable]: these rules do not present the datatype
+  ╭▸ corpus/pathological/desc/rules-not-presentable.gandr:2:14
+  │
+2 │ data Tally : Type {
+  │              ━━━━ rules that do not present the datatype
+  │
+  ╰ note: `Tally` is refused with RuleNotPresentable, as its expectation states

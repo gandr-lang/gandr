@@ -1,0 +1,27 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/specification/niche-realizability.gandr:32:30
+   │
+29 │     def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefWp(w, keptOpt, h) {
+   │     │              ┬        ─ checked against `(h : Heap) -> -F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the body of this function; binds h : Heap
+   │     │              │
+   │ ┌───┘              checked against `(w : Nat) -> (h : Heap) -> -F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the body of this function; binds w : Nat
+   │ │
+30 │ │┌    case w {
+31 │ ││      Zero => case h {
+   │ ││┌─────────────┘
+32 │ │││       Emp => return fn (e) { e },
+   │ │││              ┬──────┬────────┯──
+   │ │││              │      │        │
+   │ │││              │      │        its type does not convert: expected `derefWp(Zero, keptOpt, Emp)`, found `vOpt(vInt, Zero, Emp)`
+   │ │││              │      checked against `vOpt(vInt, Zero, Emp) => derefWp(Zero, keptOpt, Emp)`; while checking the body of this function; binds e : vOpt(vInt, Zero, Emp)
+   │ │││              checked against `-F (vOpt(vInt, Zero, Emp) => derefWp(Zero, keptOpt, Emp))`; while judging the value this returns
+33 │ │││       Cell(_l, _v, _rest) => return fn (e) { e }
+34 │ │││     },
+   │ ││└─────┘ checked against `-F (vOpt(vInt, Zero, h) => derefWp(Zero, keptOpt, h))`; while checking the next premise of this
+35 │ ││      Succ(n) => return fn (r) { derefOrSome(n, Zero, h, r) }
+36 │ ││    }
+   │ │└────┘ checked against `-F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the next premise of this
+37 │ │   }
+   │ └───┘ checked against `(w : Nat, h : Heap) => vOpt(vInt, w, h) => derefWp(w, keptOpt, h)`; while checking the body of this thunk
+   │
+   ╰ note: `derefMeets` is refused with TypeMismatch, as its expectation states

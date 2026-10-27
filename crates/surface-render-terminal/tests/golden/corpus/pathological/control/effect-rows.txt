@@ -1,0 +1,25 @@
+error[DuplicateDefinition]: `Fs` is defined twice
+   ╭▸ corpus/pathological/control/effect-rows.gandr:13:29
+   │
+13 │ def namedTwice() -> -F [Fs, Fs] Integer { pure 1 }
+   │                         ┬─  ━━ written again here
+   │                         │
+   │                         first written here
+   │
+   ╰ note: `namedTwice` is refused with DuplicateDefinition, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/effect-rows.gandr:19:3
+   │
+18 │   def narrowedRow(c : Cap { read }) -> [Div] Integer {
+   │   │               ┬                    ───────────── the type it is checked against
+   │   │               │
+   │ ┌─┘               checked against `Cap {read} -> -F [Div] Integer`; while checking the body of this function; binds c : Cap {read}
+   │ │
+19 │ │   run _ <- peek(c);
+   │ │   ━━━ its type does not convert: expected `-F [Div] Integer`, found `-F [Div, Fs] Integer`
+20 │ │   once(2)
+21 │ │ }
+   │ └─┘ checked against `+U (Cap {read} -> -F [Div] Integer)`; while checking the body of this thunk
+   │
+   ╰ note: `narrowedRow` is refused with TypeMismatch, as its expectation states

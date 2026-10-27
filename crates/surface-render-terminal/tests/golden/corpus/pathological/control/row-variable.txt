@@ -1,0 +1,27 @@
+error[ImplicitUnsolved]: the implicit `r` this call to `log` omits is determined by neither its arguments nor the type it is checked against; supply it as `log[r = …](…)`
+   ╭▸ corpus/pathological/control/row-variable.gandr:23:40
+   │
+23 │ def unread() -> Unit { ignored(thunk { log("unread") }) }
+   │                                        ━━━━━━━━━━━━━ an implicit left unsolved
+   │
+   ╰ note: `unread` is refused with ImplicitUnsolved, as its expectation states
+
+error[ImplicitUnsolved]: the solver cannot determine the implicit `r` this call to `log` omits: its row is compared with another open row, each holding an interface the other lacks; supply it as `log[r = …](…)`
+   ╭▸ corpus/pathological/control/row-variable.gandr:30:34
+   │
+30 │   ignored(thunk { either(thunk { log("one") }, thunk { stall("other") }) })
+   │                                  ━━━━━━━━━━ an implicit left unsolved
+   │
+   ╰ note: `undecided` is refused with ImplicitUnsolved, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/row-variable.gandr:35:32
+   │
+35 │ def narrowed() -> [Div] Unit { log("narrowed") }
+   │ ┬─────────────────┬────────────┯━━━━━━━━━━━━━━──
+   │ │                 │            │
+   │ │                 │            its type does not convert: expected `-F [Div] Unit`, found `-F [Console | ?] Unit`
+   │ │                 the type it is checked against
+   │ checked against `+U (-F [Div] Unit)`; while checking the body of this thunk
+   │
+   ╰ note: `narrowed` is refused with TypeMismatch, as its expectation states

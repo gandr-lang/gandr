@@ -1,0 +1,14 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/universe/vacuous-pi.gandr:26:82
+   │
+26 │ def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) { return f }
+   │ ┬────────────┬───┬───────────────────────────────────┬────────────────────┬──────┯──
+   │ │            │   │                                   │                    │      │
+   │ │            │   │                                   │                    │      its type does not convert: expected `Nat => Nat`, found `(x : Nat) => pick(x)`
+   │ │            │   │                                   │                    checked against `-F (Nat => Nat)`; while judging the value this returns
+   │ │            │   │                                   the type it is checked against
+   │ │            │   the type it synthesises
+   │ │            checked against `((x : Nat) => pick(x)) -> -F (Nat => Nat)`; while checking the body of this function; binds f : (x : Nat) => pick(x)
+   │ checked against `((x : Nat) => pick(x)) => Nat => Nat`; while checking the body of this thunk
+   │
+   ╰ note: `notArrow` is refused with TypeMismatch, as its expectation states

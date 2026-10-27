@@ -1,0 +1,7 @@
+error[UnknownMember]: the module `Answers` has no member `question`
+  ╭▸ corpus/ledger/diagnostics/UnknownMember.gandr:9:21
+  │
+9 │ def asked = Answers.question ;
+  │                     ━━━━━━━━ no member of this name
+  │
+  ╰ note: `asked` is refused with UnknownMember, as its expectation states

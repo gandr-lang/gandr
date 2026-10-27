@@ -1,0 +1,11 @@
+error[NonCovariantMotive]: a flow runs one way: `ride` may use the moving endpoint only where a run of it would be produced
+   ╭▸ corpus/ledger/diagnostics/NonCovariantMotive.gandr:16:5
+   │
+14 │ ┌   @[ refuses("NonCovariantMotive") ]
+15 │ │   def downgrade() -> -F Flow(Type, New, Old) {
+16 │ │     back(upgrade)
+   │ │     ━━━━━━━━━━━━━ the moving endpoint other than covariantly
+17 │ │   }
+   │ └───┘ checked against `() => Flow(Type, Integer * String, String * Integer)`; while checking the body of this thunk
+   │
+   ╰ note: `downgrade` is refused with NonCovariantMotive, as its expectation states

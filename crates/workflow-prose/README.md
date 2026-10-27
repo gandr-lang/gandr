@@ -11,7 +11,7 @@ The sentence rules that need a parse, held over the corpus comments, the rendere
 
 ## Synopsis
 
-**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `///` paragraph of the corpus's `.gandr` sources, every prose paragraph of `crates/*/README.md`, and every rendered diagnostic of `crates/surface-render-terminal/tests/golden/`. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches.
+**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `///` paragraph of the corpus's `.gandr` sources, every prose paragraph of `crates/*/README.md`, and every rendered diagnostic under `crates/surface-render-terminal/tests/golden/`, each file's diagnostics one by one. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches.
 
 **Why.** The style the corpus follows is ASD-STE100's: short sentences, the active voice, the present tense, no noun stacks. A reviewer misses a passive or a past tense in a dense paragraph; a parser does not. The rules need a part-of-speech tag and a dependency parse, which a pattern over the text cannot give. The ledger names the existing debt, so the check refuses new debt at once while a sweep pays the old debt down.
 

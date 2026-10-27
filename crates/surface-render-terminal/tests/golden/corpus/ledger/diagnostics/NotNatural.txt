@@ -1,0 +1,7 @@
+error[NotNatural]: the `ua` translators do not commute with the symmetries of a corolla
+   ╭▸ corpus/ledger/diagnostics/NotNatural.gandr:19:15
+   │
+19 │ def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross}) ;
+   │               ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ translators that break the corolla's symmetry
+   │
+   ╰ note: `crossed` is refused with NotNatural, as its expectation states

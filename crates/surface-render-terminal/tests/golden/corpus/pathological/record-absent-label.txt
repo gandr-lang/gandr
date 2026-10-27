@@ -1,0 +1,15 @@
+error[AbsentRecordField]: the record has no such field
+  ╭▸ corpus/pathological/record-absent-label.gandr:3:3
+  │
+2 │    def absent(r : #{n : Integer, s : String}) -> Integer {
+  │    │          ─ checked against `#{n : Integer, s : String} -> -F Integer`; while checking the body of this function; binds r : #{n : Integer, s : String}
+  │ ┌──┘
+  │ │
+3 │ │┏   case r {
+4 │ │┃     #{.z = m} => m
+5 │ │┃   }
+  │ │┗━━━┛ no field of the record type
+6 │ │  }
+  │ └──┘ checked against `#{n : Integer, s : String} => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `absent` is refused with AbsentRecordField, as its expectation states

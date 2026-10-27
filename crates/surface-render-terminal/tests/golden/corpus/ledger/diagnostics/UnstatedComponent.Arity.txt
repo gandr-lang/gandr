@@ -1,0 +1,7 @@
+error[UnstatedComponent.Arity]: the model signature cannot state `half`, which applies a sort or an operation to the wrong number of arguments
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Arity.gandr:12:19
+   │
+12 │ def model : Model(T) ;
+   │                   ━ the signature this model derives
+   │
+   ╰ note: `model` is refused with UnstatedComponent.Arity, as its expectation states

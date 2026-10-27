@@ -1,0 +1,7 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+  ╭▸ corpus/pathological/desc/item-level-data-member-retired.gandr:4:3
+  │
+4 │   data Zero : Nat;
+  │   ━━━━━━━━━━━━━━━ out of place
+  │
+  ╰ note: `Stale` is refused with MalformedForm, as its expectation states

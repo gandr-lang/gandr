@@ -1,0 +1,7 @@
+error[SessionNotSubtype]: `sim` needs its first protocol to select no more and offer no less than its second
+   ╭▸ corpus/ledger/diagnostics/SessionNotSubtype.gandr:14:18
+   │
+14 │   def narrowed = sim(SeatEnd′, SeatEnd) ;
+   │                  ━━━━━━━━━━━━━━━━━━━━━━ a protocol that does not simulate the target
+   │
+   ╰ note: `narrowed` is refused with SessionNotSubtype, as its expectation states

@@ -1,0 +1,7 @@
+error[UnresolvedTypeHead]: no type named `Clock` is written bare
+  ╭▸ corpus/pathological/effects/hello-unprovided.gandr:6:19
+  │
+6 │ def main() -> -F [Clock] Unit {
+  │                   ━━━━━ no type head of this name and arity
+  │
+  ╰ note: `main` is refused with UnresolvedTypeHead, as its expectation states

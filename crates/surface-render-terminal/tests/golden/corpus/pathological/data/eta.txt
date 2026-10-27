@@ -1,0 +1,56 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/eta.gandr:9:3
+   │
+ 8 │   def etaSwapped(e : Integer * Integer) -> Path(Integer * Integer, (e.1, e.0), e) {
+   │   │              ┬                                                 ┬─────────  ─ an endpoint the point does not convert to
+   │   │              │                                                 │
+   │   │              │                                                 an endpoint the point does not convert to
+   │ ┌─┘              checked against `(e : Integer * Integer) -> -F Path(Integer * Integer, (e.1, e.0), e)`; while checking the body of this function; binds e : Integer * Integer
+   │ │
+ 9 │ │   here(e)
+   │ │   ━━━━━━━ not both endpoints of the path
+10 │ │ }
+   │ └─┘ checked against `(e : Integer * Integer) => Path(Integer * Integer, (e.1, e.0), e)`; while checking the body of this thunk
+   │
+   ╰ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/eta.gandr:19:3
+   │
+14 │   def etaOther(e : Integer * Integer, d : Integer * Integer) -> Path(
+   │   │            ┬                      ─ checked against `(d : Integer * Integer) -> -F Path(Integer * Integer, (e.0, e.1), d)`; while checking the body of this function; binds d : Integer * Integer
+   │   │            │
+   │ ┌─┘            checked against `(e : Integer * Integer) -> (d : Integer * Integer) -> -F Path(Integer * Integer, (e.0, e.1), d)`; while checking the body of this function; binds e : Integer * Integer
+   │ │
+15 │ │   Integer * Integer,
+16 │ │   (e.0, e.1),
+   │ │   ────────── an endpoint the point does not convert to
+17 │ │   d
+   │ │   ─ an endpoint the point does not convert to
+18 │ │ ) {
+19 │ │   here(e)
+   │ │   ━━━━━━━ not both endpoints of the path
+20 │ │ }
+   │ └─┘ checked against `(e : Integer * Integer, d : Integer * Integer) => Path(Integer * Integer, (e.0, e.1), d)`; while checking the body of this thunk
+   │
+   ╰ note: `etaOther` is refused with EndpointMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/data/eta.gandr:29:3
+   │
+24 │   def etaCrossed(e : #{l : Integer, r : Integer}) -> Path(
+   │   │              ─ checked against `(e : #{l : Integer, r : Integer}) -> -F Path(#{l : Integer, r : Integer}, #{.l = e.r, .r = e.l}, e)`; while checking the body of this function; binds e : #{l : Integer, r : Integer}
+   │ ┌─┘
+   │ │
+25 │ │   #{l : Integer, r : Integer},
+26 │ │   #{.l = e.r, .r = e.l},
+   │ │   ───────────────────── an endpoint the point does not convert to
+27 │ │   e
+   │ │   ─ an endpoint the point does not convert to
+28 │ │ ) {
+29 │ │   here(e)
+   │ │   ━━━━━━━ not both endpoints of the path
+30 │ │ }
+   │ └─┘ checked against `(e : #{l : Integer, r : Integer}) => Path(#{l : Integer, r : Integer}, #{.l = e.r, .r = e.l}, e)`; while checking the body of this thunk
+   │
+   ╰ note: `etaCrossed` is refused with EndpointMismatch, as its expectation states

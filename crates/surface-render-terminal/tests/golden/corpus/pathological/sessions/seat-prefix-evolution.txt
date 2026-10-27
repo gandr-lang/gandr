@@ -1,0 +1,28 @@
+error[RunNotAdmitted]: the protocol does not admit this run
+   ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:38:79
+   │
+38 │ def dropped() -> Prefix(Evolution.Kept) { ride(\X. Prefix(X), Evolution.keep, retired) }
+   │ ┬─────────────────────────────────────────┬───────────────────────────────────┯━━━━━━───
+   │ │                                         │                                   │
+   │ │                                         │                                   a label the protocol does not admit here
+   │ │                                         checked against `-F Prefix(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the value this ride moves against the flow's source
+   │ checked against `() => Prefix(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the body of this thunk
+   │
+   ╰ note: `dropped` is refused with RunNotAdmitted, as its expectation states
+
+error[RunNotAdmitted]: the protocol does not admit this run
+   ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:43:39
+   │
+42 │   def narrowed(play : Prefix(Evolution.SeatEnd)) -> Prefix(Evolution.Kept) {
+   │   │            ──── checked; while checking the body of this function; binds play : Prefix(?String. mu t. +{handoff : !String. end, report : !String. &{next : t, retire : end}})
+   │ ┌─┘
+   │ │
+43 │ │   ride(\X. Prefix(X), Evolution.keep, play)
+   │ │   ┬───────────────────────────────────┯━━━─
+   │ │   │                                   │
+   │ │   │                                   a run that may take an offer the target drops
+   │ │   checked against `-F Prefix(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the value this ride moves against the flow's source
+44 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `narrowed` is refused with RunNotAdmitted, as its expectation states

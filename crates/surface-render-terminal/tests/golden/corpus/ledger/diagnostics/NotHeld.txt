@@ -1,0 +1,15 @@
+error[NotHeld]: `access` needs a value opened by `hold`; this names something else
+  ╭▸ corpus/ledger/diagnostics/NotHeld.gandr:5:19
+  │
+3 │ ┌ def nested() -> -F Unit {
+4 │ │   hold n = 1;
+  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+5 │ │   access n as v { access v as w { resume(w, 2) } ; resume(v, 1) }
+  │ │   ┬───────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────────────────
+  │ │   │               │
+  │ │   │               no held value here
+  │ │   checked against `-F Unit`; while checking the body of this access
+6 │ │ }
+  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │
+  ╰ note: `nested` is refused with NotHeld, as its expectation states

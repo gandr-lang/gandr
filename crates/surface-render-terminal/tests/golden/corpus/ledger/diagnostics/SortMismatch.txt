@@ -1,0 +1,10 @@
+error[SortMismatch]: a value type's code and a computation type's code are confused here
+  ╭▸ corpus/ledger/diagnostics/SortMismatch.gandr:5:18
+  │
+3 │ def wrong_sort : Type[-] ;
+  │                  ─────── the type it is checked against
+4 │
+5 │ def wrong_sort = Integer ;
+  │                  ━━━━━━━ a universe of the other sort: expected `Type[-]`, found `Type`
+  │
+  ╰ note: `wrong_sort` is refused with SortMismatch, as its expectation states

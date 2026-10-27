@@ -1,0 +1,28 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:16:34
+   │
+16 │ } = (incrTree, fn (s) { fn (h) { h } });
+   │                ┬────────┬────────┯────
+   │                │        │        │
+   │                │        │        its type does not convert: expected `wp(incrTree, isOne, s)`, found `isOne(unit, s)`
+   │                │        checked against `isOne(unit, s) -> -F wp(incrTree, isOne, s)`; while checking the body of this function; binds h : isOne(unit, s)
+   │                checked against `(a : Integer, isOne(unit, a)) => wp(incrTree, isOne, a)`; while checking the body of this function; binds s : Integer
+   │
+   ╰ note: `incrMissesOne` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:28:30
+   │
+24 │ ┌ def incrMissesTwo(
+25 │ │   post : (Unit, Integer) => Type,
+   │ │   ──── checked; while checking the body of this function; binds post : (Unit, Integer) => Type
+26 │ │   s : Integer,
+   │ │   ─ checked against `(s : Integer) -> incrByTwoSpec(post, s) -> -F wp(incrTree, post, s)`; while checking the body of this function; binds s : Integer
+27 │ │   h : incrByTwoSpec(post, s)
+   │ │   ─ checked against `incrByTwoSpec(post, s) -> -F wp(incrTree, post, s)`; while checking the body of this function; binds h : incrByTwoSpec(post, s)
+28 │ │ ) -> wp(incrTree, post, s) { h }
+   │ └──────────────────────────────┯─┘ checked against `(post : (Unit, Integer) => Type, s : Integer, incrByTwoSpec(post, s)) => wp(incrTree, post, s)`; while checking the body of this thunk
+   │                                │
+   │                                its type does not convert: expected `wp(incrTree, post, s)`, found `incrByTwoSpec(post, s)`
+   │
+   ╰ note: `incrMissesTwo` is refused with TypeMismatch, as its expectation states

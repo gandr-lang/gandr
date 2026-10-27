@@ -1,0 +1,144 @@
+error[OutOfFragment.WrongSort]: a projection expression cannot stand where a computation is expected
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:84:12
+   │
+84 │   run c <- a.C;
+   │            ━━━ a form of another sort than this position takes
+   │
+   ╰ note: `stepOfCarrier` is refused with OutOfFragment.WrongSort, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:33:11
+   │
+32 │   def tickerObserved(m : Model(Ticker) with sort C = Integer) -> Integer {
+   │   │                  ┬   ───────────── the type it synthesises
+   │   │                  │
+   │ ┌─┘                  checked against `(Model(Ticker) with sort C = Integer) -> -F Integer`; while checking the body of this function; binds m : Model(Ticker) with sort C = Integer
+   │ │
+33 │ │   observe(m)
+   │ │   ┬───────┯─
+   │ │   │       │
+   │ │   │       its type does not convert: expected `Model(Counter)`, found `Model(Ticker) with sort C = Integer`
+   │ │   checked against `-F Integer`; while checking the argument of this application
+34 │ │ }
+   │ └─┘ checked against `(Model(Ticker) with sort C = Integer) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `tickerObserved` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:41:3
+   │
+40 │   def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> Model(ReadCounter) with sort R = Integer {
+   │   │                     ┬   ┬─────────────────                           ────────────────── the type it is checked against
+   │   │                     │   │
+   │   │                     │   the type it synthesises
+   │ ┌─┘                     checked against `(Model(ReadCounter) with sort C = Integer) -> -F (Model(ReadCounter) with sort R = Integer)`; while checking the body of this function; binds m : Model(ReadCounter) with sort C = Integer
+   │ │
+41 │ │   m
+   │ │   ━ its type does not convert: expected `Model(ReadCounter) with sort R = Integer`, found `Model(ReadCounter) with sort C = Integer`
+42 │ │ }
+   │ └─┘ checked against `(Model(ReadCounter) with sort C = Integer) => Model(ReadCounter) with sort R = Integer`; while checking the body of this thunk
+   │
+   ╰ note: `countsForReadings` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:49:47
+   │
+47 │    def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer {
+   │    │            ┬                   ┬                   ─ checked against `a.0 -> -F Integer`; while checking the body of this function; binds c : a.0
+   │    │            │                   │
+   │    │            │                   checked against `Model(Counter) -> a.0 -> -F Integer`; while checking the body of this function; binds b : Model(Counter)
+   │ ┌──┘            checked against `(a : Model(Counter)) -> Model(Counter) -> a.0 -> -F Integer`; while checking the body of this function; binds a : Model(Counter)
+   │ │
+48 │ │┌   case b {
+49 │ ││     #{.zero = z, .incr = i, .read = r} => r(i(c))
+   │ ││                                           ┬─┬─┯──
+   │ ││                                           │ │ │
+   │ ││                                           │ │ its type does not convert: expected `C`, found `a.0`
+   │ ││                                           │ checked against `C`; while checking the argument of this application
+   │ ││                                           checked against `-F Integer`; while checking the argument of this application
+50 │ ││   }
+   │ │└───┘ checked against `-F Integer`; while checking the body of this split; binds C : Type, zero : C * ((C => C) * (C => Integer)), z : C, incr : (C => C) * (C => Integer), i : C => C, r : C => Integer
+51 │ │  }
+   │ └──┘ checked against `(a : Model(Counter), Model(Counter), a.0) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `unshared` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:57:26
+   │
+56 │   def integersShared(m : Model(Counter) with sort C = Integer) -> Integer {
+   │   │                  ┬   ────────────── the type it synthesises
+   │   │                  │
+   │ ┌─┘                  checked against `(Model(Counter) with sort C = Integer) -> -F Integer`; while checking the body of this function; binds m : Model(Counter) with sort C = Integer
+   │ │
+57 │ │   observeShared(upModel, m)
+   │ │   ┬──────────────────────┯─
+   │ │   │                      │
+   │ │   │                      its type does not convert: expected `#{incr : upModel.0 => upModel.0, read : upModel.0 => Integer, zero : upModel.0}`, found `Model(Counter) with sort C = Integer`
+   │ │   checked against `-F Integer`; while checking the argument of this application
+58 │ │ }
+   │ └─┘ checked against `(Model(Counter) with sort C = Integer) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `integersShared` is refused with TypeMismatch, as its expectation states
+
+error[UnknownMember]: the module `a` has no member `Nope`
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:62:46
+   │
+62 │ def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
+   │                                              ━━━━ no member of this name
+   │
+   ╰ note: `countOfNothing` is refused with UnknownMember, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:70:7
+   │
+67 │   def stepApart(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer {
+   │   │             ┬                   ┬                   ─ checked against `a.0 -> -F Integer`; while checking the body of this function; binds c : a.0
+   │   │             │                   │
+   │   │             │                   checked against `Model(Counter) -> a.0 -> -F Integer`; while checking the body of this function; binds b : Model(Counter)
+   │ ┌─┘             checked against `(a : Model(Counter)) -> Model(Counter) -> a.0 -> -F Integer`; while checking the body of this function; binds a : Model(Counter)
+   │ │
+68 │ │   run i <- b.incr;
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds i : b.0 => b.0
+69 │ │   run r <- b.read;
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds r : b.0 => Integer
+70 │ │   r(i(c))
+   │ │   ┬─┬─┯──
+   │ │   │ │ │
+   │ │   │ │ its type does not convert: expected `b.0`, found `a.0`
+   │ │   │ checked against `b.0`; while checking the argument of this application
+   │ │   checked against `-F Integer`; while checking the argument of this application
+71 │ │ }
+   │ └─┘ checked against `(a : Model(Counter), Model(Counter), a.0) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `stepApart` is refused with TypeMismatch, as its expectation states
+
+error[UnknownMember]: the module `a` has no member `nothing`
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:76:14
+   │
+76 │   run i <- a.nothing;
+   │              ━━━━━━━ no member of this name
+   │
+   ╰ note: `stepOfNothing` is refused with UnknownMember, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:96:47
+   │
+91 │ ┌  def rightApart(
+92 │ │    m : Model(Pairing) with sort A = Integer,
+   │ │    ─ checked against `(Model(Pairing) with sort A = Integer) -> (Model(Pairing) with sort A = Integer) -> -F Integer`; while checking the body of this function; binds m : Model(Pairing) with sort A = Integer
+93 │ │    n : Model(Pairing) with sort A = Integer
+   │ │    ─ checked against `(Model(Pairing) with sort A = Integer) -> -F Integer`; while checking the body of this function; binds n : Model(Pairing) with sort A = Integer
+94 │ │  ) -> Integer {
+95 │ │┌   case n {
+96 │ ││     #{.left = l, .right = r} => leftBeside(m, r)
+   │ ││                                 ┬─────────────┯─
+   │ ││                                 │             │
+   │ ││                                 │             its type does not convert: expected `m.0`, found `B`
+   │ ││                                 checked against `-F Integer`; while checking the argument of this application
+97 │ ││   }
+   │ │└───┘ checked against `-F Integer`; while checking the body of this split; binds B : Type, left : Integer * B, l : Integer, r : B
+98 │ │  }
+   │ └──┘ checked against `(Model(Pairing) with sort A = Integer, Model(Pairing) with sort A = Integer) => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `rightApart` is refused with TypeMismatch, as its expectation states

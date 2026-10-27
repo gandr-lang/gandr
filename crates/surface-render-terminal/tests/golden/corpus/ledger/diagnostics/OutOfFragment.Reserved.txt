@@ -1,0 +1,8 @@
+error[OutOfFragment.instantiation_expression.computation]: the instantiation expression is reserved, and not available yet
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Reserved.gandr:12:16
+   │
+12 │     Succ(p) => both[<, >](p)
+   │                ━━━━━━━━━━ a reserved form
+   │
+   ├ note: `both` is refused with OutOfFragment.instantiation_expression.computation, as its expectation states
+   ╰ note: tracked by #1497 <https://github.com/gandr-lang/gandr/issues/1497>

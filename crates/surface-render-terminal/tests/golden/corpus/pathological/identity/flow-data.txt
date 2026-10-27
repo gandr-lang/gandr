@@ -1,0 +1,17 @@
+error[ForwardUnsupported]: `forward` cannot image this translator at every input
+   ╭▸ corpus/pathological/identity/flow-data.gandr:30:59
+   │
+30 │   def repacked : Flow(Type, Box(Integer), Box(Integer)) = forward(rebox);
+   │                                                           ━━━━━━━━━━━━━━ a translator the rule cannot image
+   │
+   ├ note: `repacked` is refused with ForwardUnsupported, as its expectation states
+   ╰ note: tracked by #1835 <https://github.com/gandr-lang/gandr/issues/1835>
+
+error[ForwardUnsupported]: `forward` cannot image this translator at every input
+   ╭▸ corpus/pathological/identity/flow-data.gandr:45:43
+   │
+45 │   def renumbered : Flow(Type, Nat, Nat) = forward(step);
+   │                                           ━━━━━━━━━━━━━ a translator the rule cannot image
+   │
+   ├ note: `renumbered` is refused with ForwardUnsupported, as its expectation states
+   ╰ note: tracked by #1835 <https://github.com/gandr-lang/gandr/issues/1835>

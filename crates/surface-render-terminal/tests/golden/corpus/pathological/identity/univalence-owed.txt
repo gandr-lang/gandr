@@ -1,0 +1,55 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/univalence-owed.gandr:19:3
+   │
+18 │   def uaEtaRefl(a : Type) -> Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a)) {
+   │   │             ┬                                   ┬───────────────────────────  ─────── an endpoint the point does not convert to
+   │   │             │                                   │
+   │   │             │                                   an endpoint the point does not convert to
+   │ ┌─┘             checked against `(a : Type) -> -F Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a))`; while checking the body of this function; binds a : Type
+   │ │
+19 │ │   here(here(a))
+   │ │   ━━━━━━━━━━━━━ not both endpoints of the path
+20 │ │ }
+   │ └─┘ checked against `(a : Type) => Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a))`; while checking the body of this thunk
+   │
+   ╰ note: `uaEtaRefl` is refused with EndpointMismatch, as its expectation states
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/univalence-owed.gandr:30:3
+   │
+25 │ ┌ def uaEtaStratum() -> Path(
+26 │ │   Path(Type, AtStratum.Tel, AtStratum.Tel),
+27 │ │   ua(idtoequiv(AtStratum.Tel, AtStratum.Tel, AtStratum.opposite)),
+   │ │   ─────────────────────────────────────────────────────────────── an endpoint the point does not convert to
+28 │ │   AtStratum.opposite
+   │ │   ────────────────── an endpoint the point does not convert to
+29 │ │ ) {
+30 │ │   here(AtStratum.opposite)
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+31 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `uaEtaStratum` is refused with EndpointMismatch, as its expectation states
+
+error[FunextUnsupported]: `funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
+   ╭▸ corpus/pathological/identity/univalence-owed.gandr:43:3
+   │
+36 │ ┌ def funextFromHomotopy(
+37 │ │   a : Type,
+   │ │   ─ checked; while checking the body of this function; binds a : Type
+38 │ │   b : Type,
+   │ │   ─ checked; while checking the body of this function; binds b : Type
+39 │ │   f : a => b,
+   │ │   ─ checked against `(f : a => b) -> (g : a => b) -> ((x : a) => Path(b, f(x), g(x))) -> -F Path(a => b, f, g)`; while checking the body of this function; binds f : a => b
+40 │ │   g : a => b,
+   │ │   ─ checked against `(g : a => b) -> ((x : a) => Path(b, f(x), g(x))) -> -F Path(a => b, f, g)`; while checking the body of this function; binds g : a => b
+41 │ │   h : (x : a) => Path(b, f(x), g(x))
+   │ │   ─ checked against `((x : a) => Path(b, f(x), g(x))) -> -F Path(a => b, f, g)`; while checking the body of this function; binds h : (x : a) => Path(b, f(x), g(x))
+42 │ │ ) -> Path(a => b, f, g) {
+43 │ │   funext(f, g)
+   │ │   ━━━━━━━━━━━━ functions past the first-order boundary: found `a => b`
+44 │ │ }
+   │ └─┘ checked against `(a : Type, b : Type, f : a => b, g : a => b, (x : a) => Path(b, f(x), g(x))) => Path(a => b, f, g)`; while checking the body of this thunk
+   │
+   ├ note: `funextFromHomotopy` is refused with FunextUnsupported, as its expectation states
+   ╰ note: tracked by #1315 <https://github.com/gandr-lang/gandr/issues/1315>

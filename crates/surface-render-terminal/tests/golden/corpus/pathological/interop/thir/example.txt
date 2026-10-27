@@ -1,0 +1,41 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/interop/thir/example.gandr:15:19
+   │
+ 9 │   def exampleAtTrueZero(post : Value => Type) -> (post(Int(0))) => wpFn(
+   │   │                     ──── checked against `(post : Value => Type) -> -F (post(Int(0)) => wpFn(identitySpec, exampleBody, True, post))`; while checking the body of this function; binds post : Value => Type
+   │ ┌─┘
+   │ │
+10 │ │   identitySpec,
+11 │ │   exampleBody,
+12 │ │   True,
+   ‡ │
+15 │ │   return fn (h) { h }
+   │ │   ┬──────┬────────┯──
+   │ │   │      │        │
+   │ │   │      │        its type does not convert: expected `wpFn(identitySpec, exampleBody, True, post)`, found `post(Int(0))`
+   │ │   │      checked against `post(Int(0)) => wpFn(identitySpec, exampleBody, True, post)`; while checking the body of this function; binds h : post(Int(0))
+   │ │   checked against `-F (post(Int(0)) => wpFn(identitySpec, exampleBody, True, post))`; while judging the value this returns
+16 │ │ }
+   │ └─┘ checked against `(post : Value => Type) => post(Int(0)) => wpFn(identitySpec, exampleBody, True, post)`; while checking the body of this thunk
+   │
+   ╰ note: `exampleAtTrueZero` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/interop/thir/example.gandr:24:19
+   │
+20 │ ┌ def exampleAtTrueAnyTable(
+21 │ │   spec : (Item, Value, Value => Type) => Type,
+   │ │   ──── checked; while checking the body of this function; binds spec : (Item, Value, Value => Type) => Type
+22 │ │   post : Value => Type
+   │ │   ──── checked against `(post : Value => Type) -> -F (post(Int(1)) => wpFn(spec, exampleBody, True, post))`; while checking the body of this function; binds post : Value => Type
+23 │ │ ) -> (post(Int(1))) => wpFn(spec, exampleBody, True, post) {
+24 │ │   return fn (h) { h }
+   │ │   ┬──────┬────────┯──
+   │ │   │      │        │
+   │ │   │      │        its type does not convert: expected `wpFn(spec, exampleBody, True, post)`, found `post(Int(1))`
+   │ │   │      checked against `post(Int(1)) => wpFn(spec, exampleBody, True, post)`; while checking the body of this function; binds h : post(Int(1))
+   │ │   checked against `-F (post(Int(1)) => wpFn(spec, exampleBody, True, post))`; while judging the value this returns
+25 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `exampleAtTrueAnyTable` is refused with TypeMismatch, as its expectation states

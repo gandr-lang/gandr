@@ -1,0 +1,8 @@
+error[OutOfFragment.shell_block]: the shell block is not supported yet
+  ╭▸ corpus/pathological/shell/host-escape-non-string.gandr:7:28
+  │
+7 │ def escaped() -> -F Unit { #!{ printf '%s' $(1); } }
+  │                            ━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+  │
+  ├ note: `escaped` is refused with OutOfFragment.shell_block, as its expectation states
+  ╰ note: tracked by #1057 <https://github.com/gandr-lang/gandr/issues/1057>

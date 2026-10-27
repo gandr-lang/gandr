@@ -1,0 +1,7 @@
+error[UnrestrictedEndpoint]: a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`
+  ╭▸ corpus/ledger/diagnostics/UnrestrictedEndpoint.gandr:3:23
+  │
+3 │ def session_receive : ?Integer. end;
+  │                       ━━━━━━━━━━━━━ an endpoint outside a fork or a receive
+  │
+  ╰ note: `session_receive` is refused with UnrestrictedEndpoint, as its expectation states

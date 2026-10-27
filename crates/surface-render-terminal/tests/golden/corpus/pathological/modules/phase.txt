@@ -1,0 +1,23 @@
+error[PhaseDependence]: the type `Q` depends on the value `count`; a type depends only on types
+   ╭▸ corpus/pathological/modules/phase.gandr:16:26
+   │
+16 │   type Q = Path(Integer, count, 3);
+   │                          ━━━━━ a value a type depends on
+   │
+   ╰ note: `Q` is refused with PhaseDependence, as its expectation states
+
+error[PhaseDependence]: the type `R` depends on the value `three`; a type depends only on types
+   ╭▸ corpus/pathological/modules/phase.gandr:27:26
+   │
+27 │   type R = Path(Integer, three, 3);
+   │                          ━━━━━ a value a type depends on
+   │
+   ╰ note: `R` is refused with PhaseDependence, as its expectation states
+
+error[PhaseDependence]: the type `At` depends on the value `z`; a type depends only on types
+   ╭▸ corpus/pathological/modules/phase.gandr:34:23
+   │
+34 │   type At = Path(S.T, S.z, S.z);
+   │                       ━━━ a value a type depends on
+   │
+   ╰ note: `At` is refused with PhaseDependence, as its expectation states

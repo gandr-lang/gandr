@@ -1,0 +1,29 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/argument-classifier.gandr:23:40
+   │
+13 │ def first(xs : List(Integer)) -> Integer {
+   │                     ─────── the type it is checked against
+   ‡
+23 │ def mistyped() -> Integer { first(Cons("no", Nil)) }
+   │ ┬───────────────────────────┬─────┬────┯━━━─────────
+   │ │                           │     │    │
+   │ │                           │     │    its type does not convert: expected `Integer`, found `String`
+   │ │                           │     checked against `List(Integer)`; while checking the next premise of this
+   │ │                           checked against `-F Integer`; while checking the argument of this application
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `mistyped` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/data/argument-classifier.gandr:40:50
+   │
+40 │ def mistypedAt() -> Integer { size(Integer, Cons("no", Nil)) }
+   │ ┬─────────────────────────────┬────┬────────┬────┯━━━─────────
+   │ │                             │    │        │    │
+   │ │                             │    │        │    its type does not convert: expected `Integer`, found `String`
+   │ │                             │    │        checked against `List(Integer)`; while checking the next premise of this
+   │ │                             │    the type it is checked against
+   │ │                             checked against `-F Integer`; while checking the argument of this application
+   │ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `mistypedAt` is refused with TypeMismatch, as its expectation states

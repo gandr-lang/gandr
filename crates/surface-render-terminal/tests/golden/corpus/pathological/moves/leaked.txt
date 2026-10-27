@@ -1,0 +1,14 @@
+error[LinearResidue]: the endpoint is not closed before the fork half or receive body that bound it ends
+   ╭▸ corpus/pathological/moves/leaked.gandr:12:3
+   │
+11 │ ┌ def leaked() -> Unit {
+12 │ │   fork (owner : File.Handle) { close(owner) } as file;
+   │ │   ┯━━━
+   │ │   │
+   │ │   an endpoint left unconsumed: found `end`
+   │ │   the endpoint was opened by this fork
+13 │ │   pure unit
+14 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `leaked` is refused with LinearResidue, as its expectation states

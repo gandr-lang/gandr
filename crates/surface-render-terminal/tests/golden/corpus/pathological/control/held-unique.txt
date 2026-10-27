@@ -1,0 +1,82 @@
+error[HeldShared]: `hold[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
+   ╭▸ corpus/pathological/control/held-unique.gandr:9:15
+   │
+ 8 │   def entered(n : Integer) -> Unit {
+   │   │           ─ checked against `Integer -> -F Unit`; while checking the body of this function; binds n : Integer
+   │ ┌─┘
+   │ │
+ 9 │ │   hold[1] c = n;
+   │ │               ━ a value that may have another holder
+10 │ │   pure unit
+11 │ │ }
+   │ └─┘ checked against `Integer => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `entered` is refused with HeldShared, as its expectation states
+
+error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+   ╭▸ corpus/pathological/control/held-unique.gandr:17:8
+   │
+15 │ ┌ def read_held() -> Integer {
+16 │ │   hold[1] c = 0;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+17 │ │   pure c
+   │ │   ┬────┯
+   │ │   │    │
+   │ │   │    a copy of a value held at grade one
+   │ │   checked against `-F Integer`; while judging the value this returns
+18 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `read_held` is refused with HeldCopied, as its expectation states
+
+error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+   ╭▸ corpus/pathological/control/held-unique.gandr:25:33
+   │
+23 │ ┌ def read_twice() -> Unit {
+24 │ │   hold[1] c = 3;
+   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+25 │ │   access c as v { resume(v, v + v) }
+   │ │   ┬───────────────┬─────────┬───┯───
+   │ │   │               │         │   │
+   │ │   │               │         │   a copy of a value held at grade one
+   │ │   │               │         checked against `Integer`; while checking the arguments of this operation
+   │ │   │               checked against `-F Unit`; while checking the value this resume writes back
+   │ │   checked against `-F Unit`; while checking the body of this access
+26 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `read_twice` is refused with HeldCopied, as its expectation states
+
+error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+   ╭▸ corpus/pathological/control/held-unique.gandr:32:31
+   │
+30 │ ┌ def read_shared() -> Integer {
+31 │ │   hold[1] c = 0;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+32 │ │   access shared c as w { pure w }
+   │ │   ┬──────────────────────┬────┯──
+   │ │   │                      │    │
+   │ │   │                      │    a copy of a value held at grade one
+   │ │   │                      checked against `-F Integer`; while judging the value this returns
+   │ │   checked against `-F Integer`; while checking the body of this access
+33 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `read_shared` is refused with HeldCopied, as its expectation states
+
+error[ViewMoved]: the view's value was read out, so the view ends with `resume`, which writes a value back; `abort` would leave the held slot empty
+   ╭▸ corpus/pathological/control/held-unique.gandr:40:37
+   │
+38 │ ┌ def moved_then_aborted() -> Integer {
+39 │ │   hold[1] c = 0;
+   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+40 │ │   access c as v { run n <- succ(v); abort(v); pure n } unwind { pure unit }
+   │ │   ┬───────────────┬─────────────────┯━━━━━━━───────────────────────────────
+   │ │   │               │                 │
+   │ │   │               │                 an abort after the value was moved out
+   │ │   │               checked against `-F Integer`; while checking the body under this binding; binds n : Integer
+   │ │   checked against `-F Integer`; while checking the body of this access
+41 │ │ }
+   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │
+   ╰ note: `moved_then_aborted` is refused with ViewMoved, as its expectation states

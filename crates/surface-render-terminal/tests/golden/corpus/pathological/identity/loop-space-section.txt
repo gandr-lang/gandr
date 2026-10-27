@@ -1,0 +1,18 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/identity/loop-space-section.gandr:54:16
+   │
+51 │    def rec forged(c : Circle) -> Path(Circle, spin(wind(c)), c) {
+   │    │              ─ checked against `(a : Circle) -> -F Path(Circle, spin(wind(a)), a)`; while checking the body of this function; binds c : Circle
+   │ ┌──┘
+   │ │
+52 │ │┌   case c {
+53 │ ││     Base => here(Base),
+54 │ ││     Loop(x) => forged[<](x),
+   │ ││                ━━━━━━━━━━━━ its type does not convert: expected `-F Path(Circle, spin(wind(Loop(x))), Loop(x))`, found `-F Path(Circle, spin(wind(x)), x)`
+55 │ ││     Unloop(x) => { run p <- forged[<](x); cong(unaround, p) }
+56 │ ││   }
+   │ │└───┘ checked against `-F Path(Circle, spin(wind(c)), c)`; while checking the body of this function; binds x : Circle
+57 │ │  }
+   │ └──┘ checked against `(c : Circle) => Path(Circle, spin(wind(c)), c)`; while checking the body of this function; binds forged : (a : Circle) => Path(Circle, spin(wind(a)), a)
+   │
+   ╰ note: `forged` is refused with TypeMismatch, as its expectation states

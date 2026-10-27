@@ -1,0 +1,19 @@
+error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an effect
+  ╭▸ corpus/pathological/control/accessor-abort-effect.gandr:7:39
+  │
+5 │   def noisy(p : Cap { exit }) -> Integer {
+  │   │         ─ checked against `Cap {exit} -> -F Integer`; while checking the body of this function; binds p : Cap {exit}
+  │ ┌─┘
+  │ │
+6 │ │   hold c = 0;
+  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+7 │ │   access c as v { abort(v) } unwind { p.exit(1) };
+  │ │   ┬───────────────────────────────────┯━━━━━━━━──
+  │ │   │                                   │
+  │ │   │                                   an effect in an unwind
+  │ │   checked against `-F Integer`; while checking the unwind of this access under the empty row
+8 │ │   pure c
+9 │ │ }
+  │ └─┘ checked against `Cap {exit} => Integer`; while checking the body of this thunk
+  │
+  ╰ note: `noisy` is refused with UnwindEffect, as its expectation states

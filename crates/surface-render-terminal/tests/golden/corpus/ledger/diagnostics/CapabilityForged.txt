@@ -1,0 +1,16 @@
+error[CapabilityForged]: a capability cannot be made from a term; only one held or granted can stand here
+  ╭▸ corpus/ledger/diagnostics/CapabilityForged.gandr:8:8
+  │
+2 │   def peek(c : Cap {read}) -> -F [Fs] String {
+  │                ────────── the type it is checked against
+  ‡
+7 │ ┌ def forged() -> -F [Fs] String {
+8 │ │   peek("fs")
+  │ │   ┬────┯━━━─
+  │ │   │    │
+  │ │   │    no capability hypothesis: expected `Cap {read}`
+  │ │   checked against `-F [Fs] String`; while checking the argument of this application
+9 │ │ }
+  │ └─┘ checked against `+U (-F [Fs] String)`; while checking the body of this thunk
+  │
+  ╰ note: `forged` is refused with CapabilityForged, as its expectation states

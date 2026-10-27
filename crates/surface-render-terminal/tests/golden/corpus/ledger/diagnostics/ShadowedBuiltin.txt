@@ -1,0 +1,7 @@
+error[ShadowedBuiltin]: `Unit` is a builtin name, which this source may not rebind
+  ╭▸ corpus/ledger/diagnostics/ShadowedBuiltin.gandr:3:6
+  │
+3 │ data Unit : Type {
+  │      ━━━━ shadows a builtin
+  │
+  ╰ note: `Unit` is refused with ShadowedBuiltin, as its expectation states

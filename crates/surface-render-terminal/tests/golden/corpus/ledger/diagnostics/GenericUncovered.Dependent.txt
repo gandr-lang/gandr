@@ -1,0 +1,8 @@
+error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Marked`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
+  ╭▸ corpus/ledger/diagnostics/GenericUncovered.Dependent.gandr:8:34
+  │
+8 │ def reflMarked = Eq.generic.refl(Marked) ;
+  │                                  ━━━━━━ a type with no derived equality
+  │
+  ├ note: `reflMarked` is refused with GenericUncovered.Dependent, as its expectation states
+  ╰ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>

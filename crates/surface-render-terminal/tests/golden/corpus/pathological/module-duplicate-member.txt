@@ -1,0 +1,10 @@
+error[DuplicateDefinition]: `x` is defined twice
+  ╭▸ corpus/pathological/module-duplicate-member.gandr:4:3
+  │
+2 │ ┌   @[ refuses("DuplicateDefinition") ]
+3 │ │   def x = 1;
+  │ └────────────┘ first written here
+4 │     def x = 2;
+  │     ━━━━━━━━━━ written again here
+  │
+  ╰ note: `x` is refused with DuplicateDefinition, as its expectation states

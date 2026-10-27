@@ -1,0 +1,17 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/control/eliminator-answer-type-mismatch.gandr:9:40
+   │
+ 8 │ ┌ def answered() -> String {
+ 9 │ │   run s <- if true -> -F String { pure 1 } else { pure 2 };
+   │ │   ┬──      ┬─────────────┬────────┬────┯──────────────────
+   │ │   │        │             │        │    │
+   │ │   │        │             │        │    its type does not convert: expected `String`, found `Integer`
+   │ │   │        │             │        checked against `-F String`; while judging the value this returns
+   │ │   │        │             the type it is checked against
+   │ │   │        synthesised; while checking the body of this function; binds _ : Bool, _ : Unit
+   │ │   checked against `-F String`; while synthesising the computation this binds
+10 │ │   pure s
+11 │ │ }
+   │ └─┘ checked against `() => String`; while checking the body of this thunk
+   │
+   ╰ note: `answered` is refused with TypeMismatch, as its expectation states

@@ -1,0 +1,26 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:39:22
+   │
+36 │    def restored(l : Ints) -> Path(Ints, listOf(tagsOf(l)), l) {
+   │    │            ─ checked against `(l : Ints) -> -F Path(Ints, listOf(tagsOf(l)), l)`; while checking the body of this function; binds l : Ints
+   │ ┌──┘
+   │ │
+37 │ │┌   case l {
+38 │ ││     Nil => here(Nil),
+39 │ ││     Cons(x, rest) => here(Cons(x, rest))
+   │ ││                      ━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+40 │ ││   }
+   │ │└───┘ checked against `-F Path(Ints, listOf(tagsOf(l)), l)`; while checking the body of this function; binds x : i32, rest : Ints
+41 │ │  }
+   │ └──┘ checked against `(l : Ints) => Path(Ints, listOf(tagsOf(l)), l)`; while checking the body of this thunk
+   │
+   ╰ note: `restored` is refused with EndpointMismatch, as its expectation states
+
+error[EquivUnsupported]: `equiv` needs two closed pure translators between types built from units, integers, strings, tuples, sums, lists and data types that do not hold themselves
+   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:45:42
+   │
+45 │ def decided : Path(Type, Ints, Packed) = equiv(pack, unpack);
+   │                                          ━━━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Ints`
+   │
+   ├ note: `decided` is refused with EquivUnsupported, as its expectation states
+   ╰ note: tracked by #1316 <https://github.com/gandr-lang/gandr/issues/1316>

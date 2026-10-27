@@ -1,0 +1,9 @@
+error[RulesDiverge]: this rule and an earlier one rewrite one term to two different constructor terms, so the block's rules are refused
+  ╭▸ corpus/pathological/desc/rules-diverge.gandr:7:3
+  │
+6 │   rule add(Zero, n) ==> n;
+  │   ─────────────────────── the rule it overlaps
+7 │   rule add(m, Zero) ==> Succ(m);
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term to another constructor term
+  │
+  ╰ note: `NatApart` is refused with RulesDiverge, as its expectation states

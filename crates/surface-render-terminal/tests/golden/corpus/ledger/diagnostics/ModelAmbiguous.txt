@@ -1,0 +1,7 @@
+error[ModelAmbiguous]: more than one module in scope answers the model implicit `p` this call to `pointOf` omits: `Zero` and `One`; supply the one meant as `pointOf[p = …](…)`
+   ╭▸ corpus/ledger/diagnostics/ModelAmbiguous.gandr:31:30
+   │
+31 │ def ambiguous() -> Integer { pointOf(3) }
+   │                              ━━━━━━━━━━ a model implicit more than one module answers
+   │
+   ╰ note: `ambiguous` is refused with ModelAmbiguous, as its expectation states

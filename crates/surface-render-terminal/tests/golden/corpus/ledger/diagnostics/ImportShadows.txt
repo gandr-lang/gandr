@@ -1,0 +1,10 @@
+error[ImportShadows]: `answer` is bound by an import and again in this source
+  ╭▸ corpus/ledger/diagnostics/ImportShadows.gandr:6:5
+  │
+3 │ import "../syntax/pub-declaration.gandr" ;
+  │ ────────────────────────────────────────── first written here
+  ‡
+6 │ def answer = 43 ;
+  │     ━━━━━━ bound here and by an import
+  │
+  ╰ note: `answer` is refused with ImportShadows, as its expectation states

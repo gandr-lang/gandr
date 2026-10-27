@@ -1,0 +1,7 @@
+error[OutOfFragment.WrongSort]: a f type cannot stand where a value type is expected
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.WrongSort.gandr:3:20
+  │
+3 │ def pure_unknown : -F ?;
+  │                    ━━━━ a form of another sort than this position takes
+  │
+  ╰ note: `pure_unknown` is refused with OutOfFragment.WrongSort, as its expectation states

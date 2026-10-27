@@ -1,0 +1,8 @@
+error[ImplicitTelescope]: this implicit telescope `@[…]` has an entry out of shape: write `a : Type` for an implicit, `i : Size` for a stage and `i < n` for its bound, before the function's parameters
+  ╭▸ corpus/ledger/diagnostics/ImplicitTelescope.gandr:3:1
+  │
+3 │ def f @[a : Type] = 1;
+  │ ━━━━━━━━━━━━━━━━━━━━━━ an implicit out of shape
+  │
+  ├ note: `f` is refused with ImplicitTelescope, as its expectation states
+  ╰ note: tracked by #2668 <https://github.com/gandr-lang/gandr/issues/2668>

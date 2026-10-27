@@ -1,0 +1,13 @@
+error[CapabilityOutsideAuthority]: the capability does not grant this operation
+  ╭▸ corpus/ledger/diagnostics/CapabilityOutsideAuthority.gandr:4:3
+  │
+3 │   def save(c : Cap {read}) -> -F [Fs] Unit {
+  │   │        ─ checked against `Cap {read} -> -F [Fs] Unit`; while checking the body of this function; binds c : Cap {read}
+  │ ┌─┘
+  │ │
+4 │ │   c.write("notes", "draft")
+  │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━ an operation its capability withholds: found `Cap {read}`
+5 │ │ }
+  │ └─┘ checked against `+U (Cap {read} -> -F [Fs] Unit)`; while checking the body of this thunk
+  │
+  ╰ note: `save` is refused with CapabilityOutsideAuthority, as its expectation states

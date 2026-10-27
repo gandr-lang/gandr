@@ -1,0 +1,13 @@
+error[Undecided]: the checker could not decide what this code unfolds to
+   ╭▸ corpus/pathological/interop/boundary/function-row.gandr:42:1
+   │
+42 │ def throughLayout(x : Nat, h : Heap, r : realiser(optRef, x, h)) -> vOpt(vInt, x, h) { r }
+   │ ┬─────────────────┬────────┬─────────┬─────────────────────────────────────────────────┬──
+   │ │                 │        │         │                                                 │
+   │ │                 │        │         │                                                 checked against `-F vOpt(vInt, x, h)`; while comparing the type this synthesises with the one it is checked against
+   │ │                 │        │         checked against `realiser(optRef, x, h) -> -F vOpt(vInt, x, h)`; while checking the body of this function; binds r : realiser(optRef, x, h)
+   │ │                 │        checked against `(h : Heap) -> realiser(optRef, x, h) -> -F vOpt(vInt, x, h)`; while checking the body of this function; binds h : Heap
+   │ │                 checked against `(x : Nat) -> (h : Heap) -> realiser(optRef, x, h) -> -F vOpt(vInt, x, h)`; while checking the body of this function; binds x : Nat
+   │ checked against `(x : Nat, h : Heap, realiser(optRef, x, h)) => vOpt(vInt, x, h)`; while checking the body of this thunk
+   │
+   ╰ note: `throughLayout` is refused with Undecided, as its expectation states

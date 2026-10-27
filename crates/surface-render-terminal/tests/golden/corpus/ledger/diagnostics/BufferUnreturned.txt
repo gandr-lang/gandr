@@ -1,0 +1,17 @@
+error[BufferUnreturned]: the buffer placed live here is not handed back before its body ends
+   ╭▸ corpus/ledger/diagnostics/BufferUnreturned.gandr:5:5
+   │
+ 3 │ ┌  def neverFreed() -> -F Unit {
+ 4 │ │┌   handle r : Ring {
+ 5 │ ││     run b <- r.alloc(4096);
+   │ ││     ━━━ a buffer never handed back
+ 6 │ ││     pure unit
+ 7 │ ││   } with {
+   ‡ ││
+10 │ ││     oper free(b, k) => k(unit)
+11 │ ││   }
+   │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
+12 │ │  }
+   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `neverFreed` is refused with BufferUnreturned, as its expectation states
