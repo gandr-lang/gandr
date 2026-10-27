@@ -308,6 +308,7 @@ use crate::error::RegisterFault;
 use crate::levels::LevelContext;
 use crate::replay::EndpointReading;
 use crate::replay::ReplayBudget;
+use crate::replay::StuckEndpoints;
 use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
 use crate::replay::read_decode;
@@ -518,20 +519,21 @@ fn returner_ending(
 
 /// What `goal` comes to once the returned endpoints its structure leaves open
 /// are read: normalized with the admitted definitions in `entries` unfolding,
-/// and the normal forms converted by the one conversion; and, where that
-/// leaves the goal apart, what the endpoint pairs the declaration relates
-/// make of it.
+/// and the normal forms converted by the one conversion, two endpoints that
+/// stay stuck by the kernel's conversion with those definitions unfolding;
+/// and, where that leaves the goal apart, what the endpoint pairs the
+/// declaration relates make of it.
 ///
 /// # Specification
 /// - requires: `goal`'s roots and the judgement's related pairs live in
 ///   `arena`.
 /// - ensures: [`EndpointReading::Converts`] when the structural walk converges
 ///   setting nothing aside, or [`read_endpoints`] converts the set-aside pairs
-///   at the unfoldings of the judgement's entries' definitions, every other
-///   entry opaque; otherwise, when the judgement relates no pair,
-///   [`EndpointReading::Apart`], and when it does, what
-///   [`crate::element_identity::related_endpoints`] makes of the goal at those
-///   unfoldings. `arena` holds what it held on entry.
+///   under [`StuckEndpoints::Unfolding`] at the unfoldings of the judgement's
+///   entries' definitions, every other entry opaque; otherwise, when the
+///   judgement relates no pair, [`EndpointReading::Apart`], and when it does,
+///   what [`crate::element_identity::related_endpoints`] makes of the goal at
+///   those unfoldings. `arena` holds what it held on entry.
 /// - provides: the one place the checker reads a returned endpoint, shared by
 ///   every mode switch; the unfoldings are built only when a pair is set aside
 ///   or a relation is read. Reflexivity relates its endpoints by the dialogue
@@ -548,11 +550,14 @@ fn returner_ending(
 ///   definition converts at a mode switch, and one returning a different value
 ///   does not; compound endpoints related only through a definition's body
 ///   convert by the definition's dialogue and are refused by name when it is
-///   corrupted.
+///   corrupted; two decodes stuck on a binder whose arms differ by a call one
+///   side holds and the other has run convert, and an arm run to another type
+///   stays apart.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
 /// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
+/// - witness: `check::tests::a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 fn read_returned(
     arena: &mut TermArena,
@@ -575,7 +580,7 @@ fn read_returned(
             &unfoldings,
             &pending,
             ReplayBudget::DEFAULT,
-            crate::replay::StuckEndpoints::Structural,
+            StuckEndpoints::Unfolding,
         ) == EndpointReading::Converts
     {
         return Ok(EndpointReading::Converts);
@@ -8494,6 +8499,106 @@ mod tests
             Ok(()),
             admit_decoded_case(|mint, _data| two_way(mint), bound_case),
             "a synthesized case reads its scrutinee's decode as the check does"
+        );
+    }
+
+    /// Admit `Two`, of two constants, and `c = thunk λ_. return ⌜Unit⌝` at
+    /// `U(Unit → F U₀)`, then `thunk λx. λv. return v` at `U(Π (x : Two).
+    /// El(⟨held⟩) → F El(⟨ran⟩))`. `held` cases on `x`, returning `⌜Void⌝` at
+    /// the first constant and calling `c(())` at the second; `ran` is the same
+    /// case returning `⌜t⌝` at the second instead, with `t` minted by `run`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_held_against_run(
+        run: impl FnOnce(&mut TermArena) -> ValueTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let two = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, zero.clone());
+            let declaration = staging.data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![]],
+                kind,
+            );
+            environment.add_decl(declaration)?.position()
+        };
+        let code = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let arrow = mint.comp_type_arrow(unit, returns_code);
+            let declared = mint.value_type_thunk(arrow);
+            let quoted = mint.value_quote(unit);
+            let returned = mint.computation_return(quoted);
+            let lambda = mint.computation_lambda(returned);
+            let body = mint.value_thunk(lambda);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let motive = mint.comp_type_returner(universe);
+            let void = mint.value_type_empty();
+            let void = mint.value_quote(void);
+            let void_arm = mint.computation_return(void);
+            let decoded = |mint: &mut TermArena, arm: ComputationId| {
+                let scrutinee = mint.value_variable(DeBruijnIndex::from(0_u32));
+                let cased = mint.computation_data_case(scrutinee, motive, vec![void_arm, arm]);
+                let returned = mint.value_returned(cased);
+                mint.value_type_element(returned, zero.clone())
+            };
+            let head = mint.value_constant(code);
+            let forced = mint.computation_force(head);
+            let unit_value = mint.value_unit();
+            let call = mint.computation_application(forced, unit_value);
+            let held = decoded(mint, call);
+            let ran = run(mint);
+            let ran = mint.value_quote(ran);
+            let ran = mint.computation_return(ran);
+            let ran = decoded(mint, ran);
+            let returns = mint.comp_type_returner(ran);
+            let arrow = mint.comp_type_arrow(held, returns);
+            let data = mint.value_type_data(two, vec![]);
+            let family = mint.comp_type_pi(data, arrow);
+            let declared = mint.value_type_thunk(family);
+            let bound = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(bound);
+            let body = mint.computation_lambda(body);
+            let body = mint.computation_lambda(body);
+            let body = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A mode switch converts two decodes stuck on a binder whose arms differ
+    /// by a call one side holds and the other has run, by the kernel's δ-step
+    /// at the held call, as a step's own reading does (#3090). An arm run to
+    /// another type stays apart, so the δ-step is the one that separates the
+    /// two.
+    #[test]
+    fn a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_held_against_run(TermArena::value_type_unit),
+            "the held call reads as the quote it runs to"
+        );
+        let refused = admit_held_against_run(|mint| mint.value_type_base(BaseType::Integer));
+        assert!(
+            matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+            "an arm run to the integers stays apart: {refused:?}"
         );
     }
 

@@ -1,0 +1,58 @@
+/// This source checks a pair against a fold whose subject reaches its arm through a constant.
+///
+/// It pins how the kernel reads a mode switch whose expected type holds a call in a stuck arm.
+///
+/// The checker's reduct of `wp(body, post)` keeps the fold's call on `arm`'s value inside an arm that cases on the record's first field. The pair's second component checks at that arm, and `afterRead` gives it the type the call runs to. The kernel runs the held call by its δ-step and reads the two types alike.
+///
+/// - see: #3090
+/// - see: #2831
+import "./data-base.gandr";
+
+/// A program either reads, branches into a first part and its rest, or stops.
+data E : Type {
+  /// This program reads a natural.
+  Get : E;
+  /// This program runs its first part, then its rest at a successor.
+  Br : (a : E, m : E) --> E;
+  /// This program stops at zero.
+  Stop : E;
+}
+
+/// An outcome carries the natural a program ends at.
+data Out : Type {
+  /// This outcome ends at the natural `v`.
+  Ends : (v : Nat) --> Out;
+}
+
+/// This fold computes the type a program owes its postcondition `k`.
+def rec wp(e : E, k : Out => Type) -> Type {
+  case e {
+    Get => return type(#{w : Nat, post : k(Ends(w))}),
+    Br(a, m) => wp[<](a, fn (o) { case o {
+      Ends(v) => case v {
+        Zero => return Void,
+        Succ(_x) => wp[<](m, k)
+      }
+    } }),
+    Stop => k(Ends(Zero))
+  }
+}
+
+/// This postcondition asks for nothing.
+def post : Out => Type = fn (_o) { return Unit };
+
+/// This constant names the rest of `body`, another step of the fold.
+def arm : E = Br(Get, Stop);
+
+/// This program reaches its rest through the constant `arm`.
+def body : E = Br(Get, arm);
+
+/// This proof meets the rest's precondition.
+def afterRead(u : Unit) -> wp(arm, post) {
+  (Succ(Zero), u)
+}
+
+/// This proof meets the whole program's precondition through `afterRead`.
+def whole(u : Unit) -> wp(body, post) {
+  (Succ(Zero), afterRead(u))
+}

@@ -1421,7 +1421,8 @@ pub(crate) enum StuckEndpoints
     /// endpoints, where every unfolding is a recorded decision.
     Structural,
     /// By the walk, or else by the kernel's conversion with definitions
-    /// unfolding: a step's own reading, which runs a code to its quote, so a
+    /// unfolding: a step's own reading, which runs a code to its quote, and a
+    /// mode switch's, which reads the types the checker's reducts hold, so a
     /// call held in a stuck arm and the same call run read alike.
     Unfolding,
 }
