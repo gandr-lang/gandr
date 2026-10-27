@@ -1245,6 +1245,75 @@ fn a_row_names_a_theory_at_the_sorts_it_fixes_2844()
     }
 }
 
+/// A scope whose manifest fixes `S` to a parameter reads the parameter where
+/// the scope stands, past the parameters after it, and an exercise in its
+/// subject reads it past the capability too. A row fixing `S` to a parameter
+/// checks, and a scope at `Integer` discharges it (#2881).
+#[test]
+fn a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}",
+            "def scoped(a : Type, x : a, y : Integer) -> -F a {{ handle s : State with sort S = a {{ s.get() }} with {{ pure(w) => pure w, oper get(k) => k(x), oper put(v, k) => k(unit) }} }}\n",
+            "def labelled(a : Type, x : a) -> -F [st : State with sort S = a] a {{ st.get() }}\n",
+            "def discharged() -> -F Integer {{ handle s : State with sort S = Integer {{ labelled(Integer, 0) }} with {{ pure(w) => pure w, oper get(k) => k(7), oper put(v, k) => k(unit) }} }}\n",
+        ),
+        state = STATE,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let scoped = tail_of(&module, &arena, "scoped".into());
+    let Some(&Computation::Scope {
+        ref signature,
+        subject,
+        ..
+    }) = arena.computation(scoped)
+    else {
+        panic!("`handle` over a theory is a capability scope");
+    };
+    let Some(&Computation::Exercise {
+        signature: ref exercised,
+        ..
+    }) = arena.computation(subject)
+    else {
+        panic!(
+            "the subject exercises `get`: {:?}",
+            arena.computation(subject)
+        );
+    };
+    let replied = |signature: &EffectSig| {
+        signature
+            .operations()
+            .find(|operation| operation.name.as_ref() == "get")
+            .and_then(|operation| match arena.value_type(operation.reply) {
+                Some(&ValueType::Element { code, .. }) => arena.value(code),
+                Some(_) | None => None,
+            })
+    };
+    assert_eq!(
+        replied(signature),
+        Some(&variable(DeBruijnIndex::from(2_u32))),
+        "`a` at the scope, past `x` and `y`"
+    );
+    assert_eq!(
+        replied(exercised),
+        Some(&variable(DeBruijnIndex::from(3_u32))),
+        "`a` at the exercise, past the capability too"
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["scoped", "labelled", "discharged"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}
+
 /// The theory `StatePutLaws`: `State` with put-get and put-put stated.
 const PUT_LAWS: &str = concat!(
     "theory StatePutLaws {\n",
