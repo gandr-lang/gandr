@@ -1,15 +1,23 @@
-/// `rust-semantics-thir` derives the postcondition of Corten's `example` from THIR written as data.
+/// `rust-semantics-thir` derives the postconditions of Corten's `example` and its buddy allocator's `pop` from THIR written as data.
 ///
 /// Implemented: THIR's literal, parameter, conditional, return and call as data and as a theory's operations, the weakest-precondition axioms as its rules, fired by an inspected call, and `example` meeting its specification given `identity`'s.
-/// Not implemented: THIR staged by `rustc` and the buddy allocator's rung, which #327 owes.
+/// Implemented: THIR's place reads, writes and option match as data, and the allocator's `pop` meeting its free-list specification.
+/// Not implemented: a `rustc` driver that stages THIR, which #327 owes, and the allocator's other functions.
 ///
 /// The calculus is the specification monad of THIR's control effect, one postcondition for a value and one for a `return`.
 /// A function's guard is the effect's handler, so a `return` inside a call's argument skips the call.
 ///
 /// - see: corpus/model/interop/thir/example.gandr
+/// - see: corpus/model/interop/thir/buddy-pop.gandr
 
 // `Value`, `Item`, `Expr`, `wpFn`, `exampleBody`, `exampleSpec`, `exampleMeets`, `exampleReturnsPast` and `identitySpec`.
 import "../../model/interop/thir/example.gandr";
+
+// `Nat`.
+import "../../model/data/data-base.gandr";
+
+// `Vals`, `Ixs`, `freeAt`, `wpMemFn`, `popBody`, `popEnv`, `popPost`, `Own`, `Whole`, `buddy` and `popMeets`.
+import "../../model/interop/thir/buddy-pop.gandr";
 
 /// `example`'s body paired with evidence that its transformer is below its specification at every value and postcondition.
 def exampleSpecified : #{
@@ -26,4 +34,19 @@ def returnsPast(
   post : Value => Type
 ) -> post(Int(0)) => wpFn(spec, exampleBody, False, post) {
   exampleReturnsPast(spec, post)
+}
+
+/// From the free list of `order`, `pop` answers its head and leaves the rest free.
+def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt(
+  blocks,
+  heads,
+  order,
+  ixs
+)) => wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, ixs),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  popMeets(blocks, heads, order, ixs)
 }

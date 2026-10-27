@@ -1,0 +1,77 @@
+// The checker refuses `pop`'s claims at a shared root and at the wrong list.
+//
+// The model proves `pop` holding the whole root, against the list it pops.
+// Each item here weakens one of the two, so its claim does not hold.
+//
+// A write needs the whole root, so at a part the arm's precondition is `Void`.
+// At a listed head the read answers that block, so the empty list's
+// postcondition fails.
+//
+// - see: #2813
+// - see: `model/interop/thir/buddy-pop.gandr` — `afterRead`, the arm's
+//   precondition each item claims
+
+// `Nat`.
+import "../../../model/data/data-base.gandr";
+
+// `Maybe`.
+import "../../../model/data/data-maybe.gandr";
+
+// `pop`'s body, its transformer, its postcondition and the free list's parts.
+import "../../../model/interop/thir/buddy-pop.gandr";
+
+/// A part of the root cannot write the heads, so the claim from a listed head is refused.
+@[ refuses("TypeMismatch") ]
+def popShared(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  b : Nat,
+  rest : Ixs,
+  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  held : Path(
+    Maybe(Val),
+    (Some(headOf(rest)) : Maybe(Val)),
+    below(Down(b, Down(Zero, Here)), Tree(blocks))
+  ),
+  link : chain(rest, blocks),
+  apart : notIn(rest, b)
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  Own(Zero, Part, buddy(blocks, heads))
+) {
+  (
+    SomeV(IntV(b)),
+    (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+  )
+}
+
+/// At a listed head `pop` answers that block, so its claim to answer `None` is refused.
+@[ refuses("TypeMismatch") ]
+def popListedAsEmpty(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  b : Nat,
+  rest : Ixs,
+  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  held : Path(
+    Maybe(Val),
+    (Some(headOf(rest)) : Maybe(Val)),
+    below(Down(b, Down(Zero, Here)), Tree(blocks))
+  ),
+  link : chain(rest, blocks),
+  apart : notIn(rest, b)
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, INil),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  (
+    SomeV(IntV(b)),
+    (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+  )
+}

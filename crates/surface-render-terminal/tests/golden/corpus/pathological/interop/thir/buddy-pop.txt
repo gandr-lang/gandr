@@ -1,0 +1,69 @@
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:47:25
+   │
+25 │ ┌  def popShared(
+26 │ │    blocks : Vals,
+   │ │    ────── checked; while checking the body of this function; binds blocks : Vals
+27 │ │    heads : Vals,
+   │ │    ───── checked; while checking the body of this function; binds heads : Vals
+28 │ │    order : Nat,
+   │ │    ───── checked; while checking the body of this function; binds order : Nat
+29 │ │    b : Nat,
+   │ │    ─ checked; while checking the body of this function; binds b : Nat
+30 │ │    rest : Ixs,
+   │ │    ──── checked; while checking the body of this function; binds rest : Ixs
+31 │ │    h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+   │ │    ─ checked; while checking the body of this function; binds h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order))
+32 │ │    held : Path(
+   │ │    ──── checked; while checking the body of this function; binds held : Path(Maybe(Val), (Some(headOf(rest)) : Maybe(Val)), below(Down(b, Down(Zero, Here)), Tree(blocks)))
+   ‡ │
+37 │ │    link : chain(rest, blocks),
+   │ │    ──── checked; while checking the body of this function; binds link : chain(rest, blocks)
+38 │ │    apart : notIn(rest, b)
+   │ │    ───── checked; while checking the body of this function; binds apart : notIn(rest, b)
+   ‡ │
+45 │ │┌   (
+46 │ ││     SomeV(IntV(b)),
+47 │ ││     (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+   │ ││                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
+48 │ ││   )
+   │ │└───┘ checked; while judging the value this returns
+49 │ │  }
+   │ └──┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `popShared` is refused with TypeMismatch, as its expectation states
+
+error[TypeMismatch]: mismatched types
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:75:25
+   │
+53 │ ┌  def popListedAsEmpty(
+54 │ │    blocks : Vals,
+   │ │    ────── checked; while checking the body of this function; binds blocks : Vals
+55 │ │    heads : Vals,
+   │ │    ───── checked; while checking the body of this function; binds heads : Vals
+56 │ │    order : Nat,
+   │ │    ───── checked; while checking the body of this function; binds order : Nat
+57 │ │    b : Nat,
+   │ │    ─ checked; while checking the body of this function; binds b : Nat
+58 │ │    rest : Ixs,
+   │ │    ──── checked; while checking the body of this function; binds rest : Ixs
+59 │ │    h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+   │ │    ─ checked; while checking the body of this function; binds h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order))
+60 │ │    held : Path(
+   │ │    ──── checked; while checking the body of this function; binds held : Path(Maybe(Val), (Some(headOf(rest)) : Maybe(Val)), below(Down(b, Down(Zero, Here)), Tree(blocks)))
+   ‡ │
+65 │ │    link : chain(rest, blocks),
+   │ │    ──── checked; while checking the body of this function; binds link : chain(rest, blocks)
+66 │ │    apart : notIn(rest, b)
+   │ │    ───── checked; while checking the body of this function; binds apart : notIn(rest, b)
+   ‡ │
+73 │ │┌   (
+74 │ ││     SomeV(IntV(b)),
+75 │ ││     (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+   │ ││                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
+76 │ ││   )
+   │ │└───┘ checked; while judging the value this returns
+77 │ │  }
+   │ └──┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `popListedAsEmpty` is refused with TypeMismatch, as its expectation states

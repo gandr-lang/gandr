@@ -1,0 +1,703 @@
+// One function of a buddy allocator, popping a free block, meets its free-list specification.
+//
+// Corten's case study verifies a buddy allocator against a representation predicate over Rust's value forest. This is its second rung after Corten's `example`, a function that reads, matches on and writes through a place.
+//
+// The body is THIR written as data, its precondition computed by a weakest-precondition fold over it. A read or a write is an existential, a value the place holds with its equation, so stuck places stay in path endpoints. The proof cases on the free list and carries each equation by `cong` and transport.
+//
+// - see: Farka et al., Corten, arXiv:2609.04372, 2026, § 3 and § 8
+// - see: corpus/model/interop/thir/example.gandr
+
+// `Nat`.
+import "../../data/data-base.gandr";
+
+// `Maybe`.
+import "../../data/data-maybe.gandr";
+
+/// A Rust value as a forest, and the fields of a tree.
+rec {
+  /// A value: an integer, a pointer, an option, the unit, or a tree of fields.
+  @[ checks ]
+  pub data Val : Type {
+    /// The integer `n`.
+    IntV : (n : Nat) --> Val;
+    /// A pointer to the root `l`.
+    PtrV : (l : Nat) --> Val;
+    /// `None`.
+    NoneV : Val;
+    /// `Some(v)`.
+    SomeV : (v : Val) --> Val;
+    /// The unit an assignment answers.
+    UnitV : Val;
+    /// A struct or an array, its fields or elements in order.
+    Tree : (fields : Vals) --> Val;
+  }
+
+  /// Fields or elements, in order.
+  @[ checks ]
+  pub data Vals : Type {
+    /// No more.
+    VNil : Vals;
+    /// A value, then the rest.
+    VCons : (v : Val, rest : Vals) --> Vals;
+  }
+}
+
+/// The element at an index, if there is one.
+pub def rec nth(vs : Vals, i : Nat) -> Maybe(Val) {
+  case vs {
+    VNil => None,
+    VCons(v, rest) => case i {
+      Zero => Some(v),
+      Succ(j) => nth[<](rest, j)
+    }
+  }
+}
+
+/// The elements with the one at `i` replaced by `x`.
+pub def rec setN(vs : Vals, i : Nat, x : Val) -> Vals {
+  case vs {
+    VNil => VNil,
+    VCons(v, rest) => case i {
+      Zero => VCons(x, rest),
+      Succ(j) => VCons(v, setN[<](rest, j, x))
+    }
+  }
+}
+
+/// A path below a root: field or element positions, outermost first.
+pub data Steps : Type {
+  /// The root itself.
+  Here : Steps;
+  /// The field or element at `i`, then the rest.
+  Down : (i : Nat, rest : Steps) --> Steps;
+}
+
+/// The field or element of a tree at a position.
+pub def fieldAt(v : Val, i : Nat) -> Maybe(Val) {
+  case v {
+    Tree(fs) => nth(fs, i),
+    IntV(_n) => None,
+    PtrV(_l) => None,
+    NoneV => None,
+    SomeV(_w) => None,
+    UnitV => None
+  }
+}
+
+/// A tree with its field or element at `i` replaced by `y`.
+pub def setField(v : Val, i : Nat, y : Val) -> Maybe(Val) {
+  case v {
+    Tree(fs) => Some(Tree(setN(fs, i, y))),
+    IntV(_n) => None,
+    PtrV(_l) => None,
+    NoneV => None,
+    SomeV(_w) => None,
+    UnitV => None
+  }
+}
+
+/// The value below `v` at a path.
+pub def rec below(p : Steps, v : Val) -> Maybe(Val) {
+  case p {
+    Here => Some(v),
+    Down(i, rest) => case fieldAt(v, i) {
+      None => None,
+      Some(w) => below[<](rest, w)
+    }
+  }
+}
+
+/// `v` with the value at a path replaced by `w`, where the path is there.
+pub def rec setAt(p : Steps, v : Val, w : Val) -> Maybe(Val) {
+  case p {
+    Here => Some(w),
+    Down(i, rest) => case fieldAt(v, i) {
+      None => None,
+      Some(x) => case setAt[<](rest, x, w) {
+        None => None,
+        Some(y) => setField(v, i, y)
+      }
+    }
+  }
+}
+
+/// Whether two naturals are one.
+pub def rec same(a : Nat, b : Nat) -> Bool {
+  case a {
+    Zero => case b {
+      Zero => true,
+      Succ(_q) => false
+    },
+    Succ(p) => case b {
+      Zero => false,
+      Succ(q) => same[<](p, q)
+    }
+  }
+}
+
+/// THIR's place expressions in the fragment, each operand a local.
+pub data PlaceExpr : Type {
+  /// `*x`, the local `x` dereferenced.
+  Deref : (x : Nat) --> PlaceExpr;
+  /// `p.i`, the field at position `i`.
+  Field : (p : PlaceExpr, i : Nat) --> PlaceExpr;
+  /// `p[x]`, the element at the local `x`'s index.
+  Index : (p : PlaceExpr, x : Nat) --> PlaceExpr;
+}
+
+/// THIR's value expressions over places, in the fragment `pop` needs.
+pub data MemExpr : Type {
+  /// The local `x` read, the parameters the outermost locals.
+  Var : (x : Nat) --> MemExpr;
+  /// The place `p` read by copy.
+  Read : (p : PlaceExpr) --> MemExpr;
+  /// `None`.
+  NoneE : MemExpr;
+  /// `Some(e)`.
+  SomeE : (e : MemExpr) --> MemExpr;
+  /// `p = e`: the operand first, then the place.
+  Assign : (p : PlaceExpr, e : MemExpr) --> MemExpr;
+  /// `{ s; e }`.
+  Seq : (s : MemExpr, e : MemExpr) --> MemExpr;
+  /// `match e { None => n, Some(x) => m }`, `m` reading the payload as local zero.
+  MatchOpt : (e : MemExpr, n : MemExpr, m : MemExpr) --> MemExpr;
+  /// `return e`.
+  Return : (e : MemExpr) --> MemExpr;
+}
+
+/// A fraction of a root: the whole, or a part shared with others.
+pub data Frac : Type {
+  /// The whole root, which a write needs.
+  Whole : Frac;
+  /// A part of it, which a read needs.
+  Part : Frac;
+}
+
+/// The receiver's root: its location, the fraction held and its value.
+pub data State : Type {
+  /// `l ↦_q v`.
+  Own : (l : Nat, q : Frac, v : Val) --> State;
+}
+
+/// Where an expression ends: its value and the state after it.
+pub data Out : Type {
+  /// The value `v` in the state `s`.
+  Ends : (v : Val, s : State) --> Out;
+}
+
+/// A location below a root.
+pub data Loc : Type {
+  /// The path `path` below the root `l`.
+  At : (l : Nat, path : Steps) --> Loc;
+}
+
+/// The root a pointer value points to.
+pub def ptrOf(v : Val) -> Maybe(Nat) {
+  case v {
+    PtrV(l) => Some(l),
+    IntV(_n) => None,
+    NoneV => None,
+    SomeV(_w) => None,
+    UnitV => None,
+    Tree(_fs) => None
+  }
+}
+
+/// The index an integer value names.
+pub def indexOf(v : Val) -> Maybe(Nat) {
+  case v {
+    IntV(n) => Some(n),
+    PtrV(_l) => None,
+    NoneV => None,
+    SomeV(_w) => None,
+    UnitV => None,
+    Tree(_fs) => None
+  }
+}
+
+/// The root a local points to, with `acc` below it.
+pub def derefAt(m : Maybe(Val), acc : Steps) -> Maybe(Loc) {
+  case m {
+    None => None,
+    Some(v) => case ptrOf(v) {
+      None => None,
+      Some(l) => Some(At(l, acc))
+    }
+  }
+}
+
+/// The location the place `p` names at the locals `env`, `acc` the path already below it.
+pub def rec locate(p : PlaceExpr, env : Vals, acc : Steps) -> Maybe(Loc) {
+  case p {
+    Deref(x) => derefAt(nth(env, x), acc),
+    Field(q, i) => locate[<](q, env, Down(i, acc)),
+    Index(q, x) => case nth(env, x) {
+      None => None,
+      Some(v) => case indexOf(v) {
+        None => None,
+        Some(n) => locate[<](q, env, Down(n, acc))
+      }
+    }
+  }
+}
+
+/// The core transformer: what `e` needs at the locals `env` and the state `s` to end in `k` or return into `r`.
+/// A read needs the root at any fraction and a value its place holds, a write the whole root and the root it makes.
+pub def rec wpMem(e : MemExpr, env : Vals, k : Out => Type, r : Out => Type, s : State) -> Type {
+  case e {
+    Var(x) => case nth(env, x) {
+      None => return Void,
+      Some(v) => k(Ends(v, s))
+    },
+    Read(p) => case locate(p, env, Here) {
+      None => return Void,
+      Some(loc) => case loc {
+        At(l, path) => case s {
+          Own(m, q, v) => case same(l, m) {
+            true => return type(#{
+              w : Val,
+              holds : Path(Maybe(Val), (Some(w) : Maybe(Val)), below(path, v)),
+              post : k(Ends(w, Own(m, q, v)))
+            }),
+            false => return Void
+          }
+        }
+      }
+    },
+    NoneE => k(Ends(NoneV, s)),
+    SomeE(a) => wpMem[<](a, env, fn (o) { case o {
+      Ends(v, t) => k(Ends(SomeV(v), t))
+    } }, r, s),
+    Assign(p, a) => wpMem[<](a, env, fn (o) { case o {
+      Ends(w, t) => case locate(p, env, Here) {
+        None => return Void,
+        Some(loc) => case loc {
+          At(l, path) => case t {
+            Own(m, q, v) => case q {
+              Whole => case same(l, m) {
+                true => return type(#{
+                  v1 : Val,
+                  made : Path(Maybe(Val), (Some(v1) : Maybe(Val)), setAt(path, v, w)),
+                  post : k(Ends(UnitV, Own(m, Whole, v1)))
+                }),
+                false => return Void
+              },
+              Part => return Void
+            }
+          }
+        }
+      }
+    } }, r, s),
+    Seq(a, b) => wpMem[<](a, env, fn (o) { case o {
+      Ends(_v, t) => wpMem[<](b, env, k, r, t)
+    } }, r, s),
+    MatchOpt(a, n, m) => wpMem[<](a, env, fn (o) { case o {
+      Ends(v, t) => case v {
+        NoneV => wpMem[<](n, env, k, r, t),
+        SomeV(x) => wpMem[<](m, VCons(x, env), k, r, t),
+        IntV(_n) => return Void,
+        PtrV(_l) => return Void,
+        UnitV => return Void,
+        Tree(_fs) => return Void
+      }
+    } }, r, s),
+    Return(a) => wpMem[<](a, env, r, r, s)
+  }
+}
+
+/// A function's transformer: its body run as a return, guarded so the return reaches the caller's continuation.
+pub def wpMemFn(body : MemExpr, env : Vals, post : Out => Type, s : State) -> Type {
+  wpMem(Return(body), env, post, post, s)
+}
+
+/// `pop`'s arm at a head `b`: the head's link written to the heads, then `b` answered.
+pub def someArm : MemExpr = Seq(
+  Assign(
+    Index(Field(Deref(Succ(Zero)), Succ(Zero)), Succ(Succ(Zero))),
+    Read(Field(Index(Field(Deref(Succ(Zero)), Zero), Zero), Zero))
+  ),
+  SomeE(Var(Zero))
+);
+
+/// `pop`'s body, its locals `self` then `order`, and `b` inside the arm that binds it.
+pub def popBody : MemExpr = MatchOpt(
+  Read(Index(Field(Deref(Zero), Succ(Zero)), Succ(Zero))),
+  NoneE,
+  someArm
+);
+
+/// The receiver: the blocks, then the heads.
+pub def buddy(blocks : Vals, heads : Vals) -> Val {
+  Tree(VCons(Tree(blocks), VCons(Tree(heads), VNil)))
+}
+
+/// Block indices, in order.
+pub data Ixs : Type {
+  /// No more.
+  INil : Ixs;
+  /// A block, then the rest.
+  ICons : (b : Nat, rest : Ixs) --> Ixs;
+}
+
+/// Whether a block index is absent from a list.
+pub def rec notIn(xs : Ixs, b : Nat) -> Type {
+  case xs {
+    INil => return Unit,
+    ICons(x, rest) => case same(b, x) {
+      true => return Void,
+      false => notIn[<](rest, b)
+    }
+  }
+}
+
+/// The head a free list starts at: `None`, or its first block.
+pub def headOf(ixs : Ixs) -> Val {
+  case ixs {
+    INil => NoneV,
+    ICons(b, _rest) => SomeV(IntV(b))
+  }
+}
+
+/// One listed block: its link is the head of the rest, which is `tail`, and it does not repeat.
+pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type {
+  return type(#{
+    held : Path(
+      Maybe(Val),
+      (Some(headOf(rest)) : Maybe(Val)),
+      below(Down(b, Down(Zero, Here)), Tree(blocks))
+    ),
+    link : tail,
+    apart : notIn(rest, b)
+  })
+}
+
+/// Each listed block links to the next through the blocks, and no block repeats.
+pub def rec chain(ixs : Ixs, blocks : Vals) -> Type {
+  case ixs {
+    INil => return Unit,
+    ICons(b, rest) => linked(b, rest, blocks, chain[<](rest, blocks))
+  }
+}
+
+/// The free list of `order` is `ixs`: the heads hold its head, and its blocks chain.
+pub def freeAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Type {
+  return type(#{
+    head : Path(Maybe(Val), (Some(headOf(ixs)) : Maybe(Val)), nth(heads, order)),
+    wf : chain(ixs, blocks)
+  })
+}
+
+/// `pop`'s postcondition at the free list `ixs`: empty answers `None` and keeps the state.
+pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> Type {
+  case o {
+    Ends(res, s) => case ixs {
+      INil => return type(#{
+        none : Path(Val, res, NoneV),
+        kept : Path(State, s, Own(Zero, Whole, buddy(blocks, heads)))
+      }),
+      ICons(b, rest) => return type(#{
+        some : Path(Val, res, SomeV(IntV(b))),
+        hs : Vals,
+        now : Path(State, s, Own(Zero, Whole, buddy(blocks, hs))),
+        rep : freeAt(blocks, hs, order, rest),
+        out : notIn(rest, b)
+      })
+    }
+  }
+}
+
+/// `pop`'s postcondition as a predicate on where it ends.
+pub def popPost(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Out => Type {
+  return fn (o) { popAt(blocks, heads, order, ixs, o) }
+}
+
+/// The locals `pop` runs at: `self`, a pointer to the root zero, then `order`.
+pub def popEnv(order : Nat) -> Vals {
+  VCons(PtrV(Zero), VCons(IntV(order), VNil))
+}
+
+/// The place read's last step: an option keeps the value it holds.
+pub def keepSome(m : Maybe(Val)) -> Maybe(Val) {
+  case m {
+    None => None,
+    Some(x) => Some(x)
+  }
+}
+
+/// Whether an option holds a value.
+pub def isSome(m : Maybe(Val)) -> Type {
+  case m {
+    None => return Void,
+    Some(_x) => return Unit
+  }
+}
+
+/// No path joins `Some(y)` to `None`, since `isSome` holds at one end only.
+pub def noneHeld(y : Val, h : Path(Maybe(Val), (Some(y) : Maybe(Val)), (None : Maybe(Val)))) -> Void {
+  transport(
+    (m : Maybe(Val), Path(Maybe(Val), (Some(y) : Maybe(Val)), m)) => isSome(m),
+    h,
+    here((Some(y) : Maybe(Val))),
+    here(h),
+    unit
+  )
+}
+
+/// `nth` at `i` answers the element `setN` writes there, when `i` holds one.
+pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path(
+  Maybe(Val),
+  (Some(y) : Maybe(Val)),
+  nth(
+    vs,
+    i
+  )
+)) => Path(Maybe(Val), (Some(x) : Maybe(Val)), nth(setN(vs, i, x), i)) {
+  case vs {
+    VNil => case i {
+      Zero => return fn (h) { case (noneHeld(y, h) : Void) {} },
+      Succ(_j) => return fn (h) { case (noneHeld(y, h) : Void) {} }
+    },
+    VCons(_v, rest) => case i {
+      Zero => return fn (_h) { here((Some(x) : Maybe(Val))) },
+      Succ(j) => nthSet[<](rest, j, x, y)
+    }
+  }
+}
+
+/// The heads the write to `heads[order]` makes, given what they held there.
+pub def headsAt(heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val) {
+  case m {
+    None => None,
+    Some(_x) => Some(Tree(setN(heads, order, w)))
+  }
+}
+
+/// The root the write to `self.heads[order]` makes, given what the heads held there.
+pub def setHeadsAt(blocks : Vals, heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val) {
+  case headsAt(heads, order, w, m) {
+    None => None,
+    Some(hs) => setField(buddy(blocks, heads), Succ(Zero), hs)
+  }
+}
+
+/// The write to `self.heads[order]` makes the root with the heads set there, given `order` held one.
+pub def headsSet(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  w : Val,
+  y : Val,
+  h : Path(Maybe(Val), (Some(y) : Maybe(Val)), nth(heads, order))
+) -> Path(
+  Maybe(Val),
+  (Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)),
+  setAt(Down(Succ(Zero), Down(order, Here)), buddy(blocks, heads), w)
+) {
+  transport(
+    (m : Maybe(Val), Path(Maybe(Val), (Some(y) : Maybe(Val)), m)) => Path(
+      Maybe(Val),
+      (Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)),
+      setHeadsAt(blocks, heads, order, w, m)
+    ),
+    h,
+    here((Some(y) : Maybe(Val))),
+    here(h),
+    here((Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)))
+  )
+}
+
+/// The empty list's postcondition: `None`, the state kept.
+pub def emptyEnds(blocks : Vals, heads : Vals) -> #{
+  none : Path(Val, NoneV, NoneV),
+  kept : Path(State, Own(Zero, Whole, buddy(blocks, heads)), Own(Zero, Whole, buddy(blocks, heads)))
+} {
+  #{none = here(NoneV), kept = here(Own(Zero, Whole, buddy(blocks, heads)))}
+}
+
+/// The rest of the list, rooted at the heads set to its head.
+pub def restFree(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  rest : Ixs,
+  y : Val,
+  h : Path(Maybe(Val), (Some(y) : Maybe(Val)), nth(heads, order)),
+  link : chain(rest, blocks)
+) -> #{
+  head : Path(
+    Maybe(Val),
+    (Some(headOf(rest)) : Maybe(Val)),
+    nth(setN(heads, order, headOf(rest)), order)
+  ),
+  wf : chain(rest, blocks)
+} {
+  run set <- nthSet(heads, order, headOf(rest), y);
+  run p <- set(h);
+  #{head = p, wf = link}
+}
+
+/// `pop` at an empty list: the read finds `None`, and `pop` writes nothing.
+pub def popNone(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  h : Path(Maybe(Val), (Some(NoneV) : Maybe(Val)), nth(heads, order))
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, INil),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  (NoneV, (cong(keepSome, h), emptyEnds(blocks, heads)))
+}
+
+/// After the write, `pop` answers `b`, and the rest of the list stays free.
+pub def afterWrite(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  b : Nat,
+  rest : Ixs,
+  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  link : chain(rest, blocks),
+  apart : notIn(rest, b)
+) -> wpMem(
+  SomeE(Var(Zero)),
+  VCons(IntV(b), popEnv(order)),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  Own(Zero, Whole, buddy(blocks, setN(heads, order, headOf(rest))))
+) {
+  (here(SomeV(IntV(b))), (setN(heads, order, headOf(rest)), (
+    here(Own(Zero, Whole, buddy(blocks, setN(heads, order, headOf(rest))))),
+    (restFree(blocks, heads, order, rest, SomeV(IntV(b)), h, link), apart)
+  )))
+}
+
+/// After the read of `b`, `pop` reads its link and writes it to the heads.
+pub def afterRead(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  b : Nat,
+  rest : Ixs,
+  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  held : Path(
+    Maybe(Val),
+    (Some(headOf(rest)) : Maybe(Val)),
+    below(Down(b, Down(Zero, Here)), Tree(blocks))
+  ),
+  link : chain(rest, blocks),
+  apart : notIn(rest, b)
+) -> wpMem(
+  someArm,
+  VCons(IntV(b), popEnv(order)),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  (headOf(rest), (held, (
+    buddy(blocks, setN(heads, order, headOf(rest))),
+    (
+      headsSet(blocks, heads, order, headOf(rest), SomeV(IntV(b)), h),
+      afterWrite(blocks, heads, order, b, rest, h, link, apart)
+    )
+  )))
+}
+
+/// `pop` at a list starting at `b`: the read finds `b`, `pop` writes its link to the heads, and it answers `b`.
+pub def popSome(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  b : Nat,
+  rest : Ixs,
+  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  wf : #{
+    held : Path(
+      Maybe(Val),
+      (Some(headOf(rest)) : Maybe(Val)),
+      below(Down(b, Down(Zero, Here)), Tree(blocks))
+    ),
+    link : chain(rest, blocks),
+    apart : notIn(rest, b)
+  }
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  case wf {
+    #{held, link, apart} => (
+      SomeV(IntV(b)),
+      (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+    )
+  }
+}
+
+/// The free list's predicate taken apart at its head and first link.
+pub def popFrom(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  b : Nat,
+  rest : Ixs,
+  fl : #{
+    head : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+    wf : #{
+      held : Path(
+        Maybe(Val),
+        (Some(headOf(rest)) : Maybe(Val)),
+        below(Down(b, Down(Zero, Here)), Tree(blocks))
+      ),
+      link : chain(rest, blocks),
+      apart : notIn(rest, b)
+    }
+  }
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, ICons(b, rest)),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  case fl {
+    #{head, wf} => popSome(blocks, heads, order, b, rest, head, wf)
+  }
+}
+
+/// The empty predicate taken apart at its head.
+pub def popFromEmpty(
+  blocks : Vals,
+  heads : Vals,
+  order : Nat,
+  fl : #{head : Path(Maybe(Val), (Some(NoneV) : Maybe(Val)), nth(heads, order)), wf : Unit}
+) -> wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, INil),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  case fl {
+    #{head, wf} => popNone(blocks, heads, order, head)
+  }
+}
+
+/// `pop` meets its specification: from the free list of `order`, it answers the list's head and leaves the rest free.
+/// Its predicate and specification take 61 lines and its proof 204, against about 2800 lines of Rocq for Corten's whole allocator.
+pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt(
+  blocks,
+  heads,
+  order,
+  ixs
+)) => wpMemFn(
+  popBody,
+  popEnv(order),
+  popPost(blocks, heads, order, ixs),
+  Own(Zero, Whole, buddy(blocks, heads))
+) {
+  case ixs {
+    INil => return fn (fl) { popFromEmpty(blocks, heads, order, fl) },
+    ICons(b, rest) => return fn (fl) { popFrom(blocks, heads, order, b, rest, fl) }
+  }
+}

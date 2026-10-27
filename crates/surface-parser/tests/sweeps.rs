@@ -8,7 +8,9 @@
 //! hashed slice of the corpus at a fixed size, salted by the sweep's name, at
 //! least one source of each class — `strict` and each directory below
 //! `fixture`, the pending set among them — and every source the change adds
-//! or modifies.
+//! or modifies. A sampled source longer than [`SAMPLED_SPAN`] steps through
+//! its rows by its multiple of the span, so it costs about its length times
+//! the span rather than its length squared.
 
 use core::error::Error;
 use core::num::NonZeroUsize;
@@ -48,7 +50,7 @@ use crate::common::label_of;
 use crate::common::text;
 
 /// The recovery sweep's sample: forty-eight sources, and the rows of every
-/// sixteenth significant token of each.
+/// sixteenth significant token of each, widened past [`SAMPLED_SPAN`].
 const RECOVERY: Sample = Sample {
     name: SampleName("dropped_tokens_recover_no_worse_than_the_record"),
     size: SampleSize(48),
@@ -70,7 +72,8 @@ const ROW_FIELDS: usize = 8;
 /// The table sweep's sample: twelve sources, the rows of every sixteenth
 /// significant token of each, every sixty-fourth under `anodized_panic`. A
 /// change that touches more sources widens the step in proportion, so the
-/// sample molds about as many rows however many sources it visits.
+/// sample molds about as many rows however many sources it visits, and a
+/// source past [`SAMPLED_SPAN`] widens it again.
 const TABLES: Sample = Sample {
     name: SampleName("table_verdicts_equal_dry_run_verdicts"),
     size: SampleSize(12),
@@ -89,6 +92,24 @@ const TABLES_STRIDE: usize = if cfg!(anodized_panic) { 64 } else { 16 };
 /// plain, every sixteenth under `anodized_panic`, where every clause of both
 /// procedures runs at every decision.
 const TABLES_WHOLE_STRIDE: usize = if cfg!(anodized_panic) { 16 } else { 1 };
+
+/// The significant tokens a sampled source holds at its sweep's own step.
+///
+/// A row parses or molds the source once more, so a source at a fixed step
+/// costs its length squared. At the recovery sample's step with
+/// specifications enforced, a source of 4729 tokens took 16.5 s on one core,
+/// past half the 30 s bound alone, where one of this many takes under one.
+const SAMPLED_SPAN: usize = 1024;
+
+/// The step between the token rows a sweep visits in one source.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct RowStep(usize);
+
+/// The significant tokens one source holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct TokenCount(usize);
 
 /// Every corpus source, whole and cut short after each significant token,
 /// keeps its recorded tree, and dropping each significant token recovers no
@@ -133,7 +154,9 @@ const TABLES_WHOLE_STRIDE: usize = if cfg!(anodized_panic) { 16 } else { 1 };
 /// first ([`observed_in_parallel`]): run one after another, the whole matrix
 /// took 127 s of the plain lane's critical path (#2148). The sample,
 /// [`RECOVERY`], parses forty-eight sources, those the change touches first:
-/// each one's whole row and the rows of every sixteenth significant token.
+/// each one's whole row and the rows of every sixteenth significant token, a
+/// source past [`SAMPLED_SPAN`] tokens at that step times its multiple of the
+/// span ([`sampled_step`]).
 /// Every source's record is still required to exist, and every record to have
 /// a source, under every profile.
 #[test]
@@ -224,7 +247,8 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         Sweep::asked()?
     };
     eprintln!("{}", sweep.rotation());
-    let stride = match sweep.coverage() {
+    let coverage = sweep.coverage();
+    let stride = match coverage {
         Coverage::Full => 1,
         Coverage::Sampled => RECOVERY_STRIDE,
     };
@@ -278,11 +302,16 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
                 whole.tree().positions().count()
             )
             .map_err(|error| error.to_string())?;
-            let significant = label(SourceFragment::from(src.as_str()))
-                .into_iter()
-                .filter(|token| token.lexeme != Lexeme::Space);
-            for (index, token) in significant.enumerate() {
-                if !index.is_multiple_of(stride) {
+            let labelled = label(SourceFragment::from(src.as_str()));
+            let significant = || {
+                labelled
+                    .iter()
+                    .filter(|token| token.lexeme != Lexeme::Space)
+            };
+            let RowStep(step) =
+                sampled_step(coverage, RowStep(stride), TokenCount(significant().count()));
+            for (index, token) in significant().enumerate() {
+                if !index.is_multiple_of(step) {
                     writeln!(observed, "T").map_err(|error| error.to_string())?;
                     continue;
                 }
@@ -508,6 +537,47 @@ where
         .collect()
 }
 
+/// The step a sweep takes through a source's token rows: `stride`, widened
+/// under the sample by the multiple of [`SAMPLED_SPAN`] the source's `tokens`
+/// reach.
+///
+/// A sampled source of any length then visits at most as many rows as one
+/// of the span, so its cost grows with its length, not its length squared,
+/// and no one source takes the 30 s bound alone. The whole sweep keeps
+/// `stride` at every length, since it owes every row.
+///
+/// # Specification
+/// - ensures: at least `stride`; exactly `stride` under [`Coverage::Full`];
+///   under [`Coverage::Sampled`], at most as many rows of `tokens` as of the
+///   span at `stride`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sampled sweeps visit a source of 4729 tokens beside
+///   sources under the span; a step that never widened would take the bound,
+///   and one that widened under the whole sweep would skip rows it owes.
+/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+#[spec(ensures: |ret| ret.0 >= stride.0 && match coverage {
+    Coverage::Full => ret.0 == stride.0,
+    Coverage::Sampled => stride.0 == 0 || tokens.0.div_ceil(ret.0) <= SAMPLED_SPAN.div_ceil(stride.0),
+})]
+fn sampled_step(
+    coverage: Coverage,
+    stride: RowStep,
+    tokens: TokenCount,
+) -> RowStep
+{
+    match coverage {
+        Coverage::Full => stride,
+        Coverage::Sampled => RowStep(
+            stride
+                .0
+                .saturating_mul(tokens.0.div_ceil(SAMPLED_SPAN).max(1)),
+        ),
+    }
+}
+
 /// The molder's tables reach the dry runs' verdict at every decision the
 /// corpus and its one-token drops produce, in both modes.
 ///
@@ -525,8 +595,10 @@ where
 /// sixty-fourth under `anodized_panic`. When the change brings it past twelve
 /// sources, the step widens by the multiple of twelve it visits, so a change
 /// over a hundred fixtures molds each whole and the same budget of rows spread
-/// over them, inside the test limit. The whole sweep molds every source at
-/// every row, every sixteenth under `anodized_panic`.
+/// over them, inside the test limit; a source past [`SAMPLED_SPAN`] tokens
+/// widens the step again by its multiple of the span ([`sampled_step`]). The
+/// whole sweep molds every source at every row, every sixteenth under
+/// `anodized_panic`.
 #[test]
 fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
 {
@@ -577,11 +649,19 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
         let src = std::fs::read_to_string(&source.path)
             .map_err(|error| format!("{}: {error}", source.path.display()))?;
         differential(&|| format!("{rel} whole"), &src);
-        let significant = label(SourceFragment::from(src.as_str()))
-            .into_iter()
-            .filter(|token| token.lexeme != Lexeme::Space);
-        for (index, token) in significant.enumerate() {
-            if !index.is_multiple_of(stride) {
+        let labelled = label(SourceFragment::from(src.as_str()));
+        let significant = || {
+            labelled
+                .iter()
+                .filter(|token| token.lexeme != Lexeme::Space)
+        };
+        let RowStep(step) = sampled_step(
+            sweep.coverage(),
+            RowStep(stride),
+            TokenCount(significant().count()),
+        );
+        for (index, token) in significant().enumerate() {
+            if !index.is_multiple_of(step) {
                 continue;
             }
             let start = usize::try_from(token.start)?;
