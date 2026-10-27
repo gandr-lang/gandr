@@ -1484,9 +1484,10 @@ pub(crate) fn read_endpoints(
 ///   on entry.
 /// - provides: the check's reading of a decode it must see the head of — the
 ///   fibre a pair's second component checks at, instantiated at a first
-///   component a code calls into (#721), and the type a data case's scrutinee
-///   is cased on at, a binder a case refined to a call — kept beside the
-///   conversion's reading so both read a returned code by the one evaluator.
+///   component a code calls into (#721), and the type a data or sum case's
+///   scrutinee is cased on at, a binder a case refined to a call — kept beside
+///   the conversion's reading so both read a returned code by the one
+///   evaluator.
 /// - fails: never — a normalization that stops reads to no type.
 /// - panics: none.
 ///
@@ -1494,9 +1495,11 @@ pub(crate) fn read_endpoints(
 /// - hypothesis: L3 — a decode whose code calls a thunk returning `⌜Unit⌝`
 ///   reads to the unit type and admits `()`; one whose code returns `⌜Integer⌝`
 ///   reads to the integers and refuses it. A binder whose decode reads to a
-///   data type is cased on at it; one reading to the unit type is refused.
+///   data type or a sum is cased on at it; one reading to the unit type is
+///   refused.
 /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
 /// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `check::tests::a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| ret.map_or_else(|| arena.watermark() == before, |quoted| arena.value_type(quoted).is_some()),

@@ -1,0 +1,36 @@
+/// `absurdArm` answers an empty case on a lambda's binder whose type an enclosing case refined to `Void`.
+///
+/// Under the arm `Zero`, the binder's type `isVoid(Zero)` is a call that returns `Void`, so the empty case covers it.
+/// The kernel admits the declaration as the checker does, and the fixture runs the other arm.
+///
+/// The checker unfolds the binder's type to `Void` before it reads the case.
+/// The kernel reads the decode of the returned call by its own evaluator before it reads the scrutinee's shape.
+///
+/// - see: #2830
+/// - see: `refined-binder.gandr`
+
+// The naturals.
+import "./data-base.gandr";
+
+/// The family that is `Void` at zero and `Unit` past it.
+pub def isVoid(n : Nat) -> Type {
+  case n {
+    Zero => return Void,
+    Succ(_m) => return Unit
+  }
+}
+
+/// A function from the family at `n` to the naturals, whose arm at zero cases on no value.
+pub def absurdArm(n : Nat) -> (isVoid(n)) => Nat {
+  case n {
+    Zero => return fn (u) { case u {} },
+    Succ(_m) => return fn (_u) { return Zero }
+  }
+}
+
+/// Past zero, the family is `Unit`, and the arm answers zero.
+@[ runs("Zero") ]
+def absurdPast() -> Nat {
+  run arm <- absurdArm(Succ(Zero));
+  arm(unit)
+}
