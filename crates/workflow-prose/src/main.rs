@@ -122,9 +122,10 @@ fn main() -> ExitCode
 ///   matches is printed as stale, and the outcome is agreed exactly when
 ///   neither was printed.
 /// - provides: the whole command.
-/// - fails: every refusal of [`passage::gather`], [`Glossary::read`],
-///   [`parse::parse`] and [`ledger::read`]; [`ProseError::Io`] when the ledger,
-///   the glossary or standard output cannot be read or written.
+/// - fails: every refusal of [`passage::gather`], [`Glossary::read`] and
+///   [`parse::parse`]; [`ProseError::Ledger`] for a ledger line
+///   [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger, the glossary
+///   or standard output cannot be read or written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes printed and the ledger file.
 ///
