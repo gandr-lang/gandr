@@ -28304,4 +28304,90 @@ mod tests
              argument at its parameter's index in the body"
         );
     }
+
+    /// #3562: a recursive function's descent call, under a lambda that a
+    /// body's quoted family holds, reads the fixpoint's binder at its index in
+    /// the body, with and without a uniform parameter before the staged one,
+    /// and not at another binder's.
+    #[test]
+    fn a_self_call_a_body_quotes_reads_its_fixpoint_at_its_index_3562()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data Sig(a : Type, b : +U (a -> -F Type)) : Type { MkSig : (x : a, y : b(x)) --> \
+                 Sig(a, b); } data IR(d : Type) : Type[+, 1] { Iota : (e : d) --> IR(d); SigmaC : \
+                 (a : Type, f : +U (a -> -F IR(d))) --> IR(d); } def rec argsU(c : IR(Unit)) -> \
+                 -F Type { case c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk \
+                 { fn (y) { argsU[<](f(y)) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
+                 { case c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fn (y) \
+                 { argsD[<](d, f(y)) } })) } }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        // The head the descent call forces, under the lambda the second arm's
+        // quoted `Sig` holds as its second argument.
+        let head = |arena: &CoreArena, at: usize| {
+            let Some(&Value::Thunk(mut under)) = arena.value(body_of(lowered[at]))
+            else {
+                panic!("the body is a thunk");
+            };
+            while let Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) =
+                arena.computation(under)
+            {
+                under = body;
+            }
+            let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(under)
+            else {
+                panic!("the fixpoint matches its code");
+            };
+            let Some(&(mut arm)) = branches.get(1)
+            else {
+                panic!("a second arm");
+            };
+            while let Some(&Computation::Lambda(body)) = arena.computation(arm) {
+                arm = body;
+            }
+            let Some(&Computation::Return(returned)) = arena.computation(arm)
+            else {
+                panic!("the arm returns");
+            };
+            let Some(&Value::Quote(quoted)) = arena.value(returned)
+            else {
+                panic!("a quote");
+            };
+            let Some(&ValueType::Data { ref arguments, .. }) = arena.value_type(quoted)
+            else {
+                panic!("a quoted family");
+            };
+            let Some(&Value::Thunk(family)) = arguments.get(1).and_then(|&held| arena.value(held))
+            else {
+                panic!("the family's second argument is a thunk");
+            };
+            let Some(&Computation::Lambda(call)) = arena.computation(family)
+            else {
+                panic!("under one lambda");
+            };
+            let Some(&Computation::Application(forced, _)) = arena.computation(call)
+            else {
+                panic!("a call");
+            };
+            let Some(&Computation::Force(callee)) = arena.computation(forced)
+            else {
+                panic!("of a forced head");
+            };
+            arena.value(callee).cloned()
+        };
+        let fixpoint = Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(4_u32),
+        });
+
+        assert_eq!(
+            [2_usize, 3].map(|declaration| head(&arena, declaration)),
+            [fixpoint.clone(), fixpoint],
+            "under `y`, `f`, `a` and `c`, each head reads its own fixpoint"
+        );
+    }
 }
