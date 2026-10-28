@@ -8,12 +8,15 @@
 //
 // Each declaration below migrates to the seat and returns its result to the
 // operator. Data of integers is open, and so is a handle to it. A closed
-// thunk is open too, since it captures nothing.
+// thunk is open too, since it captures nothing. A field the operator reads
+// from what comes back reads as it does in place.
 //
 // - see: Rainey et al., "LoCalMem", PACMPL 10 (ICFP 2026), § 5.1, openness
 // - see: Murphy, Crary and Harper, "Type-Safe Distributed Programming with
 //   ML5", TGC 2007, § 3
 // - see: `pathological/worlds/open.gandr` — what is not open stays
+// - see: #3275 — `projectedDone`, `projectedInner` and `forcedLater`, a
+//   field read from a record a migration answers
 
 // The operator's and the seat's worlds, each declaration's entry.
 import "./seat-and-operator.gandr";
@@ -28,6 +31,20 @@ data Point : Type {
 @[ entry((operator, seat)), runs("#{.done = 3, .left = 4}") ]
 def counts() -> #{done : Integer, left : Integer} {
   migrate [seat] { pure #{done = 3, left = 4} }
+}
+
+/// A field of that record reads at the operator as it reads in place.
+@[ entry((operator, seat)), runs("3") ]
+def projectedDone() -> Integer {
+  run r : #{done : Integer, left : Integer} <- migrate [seat] { pure #{done = 3, left = 4} };
+  r.done
+}
+
+/// A field of a record nested in the answer reads the same way.
+@[ entry((operator, seat)), runs("3") ]
+def projectedInner() -> Integer {
+  run r : #{inner : #{done : Integer}} <- migrate [seat] { pure #{inner = #{done = 3}} };
+  r.inner.done
 }
 
 /// A datatype of integers comes back, field by field open.
@@ -58,4 +75,14 @@ def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
 @[ entry((operator, seat)), runs("#{.done = 3, .later = thunk { 4 }}") ]
 def bareRecord() -> #{done : Integer, later : () => Integer} {
   migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
+}
+
+/// Its thunk, read from the record and forced at the operator, runs there.
+@[ entry((operator, seat)), runs("4") ]
+def forcedLater() -> Integer {
+  run r : #{done : Integer, later : () => Integer} <- migrate [seat] {
+    pure #{done = 3, later = thunk { pure 4 }}
+  };
+  run later : () => Integer <- r.later;
+  force later
 }
