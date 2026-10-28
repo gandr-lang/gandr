@@ -102,7 +102,7 @@ fn an_overlap_that_joins_is_certified_and_runs_either_way()
             ["NatUnits", "add"],
             "the family stands and its operation runs"
         );
-        let family = &module.declarations()[0];
+        let family = module.declarations().iter().next().unwrap();
         for (call, normal) in [
             ("add(Zero, Zero)", "Zero"),
             ("add(Succ(Zero), Zero)", "Succ(Zero)"),
@@ -178,7 +178,7 @@ fn the_circles_cancellations_join_below_the_root()
                 .all(|certificate| bool::from(certificate.replay(&presented.store))),
             "every certificate replays over the term store"
         );
-        let family = &module.declarations()[0];
+        let family = module.declarations().iter().next().unwrap();
         assert!(
             matches!(family.outcome(), DeclarationOutcome::Data(_)),
             "the family stands"
@@ -240,7 +240,7 @@ data Circle : Type {
             "both rules rewrite `Loop(Loop(Unloop(x')))`, one to `Loop(x')` and the other to \
              `Unloop(x')`"
         );
-        let [ref family] = *module.declarations()
+        let [family] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the refused family")
         };
@@ -412,7 +412,7 @@ def later = 7;"#,
             module.cells().declarations[0].coincidence,
             Coincidence::Refused(CellDiagnosticIndex(0))
         ));
-        let [ref family, ref later] = *module.declarations()
+        let [family, later] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the refused family and the later declaration, and no operation")
         };
@@ -499,7 +499,7 @@ fn a_groups_inverse_law_completes_to_the_rules_it_derives()
             !bool::from(cut.replay(&presented.store)),
             "a certificate fires its rule"
         );
-        let family = &module.declarations()[0];
+        let family = module.declarations().iter().next().unwrap();
         for (call, normal) in [
             ("mul(inv(a), mul(a, b))", "b"),
             ("mul(a, inv(a))", "e"),
@@ -554,7 +554,7 @@ fn a_scope_extrusion_family_never_completes()
              a longer rule",
             "the second derived rule is refused, naming the first"
         );
-        let [ref family, ..] = *module.declarations()
+        let [family, ..] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the refused family")
         };
@@ -632,7 +632,7 @@ fn a_permuted_call_no_order_orients_is_uncompleted()
              `plus(n', Zero)`, and the path order orients no rule from an operation call between \
              the two"
         );
-        let [ref family, ..] = *module.declarations()
+        let [family, ..] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the refused family")
         };
@@ -683,7 +683,7 @@ fn a_data_blocks_derived_rule_is_a_pattern_rule()
         );
         let reached = module
             .normal_form(
-                &module.declarations()[0],
+                module.declarations().iter().next().unwrap(),
                 CallText::from("swap(Zero, Succ(Zero))"),
             )
             .unwrap_or_else(|fault| panic!("{fault}"));
@@ -855,7 +855,7 @@ fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
             "rule grow(n) ==> Succ(grow(n))"
         );
         assert_eq!(
-            module.declarations()[0].outcome(),
+            module.declarations().iter().next().unwrap().outcome(),
             DeclarationOutcome::Refused(LoweringRefusal::RulesUnoriented {
                 span: diagnostic.span
             })
@@ -915,7 +915,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
                 "{later} names ζ"
             );
             assert_eq!(
-                module.declarations()[0].outcome(),
+                module.declarations().iter().next().unwrap().outcome(),
                 DeclarationOutcome::Refused(LoweringRefusal::RulesOverlapSecondOrder {
                     span: diagnostic.span,
                     first
@@ -1042,7 +1042,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
             "the vacant restriction names extrusion"
         );
         assert_eq!(
-            module.declarations()[0].outcome(),
+            module.declarations().iter().next().unwrap().outcome(),
             DeclarationOutcome::Refused(LoweringRefusal::RulesOverlapCondition {
                 span: diagnostic.span,
                 first
@@ -1087,7 +1087,7 @@ fn an_equation_written_backwards_orients_forwards()
             ),
             "the kernel-facing rule runs forwards"
         );
-        let family = &module.declarations()[0];
+        let family = module.declarations().iter().next().unwrap();
         assert_eq!(
             module
                 .normal_form(family, CallText::from("S(P(Z))"))
@@ -1193,7 +1193,7 @@ def later = 7;"#,
             module.cells().declarations[0].coincidence,
             Coincidence::Orthogonal
         );
-        let [ref family, ref walk, .., ref later] = *module.declarations()
+        let [family, walk, .., later] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the family, its operations and the later declaration")
         };
@@ -1251,7 +1251,7 @@ def later = 7;"#,
 }"#,
     );
     lowered(restriction, |module| {
-        let [ref theory, ..] = *module.declarations()
+        let [theory, ..] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the theory")
         };
@@ -1324,7 +1324,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
         (plain, &[("choose(second, first)", Ok("second"))][..]),
     ] {
         lowered(source, |module| {
-            let [ref theory, ..] = *module.declarations()
+            let [theory, ..] = *module.declarations().iter().collect::<Vec<_>>()
             else {
                 panic!("the theory")
             };
@@ -1408,7 +1408,7 @@ fn an_instantiating_rule_fires_at_an_inspected_call_2966()
         ),
     ] {
         lowered(source, |module| {
-            let [ref theory, ..] = *module.declarations()
+            let [theory, ..] = *module.declarations().iter().collect::<Vec<_>>()
             else {
                 panic!("the theory")
             };

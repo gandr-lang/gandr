@@ -166,7 +166,7 @@ fn an_entry_takes_the_ambient_authority_2970()
                   authority.print(\"hello, world!\")\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    let &[ref declaration] = module.declarations()
+    let [declaration] = *module.declarations().iter().collect::<alloc::vec::Vec<_>>()
     else {
         panic!("one declaration: {source}");
     };

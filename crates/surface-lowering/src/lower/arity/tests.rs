@@ -240,7 +240,7 @@ fn shown(
 /// # Adequacy
 /// - hypothesis: L3 — every witness below reads its module through here.
 /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
-#[spec(ensures: |ret| !ret.declarations().is_empty())]
+#[spec(ensures: |ret| ret.declarations().iter().next().is_some())]
 fn lowered<'source, Text>(
     source: Text,
     arena: &mut CoreArena,
@@ -378,7 +378,8 @@ where
     let module = lowered(source, &mut arena);
     match module
         .declarations()
-        .last()
+        .iter()
+        .next_back()
         .map(LoweredDeclaration::outcome)
     {
         Some(DeclarationOutcome::Refused(refusal)) => refusal,

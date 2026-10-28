@@ -199,7 +199,7 @@ fn native_data_keeps_telescope_and_nominal_heads()
     )
     .unwrap();
     assert_eq!(module.description_diagnostics(), []);
-    let [ref family, ref xs] = *module.declarations()
+    let [family, xs] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("family and its consumer")
     };
@@ -1045,7 +1045,7 @@ fn member_refusals_keep_their_spans_and_other_declarations()
         Recognition::default(),
     )
     .unwrap();
-    let [ref family, ref refused, ref later] = *module.declarations()
+    let [family, refused, later] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("family, held member refusal and later declaration")
     };
@@ -1107,7 +1107,7 @@ fn a_held_member_states_its_own_expectation_1462()
             .map(|entry| alloc::string::String::from(entry.name().as_ref()))
             .collect()
     };
-    let [ref family, ref attributed, ref bare] = *module.declarations()
+    let [family, attributed, bare] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!(
             "the family and its two held rules: {:?}",
@@ -1252,7 +1252,7 @@ fn a_codata_declaration_lowers_to_its_signature()
         Recognition::default(),
     )
     .unwrap();
-    let [ref flag, ref stream, ref ones, ref later] = *module.declarations()
+    let [flag, stream, ones, later] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("data, codata, a stream and a later declaration")
     };
@@ -1371,7 +1371,7 @@ fn a_codata_self_reference_keeps_its_written_arguments_2188()
             index: DeBruijnIndex::from(index),
         })
     };
-    let [ref swap, ref twisted, ref stream] = *module.declarations()
+    let [swap, twisted, stream] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("three codata families")
     };
@@ -1410,7 +1410,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
         Recognition::default(),
     )
     .unwrap();
-    let [ref stream, ref later] = *module.declarations()
+    let [stream, later] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("the codata family and the later declaration are declared")
     };

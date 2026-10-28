@@ -68,10 +68,11 @@ const MAYBE: &str =
 /// # Adequacy
 /// - hypothesis: L3 — every witness below reads its module through here.
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-#[spec(ensures: |ret| ret.declarations().windows(2).all(|pair| match *pair {
-    | [ref left, ref right] => left.constant() < right.constant(),
-    | _ => false,
-}))]
+#[spec(ensures: |ret| ret
+    .declarations()
+    .iter()
+    .zip(ret.declarations().iter().skip(1))
+    .all(|(left, right)| left.constant() < right.constant()))]
 pub(in crate::lower) fn lowered<'source>(
     source: SourceText<'source>,
     arena: &mut CoreArena,
@@ -127,7 +128,7 @@ pub(in crate::lower) fn assert_checked(
     let report = judged(module, arena);
     assert_eq!(
         report.judged().len(),
-        module.declarations().len(),
+        module.declarations().iter().len(),
         "nothing is refused: {:?}",
         module.declarations()
     );
@@ -1820,7 +1821,7 @@ fn operation_and_rule_members_are_left_to_the_description_route()
     let source = "data NatOp : Type { Zero : NatOp; One : NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; rule add(Zero, n) ==> n; }\ndata NatRetired : Type { Only : NatRetired; op stale(x : NatRetired) -> NatRetired; }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    let [ref operated, ref retired, ref held] = *module.declarations()
+    let [operated, retired, held] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("two families and the retired member's refusal");
     };
@@ -1871,7 +1872,7 @@ fn an_attribute_block_decorates_the_data_declaration_after_it()
         ),
         &mut arena,
     );
-    let [ref family, ref value] = *module.declarations()
+    let [family, value] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("two names are declared");
     };
@@ -4634,7 +4635,7 @@ fn a_loop_mints_the_words_at_its_point()
     let mut arena = CoreArena::new();
     let source = "data Circle : Type {\n  Base : Circle;\n  Next : (x : Circle) --> Circle;\n  loop : Next(Base) <-> Next(Base);\n  turn : Next(Base) <-> Next(Base);\n}\ndata Flag : Type { On : Flag; }\n";
     let module = lowered(SourceText::from(source), &mut arena);
-    let [ref circle, ref words, ref looped, ref turned, ref flag] = *module.declarations()
+    let [circle, words, looped, turned, flag] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!(
             "the family, its words, a binding per loop, then the next family: {:?}",

@@ -457,17 +457,18 @@ fn ordinary_lowering_executes_the_cell_gate_and_preserves_later_values()
         module.cells().declarations[0].store.len(),
         CellCount::from(2_usize)
     );
-    assert_eq!(module.declarations().len(), 3);
-    for (declaration, expected) in module.declarations().iter().zip(["Flag", "Flag", "later"]) {
+    let declarations: Vec<_> = module.declarations().iter().collect();
+    assert_eq!(declarations.len(), 3);
+    for (declaration, expected) in declarations.iter().zip(["Flag", "Flag", "later"]) {
         assert_eq!(declaration.name().as_ref(), expected);
     }
     assert!(matches!(
-        module.declarations()[0].outcome(),
+        declarations[0].outcome(),
         crate::DeclarationOutcome::Data(_)
     ));
-    assert_eq!(module.declarations()[1].span(), rule.span);
+    assert_eq!(declarations[1].span(), rule.span);
     assert!(matches!(
-        module.declarations()[1].outcome(),
+        declarations[1].outcome(),
         crate::DeclarationOutcome::Refused(_)
     ));
 }

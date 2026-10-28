@@ -264,7 +264,7 @@
 //!     Recognition::default(),
 //! )?;
 //!
-//! let [declaration] = module.declarations()
+//! let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
 //! else {
 //!     unreachable!("one name is declared");
 //! };
@@ -471,6 +471,8 @@ pub use crate::module::HalfAt;
 pub use crate::module::Halves;
 pub use crate::module::Inertness;
 pub use crate::module::InstanceIndex;
+pub use crate::module::Listed;
+pub use crate::module::ListedIter;
 pub use crate::module::LoweredDeclaration;
 pub use crate::module::LoweredModule;
 pub use crate::module::LoweredStructure;
@@ -484,6 +486,7 @@ pub use crate::module::StructureIndex;
 pub use crate::module::ValueComponent;
 pub use crate::module::Visibility;
 pub use crate::module::WrittenImport;
+pub use crate::module::listed_entry;
 pub use crate::module::manifest_type;
 pub use crate::module::unaliased;
 pub use crate::module::written_imports;

@@ -712,7 +712,7 @@ theory Wheel {
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    let [ref wheel] = *module.declarations()
+    let [wheel] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!(
             "the refused block is one declaration, and mints no `Theory`: {:?}",
@@ -775,7 +775,7 @@ fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    let [ref unbindable] = *module.declarations()
+    let [unbindable] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!("the block is one declaration: {:?}", module.declarations())
     };
@@ -823,7 +823,7 @@ fn a_refused_top_level_operation_states_its_refusal()
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    let [ref split] = *module.declarations()
+    let [split] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!(
             "the refused operation is one declaration: {:?}",
@@ -874,7 +874,7 @@ fn a_decorated_top_level_operation_is_refused_at_itself_3073()
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    let [ref split, ref one] = *module.declarations()
+    let [split, one] = *module.declarations().iter().collect::<Vec<_>>()
     else {
         panic!(
             "the operation and the definition are the two declarations: {:?}",

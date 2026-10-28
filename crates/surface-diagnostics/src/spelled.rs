@@ -1045,7 +1045,7 @@ impl Families
     /// - hypothesis: L3 — a body's match names each branch by its constructor;
     ///   a case left out spells `?`, which the test fails on.
     /// - witness: `tests::diagnostics::a_body_names_its_match_arms_by_their_constructors_809`
-    #[spec(ensures: |ret| ret.families.len() <= module.declarations().len()
+    #[spec(ensures: |ret| ret.families.len() <= module.declarations().iter().len()
         && ret.cases.len() == module.origins().eliminations().len())]
     #[inline]
     #[must_use]
@@ -1084,7 +1084,7 @@ impl Families
     /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
     /// - witness: `tests::diagnostics::a_loop_arm_is_named_by_its_loop_823`
     /// - witness: `tests::diagnostics::a_shadowed_constructor_spells_by_its_family_2428`
-    #[spec(ensures: |ret| ret.families.len() <= module.declarations().len() && ret.cases.is_empty())]
+    #[spec(ensures: |ret| ret.families.len() <= module.declarations().iter().len() && ret.cases.is_empty())]
     #[inline]
     #[must_use]
     pub fn declared(module: &LoweredModule<'_>) -> Self

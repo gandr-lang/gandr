@@ -1515,7 +1515,8 @@ def d : Integer ;
         else {
             panic!("the module is admitted")
         };
-        let [ref whole, ref other, ref signed, ref owed, ref refused] = *module.declarations()
+        let [whole, other, signed, owed, refused] =
+            *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the five declarations retain their positions")
         };

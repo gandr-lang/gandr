@@ -1896,9 +1896,13 @@ fn judge_closure<'held>(
             )
         },
     );
-    let boundary = module.declarations().last().map_or(first, |last| {
-        ConstantIndex::from(usize::from(last.constant()).saturating_add(1))
-    });
+    let boundary = module
+        .declarations()
+        .iter()
+        .next_back()
+        .map_or(first, |last| {
+            ConstantIndex::from(usize::from(last.constant()).saturating_add(1))
+        });
     Some(ClosureJudgement {
         arena,
         declarations,
@@ -2185,7 +2189,7 @@ pub fn lower_onto_closure<'held>(
 #[must_use]
 #[spec(
     captures: [
-        expected_declarations = module.declarations().len(),
+        expected_declarations = module.declarations().iter().len(),
         expected_names = module.structured_names(),
     ],
     ensures: |ret| ret.admission.names == expected_names && match ret.settled {
@@ -2235,7 +2239,7 @@ pub fn judge<'source>(
 #[inline]
 #[must_use]
 #[spec(
-    captures: [expected_declarations = module.declarations().len()],
+    captures: [expected_declarations = module.declarations().iter().len()],
     ensures: |ret| match ret.settled {
         Ok(Composed::Settled { ref report, .. }) =>
             report.declarations().len() <= expected_declarations
@@ -2287,7 +2291,7 @@ pub fn judge_member<'source>(
 #[inline]
 #[must_use]
 #[spec(
-    captures: [expected_declarations = module.declarations().len()],
+    captures: [expected_declarations = module.declarations().iter().len()],
     ensures: |ret| match ret.settled {
         Ok(Composed::Settled { ref report, .. }) =>
             report.declarations().len() <= expected_declarations
@@ -2345,7 +2349,7 @@ pub fn judge_member_after<'source>(
 #[inline]
 #[must_use]
 #[spec(
-    captures: [expected_declarations = module.declarations().len()],
+    captures: [expected_declarations = module.declarations().iter().len()],
     ensures: |ref ret| if let Polled::Whole(ref judged) = *ret {
         match judged.settled {
             Ok(Composed::Settled { ref report, .. }) =>
@@ -3521,7 +3525,7 @@ fn elaborated(
 #[inline]
 #[spec(
     captures: [
-        expected_declarations = module.declarations().len(),
+        expected_declarations = module.declarations().iter().len(),
         expected_unstatable = module.declarations().iter().filter(|declaration|
             matches!((declaration.outcome(), declaration.signature(), declaration.definition(), declaration.refused_form()),
                 (DeclarationOutcome::Refused(_), Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_))))
@@ -3749,7 +3753,7 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 ///   read under a host entry naming them, enters at them; a name it does not
 ///   declare grants nothing.
 /// - witness: `compose::tests::a_host_entry_names_the_worlds_a_module_declares`
-#[spec(ensures: |ref ret| ret.len() <= module.declarations().len())]
+#[spec(ensures: |ref ret| ret.len() <= module.declarations().iter().len())]
 fn declared_worlds(module: &LoweredModule<'_>) -> BTreeMap<WorldName, ConstantIndex>
 {
     module
@@ -3918,7 +3922,7 @@ impl gandr_surface_format::Elaborate for Elaborating
 })]
 pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 {
-    let mut declarations = Vec::with_capacity(module.declarations().len());
+    let mut declarations = Vec::with_capacity(module.declarations().iter().len());
     for lowered in module.declarations() {
         let (declared, defined) = match lowered.outcome() {
             DeclarationOutcome::Completed {
@@ -5225,7 +5229,7 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
         .expect("the module lowers");
         assert!(
             matches!(
-                module.declarations()[0].outcome(),
+                module.declarations().iter().next().unwrap().outcome(),
                 DeclarationOutcome::Bodied { .. }
             ),
             "the lowering writes the body alone and refuses nothing"
@@ -5286,7 +5290,7 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
         };
         assert_eq!(
             fault.constant(),
-            module.declarations()[1].constant(),
+            module.declarations().iter().nth(1).unwrap().constant(),
             "the first accepted declaration is the one reported"
         );
         assert!(

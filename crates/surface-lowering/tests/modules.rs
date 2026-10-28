@@ -556,7 +556,7 @@ fn dotted(
 /// - witness: `tests::modules::manifest_refusals_propagate_transitively_before_minting`
 #[spec(
         ensures: |ret| {
-            ret.len() == lowered.module.declarations().len()
+            ret.len() == lowered.module.declarations().iter().len()
                 && ret.iter().zip(lowered.module.declarations()).all(
                     |(&(ref path, role, amounts), declaration)| {
                         role == declaration.role()
@@ -670,13 +670,10 @@ where
                         .map(AsRef::as_ref)
                         .chain(core::iter::once(ret.name().as_ref())))
                 }
-                && lowered
-                    .module
-                    .declarations()
-                    .binary_search_by_key(&ret.constant(), LoweredDeclaration::constant)
-                    .ok()
-                    .and_then(|index| lowered.module.declarations().get(index))
-                    .is_some_and(|stored| core::ptr::eq(&raw const *stored, &raw const *ret))
+                && matches!(
+                    lowered.module.declarations().search(&ret.constant(), LoweredDeclaration::constant),
+                    Maybe::Present(stored) if core::ptr::eq(&raw const *stored, &raw const *ret)
+                )
         },
     )]
 fn declaration<'lowered, 'source, Path>(
@@ -3137,7 +3134,8 @@ fn a_later_seal_leaves_an_earlier_extent()
         match lowered
             .module
             .declarations()
-            .first()
+            .iter()
+            .next()
             .map(LoweredDeclaration::outcome)
         {
             Some(DeclarationOutcome::Abstract(sealing)) => usize::from(sealing.extent),
@@ -3210,7 +3208,8 @@ fn opaque_ascription_seals()
     let Some(DeclarationOutcome::Abstract(sealing)) = lowered
         .module
         .declarations()
-        .first()
+        .iter()
+        .next()
         .map(LoweredDeclaration::outcome)
     else {
         panic!("the first declaration is the abstract type");

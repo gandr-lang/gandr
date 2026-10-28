@@ -1101,7 +1101,7 @@ impl Error for SettleFault
     ensures: |ret| match ret {
     Ok(ref report) => {
         report.ledger() == verdicts.ledger().count()
-            && report.declarations().len() == module.declarations().len()
+            && report.declarations().len() == module.declarations().iter().len()
             && report
                 .declarations()
                 .iter()
@@ -1315,17 +1315,17 @@ pub fn settle_after<'source, Roots>(
 where
     Roots: Rooted + Copy,
 {
-    let (leading, later) = module
-        .declarations()
-        .split_at_checked(earlier.len())
-        .unwrap_or_else(|| (module.declarations(), &[]));
+    // The declarations the earlier report settled lead the module's, the
+    // closure's; the rest are settled here.
+    let mut later = module.declarations().iter();
     // A lowering refusal consumes no verdict.
-    let consumed = leading
-        .iter()
+    let consumed = later
+        .by_ref()
+        .take(earlier.len())
         .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
         .count();
     let mut judged = verdicts.judged().iter().skip(consumed);
-    let mut declarations = Vec::with_capacity(module.declarations().len());
+    let mut declarations = Vec::with_capacity(module.declarations().iter().len());
     declarations.extend_from_slice(earlier);
     for lowered in later {
         let root = roots.root_at(lowered.span().start());
@@ -1542,13 +1542,12 @@ fn waits<'source>(
     waiting
         .blockers()
         .iter()
-        .filter_map(|&hole| {
-            declarations
-                .binary_search_by_key(&hole, LoweredDeclaration::constant)
-                .ok()
-                .and_then(|at| declarations.get(at))
-                .map(LoweredDeclaration::name)
-        })
+        .filter_map(
+            |&hole| match declarations.search(&hole, LoweredDeclaration::constant) {
+                Maybe::Present(declaration) => Some(declaration.name()),
+                Maybe::Absent(_) => None,
+            },
+        )
         .collect()
 }
 

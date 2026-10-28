@@ -58,7 +58,7 @@ use crate::resolve::SurfaceName;
 /// # Adequacy
 /// - hypothesis: L3 — every witness below reads its module through here.
 /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
-#[spec(ensures: |ret| !ret.declarations().is_empty())]
+#[spec(ensures: |ret| ret.declarations().iter().next().is_some())]
 pub(in crate::lower) fn lowered<'source>(
     source: SourceText<'source>,
     arena: &mut CoreArena,
@@ -91,7 +91,7 @@ pub(in crate::lower) fn lowered<'source>(
 /// - hypothesis: L3 — a derived operation is accepted only where its motive and
 ///   its base agree with the answer it was read off.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
-#[spec(ensures: |ret| ret.judged().len() <= module.declarations().len())]
+#[spec(ensures: |ret| ret.judged().len() <= module.declarations().iter().len())]
 pub(in crate::lower) fn judged(
     module: &LoweredModule<'_>,
     arena: &mut CoreArena,

@@ -1,10 +1,14 @@
-//! A table by key held in two parts: the entries of the closure a module was
-//! lowered after, shared with every other module lowered after it and with the
-//! suspended lowering, and the module's own.
+//! A table by key, and a list, each held in two parts: the entries of the
+//! closure a module was lowered after, shared with every other module lowered
+//! after it and with the suspended lowering, and the module's own.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::fmt;
+use core::iter::Chain;
+use core::iter::FusedIterator;
+use core::slice;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
@@ -29,6 +33,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The module was lowered whole, after no closure.
             Whole,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a layered list holds no entry at a key.
+    pub mod listed_entry {
+        /// Neither part holds an entry its key reads as the key.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No entry is listed under the key.
+            Unlisted,
         }
     }
 }
@@ -398,17 +414,428 @@ where
     }
 }
 
+/// A list in order: the entries of the closure a module was lowered after,
+/// shared, then the entries the module's own lowering added.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the list is the closure's entries followed by the module's own;
+///   two lists are equal when they hold the same entries in the same order,
+///   however each splits them.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — a type-level block.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document resumed after its closure reads its
+///   declarations as the whole lowering's module does: the closure's, then its
+///   own.
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+/// - witness: `module::layered::tests::a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446`
+#[derive(Clone)]
+pub struct LayeredList<Value>
+{
+    /// The closure's entries, shared with every module lowered after it.
+    closure: Maybe<Arc<[Value]>, closure_part::Absent>,
+    /// The entries the module's own lowering added: past the closure's for a
+    /// module lowered after one, every entry otherwise.
+    own: Vec<Value>,
+}
+
+impl<Value> LayeredList<Value>
+{
+    /// The list of a module lowered whole, holding `own`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn whole(own: Vec<Value>) -> Self
+    {
+        Self {
+            closure: Maybe::Absent(closure_part::Absent::Whole),
+            own,
+        }
+    }
+
+    /// The list of a module lowered after a closure whose list is `closure`:
+    /// this list's entries, in order, read after `closure`'s.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the answer shares `closure`, and its own entries are this
+    ///   list's, in order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LayeredList`].
+    /// - witness: `module::layered::tests::a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446`
+    #[spec(
+        captures: count = self.count(),
+        ensures: |ret| matches!(ret.closure, Maybe::Present(ref shared) if Arc::ptr_eq(shared, closure))
+            && ret.own.len() == count.0,
+    )]
+    #[inline]
+    #[must_use]
+    pub(crate) fn after(
+        self,
+        closure: &Arc<[Value]>,
+    ) -> Self
+    where
+        Value: Clone,
+    {
+        let own = match self.closure {
+            Maybe::Absent(_) => self.own,
+            Maybe::Present(held) => {
+                let mut own = held.to_vec();
+                own.extend(self.own);
+                own
+            },
+        };
+        Self {
+            closure: Maybe::Present(Arc::clone(closure)),
+            own,
+        }
+    }
+
+    /// How many entries the two parts hold together.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the closure's entries and the module's own.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the sum of the two parts' lengths is the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LayeredList`].
+    /// - witness: `module::layered::tests::a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446`
+    #[inline]
+    pub(crate) fn count(&self) -> EntryCount
+    {
+        let closure = match self.closure {
+            Maybe::Present(ref closure) => closure.len(),
+            Maybe::Absent(_) => 0_usize,
+        };
+        EntryCount(closure.saturating_add(self.own.len()))
+    }
+
+    /// Every entry, in order: the closure's, then the module's own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn read(&self) -> Listed<'_, Value>
+    {
+        Listed {
+            closure: match self.closure {
+                Maybe::Present(ref closure) => closure.as_ref(),
+                Maybe::Absent(_) => &[],
+            },
+            own: &self.own,
+        }
+    }
+
+    /// Every entry, as one list: the closure's, shared with the modules
+    /// lowered after it, for the closure itself to share.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a list holding exactly this list's entries, in order; the
+    ///   closure's own when this list holds none past it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer holds the entries of both parts, which a
+    ///   clause could only compare by joining them again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LayeredList`].
+    /// - witness: `module::layered::tests::a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446`
+    #[inline]
+    #[must_use]
+    pub(crate) fn shared(self) -> Arc<[Value]>
+    where
+        Value: Clone,
+    {
+        match self.closure {
+            Maybe::Absent(_) => Arc::from(self.own),
+            Maybe::Present(closure) if self.own.is_empty() => closure,
+            Maybe::Present(closure) => closure.iter().cloned().chain(self.own).collect(),
+        }
+    }
+}
+
+impl<Value> PartialEq for LayeredList<Value>
+where
+    Value: PartialEq,
+{
+    /// Whether the two lists hold the same entries in the same order, however
+    /// each splits them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.read() == other.read()
+    }
+}
+
+impl<Value> Eq for LayeredList<Value> where Value: Eq
+{
+}
+
+impl<Value> fmt::Debug for LayeredList<Value>
+where
+    Value: fmt::Debug,
+{
+    /// The list's entries, as one list.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Debug::fmt(&self.read(), f)
+    }
+}
+
+/// A list's entries as a reader holds them, in order: the entries of the
+/// closure the module was lowered after, then the module's own.
+///
+/// # Specification
+/// trivial.
+pub struct Listed<'list, Value>
+{
+    /// The closure's entries; none for a module lowered whole.
+    closure: &'list [Value],
+    /// The module's own entries.
+    own: &'list [Value],
+}
+
+impl<'list, Value> Listed<'list, Value>
+{
+    /// Every entry, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> ListedIter<'list, Value>
+    {
+        ListedIter(self.closure.iter().chain(self.own))
+    }
+
+    /// The entry `key_of` reads as `key`, each part's entries ascending by
+    /// what `key_of` reads.
+    ///
+    /// # Specification
+    /// - requires: each part's entries ascend by what `key_of` reads.
+    /// - ensures: an entry `key_of` reads as `key` when either part holds one;
+    ///   absent otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — `key_of` is the caller's closure, which a clause
+    ///   could only call again over every entry.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LayeredList`]: a key is found in the closure's
+    ///   part and in the module's own.
+    /// - witness: `module::layered::tests::a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446`
+    #[inline]
+    pub fn search<Key, KeyOf>(
+        &self,
+        key: &Key,
+        mut key_of: KeyOf,
+    ) -> Maybe<&'list Value, listed_entry::Absent>
+    where
+        Key: Ord,
+        KeyOf: FnMut(&Value) -> Key,
+    {
+        [self.closure, self.own]
+            .into_iter()
+            .find_map(|part| part.get(part.binary_search_by_key(key, &mut key_of).ok()?))
+            .map_or(
+                Maybe::Absent(listed_entry::Absent::Unlisted),
+                Maybe::Present,
+            )
+    }
+}
+
+impl<Value> Clone for Listed<'_, Value>
+{
+    /// The same entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<Value> Copy for Listed<'_, Value>
+{
+}
+
+impl<'list, Value> IntoIterator for Listed<'list, Value>
+{
+    type IntoIter = ListedIter<'list, Value>;
+    type Item = &'list Value;
+
+    /// Every entry, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        self.iter()
+    }
+}
+
+impl<'list, Value> IntoIterator for &Listed<'list, Value>
+{
+    type IntoIter = ListedIter<'list, Value>;
+    type Item = &'list Value;
+
+    /// Every entry, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        self.iter()
+    }
+}
+
+impl<Value> PartialEq for Listed<'_, Value>
+where
+    Value: PartialEq,
+{
+    /// Whether the two hold the same entries in the same order, however each
+    /// splits them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl<Value> Eq for Listed<'_, Value> where Value: Eq
+{
+}
+
+impl<Value> fmt::Debug for Listed<'_, Value>
+where
+    Value: fmt::Debug,
+{
+    /// The entries, as one list.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+/// A list's entries in order, read from either end.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct ListedIter<'list, Value>(Chain<slice::Iter<'list, Value>, slice::Iter<'list, Value>>);
+
+impl<Value> Clone for ListedIter<'_, Value>
+{
+    /// The same entries left to read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self(self.0.clone())
+    }
+}
+
+impl<'list, Value> Iterator for ListedIter<'list, Value>
+{
+    type Item = &'list Value;
+
+    /// The next entry from the front.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        self.0.next()
+    }
+
+    /// Exactly the entries left.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>)
+    {
+        self.0.size_hint()
+    }
+}
+
+impl<Value> DoubleEndedIterator for ListedIter<'_, Value>
+{
+    /// The next entry from the back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item>
+    {
+        self.0.next_back()
+    }
+}
+
+impl<Value> ExactSizeIterator for ListedIter<'_, Value>
+{
+}
+
+impl<Value> FusedIterator for ListedIter<'_, Value>
+{
+}
+
 #[cfg(test)]
 mod tests
 {
     use alloc::collections::BTreeMap;
     use alloc::string::String;
     use alloc::sync::Arc;
+    use alloc::vec;
 
     use quenchant_shape::shape::Maybe;
 
     use super::EntryCount;
     use super::Layered;
+    use super::LayeredList;
 
     /// #3408: a lowering resumed after its closure shares the closure's
     /// collected entries with the suspended lowering rather than copying
@@ -470,5 +897,59 @@ mod tests
             suspended,
             Layered::whole(BTreeMap::from([(0_u8, 'a'), (1_u8, 'b'), (2_u8, 'c')]))
         );
+    }
+
+    /// #3446: a module resumed after its closure shares the closure's
+    /// declarations rather than copying them, and reads them as the whole
+    /// lowering's list: the closure's, then its own, found by key in either
+    /// part, equal to the list held whole. Resuming again rebases the list
+    /// onto the new closure's part, keeping its own entries after it.
+    #[test]
+    fn a_list_resumed_after_its_closure_shares_it_and_reads_as_the_whole_3446()
+    {
+        let letters = |list: &LayeredList<char>| list.read().iter().copied().collect::<String>();
+        let closure = LayeredList::whole(vec!['a', 'b', 'c']).shared();
+        let resumed = LayeredList::whole(vec!['d', 'e']).after(&closure);
+        let shared = |list: &LayeredList<char>| match list.closure {
+            Maybe::Present(ref held) => Arc::clone(held),
+            Maybe::Absent(_) => panic!("the list shares a closure's part"),
+        };
+        assert!(
+            Arc::ptr_eq(&shared(&resumed), &closure),
+            "the closure's entries are shared, not copied"
+        );
+        assert_eq!("abcde", letters(&resumed), "the closure's entries lead");
+        assert_eq!(resumed.count(), EntryCount(5_usize));
+        assert_eq!(resumed.read().iter().len(), 5_usize);
+        assert_eq!(resumed.read().iter().next_back(), Some(&'e'));
+        assert_eq!(
+            resumed,
+            LayeredList::whole(vec!['a', 'b', 'c', 'd', 'e']),
+            "a list equals the whole one however it is split"
+        );
+        assert_ne!(resumed, LayeredList::whole(vec!['a', 'b', 'd', 'c', 'e']));
+        for (key, found) in [('b', Some('b')), ('d', Some('d')), ('z', None)] {
+            let answer = match resumed.read().search(&key, |letter| *letter) {
+                Maybe::Present(&letter) => Some(letter),
+                Maybe::Absent(_) => None,
+            };
+            assert_eq!(answer, found, "{key} is searched in both parts");
+        }
+
+        let unchanged = LayeredList::whole(vec![]).after(&closure);
+        assert!(
+            Arc::ptr_eq(&unchanged.shared(), &closure),
+            "a list holding nothing of its own shares the closure's part as it is"
+        );
+        let later = LayeredList::whole(vec!['x']).shared();
+        let rebased = resumed.clone().after(&later);
+        assert_eq!(
+            "xabcde",
+            letters(&rebased),
+            "resuming again keeps every entry of the list after the new closure's"
+        );
+        let every = resumed.shared();
+        assert_eq!(*every, ['a', 'b', 'c', 'd', 'e']);
+        assert!(!Arc::ptr_eq(&every, &closure));
     }
 }
