@@ -11,8 +11,8 @@ name: Nightly
 # Every sweep over its whole input, which the merge queue samples: the
 # `nightly` nextest profile with specifications enforced (`mise run
 # ci:sweeps-nightly`), the costliest sweeps each over the night's slice of
-# the corpus; the night's third of the crates that declare features, each
-# crate's tests with every feature on; and the recovery sweep over the syntax
+# the corpus; one crate that declares features a night, its tests with
+# every feature on; and the recovery sweep over the syntax
 # exemplars, its causes filed. Daily on main when main moved since the last
 # successful run; a failure is a red run on main, never a blocked queue. A
 # dispatch always runs. Beside them, every day, each CI lane's median job
@@ -223,11 +223,15 @@ jobs:
           path: recovery.out/report.txt
           retention-days: 7
 
-  # Each crate's tests with every feature it declares on, a third of those
-  # crates a night (`mise run ci:all-features` says which), in the plain
-  # lane's restored test state, whose dependencies a feature does not touch.
-  # The sweeps sample as on a landing that changed no source. A feature-gated
-  # test that fails here is filed as a defect, never skipped (#1785).
+  # Each crate's tests with every feature it declares on, one of those crates
+  # a night (`mise run ci:all-features` says which), in the plain lane's
+  # restored test state. The sweeps sample as on a landing that changed no
+  # source. A feature-gated test that fails here is filed as a defect, never
+  # skipped (#1785). The job's share of the nightly's 900 s is 186 s, its
+  # 245 s in the dispatched run 40602657172 scaled by 900/1185 (#3013): 45 s
+  # of setup, 186 s building a third of the crates and 11 s testing them. One
+  # crate a night builds about its own closure; a crate whose night stays past
+  # the share gets its own saved build state (#3288).
   all-features:
     name: test every crate with every feature on
     needs: [ci-image-ref, freshness]
