@@ -3,9 +3,10 @@
 //! Conversion rewrites every thunk, recursive thunk and copattern object of a
 //! focused program into an abstract closure over the context variables it
 //! names, and entering a closure redex binds its environment and its frame
-//! together. Neither changes what a program answers: the suites run each
-//! generated program as focused, converted and entered on every tier this host
-//! has, and compare the readings.
+//! together, directly or at the end of a bind chain. Neither changes what a
+//! program answers: the suites run each generated program as focused,
+//! converted and entered on every tier this host has, and compare the
+//! readings.
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -23,6 +24,7 @@ use crate::differential::run_on_tiers;
 use crate::differential::settled;
 use crate::generate::Generated;
 use crate::generate::GeneratedRoot;
+use crate::generate::applied_binds;
 use crate::generate::computations;
 
 /// The command a sweep answered for a command.
@@ -78,11 +80,12 @@ proptest! {
         prop_assert_eq!(Agreement::Same, agreement(&written, &ran), "converted, the program read back {:?} against {:?}", ran, written);
     }
 
-    /// Every generated program, converted or not, with every closure redex
+    /// Every generated program, and every generated application of a bind
+    /// whose body is a function, converted or not, with every closure redex
     /// entered, runs to what it runs to as written, once both readings are
     /// normalised.
     #[test]
-    fn an_entered_closure_answers_as_the_cut_did(generated in computations())
+    fn an_entered_closure_answers_as_the_cut_did(generated in prop_oneof![computations(), applied_binds()])
     {
         let mut arena = CommandArena::new();
         let command = focused(&mut arena, &generated)?;

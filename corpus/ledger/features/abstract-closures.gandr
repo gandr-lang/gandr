@@ -2,6 +2,7 @@
 ///
 /// Implemented: conversion adds one captured variable at a time, and every converted program runs to what it runs to as written.
 /// Not implemented: #3077 owes the closure's type summaries, linear captures, lambda sets and a run path that converts, and #2770 owes environment sharing.
+/// Not implemented: #3636 owes a checked form that applies a block where the block stands, and entering reaches its closure at a distance.
 ///
 /// The function `constantly` returns names its argument, so conversion moves that argument into the closure's environment.
 /// The thunk `either` returns names both arguments, and conversion moves them one at a time, the later one first.

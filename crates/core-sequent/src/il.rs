@@ -683,6 +683,10 @@ pub enum ConsumerNode
         then: ConsumerId,
     },
     /// A pure native fold, retaining annotations for inverse focusing.
+    ///
+    /// The fold keeps the order of the cells and the outer scope. Each branch
+    /// has its own return covariable. The command arena owns the type
+    /// annotations the fold imports, and a rollback drops them with the nodes.
     ListFold
     {
         /// Element type in this arena's annotation arena.
