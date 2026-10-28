@@ -2357,6 +2357,31 @@ impl crate::fork::Fork for Scrambled
         let right = right();
         (left(), right)
     }
+
+    /// Every job from a fresh state in slice order, which keeps every edge,
+    /// each folded after its job.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        _after: &crate::fork::Dependences,
+        start: Start,
+        job: Job,
+        mut fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        for item in items {
+            job(&mut start(), item);
+            fold(item);
+        }
+    }
 }
 
 /// A program's families admitted on `fork` under a stopped clock, each report
