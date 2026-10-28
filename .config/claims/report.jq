@@ -18,7 +18,8 @@
 #
 # - prose: a line outside `## After` naming an open issue as `after #n`,
 #   `blocked on #n`, `waits on #n`, `once #n lands` or `needs #n`, with no
-#   dependency on it set;
+#   dependency on it set; never in a `collector`'s body, a guard's record of
+#   other issues, whose phrases this report's own table quotes (#3347);
 # - after: an issue `## After` lists with no dependency on it set;
 # - epic: an epic's open sub-issue the epic is not blocked by;
 # - labels: an issue short of its label set, one `kind:`, `priority:` and
@@ -58,7 +59,8 @@ def nights_cell: "\(.nights)\(if .nights >= 3 then " — a refusal candidate" el
     | .number as $self
     | (.blocked_by // []) as $set
     | def unset($n): $n != $self and ($open | index($n)) != null and ($set | index($n)) == null;
-    ((.body // "" | outside_after[]
+    ((select((.labels // []) | index("collector") | not)
+        | .body // "" | outside_after[]
         | match(phrases; "g")
         | {n: ((.captures | map(select(.string != null)) | first.string) | tonumber), phrase: .string}
         | select(unset(.n))

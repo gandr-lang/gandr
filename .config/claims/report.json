@@ -234,6 +234,44 @@
     "output": "{\n  \"count\": 0,\n  \"body\": \"The nightly tracker report (`mise run report:deps`, #2902) found every open issue's stated dependencies set on GitHub, its label set full, and every ledger row owing on an open issue.\\n\"\n}"
   },
   {
+    "name": "#3347: a collector's table quoting a phrase is no prose: the report's own rows are not found again",
+    "input": {
+      "issues": [
+        {
+          "number": 30,
+          "labels": ["collector", "kind:ci", "area:workflow", "priority:medium", "effort:unknown"],
+          "body": "## Dependencies\n\n| Issue | Waits on | Found | Nights |\n| --- | --- | --- | --- |\n| #10 | #20 | says `after #20` | 1 |\n",
+          "blocked_by": [],
+          "sub_issues": []
+        }
+      ],
+      "open": [
+        {
+          "number": 30,
+          "labels": ["collector", "kind:ci", "area:workflow", "priority:medium", "effort:unknown"]
+        },
+        {
+          "number": 20,
+          "labels": ["kind:gap", "area:workflow", "priority:medium", "effort:unknown"]
+        }
+      ],
+      "previous": "",
+      "defaults": {
+        "kind": {
+          "gap": {
+            "priority": "medium",
+            "effort": "unknown"
+          },
+          "ci": {
+            "priority": "medium",
+            "effort": "unknown"
+          }
+        }
+      }
+    },
+    "output": "{\n  \"count\": 0,\n  \"body\": \"The nightly tracker report (`mise run report:deps`, #2902) found every open issue's stated dependencies set on GitHub, its label set full, and every ledger row owing on an open issue.\\n\"\n}"
+  },
+  {
     "name": "an issue short of its label set is found, a default and an epic's extra kind named; several areas and a full set are not",
     "input": {
       "issues": [],
