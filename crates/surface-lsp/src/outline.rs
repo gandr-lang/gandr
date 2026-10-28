@@ -23,10 +23,12 @@
 //!   a `Module`, an `Interface`, a `Struct` or an `Enum` by its keyword:
 //!   `module`, `theory`, `codata`, and `data` or anything else. A symbol's
 //!   range is its form's, widened over the attribute blocks standing directly
-//!   before it, and its selection range is the name's tile; it is tagged
-//!   `Deprecated` when one of those blocks, or one an attributed module member
-//!   writes before its keyword, names the `deprecated` attribute. An attribute
-//!   block is a form with no such tile, so it is no symbol.
+//!   before it — a block of `doc` entries alone too, which the parser files
+//!   under the form as its documentation — and its selection range is the
+//!   name's tile; it is tagged `Deprecated` when one of those blocks, or one an
+//!   attributed module member writes before its keyword, names the `deprecated`
+//!   attribute. An attribute block is a form with no such tile, so it is no
+//!   symbol.
 //! - **Root forms that declare nothing.** A form written at the root that names
 //!   nothing and writes no declaration — a stray the lowering refuses — is an
 //!   `Event` symbol, named by what it writes up to its first own `{` (then `{ …
@@ -128,7 +130,8 @@ pub enum Declarer
 ///   highlighter classifies as [`HlRole::FunctionDef`], [`HlRole::VariableDef`]
 ///   or [`HlRole::Type`], or as [`HlRole::Label`] after the keyword `world`.
 ///   The symbol's range is the form's, widened to the attribute blocks and the
-///   `pub` mark standing directly before it, and it is deprecated exactly when
+///   `pub` mark standing directly before it, and to a block of `doc` entries
+///   alone the parser files under the form, and it is deprecated exactly when
 ///   one of those blocks, or one the form writes among its own tiles before its
 ///   keyword, names the `deprecated` attribute; it is exported exactly when the
 ///   mark stands there, or, held by another symbol, when that one is. Its
@@ -169,6 +172,7 @@ pub enum Declarer
 /// - witness: `outline::tests::a_theory_holds_its_members`
 /// - witness: `outline::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
+/// - witness: `hover::tests::a_doc_attribute_hovers_its_declaration_3197`
 #[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
     !found.1.name.is_empty() && found.1.holder.is_none_or(|holder| holder < position)))]
 pub fn declarations(
@@ -227,7 +231,7 @@ pub fn declarations(
                         .rule_of(mold)
                         .is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK) =>
                 {
-                    let span = node.span();
+                    let span = documented(tree, child, node.span());
                     let Deprecated(deprecated) = names_deprecated(tree, child);
                     blocks = Some(Decorated::joined(blocks, Decorated {
                         span,
@@ -561,6 +565,37 @@ fn names_deprecated(
     Deprecated(false)
 }
 
+/// `span`, the node at `at`'s own, widened over each block of `doc` entries
+/// alone among its children: the parser files such a block as documentation of
+/// the form or the attribute block after it, a documentation node whose first
+/// tile opens a block, `@[`, which stands before that node all the same
+/// (#3197).
+///
+/// # Specification
+/// trivial.
+fn documented(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+    span: ByteSpan,
+) -> ByteSpan
+{
+    tree.children(at)
+        .filter_map(|child| {
+            let node = tree.node(child)?;
+            if !matches!(node.label(), NodeLabel::Doc) {
+                return None;
+            }
+            let opener = tree.children(child).find(|&written| {
+                matches!(
+                    tree.node(written).map(Node::label),
+                    Some(NodeLabel::Tile(_))
+                )
+            })?;
+            (tree.fragment(opener).map(<&str>::from) == Some("@[")).then_some(node.span())
+        })
+        .fold(span, ByteSpan::join)
+}
+
 /// The symbol the form at `at` declares, when it is a named declaration,
 /// its range widened over the attribute blocks `decorated` before it.
 ///
@@ -634,13 +669,15 @@ fn declared(
                     .skip_while(|&later| later != child)
                     .find_map(|later| body_start(tree, later))
                     .unwrap_or_else(|| node.span().end());
+                // A block of `doc` entries alone filed under the form widens
+                // its range as a block standing beside it does.
+                let widened = documented(tree, at, node.span());
                 return Some(DocumentSymbol {
                     name,
                     kind: kind_of(role, keyword),
                     range: range_of(
                         index,
-                        decorated
-                            .map_or_else(|| node.span(), |blocks| blocks.span.join(node.span())),
+                        decorated.map_or(widened, |blocks| blocks.span.join(widened)),
                     )?,
                     selection_range: range_of(index, named)?,
                     detail: detail(tree, named.end(), body),
