@@ -3872,8 +3872,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - ensures: the family stands as a value type over its arguments, each
-    ///   read as a value under the site's frame and recorded at its place among
-    ///   the family's parameters.
+    ///   read as a value under the site's frame, standing inside the type as a
+    ///   path type's endpoints do, and recorded at its place among the family's
+    ///   parameters.
     /// - fails: the arity refusal for an argument count other than `arity`; the
     ///   wrong-sort refusal where no value type is read or reached.
     /// - panics: none.
@@ -3883,8 +3884,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a family over one and over two arguments, and over
-    ///   too few, each asserted as the exact nominal type or refusal.
+    ///   too few, each asserted as the exact nominal type or refusal; a family
+    ///   a body quotes reads each argument at its index in the body.
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
+    /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
     #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Data(constant, applied)))]
     pub(super) fn family(
         &mut self,
@@ -3917,6 +3920,11 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(argument, Reading::Value(frame));
             }
         }
+        // Each argument is a value the family's type reads: it counts in that
+        // type's telescope, a body quote's where the family is quoted in a
+        // body, as a path type's endpoints do.
+        self.in_type
+            .extend(stretch(&self.operands, applied).iter().copied());
         self.plan(site, Plan::Data(constant, applied));
 
         Ok(())
@@ -4031,7 +4039,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - ensures: the family stands as a computation type over its arguments,
-    ///   each read as a value under the site's frame.
+    ///   each read as a value under the site's frame, standing inside the type
+    ///   as a path type's endpoints do.
     /// - fails: the arity refusal for an argument count other than `arity`; the
     ///   wrong-sort refusal where no computation type is read or reached.
     /// - panics: none.
@@ -4041,8 +4050,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a codata family read as a function's answer lowers to
-    ///   the nominal computation type over its argument.
+    ///   the nominal computation type over its argument; one a body quotes
+    ///   reads its argument at its index in the body.
     /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
     #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Codata(constant, applied)))]
     pub(super) fn codata_type(
         &mut self,
@@ -4062,6 +4073,8 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(argument, Reading::Value(frame));
             }
         }
+        self.in_type
+            .extend(stretch(&self.operands, applied).iter().copied());
         self.plan(site, Plan::Codata(constant, applied));
 
         Ok(())
