@@ -10,6 +10,8 @@ use std::process::Command;
 use gandr_workflow_github::Body;
 use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
+use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::read;
 use gandr_workflow_github::run;
 use serde::Deserialize;
 
@@ -346,7 +348,7 @@ pub fn recent_runs(
             command.args(["-f", "event=schedule", "--jq", SCHEDULED_QUERY])
         },
     };
-    let text = run(&mut command, Feed::Nothing)?;
+    let text = read(&mut command, READ_PAUSE)?;
     text.lines()
         .take(usize::from(count))
         .map(|line| {
@@ -402,7 +404,7 @@ pub fn samples(
             Jobs::Completed => COMPLETED_JOB_QUERY,
         },
     ]);
-    let text = run(&mut command, Feed::Nothing)?;
+    let text = read(&mut command, READ_PAUSE)?;
     text.lines()
         .map(|line| {
             line.parse::<Sample>().ok().ok_or_else(|| {
@@ -450,7 +452,7 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
         "--jq",
         WORKFLOW_QUERY,
     ]);
-    let listing = run(&mut list, Feed::Nothing)?;
+    let listing = read(&mut list, READ_PAUSE)?;
     let unread = |command: &Command, line: &str, what: &str| {
         BudgetError::from(GitHubError::unread(
             command,
@@ -481,7 +483,7 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
             "--jq",
             TIMED_QUERY,
         ]);
-        let text = run(&mut runs, Feed::Nothing)?;
+        let text = read(&mut runs, READ_PAUSE)?;
         text.lines()
             .take(usize::from(count))
             .map(|line| {
@@ -528,7 +530,7 @@ pub fn cache_usage() -> Result<CacheUsage, BudgetError>
 {
     let mut command = Command::new("gh");
     command.args(["api", "--method", "GET", CACHE, "--jq", CACHE_QUERY]);
-    let text = run(&mut command, Feed::Nothing)?;
+    let text = read(&mut command, READ_PAUSE)?;
     text.parse::<CacheUsage>().ok().ok_or_else(|| {
         BudgetError::from(GitHubError::unread(
             &command,
@@ -583,7 +585,7 @@ pub fn file(
         "--json",
         "number,state,title",
     ]);
-    let listing = run(&mut list, Feed::Nothing)?;
+    let listing = read(&mut list, READ_PAUSE)?;
     let issues: Vec<Listed> = serde_json::from_str(&listing)
         .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
     let found = issues.into_iter().find(|issue| issue.title == title.0);

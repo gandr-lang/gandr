@@ -4,8 +4,8 @@
 use core::fmt;
 use std::process::Command;
 
-use gandr_workflow_github::Feed;
-use gandr_workflow_github::run;
+use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::read;
 
 use crate::error::BudgetError;
 use crate::report::RunId;
@@ -140,7 +140,7 @@ pub fn classify(run_id: RunId) -> Result<Cone, BudgetError>
         "--jq",
         r#"(.event + "\t" + .head_sha + "\t" + (.pull_request.base.sha // "") + "\t" + (.head_branch // ""))"#,
     ]);
-    let text = run(&mut command, Feed::Nothing)?;
+    let text = read(&mut command, READ_PAUSE)?;
     let mut fields = text.split('\t');
     let event = fields.next().unwrap_or_default();
     let head = fields.next().unwrap_or_default();
@@ -168,7 +168,7 @@ pub fn classify(run_id: RunId) -> Result<Cone, BudgetError>
         "--jq",
         r#".files[] | .filename"#,
     ]);
-    let files = run(&mut compare, Feed::Nothing)?;
+    let files = read(&mut compare, READ_PAUSE)?;
     let deep = files
         .lines()
         .any(|path| file_cone(Path::from(path)) == Cone::Deep);
