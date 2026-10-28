@@ -206,7 +206,7 @@ fn focus_refusals_keep_their_reasons_apart()
         FocusRefusal::from(mint),
         FocusRefusal::Code(value),
         FocusRefusal::IncompleteValue(value),
-        FocusRefusal::Session(computation),
+        FocusRefusal::Placement(computation),
         FocusRefusal::Unelaborated(value),
         FocusRefusal::TranslationInvariant,
     ]);

@@ -4,12 +4,14 @@
 
 /// The seat selects `done` and drops its end; the desk offers `done` and
 /// drops its own.
+@[ runs("unit") ]
 def finished() -> Unit {
   fork (seat : +{done : end}) { select(seat, done); drop(seat) } as desk;
   offer(desk) { done => drop(desk) }
 }
 
 /// A drop at one end of a fork and a close at the other.
+@[ runs("unit") ]
 def mixed() -> Unit {
   fork (seat : end) { close(seat) } as desk;
   drop(desk)

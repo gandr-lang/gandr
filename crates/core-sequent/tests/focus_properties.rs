@@ -59,6 +59,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use proptest::prelude::*;
+use quenchant_shape::shape::Maybe;
 
 use crate::compare::Agreement;
 use crate::compare::same_computation;
@@ -448,6 +449,28 @@ fn walked(
                             body,
                             depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
                         )),
+                    }
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::Session {
+                    ref action,
+                    continuation,
+                } => {
+                    for value in action.values() {
+                        stack.push(Visit::Producer(value, depth));
+                    }
+                    for body in action.computations() {
+                        let mut under = depth.under(ProducerArity::ZERO, ConsumerArity::ONE);
+                        under.linears = under
+                            .linears
+                            .checked_add(u32::from(action.child_binders()))
+                            .expect("a shallow term");
+                        stack.push(Visit::Command(body, under));
+                    }
+                    if let Maybe::Present(index) = action.endpoint()
+                        && let Some(past) = u32::from(index).checked_sub(depth.linears)
+                    {
+                        free.0.insert((Zone::Linear, DeBruijnIndex::from(past)));
                     }
                     stack.push(Visit::Consumer(continuation, depth));
                 },

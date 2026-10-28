@@ -23,6 +23,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
+use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_kernel_term::DeBruijnIndex;
@@ -307,6 +308,7 @@ fn render<'arena>(
     | (Some(&CommandNode::Reset { body, continuation } | &CommandNode::Shift { body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Memory { ref form, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.computations()) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::World { ref form, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.scoped().map(|(body, _)| body)) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
+    | (Some(&CommandNode::Session { ref action, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(action.computations()) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(action.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | _ => false,
 })]
 fn command(
@@ -520,6 +522,64 @@ fn command(
                         },
                     }),
                     text!("α ⇒ "),
+                    Piece::Command(body, depth),
+                ],
+            };
+            pieces.extend([
+                text!("; "),
+                Piece::Consumer(continuation, depth),
+                text!(")"),
+            ]);
+            pieces
+        },
+        CommandNode::Session {
+            ref action,
+            continuation,
+        } => {
+            let linear =
+                |index: DeBruijnIndex| Piece::Owned(alloc::format!("l{}", u32::from(index)));
+            let mut pieces = match *action {
+                SessionAction::Send { endpoint, payload } => alloc::vec![
+                    text!("send("),
+                    linear(endpoint),
+                    text!(", "),
+                    Piece::Producer(payload, depth),
+                ],
+                SessionAction::Receive { endpoint, body } => alloc::vec![
+                    text!("recv("),
+                    linear(endpoint),
+                    text!("; (l; α) ⇒ "),
+                    Piece::Command(body, depth),
+                ],
+                SessionAction::Select {
+                    endpoint,
+                    ref label,
+                } => alloc::vec![
+                    text!("select("),
+                    linear(endpoint),
+                    Piece::Owned(alloc::format!(", {}", label.as_ref())),
+                ],
+                SessionAction::Offer { endpoint, ref arms } => {
+                    let mut offer = alloc::vec![text!("offer("), linear(endpoint)];
+                    for (label, &arm) in arms {
+                        offer.extend([
+                            Piece::Owned(alloc::format!("; {}(α) ⇒ ", label.as_ref())),
+                            Piece::Command(arm, depth),
+                        ]);
+                    }
+                    offer
+                },
+                SessionAction::Close { endpoint } => alloc::vec![text!("close("), linear(endpoint)],
+                SessionAction::Fork { child, parent, .. } => alloc::vec![
+                    text!("fork((l; α) ⇒ "),
+                    Piece::Command(child, depth),
+                    text!(" | (l; α) ⇒ "),
+                    Piece::Command(parent, depth),
+                ],
+                SessionAction::Place { payload, body } => alloc::vec![
+                    text!("place("),
+                    Piece::Producer(payload, depth),
+                    text!("; (l; α) ⇒ "),
                     Piece::Command(body, depth),
                 ],
             };

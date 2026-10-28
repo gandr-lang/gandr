@@ -1004,7 +1004,10 @@ fn run(
         unsafe {
             frames.wrapping_add(1).write(Word::ZERO);
         }
-        let base = frames.wrapping_add(2);
+        // A run that acts on a session stands every task on the joined frame,
+        // laid above the sentinel once the entry window is known.
+        let joined = lowered.joined.map(|label| parts.codes.label(label));
+        let base = frames.wrapping_add(if joined.is_some() { 4 } else { 2 });
         let mut calls = Calls::new(parts);
         let mut runtime = Runtime::new(
             heap,
@@ -1036,6 +1039,17 @@ fn run(
             *held = word;
         }
         let window = buffers.window.as_mut_ptr();
+        if let Some(code) = joined {
+            // SAFETY: the frame region's capacity holds far more than the
+            // sentinel's and the joined frame's four words.
+            unsafe {
+                frames.wrapping_add(2).write(code);
+            }
+            // SAFETY: as above.
+            unsafe {
+                frames.wrapping_add(3).write(Word::from_pointer(window));
+            }
+        }
         // The run allocates past the captures laid on its heap.
         let top = runtime.heap_top();
         let answer = match code {
@@ -1095,6 +1109,7 @@ fn run(
                 Some(Refused::Reply(value)) => return Err(Declined::Reply(value)),
                 Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
                 Some(Refused::Migration(at, why)) => return Err(Declined::Migration(at, why)),
+                Some(Refused::Deadlock(waiting)) => Stuck::Deadlock(waiting),
                 None => {
                     let head = match Observed::try_from(runtime.observed()) {
                         Ok(Observed::Apply) => DestructorTag::Apply,

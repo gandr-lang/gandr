@@ -670,7 +670,7 @@ fn unfocused(tree: Tree) -> (Vec<String>, Vec<PathBuf>)
                             | FocusRefusal::ElementTransport(..)
                             | FocusRefusal::IncompleteValue(_)
                             | FocusRefusal::IncompleteComputation(_)
-                            | FocusRefusal::Session(_)
+                            | FocusRefusal::Placement(_)
                     )
                 })
                 .map(|(name, refusal)| format!("{}: `{name}`: {refusal}", path.display())),
@@ -680,7 +680,7 @@ fn unfocused(tree: Tree) -> (Vec<String>, Vec<PathBuf>)
 }
 
 /// Every accepted declaration of the model corpus focuses, but for a code,
-/// element identity, a hole or a session action, which the machine carries
+/// element identity, a hole or a buffer's placement, which the machine carries
 /// no image of.
 #[test]
 fn focusing_is_total_on_the_model_corpus()
@@ -690,12 +690,12 @@ fn focusing_is_total_on_the_model_corpus()
     assert_eq!(
         refusals,
         Vec::<String>::new(),
-        "focusing refuses only codes, element identity, holes, session actions and world forms"
+        "focusing refuses only codes, element identity, holes and buffers' placements"
     );
 }
 
 /// Every accepted declaration of the pathological corpus focuses, but for
-/// a code, element identity, a hole, a session action or a world form.
+/// a code, element identity, a hole or a buffer's placement.
 #[test]
 fn focusing_is_total_on_the_pathological_corpus()
 {

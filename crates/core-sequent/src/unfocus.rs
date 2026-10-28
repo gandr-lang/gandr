@@ -706,6 +706,8 @@ impl Unfocusing<'_>
                     && self.computations.len() >= form.computations().count(),
                 CommandNode::World { ref form, .. } => self.values.len() >= form.values().count()
                     && self.computations.len() >= form.scoped().count(),
+                CommandNode::Session { ref action, .. } => self.values.len() >= action.values().count()
+                    && self.computations.len() >= action.computations().count(),
             }),
             | &Task::With(count) => self.computations.len() >= usize::from(count),
             | &Task::Bind => self.computations.len() >= 2,
@@ -1105,6 +1107,30 @@ impl Unfocusing<'_>
         })
     }
 
+    /// Import a fork's protocol and close only its ambient type-code
+    /// variables, as [`Self::signature`] closes an interface's types.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`UnfocusRefusal::CommandOutsideTheImage`] for a dangling annotation.
+    fn protocol(
+        &mut self,
+        at: CommandId,
+        protocol: gandr_core_term::ValueTypeId,
+        depth: Depth,
+    ) -> Result<gandr_core_term::ValueTypeId, UnfocusRefusal>
+    {
+        let imported = gandr_core_term::TypeImporter::new(self.arena.annotations(), self.core)
+            .value_type(protocol)
+            .map_err(|gandr_core_term::ImportFault| UnfocusRefusal::CommandOutsideTheImage(at))?;
+        if self.closing.selected.is_empty() {
+            return Ok(imported);
+        }
+        Ok(self.close_type(imported, depth))
+    }
+
     /// Close an annotation read at `depth`: each index the closing selects
     /// past `depth`'s producer binders is replaced by its value, the highest
     /// first, so each substitution lowers only the indices above it.
@@ -1257,6 +1283,16 @@ impl Unfocusing<'_>
                 )?;
                 self.core.computation_world(form)
             },
+            CommandNode::Session { ref action, .. } => {
+                let action = action.try_map(
+                    gandr_core_term::session::ChildOrder::Reverse,
+                    self,
+                    |decoder, _| decoder.pop_value(),
+                    |decoder, _| decoder.pop_computation(),
+                    |decoder, protocol| decoder.protocol(source, protocol, depth),
+                )?;
+                self.core.computation_session(action)
+            },
             CommandNode::Cut { .. } => {
                 return Err(UnfocusRefusal::CommandOutsideTheImage(source));
             },
@@ -1390,6 +1426,20 @@ impl Unfocusing<'_>
                     },
                 }
                 for value in form.values() {
+                    self.tasks.push(Task::Value(value, depth));
+                }
+            },
+            CommandNode::Session {
+                ref action,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                for body in action.computations().rev() {
+                    self.tasks
+                        .push(Task::Command(body, depth.under_covariable()));
+                }
+                for value in action.values() {
                     self.tasks.push(Task::Value(value, depth));
                 }
             },

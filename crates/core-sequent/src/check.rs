@@ -67,8 +67,8 @@ use crate::il::NodeAddress;
 use crate::il::NodeScope;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::command_annotations;
 use crate::il::command_children;
-use crate::il::command_signature;
 use crate::il::consumer_annotations;
 use crate::il::consumer_children;
 use crate::il::producer_children;
@@ -449,9 +449,7 @@ impl Walk<'_>
                 self.second_class(closure, closure, ConsumerArity::ZERO)?;
             }
         }
-        if let Some(signature) = command_signature(node) {
-            self.annotated(NodeAddress::Command(id), signature.types())?;
-        }
+        self.annotated(NodeAddress::Command(id), command_annotations(node))?;
         let work = self.stack.len();
         command_children(node, |child, _| self.schedule(child))?;
         if let Some(pushed) = self.stack.get_mut(work ..) {

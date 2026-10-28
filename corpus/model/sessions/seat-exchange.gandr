@@ -9,6 +9,7 @@ import "./seat-base.gandr";
 
 /// A desk dispatching a task to a forked seat and following its reports to a
 /// retirement or a handoff.
+@[ runs("unit") ]
 def exchange() -> Unit {
   fork (seat : Seat.SeatEnd) {
     recv(seat) as task;

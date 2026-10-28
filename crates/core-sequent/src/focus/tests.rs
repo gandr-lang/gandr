@@ -215,24 +215,22 @@ fn a_hole_is_reached_and_a_mark_refused_by_name_1881()
 }
 
 #[test]
-fn a_session_action_is_refused_by_name()
+fn a_placement_is_refused_by_name()
 {
     let mut core = CoreArena::new();
-    let returned = {
-        let unit = core.value_unit();
-        core.computation_return(unit)
-    };
-    let close = core.computation_session(gandr_core_term::session::SessionAction::Close {
-        endpoint: gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let placed = core.computation_session(gandr_core_term::session::SessionAction::Place {
+        payload: unit,
+        body: returned,
     });
-    let term = core.computation_bind(close, returned);
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
     let mark = arena.watermark();
     assert_eq!(
-        focus_computation(&core, term, &mut arena, &mut provenance),
-        Err(FocusRefusal::Session(close)),
-        "the action is refused by name"
+        focus_computation(&core, placed, &mut arena, &mut provenance),
+        Err(FocusRefusal::Placement(placed)),
+        "the placement is refused by name"
     );
     assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
 }

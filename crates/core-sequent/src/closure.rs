@@ -101,8 +101,8 @@ use crate::il::PatternArm;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
 use crate::il::Route;
+use crate::il::command_annotations;
 use crate::il::command_children;
-use crate::il::command_signature;
 use crate::il::consumer_annotations;
 use crate::il::consumer_children;
 use crate::il::producer_children;
@@ -792,10 +792,9 @@ fn annotated(
         NodeAddress::Consumer(id) => {
             consumer_annotations(arena.consumer(id).ok_or(dangling)?).try_for_each(&mut check)
         },
-        NodeAddress::Command(id) => command_signature(arena.command(id).ok_or(dangling)?)
-            .map_or(Ok(()), |signature| {
-                signature.types().try_for_each(&mut check)
-            }),
+        NodeAddress::Command(id) => {
+            command_annotations(arena.command(id).ok_or(dangling)?).try_for_each(&mut check)
+        },
     }
 }
 
@@ -1255,6 +1254,19 @@ fn rebuild_command(
             )?;
             CommandNode::World {
                 form,
+                continuation: fresh.consumer()?,
+            }
+        },
+        CommandNode::Session { ref action, .. } => {
+            let action = action.try_map(
+                ChildOrder::Forward,
+                fresh,
+                |fresh, _| fresh.producer(),
+                |fresh, _| fresh.command(),
+                |_, protocol| Ok(protocol),
+            )?;
+            CommandNode::Session {
+                action,
                 continuation: fresh.consumer()?,
             }
         },

@@ -185,6 +185,7 @@ use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Primitive;
+use gandr_core_term::session::SessionAction;
 use gandr_core_term::support::Indices;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
@@ -222,8 +223,8 @@ use crate::fuse::fuse;
 /// A command the lowering does not lay out.
 ///
 /// One ill-formed — children that contradict their head, a node or a binder
-/// missing — or one past a width the layout holds. A run of a command that
-/// reaches one declines.
+/// missing — one past a width the layout holds, or a buffer's placement,
+/// which focusing never yields. A run of a command that reaches one declines.
 ///
 /// # Specification
 /// trivial.
@@ -247,6 +248,8 @@ pub enum Form
     /// A node the lowering reaches that the ownership reading places nowhere,
     /// or that two parents drop differently.
     Unowned,
+    /// A buffer's placement, which focusing never yields and no run places.
+    Placement,
 }
 
 impl core::fmt::Display for Form
@@ -269,6 +272,7 @@ impl core::fmt::Display for Form
             Self::Dangling => "a node the arena does not hold",
             Self::Unbound => "a variable bound by nothing in the command",
             Self::Unowned => "a node the ownership reading does not place",
+            Self::Placement => "a buffer's placement, which no run places",
         })
     }
 }
@@ -733,19 +737,23 @@ struct Captured
 
 /// The producer binders a closure body's own entry opens, which its captures
 /// lie past.
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 struct Crossed
 {
-    /// The producer binders.
+    /// The intuitionistic producer binders.
     producers: u32,
+    /// The linear producer binders: a forked child's end.
+    linears: u32,
 }
 
 impl Crossed
 {
     /// None: a producer's support already lies past its own binders, and a
     /// fold's empty branch opens only a covariable.
-    const NONE: Self = Self { producers: 0 };
+    const NONE: Self = Self {
+        producers: 0,
+        linears: 0,
+    };
 }
 
 /// A de Bruijn index, as the lowering counts it.
@@ -788,6 +796,18 @@ enum Task
     /// An access's frame, popped with the body's answer in hand: the view's
     /// slot, the unwind's label, the access command and its scope.
     Ended(Slot, Label, CommandId, Scope),
+    /// A receive's frame, popped with the payload's cell in hand: the body
+    /// runs with the cell bound as its linear producer and its covariable
+    /// bound as the binding says.
+    Received(CommandId, Scope, Binding),
+    /// An offer's frame, popped with the selected label's position in hand:
+    /// the host call the operand names continues at the arm.
+    Offered(Operand),
+    /// A fork's child, its continuation loaded: the closure over its
+    /// captures, allocated into hand.
+    Forked(CommandId, Scope),
+    /// The joined frame's block, popped with an ended task's answer in hand.
+    Joined,
     /// Run the suspended capture in hand against the consumer its cut
     /// delivers it to: the consumer loaded, the capture entered.
     Capture(ConsumerId, Scope),
@@ -831,6 +851,8 @@ enum Entry
     Force(CommandId),
     /// A fixpoint: itself, then its return covariable.
     Fixpoint(CommandId),
+    /// A forked child: its end's cell, then its return covariable.
+    Fork(CommandId),
     /// A constant's unfolding: its definition evaluated into its word, then
     /// returned to the frame on top.
     Unfold(ProducerId, Immediate),
@@ -866,8 +888,9 @@ pub struct Site
     pub captures: Vec<Slot>,
 }
 
-/// A fold's cell closure: it lives only in the frame that applies it, so no
-/// site records it, and it owns one reference of each producer it captures.
+/// A closure no answer holds: a fold's cell closure, which lives only in the
+/// frame that applies it, or a forked child's, which only the scheduler holds.
+/// No site records it, and it owns one reference of each producer it captures.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cell
 {
@@ -987,6 +1010,45 @@ pub enum Callee
         /// to run closed over its captures when the migration first runs.
         body: CommandId,
     },
+    /// Fork a child task over one end of a fresh channel: the argument is the
+    /// child's closure, queued to be entered with its end's cell; answers the
+    /// parent's end's cell.
+    Fork(CommandId),
+    /// Send the second argument on the end whose cell is the first; answers
+    /// the unit.
+    Send(CommandId),
+    /// Receive on the end whose cell is the argument: answers the oldest
+    /// payload sent to it in a fresh cell, or parks the task and continues
+    /// another.
+    Receive(CommandId),
+    /// Select the label on the end whose cell is the argument; answers the
+    /// unit.
+    Select
+    {
+        /// The selection.
+        at: CommandId,
+        /// The label selected.
+        label: FieldLabel,
+    },
+    /// Offer on the end whose cell is the argument: answers the position,
+    /// among the labels, of the oldest label selected to it, or parks the
+    /// task and continues another.
+    Offer
+    {
+        /// The offer.
+        at: CommandId,
+        /// The arms' labels, in label order.
+        labels: Vec<FieldLabel>,
+    },
+    /// Continue at the arm whose position is the argument, in the window in
+    /// reach.
+    Branch(Vec<Label>),
+    /// Close the end whose cell is the argument; answers the unit.
+    Close(CommandId),
+    /// End the running task, its answer the argument: continue the next task
+    /// ready, or answer the root's answer below the base once every task has
+    /// ended.
+    Joined,
     /// Stick at a constant the definitions do not hold.
     Undefined(ConstantIndex),
     /// Stick at a constant whose unfolding needs its own value.
@@ -1125,6 +1187,10 @@ pub struct Lowered
     /// The constants the function unfolds, by their word in the run's
     /// constant table.
     pub globals: Vec<ConstantIndex>,
+    /// The joined frame's label, when the function acts on a session: every
+    /// task's frames stand on it, and its block hands an ended task's answer
+    /// to the scheduler.
+    pub joined: Option<Label>,
 }
 
 /// The most instructions one lowering emits: past it the command declines
@@ -1313,6 +1379,8 @@ struct Lowering<'run>
     /// The reuse tokens waiting for their constructors: the constructor, the
     /// token's binder and its slot.
     tokens: Vec<(ProducerId, Scope, Slot)>,
+    /// The joined frame's label, once a session action is lowered.
+    joined: Option<Label>,
 }
 
 impl Lowering<'_>
@@ -1567,7 +1635,12 @@ impl Lowering<'_>
                     .outside(Zone::Intuitionistic, depth(crossed.producers)),
                 crossed.producers,
             ),
-            linears: past(support.producers().outside(Zone::Linear, depth(0)), 0),
+            linears: past(
+                support
+                    .producers()
+                    .outside(Zone::Linear, depth(crossed.linears)),
+                crossed.linears,
+            ),
         };
         Ok(self.scopes.enclose(scope, &captured))
     }
@@ -1951,7 +2024,10 @@ impl Lowering<'_>
         // The cell branch binds the head, the tail's result and a covariable;
         // the head is bound here, the other two by the closure's entry, and
         // the covariable is captured by none.
-        let crossed = Crossed { producers: 1 };
+        let crossed = Crossed {
+            producers: 1,
+            linears: 0,
+        };
         let (base, label) = self.suspend(
             with_head,
             NodeAddress::Command(on_cons),
@@ -1978,7 +2054,10 @@ impl Lowering<'_>
         self.function.bind(empty);
         self.emit(StencilId::Bind, list.operand(), Operand::Unused);
         self.emit(StencilId::Drop, list.operand(), Operand::Unused);
-        let past = Crossed { producers: 2 };
+        let past = Crossed {
+            producers: 2,
+            linears: 0,
+        };
         for capture in self.named(NodeAddress::Command(on_cons), scope, past)? {
             self.emit(StencilId::Drop, capture.operand(), Operand::Unused);
         }
@@ -2169,6 +2248,7 @@ impl Lowering<'_>
     {
         let returned = self.owners(NodeAddress::Command(on_return), scope, Crossed {
             producers: 1,
+            linears: 0,
         })?;
         let kept = self.kept(handle, scope)?;
         self.owners.extend(kept);
@@ -2223,13 +2303,28 @@ impl Lowering<'_>
         count: Immediate,
     ) -> Result<Task, Form>
     {
-        let row = intern(&mut self.callees, callee);
-        let row = u32::try_from(row.0).map_err(|_overflow| Form::HeaderWidth)?;
         Ok(Task::Emit(
             StencilId::Call,
-            Operand::Immediate(Immediate::from(row)),
+            self.callee(callee)?,
             Operand::Immediate(count),
         ))
+    }
+
+    /// The operand naming `callee`'s row of the callee table.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a callee table past an immediate's width.
+    fn callee(
+        &mut self,
+        callee: &Callee,
+    ) -> Result<Operand, Form>
+    {
+        let row = intern(&mut self.callees, callee);
+        let row = u32::try_from(row.0).map_err(|_overflow| Form::HeaderWidth)?;
+        Ok(Operand::Immediate(Immediate::from(row)))
     }
 
     /// Lower the control command `id` in `scope`. A handler's and a reset's
@@ -2426,6 +2521,10 @@ impl Lowering<'_>
                 ref form,
                 continuation,
             } => self.world(id, form, continuation, scope)?,
+            CommandNode::Session {
+                ref action,
+                continuation,
+            } => self.session(id, action, continuation, scope)?,
         }
         Ok(())
     }
@@ -2702,6 +2801,196 @@ impl Lowering<'_>
         Ok(())
     }
 
+    /// Lower the session action `action` of the command `id` with its
+    /// continuation in `scope`. Every action is a host call on its end's cell.
+    /// A receive and an offer load the continuation and push a frame their
+    /// call pops: the host answers into it, or parks the task's frames and
+    /// continues another, which a later send resumes at that frame. A
+    /// receive's frame binds the payload's cell and runs the body; an offer's
+    /// continues at the arm its peer selected. A fork's child is a closure
+    /// over its captures, entered by the scheduler with its end's cell, and
+    /// the parent runs on with its own. A body's covariable falls through to
+    /// the loaded continuation, the body's return when that is where the
+    /// continuation delivers, as a hold's does.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Placement`] for a buffer's placement; as [`Self::step`]
+    /// otherwise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — two forks exchanging a payload and a choice answer
+    ///   alike on every run and on both tiers, a child its parent never
+    ///   receives from still runs to its end, and a run whose tasks all wait is
+    ///   stuck at their actions; a frame pushed at the wrong point, or a child
+    ///   entered without its end, changes an answer.
+    /// - witness: `tests::sessions::forked_tasks_exchange_alike_on_both_tiers`
+    /// - witness: `tests::sessions::a_run_whose_tasks_all_wait_is_stuck_at_their_actions`
+    fn session(
+        &mut self,
+        id: CommandId,
+        action: &SessionAction<ProducerId, CommandId, gandr_core_term::ValueTypeId>,
+        continuation: ConsumerId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        self.join();
+        let falls = match self.returns_through(continuation, scope)? {
+            Some(_) => Binding::Returning,
+            None => Binding::FallThrough,
+        };
+        match *action {
+            SessionAction::Send { endpoint, payload } => {
+                let end = self.end(scope, endpoint)?;
+                let call = self.call(&Callee::Send(id), Immediate::from(2_u32))?;
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(payload, scope));
+                self.tasks.push(PUSH);
+                self.tasks.push(end);
+            },
+            SessionAction::Select {
+                endpoint,
+                ref label,
+            } => {
+                let end = self.end(scope, endpoint)?;
+                let call = self.call(
+                    &Callee::Select {
+                        at: id,
+                        label: label.clone(),
+                    },
+                    Immediate::from(1_u32),
+                )?;
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(end);
+            },
+            SessionAction::Close { endpoint } => {
+                let end = self.end(scope, endpoint)?;
+                let call = self.call(&Callee::Close(id), Immediate::from(1_u32))?;
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(end);
+            },
+            SessionAction::Receive { endpoint, body } => {
+                let end = self.end(scope, endpoint)?;
+                let call = self.call(&Callee::Receive(id), Immediate::from(1_u32))?;
+                let owners = self.owners(NodeAddress::Command(body), scope, Crossed::NONE)?;
+                let resumed = self.frame_label(Some(owners));
+                self.blocks
+                    .push((resumed, Task::Received(body, scope, falls)));
+                self.awaited(continuation, scope, resumed, end, call);
+            },
+            SessionAction::Offer { endpoint, ref arms } => {
+                let end = self.end(scope, endpoint)?;
+                let call = self.call(
+                    &Callee::Offer {
+                        at: id,
+                        labels: arms.keys().cloned().collect(),
+                    },
+                    Immediate::from(1_u32),
+                )?;
+                let mut targets = Vec::with_capacity(arms.len());
+                let mut named = BTreeSet::new();
+                for &arm in arms.values() {
+                    named.extend(self.named(NodeAddress::Command(arm), scope, Crossed::NONE)?);
+                    let label = self.function.label();
+                    let (inner, _) = self.bind(scope, falls);
+                    self.blocks.push((label, Task::Command(arm, inner)));
+                    targets.push(label);
+                }
+                let start = self.owners.len();
+                self.owners.extend(named);
+                let offered = self.frame_label(Some(OwnerRun(start .. self.owners.len())));
+                let branch = self.callee(&Callee::Branch(targets))?;
+                self.blocks.push((offered, Task::Offered(branch)));
+                self.awaited(continuation, scope, offered, end, call);
+            },
+            SessionAction::Fork { child, parent, .. } => {
+                let call = self.call(&Callee::Fork(id), Immediate::from(1_u32))?;
+                let (held, cell) = self.bind(scope, Binding::Linear);
+                let (inner, _) = self.bind(held, falls);
+                self.tasks.push(Task::Command(parent, inner));
+                self.tasks
+                    .push(Task::Emit(StencilId::Bind, cell.operand(), Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Forked(child, scope));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            SessionAction::Place { .. } => return Err(Form::Placement),
+        }
+        Ok(())
+    }
+
+    /// The read of the cell the linear binder `endpoint` of `scope` holds, as
+    /// one instruction to queue.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Unbound`] for a binder no linear slot of `scope` holds.
+    fn end(
+        &self,
+        scope: Scope,
+        endpoint: DeBruijnIndex,
+    ) -> Result<Task, Form>
+    {
+        let cell = self
+            .scopes
+            .slot(scope, Binding::Linear, Index(u32::from(endpoint)))?;
+        Ok(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused))
+    }
+
+    /// Queue an action that may wait: the continuation loaded, the frame at
+    /// `resumed` pushed in the current window, the end read and pushed, the
+    /// call, and the frame popped with the call's answer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn awaited(
+        &mut self,
+        continuation: ConsumerId,
+        scope: Scope,
+        resumed: Label,
+        end: Task,
+        call: Task,
+    )
+    {
+        self.tasks
+            .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+        self.tasks.push(call);
+        self.tasks.push(PUSH);
+        self.tasks.push(end);
+        self.tasks.push(Task::Emit(
+            StencilId::Pushf,
+            Operand::Code(resumed),
+            Operand::Unused,
+        ));
+        self.tasks.push(Task::Load(continuation, scope));
+    }
+
+    /// Record the joined frame's label and queue its block, once: every task
+    /// of a function that acts on a session stands on the frame.
+    ///
+    /// # Specification
+    /// trivial.
+    fn join(&mut self)
+    {
+        if self.joined.is_none() {
+            let owners = self.unowned();
+            let label = self.frame_label(Some(owners));
+            self.blocks.push((label, Task::Joined));
+            self.joined = Some(label);
+        }
+    }
+
     /// Open a closure body: bind its label, emit its entry, and queue what it
     /// runs — a command, or a constant's definition evaluated into its word
     /// and returned to the frame its read pushed; a computed definition's `μ`
@@ -2740,6 +3029,11 @@ impl Lowering<'_>
                 Binding::Temporary,
             ]),
             Entry::Fixpoint(_) => (StencilId::EnterFix, &[Binding::Producer, Binding::Returns]),
+            Entry::Fork(_) => (StencilId::EnterApply, &[
+                Binding::Linear,
+                Binding::Returns,
+                Binding::Temporary,
+            ]),
         };
         let at = self.emit(stencil, Slot(0).operand(), depth.operand());
         let mut scope = body.scope;
@@ -2760,7 +3054,10 @@ impl Lowering<'_>
             }
         }
         match body.entry {
-            Entry::Apply(command) | Entry::Force(command) | Entry::Fixpoint(command) => {
+            Entry::Apply(command)
+            | Entry::Force(command)
+            | Entry::Fixpoint(command)
+            | Entry::Fork(command) => {
                 self.tasks.push(Task::Command(command, scope));
             },
             Entry::Unfold(definition, word) => {
@@ -2881,6 +3178,46 @@ impl Lowering<'_>
                 self.emit(StencilId::Bind, value.operand(), Operand::Unused);
                 let (inner, _) = self.bind(held, Binding::FallThrough);
                 self.tasks.push(Task::Command(body, inner));
+                Ok(())
+            },
+            Task::Received(body, scope, falls) => {
+                let (held, cell) = self.bind(scope, Binding::Linear);
+                self.emit(StencilId::Bind, cell.operand(), Operand::Unused);
+                let (inner, _) = self.bind(held, falls);
+                self.tasks.push(Task::Command(body, inner));
+                Ok(())
+            },
+            Task::Offered(branch) => {
+                self.emit(StencilId::Push, Operand::Unused, Operand::Unused);
+                self.emit(
+                    StencilId::Call,
+                    branch,
+                    Operand::Immediate(Immediate::from(1_u32)),
+                );
+                Ok(())
+            },
+            Task::Forked(child, scope) => {
+                let crossed = Crossed {
+                    producers: 0,
+                    linears: 1,
+                };
+                let (base, label) = self.suspend(
+                    scope,
+                    NodeAddress::Command(child),
+                    crossed,
+                    Entry::Fork(child),
+                    Flavour::Apply,
+                )?;
+                let captures = self.scopes.producers(base).into_iter().flatten().collect();
+                self.cells.push(Cell { label, captures });
+                Ok(())
+            },
+            Task::Joined => {
+                let call = self.call(&Callee::Joined, Immediate::from(1_u32))?;
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
                 Ok(())
             },
             Task::Returned(handle, scope) => {
@@ -3026,7 +3363,8 @@ impl Lowering<'_>
             | CommandNode::Resume { .. }
             | CommandNode::Abandon { .. }
             | CommandNode::Reset { .. }
-            | CommandNode::Shift { .. } => return self.control(id, scope),
+            | CommandNode::Shift { .. }
+            | CommandNode::Session { .. } => return self.control(id, scope),
         };
         self.enter(NodeAddress::Command(id), scope)?;
         let target = arena.consumer(consumer).ok_or(Form::Dangling)?;
@@ -3345,6 +3683,7 @@ impl Lowering<'_>
                             let owners =
                                 self.owners(NodeAddress::Command(body), scope, Crossed {
                                     producers: 1,
+                                    linears: 0,
                                 })?;
                             let label = self.frame_label(Some(owners));
                             self.blocks.push((label, Task::Bound(body, scope)));
@@ -3972,6 +4311,7 @@ impl Lowering<'_>
                 let empty = self.owners(NodeAddress::Command(on_nil), scope, Crossed::NONE)?;
                 let cells = self.owners(NodeAddress::Command(on_cons), scope, Crossed {
                     producers: 2,
+                    linears: 0,
                 })?;
                 let label = self.frame_label(Some(OwnerRun(empty.0.start .. cells.0.end)));
                 self.blocks.push((label, Task::Fold(id, scope)));
@@ -4079,8 +4419,9 @@ fn fused(lowered: Lowered) -> Lowered
 ///   both tiers against stated answers.
 ///
 /// # Errors
-/// The [`Form`] of the first ill-formed or oversized node, or
-/// [`Form::Unowned`] for a node the ownership reading does not place.
+/// The [`Form`] of the first ill-formed or oversized node, [`Form::Unowned`]
+/// for a node the ownership reading does not place, or [`Form::Placement`]
+/// for a buffer's placement.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the named programs halt on both tiers with equal answers:
@@ -4172,6 +4513,7 @@ fn lowered(
         ownership,
         reuses,
         tokens: Vec::new(),
+        joined: None,
     };
     let captures = match root {
         Root::Closed(command) => {
@@ -4271,6 +4613,7 @@ fn lowered(
             .into_iter()
             .map(|(constant, _)| constant)
             .collect(),
+        joined: lowering.joined,
     };
     Ok(lowered)
 }

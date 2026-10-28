@@ -1,13 +1,22 @@
-// The peer's cancellation hop: the scope's clause abandons the rest while its
-// peer still owes a send, and the peer's next action observes the
-// cancellation and abandons its own rest (Fowler, Lindley, Morris and Decova,
-// _Exceptional Asynchronous Session Types_, POPL 2019, doi:10.1145/3290341).
-// No session action runs in the machine yet, so the program checks and does
-// not run.
+// A peer that has sent everything before its scope abandons the rest leaves
+// the run its clause's answer.
+//
+// The run's scheduler starts a fork's child when the root first waits. Here
+// the child sends both payloads and ends before the clause abandons the
+// root's rest.
+//
+// The root takes the first payload, then the exit abandons its continuation
+// with the second payload still on the channel. No cancellation reaches the
+// ended peer, so the run answers `7`.
+//
+// - see: #3305 — the cancellation hop, which a peer still waiting at the
+//   abandonment needs
+// - see: Fowler, Lindley, Morris and Decova, _Exceptional Asynchronous
+//   Session Types_, POPL 2019, doi:10.1145/3290341 — cancellation reaching
+//   the peer
 
-/// A peer cancelled at its next action. It runs to 7 once session actions
-/// run in the machine (#1380).
-@[ runs("unrunnable: `cancelled` did not focus: a session action has no image in the command IL") ]
+/// The peer sends both payloads and ends before the clause abandons the rest.
+@[ runs("7") ]
 def cancelled() -> Integer {
   handle c : Proc {
     fork (peer : !Integer. !Integer. end) {
