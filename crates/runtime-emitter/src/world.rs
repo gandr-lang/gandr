@@ -35,7 +35,6 @@
 //!   the destination.
 
 use alloc::vec::Vec;
-use core::fmt;
 use core::num::NonZeroU64;
 use std::sync::LazyLock;
 use std::sync::Mutex;
@@ -48,6 +47,7 @@ use gandr_core_sequent::Definitions;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
+use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_runtime_stencils::Fuel;
@@ -83,58 +83,6 @@ const CAP: NonZeroU64 = match NonZeroU64::new(64) {
 /// The process's chunk store, which every world reaches.
 static CAM: LazyLock<Mutex<InMemoryChunkStore>> =
     LazyLock::new(|| Mutex::new(InMemoryChunkStore::new()));
-
-/// Why a migration answered nothing.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Unmigrated
-{
-    /// No world binding of the host names a host for the world.
-    UnboundWorld,
-    /// The host the world is bound to was not reached, or the exchange with
-    /// it failed.
-    Unreached,
-    /// The host the world is bound to holds no code the migration names.
-    Unheld,
-    /// The host the world is bound to does not stand at it.
-    Unserved,
-    /// A capture did not reach the host the world is bound to.
-    Unfetched,
-    /// The body ran to no value at its world, or a value it took or answered
-    /// did not cross.
-    Unanswered,
-}
-
-impl fmt::Display for Unmigrated
-{
-    /// The reason by its name, then what it means.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(match *self {
-            Self::UnboundWorld => {
-                "UnboundWorld: no world binding of the host names a host for its world, and \
-                 nothing was sent"
-            },
-            Self::Unreached => "Unreached: the host its world is bound to was not reached",
-            Self::Unheld => "Unheld: the host its world is bound to holds no such code",
-            Self::Unserved => "Unserved: the host its world is bound to does not stand at it",
-            Self::Unfetched => "Unfetched: a capture did not reach the host its world is bound to",
-            Self::Unanswered => {
-                "Unanswered: it ran to no value at its world, or a value it took or answered did \
-                 not cross"
-            },
-        })
-    }
-}
 
 /// The chunker's constants every crossing between worlds commits and reads
 /// under, in this process and between hosts.

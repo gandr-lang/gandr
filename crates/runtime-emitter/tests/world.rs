@@ -22,6 +22,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
@@ -48,7 +49,6 @@ use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
-use gandr_runtime_emitter::world::Unmigrated;
 use gandr_runtime_emitter::world::arrive;
 
 /// The jumps a run may take: no test program comes near.

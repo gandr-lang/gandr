@@ -21,10 +21,11 @@ path = "tests/lib.rs"
 # iroh dials and accepts; the mDNS lookup finds peers on the local network
 # when a binding asks for it; tokio runs the endpoint's thread. The value
 # plane holds the chunks an endpoint serves and fetches, and verifies each
-# on receipt. The pinned anodized facade supplies the specification
-# attribute.
+# on receipt. The core's world vocabulary names why a migration answered
+# nothing. The pinned anodized facade supplies the specification attribute.
 [dependencies]
 anodized.workspace = true
+gandr-core-term.workspace = true
 gandr-storage-values.workspace = true
 iroh.workspace = true
 iroh-mdns-address-lookup.workspace = true

@@ -67,11 +67,20 @@
 //! stands where the form stands. No case binds in the linear zone, so a
 //! rewrite of the linear indices passes through a world form unchanged.
 //!
+//! # A migration that answers nothing
+//!
+//! [`Unmigrated`] names why: the run that asked declines with it, and a host
+//! that was shipped a migration answers with it. Which host a world is bound
+//! to stays the host's, so two of its reasons, [`Unmigrated::UnboundWorld`]
+//! and [`Unmigrated::Unreached`], arise only where the migration was asked.
+//!
 //! # References
 //!
 //! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
 //!   per-world LAMs and the one CAM a crossing passes through, and `Open`,
 //!   the representation half of a crossing.
+
+use core::fmt;
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
@@ -96,6 +105,58 @@ pub enum World
     Host,
     /// The world the `world w ;` declaration at this position declares.
     Declared(ConstantIndex),
+}
+
+/// Why a migration answered nothing.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Unmigrated
+{
+    /// No world binding of the host names a host for the world.
+    UnboundWorld,
+    /// The host the world is bound to was not reached, or the exchange with
+    /// it failed.
+    Unreached,
+    /// The host the world is bound to holds no code the migration names.
+    Unheld,
+    /// The host the world is bound to does not stand at it.
+    Unserved,
+    /// A capture did not reach the host the world is bound to.
+    Unfetched,
+    /// The body ran to no value at its world, or a value it took or answered
+    /// did not cross.
+    Unanswered,
+}
+
+impl fmt::Display for Unmigrated
+{
+    /// The reason by its name, then what it means.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::UnboundWorld => {
+                "UnboundWorld: no world binding of the host names a host for its world, and \
+                 nothing was sent"
+            },
+            Self::Unreached => "Unreached: the host its world is bound to was not reached",
+            Self::Unheld => "Unheld: the host its world is bound to holds no such code",
+            Self::Unserved => "Unserved: the host its world is bound to does not stand at it",
+            Self::Unfetched => "Unfetched: a capture did not reach the host its world is bound to",
+            Self::Unanswered => {
+                "Unanswered: it ran to no value at its world, or a value it took or answered did \
+                 not cross"
+            },
+        })
+    }
 }
 
 /// A value type that names a world: a handle held at one, or the capability

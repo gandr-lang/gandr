@@ -14,6 +14,7 @@ use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::Store;
+use gandr_core_term::world::Unmigrated;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -28,7 +29,6 @@ use gandr_runtime_net::Configuration;
 use gandr_runtime_net::Endpoint;
 use gandr_runtime_net::Fault;
 use gandr_runtime_net::Peer;
-use gandr_runtime_net::Refusal;
 use gandr_runtime_net::Secret;
 use gandr_runtime_net::WORLDS_ALPN;
 use gandr_runtime_net::WorldName;
@@ -216,12 +216,20 @@ fn a_migration_runs_at_the_far_host_and_its_answer_comes_back()
     drop(far);
 }
 
-/// A far owner that does not stand at the world refuses without fetching:
-/// the refusal crosses back, the far store stays empty, and the asker's
-/// holds only its capture.
+/// A far owner that runs nothing refuses without fetching, by each reason in
+/// turn: every refusal crosses back as itself, the far store stays empty,
+/// and the asker's holds only its capture.
 #[test]
 fn a_refusal_crosses_back_and_nothing_is_fetched()
 {
+    const REASONS: [Unmigrated; 6] = [
+        Unmigrated::UnboundWorld,
+        Unmigrated::Unreached,
+        Unmigrated::Unheld,
+        Unmigrated::Unserved,
+        Unmigrated::Unfetched,
+        Unmigrated::Unanswered,
+    ];
     let (near_chunks, far_chunks) = (Chunks::new(), Chunks::new());
     let (mut near, mut far) = (on_loopback(&near_chunks), on_loopback(&far_chunks));
     let mut here = Store::new();
@@ -230,27 +238,33 @@ fn a_refusal_crosses_back_and_nothing_is_fetched()
         commit(&here, value, params(), &mut *near_chunks.lock()).expect("an integer crosses");
     let far_peer = peer_of(&far);
     let serving = thread::spawn(move || {
-        let arrival = far.arrive().expect("the migration arrives");
-        far.answer(arrival.id, &Answer::Refused(Refusal::Unserved))
-            .expect("the refusal is sent");
+        for reason in REASONS {
+            let arrival = far.arrive().expect("the migration arrives");
+            far.answer(arrival.id, &Answer::Refused(reason))
+                .expect("the refusal is sent");
+        }
         far
     });
-    let answer = near
-        .migrate(&far_peer, &swap(vec![capture]))
-        .expect("the migration completes");
+    let answers: Vec<Answer> = REASONS
+        .iter()
+        .map(|_reason| {
+            near.migrate(&far_peer, &swap(vec![capture]))
+                .expect("the migration completes")
+        })
+        .collect();
     let far = serving.join().expect("the far owner refuses");
     assert_eq!(
         (
-            answer,
+            answers,
             far_chunks.lock().chunk_count(),
             near_chunks.lock().chunk_count()
         ),
         (
-            Answer::Refused(Refusal::Unserved),
+            REASONS.map(Answer::Refused).to_vec(),
             ChunkCount::from(0_usize),
             ChunkCount::from(1_usize)
         ),
-        "the refusal comes back and no chunk moved"
+        "each refusal comes back as itself and no chunk moved"
     );
     drop(far);
 }
@@ -338,7 +352,7 @@ fn a_configuration_that_does_not_frame_is_never_offered()
     let asker = near.node_id();
     let serving = thread::spawn(move || {
         let arrival = far.arrive().expect("a migration arrives");
-        far.answer(arrival.id, &Answer::Refused(Refusal::Unheld))
+        far.answer(arrival.id, &Answer::Refused(Unmigrated::Unheld))
             .expect("the refusal is sent");
         (far, arrival.from)
     });
@@ -348,7 +362,7 @@ fn a_configuration_that_does_not_frame_is_never_offered()
     let (far, from) = serving.join().expect("the far owner answers");
     assert_eq!(
         (refused, from, answer),
-        (true, asker, Answer::Refused(Refusal::Unheld)),
+        (true, asker, Answer::Refused(Unmigrated::Unheld)),
         "the unframed dialer is closed, and the first arrival is the asker's"
     );
     drop(far);

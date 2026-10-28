@@ -150,6 +150,7 @@ digraph crates {
   "runtime-emitter" -> "storage-chunker";
   "runtime-emitter" -> "storage-values";
   "runtime-emitter" -> "theory-cell-complexes";
+  "runtime-net" -> "core-term";
   "runtime-net" -> "storage-values";
   "storage-artifact" -> "kernel-term";
   "storage-artifact" -> "storage-records";

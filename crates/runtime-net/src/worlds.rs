@@ -7,8 +7,9 @@
 //! finishes its side. The far host fetches each capture's chunks it lacks
 //! from the asker over the same connection, as the chunk wire fetches, runs
 //! the code, commits its answer, and answers with the answer's manifest or
-//! with the [`Refusal`] that ran nothing. The asker then fetches the answer's
-//! chunks over the connection, naming its captures held, and closes it:
+//! with the [`Unmigrated`] reason it ran nothing. The asker then fetches the
+//! answer's chunks over the connection, naming its captures held, and closes
+//! it:
 //!
 //! ```text
 //! configuration := part(code) part(world) part(capture)*
@@ -38,13 +39,14 @@
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::world::Unmigrated;
 use gandr_storage_values::ValueManifest;
 
-use crate::chunks::Framed;
-use crate::chunks::Malformed;
-use crate::chunks::Part;
-use crate::chunks::Parts;
 use crate::endpoint::Fault;
+use crate::frame::Framed;
+use crate::frame::Malformed;
+use crate::frame::Part;
+use crate::frame::Parts;
 use crate::peer::NodeId;
 
 /// The protocol name a host takes migrations under, offered beside
@@ -54,17 +56,25 @@ pub const WORLDS_ALPN: &[u8] = b"gandr/worlds/0";
 /// The tag an answer carrying a value's manifest opens with.
 const ANSWERED: u8 = 0;
 
-/// The tag of [`Refusal::Unheld`].
+/// The tag of [`Unmigrated::Unheld`].
 const UNHELD: u8 = 1;
 
-/// The tag of [`Refusal::Unserved`].
+/// The tag of [`Unmigrated::Unserved`].
 const UNSERVED: u8 = 2;
 
-/// The tag of [`Refusal::Unfetched`].
+/// The tag of [`Unmigrated::Unfetched`].
 const UNFETCHED: u8 = 3;
 
-/// The tag of [`Refusal::Unanswered`].
+/// The tag of [`Unmigrated::Unanswered`].
 const UNANSWERED: u8 = 4;
+
+/// The tag of [`Unmigrated::UnboundWorld`], a reason that arises where a
+/// migration is asked: the wire frames it so that every answer frames.
+const UNBOUND_WORLD: u8 = 5;
+
+/// The tag of [`Unmigrated::Unreached`], a reason that arises where a
+/// migration is asked: the wire frames it so that every answer frames.
+const UNREACHED: u8 = 6;
 
 /// The bytes naming the code a migration runs, which only the far host reads.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -281,41 +291,6 @@ impl Configuration
     }
 }
 
-/// Why a far host ran no migration.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Refusal
-{
-    /// The host holds no code the configuration names.
-    Unheld,
-    /// The host does not stand at the world the configuration names.
-    Unserved,
-    /// A capture's chunks did not reach the host whole.
-    Unfetched,
-    /// The run answered no value, or its answer did not cross.
-    Unanswered,
-}
-
-impl fmt::Display for Refusal
-{
-    /// Why the far host ran nothing, in a sentence fragment.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(match *self {
-            Self::Unheld => "the far host holds no code the migration names",
-            Self::Unserved => "the far host does not stand at the world",
-            Self::Unfetched => "a capture did not reach the far host whole",
-            Self::Unanswered => "the far run answered no value that crosses",
-        })
-    }
-}
-
 /// What a far host answered a migration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Answer
@@ -323,7 +298,7 @@ pub enum Answer
     /// The run's answer, by the manifest the far host committed it under.
     Answered(ValueManifest),
     /// Why it ran nothing.
-    Refused(Refusal),
+    Refused(Unmigrated),
 }
 
 impl Answer
@@ -354,10 +329,12 @@ impl Answer
         let mut framed = Framed::default();
         let tag = match *self {
             Self::Answered(_) => ANSWERED,
-            Self::Refused(Refusal::Unheld) => UNHELD,
-            Self::Refused(Refusal::Unserved) => UNSERVED,
-            Self::Refused(Refusal::Unfetched) => UNFETCHED,
-            Self::Refused(Refusal::Unanswered) => UNANSWERED,
+            Self::Refused(Unmigrated::Unheld) => UNHELD,
+            Self::Refused(Unmigrated::Unserved) => UNSERVED,
+            Self::Refused(Unmigrated::Unfetched) => UNFETCHED,
+            Self::Refused(Unmigrated::Unanswered) => UNANSWERED,
+            Self::Refused(Unmigrated::UnboundWorld) => UNBOUND_WORLD,
+            Self::Refused(Unmigrated::Unreached) => UNREACHED,
         };
         framed.push(&[Part(&[tag])])?;
         if let Self::Answered(manifest) = *self {
@@ -395,10 +372,12 @@ impl Answer
                     ValueManifest::decode(manifest.manifest()).map_err(|_undecoded| Malformed)?,
                 )
             },
-            [UNHELD] => Self::Refused(Refusal::Unheld),
-            [UNSERVED] => Self::Refused(Refusal::Unserved),
-            [UNFETCHED] => Self::Refused(Refusal::Unfetched),
-            [UNANSWERED] => Self::Refused(Refusal::Unanswered),
+            [UNHELD] => Self::Refused(Unmigrated::Unheld),
+            [UNSERVED] => Self::Refused(Unmigrated::Unserved),
+            [UNFETCHED] => Self::Refused(Unmigrated::Unfetched),
+            [UNANSWERED] => Self::Refused(Unmigrated::Unanswered),
+            [UNBOUND_WORLD] => Self::Refused(Unmigrated::UnboundWorld),
+            [UNREACHED] => Self::Refused(Unmigrated::Unreached),
             _ => return Err(Malformed),
         };
         match parts.next() {

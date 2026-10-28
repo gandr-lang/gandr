@@ -7,12 +7,12 @@
 //! sends the manifest of the value it wants, then the manifest of each value
 //! whose chunks it holds whole, and finishes its side. The holder answers
 //! with every chunk of the wanted value's closure that no held value's
-//! closure contains, each under its digest, and finishes:
+//! closure contains, each under its digest, and finishes. Each is a part as
+//! every wire frames one ([`Framed`]):
 //!
 //! ```text
 //! request     := part(wanted) part(held)*
 //! answer      := part(digest || image)*
-//! part(bytes) := u32le length || bytes, at most MAX_FRAME bytes
 //! ```
 //!
 //! The asker verifies every chunk against the digest it came under before it
@@ -63,16 +63,17 @@ use gandr_storage_values::ChunkDigest;
 use gandr_storage_values::ChunkImage;
 use gandr_storage_values::ChunkStore as _;
 use gandr_storage_values::InMemoryChunkStore;
-use gandr_storage_values::ManifestImage;
 use gandr_storage_values::StoredChunkRef;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::ValueManifest;
 use gandr_storage_values::verify_chunk_image;
 
 use crate::endpoint::Fault;
-use crate::endpoint::Oversized;
-use crate::endpoint::PREFIX;
-use crate::endpoint::Prefix;
+use crate::frame::Framed;
+use crate::frame::Malformed;
+use crate::frame::Oversized;
+use crate::frame::Part;
+use crate::frame::Parts;
 use crate::peer::NodeId;
 
 /// The protocol name a holder answers fetches under, offered beside
@@ -251,12 +252,6 @@ pub struct Fetched
     pub bytes: u64,
 }
 
-/// A request or an answer: parts, each a little-endian `u32` length, then
-/// that many bytes, at most [`MAX_FRAME`](crate::MAX_FRAME).
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct Framed(Vec<u8>);
-
 impl Framed
 {
     /// The request for `wanted`, naming each of `held` as held whole.
@@ -288,72 +283,7 @@ impl Framed
         }
         Ok(request)
     }
-
-    /// Append one part, `pieces` one after another, its length first.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: on success, the bytes grew by the prefix and the pieces; on
-    ///   failure, they are unchanged.
-    /// - fails: [`Oversized`] for pieces longer than
-    ///   [`MAX_FRAME`](crate::MAX_FRAME) together.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`Oversized`], carrying the part's length.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — every part a request and an answer carry reads back
-    ///   whole at the other end.
-    /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
-    #[spec(captures: before = self.0.len(), ensures: |ret| ret.is_ok() || self.0.len() == before)]
-    pub(super) fn push(
-        &mut self,
-        pieces: &[Part<'_>],
-    ) -> Result<(), Oversized>
-    {
-        let length = pieces
-            .iter()
-            .fold(0_usize, |sum, piece| sum.saturating_add(piece.0.len()));
-        let prefix = Prefix::try_from(length)?;
-        self.0.reserve(length.saturating_add(PREFIX));
-        self.0.extend_from_slice(&<[u8; PREFIX]>::from(prefix));
-        for piece in pieces {
-            self.0.extend_from_slice(piece.0);
-        }
-        Ok(())
-    }
 }
-
-impl From<Vec<u8>> for Framed
-{
-    /// The parts `bytes` hold, read as they arrived.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(bytes: Vec<u8>) -> Self
-    {
-        Self(bytes)
-    }
-}
-
-impl AsRef<[u8]> for Framed
-{
-    /// The bytes, borrowed.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn as_ref(&self) -> &[u8]
-    {
-        &self.0
-    }
-}
-
-/// Bytes this protocol does not frame.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Malformed;
 
 /// Why a holder refused a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -406,22 +336,8 @@ impl From<Oversized> for Unanswered
     }
 }
 
-/// The bytes of one part.
-#[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-pub struct Part<'bytes>(pub &'bytes [u8]);
-
 impl<'bytes> Part<'bytes>
 {
-    /// The part read as a manifest image.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn manifest(self) -> ManifestImage<'bytes>
-    {
-        ManifestImage::from(self.0)
-    }
-
     /// The part read as a digest, then the chunk image it names.
     ///
     /// # Specification
@@ -439,41 +355,5 @@ impl<'bytes> Part<'bytes>
             ChunkDigest::from(*digest),
             ChunkImage::from(image),
         ))
-    }
-}
-
-/// The parts of a request or an answer not yet read, in order.
-#[derive(Clone, Debug)]
-#[repr(transparent)]
-pub struct Parts<'bytes>(pub &'bytes [u8]);
-
-impl<'bytes> Iterator for Parts<'bytes>
-{
-    type Item = Result<Part<'bytes>, Malformed>;
-
-    /// The next part, or [`Malformed`] once for bytes that do not frame,
-    /// after which nothing is read.
-    ///
-    /// # Specification
-    /// trivial.
-    fn next(&mut self) -> Option<Self::Item>
-    {
-        if self.0.is_empty() {
-            return None;
-        }
-        let framed = self
-            .0
-            .split_first_chunk::<PREFIX>()
-            .and_then(|(&prefix, rest)| {
-                let length = Prefix::try_from(prefix).ok()?;
-                rest.split_at_checked(usize::from(length))
-            });
-        let Some((part, rest)) = framed
-        else {
-            self.0 = &[];
-            return Some(Err(Malformed));
-        };
-        self.0 = rest;
-        Some(Ok(Part(part)))
     }
 }
