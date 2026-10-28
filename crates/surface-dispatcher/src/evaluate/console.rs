@@ -1,11 +1,15 @@
-//! The console a run writes to: where the lines `Console.print` performs go.
+//! The console a run writes to and reads from: where the lines `Console.print`
+//! and `Stderr.eprint` perform go, and where `Stdin.read_line` reads.
 //!
 //! The host at a program's entry hands each line to a [`Console`]: the driver's
-//! writes it to standard output, and [`Captured`] keeps it, so a test or a
-//! corpus expectation reads what the program printed. Both are models of the
-//! one `Console` interface, and a program runs unchanged under either.
+//! writes it to standard output or standard error and reads standard input,
+//! and [`Captured`] keeps the lines and answers from the input it was fed, so a
+//! test or a corpus expectation reads what the program printed. Both are
+//! models of the three stream interfaces, and a program runs unchanged under
+//! either.
 
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::convert::Infallible;
@@ -15,7 +19,10 @@ use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::ProducerArity;
 use gandr_core_term::effect::host::CONSOLE;
+use gandr_core_term::effect::host::STDERR;
+use gandr_core_term::effect::host::STDIN;
 use gandr_kernel_term::Literal;
+use gandr_kernel_term::StringLiteral;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
@@ -24,6 +31,41 @@ use gandr_runtime_emitter::HostValues;
 /// The operation of [`CONSOLE`] that writes a line.
 const PRINT: &str = "print";
 
+/// The operation of [`STDERR`] that writes a line.
+const EPRINT: &str = "eprint";
+
+/// The operation of [`STDIN`] that reads a line.
+const READ_LINE: &str = "read_line";
+
+/// The standard stream a host operation meets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stream
+{
+    /// Standard output, `Console.print`.
+    Out,
+    /// Standard error, `Stderr.eprint`.
+    Err,
+    /// Standard input, `Stdin.read_line`.
+    In,
+}
+
+/// The standard stream `request` meets, or none for any other operation.
+///
+/// # Specification
+/// trivial.
+fn stream(request: &HostRequest<'_>) -> Option<Stream>
+{
+    match (
+        request.signature.name().as_ref(),
+        request.operation.as_ref(),
+    ) {
+        (CONSOLE, PRINT) => Some(Stream::Out),
+        (STDERR, EPRINT) => Some(Stream::Err),
+        (STDIN, READ_LINE) => Some(Stream::In),
+        _ => None,
+    }
+}
+
 /// Whether a console wrote a line.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Printed
@@ -31,6 +73,16 @@ pub enum Printed
     /// The line was written.
     Written,
     /// The console could not write it.
+    Failed,
+}
+
+/// What reading a line of input came to.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Input
+{
+    /// The next line, its newline kept; the empty string at the end of input.
+    Line(String),
+    /// The console could not read.
     Failed,
 }
 
@@ -65,10 +117,10 @@ impl AsRef<str> for Line<'_>
     }
 }
 
-/// Where a run's printed lines go.
+/// Where a run's printed lines go and where its input comes from.
 pub trait Console
 {
-    /// Write `line` as one line.
+    /// Write `line` as one line to standard output.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -87,20 +139,74 @@ pub trait Console
         &mut self,
         line: Line<'_>,
     ) -> Printed;
+
+    /// Write `line` as one line to standard error.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Printed::Written`] once the line is written whole, as one
+    ///   line, apart from the lines [`Self::print`] writes; [`Printed::Failed`]
+    ///   when it could not be.
+    /// - executable: none — the trait states the console's obligation; each
+    ///   body is an implementor's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an entry writing to both streams leaves each line in
+    ///   its own stream of [`Captured`], in order.
+    /// - witness: `evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
+    fn eprint(
+        &mut self,
+        line: Line<'_>,
+    ) -> Printed;
+
+    /// Read the next line of input.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Input::Line`] with the next line and its newline, or the
+    ///   empty string once the input is spent; [`Input::Failed`] when it could
+    ///   not be read.
+    /// - executable: none — the trait states the console's obligation; each
+    ///   body is an implementor's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an entry reading two lines from [`Captured`] fed one
+    ///   reads it and then the empty string.
+    /// - witness: `evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
+    fn read_line(&mut self) -> Input;
 }
 
-/// A console keeping every line it is handed, in order.
+/// A console keeping every line it is handed, in order, each stream apart,
+/// and answering reads from the input it was fed.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct Captured
 {
-    /// The lines written, the first first.
+    /// The lines written to standard output, the first first.
     lines: Vec<String>,
+    /// The lines written to standard error, the first first.
+    errors: Vec<String>,
+    /// The input not yet read, the next first.
+    input: VecDeque<String>,
 }
 
 impl Captured
 {
-    /// The lines written, the first first.
+    /// A console reading `input`, each line with its newline, the first first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn fed(input: Vec<String>) -> Self
+    {
+        Self {
+            lines: Vec::new(),
+            errors: Vec::new(),
+            input: VecDeque::from(input),
+        }
+    }
+
+    /// The lines written to standard output, the first first.
     ///
     /// # Specification
     /// trivial.
@@ -109,6 +215,17 @@ impl Captured
     pub fn lines(&self) -> &[String]
     {
         &self.lines
+    }
+
+    /// The lines written to standard error, the first first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn errors(&self) -> &[String]
+    {
+        &self.errors
     }
 }
 
@@ -127,26 +244,53 @@ impl Console for Captured
         self.lines.push(String::from(line.as_ref()));
         Printed::Written
     }
+
+    /// Keep `line` as standard error's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eprint(
+        &mut self,
+        line: Line<'_>,
+    ) -> Printed
+    {
+        self.errors.push(String::from(line.as_ref()));
+        Printed::Written
+    }
+
+    /// The next line fed, or the empty string once they are spent.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn read_line(&mut self) -> Input
+    {
+        Input::Line(self.input.pop_front().unwrap_or_default())
+    }
 }
 
-/// Serve the `Console.print` `request` offers on `console`: the reply the
-/// host gives, or nothing when the request is another operation.
+/// Serve the standard-stream `request` offers on `console`: the reply the host
+/// gives, or nothing when the request is another operation.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: for `Console.print` with a string payload, the line handed to
-///   `console` and the unit allocated as the reply; a decline when the payload
-///   is no string, the console failed, or the store refused the reply; nothing
-///   for any other operation.
+/// - ensures: for `Console.print` and `Stderr.eprint` with a string payload,
+///   the line handed to `console` on its stream and the unit allocated as the
+///   reply; for `Stdin.read_line`, the line `console` reads allocated as the
+///   reply. A decline when a written payload is no string, the console failed,
+///   or the store refused the reply; nothing for any other operation.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Console::print`].
+/// - hypothesis: L3 — as [`Console::print`], [`Console::eprint`] and
+///   [`Console::read_line`].
 /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
+/// - witness: `evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
 #[spec(
-    captures: [printing = request.signature.name().as_ref() == CONSOLE && request.operation.as_ref() == PRINT],
-    ensures: |ret| ret.is_none() || printing,
+    captures: [streaming = stream(&request).is_some()],
+    ensures: |ret| ret.is_none() || streaming,
 )]
 pub(super) fn served<Abort>(
     console: &mut dyn Console,
@@ -154,14 +298,30 @@ pub(super) fn served<Abort>(
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>
 {
-    if request.signature.name().as_ref() != CONSOLE || request.operation.as_ref() != PRINT {
-        return None;
+    let met = stream(&request)?;
+    if met == Stream::In {
+        let Input::Line(line) = console.read_line()
+        else {
+            return Some(HostReply::Decline);
+        };
+        return Some(
+            values
+                .allocate(HeapValue::Literal(Literal::Text(StringLiteral::new(line))))
+                .map_or(HostReply::Decline, HostReply::Resume),
+        );
     }
     let Some(&HeapValue::Literal(Literal::Text(ref text))) = values.value(request.payload)
     else {
         return Some(HostReply::Decline);
     };
-    if console.print(Line::from(text.as_ref())) == Printed::Failed {
+    let line = Line::from(text.as_ref());
+    let written = if met == Stream::Err {
+        console.eprint(line)
+    }
+    else {
+        console.print(line)
+    };
+    if written == Printed::Failed {
         return Some(HostReply::Decline);
     }
     Some(
@@ -174,8 +334,8 @@ pub(super) fn served<Abort>(
     )
 }
 
-/// The host of a run that only prints: `Console.print` writes to its
-/// console, and every other operation is declined.
+/// The host of a run that only meets the standard streams: each of their
+/// operations is served on its console, and every other one is declined.
 #[repr(transparent)]
 pub(super) struct PrintingHost<'console>
 {
@@ -199,8 +359,8 @@ impl HostHandler for PrintingHost<'_>
 {
     type Abort = Infallible;
 
-    /// Write a `Console.print` line to the console and resume with the unit;
-    /// decline every other operation.
+    /// Serve a standard-stream operation on the console; decline every other
+    /// operation.
     ///
     /// # Specification
     /// trivial.

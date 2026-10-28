@@ -1,0 +1,29 @@
+// A program reading a line through `std` and answering on one of two streams.
+//
+// `main` is handed the ambient authority and opens the console from it, so
+// all three standard streams cross from that one capability. Nothing reaches
+// them through the ambient interfaces.
+//
+// `read_line` keeps the line's newline, so `yes` arrives as `"yes\n"`. `gandr
+// run answer.gandr` prints `agreed` on standard output for it, and `declined`
+// on standard error for anything else.
+//
+// - see: `../../../library/std/src/console.gandr` — `print`, `eprint` and
+//   `read_line`
+// - see: #2970 — `std.authority` and `std.console`
+
+// `Authority`, `console`.
+import "../../../library/std/src/authority.gandr";
+
+// `print`, `eprint`, `read_line`.
+import "../../../library/std/src/console.gandr";
+
+/// The entry: it reads one line and answers it.
+def main(authority : Authority) -> [Console, Stderr, Stdin] Unit {
+  run answer <- read_line(console(authority));
+  if answer == "yes\n" {
+    print(console(authority), "agreed")
+  } else {
+    eprint(console(authority), "declined")
+  }
+}

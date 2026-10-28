@@ -19,6 +19,7 @@ use super::program_entry;
 use crate::evaluate::Captured;
 use crate::evaluate::Console;
 use crate::evaluate::Evaluation;
+use crate::evaluate::Input;
 use crate::evaluate::Line;
 use crate::evaluate::Printed;
 use crate::evaluate::tests::program;
@@ -254,6 +255,36 @@ fn an_entry_prints_through_its_authority_2970()
     assert_eq!(console.lines(), ["hello", "world"], "each line, in order");
 }
 
+/// An entry reads standard input a line at a time, each with its newline and
+/// the empty string once the input is spent, and writes standard output and
+/// standard error apart, each stream an interface of its own (#2970).
+#[test]
+fn an_entry_reads_and_writes_the_three_streams_2970()
+{
+    let source = "def main() -> -F [Console, Stderr, Stdin] Unit {\n  \
+                  run first <- Stdin.read_line(unit);\n  \
+                  run second <- Stdin.read_line(unit);\n  \
+                  Console.print(first);\n  \
+                  Stderr.eprint(second)\n}\n";
+    let mut ran = program(source);
+    let Maybe::Present(entry) = ran.entry()
+    else {
+        panic!("an entry: {source}");
+    };
+    let mut console = Captured::fed(alloc::vec![String::from("hello\n")]);
+    assert_eq!(
+        ran.enter(entry, &[], &mut console, (None, None)),
+        Entered::Exited(ExitStatus(0)),
+        "the unit exits with 0"
+    );
+    assert_eq!(console.lines(), ["hello\n"], "the line read, newline kept");
+    assert_eq!(
+        console.errors(),
+        [""],
+        "the end of input is the empty string"
+    );
+}
+
 /// A console failing every line it is handed, counting them.
 #[repr(transparent)]
 struct Refusing
@@ -275,5 +306,28 @@ impl Console for Refusing
     {
         self.asked = self.asked.saturating_add(1);
         Printed::Failed
+    }
+
+    /// Count the line and fail it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn eprint(
+        &mut self,
+        _line: Line<'_>,
+    ) -> Printed
+    {
+        self.asked = self.asked.saturating_add(1);
+        Printed::Failed
+    }
+
+    /// Count the read and fail it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_line(&mut self) -> Input
+    {
+        self.asked = self.asked.saturating_add(1);
+        Input::Failed
     }
 }

@@ -335,6 +335,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Identity;
+use gandr_surface_dispatcher::Input;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
 use gandr_surface_dispatcher::LIBRARY;
@@ -2581,9 +2582,10 @@ fn doubled(doubled: Doubled) -> ExitCode
 ///   migrations sent where `hosting`'s bindings bind them, or its worlds served
 ///   when `hosting` serves, the network bound first and its peer spelling,
 ///   `<key>@<ip:port>`, the first line on standard error: what it prints goes
-///   to standard output, its diagnostics to standard error and its run status
-///   chooses the exit. A staging follows [`stage`], a formatting [`fmt`], a
-///   ledger task [`ledger`], and a census [`cells`].
+///   to standard output, what it writes to standard error goes there beside its
+///   diagnostics, the lines it reads come from standard input, and its run
+///   status chooses the exit. A staging follows [`stage`], a formatting
+///   [`fmt`], a ledger task [`ledger`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -3686,6 +3688,7 @@ const fn worse(
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
 /// - witness: `tests::cli::a_program_prints_hello_world_2279`
+/// - witness: `tests::cli::a_program_reads_and_answers_on_the_standard_streams_2970`
 /// - witness: `tests::net::two_processes_run_the_far_world_s_migrations_there`
 fn script(
     runnable: &mut Script,
@@ -3694,7 +3697,11 @@ fn script(
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
-    let ran = runnable.run(&mut Lines { out: &mut *stdout });
+    let ran = runnable.run(&mut Lines {
+        out: &mut *stdout,
+        err: &mut *stderr,
+        input: &mut std::io::stdin().lock(),
+    });
     let status = ran.status();
     let mut exited = None;
     match ran {
@@ -3783,12 +3790,16 @@ fn script(
 }
 
 /// The console `gandr run` hands a program: each line it prints written to
-/// `out`, standard output, as one line.
-#[repr(transparent)]
+/// `out`, standard output, or `err`, standard error, as one line, and each line
+/// it reads read from `input`, standard input.
 struct Lines<'out>
 {
-    /// Where the lines go.
+    /// Where standard output's lines go.
     out: &'out mut dyn std::io::Write,
+    /// Where standard error's lines go.
+    err: &'out mut dyn std::io::Write,
+    /// Where input is read from.
+    input: &'out mut dyn std::io::BufRead,
 }
 
 impl Console for Lines<'_>
@@ -3805,6 +3816,35 @@ impl Console for Lines<'_>
         match writeln!(self.out, "{}", line.as_ref()) {
             Ok(()) => Printed::Written,
             Err(_) => Printed::Failed,
+        }
+    }
+
+    /// Write `line` and a newline to `err`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn eprint(
+        &mut self,
+        line: Line<'_>,
+    ) -> Printed
+    {
+        match writeln!(self.err, "{}", line.as_ref()) {
+            Ok(()) => Printed::Written,
+            Err(_) => Printed::Failed,
+        }
+    }
+
+    /// The next line of `input`, its newline kept; the empty string at its
+    /// end. A line that is not UTF-8 fails.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_line(&mut self) -> Input
+    {
+        let mut line = String::new();
+        match self.input.read_line(&mut line) {
+            Ok(_) => Input::Line(line),
+            Err(_) => Input::Failed,
         }
     }
 }

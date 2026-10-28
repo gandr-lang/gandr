@@ -24,6 +24,14 @@
 //! writes it to standard output; a host capturing it, as a test's does, keeps
 //! the lines instead, and the program runs unchanged under either.
 //!
+//! `Stderr` is the process's error stream: `eprint` takes a string and replies
+//! the unit once the host has written it as one line to standard error.
+//! `Stdin` is its input: `read_line` takes the unit and replies the next line
+//! with its newline kept, so the end of input is the empty string and an empty
+//! line is a newline alone. The three standard streams are three interfaces,
+//! as `cap-std` holds three handles, so a handler of one covers its own
+//! operations alone.
+//!
 //! `Net` is a stream to a peer. `connect` takes the peer, its key spelled in
 //! hex and then any `@<ip:port>` the dialer may try, and replies a stream;
 //! `accept` takes the unit and replies the dialing peer's key and a stream;
@@ -74,10 +82,15 @@ pub const RING: &str = "Ring";
 pub const DIV: &str = "Div";
 /// The console interface: a line written to the process's output.
 pub const CONSOLE: &str = "Console";
+/// The error stream interface: a line written to the process's standard
+/// error.
+pub const STDERR: &str = "Stderr";
+/// The input interface: a line read from the process's standard input.
+pub const STDIN: &str = "Stdin";
 /// The network interface: a stream to a peer named by its key.
 pub const NET: &str = "Net";
 
-/// The eight interfaces, sharing their arena-owned payload and reply types.
+/// The ten interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -95,6 +108,10 @@ pub struct HostSignatures
     pub div: EffectSig,
     /// Write a line to the console.
     pub console: EffectSig,
+    /// Write a line to standard error.
+    pub stderr: EffectSig,
+    /// Read a line from standard input.
+    pub stdin: EffectSig,
     /// Open, accept, write, read and close a stream to a peer.
     pub net: EffectSig,
 }
@@ -223,7 +240,7 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div, &host.console, &host.net].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div, &host.console, &host.stderr, &host.stdin, &host.net].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
@@ -324,6 +341,16 @@ impl HostSignatures
             payload: string,
             reply: unit,
         }])?;
+        let stderr = EffectSig::new(STDERR.into(), [EffectOp {
+            name: "eprint".into(),
+            payload: string,
+            reply: unit,
+        }])?;
+        let stdin = EffectSig::new(STDIN.into(), [EffectOp {
+            name: "read_line".into(),
+            payload: unit,
+            reply: string,
+        }])?;
         let accepted = arena.value_type_product(&[string, integer]);
         let frame = arena.value_type_product(&[integer, string]);
         let net = EffectSig::new(NET.into(), [
@@ -361,17 +388,19 @@ impl HostSignatures
             ring,
             div,
             console,
+            stderr,
+            stdin,
             net,
         })
     }
 
-    /// The eight interfaces, in the order the host declares them.
+    /// The ten interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 8]
+    pub const fn interfaces(&self) -> [&EffectSig; 10]
     {
         [
             &self.exec,
@@ -381,6 +410,8 @@ impl HostSignatures
             &self.ring,
             &self.div,
             &self.console,
+            &self.stderr,
+            &self.stdin,
             &self.net,
         ]
     }

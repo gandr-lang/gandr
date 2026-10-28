@@ -252,6 +252,7 @@ pub use crate::evaluate::Entry;
 pub use crate::evaluate::Evaluation;
 pub use crate::evaluate::ExitStatus;
 pub use crate::evaluate::Hosted;
+pub use crate::evaluate::Input;
 pub use crate::evaluate::Line;
 pub use crate::evaluate::MigrationCount;
 pub use crate::evaluate::Printed;

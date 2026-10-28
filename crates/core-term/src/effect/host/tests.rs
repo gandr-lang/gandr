@@ -10,6 +10,8 @@ use super::FS;
 use super::HostSignatures;
 use super::NET;
 use super::PROC;
+use super::STDERR;
+use super::STDIN;
 use super::declared;
 use crate::CertificateEquality;
 use crate::CoreArena;
@@ -30,6 +32,8 @@ fn an_operation_names_the_interface_offering_it()
         ("get", ENV),
         ("exec", EXEC),
         ("transmit", NET),
+        ("eprint", STDERR),
+        ("read_line", STDIN),
     ] {
         let Maybe::Present(found) = host.offering(&OperationName::from(operation))
         else {
@@ -107,6 +111,8 @@ fn host_interfaces_pin_names_payloads_and_replies()
         ]),
         (&host.div, DIV, alloc::vec![]),
         (&host.console, CONSOLE, alloc::vec![("print", string, unit)]),
+        (&host.stderr, STDERR, alloc::vec![("eprint", string, unit)]),
+        (&host.stdin, STDIN, alloc::vec![("read_line", unit, string)]),
         (&host.net, NET, alloc::vec![
             ("accept", unit, status),
             ("connect", string, integer),

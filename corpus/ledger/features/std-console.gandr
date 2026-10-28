@@ -1,14 +1,15 @@
-/// `std-console`: The standard streams.
-/// Implemented: `std.console`, `library/std/src/console.gandr`, holds `print`, which writes one line to standard output through the console's root capability; `std.authority`'s `console` opens that capability from the authority `gandr run` gives `main`, and `corpus/model/effects/hello.gandr` prints through it.
-/// Not implemented: standard error and standard input, which the host's `Console` interface lacks, and which #2970 owes; a capability a handler's scope introduces cannot reach `print`, which takes a capability of no region.
+/// `std-console`: `print`, `eprint` and `read_line` write standard output and standard error and read standard input through the console capability `main` opens from its authority.
 
 // `Authority`, `console`.
 import "../../../library/std/src/authority.gandr";
 
-// `print`.
+// `print`, `eprint`, `read_line`.
 import "../../../library/std/src/console.gandr";
 
-/// A greeting through the console that `main` opens from its authority.
-pub def hello(authority : Authority) -> [Console] Unit {
-  print(console(authority), "hello, world!")
+/// A line read from standard input, written back to standard output, and a
+/// note on standard error.
+pub def echo(authority : Authority) -> [Console, Stderr, Stdin] Unit {
+  run line <- read_line(console(authority));
+  print(console(authority), line);
+  eprint(console(authority), "echoed")
 }

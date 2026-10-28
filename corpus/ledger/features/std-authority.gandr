@@ -1,6 +1,6 @@
 /// `std-authority`: The ambient authority.
 /// Implemented: `std.authority`, `library/std/src/authority.gandr`, names `Authority`, a capability holding every host operation a landed module of `std` reaches, which `main` takes as its parameter, `def main(authority : Authority)`, and `gandr run` hands it once, a capability no handler of the run introduced, so each exercise through it is the host's; `console` opens the standard streams' root capability from it by attenuation (#2970).
-/// Not implemented: the authority is durable, not linear, until the checker admits a consumable capability, `Cap[1]`; it holds `print` alone until `std.fs`, `std.net`, `std.time`, `std.rand`, `std.process` and `std.env` land; an exercise on a value typed by the alias, `authority.print(…)`, is refused as a projection (#1106), so a program exercises it through a parameter of capability type.
+/// Not implemented: the authority is durable, not linear, until the checker admits a consumable capability, `Cap[1]`, which #3509 owes; it holds the standard streams' operations alone until `std.fs`, `std.net`, `std.time`, `std.rand`, `std.process` and `std.env` land; an exercise on a value typed by the alias, `authority.print(…)`, is refused as a projection (#1106), so a program exercises it through a parameter of capability type.
 
 // `Authority`, `console`.
 import "../../../library/std/src/authority.gandr";
