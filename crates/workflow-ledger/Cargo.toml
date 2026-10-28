@@ -1,0 +1,15 @@
+[package]
+name = "gandr-workflow-ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The debt ledger the workflow checks share: the committed findings, one key per line, a new finding refusing and a fixed one leaving its line stale"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "gandr", "ledger", "ratchet"]
+categories = ["development-tools"]
+publish.workspace = true
+
+[lints]
+workspace = true

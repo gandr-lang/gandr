@@ -15,13 +15,13 @@
 //! - `2`: a refusal — an unreadable file, a malformed glossary or ledger, a
 //!   failed parse, or standard output closed; also a malformed invocation.
 
-extern crate alloc;
-
-use alloc::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use gandr_workflow_ledger::Ledger;
+use gandr_workflow_ledger::LedgerError;
+use gandr_workflow_ledger::Standing;
 use gandr_workflow_prose::Finding;
 use gandr_workflow_prose::Glossary;
 use gandr_workflow_prose::Key;
@@ -122,9 +122,10 @@ fn main() -> ExitCode
 ///   matches is printed as stale, and the outcome is agreed exactly when
 ///   neither was printed.
 /// - provides: the whole command.
-/// - fails: every refusal of [`passage::gather`], [`Glossary::read`],
-///   [`parse::parse`] and [`ledger::read`]; [`ProseError::Io`] when the ledger,
-///   the glossary or standard output cannot be read or written.
+/// - fails: every refusal of [`passage::gather`], [`Glossary::read`] and
+///   [`parse::parse`]; [`ProseError::Ledger`] for a ledger line
+///   [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger, the glossary
+///   or standard output cannot be read or written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes printed and the ledger file.
 ///
@@ -168,7 +169,6 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         };
         findings.extend(rules::procedure(golden, help));
     }
-    let keys: BTreeSet<Key> = findings.iter().map(Key::of).collect();
     let ledger_path = cli.root.join("corpus/prose.ledger");
     let mut out = std::io::stdout().lock();
     let output = |error: std::io::Error| ProseError::Io {
@@ -176,21 +176,18 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         message: error.to_string(),
     };
     if cli.write {
-        std::fs::write(&ledger_path, ledger::write(&keys)).map_err(io(ledger_path))?;
-        writeln!(out, "prose: wrote {} ledger lines", keys.len()).map_err(output)?;
+        let text = gandr_workflow_ledger::write(ledger::HEADER, findings.iter().map(Key::of));
+        let lines = text.lines().filter(|line| !line.starts_with('#')).count();
+        std::fs::write(&ledger_path, text).map_err(io(ledger_path))?;
+        writeln!(out, "prose: wrote {lines} ledger lines").map_err(output)?;
         return Ok(Outcome::Agreed);
     }
-    let committed = ledger::read(Text(
+    let committed = Ledger::<Key>::read(gandr_workflow_ledger::Text(
         &std::fs::read_to_string(&ledger_path).map_err(io(ledger_path))?,
-    ))?;
-    let mut disagreed = false;
-    let mut told = BTreeSet::new();
-    for finding in &findings {
-        let key = Key::of(finding);
-        if committed.contains(&key) || !told.insert(key) {
-            continue;
-        }
-        disagreed = true;
+    ))
+    .map_err(|LedgerError::Unread { line }| ProseError::Ledger { line })?;
+    let verdict = committed.check(&findings, Key::of);
+    for finding in &verdict.new {
         writeln!(
             out,
             "{}:{}: {}: \"{}\" — {}",
@@ -202,8 +199,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         )
         .map_err(output)?;
     }
-    for stale in committed.difference(&keys) {
-        disagreed = true;
+    for stale in &verdict.stale {
         writeln!(
             out,
             "corpus/prose.ledger: stale line `{stale}`: no finding matches it; run `mise run \
@@ -211,7 +207,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         )
         .map_err(output)?;
     }
-    if disagreed {
+    if verdict.standing() == Standing::Disagreed {
         return Ok(Outcome::Disagreed);
     }
     writeln!(

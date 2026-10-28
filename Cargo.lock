@@ -1448,6 +1448,7 @@ dependencies = [
  "gandr-surface-lowering",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "gandr-workflow-ledger",
  "quenchant-anodized",
  "quenchant-shape",
 ]
@@ -2004,11 +2005,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-ledger"
+version = "0.0.0"
+
+[[package]]
 name = "gandr-workflow-prose"
 version = "0.0.0"
 dependencies = [
  "blake3",
  "clap",
+ "gandr-workflow-ledger",
  "quenchant-shape",
  "serde",
  "serde_json",

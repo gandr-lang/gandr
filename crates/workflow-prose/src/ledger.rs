@@ -1,24 +1,29 @@
-//! The ledger: the committed prose debt, one line per finding, so a new
-//! finding refuses and a fixed one leaves a stale line to delete.
+//! The prose ledger's key: what `corpus/prose.ledger` records of a finding.
+//! The ledger itself, its reading, its verdict and its writing, is
+//! `gandr-workflow-ledger`'s.
 //!
 //! A line is `PATH RULE DIGEST`: the file, the rule and the first sixteen
 //! hexadecimal digits of the sentence's BLAKE3 digest. The digest keys the
 //! sentence, not its line, so moving a sentence keeps its key and rewording it
 //! retires the old one.
 
-extern crate alloc;
-
-use alloc::collections::BTreeSet;
 use core::fmt;
-use core::fmt::Write as _;
+use core::str::FromStr;
 
-use crate::error::ProseError;
-use crate::passage::Text;
+use gandr_workflow_ledger::Header;
+
 use crate::rules::Finding;
 use crate::rules::Rule;
 
 /// The hexadecimal digits of the digest a key keeps.
 const DIGITS: usize = 16;
+
+/// The header `corpus/prose.ledger` is written under.
+pub const HEADER: Header<'static> = Header(
+    "The prose debt `check:prose` names (crates/workflow-prose/README.md): a\nfinding here \
+     passes, a new one refuses, a fixed one leaves its line stale.\nWritten by `mise run \
+     check:prose --write`; never edited by hand.",
+);
 
 /// One ledger line: a finding's file, rule and sentence digest.
 ///
@@ -80,92 +85,71 @@ impl fmt::Display for Key
     }
 }
 
-/// The ledger's keys, from its text.
+/// Why a line is no key: it is not a path, a rule and sixteen hexadecimal
+/// digits.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: on success, one key per line that is neither blank nor a `#`
-///   comment, each a path, a rule's name and sixteen hexadecimal digits,
-///   separated by single spaces.
-/// - provides: the committed debt.
-/// - fails: [`ProseError::Ledger`] naming the first line that is not a key.
-/// - panics: none.
-/// - executable: none — the outcome is the parse itself.
-///
-/// # Errors
-/// As `fails` lists.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a written ledger reads back, and lines with an unknown
-///   rule, a short digest or a missing field are refused.
-/// - witness: `ledger::tests::a_ledger_reads_back_what_it_writes`
-#[inline]
-pub fn read(text: Text<'_>) -> Result<BTreeSet<Key>, ProseError>
+/// - provides: the refusal [`Key`]'s parse gives; the ledger names the line.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Unkeyed;
+
+impl FromStr for Key
 {
-    let mut keys = BTreeSet::new();
-    for line in text.0.lines() {
-        if line.trim().is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let refuse = || ProseError::Ledger {
-            line: line.to_owned(),
-        };
+    type Err = Unkeyed;
+
+    /// The key a ledger line spells.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, a path, a rule's name and sixteen hexadecimal
+    ///   digits, the last two split from the right at single spaces, so a path
+    ///   may hold a space.
+    /// - provides: one held key of the committed debt.
+    /// - fails: [`Unkeyed`] for a missing field, an unknown rule, an empty
+    ///   path, or a digest that is not sixteen hexadecimal digits.
+    /// - panics: none.
+    /// - executable: none — the outcome is the parse itself.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written key reads back, and lines with an unknown
+    ///   rule, a short digest or a missing field are refused.
+    /// - witness: `ledger::tests::a_ledger_reads_back_what_it_writes`
+    #[inline]
+    fn from_str(line: &str) -> Result<Self, Unkeyed>
+    {
         let mut fields = line.rsplitn(3, ' ');
         let (Some(digest), Some(rule), Some(path)) = (fields.next(), fields.next(), fields.next())
         else {
-            return Err(refuse());
+            return Err(Unkeyed);
         };
-        let rule = rule.parse::<Rule>().ok().ok_or_else(refuse)?;
+        let rule = rule.parse::<Rule>().map_err(|_unknown| Unkeyed)?;
         if path.is_empty()
             || digest.len() != DIGITS
             || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
         {
-            return Err(refuse());
+            return Err(Unkeyed);
         }
-        keys.insert(Key {
+        Ok(Self {
             path: path.to_owned(),
             rule,
             digest: digest.to_owned(),
-        });
+        })
     }
-    Ok(keys)
-}
-
-/// The ledger's text for `keys`: a header, then one line per key in order.
-///
-/// # Specification
-/// trivial.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`read`].
-/// - witness: `ledger::tests::a_ledger_reads_back_what_it_writes`
-#[inline]
-#[must_use]
-pub fn write(keys: &BTreeSet<Key>) -> String
-{
-    let mut text = String::from(
-        "# The prose debt `check:prose` names (crates/workflow-prose/README.md): a\n# finding \
-         here passes, a new one refuses, a fixed one leaves its line stale.\n# Written by `mise \
-         run check:prose --write`; never edited by hand.\n",
-    );
-    for key in keys {
-        writeln!(text, "{key}").unwrap_or_default();
-    }
-    text
 }
 
 #[cfg(test)]
 mod tests
 {
-    extern crate alloc;
+    use gandr_workflow_ledger::Ledger;
+    use gandr_workflow_ledger::LedgerError;
+    use gandr_workflow_ledger::Text;
+    use gandr_workflow_ledger::write;
 
-    use alloc::collections::BTreeSet;
-
+    use super::HEADER;
     use super::Key;
-    use super::read;
-    use super::write;
-    use crate::error::ProseError;
-    use crate::passage::Text;
     use crate::rules::Finding;
     use crate::rules::Rule;
 
@@ -175,8 +159,8 @@ mod tests
             Finding {
                 path: $path.to_owned(),
                 line: crate::passage::comments(
-                    Text($path),
-                    Text(&format!("{}/// x", "\n".repeat($line - 1))),
+                    crate::passage::Text($path),
+                    crate::passage::Text(&format!("{}/// x", "\n".repeat($line - 1))),
                 )
                 .into_iter()
                 .next()
@@ -202,22 +186,24 @@ mod tests
     #[test]
     fn a_ledger_reads_back_what_it_writes()
     {
-        let keys: BTreeSet<Key> = [
-            Key::of(&finding!("corpus/b.gandr", 1, "One.")),
-            Key::of(&finding!("corpus/a b.gandr", 2, "Two.")),
-        ]
-        .into_iter()
-        .collect();
-        let text = write(&keys);
-        assert_eq!(read(Text(&text)), Ok(keys));
+        let findings = [
+            finding!("corpus/b.gandr", 1, "One."),
+            finding!("corpus/a b.gandr", 2, "Two."),
+        ];
+        let text = write(HEADER, findings.iter().map(Key::of));
+        let ledger = Ledger::<Key>::read(Text(&text)).expect("the written ledger reads");
+        assert_eq!(
+            ledger.check(&findings, Key::of).standing(),
+            gandr_workflow_ledger::Standing::Agreed
+        );
         for line in [
             "corpus/a.gandr Passive 0123",
             "corpus/a.gandr Unknown 0123456789abcdef",
             "corpus/a.gandr 0123456789abcdef",
         ] {
             assert_eq!(
-                read(Text(line)),
-                Err(ProseError::Ledger {
+                Ledger::<Key>::read(Text(line)),
+                Err(LedgerError::Unread {
                     line: line.to_owned()
                 })
             );

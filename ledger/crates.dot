@@ -87,6 +87,7 @@ digraph crates {
     "workflow-github";
     "workflow-hotpath-guard";
     "workflow-lane-budget";
+    "workflow-ledger";
     "workflow-prose";
     "workflow-spec-cost";
     "workflow-sweep";
@@ -329,6 +330,7 @@ digraph crates {
   "workflow-coverage-guard" -> "workflow-github";
   "workflow-hotpath-guard" -> "workflow-github";
   "workflow-lane-budget" -> "workflow-github";
+  "workflow-prose" -> "workflow-ledger";
   "workflow-spec-cost" -> "workflow-test-timing";
   "workflow-sweep" -> "surface-format";
   "workflow-sweep" -> "surface-grammar";
