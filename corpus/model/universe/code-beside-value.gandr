@@ -1,0 +1,64 @@
+// A value beside its code, read at each arm of a case on the code.
+//
+// A two-code universe decodes each code to a type. A case on a code reads the
+// goal at each arm's code. It also reads each later binder whose type decodes
+// the code, so a value typed at the code's decode stands at the arm's type.
+//
+// The case generalises its motive over the value. The kernel checks the case
+// at that motive, and the machine runs the case as written.
+//
+// - see: McBride, _Elimination with a Motive_, TYPES 2000, LNCS 2277,
+//   doi:10.1007/3-540-45842-5_13 — a motive generalised over the binders that
+//   depend on the scrutinee
+// - see: #3483 — refinement by solution, which reads a binder after the
+//   scrutinee at each arm
+
+/// The naturals.
+data Nat : Type {
+  /// Zero.
+  Zero : Nat;
+  /// One past a natural.
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A universe of two codes.
+data UQ : Type {
+  /// The code of the naturals.
+  NatQ : UQ;
+  /// The code of the unit type.
+  UnitQ : UQ;
+}
+
+/// The type each code decodes to.
+def elQ(u : UQ) -> Type {
+  case u {
+    NatQ => return Nat,
+    UnitQ => return Unit
+  }
+}
+
+/// A value at each code: the goal reads the arm's code.
+def pick(u : UQ) -> elQ(u) {
+  case u {
+    NatQ => Zero,
+    UnitQ => unit
+  }
+}
+
+/// A value beside its code, read back as a natural. The `NatQ` arm reads `v`
+/// at `elQ(NatQ)`, which decodes to `Nat`.
+def back(u : UQ, v : elQ(u)) -> Nat {
+  case u {
+    NatQ => v,
+    UnitQ => Zero
+  }
+}
+
+/// A value beside its code, at the code's decode. Each arm reads `v` at its
+/// own code.
+def same(u : UQ, v : elQ(u)) -> elQ(u) {
+  case u {
+    NatQ => v,
+    UnitQ => v
+  }
+}

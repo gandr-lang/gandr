@@ -110,6 +110,12 @@
 //! would settle on every non-folding update anyway. Reversal: a measured
 //! family whose cost is dominated by the settle at a consumer, which would
 //! carry relocations through the readers that consumer reaches.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: §
+//!   elim-refine-with-abstraction, a goal generalised over a solved variable,
+//!   whose types an environment substitution reads back where they are written.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -6737,6 +6743,82 @@ pub fn substitute_environment_traced(
     let substituted = engine.run(term_node(subject), Binders::NONE, Rewrite::Environment);
     report(&engine.memo, carried);
     node_term(substituted, subject)
+}
+
+/// [`substitute_environment`] over a value type.
+///
+/// # Specification
+/// - requires: as [`substitute_environment`], `subject` a value type.
+/// - ensures: `subject` with every free index the environment covers replaced
+///   by its entry, carried under the binders it stands beneath, and an index
+///   past the environment lowered by its length; `subject` itself when the
+///   environment is empty.
+/// - provides: the substitution a solved variable is read through in the type
+///   of a binder after it, all its dependants renamed at once.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type whose endpoints are a covered and an
+///   uncovered index, and a Π whose codomain reads its own binder and a covered
+///   index, separate a replaced index, a lowered one and a bound one.
+/// - witness: `rewrite::tests::an_environment_substitution_reaches_into_types`
+#[spec(captures: entry = arena.watermark(), ensures: |ret| !environment.is_empty() || (ret == subject && arena.watermark() == entry))]
+#[inline]
+#[must_use]
+pub fn substitute_environment_value_type(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    environment: &[ValueId],
+) -> ValueTypeId
+{
+    if environment.is_empty() {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    engine.environment = environment.to_vec();
+    match engine.run(
+        Node::ValueType(subject),
+        Binders::NONE,
+        Rewrite::Environment,
+    ) {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// [`substitute_environment`] over a computation type.
+///
+/// # Specification
+/// - requires: as [`substitute_environment`], `subject` a computation type.
+/// - ensures: as [`substitute_environment_value_type`], over a computation
+///   type.
+/// - provides: the substitution a solved variable is read through in an arm's
+///   goal.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`substitute_environment_value_type`].
+/// - witness: `rewrite::tests::an_environment_substitution_reaches_into_types`
+#[spec(captures: entry = arena.watermark(), ensures: |ret| !environment.is_empty() || (ret == subject && arena.watermark() == entry))]
+#[inline]
+#[must_use]
+pub fn substitute_environment_comp_type(
+    arena: &mut CoreArena,
+    subject: CompTypeId,
+    environment: &[ValueId],
+) -> CompTypeId
+{
+    if environment.is_empty() {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    engine.environment = environment.to_vec();
+    match engine.run(Node::CompType(subject), Binders::NONE, Rewrite::Environment) {
+        Node::CompType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => subject,
+    }
 }
 
 /// The constants, atoms and bound regions one instantiation replaces: each

@@ -2106,6 +2106,7 @@ where
         handled: report.handled(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
+        refinements: report.refinements(),
         laws: report.laws(),
         operation_rules: report.operation_rules(),
         stage_signatures: report.stage_signatures(),
@@ -2299,6 +2300,7 @@ where
                     declared,
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    refined: source.refinements.get(&constant).map_or(&[], Vec::as_slice),
                     laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
                     operation_rules: source
                         .operation_rules
@@ -2437,6 +2439,7 @@ fn block_offers<'report>(
                     declared: declared.id(),
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    refined: source.refinements.get(&constant).map_or(&[], Vec::as_slice),
                     laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
                     operation_rules: source
                         .operation_rules
@@ -2459,6 +2462,7 @@ fn block_offers<'report>(
                     declared: synthesised.produced().id(),
                     body,
                     relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    refined: source.refinements.get(&constant).map_or(&[], Vec::as_slice),
                     laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
                     operation_rules: source
                         .operation_rules
@@ -2589,6 +2593,9 @@ struct Source<'source>
     /// The path endpoint pairs each accepted declaration's conversions
     /// related, by position.
     relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
+    /// The nodes each accepted declaration's judgement refined by a solved
+    /// variable, by position, each beside the node the kernel reads.
+    refinements: &'source BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
     /// The laws each lawful declaration's folds rest on, by position.
     laws: &'source BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// The rules of the operation each ruled declaration lowered from, by
@@ -2628,6 +2635,9 @@ enum Offer<'signature>
         body: ValueId,
         /// The path endpoint pairs its conversions related.
         relations: &'signature [EndpointRelation],
+        /// The nodes its judgement refined by a solved variable, ascending,
+        /// each beside the node the kernel reads in its place.
+        refined: &'signature [(ComputationId, ComputationId)],
         /// The laws its folds rest on, by module position.
         laws: &'signature [ConstantIndex],
         /// The rules of the operation it lowered from, over module positions.
@@ -2936,7 +2946,13 @@ where
     let next = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let (erased, unseeded) = {
-        let mut erasure = Erasure::new(arena, source, positions, base).crossing_block(crossing);
+        let refined = match offer {
+            Offer::Definition { refined, .. } => refined,
+            Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
+        };
+        let mut erasure = Erasure::new(arena, source, positions, base)
+            .crossing_block(crossing)
+            .refining(refined);
         let erased = erasure
             .offer(staging.arena(), offer)
             .map_err(|refusal| (refusal, Vec::new()))
@@ -4955,6 +4971,9 @@ struct Erasure<'source, 'positions>
     /// declaration holds yet — a data declaration's own, or every member of
     /// its mutual block.
     crossing: &'positions [(ConstantIndex, ConstantIndex)],
+    /// The nodes the judgement refined by a solved variable in the declaration
+    /// erased, ascending, each beside the node erased in its place.
+    refined: &'positions [(ComputationId, ComputationId)],
     /// The declaration the erasure met that the environment does not hold
     /// yet — a native operation's signature or a handled effect's free model
     /// — which stops it.
@@ -4990,6 +5009,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             pending: Vec::new(),
             bodies: BTreeMap::new(),
             crossing: &[],
+            refined: &[],
             unseeded: None,
         }
     }
@@ -5006,6 +5026,21 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Self
     {
         self.crossing = crossing;
+        self
+    }
+
+    /// The same erasure reading each node of `refined` as the node beside it:
+    /// an arm or a case the judgement refined by a solved variable, which the
+    /// kernel checks as refined while the core body keeps it as written.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn refining(
+        mut self,
+        refined: &'positions [(ComputationId, ComputationId)],
+    ) -> Self
+    {
+        self.refined = refined;
         self
     }
 
@@ -6728,7 +6763,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: ordinary computations open one continuation; a native case
+    /// - ensures: a node the judgement refined opens the frame of its
+    ///   refinement; ordinary computations open one continuation; a native case
     ///   queues its motive and every branch after the scrutinee; a sum case
     ///   queues every branch after the scrutinee; a lazy product queues every
     ///   component after the first, and the empty one assembles at once. A
@@ -6752,7 +6788,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.refined.binary_search_by_key(&at, |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -6774,6 +6810,18 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
             None => {},
+        }
+        // A node the judgement refined by a solved variable crosses as its
+        // refinement, which the kernel checks; the core body keeps it as
+        // written, which the evaluator and the machine run.
+        if let Ok(place) = self.refined.binary_search_by_key(&at, |&(node, _)| node)
+            && let Some(&(_, refined)) = self.refined.get(place)
+        {
+            self.memo().computations.insert(at, Image::Open);
+            self.frames.push(Frame::Rewritten { at });
+            return Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                refined,
+            ))));
         }
         let Some(computation) = self.arena.computation(at)
         else {

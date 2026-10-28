@@ -1,27 +1,27 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/dependent-vectors.gandr:38:23
+   ╭▸ corpus/pathological/data/dependent-vectors.gandr:42:23
    │
-36 │    def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
+40 │    def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
    │    │          ┬         ┬         ─ checked against `Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds v : Vec(a, Succ(n))
    │    │          │         │
    │    │          │         checked against `(n : Nat) -> Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds n : Nat
    │ ┌──┘          checked against `(a : Type) -> (n : Nat) -> Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds a : Type
    │ │
-37 │ │┌   case v {
-38 │ ││     VCons(m, _, t) => t
+41 │ │┌   case v {
+42 │ ││     VCons(m, _, t) => t
    │ ││                       ━ its type does not convert: expected `Vec(a, n)`, found `Vec(a, m)`
-39 │ ││   }
+43 │ ││   }
    │ │└───┘ checked against `-F Vec(a, n)`; while checking the body of this function; binds m : Nat, _ : a, t : Vec(a, m), _ : Path(Nat, Succ(m), Succ(n))
-40 │ │  }
+44 │ │  }
    │ └──┘ checked against `(a : Type, n : Nat, Vec(a, Succ(n))) => Vec(a, n)`; while checking the body of this thunk
    │
    ├ note: `tail` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/dependent-vectors.gandr:45:37
+   ╭▸ corpus/pathological/data/dependent-vectors.gandr:49:37
    │
-45 │ def firstOfPair() -> Integer { head(pair()) }
+49 │ def firstOfPair() -> Integer { head(pair()) }
    │ ┬──────────────────────────────┬────┯━━━━━───
    │ │                              │    │
    │ │                              │    its type does not convert: expected `Vec(?, Succ(?))`, found `Vec(Integer, Succ(Succ(Zero)))`
@@ -31,39 +31,35 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ├ note: `firstOfPair` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/dependent-vectors.gandr:52:31
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/data/dependent-vectors.gandr:56:13
    │
-50 │    def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) {
-   │    │           ┬         ┬         ┬        ┬─              ┬─                 ───────────── the type it is checked against
-   │    │           │         │         │        │               │
-   │    │           │         │         │        │               checked against `Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds ys : Vec(b, n)
+54 │    def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) {
+   │    │           ┬         ┬         ┬        ┬─              ── checked against `Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds ys : Vec(b, n)
+   │    │           │         │         │        │
    │    │           │         │         │        checked against `Vec(a, n) -> Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds xs : Vec(a, n)
    │    │           │         │         checked against `(c : Nat) -> Vec(a, c) -> Vec(b, c) -> -F Vec(a * b, c)`; while checking the body of this function; binds n : Nat
    │    │           │         checked against `(b : Type) -> (n : Nat) -> Vec(a, n) -> Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds b : Type
    │ ┌──┘           checked against `(a : Type) -> (b : Type) -> (n : Nat) -> Vec(a, n) -> Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds a : Type
    │ │
-51 │ │┌   case xs {
-52 │ ││     VNil => case ys { VNil => VNil },
-   │ ││             ┬─────────────────┯━━━──
-   │ ││             │                 │
-   │ ││             │                 its type does not convert: expected `Vec(a * b, n)`, found `Vec(a * b, Zero)`
-   │ ││             checked against `-F Vec(a * b, n)`; while checking the body of this function; binds _ : Path(Nat, Zero, n)
-53 │ ││     VCons(m, x, xt) => case ys {
-54 │ ││       VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
-55 │ ││     }
-56 │ ││   }
+55 │ │┌   case xs {
+56 │ ││     VNil => case ys { VNil => VNil },
+   │ ││             ━━━━━━━━━━━━━━━━━━━━━━━━ a path whose endpoints are not apart
+57 │ ││     VCons(m, x, xt) => case ys {
+58 │ ││       VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
+59 │ ││     }
+60 │ ││   }
    │ │└───┘ checked against `-F Vec(a * b, n)`; while checking the body of this function; binds _ : Path(Nat, Zero, n)
-57 │ │  }
+61 │ │  }
    │ └──┘ checked against `(a : Type, b : Type, n : Nat, Vec(a, n), Vec(b, n)) => Vec(a * b, n)`; while checking the body of this function; binds zip : (c : Nat, Vec(a, c), Vec(b, c)) => Vec(a * b, c)
    │
-   ├ note: `zip` is refused with TypeMismatch, as its expectation states
-   ╰ help: change the term or the type it is checked against, so that the two types agree
+   ├ note: `zip` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/dependent-vectors.gandr:64:13
+   ╭▸ corpus/pathological/data/dependent-vectors.gandr:67:1
    │
-62 │    def rec append(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> Vec(a, plus(m, n)) {
+67 │    def rec append(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> Vec(a, plus(m, n)) {
    │    │              ┬         ┬        ┬        ┬─              ── checked against `Vec(a, m) -> -F Vec(a, plus(m, n))`; while checking the body of this function; binds ys : Vec(a, m)
    │    │              │         │        │        │
    │    │              │         │        │        checked against `Vec(a, n) -> Vec(a, m) -> -F Vec(a, plus(m, n))`; while checking the body of this function; binds xs : Vec(a, n)
@@ -71,14 +67,19 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │    │              │         checked against `(b : Nat) -> (c : Nat) -> Vec(a, b) -> Vec(a, c) -> -F Vec(a, plus(c, b))`; while checking the body of this function; binds n : Nat
    │ ┌──┘              checked against `(a : Type) -> (n : Nat) -> (m : Nat) -> Vec(a, n) -> Vec(a, m) -> -F Vec(a, plus(m, n))`; while checking the body of this function; binds a : Type
    │ │
-63 │ │┌   case xs {
-64 │ ││     VNil => ys,
-   │ ││             ━━ its type does not convert: expected `Vec(a, plus(m, n))`, found `Vec(a, m)`
-65 │ ││     VCons(k, x, xt) => VCons(plus(m, k), x, append[<](a, k, m, xt, ys))
-66 │ ││   }
-   │ │└───┘ checked against `-F Vec(a, plus(m, n))`; while checking the body of this function; binds _ : Path(Nat, Zero, n)
-67 │ │  }
+68 │ │┌   case xs {
+69 │ ││     VNil => ys,
+70 │ ││     VCons(k, x, xt) => VCons(plus(m, k), x, append[<](a, k, m, xt, ys))
+71 │ ││   }
+   │ │└───┘ checked against `-F Vec(a, plus(m, n))`; while finishing the type of this
+72 │ │  }
    │ └──┘ checked against `(a : Type, n : Nat, m : Nat, Vec(a, n), Vec(a, m)) => Vec(a, plus(m, n))`; while checking the body of this function; binds append : (b : Nat, c : Nat, Vec(a, b), Vec(a, c)) => Vec(a, plus(c, b))
    │
+   ├ note: while checking the body of this function; binds _ : Nat, _ : a, _ : Vec(a, ?), _ : Path(Nat, Succ(?), n)
+   ├ note: while synthesising the computation this binds
+   ├ note: while checking the operand of this transport
+   ├ note: while checking the body of this thunk
+   ├ note: while judging the value this returns
+   ├ note: while comparing the type this synthesises with the one it is checked against
    ├ note: `append` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

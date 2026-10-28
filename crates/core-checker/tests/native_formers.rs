@@ -2471,6 +2471,386 @@ fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
     );
 }
 
+/// `T : Type { Yes; No }` at position 0, and `B(t : T) : Type { Mk : B(t) }`
+/// at position 1: a two-code universe and a family over it.
+///
+/// # Specification
+/// trivial.
+fn codes_and_boxes(arena: &mut CoreArena) -> (ValueTypeId, [Declaration; 2])
+{
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let codes = ConstantIndex::from(0_usize);
+    let code = arena.value_type_data(codes, vec![]);
+    let declarations = [
+        Declaration::data(
+            codes,
+            DataSignature::new(vec![], vec![vec![], vec![]], kind).into(),
+            OriginToken::from(0_usize),
+        ),
+        Declaration::data(
+            ConstantIndex::from(1_usize),
+            DataSignature::new(vec![code], vec![vec![]], kind).into(),
+            OriginToken::from(1_usize),
+        ),
+    ];
+    (code, declarations)
+}
+
+#[test]
+fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
+{
+    let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    // `I : T -> Type { Made : I(Yes); }`: an arm on `Made` binds the equation
+    // `Path(T, Yes, t)` past its fields.
+    let family = Declaration::data(
+        indexed,
+        DataSignature::new(vec![], vec![vec![]], kind)
+            .indexed(vec![code], vec![vec![yes]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
+    let no_fields = [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec();
+    // `pick(t : T, i : I(t)) -> I(t) { case i { Made => Made } }`: the arm's
+    // goal reads `t`, and `Made` stands at `Yes`.
+    let t_outer = variable(&mut arena, 0);
+    let at_t = arena.value_type_data(indexed, vec![t_outer]);
+    let t_under = variable(&mut arena, 1);
+    let at_t_under = arena.value_type_data(indexed, vec![t_under]);
+    let answers = arena.comp_type_returner(at_t_under);
+    let picked_type = arena.comp_type_pi(at_t, answers);
+    let picked_type = arena.comp_type_pi(code, picked_type);
+    let picked_type = arena.value_type_thunk(picked_type);
+    let at_yes = arena.value_type_data(indexed, vec![yes]);
+    let made = arena.value_constructor(at_yes, yes_tag, vec![]);
+    let returned = arena.computation_return(made);
+    let arm = arena.computation_lambda(returned);
+    let t_in_motive = variable(&mut arena, 2);
+    let motive = arena.value_type_data(indexed, vec![t_in_motive]);
+    let motive = arena.comp_type_returner(motive);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        motive,
+        (vec![arm], no_fields.clone()),
+        one_equation,
+    );
+    let picked = arena.computation_lambda(case);
+    let picked = arena.computation_lambda(picked);
+    let picked = arena.value_thunk(picked);
+    // `carry(t : T, i : I(t), w : B(t)) -> B(Yes) { case i { Made => w } }`:
+    // the arm reads `w`, a binder after the scrutinee whose type reads `t`.
+    let t_box = variable(&mut arena, 1);
+    let box_at_t = arena.value_type_data(boxed, vec![t_box]);
+    let box_at_yes = arena.value_type_data(boxed, vec![yes]);
+    let carried_answer = arena.comp_type_returner(box_at_yes);
+    let carried_type = arena.comp_type_pi(box_at_t, carried_answer);
+    let carried_type = arena.comp_type_pi(at_t, carried_type);
+    let carried_type = arena.comp_type_pi(code, carried_type);
+    let carried_type = arena.value_type_thunk(carried_type);
+    let w = variable(&mut arena, 1);
+    let returned = arena.computation_return(w);
+    let arm = arena.computation_lambda(returned);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        carried_answer,
+        (vec![arm], no_fields),
+        one_equation,
+    );
+    let carried = arena.computation_lambda(case);
+    let carried = arena.computation_lambda(carried);
+    let carried = arena.computation_lambda(carried);
+    let carried = arena.value_thunk(carried);
+    let (report, crossed) = run(&mut arena, &[
+        codes,
+        boxes,
+        family,
+        definition(ConstantIndex::from(3_usize), picked_type, picked),
+        definition(ConstantIndex::from(4_usize), carried_type, carried),
+    ]);
+    for (position, what) in [(3, "the arm's goal"), (4, "a binder after the scrutinee")] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "{what} is read at the arm's index: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits the arm refined for {what}: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    assert!(crossed.audit().axioms().is_empty());
+}
+
+#[test]
+fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
+{
+    let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let boxed = ConstantIndex::from(1_usize);
+    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let no_fields = [0_usize, 0]
+        .map(gandr_kernel_term::FieldCount::from)
+        .to_vec();
+    let u_outer = variable(&mut arena, 0);
+    let box_at_u = arena.value_type_data(boxed, vec![u_outer]);
+    // `same(u : T, v : B(u)) -> B(u) { case u { Yes => v, No => v } }`: each
+    // arm reads `v` at its own code.
+    let u_under = variable(&mut arena, 1);
+    let box_under = arena.value_type_data(boxed, vec![u_under]);
+    let answers = arena.comp_type_returner(box_under);
+    let same_type = arena.comp_type_pi(box_at_u, answers);
+    let same_type = arena.comp_type_pi(code, same_type);
+    let same_type = arena.value_type_thunk(same_type);
+    let scrutinee_bound = variable(&mut arena, 0);
+    let motive = arena.value_type_data(boxed, vec![scrutinee_bound]);
+    let motive = arena.comp_type_returner(motive);
+    let v = variable(&mut arena, 0);
+    let returned = arena.computation_return(v);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_data_case(
+        scrutinee,
+        motive,
+        vec![returned, returned],
+        no_fields.clone(),
+    );
+    let same = arena.computation_lambda(case);
+    let same = arena.computation_lambda(same);
+    let same = arena.value_thunk(same);
+    // `back(u : T, v : B(u)) -> B(Yes) { case u { Yes => v, No => Mk } }`:
+    // one arm reads `v`, at `Yes`.
+    let box_at_yes = arena.value_type_data(boxed, vec![yes]);
+    let answer = arena.comp_type_returner(box_at_yes);
+    let back_type = arena.comp_type_pi(box_at_u, answer);
+    let back_type = arena.comp_type_pi(code, back_type);
+    let back_type = arena.value_type_thunk(back_type);
+    let made = arena.value_constructor(box_at_yes, ConstructorTag::from(0_usize), vec![]);
+    let made = arena.computation_return(made);
+    let case = arena.computation_data_case(scrutinee, answer, vec![returned, made], no_fields);
+    let back = arena.computation_lambda(case);
+    let back = arena.computation_lambda(back);
+    let back = arena.value_thunk(back);
+    let (report, crossed) = run(&mut arena, &[
+        codes,
+        boxes,
+        definition(ConstantIndex::from(2_usize), same_type, same),
+        definition(ConstantIndex::from(3_usize), back_type, back),
+    ]);
+    for (position, what) in [(2, "each arm"), (3, "the one arm that reads it")] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "the binder after the scrutinee is read at {what}: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits the case refined at {what}: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    assert!(crossed.audit().axioms().is_empty());
+}
+
+#[test]
+fn a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483()
+{
+    let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let family = Declaration::data(
+        indexed,
+        DataSignature::new(vec![], vec![vec![]], kind)
+            .indexed(vec![code], vec![vec![yes]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    // `keep(x : B(Yes)) -> B(Yes) { x }`, a call to nest.
+    let box_at_yes = arena.value_type_data(boxed, vec![yes]);
+    let answer = arena.comp_type_returner(box_at_yes);
+    let keep_type = arena.comp_type_arrow(box_at_yes, answer);
+    let keep_type = arena.value_type_thunk(keep_type);
+    let x = variable(&mut arena, 0);
+    let keep = arena.computation_return(x);
+    let keep = arena.computation_lambda(keep);
+    let keep = arena.value_thunk(keep);
+    // `wrap(t : T, i : I(t), w : B(t)) -> B(Yes) { case i { Made => keep(w) }
+    // }`, the call nested in the returned value: the refined arm reads `w` at
+    // `Yes`, and the run binds where the arm was written.
+    let t_outer = variable(&mut arena, 0);
+    let at_t = arena.value_type_data(indexed, vec![t_outer]);
+    let t_box = variable(&mut arena, 1);
+    let box_at_t = arena.value_type_data(boxed, vec![t_box]);
+    let wrap_type = arena.comp_type_pi(box_at_t, answer);
+    let wrap_type = arena.comp_type_pi(at_t, wrap_type);
+    let wrap_type = arena.comp_type_pi(code, wrap_type);
+    let wrap_type = arena.value_type_thunk(wrap_type);
+    let head = arena.value_constant(ConstantIndex::from(3_usize));
+    let head = arena.computation_force(head);
+    let w = variable(&mut arena, 1);
+    let call = arena.computation_application(head, w);
+    let nested = arena.value_nested(call);
+    let returned = arena.computation_return(nested);
+    let arm = arena.computation_lambda(returned);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        answer,
+        (
+            vec![arm],
+            [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        ),
+        gandr_kernel_term::EquationCount::from(1_usize),
+    );
+    let wrap = arena.computation_lambda(case);
+    let wrap = arena.computation_lambda(wrap);
+    let wrap = arena.computation_lambda(wrap);
+    let wrap = arena.value_thunk(wrap);
+    let (report, crossed) = run(&mut arena, &[
+        codes,
+        boxes,
+        family,
+        definition(ConstantIndex::from(3_usize), keep_type, keep),
+        definition(ConstantIndex::from(4_usize), wrap_type, wrap),
+    ]);
+    assert!(
+        matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+        "the refined arm's nested call is decided where it is written: {:?}",
+        report.judged()[4].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[4].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the refined arm over the bound call: {:?}",
+        crossed.readmitted()[4].outcome()
+    );
+}
+
+/// `same(u : T, v : B(u), w : Unit) -> Path(B(u), v, v)`, its `Yes` arm
+/// `_ ← return unit; return here(v)` and its `No` arm `return here(v)`: the
+/// case reads `v` at each arm through a copy, and the typed run reads each
+/// written term of the `Yes` arm back in the arm's written context.
+#[test]
+fn a_refined_arm_types_its_written_terms_in_their_own_context_3483()
+{
+    let mut arena = CoreArena::new();
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let boxed = ConstantIndex::from(1_usize);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let unit_type = arena.value_type_unit();
+    let u_outer = variable(&mut arena, 0);
+    let box_at_u = arena.value_type_data(boxed, vec![u_outer]);
+    let u_result = variable(&mut arena, 2);
+    let box_result = arena.value_type_data(boxed, vec![u_result]);
+    let v_result = variable(&mut arena, 1);
+    let result = arena.value_type_path(box_result, v_result, v_result);
+    let answers = arena.comp_type_returner(result);
+    let same_type = arena.comp_type_pi(unit_type, answers);
+    let same_type = arena.comp_type_pi(box_at_u, same_type);
+    let same_type = arena.comp_type_pi(code, same_type);
+    let same_type = arena.value_type_thunk(same_type);
+    // The motive under the scrutinee's binder: `Path(B(s), v, v)`.
+    let scrutinised = variable(&mut arena, 0);
+    let box_scrutinised = arena.value_type_data(boxed, vec![scrutinised]);
+    let v_motive = variable(&mut arena, 2);
+    let motive = arena.value_type_path(box_scrutinised, v_motive, v_motive);
+    let motive = arena.comp_type_returner(motive);
+    let unit = arena.value_unit();
+    let first = arena.computation_return(unit);
+    let v_under = variable(&mut arena, 2);
+    let here_under = arena.value_here(v_under);
+    let then = arena.computation_return(here_under);
+    let on_yes = arena.computation_bind(first, then);
+    let v_top = variable(&mut arena, 1);
+    let here_top = arena.value_here(v_top);
+    let on_no = arena.computation_return(here_top);
+    let scrutinee = variable(&mut arena, 2);
+    let no_fields = [0_usize, 0]
+        .map(gandr_kernel_term::FieldCount::from)
+        .to_vec();
+    let case = arena.computation_data_case(scrutinee, motive, vec![on_yes, on_no], no_fields);
+    let same = arena.computation_lambda(case);
+    let same = arena.computation_lambda(same);
+    let same = arena.computation_lambda(same);
+    let same = arena.value_thunk(same);
+    let constant = ConstantIndex::from(2_usize);
+    let typed = gandr_core_checker::type_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &[codes, boxes, definition(constant, same_type, same)],
+    );
+    assert!(
+        !typed.refused().contains_key(&constant),
+        "the case reads `v` at each arm: {:?}",
+        typed.refused()
+    );
+    let typings = typed
+        .typings()
+        .get(&constant)
+        .expect("the body is typed")
+        .typings();
+    let index_of = |at: ValueId| match arena.value(at) {
+        Some(&gandr_core_term::Value::Variable { index, .. }) => Some(u32::from(index)),
+        Some(_) | None => None,
+    };
+    // Under `u, v, w` and the bind's binder, `v` is the third binder out.
+    let read = |term: ValueId| {
+        typings
+            .iter()
+            .filter(|typing| typing.term == gandr_core_checker::TermNode::Value(term))
+            .map(|typing| {
+                let ends = match typing.ty {
+                    gandr_core_checker::TypeNode::Value(ty) => match arena.value_type(ty) {
+                        Some(&ValueType::Path { left, right, .. }) => {
+                            Some((index_of(left), index_of(right)))
+                        },
+                        Some(_) | None => None,
+                    },
+                    gandr_core_checker::TypeNode::Computation(_) => None,
+                };
+                (usize::from(typing.depth), ends)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        read(here_under),
+        [(4, Some((Some(2), Some(2))))],
+        "the written path is typed between the written `v`s, at the arm's own depth"
+    );
+    let depths: Vec<usize> = read(v_under).iter().map(|&(depth, _)| depth).collect();
+    assert!(
+        !depths.is_empty() && depths.iter().all(|&depth| depth == 4),
+        "the written `v` under the bind is typed as written, not as the copy: {depths:?}"
+    );
+    assert_eq!(
+        read(here_top),
+        [(3, Some((Some(1), Some(1))))],
+        "the other arm's path reads the written `v` at the written depth"
+    );
+}
+
 #[test]
 fn empty_data_elimination_preserves_the_ambient_scope()
 {
