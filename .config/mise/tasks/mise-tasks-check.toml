@@ -1404,7 +1404,8 @@ FROM reference;"); keys read $resolved"
 # `rests.jq` the hold a landing rests on, `chain.jq` a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on,
 # `state.jq` a member's readiness (#2783), `dirty.jq` whether `pr:watch`'s
-# `DIRTY` reading is a conflict (#2854), `superseded.jq` whether a cancelled
+# `DIRTY` reading is a conflict (#2854), `heal.jq` whether its heal restacks
+# or waits on a queued member (#3615), `superseded.jq` whether a cancelled
 # check's run was superseded on its head (#2829), `prefix.jq` what a landing
 # queues (#1988), `sweep.jq` which worktrees `wt:sweep` removes, and
 # `triggers.jq` whether the landing watcher reads on the events that change
