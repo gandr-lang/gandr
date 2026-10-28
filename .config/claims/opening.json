@@ -759,7 +759,7 @@
       ],
       "regressions": []
     },
-    "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there, and without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add both, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there, and without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add both, then run `pr:open` again"
   },
   {
     "name": "#2524: a defect closed with an observation, its only test naming another issue, is refused naming the regression",
@@ -784,7 +784,7 @@
         }
       ]
     },
-    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add it, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
     "name": "#2524: an observation and a `.config` case citing the issue opens",
@@ -893,7 +893,62 @@
         }
       ]
     },
-    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add it, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
+  },
+  {
+    "name": "#3538: a smoke's `//` line citing the issue is a regression, and so is a `node:test` name citing it",
+    "input": {
+      "branch": "distribution-2621-smoke",
+      "body": "Fixes #2621\nFixes #2622\n\n## Observation\n\nOn darwin, the smoke's server exited 1 before `initialize`.\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        },
+        {
+          "number": 2622,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": "contrib/gandr-vscode/src/smoke/scene.ts",
+          "text": "// The server that answers is #2621's: the runner's own."
+        },
+        {
+          "path": "contrib/gandr-vscode/src/input/trie.test.ts",
+          "text": "void test(\"\\\\to offers → first (#2622)\", () => {"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#3538: an extension's TypeScript outside its tests, and a test's line that is neither comment nor name, is no regression",
+    "input": {
+      "branch": "distribution-2621-smoke",
+      "body": "Fixes #2621\n\n## Observation\n\nOn darwin, the smoke's server exited 1 before `initialize`.\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": "contrib/gandr-vscode/src/lsp/client.ts",
+          "text": "// The server's environment is the runner's (#2621)."
+        },
+        {
+          "path": "contrib/gandr-vscode/src/smoke/run.ts",
+          "text": "const issue = \"#2621\";"
+        }
+      ]
+    },
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
     "name": "#2527: a grammar change whose body has no `### Surface form` is refused, naming the subsection and both lines",

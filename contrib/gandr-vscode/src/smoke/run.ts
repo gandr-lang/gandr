@@ -3,7 +3,9 @@
 // scratch workspace holding one corpus source, with the extension under
 // development and nothing else, and plays `scene.ts` in its extension host.
 // The `gandr` on `PATH` serves it; `mise run check:vscode-smoke` puts the
-// workspace's build first. VS Code's own log is printed only when the scene
+// workspace's build first. VS Code keeps the runner's environment rather
+// than resolving the login shell's, which on macOS replaces `PATH` and so
+// the `gandr` that serves. VS Code's own log is printed only when the scene
 // fails.
 
 import { runTests } from "@vscode/test-electron";
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
         "--ozone-platform=headless",
         "--disable-extensions",
         "--disable-workspace-trust",
+        "--force-disable-user-env",
         `--user-data-dir=${join(scratch, "user")}`,
         `--extensions-dir=${join(scratch, "extensions")}`,
       ],

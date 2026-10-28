@@ -11,8 +11,8 @@
 #   concerns  `ledger/concerns.sql` at the head and at the base:
 #             {ids: [id], base: [id], sites: [{concern, crate, module}]}
 #   added     the paths the change adds under `crates/*/src/`
-#   regressions  the lines the change adds to corpus sources, Rust test files
-#             and `.config` cases: [{path, text}]
+#   regressions  the lines the change adds to corpus sources, Rust test files,
+#             `.config` cases and `contrib/` TypeScript: [{path, text}]
 #   surface   the paths the change touches under `crates/surface-parser/`,
 #             `crates/surface-grammar/` and `crates/surface-syntax/`
 #   vault     the vault pages and the crates' citations (#2793), or null where
@@ -65,7 +65,9 @@
 # it (#2524): a body closing a `kind:defect` issue `#n` has a non-empty
 # `## Observation`, and the change adds a regression naming `#n`: a corpus
 # `///` line citing `#n`, a Rust test whose name ends `_n` (or carries `_n_`),
-# or a `.config` JSON case whose `"name"` cites `#n`.
+# a `.config` JSON case whose `"name"` cites `#n`, or, in an editor
+# extension's TypeScript tests (`contrib/` files named `*.test.ts` or under a
+# `smoke/` directory), a `//` line or a `test(…)` name citing `#n` (#3538).
 #
 # A surface form states its parser cost and its demand (#2527): a change to
 # the parser, its grammar or its syntax tree (`surface`, the paths it changes
@@ -254,6 +256,8 @@ def regression($n):
   | if (.path | endswith(".gandr")) then .text | test("^\\s*///.*#\($n)\\b")
     elif (.path | endswith(".rs")) then .text | test("\\bfn\\s+\\w*_\($n)(_\\w*)?\\s*[(<]")
     elif (.path | startswith(".config/") and endswith(".json")) then .text | test("\"name\":\\s*\"[^\"]*#\($n)\\b")
+    elif (.path | startswith("contrib/") and (endswith(".test.ts") or test("/smoke/[^/]+\\.ts$")))
+    then .text | test("^\\s*//.*#\($n)\\b|\\btest\\(\\s*[\"'`][^\"'`]*#\($n)\\b")
     else false
     end;
 
@@ -268,7 +272,7 @@ def defects:
   | select($closed | index($n))
   | [if $observed then empty else "`## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there" end,
      if ([$added[] | select(regression($n))] | length) > 0 then empty
-     else "a regression naming #\($n): a corpus `///` line citing it, a Rust test named `…_\($n)`, or a `.config` case whose name cites it, added by the change" end]
+     else "a regression naming #\($n): a corpus `///` line citing it, a Rust test named `…_\($n)`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change" end]
   | select(length > 0)
   | "the body closes #\($n), a `kind:defect`, without \(join(", and without ")); add \(if length > 1 then "both" else "it" end), then run `pr:open` again";
 

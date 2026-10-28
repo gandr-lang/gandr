@@ -6,7 +6,10 @@
 // configuration re-entered `start()` without bound, and the extension host
 // hung before it resolved. The hover is #347's: the client announces
 // `supportHtml`, so the server colours the hover by role, one `<span>` per
-// run, inside `<pre><code>`; a client without it gets a Markdown fence.
+// run, inside `<pre><code>`; a client without it gets a Markdown fence. The
+// server that answers is #3538's: VS Code keeps the runner's environment, so
+// the `gandr` the runner puts first on `PATH` serves, not one the login
+// shell finds first.
 
 import * as assert from "node:assert/strict";
 import * as vscode from "vscode";

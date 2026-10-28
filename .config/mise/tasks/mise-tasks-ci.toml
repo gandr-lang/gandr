@@ -2708,9 +2708,9 @@ sites=$(concerns_at HEAD 'SELECT concern, crate, module FROM site ORDER BY conce
 concerns=$(jq -n --argjson ids "${ids:-[]}" --argjson had "${had:-[]}" --argjson sites "${sites:-[]}" \
   '{ids: [$ids[].id], base: [$had[].id], sites: $sites}')
 added=$(git diff --no-renames --name-only --diff-filter=A "$from" HEAD -- ':(glob)crates/*/src/**/*.rs' | jq -R . | jq -s .)
-# The lines the change adds where a defect's regression is named (#2524),
-# those that can name an issue alone, to keep the argument small.
-regressions=$(git diff -U0 --no-renames --no-color "$from" HEAD -- ':(glob)corpus/**/*.gandr' ':(glob)**/*.rs' ':(glob).config/**/*.json' \
+# The lines the change adds where a defect's regression is named (#2524,
+# #3538), those that can name an issue alone, to keep the argument small.
+regressions=$(git diff -U0 --no-renames --no-color "$from" HEAD -- ':(glob)corpus/**/*.gandr' ':(glob)**/*.rs' ':(glob).config/**/*.json' ':(glob)contrib/**/*.ts' \
   | jq -Rs '[foreach (split("\n")[]) as $line ({path: null};
       if ($line | startswith("+++ ")) then {path: ($line | sub("^\\+\\+\\+ (b/)?"; ""))}
       else {path, text: (if ($line | startswith("+")) then $line[1:] else null end)} end;
