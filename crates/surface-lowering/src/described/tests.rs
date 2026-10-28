@@ -1138,3 +1138,97 @@ fn substitution_rebuilds_every_node_and_replaces_only_mapped_variables()
         "an empty map leaves the term as written"
     );
 }
+
+/// Each constructor of an indexed family answers at the index it states
+/// (#3528): `FZ` at `Fin(S(n))`, binding the field its index names; the
+/// constant `AtZ` at `At(Z)`; and the parameterised `V`'s at `V(a, Z)` and
+/// `V(a, S(n))`, read through a chain that binds `n` alone.
+#[test]
+fn an_indexed_constructor_answers_at_the_index_it_states_3528()
+{
+    /// A family argument, two levels deep: a variable by its distance, a
+    /// constructor by its tag over its fields, each read one level.
+    ///
+    /// # Specification
+    /// trivial.
+    fn argument(
+        arena: &CoreArena,
+        value: gandr_core_term::ValueId,
+    ) -> String
+    {
+        let leaf = |value| match arena.value(value) {
+            Some(&gandr_core_term::Value::Variable { index, .. }) => {
+                alloc::format!("#{}", u32::from(index))
+            },
+            Some(&gandr_core_term::Value::Constructor {
+                tag, ref fields, ..
+            }) if fields.is_empty() => {
+                alloc::format!("{}()", usize::from(tag))
+            },
+            other => alloc::format!("{other:?}"),
+        };
+        match arena.value(value) {
+            Some(&gandr_core_term::Value::Constructor {
+                tag, ref fields, ..
+            }) => {
+                let fields: Vec<String> = fields.iter().map(|&field| leaf(field)).collect();
+                alloc::format!("{}({})", usize::from(tag), fields.join(", "))
+            },
+            Some(_) | None => leaf(value),
+        }
+    }
+    let source = SourceText::from(
+        "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\ndata Fin : N -> Type {\n  FZ : (n : \
+         N) --> Fin(S(n));\n}\ndata At : N -> Type {\n  AtZ : At(Z);\n}\ndata V(a : Type) : N -> \
+         Type {\n  VN : V(a, Z);\n  VC : (n : N, x : a, t : V(a, n)) --> V(a, S(n));\n}\n",
+    );
+    let (types, arena) = described(source);
+    let name = |around: &'static str, inner: &'static str| {
+        entry(
+            &types,
+            at(source, SourceText::from(around), SourceText::from(inner)),
+            DescribedRole::Name,
+        )
+    };
+    let arguments = |ty: Option<ValueType>| match ty {
+        Some(ValueType::Data { ref arguments, .. }) => Some(
+            arguments
+                .iter()
+                .map(|&value| argument(&arena, value))
+                .collect::<Vec<_>>(),
+        ),
+        Some(_) | None => None,
+    };
+
+    let fz = name("FZ :", "FZ");
+    assert_eq!(
+        arguments(returned(&arena, fz.ty)),
+        Some(Vec::from([String::from("1(#0)")])),
+        "`FZ` returns `Fin(S(n))`, `n` its field"
+    );
+    assert!(
+        matches!(arena.value_type(fz.ty), Some(&ValueType::Thunk(chain))
+            if matches!(arena.comp_type(chain), Some(CompType::Pi { .. }))),
+        "the field the index names is bound"
+    );
+    let at_zero = name("AtZ :", "AtZ");
+    assert_eq!(
+        arguments(arena.value_type(at_zero.ty).cloned()),
+        Some(Vec::from([String::from("0()")])),
+        "the constant constructor answers at `At(Z)`"
+    );
+    let nil = name("VN :", "VN");
+    assert_eq!(
+        arguments(arena.value_type(nil.ty).cloned()),
+        Some(Vec::from([String::from("#0"), String::from("0()")])),
+        "`VN` answers at `V(a, Z)`"
+    );
+    assert_eq!(context(&types, nil), ["a"], "under the parameter");
+    let cons = name("VC :", "VC");
+    assert_eq!(
+        arguments(returned(&arena, cons.ty)),
+        Some(Vec::from([String::from("#1"), String::from("1(#0)")])),
+        "`VC` returns `V(a, S(n))`: `n` the chain's one binder, `a` past it"
+    );
+    assert_eq!(context(&types, cons), ["a"], "under the parameter");
+}
