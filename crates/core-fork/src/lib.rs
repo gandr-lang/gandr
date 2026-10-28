@@ -12,6 +12,12 @@
 //! The `pool_only_threads` lint of the policy wall holds the rule. A call that
 //! starts a thread or a pool outside the driver's pool is refused. A site that
 //! owns its thread states why in an expectation at the site.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design
+//!   (§ futures-sax): a cut's reader waits for its writer, so a join's right
+//!   half may wait for its left half, and never the reverse.
 
 #![no_std]
 
@@ -57,13 +63,15 @@ pub trait Fork: Sync
         Start: Fn() -> State + Sync,
         Job: Fn(&mut State, &mut Item) + Sync;
 
-    /// Run two independent halves, possibly at once, and return both
-    /// results.
+    /// Run two halves, possibly at once, and return both results. The right
+    /// half may wait for the left one, and never the reverse.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: the left half never waits for the right half.
     /// - ensures: each half has run exactly once to completion; the pair is
-    ///   their results, in argument order.
+    ///   their results, in argument order. The left half begins before the join
+    ///   waits for the right half to end, so a right half that waits for the
+    ///   left one ends.
     /// - panics: a panic of either half.
     /// - executable: none — the schedule is the implementation's.
     ///

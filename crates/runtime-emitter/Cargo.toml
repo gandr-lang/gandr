@@ -26,8 +26,11 @@ path = "tests/lib.rs"
 # dependency for their layout and the executor, and a build dependency for
 # the stencil list the build script checks the object against. A value
 # crossing between worlds commits to the value plane under the typed
-# chunker's constants, a lift's level read through the strata crate.
+# chunker's constants, a lift's level read through the strata crate. A cut's
+# writer and reader run as the two halves of a join on the fork the caller
+# hands over.
 [dependencies]
+gandr-core-fork.workspace = true
 gandr-core-sequent.workspace = true
 gandr-core-session.workspace = true
 gandr-core-term.workspace = true

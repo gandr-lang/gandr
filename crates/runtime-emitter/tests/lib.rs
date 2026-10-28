@@ -19,6 +19,8 @@ mod count;
 #[cfg(test)]
 mod crossing;
 #[cfg(test)]
+mod cut;
+#[cfg(test)]
 mod forms;
 #[cfg(test)]
 mod seam;

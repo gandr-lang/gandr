@@ -334,6 +334,25 @@ impl<'run> HostValues<'run>
     {
         crossing::deref(manifest, params, chunks, self.store)
     }
+
+    /// Cross the value `from` binds at `value` into the store, at addresses
+    /// fresh there, through the process's chunk store: a reply the host may
+    /// resume with.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`crossing::commit`]'s and [`crossing::deref()`]'s refusals: a value
+    /// that does not cross is named, and the store gains nothing.
+    pub(crate) fn cross_from(
+        &mut self,
+        from: &Store,
+        value: HeapValueId,
+    ) -> Result<HeapValueId, CrossingRefusal>
+    {
+        crate::world::cross(from, value, self.store)
+    }
 }
 
 /// A host's decision with its abort result kept by the adapter: what the

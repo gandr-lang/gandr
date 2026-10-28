@@ -365,15 +365,20 @@ impl Fork for Pool
     ///
     /// # Specification
     /// - ensures: each half runs once, and the pair is their results in
-    ///   argument order.
+    ///   argument order. The left half begins before the join waits for the
+    ///   right one: `rayon::join` runs it on the joining worker, and the
+    ///   calling thread runs it first.
     /// - panics: a panic of either half.
     /// - executable: none — the schedule is the pool's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a join on a wide pool and on a serial pool, each
     ///   recording where its halves ran, distinguish halves run outside the
-    ///   pool and swapped results.
+    ///   pool and swapped results; a right half that waits for its left half's
+    ///   signal sees it at either width, where a join that waited for the right
+    ///   half first would leave it waiting.
     /// - witness: `pool::tests::a_pool_forks_on_its_own_threads`
+    /// - witness: `pool::tests::a_right_half_may_wait_for_the_left_one`
     #[inline]
     fn join<Left, Right, LeftOutput, RightOutput>(
         &self,
@@ -486,7 +491,8 @@ impl Fork for Pooled
         });
     }
 
-    /// Run both halves through `rayon::join`.
+    /// Run both halves through `rayon::join`, which runs the left half on the
+    /// joining worker before it waits for the right one.
     ///
     /// # Specification
     /// trivial.
@@ -544,6 +550,9 @@ mod tests
     use core::num::NonZeroUsize;
     use core::sync::atomic::AtomicUsize;
     use core::sync::atomic::Ordering;
+    use core::time::Duration;
+    use std::sync::Condvar;
+    use std::sync::Mutex;
 
     use gandr_core_fork::Fork as _;
     use quenchant_shape::shape::Maybe;
@@ -698,5 +707,39 @@ mod tests
             (('l', true), ('r', true)),
             "a serial join runs both halves on the caller, in argument order"
         );
+    }
+
+    /// A join's right half waits for a signal that its left half gives. On a
+    /// wide pool and on a serial one, the right half sees the signal.
+    #[test]
+    fn a_right_half_may_wait_for_the_left_one()
+    {
+        let wide = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        for pool in [wide, Pool::default()] {
+            let (given, signalled) = (Mutex::new(false), Condvar::new());
+            let ((), seen) = pool.join(
+                || {
+                    *given.lock().unwrap() = true;
+                    signalled.notify_all();
+                },
+                || {
+                    let (seen, waited) = signalled
+                        .wait_timeout_while(
+                            given.lock().unwrap(),
+                            Duration::from_secs(60),
+                            |given| !*given,
+                        )
+                        .unwrap();
+                    *seen && !waited.timed_out()
+                },
+            );
+            assert!(
+                seen,
+                "the right half sees the left half's signal at {:?}",
+                pool.width()
+            );
+        }
     }
 }

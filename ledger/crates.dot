@@ -145,6 +145,7 @@ digraph crates {
   "kernel-term" -> "kernel-conversion-trace";
   "kernel-term" -> "kernel-strata";
   "kernel-term" -> "theory-path-orders";
+  "runtime-emitter" -> "core-fork";
   "runtime-emitter" -> "core-sequent";
   "runtime-emitter" -> "core-session";
   "runtime-emitter" -> "core-term";
@@ -342,7 +343,8 @@ digraph crates {
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
   "workflow-test-timing" -> "workflow-github";
-  "core-fork" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
+  "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
+  "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
   "surface-session" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
