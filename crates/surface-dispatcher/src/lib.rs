@@ -363,6 +363,7 @@ pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;
 pub use crate::presentation::Presentation;
 pub use crate::presentation::PresentationFault;
+pub use crate::presentation::presented;
 pub use crate::presentation::read_presentation;
 pub use crate::report::Goals;
 pub use crate::report::Lints;

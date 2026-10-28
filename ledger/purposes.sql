@@ -2137,6 +2137,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The drive
 INSERT INTO purpose VALUES('surface-dispatcher','pool::PoolFault','struct','Why the driver''s pool could not start.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::Presentation','struct','How a reader asks sources to be shown: the `[presentation]` table of the user''s configuration file or of a package''s manifest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::PresentationFault','enum','Why a `[presentation]` table could not be read: the file unread, not TOML, or naming a spelling there is none of.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','presentation::presented','function','Read the `[presentation]` table of a document another reader has already parsed, so one parse of a file serves each of its tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::read_presentation','function','Read the `[presentation]` table of the file at a path, an absent file naming nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Goals','enum','What `check` does with a declaration unsettled by its obligations alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Lints','struct','Where `check` reports each lint''s findings; `test` reports none.',NULL,'fits','sound',NULL);

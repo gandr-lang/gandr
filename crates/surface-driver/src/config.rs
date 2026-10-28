@@ -26,6 +26,12 @@
 //! spelling there is none of is a fault: the driver says so on standard
 //! error, `gandr: <path>: <fault>`, and exits `2` before any verb runs.
 //!
+//! A process reads and parses the file at most once, the first time a table
+//! of it is asked for: [`Configuration`] holds the document, and the
+//! presentation and the kernel policy are each read from it. A flag that
+//! answers the spelling leaves the file unread until a `check` asks its
+//! kernel policy.
+//!
 //! **Alternatives.** A directories crate (`etcetera`, `directories`) resolves
 //! each platform's native directory, `~/Library/Application Support` on macOS
 //! among them; one path rule on every platform is what a user documents and
@@ -74,6 +80,7 @@
 //! stands.
 
 use alloc::collections::BTreeSet;
+use core::cell::OnceCell;
 use core::fmt;
 use std::io;
 use std::path::Path;
@@ -83,7 +90,7 @@ use anodized::spec;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::PresentationFault;
-use gandr_surface_dispatcher::read_presentation;
+use gandr_surface_dispatcher::presented;
 
 /// Whose recorded kernel verdicts a `check` believes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -352,70 +359,161 @@ pub fn verdicts() -> Option<PathBuf>
     )
 }
 
-/// The user's configuration, read from the file [`located`] names under the
-/// process's environment.
+/// The user's configuration file, read and parsed at most once a process: its
+/// `[presentation]` and its `[kernel]` are two tables of the one file.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the presentation the file sets, as [`read_presentation`] reads
-///   it; none when no directory is named or no file is there.
-/// - provides: the settings `main` reads before any verb runs.
-/// - fails: the faults of [`read_presentation`].
-/// - panics: none.
-/// - executable: none — the result depends on the environment and the file
-///   system, which the clauses cannot observe.
-///
-/// # Errors
-/// [`PresentationFault::Unreadable`], [`PresentationFault::Malformed`] and
-/// [`PresentationFault::Unset`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — a configured spelling is printed, a flag outranks it, and
-///   a malformed file stops the run, each through the binary.
-/// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
-pub fn read() -> Result<Presentation, PresentationFault>
+/// trivial.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+pub struct Configuration
 {
-    let home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
-    let fallback = std::env::var_os("HOME").map(PathBuf::from);
-    located(home, fallback).map_or_else(|| Ok(Presentation::default()), read_presentation)
+    /// The file, read on the first question asked of it.
+    read: OnceCell<Read>,
 }
 
-/// The kernel policy the user's configuration file names, read from the file
-/// [`located`] names under the process's environment.
+/// What reading the configuration file found.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: as [`kernel_parsed`] reads the file's text; the default policy
-///   when no directory is named or no file is there.
-/// - provides: whose verdicts a `check` believes.
-/// - fails: a file that exists and cannot be read, and the faults of
-///   [`kernel_parsed`].
-/// - panics: none.
-/// - executable: none — the result depends on the environment and the file
-///   system.
-///
-/// # Errors
-/// [`KernelFault`], naming the file.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a key `kernel.trusted` lists is believed through the
-///   binary.
-/// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
-pub fn kernel() -> Result<Kernel, KernelFault>
+/// trivial.
+#[derive(Debug)]
+enum Read
 {
-    let home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
-    let fallback = std::env::var_os("HOME").map(PathBuf::from);
-    let Some(path) = located(home, fallback)
-    else {
-        return Ok(Kernel::default());
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(text) => kernel_parsed(path, toml::from_str(&text)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Kernel::default()),
-        Err(error) => Err(KernelFault {
-            path,
-            why: format!("cannot be read: {error}"),
-        }),
+    /// No directory is named, or no file is there.
+    Absent,
+    /// The file's text, parsed as TOML.
+    Parsed
+    {
+        /// The file.
+        path: PathBuf,
+        /// The document, or why its text is not TOML.
+        document: Result<toml::Table, toml::de::Error>,
+    },
+    /// The file exists and cannot be read.
+    Unreadable
+    {
+        /// The file.
+        path: PathBuf,
+        /// The operating system's error.
+        error: io::Error,
+    },
+}
+
+impl Configuration
+{
+    /// The file [`located`] names under the process's environment, read and
+    /// parsed the first time it is asked for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same reading on every call: the file is read once.
+    /// - provides: one read of the file for every table it holds.
+    /// - fails: never; a fault is the reading's, for each table to report.
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system, which the clauses cannot observe.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the spelling and a check's kernel policy each read
+    ///   the file through the binary, the policy after the spelling in one
+    ///   process.
+    /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
+    /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
+    fn read(&self) -> &Read
+    {
+        self.read.get_or_init(|| {
+            let home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+            let fallback = std::env::var_os("HOME").map(PathBuf::from);
+            let Some(path) = located(home, fallback)
+            else {
+                return Read::Absent;
+            };
+            match std::fs::read_to_string(&path) {
+                Ok(text) => Read::Parsed {
+                    path,
+                    document: toml::from_str(&text),
+                },
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Read::Absent,
+                Err(error) => Read::Unreadable { path, error },
+            }
+        })
+    }
+
+    /// The presentation the user's configuration file sets.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`presented`] reads the file's document; none when no
+    ///   directory is named or no file is there.
+    /// - provides: the settings `main` reads before any verb runs.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`presented`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system, which the clauses cannot observe.
+    ///
+    /// # Errors
+    /// [`PresentationFault::Unreadable`], [`PresentationFault::Malformed`] and
+    /// [`PresentationFault::Unset`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a configured spelling is printed, a flag outranks it,
+    ///   and a malformed file stops the run, each through the binary.
+    /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
+    pub fn presentation(&self) -> Result<Presentation, PresentationFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(Presentation::default()),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => presented(path.clone(), document.as_ref()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(PresentationFault::Unreadable {
+                path: path.clone(),
+                error: io::Error::new(error.kind(), error.to_string()),
+            }),
+        }
+    }
+
+    /// The kernel policy the user's configuration file names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`kernel_parsed`] reads the file's document; the default
+    ///   policy when no directory is named or no file is there.
+    /// - provides: whose verdicts a `check` believes.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`kernel_parsed`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system.
+    ///
+    /// # Errors
+    /// [`KernelFault`], naming the file.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a key `kernel.trusted` lists is believed through the
+    ///   binary.
+    /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
+    pub fn kernel(&self) -> Result<Kernel, KernelFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(Kernel::default()),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => kernel_parsed(path, document.as_ref()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(KernelFault {
+                path: path.clone(),
+                why: format!("cannot be read: {error}"),
+            }),
+        }
     }
 }
 
@@ -444,18 +542,17 @@ pub fn kernel() -> Result<Kernel, KernelFault>
 ///   each read.
 /// - witness: `config::tests::a_kernel_policy_is_read_and_a_bad_one_refused_2799`
 fn kernel_parsed(
-    path: PathBuf,
-    read: Result<toml::Table, toml::de::Error>,
+    path: &Path,
+    read: Result<&toml::Table, &toml::de::Error>,
 ) -> Result<Kernel, KernelFault>
 {
+    let fault = |why: String| KernelFault {
+        path: path.to_path_buf(),
+        why,
+    };
     let table = match read {
         Ok(table) => table,
-        Err(error) => {
-            return Err(KernelFault {
-                path,
-                why: format!("not TOML: {}", error.message()),
-            });
-        },
+        Err(error) => return Err(fault(format!("not TOML: {}", error.message()))),
     };
     let read = match table.get("kernel") {
         None => Ok(Kernel::default()),
@@ -465,7 +562,7 @@ fn kernel_parsed(
             other.type_str()
         )),
     };
-    read.map_err(|why| KernelFault { path, why })
+    read.map_err(fault)
 }
 
 /// What a setting holds, in words: a string as itself, quoted; any other
@@ -547,6 +644,7 @@ fn identity(key: &toml::Value) -> Option<KernelIdentity>
 mod tests
 {
     use alloc::collections::BTreeSet;
+    use std::path::Path;
     use std::path::PathBuf;
 
     use gandr_kernel_core::verdict::KernelIdentity;
@@ -608,8 +706,12 @@ mod tests
     #[test]
     fn a_kernel_policy_is_read_and_a_bad_one_refused_2799()
     {
-        let read =
-            |text: &str| kernel_parsed(PathBuf::from("/c/gandr/config.toml"), toml::from_str(text));
+        let read = |text: &str| {
+            kernel_parsed(
+                Path::new("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+            )
+        };
         let kernel = |text: &str| match read(text) {
             Ok(kernel) => kernel,
             Err(fault) => panic!("{text:?} is read: {fault}"),

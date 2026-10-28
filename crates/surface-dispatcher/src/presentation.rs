@@ -10,11 +10,13 @@
 //! spelling = "ascii" # or "unicode"
 //! ```
 //!
-//! [`read_presentation`] reads it from either, and its key path is the
-//! editor's `gandr.presentation.spelling` setting. Where several name a
-//! spelling, the editor's own setting outranks the project's manifest, and the
-//! manifest outranks the user's file; the driver's `--spelling` flag outranks
-//! the file for one invocation.
+//! [`read_presentation`] reads it from either, and [`presented`] reads it
+//! from a file another reader has already parsed: the driver parses the
+//! user's file once for this table and its own `[kernel]`. Its key path is
+//! the editor's `gandr.presentation.spelling` setting. Where several name a
+//! spelling, the editor's own setting outranks the project's manifest, and
+//! the manifest outranks the user's file; the driver's `--spelling` flag
+//! outranks the file for one invocation.
 //!
 //! **The reader is one.** The alternative was the driver's configuration
 //! module and the language server each reading their own file, which would
@@ -105,7 +107,8 @@ impl fmt::Display for PresentationFault
 ///   [`PresentationFault::Malformed`], and a `presentation` that is not a table
 ///   or a spelling that is not one of the two names is
 ///   [`PresentationFault::Unset`].
-/// - provides: the reading of a file's table, apart from reading the file.
+/// - provides: the reading of a file's table, apart from reading the file, so a
+///   reader that parsed the file for another table reads this one too.
 /// - fails: the faults the ensures clause names.
 /// - panics: none.
 ///
@@ -118,14 +121,20 @@ impl fmt::Display for PresentationFault
 ///   TOML, an unknown spelling and a misshapen table are each read.
 /// - witness: `presentation::tests::a_spelling_is_read_and_a_bad_one_refused`
 #[spec(ensures: |ref ret| !matches!(*ret, Err(PresentationFault::Unreadable { .. })))]
-fn presented(
+#[inline]
+pub fn presented(
     path: PathBuf,
-    read: Result<toml::Table, toml::de::Error>,
+    read: Result<&toml::Table, &toml::de::Error>,
 ) -> Result<Presentation, PresentationFault>
 {
     let table = match read {
         Ok(table) => table,
-        Err(error) => return Err(PresentationFault::Malformed { path, error }),
+        Err(error) => {
+            return Err(PresentationFault::Malformed {
+                path,
+                error: error.clone(),
+            });
+        },
     };
     let unset = |path: PathBuf, found: String| PresentationFault::Unset { path, found };
     let presentation = match table.get("presentation") {
@@ -187,7 +196,7 @@ fn presented(
 pub fn read_presentation(path: PathBuf) -> Result<Presentation, PresentationFault>
 {
     match std::fs::read_to_string(&path) {
-        Ok(text) => presented(path, toml::from_str(&text)),
+        Ok(text) => presented(path, toml::from_str(&text).as_ref()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Presentation::default()),
         Err(error) => Err(PresentationFault::Unreadable { path, error }),
     }
@@ -208,8 +217,12 @@ mod tests
     #[test]
     fn a_spelling_is_read_and_a_bad_one_refused()
     {
-        let read =
-            |text: &str| presented(PathBuf::from("/c/gandr/config.toml"), toml::from_str(text));
+        let read = |text: &str| {
+            presented(
+                PathBuf::from("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+            )
+        };
         let spelling = |text: &str| match read(text) {
             Ok(Presentation { spelling }) => spelling,
             Err(fault) => panic!("{text:?} is read: {fault}"),
