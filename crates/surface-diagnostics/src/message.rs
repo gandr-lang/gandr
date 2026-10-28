@@ -649,7 +649,8 @@ fn lowered(
         ),
         LoweringRefusal::EntryType { .. } => f.write_str(
             "`main` is the program's entry; declare it `def main() -> -F Integer` or `def main() \
-             -> -F Unit`, or `def main(args : List(String)) -> -F Integer` to read the arguments",
+             -> -F Unit`, `def main(args : List(String)) -> -F Integer` to read the arguments, \
+             or `def main(authority : Authority) -> -F Unit` to be handed the ambient authority",
         ),
         LoweringRefusal::RegionAsValue { name, .. } => write!(
             f,

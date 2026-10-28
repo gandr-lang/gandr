@@ -28,6 +28,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::HostGrant;
 use crate::component::Laid;
+use crate::component::lay_out;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
@@ -537,22 +538,25 @@ impl Script
     ///   [`SourceFault::Unreadable`], a grammar that did not build a
     ///   [`SourceFault::Grammar`], and a pipeline fault a
     ///   [`SourceFault::Compose`], each naming the path given. Otherwise the
-    ///   source is laid after the prelude alone, composed under its root, its
-    ///   step built as a walk builds it, and [`execute`] runs it, its entry
-    ///   given the script's arguments, its network and its bindings keyed by
-    ///   the laid text; a script that hosts is [`host`]ed instead, its worlds
-    ///   those its bindings bind to its key, or, with no bindings, every world
-    ///   its entry may migrate to; one with no network hosts nothing.
+    ///   source is laid out with its import closure as [`lay_out`] lays it,
+    ///   after the prelude alone when it imports nothing, composed under its
+    ///   root, its step built as a walk builds it, and [`execute`] runs it, its
+    ///   entry given the script's arguments, its network and its bindings keyed
+    ///   by the laid text; a script that hosts is [`host`]ed instead, its
+    ///   worlds those its bindings bind to its key, or, with no bindings, every
+    ///   world its entry may migrate to; one with no network hosts nothing.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — real file, shebang, missing-file and source-refusal
-    ///   fixtures assert their paths and outcomes. L2 comparisons with the same
+    ///   fixtures assert their paths and outcomes, and a script importing a
+    ///   sibling runs through what it imports. L2 comparisons with the same
     ///   in-memory source cover pipeline agreement, not an independent oracle
     ///   for arbitrary programs or all filesystem failures.
     /// - witness: `tests::run::run_source_file_runs_a_script_file`
+    /// - witness: `tests::run::a_script_runs_through_what_it_imports_2970`
     /// - witness: `tests::run::a_script_compares_through_the_prelude_s_eq_2302`
     /// - witness: `tests::run::run_source_file_accepts_an_executable_shebang_line`
     /// - witness: `tests::run::run_source_file_reports_the_path_of_an_absent_file`
@@ -590,10 +594,11 @@ impl Script
                 };
             },
         };
-        let laid = &*self.laid.insert(Laid::alone(
+        let laid = &*self.laid.insert(lay_out(
+            grammar,
             &self.path,
+            root,
             SourceText::from(self.text.as_str()),
-            (Vec::new(), Vec::new()),
         ));
         let source = SourceText::from(laid.text.as_str());
         let composed = lower_unit_source(grammar, source, &laid.unit, &mut self.lowerings)

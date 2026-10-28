@@ -154,3 +154,41 @@ fn an_entry_returns_the_unit_2279()
         "{source}"
     );
 }
+
+/// An entry takes the ambient authority, a capability, as it takes the
+/// arguments: `U (Cap {…} → F^e R)` is an entry's type, and a `main` printing
+/// through the capability it is handed is lowered as written; one taking the
+/// authority and returning a string is refused at its name (#2970).
+#[test]
+fn an_entry_takes_the_ambient_authority_2970()
+{
+    let source = "def main(authority : Cap { print }) -> [Console] Unit {\n  \
+                  authority.print(\"hello, world!\")\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let &[ref declaration] = module.declarations()
+    else {
+        panic!("one declaration: {source}");
+    };
+    let DeclarationOutcome::Completed { declared_type, .. } = declaration.outcome()
+    else {
+        panic!(
+            "the entry is lowered as written: {:?}",
+            declaration.outcome()
+        );
+    };
+    assert_eq!(
+        entry_shape(&arena, declared_type),
+        Maybe::Present(Arguments::Authority)
+    );
+    let source = "def main(authority : Cap { print }) -> -F String { return \"x\" }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("main")),
+            LoweringRefusal::EntryType { span } if usize::from(span.start()) == 4_usize
+        ),
+        "an entry of the authority returning a string is refused at its name"
+    );
+}

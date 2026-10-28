@@ -304,6 +304,43 @@ fn a_script_compares_through_the_prelude_s_eq_2302()
     }
 }
 
+/// #2970: a script is laid out with what it imports, as `check` lays it, so
+/// its entry runs through a sibling's declaration; laid after the prelude
+/// alone, the import would name no source and nothing would run.
+#[test]
+fn a_script_runs_through_what_it_imports_2970()
+{
+    let sibling = Scratch::write(
+        Path::new("import-2970-answer"),
+        SourceText::from("pub def answer = 42 ;\n"),
+    );
+    let name = sibling
+        .0
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("the sibling's name");
+    let text = format!("import \"{name}\";\ndef main() -> -F Integer {{ return answer }}\n");
+    let importer = Scratch::write(
+        Path::new("import-2970-main"),
+        SourceText::from(text.as_str()),
+    );
+    let mut script = Script::new(importer.0.clone());
+    let run = script.run(&mut Captured::default());
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(exited),
+                    ..
+                },
+                ..
+            } if exited == ExitStatus::from(42_u8)
+        ),
+        "the entry runs through the sibling's `answer`: {run:?}"
+    );
+}
+
 /// #1881: a script's arguments reach its entry, which exits with their
 /// number.
 #[test]

@@ -642,10 +642,13 @@ enum Command
     /// choreography, deployed as this process.
     ///
     /// A `main` returns the exit code, `def main() -> -F Integer`, or the
-    /// unit, `def main() -> -F [Console] Unit`, for 0, and reads the
-    /// arguments after the path when it takes them, `def main(args :
-    /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`, and
-    /// `Console.print(s)` writes `s` as a line of standard output. A `Net`
+    /// unit, `def main() -> -F [Console] Unit`, for 0. It reads the arguments
+    /// after the path when it takes them, `def main(args : List(String)) -> -F
+    /// Integer`, and is handed the ambient authority when it takes that, `def
+    /// main(authority : Authority) -> -F [Console] Unit`, `std.authority`'s
+    /// capability, through which each operation is this process's.
+    /// `Proc.exit(n)` ends the run with `n`, and `Console.print(s)` writes `s`
+    /// as a line of standard output. A `Net`
     /// operation binds the program's network on first use, as the `--net-*`
     /// flags say. A migration runs in this process, or, when `--world` or a
     /// manifold binds any world, where those bindings bind its world; an entry
