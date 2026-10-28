@@ -47,15 +47,16 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// a world's requirement row, `requires [Console, store : Store with sort V =
-/// String]`, and a site's offer, `offers [Console, store = Echo]`.
-const BUILT_IN_FINGERPRINT: u64 = 0x4d77_91a8_42bf_eefb;
+/// the operator declaration leaving the grammar (#1111), after a world's
+/// requirement row, `requires [Console, store : Store with sort V = String]`,
+/// and a site's offer, `offers [Console, store = Echo]`.
+const BUILT_IN_FINGERPRINT: u64 = 0x5a52_a8b5_0329_f7b6;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3326);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3314);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -64,7 +65,7 @@ const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("!", 21),
     ("!=", 1),
-    ("\"", 14),
+    ("\"", 12),
     ("#", 2),
     ("#!{", 1),
     ("#{", 9),
@@ -88,7 +89,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("..", 3),
     (":", 280),
     (":>", 2),
-    (";", 252),
+    (";", 251),
     ("<", 12),
     ("<&", 1),
     ("<-", 20),
@@ -153,7 +154,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("else", 2),
     ("end", 1),
     ("environment_assignment", 1),
-    ("escape_sequence", 7),
+    ("escape_sequence", 6),
     ("exclusive", 1),
     ("ext", 1),
     ("extern", 1),
@@ -180,9 +181,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("import", 1),
     ("in", 2),
     ("include", 2),
-    ("infix", 1),
-    ("infixl", 1),
-    ("infixr", 1),
     ("is", 1),
     ("law", 3),
     ("leta", 20),
@@ -193,18 +191,16 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("mu", 1),
     ("newline", 1),
     ("node", 3),
-    ("number", 56),
+    ("number", 55),
     ("obs", 1),
     ("offer", 1),
     ("offers", 1),
     ("on", 1),
-    ("op", 3),
+    ("op", 2),
     ("oper", 8),
     ("pack", 2),
     ("package", 1),
     ("pi+", 8),
-    ("postfix", 1),
-    ("prefix", 1),
     ("pub", 1),
     ("pure", 3),
     ("rec", 2),
@@ -222,7 +218,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("shell_word", 1),
     ("single_quoted_content", 1),
     ("sort", 14),
-    ("string_fragment", 6),
+    ("string_fragment", 5),
     ("subshell_close", 1),
     ("subshell_open", 1),
     ("tail", 1),

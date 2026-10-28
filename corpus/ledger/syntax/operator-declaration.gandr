@@ -1,4 +1,0 @@
-/// `operator_declaration`: an operator fixity declaration: a fixity, a precedence and the operator's text.
-/// The checker does not reach this form yet; #1111 tracks it.
-@[ refuses("OutOfFragment.operator_declaration") ]
-op prefix 9 "!" ;

@@ -130,7 +130,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 110 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=18 => Sort::ModuleMember, 19..=30 | 100..=101 => Sort::Pattern, 31..=36 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 109 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=11 => Sort::Item, 12..=17 => Sort::ModuleMember, 18..=29 | 99..=100 => Sort::Pattern, 30..=35 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -268,7 +268,7 @@ fn items(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "import_declaration", "world_declaration", "offers_declaration", "operator_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 9 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "import_declaration", "world_declaration", "offers_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -580,35 +580,6 @@ fn declarations(
             t(TileLabel(";")),
         ]),
     ));
-
-    // --- operator-fixity declaration (reserved) -------
-    // `op <fixity> <level> "spelling" ;` — reserved parse-and-decline. Reusing
-    // the `op` keyword (already reserved for data operation members) keeps the
-    // keyword table tight: at a fresh item slot only THIS `op` mold is
-    // admissible, while the data-member `op` is a `≐`-successor reachable only
-    // inside an open `data` / `codata` block. The fixity classes are contextual
-    // tiles (not reserved keywords), and the operator spelling is a STRING
-    // literal so the labeler need not tokenise a user operator; folding a
-    // declared operator into the grammar is not part of this surface.
-    let mut operator = r(
-        RuleName("operator_declaration"),
-        Provenance("operator_declaration"),
-        s,
-        p,
-        seq([
-            t(TileLabel("op")),
-            fixity_class(),
-            t(TileLabel("number")),
-            dq_string(),
-            t(TileLabel(";")),
-        ]),
-    );
-    operator.adaptations.push(Adaptation::new(
-        RuleName("operator_declaration"),
-        SurfaceForm("operator_declaration"),
-        AdaptationReason("the operator declaration reads `op <infixl|infixr|infix|prefix|postfix> <level> \"spelling\" ;`, reusing the reserved `op` lead and a string-literal spelling so the labeler needs no user-operator token; the declaration parses and is declined, since no declared operator is folded into the grammar"),
-    ));
-    out.push(operator);
 
     // --- mutual-recursion `rec { … }` block -
     // Form-first `rec {` is distinct from the `def` tail's `rec` (where `rec`
@@ -1431,32 +1402,6 @@ fn ctor_field() -> Regex
         t(TileLabel("identifier")),
         t(TileLabel(":")),
         h(Sort::Type),
-    ])
-}
-
-/// Build the reserved operator-declaration fixity class menu.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the five declared fixity spellings in their grammar order.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 5 && parts.iter().zip(["infixl","infixr","infix","prefix","postfix"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
-fn fixity_class() -> Regex
-{
-    alt([
-        t(TileLabel("infixl")),
-        t(TileLabel("infixr")),
-        t(TileLabel("infix")),
-        t(TileLabel("prefix")),
-        t(TileLabel("postfix")),
     ])
 }
 

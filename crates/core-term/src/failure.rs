@@ -66,9 +66,9 @@ impl TrackingIssue
     pub const PACKAGES: Self = Self(1108);
     /// A number literal written with the `f32` suffix, under the float rule.
     pub const TYPED_NUMBER: Self = Self(2563);
-    /// An operator declaration, and an operator outside the prelude's
-    /// vocabulary, which only a declaration would bring.
-    pub const OPERATOR_DECLARATION: Self = Self(1111);
+    /// User-declared operators: an operator outside the prelude's vocabulary,
+    /// which only a declaration would bring.
+    pub const USER_OPERATORS: Self = Self(3559);
     /// A thunk type's grade.
     pub const THUNK_GRADE: Self = Self(1112);
     /// A session action naming as its endpoint a form no fork binds, such as

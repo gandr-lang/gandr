@@ -40,11 +40,10 @@
 //! renderer seam, `gandr-surface-render-remote`. The contract suite that drives
 //! a parser over the built-in surface is not here either: it needs the parser,
 //! and it lives with the parser crate; the highlighter's corpus suite runs the
-//! parser as a dev-dependency. User-declared operators are not in the grammar:
-//! the built-in surface's `operator_declaration` rule parses a fixity
-//! declaration so the elaborator can decline it by name, and a grammar is never
-//! extended at run time. Adding them adds an extension entry point together
-//! with its fixity vocabulary.
+//! parser as a dev-dependency. User-declared operators are not in the grammar,
+//! and a grammar is never extended at run time. Adding them adds an extension
+//! entry point together with its fixity vocabulary and a binding from each
+//! spelling to the function it calls.
 //!
 //! # Spellings
 //!

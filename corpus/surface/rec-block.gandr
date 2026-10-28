@@ -1,0 +1,20 @@
+// A `rec` block whose members call each other.
+//
+// A block of plain definitions names each member before any body is read, so
+// members may call each other in either order.
+//
+// Each member claims descent on its call of the other, which only a `def rec`
+// may claim, so each claim is refused.
+//
+// - see: `surface/def-rec-and-copatterns.gandr` — a `def rec`'s claim
+
+/// Evenness and oddness, each by the other.
+rec {
+  /// Even when its predecessor is odd; a plain definition claims no
+  /// descent.
+  @[ refuses("OutOfFragment.ForeignClaim") ]
+  def even(n : Integer) -> -F Bool { return odd[<](n) }
+  /// Odd when its predecessor is even, refused for the same reason.
+  @[ refuses("OutOfFragment.ForeignClaim") ]
+  def odd(n : Integer) -> -F Bool { return even[<](n) }
+}

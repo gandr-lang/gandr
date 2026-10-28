@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 76_usize] = [
+    pub const ALL: [Self; 75_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -259,7 +259,6 @@ impl FormName
         Self::CO_BUNDLE,
         Self::DROP,
         Self::UNION_TYPE,
-        Self::OPERATOR_DECLARATION,
         Self::DUP,
         Self::STAGED_TYPE,
         Self::UNKNOWN_TYPE,
@@ -435,8 +434,6 @@ impl FormName
     pub const DROP: Self = Self("drop_expression");
     /// The union type `A | B`.
     pub const UNION_TYPE: Self = Self("union_type");
-    /// The operator declaration `op infixl 6 "spelling" ;`.
-    pub const OPERATOR_DECLARATION: Self = Self("operator_declaration");
     /// The extern block `extern "c" from "library" { … }`.
     pub const EXTERN_BLOCK: Self = Self("extern_block");
     /// The reserved endpoint copy `dup(e)`.
@@ -1158,7 +1155,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 135_usize] = [
+pub const FORMERS: [(&str, Former); 134_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1296,10 +1293,6 @@ pub const FORMERS: [(&str, Former); 135_usize] = [
         Former::Unadmitted(Unbuilt::LiteralPattern),
     ),
     ("manifest_sort", Former::Unadmitted(Unbuilt::ManifestSort)),
-    (
-        "operator_declaration",
-        Former::Unadmitted(Unbuilt::OperatorDeclaration),
-    ),
     ("or_pattern", Former::Unadmitted(Unbuilt::OrPattern)),
     ("pack_expression", Former::Unadmitted(Unbuilt::Pack)),
     ("package_type", Former::Unadmitted(Unbuilt::PackageType)),

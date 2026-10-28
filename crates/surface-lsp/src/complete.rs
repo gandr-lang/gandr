@@ -1207,7 +1207,6 @@ mod tests
             ),
             row("import", "import ${1:identifier};"),
             row("world", "world ${1:identifier};"),
-            row("op", "op infixl ${1:number} \"${2:string_fragment}\";"),
             row("rec", "rec { ${1:item} \\}"),
             (String::from("pub"), String::from("pub"), false),
             row(
