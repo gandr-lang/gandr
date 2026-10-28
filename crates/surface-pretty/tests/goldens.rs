@@ -1390,10 +1390,10 @@ fn a_record_update_spells_its_base_and_the_fields_it_writes()
 }
 
 /// An injection of unit ascribed `Bool` spells as the word it lowers from,
-/// `true` at the first summand and `false` at the second, still ascribed, so
-/// the spelling lowers back to the ascribed injection (#2168); unit injected
-/// into another sum, and another value injected into `Bool`, keep the
-/// injection.
+/// `true` at the first summand and `false` at the second, since the lowering
+/// mints each word ascribed (#2168, #3350); the word ascribed again is the
+/// annotation the source wrote. Unit injected into another sum, and another
+/// value injected into `Bool`, keep the injection.
 #[test]
 fn an_ascribed_truth_value_spells_as_its_word_2168()
 {
@@ -1411,10 +1411,12 @@ fn an_ascribed_truth_value_spells_as_its_word_2168()
     let falsity = core.value_ascribe(second, boolean);
     let elsewhere = core.value_ascribe(first, not_bool);
     let other = core.value_ascribe(counted, boolean);
+    let annotated = core.value_ascribe(truth, boolean);
     let source = CoreSource::new(&core, &[]);
     for (value, expected) in [
-        (truth, "(true : Bool)"),
-        (falsity, "(false : Bool)"),
+        (truth, "true"),
+        (falsity, "false"),
+        (annotated, "(true : Bool)"),
         (elsewhere, "(+{.0 = unit} : +{Unit, Integer})"),
         (other, "(+{.0 = 1} : Bool)"),
     ] {
@@ -1426,31 +1428,28 @@ fn an_ascribed_truth_value_spells_as_its_word_2168()
     }
 }
 
-/// A path type's endpoint that is a truth value at its carrier `Bool` spells
-/// as its word, `Path(Bool, true, false)`: the checked type holds the bare
-/// injection the source's word lowered to, so a hover and a law's statement
-/// read as written (#2407). An endpoint at another carrier keeps the
-/// injection.
+/// A path type's endpoint the source wrote as a word spells as the word,
+/// `Path(Bool, true, false)`: the checked type holds the word ascribed `Bool`,
+/// as the lowering mints it, so a hover and a law's statement read as written
+/// (#2407, #3350). A bare injection keeps its injection, which is what reads
+/// back to it.
 #[test]
 fn a_truth_value_at_a_path_endpoint_spells_as_its_word_2407()
 {
     let mut core = CoreArena::new();
-    let integer_type = core.value_type_base(BaseType::Integer);
     let unit_type = core.value_type_product(&[]);
     let boolean = core.value_type_sum(&[unit_type, unit_type]);
-    let not_bool = core.value_type_sum(&[unit_type, integer_type]);
     let unit = core.value_unit();
     let first = core.value_injection(Side::Left.into(), unit);
     let second = core.value_injection(Side::Right.into(), unit);
-    let between = core.value_type_path(boolean, first, second);
-    let elsewhere = core.value_type_path(not_bool, first, first);
+    let truth = core.value_ascribe(first, boolean);
+    let falsity = core.value_ascribe(second, boolean);
+    let between = core.value_type_path(boolean, truth, falsity);
+    let bare = core.value_type_path(boolean, first, second);
     let source = CoreSource::new(&core, &[]);
     for (ty, expected) in [
         (between, "Path(Bool, true, false)"),
-        (
-            elsewhere,
-            "Path(+{Unit, Integer}, +{.0 = unit}, +{.0 = unit})",
-        ),
+        (bare, "Path(Bool, +{.0 = unit}, +{.1 = unit})"),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(CoreNode::ValueType(ty))),

@@ -2543,7 +2543,7 @@ fn a_type_member_names_a_computation_type_3080()
             .take(2_usize)
             .map(|&(_, judgement)| judgement)
             .collect::<Vec<_>>(),
-        [Judgement::Refused, Judgement::Checked],
+        [Judgement::Mismatched, Judgement::Checked],
         "an instance's computation member reads its template's renamed to the argument's \
          atom: the instance's run inhabits it and a boolean does not"
     );

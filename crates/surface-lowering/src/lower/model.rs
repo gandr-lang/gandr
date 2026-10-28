@@ -1529,8 +1529,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: a variable is the intuitionistic index counting the binding
     ///   binders after it in `context`; an application `g(t₁, …, tₙ)` is
     ///   `↑((force g) t₁ … tₙ)` over the constant of the member `g` names;
-    ///   `true` and `false` are the left and the right unit of `Bool`; every
-    ///   node carrying the minting's origin.
+    ///   `true` and `false` are the left and the right unit of `Bool`, ascribed
+    ///   `Bool` as a program's literal is; every node carrying the minting's
+    ///   origin.
     /// - fails: a variable `context` does not bind, any other constructor or a
     ///   results term, and an operation the module does not define, as
     ///   unlowered.
@@ -1585,9 +1586,18 @@ impl<'source> Lowerer<'_, 'source>
                         };
                         let unit = sink.arena.value_unit();
                         sink.origins.record_value(unit, origin);
-                        let id = sink
+                        let injected = sink
                             .arena
                             .value_injection(gandr_kernel_term::Summand::from(side), unit);
+                        sink.origins.record_value(injected, origin);
+                        let Lowered::ValueType(boolean) = sink.atom(
+                            crate::resolve::TypeAtom::Boolean,
+                            origin.inserted(Insertion::Classifier),
+                        )
+                        else {
+                            return Err(Missing::Unlowered);
+                        };
+                        let id = sink.arena.value_ascribe(injected, boolean);
                         sink.origins.record_value(id, origin);
                         built.push(id);
                     },

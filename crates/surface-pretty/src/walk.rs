@@ -1127,6 +1127,7 @@ where
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
     | Former::Row { tail, .. } => ret.len() == usize::from(tail.is_some())
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Annotated { value, ty } => ret.is_empty() == truth(source, value, ty).is_some(),
     | Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
@@ -1261,23 +1262,12 @@ where
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second)
         | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
-        // An endpoint that is a truth value at the path's carrier is a word:
-        // the endpoint has no child.
         Former::Path {
             carrier,
             left,
             right,
-        } => {
-            let mut slots = Vec::from([value_type(carrier)]);
-            slots.extend(
-                [left, right]
-                    .into_iter()
-                    .filter(|&end| truth(source, end, carrier).is_none())
-                    .map(value),
-            );
-            slots
-        },
-        Former::Flow {
+        }
+        | Former::Flow {
             carrier,
             left,
             right,
@@ -1559,12 +1549,12 @@ where
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
         },
-        // A truth value is a word: the type is its one child.
+        // A truth value is a word: no child is written.
         Former::Annotated {
             value: annotated,
             ty,
         } => match truth(source, annotated, ty) {
-            Some(_) => Vec::from([value_type(ty)]),
+            Some(_) => Vec::new(),
             None => Vec::from([value(annotated), value_type(ty)]),
         },
         // An offer's arm and a fork's child end in a computation the surface
@@ -7427,6 +7417,11 @@ impl Walk<'_, '_>
             {
                 return writes(Production("type_identifier"), self.atom(name));
             },
+            // `true` and `false`, each ascribed `Bool`, as the lowering mints
+            // the words (#3350).
+            Former::Annotated { value, ty } if let Some(word) = truth(source, value, ty) => {
+                return writes(Production("boolean.expression"), self.atom(word));
+            },
             Former::Unit => {
                 return writes(Production("unit.expression"), self.atom(Glyphs("unit")));
             },
@@ -9743,21 +9738,12 @@ impl Walk<'_, '_>
             let _ = parts.part(Part::Close);
         };
         let binding = match *former {
-            // `Path(Bool, alike(a, a), true)`: an endpoint that is a truth
-            // value at the carrier is written as its word, as the source
-            // writes it.
-            Former::Path {
-                carrier,
-                left,
-                right,
-            } => {
+            // `Path(Bool, alike(a, a), true)`: an endpoint the source wrote as
+            // a word holds the word ascribed `Bool`, which spells as the word.
+            Former::Path { .. } => {
                 let _ = parts.text("Path(").piece(Binding::Sequence);
-                for end in [left, right] {
-                    let _ = parts.text(",").part(Part::Space);
-                    let _ = match truth(source, end, carrier) {
-                        Some(word) => parts.text(word.0),
-                        None => parts.piece(Binding::Sequence),
-                    };
+                for _end in 0_usize .. 2_usize {
+                    let _ = parts.text(",").part(Part::Space).piece(Binding::Sequence);
                 }
                 let _ = parts.part(Part::Tight).text(")");
                 writes(Production("path_type"), Binding::Atom)
@@ -10545,14 +10531,15 @@ impl Walk<'_, '_>
                         }
                     })
             },
-            // `(v : T)`, the annotation the source wrote; `(true : Bool)` for an
-            // ascribed truth value.
-            Former::Annotated { value, ty } => {
-                let _ = match truth(source, value, ty) {
-                    Some(word) => parts.text("(").text(word.0),
-                    None => parts.text("(").piece(Binding::Arrow),
-                };
-                let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
+            // `(v : T)`, the annotation the source wrote; an ascribed truth
+            // value is its word, written as an atom.
+            Former::Annotated { .. } => {
+                let _ = parts
+                    .text("(")
+                    .piece(Binding::Arrow)
+                    .text(" : ")
+                    .piece(Binding::Arrow)
+                    .text(")");
                 writes(Production("parenthesized_expression"), Binding::Atom)
             },
             #[cfg_attr(
