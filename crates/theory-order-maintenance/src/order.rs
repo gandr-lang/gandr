@@ -1125,14 +1125,19 @@ impl<T> OrderMaintenance<T>
     ///   the two elements; `Some(Equal)` exactly when both handles refer to the
     ///   same live element, so distinct live elements never compare `Equal`.
     /// - provides: the total order the structure exists to maintain. The clause
-    ///   checks the answer against the two elements' keys, its presence against
-    ///   both handles' liveness, and reflexivity; stale or foreign handles are
-    ///   answered with `None`, never assumed live.
+    ///   splits on the group as the body does. Two elements of one group are
+    ///   checked against their labels, which order their keys, since both keys
+    ///   carry the group's top. Two of different groups are checked against
+    ///   their keys, read by [`Self::key_at`], so the check enters no clause of
+    ///   the key. The clause also checks the answer's presence against both
+    ///   handles resolving, and reflexivity against the handles once both
+    ///   resolve, which reads no handle a third time. Stale or foreign handles
+    ///   are answered with `None`, never assumed live.
     /// - fails: returns `None` if either handle is stale or foreign.
     /// - panics: none.
     /// - intension: two label comparisons at most — the groups' labels measured
-    ///   from the base group's, then the elements' own — independent of the
-    ///   number of elements between them.
+    ///   from the base group's, read once, then the elements' own — independent
+    ///   of the number of elements between them.
     ///
     /// # Adequacy
     /// - hypothesis: L2 for the ordering itself — every pair of handles is
@@ -1148,15 +1153,20 @@ impl<T> OrderMaintenance<T>
     /// - witness: `order::tests::foreign_handle_is_rejected`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.is_none_or(|ordering| Some(ordering)
-            == self
-                .resolve(left)
-                .and_then(|occupied| self.key(occupied))
-                .zip(self.resolve(right).and_then(|occupied| self.key(occupied)))
-                .map(|(first, second)| first.cmp(&second)))
-        && ret.is_some() == (bool::from(self.contains(left)) && bool::from(self.contains(right)))
-        && (ret == Some(Ordering::Equal))
-            == (left == right && bool::from(self.contains(left))))]
+    #[spec(ensures: |ret| match self.resolve(left).zip(self.resolve(right)) {
+        None => ret.is_none(),
+        Some((first, second)) => (ret == Some(Ordering::Equal)) == (left == right)
+            && if first.group == second.group {
+                ret == Some(first.label.cmp(&second.label))
+            }
+            else {
+                ret.is_some()
+                    && ret == self
+                        .base_label()
+                        .and_then(|base| self.key_at(base, first).zip(self.key_at(base, second)))
+                        .map(|(first_key, second_key)| first_key.cmp(&second_key))
+            },
+    })]
     pub fn cmp(
         &self,
         left: Pos,
@@ -1168,8 +1178,9 @@ impl<T> OrderMaintenance<T>
         if left_occupied.group == right_occupied.group {
             return Some(left_occupied.label.cmp(&right_occupied.label));
         }
-        let left_key = self.key(left_occupied)?;
-        let right_key = self.key(right_occupied)?;
+        let base = self.base_label()?;
+        let left_key = self.key(base, left_occupied)?;
+        let right_key = self.key(base, right_occupied)?;
         Some(left_key.cmp(&right_key))
     }
 
@@ -1886,15 +1897,36 @@ impl<T> OrderMaintenance<T>
         }
     }
 
-    /// The place of a live element in the order: its group's label measured
-    /// forward from the base group's label, then its own label.
+    /// The base group's label, which every group's place is measured from.
     ///
     /// # Specification
-    /// - requires: nothing; an unresolvable group or base is an absence.
-    /// - ensures: returns the element's group's distance from the base group
-    ///   around the circle, beside the element's own label, and `None` when the
-    ///   group or the base does not resolve.
-    /// - provides: the key two elements of different groups compare by.
+    /// - requires: nothing; a structure without a base is an absence.
+    /// - ensures: returns the label of the group the structure's base names,
+    ///   and `None` when the structure has no base or it does not resolve.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the sequence models compare every pair of elements by
+    ///   their keys, measured from this label, after generated edits that move
+    ///   the base.
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    #[spec(ensures: |ret| ret == self.base.and_then(|base| self.group(base)).map(|group| group.label))]
+    #[inline]
+    fn base_label(&self) -> Option<TopLabel>
+    {
+        Some(self.group(self.base?)?.label)
+    }
+
+    /// The place of a live element in the order: its group's label measured
+    /// forward from the base group's label `base`, then its own label.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unresolvable group is an absence.
+    /// - ensures: returns the element's group's distance from `base` around the
+    ///   circle, beside the element's own label, and `None` when the group does
+    ///   not resolve.
+    /// - provides: at [`Self::base_label`], the key two elements of different
+    ///   groups compare by.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1907,13 +1939,37 @@ impl<T> OrderMaintenance<T>
     #[inline]
     fn key(
         &self,
+        base: TopLabel,
+        occupied: &Occupied<T>,
+    ) -> Option<OrderKey>
+    {
+        self.key_at(base, occupied)
+    }
+
+    /// [`Self::key`] without its clause: the reader the clauses that state an
+    /// ordering against keys call, so checking one comparison enters no
+    /// further clause of the key.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::key`].
+    /// - ensures: as [`Self::key`].
+    /// - panics: none.
+    /// - executable: none — it is the clauses' own reader; [`Self::key`] states
+    ///   its clause over this body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Self::key`].
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    #[inline]
+    fn key_at(
+        &self,
+        base: TopLabel,
         occupied: &Occupied<T>,
     ) -> Option<OrderKey>
     {
         let group = self.group(occupied.group)?;
-        let base = self.group(self.base?)?;
         Some(OrderKey {
-            top: TopLabel(group.label.0.wrapping_sub(base.label.0) & self.top.last().0),
+            top: TopLabel(group.label.0.wrapping_sub(base.0) & self.top.last().0),
             bottom: occupied.label,
         })
     }
