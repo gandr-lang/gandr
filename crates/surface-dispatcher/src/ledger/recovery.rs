@@ -20,7 +20,11 @@
 //! +{Integer}` less `Integer` is the empty sum, a type the corpus writes on
 //! purpose, and the first ill-typed term is then the body's injection; `def
 //! rec f` less `rec` is a definition that cannot call itself, and its own
-//! call is unresolved. With no mistake of form left, the first refusal is
+//! call is unresolved. So is a source whose lowering refuses a form only for
+//! what it means where it stands (#3332): `loop` deleted leaves its `break`
+//! outside any loop, `break` deleted leaves the statement after an endless
+//! loop unreached, and `rec` deleted leaves a descent claim outside a
+//! recursive group. With no mistake of form left, the first refusal is
 //! where the source goes wrong by construction, so it is counted well formed
 //! beside the accepted, not filed.
 //!
@@ -59,6 +63,7 @@ use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::SPELLED;
+use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_parser::CandidateLabel;
 use gandr_surface_parser::Lexeme;
@@ -174,8 +179,8 @@ struct Reported
     /// Its primary span, measured in the mutant's own text, when it has one.
     span: Option<Site>,
     /// Whether the mutant was well formed: the lowering read every
-    /// declaration and refused none but for an unresolved name, so the first
-    /// error is a meaning's, not a form's.
+    /// declaration and refused none but for what a well-formed form means
+    /// where it stands, so the first error is a meaning's, not a form's.
     formed: bool,
 }
 
@@ -596,11 +601,12 @@ fn mutants(
 /// - ensures: one mutant per tile and mutation as [`mutants`] makes them, each
 ///   checked as `check` checks a source under a `ledger` directory; a mutant is
 ///   accepted when the check reports no error, counted well formed when the
-///   lowering refused none of its declarations but for an unresolved name and
-///   its first error does not mark the site, and a finding otherwise when its
-///   first error's primary span neither overlaps nor touches the mutation's
-///   site, or the error has none. The scratch directory the mutants are written
-///   under is removed.
+///   lowering refused none of its declarations but for an unresolved name, a
+///   loop's exit outside any loop, an unreachable statement or a descent claim
+///   outside a recursive group, and its first error does not mark the site, and
+///   a finding otherwise when its first error's primary span neither overlaps
+///   nor touches the mutation's site, or the error has none. The scratch
+///   directory the mutants are written under is removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -613,12 +619,15 @@ fn mutants(
 /// # Adequacy
 /// - hypothesis: L3 — a definition's exemplar is swept tile by tile, every
 ///   mutant counted and each first error read against its site; a deletion
-///   leaving another well-formed declaration whose body the checker refuses,
-///   and a `rec` deleted or a declaration's keyword name missed, leaving only
-///   unresolved names, are counted well formed, not filed.
+///   leaving another well-formed declaration whose body the checker refuses, a
+///   `rec` deleted or a declaration's keyword name missed, leaving only
+///   unresolved names, and a `loop`, `break` or `rec` deleted, leaving an exit
+///   outside any loop, a statement no path reaches or a descent claim outside a
+///   recursive group, are counted well formed, not filed.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
+/// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
@@ -667,8 +676,11 @@ pub(super) fn sweep(
             } = step
             {
                 // Well formed: the lowering read the source and refused no
-                // declaration of it but for a name no declaration answers,
-                // so what the check reports is a meaning, not a form.
+                // declaration of it but for what a well-formed form means
+                // where it stands — a name no declaration answers, a loop's
+                // exit outside any loop, a statement no path reaches, or a
+                // descent claim outside a recursive group — so what the check
+                // reports is a meaning, not a form.
                 let formed = matches!(
                     *composed,
                     Composed::Settled {
@@ -680,7 +692,16 @@ pub(super) fn sweep(
                             !matches!(
                                 declaration.produced().refusal(),
                                 Maybe::Present(Refusal::Lowering(ref refused))
-                                    if !matches!(*refused, LoweringRefusal::UnresolvedName { .. })
+                                    if !matches!(
+                                        *refused,
+                                        LoweringRefusal::UnresolvedName { .. }
+                                            | LoweringRefusal::OutsideLoop { .. }
+                                            | LoweringRefusal::Unreachable { .. }
+                                            | LoweringRefusal::OutOfFragment {
+                                                boundary: FragmentBoundary::ForeignClaim,
+                                                ..
+                                            }
+                                    )
                             )
                         })
                 );
@@ -1063,5 +1084,75 @@ mod tests
             );
         }
         assert!(report.formed >= unresolved.len(), "{report}");
+    }
+
+    /// #3332: `loop` deleted leaves its `break` outside any loop, `break`
+    /// deleted or missed leaves the loop endless and the statement after it
+    /// unreached, and `rec` deleted leaves a descent claim outside a recursive
+    /// group. Each form left is well formed and refused for what it means where
+    /// it stands, so each mutant is counted well formed and not filed.
+    #[test]
+    fn a_deleted_licence_leaves_a_well_formed_source_3332()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-licence",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "break-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/break-expression.gandr"),
+            ),
+            (
+                "break-value-expression.gandr",
+                include_str!("../../../../corpus/ledger/syntax/break-value-expression.gandr"),
+            ),
+            (
+                "rec-block.gandr",
+                include_str!("../../../../corpus/ledger/syntax/rec-block.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let licensed = [
+            (
+                "break-expression.gandr",
+                99_usize,
+                "loop",
+                Mutation::Deleted,
+            ),
+            (
+                "break-expression.gandr",
+                106,
+                "break",
+                Mutation::Missed(String::from("brea")),
+            ),
+            ("break-expression.gandr", 106, "break", Mutation::Deleted),
+            (
+                "break-value-expression.gandr",
+                119,
+                "loop",
+                Mutation::Deleted,
+            ),
+            ("rec-block.gandr", 174, "rec", Mutation::Deleted),
+            ("rec-block.gandr", 302, "rec", Mutation::Deleted),
+        ];
+        for &(exemplar, at, tile, ref mutation) in &licensed {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == *mutation
+                }),
+                "{exemplar}:{at}: `{tile}` {mutation} leaves a well-formed source: {report}"
+            );
+        }
+        assert!(report.formed >= licensed.len(), "{report}");
     }
 }
