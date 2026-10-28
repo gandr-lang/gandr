@@ -1,10 +1,26 @@
-// Hello, world: a program printing a line through `Console`, an effect the
-// host provides. Its handler is the runtime at the entry, writing each line
-// to standard output; a test runs the same program under a handler that
-// keeps the lines. `gandr run hello.gandr` prints `hello, world!` and exits 0.
+// Hello, world: a program printing a line through `std`, handed the ambient
+// authority by `gandr run`.
+//
+// Authority enters a program in one place, as `main`'s parameter, and the
+// program prints through a capability opened from it. Nothing reaches the
+// standard streams through the ambient `Console` interface.
+//
+// `console` narrows the authority to the standard streams, and `print` writes
+// one line through them. `gandr run hello.gandr` prints `hello, world!` and
+// exits 0.
+//
+// - see: `../../../library/std/src/authority.gandr` — `Authority` and
+//   `console`
+// - see: `../../../library/std/src/console.gandr` — `print`
+// - see: #2970 — `std.authority` and `std.console`
 
-/// The entry: it prints its greeting and returns the unit, which exits 0.
-@[ runs("hello, world!\nunit") ]
-def main() -> [Console] Unit {
-  Console.print("hello, world!")
+// `Authority`, `console`.
+import "../../../library/std/src/authority.gandr";
+
+// `print`.
+import "../../../library/std/src/console.gandr";
+
+/// The entry: it opens the console from its authority and prints its greeting.
+def main(authority : Authority) -> [Console] Unit {
+  print(console(authority), "hello, world!")
 }

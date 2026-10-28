@@ -1,0 +1,12 @@
+// `std.console`: the standard streams, written through the console's root
+// capability, which `std.authority`'s `console` opens from the authority
+// `main` is handed. A program reaches the streams through a capability it
+// was given, never through the ambient `Console` interface, so what it may
+// print is what crossed from `main`. The host at a program's entry serves
+// each line on standard output; standard error and standard input join it
+// as the host interface grows to offer them.
+
+/// One line, written to standard output through `console`.
+pub def print(console : Cap { print }, line : String) -> [Console] Unit {
+  console.print(line)
+}
