@@ -1,0 +1,87 @@
+// A peer still waiting when its counterpart abandons the rest is cancelled,
+// and the run answers its clause's value.
+//
+// The abandoned rest held an end whose protocol had not ended, so it owed
+// its peer a cancellation. The peer's next action on its own end observes it
+// and abandons the peer's continuation in turn.
+//
+// Each program below abandons its root's rest through an exit clause that
+// answers `7`. A peer parked at a receive is readied and abandoned, and an
+// end queued at an abandoned end is cancelled with it.
+//
+// - see: #3305 — the cancellation hop
+// - see: Fowler, Lindley, Morris and Decova, _Exceptional Asynchronous
+//   Session Types_, POPL 2019, doi:10.1145/3290341 — cancellation reaching
+//   the peer and every end left in a cancelled end's buffer
+
+/// The peer sends, then waits on a payload the abandoned rest would have
+/// sent.
+@[ runs("7") ]
+def parked() -> Integer {
+  handle c : Proc {
+    fork (peer : !Integer. ?Integer. end) {
+      send(peer, 1);
+      recv(peer) as x;
+      close(peer)
+    } as found;
+    recv(found) as first;
+    c.exit(1);
+    send(found, 2);
+    close(found);
+    pure first
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  }
+}
+
+/// The peer's first action is the receive, and the root abandons the rest
+/// before the peer ever waits.
+@[ runs("7") ]
+def late() -> Integer {
+  handle c : Proc {
+    fork (peer : ?Integer. end) {
+      recv(peer) as x;
+      close(peer)
+    } as found;
+    c.exit(1);
+    send(found, 2);
+    close(found);
+    pure 1
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  }
+}
+
+/// A relay sends the root the worker's peer, and the clause abandons the
+/// root's rest before it takes that end. The root's cancelled end cancels the
+/// end queued at it, and the worker's waiting receive then abandons the worker.
+@[ runs("7") ]
+def forwarded() -> Integer {
+  handle c : Proc {
+    fork (relay : !(!Integer. end). end) {
+      fork (worker : ?Integer. end) {
+        recv(worker) as n;
+        close(worker)
+      } as w;
+      send(relay, w);
+      close(relay)
+    } as r;
+    fork (tick : !Integer. end) {
+      send(tick, 1);
+      close(tick)
+    } as t;
+    recv(t) as one;
+    close(t);
+    c.exit(1);
+    recv(r) as held;
+    send(held, 3);
+    close(held);
+    close(r);
+    pure one
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  }
+}

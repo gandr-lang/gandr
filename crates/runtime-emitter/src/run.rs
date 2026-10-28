@@ -1281,6 +1281,7 @@ fn run(
                 Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
                 Some(Refused::Migration(at, why)) => return Err(Declined::Migration(at, why)),
                 Some(Refused::Deadlock(waiting)) => Stuck::Deadlock(waiting),
+                Some(Refused::Cancelled(at)) => Stuck::Cancelled(at),
                 None => {
                     let head = match Observed::try_from(runtime.observed()) {
                         Ok(Observed::Apply) => DestructorTag::Apply,

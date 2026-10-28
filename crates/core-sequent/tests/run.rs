@@ -266,7 +266,8 @@ fn fingerprint(run: &Result<Ran, Declined>) -> String
                 | Stuck::CyclicConstant(_)
                 | Stuck::Unended(_)
                 | Stuck::Outside(_)
-                | Stuck::Deadlock(_) => String::new(),
+                | Stuck::Deadlock(_)
+                | Stuck::Cancelled(_) => String::new(),
             };
             format!("stuck {stuck:?}: {held}")
         },

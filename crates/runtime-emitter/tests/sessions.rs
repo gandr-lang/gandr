@@ -1,6 +1,9 @@
 //! Sessions run on the run's own scheduler: forked tasks take turns on its
-//! thread, a receive or an offer with nothing sent parks its task, and a run
-//! whose tasks all wait is stuck at their actions.
+//! thread, a receive or an offer with nothing sent parks its task, a run
+//! whose tasks all wait is stuck at their actions, and an end abandoned
+//! before its protocol ended cancels its peer.
+
+use alloc::sync::Arc;
 
 use gandr_core_sequent::CommandNode;
 use gandr_core_sequent::Definitions;
@@ -13,6 +16,10 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::EffectClause;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectOp;
+use gandr_core_term::effect::EffectSig;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
@@ -466,6 +473,223 @@ fn a_run_whose_tasks_all_wait_is_stuck_at_their_actions()
             Ok(Outcome::Stuck(Stuck::Deadlock(vec![parent, child]))),
             outcome,
             "the run is stuck at both receives on {tier:?}"
+        );
+    }
+}
+
+/// The one-operation interface `Proc`, its `exit` taking and answering the
+/// unit.
+///
+/// # Specification
+/// trivial.
+fn proc(core: &mut CoreArena) -> EffectSig
+{
+    let unit = core.value_type_unit();
+    EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        name: "exit".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature")
+}
+
+/// `exit` performed with the unit, then `rest`.
+///
+/// # Specification
+/// trivial.
+fn exited(
+    core: &mut CoreArena,
+    rest: ComputationId,
+) -> ComputationId
+{
+    let signature = proc(core);
+    let unit = core.value_unit();
+    let performed = core.computation_perform(signature, "exit".into(), unit);
+    core.computation_bind(performed, rest)
+}
+
+/// `subject` handled over [`proc`]: its return answered as itself, its
+/// `exit` by a clause that abandons the continuation and returns `answer`.
+///
+/// # Specification
+/// trivial.
+fn abandoning(
+    core: &mut CoreArena,
+    subject: ComputationId,
+    answer: ValueId,
+) -> ComputationId
+{
+    let signature = proc(core);
+    let returned = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = core.computation_return(returned);
+    // Under the clause: the continuation `x0`, then the payload.
+    let continuation = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let abandoned = core.computation_abandon(continuation);
+    let answered = core.computation_return(answer);
+    let body = core.computation_bind(abandoned, answered);
+    core.computation_handle(
+        signature,
+        subject,
+        on_return,
+        Arc::from([EffectClause {
+            operation: "exit".into(),
+            body,
+        }]),
+    )
+}
+
+/// A root that takes its child's first payload, then abandons the rest of its
+/// scope while the child waits for a second: the rest held the root's end,
+/// so the end is cancelled, the waiting child is abandoned, and the run
+/// answers the clause's `7` on every tier. An abandonment that cancels no end
+/// leaves the child waiting and the run stuck.
+#[test]
+fn an_abandoned_end_s_waiting_peer_is_abandoned()
+{
+    let mut core = CoreArena::new();
+    let protocol = core.value_type_unit();
+    let one = integer(&mut core, Digits("1"));
+    let two = integer(&mut core, Digits("2"));
+    let seven = integer(&mut core, Digits("7"));
+    // The child: `send(c, 1); recv(c) as x; close(c)`.
+    let closed = core.computation_session(SessionAction::Close {
+        endpoint: end(Linear(1)),
+    });
+    let received = core.computation_session(SessionAction::Receive {
+        endpoint: end(Linear(0)),
+        body: closed,
+    });
+    let child = then(
+        &mut core,
+        SessionAction::Send {
+            endpoint: end(Linear(0)),
+            payload: one,
+        },
+        received,
+    );
+    // The root, under its end and then the first payload: `exit; send(e, 2);
+    // close(e); return first`.
+    let first = core.value_variable(Zone::Linear, end(Linear(0)));
+    let answered = core.computation_return(first);
+    let closed = then(
+        &mut core,
+        SessionAction::Close {
+            endpoint: end(Linear(1)),
+        },
+        answered,
+    );
+    let sent = then(
+        &mut core,
+        SessionAction::Send {
+            endpoint: end(Linear(1)),
+            payload: two,
+        },
+        closed,
+    );
+    let rest = exited(&mut core, sent);
+    let parent = core.computation_session(SessionAction::Receive {
+        endpoint: end(Linear(0)),
+        body: rest,
+    });
+    let forked = core.computation_session(SessionAction::Fork {
+        protocol,
+        child,
+        parent,
+    });
+    let program = abandoning(&mut core, forked, seven);
+    let (arena, root) = focused(&core, program);
+    for &tier in tiers() {
+        let mut store = Store::new();
+        let outcome = evaluate_on(
+            tier,
+            &arena,
+            &Definitions::new(),
+            root,
+            budget(),
+            RunInputs::new(&mut store),
+        );
+        let Ok(Outcome::Halted(answer)) = outcome
+        else {
+            panic!("the run halts on {tier:?}: {outcome:?}");
+        };
+        let read =
+            read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&core, read, seven),
+            "the run answers the clause's 7 on {tier:?}"
+        );
+    }
+}
+
+/// A child that abandons the rest of its scope, which held its end, while
+/// the root waits at its receive on the channel: the receive meets the
+/// cancellation and abandons the root's continuation, so the run has no
+/// answer and is stuck cancelled at that receive on every tier. A root that
+/// kept waiting would leave the run stuck in a deadlock instead.
+#[test]
+fn a_root_whose_peer_cancels_is_stuck_cancelled_at_its_receive()
+{
+    let mut core = CoreArena::new();
+    let protocol = core.value_type_unit();
+    let two = integer(&mut core, Digits("2"));
+    let unit = core.value_unit();
+    // The child, its end in its scope: `exit; send(c, 2); close(c)`, the exit
+    // abandoning the rest.
+    let closed = core.computation_session(SessionAction::Close {
+        endpoint: end(Linear(0)),
+    });
+    let sent = then(
+        &mut core,
+        SessionAction::Send {
+            endpoint: end(Linear(0)),
+            payload: two,
+        },
+        closed,
+    );
+    let rest = exited(&mut core, sent);
+    let child = abandoning(&mut core, rest, unit);
+    // The root: `recv(e) as n; close(e); return n`.
+    let n = core.value_variable(Zone::Linear, end(Linear(0)));
+    let answered = core.computation_return(n);
+    let closed = then(
+        &mut core,
+        SessionAction::Close {
+            endpoint: end(Linear(1)),
+        },
+        answered,
+    );
+    let parent = core.computation_session(SessionAction::Receive {
+        endpoint: end(Linear(0)),
+        body: closed,
+    });
+    let program = core.computation_session(SessionAction::Fork {
+        protocol,
+        child,
+        parent,
+    });
+    let (arena, root) = focused(&core, program);
+    let Some(&CommandNode::Session {
+        action: SessionAction::Fork { parent, .. },
+        ..
+    }) = arena.command(root)
+    else {
+        panic!("the program focuses to its fork");
+    };
+    for &tier in tiers() {
+        let mut store = Store::new();
+        let outcome = evaluate_on(
+            tier,
+            &arena,
+            &Definitions::new(),
+            root,
+            budget(),
+            RunInputs::new(&mut store),
+        );
+        assert_eq!(
+            Ok(Outcome::Stuck(Stuck::Cancelled(parent))),
+            outcome,
+            "the root's receive meets its peer's cancellation on {tier:?}"
         );
     }
 }

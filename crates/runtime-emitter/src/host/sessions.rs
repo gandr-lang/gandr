@@ -14,6 +14,15 @@
 //! once every task has ended the root's answer pops the halt frame. With no
 //! task ready and one waiting, the run is stuck at the actions the tasks wait
 //! at.
+//!
+//! An end abandoned before its protocol ended is cancelled, the daimon its
+//! peer is owed: the messages queued at it are given up, an end one carries
+//! cancelled in turn, and a task waiting at its peer is readied to be
+//! abandoned. A send or a select to a cancelled peer, and a receive or an
+//! offer from one with nothing queued, abandon the acting task's
+//! continuation: its frames' unwinds run, every end it still holds is
+//! cancelled, and the task ends. A root so ended leaves the run stuck at that
+//! action, cancelled.
 
 use alloc::collections::VecDeque;
 
@@ -218,15 +227,44 @@ enum Ready
         /// What it took: a payload's cell, or a label's position.
         answer: Word,
     },
+    /// A task that waited at an end its peer cancelled: its frames abandoned,
+    /// their unwinds run, and the task ended.
+    Abandon
+    {
+        /// The task.
+        task: Task,
+        /// Its frames.
+        stack: Word,
+        /// The receive or offer it waited at.
+        at: CommandId,
+    },
 }
 
-/// One end of a channel: the messages sent to it and not yet taken, oldest
-/// first, the receipt or offer a traced run records as each is taken, and
-/// the task waiting at it.
+/// Who holds an end, and whether its protocol goes on.
 ///
 /// # Specification
 /// trivial.
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// A task holds it, in its frames or its window.
+    Held(Task),
+    /// A message carries it, queued at an end.
+    Sent,
+    /// Closed: its protocol ended.
+    Closed,
+    /// Abandoned before its protocol ended: a cancellation its peer's next
+    /// action observes.
+    Cancelled,
+}
+
+/// One end of a channel: the messages sent to it and not yet taken, oldest
+/// first, the receipt or offer a traced run records as each is taken, the
+/// task waiting at it, and who holds it.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
 struct End<'run>
 {
     /// The messages.
@@ -235,13 +273,32 @@ struct End<'run>
     noted: VecDeque<RecordedMove<Carried>>,
     /// The task waiting, if any.
     waiting: Option<Parked<'run>>,
+    /// Who holds it.
+    standing: Standing,
+}
+
+impl End<'_>
+{
+    /// A fresh end the task `task` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn held(task: Task) -> Self
+    {
+        Self {
+            queued: VecDeque::new(),
+            noted: VecDeque::new(),
+            waiting: None,
+            standing: Standing::Held(task),
+        }
+    }
 }
 
 /// A channel: its two ends.
 ///
 /// # Specification
 /// trivial.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Channel<'run>
 {
     /// The child's end.
@@ -251,9 +308,10 @@ struct Channel<'run>
 }
 
 /// A run's tasks: its channels, the tasks ready, oldest first, the task
-/// running, and the root's answer once the root has ended. Scheduling is
+/// running, the root's answer once the root has ended, and the action a
+/// cancellation abandoned the root at, once one has. Scheduling is
 /// deterministic: a fork's parent runs on, and a child or a task a message
-/// readies joins the back of the queue.
+/// or a cancellation readies joins the back of the queue.
 ///
 /// # Specification
 /// trivial.
@@ -274,6 +332,9 @@ pub(super) struct Scheduler<'run>
     parked: usize,
     /// The root's answer, once the root has ended.
     answer: Option<Word>,
+    /// The action a cancellation abandoned the root's continuation at: the
+    /// run then has no answer.
+    cancelled: Option<CommandId>,
 }
 
 impl<'run> Scheduler<'run>
@@ -292,6 +353,7 @@ impl<'run> Scheduler<'run>
             forked: Task::ROOT,
             parked: 0,
             answer: None,
+            cancelled: None,
         }
     }
 
@@ -313,6 +375,30 @@ impl<'run> Scheduler<'run>
             Party::Child => &mut held.child,
             Party::Parent => &mut held.parent,
         })
+    }
+
+    /// The ends the task `task` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held_by(
+        &self,
+        task: Task,
+    ) -> Vec<(ChannelIndex, Party)>
+    {
+        self.channels
+            .iter()
+            .enumerate()
+            .flat_map(|(index, channel)| {
+                [
+                    (Party::Child, &channel.child),
+                    (Party::Parent, &channel.parent),
+                ]
+                .into_iter()
+                .filter(move |&(_, end)| end.standing == Standing::Held(task))
+                .map(move |(party, _)| (ChannelIndex(index), party))
+            })
+            .collect()
     }
 
     /// The actions the waiting tasks wait at, in the order the tasks forked.
@@ -367,6 +453,34 @@ fn end_of(held: Word) -> Result<(ChannelIndex, Party), Refusal>
 {
     // SAFETY: a cell holds its value first.
     let end = unsafe { *cell(held)?.wrapping_add(VALUE) };
+    capability_end(end)
+}
+
+/// Push the cell `held` onto `ends` when it holds a session's end.
+///
+/// # Specification
+/// trivial.
+pub(super) fn gather_end(
+    ends: &mut Vec<Word>,
+    held: Word,
+)
+{
+    if end_of(held).is_ok() {
+        ends.push(held);
+    }
+}
+
+/// The channel and the party of the end `end`: a capability whose fields
+/// are its channel's number and its party, as a cell holds it and a send
+/// carries it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for a value that is no end.
+fn capability_end(end: Word) -> Result<(ChannelIndex, Party), Refusal>
+{
     if kind(end)? != Kind::Capability {
         return Err(Refusal::Operands);
     }
@@ -431,7 +545,6 @@ impl<'run> Calls<'run, '_>
         let channel = ChannelIndex(self.scheduler.channels.len());
         let theirs = endpoint(runtime, channel, Party::Child)?;
         let ours = endpoint(runtime, channel, Party::Parent)?;
-        self.scheduler.channels.push(Channel::default());
         if let Recording::Into(ref mut trace) = self.recording {
             trace.plays.push(Play {
                 fork: at,
@@ -440,6 +553,10 @@ impl<'run> Calls<'run, '_>
         }
         let task = Task(self.scheduler.forked.0.saturating_add(1));
         self.scheduler.forked = task;
+        self.scheduler.channels.push(Channel {
+            child: End::held(task),
+            parent: End::held(self.scheduler.running),
+        });
         self.scheduler.ready.push_back(Ready::Start {
             task,
             closure,
@@ -553,26 +670,48 @@ impl<'run> Calls<'run, '_>
         let end = end_of(held)?;
         let task = self.scheduler.running;
         self.note(end, task, RecordedMove::Closed);
+        self.scheduler.end(end.0, end.1)?.standing = Standing::Closed;
         unit(runtime)
     }
 
-    /// Put `message` on the end the cell `held` holds: handed to the task
-    /// waiting at the peer's end, which joins the back of the ready queue,
-    /// or queued there. Answers the unit.
+    /// Put `message` on the end the cell `held` holds, for the action `at`:
+    /// handed to the task waiting at the peer's end, which joins the back of
+    /// the ready queue and holds an end the message carries, or queued there.
+    /// Answers the unit. A cancelled peer takes no message: the payload is
+    /// given up, an end it carries cancelled, and the running task's
+    /// continuation abandoned as [`Self::abandoned`] does.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// As [`end_of`] and [`delivered`].
+    /// As [`end_of`], [`delivered`], [`Self::cancel`] and
+    /// [`Self::abandoned`].
     pub(super) fn sent(
         &mut self,
         runtime: &mut Runtime,
         held: Word,
+        at: CommandId,
         message: Message<'run>,
     ) -> Result<Word, Refusal>
     {
         let (channel, party) = end_of(held)?;
+        let carried = match message {
+            Message::Payload(payload) => capability_end(payload).ok(),
+            Message::Label(_) => None,
+        };
+        if self.scheduler.end(channel, party.peer())?.standing == Standing::Cancelled {
+            if let Message::Payload(payload) = message {
+                let sites = self.sites;
+                // SAFETY: the send owns its payload, a value of the run's
+                // heap, which no task takes once its peer is cancelled.
+                unsafe {
+                    give_up(runtime, payload, |object| owned(object, sites));
+                }
+            }
+            self.cancel(runtime, carried.into_iter().collect())?;
+            return self.abandoned(runtime, at);
+        }
         let received = match self.recording {
             Recording::Into(_) => {
                 let [sent, received] = self.moves(message)?;
@@ -583,7 +722,7 @@ impl<'run> Calls<'run, '_>
             Recording::Off => None,
         };
         let peer = self.scheduler.end(channel, party.peer())?;
-        if let Some(parked) = peer.waiting.take() {
+        let holder = if let Some(parked) = peer.waiting.take() {
             let answer = delivered(runtime, message, parked.waits)?;
             self.scheduler.parked = self.scheduler.parked.saturating_sub(1);
             self.scheduler.ready.push_back(Ready::Resume {
@@ -594,23 +733,32 @@ impl<'run> Calls<'run, '_>
             if let Some(received) = received {
                 self.note((channel, party.peer()), parked.task, received);
             }
+            Standing::Held(parked.task)
         }
         else {
             peer.queued.push_back(message);
             peer.noted.extend(received);
+            Standing::Sent
+        };
+        if let Some((carried, side)) = carried {
+            self.scheduler.end(carried, side)?.standing = holder;
         }
         unit(runtime)
     }
 
     /// Take what `waits` names at the end the cell `held` holds, for the
-    /// action `at`: the oldest message queued there, or, with none, park the
-    /// running task's frames at the end and continue the next task ready.
+    /// action `at`: the oldest message queued there, an end it carries then
+    /// held by the running task; with none and the peer cancelled, abandon
+    /// the running task's continuation as [`Self::abandoned`] does; or, with
+    /// none, park the running task's frames at the end and continue the next
+    /// task ready.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// As [`end_of`], [`delivered`], [`Self::capture`] and [`Self::switch`].
+    /// As [`end_of`], [`delivered`], [`Self::capture`], [`Self::switch`] and
+    /// [`Self::abandoned`].
     pub(super) fn awaited(
         &mut self,
         runtime: &mut Runtime,
@@ -622,11 +770,20 @@ impl<'run> Calls<'run, '_>
         let (channel, party) = end_of(held)?;
         let end = self.scheduler.end(channel, party)?;
         if let Some(message) = end.queued.pop_front() {
-            if let Some(received) = end.noted.pop_front() {
-                let task = self.scheduler.running;
+            let noted = end.noted.pop_front();
+            let task = self.scheduler.running;
+            if let Some(received) = noted {
                 self.note((channel, party), task, received);
             }
+            if let Message::Payload(payload) = message
+                && let Ok((carried, side)) = capability_end(payload)
+            {
+                self.scheduler.end(carried, side)?.standing = Standing::Held(task);
+            }
             return delivered(runtime, message, waits);
+        }
+        if self.scheduler.end(channel, party.peer())?.standing == Standing::Cancelled {
+            return self.abandoned(runtime, at);
         }
         let base = runtime.frame_base();
         let stack = self.capture(runtime, base)?;
@@ -664,9 +821,10 @@ impl<'run> Calls<'run, '_>
 
     /// End the running task, its answer `answer`, at the joined frame's
     /// block. The joined frame is written back below the base, where the
-    /// block's own call overwrote it; the root's answer is kept and a child's
-    /// given up. Once every task has ended, the root's answer pops the halt
-    /// frame; otherwise the next task ready continues.
+    /// block's own call overwrote it; the root's answer is kept, unless a
+    /// cancellation abandoned the root, and a child's given up. Once every
+    /// task has ended, the root's answer pops the halt frame; otherwise the
+    /// next task ready continues.
     ///
     /// # Specification
     /// trivial.
@@ -689,13 +847,13 @@ impl<'run> Calls<'run, '_>
         unsafe {
             *below.wrapping_add(1) = Word::from_pointer(runtime.environment());
         }
-        if self.scheduler.running == Task::ROOT {
+        if self.scheduler.running == Task::ROOT && self.scheduler.cancelled.is_none() {
             self.scheduler.answer = Some(answer);
         }
         else {
             let sites = self.sites;
             // SAFETY: a task's end owns its answer, which nothing reads once
-            // the task has ended.
+            // the task has ended or a cancellation has abandoned it.
             unsafe {
                 give_up(runtime, answer, |object| owned(object, sites));
             }
@@ -711,14 +869,18 @@ impl<'run> Calls<'run, '_>
 
     /// Continue the next task ready, its frames from the base: a child is
     /// entered as its closure with its end's cell in hand, a task that waited
-    /// has its frames replayed and its top frame popped with what it took.
+    /// has its frames replayed and its top frame popped with what it took,
+    /// and one whose peer was cancelled is ended as [`Self::forsake`] ends
+    /// it.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
     /// [`Refusal::Operands`] with no task ready, recorded as
-    /// [`Refused::Deadlock`]; as [`Self::replay`].
+    /// [`Refused::Cancelled`] once a cancellation abandoned the root and as
+    /// [`Refused::Deadlock`] otherwise; as [`Self::replay`] and
+    /// [`Self::forsake`].
     fn switch(
         &mut self,
         runtime: &mut Runtime,
@@ -753,10 +915,141 @@ impl<'run> Calls<'run, '_>
                 runtime.jump(code, window.to_pointer());
                 Ok(answer)
             },
+            Some(Ready::Abandon { task, stack, at }) => {
+                self.scheduler.running = task;
+                self.forsake(runtime, stack, at)
+            },
             None => {
-                self.refused = Some(Refused::Deadlock(self.scheduler.waiting()));
+                self.refused = Some(match self.scheduler.cancelled {
+                    Some(at) => Refused::Cancelled(at),
+                    None => Refused::Deadlock(self.scheduler.waiting()),
+                });
                 Err(Refusal::Operands)
             },
         }
+    }
+
+    /// Cancel each open end the cells `held` hold, as [`Self::cancel`] does:
+    /// the session ends an abandoned stack's frames hold.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::cancel`].
+    pub(super) fn cancel_cells(
+        &mut self,
+        runtime: &mut Runtime,
+        held: &[Word],
+    ) -> Result<(), Refusal>
+    {
+        let ends = held.iter().filter_map(|&cell| end_of(cell).ok()).collect();
+        self.cancel(runtime, ends)
+    }
+
+    /// Cancel `ends` and every end their cancellation reaches. An end still
+    /// open is marked cancelled; the messages queued at it, which no task will
+    /// take, are given up, and an end one carries is cancelled in turn; and a
+    /// task waiting at its peer is readied to be abandoned. A closed or an
+    /// already cancelled end is left as it is.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for an end of a channel no fork made.
+    fn cancel(
+        &mut self,
+        runtime: &mut Runtime,
+        mut ends: Vec<(ChannelIndex, Party)>,
+    ) -> Result<(), Refusal>
+    {
+        let sites = self.sites;
+        while let Some((channel, party)) = ends.pop() {
+            let end = self.scheduler.end(channel, party)?;
+            if matches!(end.standing, Standing::Closed | Standing::Cancelled) {
+                continue;
+            }
+            end.standing = Standing::Cancelled;
+            end.noted.clear();
+            for message in core::mem::take(&mut end.queued) {
+                if let Message::Payload(payload) = message {
+                    ends.extend(capability_end(payload).ok());
+                    // SAFETY: a queued payload holds one owner of a value of
+                    // the run's heap, which no task takes once its end is
+                    // cancelled.
+                    unsafe {
+                        give_up(runtime, payload, |object| owned(object, sites));
+                    }
+                }
+            }
+            if let Some(parked) = self.scheduler.end(channel, party.peer())?.waiting.take() {
+                self.scheduler.parked = self.scheduler.parked.saturating_sub(1);
+                self.scheduler.ready.push_back(Ready::Abandon {
+                    task: parked.task,
+                    stack: parked.stack,
+                    at: parked.at,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Abandon the running task's continuation at the action `at`, which met
+    /// an end its peer cancelled: its frames from the base captured, then
+    /// ended as [`Self::forsake`] ends them.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::capture`] and [`Self::forsake`].
+    fn abandoned(
+        &mut self,
+        runtime: &mut Runtime,
+        at: CommandId,
+    ) -> Result<Word, Refusal>
+    {
+        let base = runtime.frame_base();
+        let stack = self.capture(runtime, base)?;
+        self.forsake(runtime, stack, at)
+    }
+
+    /// End the running task, its frames `stack` abandoned at the action `at`:
+    /// above the base, a frame for each access the stack captured, entering
+    /// its unwind, as [`Self::unwound`] pushes them; every end the task still
+    /// holds cancelled; and the topmost frame popped with the unit in hand, so
+    /// the unwinds run and the joined frame's block ends the task. A root so
+    /// ended leaves the run no answer.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::unwound`], [`Self::cancel`] and [`unit()`].
+    fn forsake(
+        &mut self,
+        runtime: &mut Runtime,
+        stack: Word,
+        at: CommandId,
+    ) -> Result<Word, Refusal>
+    {
+        runtime.set_frame_top(runtime.frame_base());
+        self.unwound(runtime, stack)?;
+        let task = self.scheduler.running;
+        let held = self.scheduler.held_by(task);
+        self.cancel(runtime, held)?;
+        if task == Task::ROOT {
+            self.scheduler.cancelled = Some(at);
+        }
+        let top = runtime.frame_top().wrapping_sub(2);
+        // SAFETY: a task's frames stand on the joined frame below the base,
+        // and each unwind's frame stands above it.
+        let code = unsafe { *top };
+        // SAFETY: as above.
+        let window = unsafe { *top.wrapping_add(1) };
+        runtime.set_frame_top(top);
+        runtime.jump(code, window.to_pointer());
+        unit(runtime)
     }
 }
