@@ -1,6 +1,14 @@
-// What the vectors refuse: a vector at a length its constructor does not
-// state, and a family stating an element where its length goes. What a case
-// on a vector cannot leave out is `vector-head.gandr`.
+// The checker refuses a vector at a length that its value does not stand at.
+//
+// A vector's type states its length. A length that disagrees is a mismatch,
+// not a coercion.
+//
+// The checker refuses a vector at a length that its constructor does not
+// state. It refuses a length written as a call that computes another length.
+// It also refuses a family that states an element where its length goes.
+//
+// - see: `vector-head.gandr` — what a case on a vector cannot leave out
+// - see: #3579 — a family's argument written as a call converts with its value
 
 // The naturals the lengths count in.
 import "../../model/data/data-base.gandr";
@@ -15,8 +23,16 @@ def overstated() -> Vec(Integer, Succ(Succ(Zero))) {
   VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
 }
 
+/// A vector `m` long that claims the length `plus(m, Succ(Zero))`. That sum
+/// computes one past `m`.
+@[ refuses("TypeMismatch") ]
+def overPadded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Succ(Zero))) {
+  v
+}
+
 /// A family whose constructor states its element where its length goes.
 @[ refuses("TypeMismatch") ]
 data Misindexed(a : Type) : Nat -> Type {
+  /// An element standing where its length goes.
   Wrong : (x : a) --> Misindexed(a, x);
 }

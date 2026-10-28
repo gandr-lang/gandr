@@ -287,7 +287,9 @@ enum Pairing
     Comps(Relocated<CompTypeId>, Relocated<CompTypeId>),
     /// Two codes, each read at its head.
     Codes(ValueId, ValueId),
-    /// Invariant term-valued indices, with the kernel's structural equality.
+    /// Invariant term-valued indices, with the kernel's equality. They agree as
+    /// syntax. A side written as a call also agrees with the value that the
+    /// call returns.
     Terms(ValueId, ValueId),
     /// Two path endpoints: the same term up to the normaliser's conversion,
     /// every admitted definition unfolding.
@@ -1005,11 +1007,12 @@ pub fn equivalent(
     )
 }
 
-/// Whether two path endpoints a type conversion met are the same term, keeping
-/// the derivation where the machine's traced reading relates them.
+/// Whether two terms that a type conversion met are the same term. The terms
+/// are path endpoints, or family arguments with a call on one side. The
+/// derivation is kept where the machine's traced reading relates them.
 ///
 /// # Specification
-/// - requires: both endpoints stand under the binders the conversion is under.
+/// - requires: both terms stand under the binders the conversion is under.
 /// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
 ///   on `context` when the machine relates `left` to `right` with returned
 ///   endpoints held at the definitions they call; [`Agreement::Convertible`],
@@ -1087,15 +1090,16 @@ fn endpoints_agree(
 ///   applications of agreeing heads to agreeing arguments, or static lambdas
 ///   over agreeing bodies; two data indices agree when either root is a hole or
 ///   a mark the solver does not refute against the other side, or they are
-///   equal as syntax, and two endpoints by the same rule or when they convert
-///   as endpoints; [`Agreement::Apart`] at the first rigid disagreement. Inside
-///   the elaboration run a bare owed flex–rigid equation is accumulated
-///   instead: agreement is then conditional on those residuals, and a later
-///   rigid disagreement still answers `Apart`. A pair not deferred whose side
-///   is the decode of a metavariable a call nominated is posed to the solver: a
-///   solved or postponed equation agrees, and a refuted one answers `Apart`.
-///   Two returners' rows, either open through a tail over a metavariable, are
-///   posed to the solver as one row equation by the same rule; rigid rows are
+///   equal as syntax, or either root is a call and they convert as endpoints,
+///   and two endpoints by the same rule or when they convert as endpoints;
+///   [`Agreement::Apart`] at the first rigid disagreement. Inside the
+///   elaboration run a bare owed flex–rigid equation is accumulated instead:
+///   agreement is then conditional on those residuals, and a later rigid
+///   disagreement still answers `Apart`. A pair not deferred whose side is the
+///   decode of a metavariable a call nominated is posed to the solver: a solved
+///   or postponed equation agrees, and a refuted one answers `Apart`. Two
+///   returners' rows, either open through a tail over a metavariable, are posed
+///   to the solver as one row equation by the same rule; rigid rows are
 ///   compared interface by interface, a closed row included in an open one
 ///   under subtyping and an open row only in one open through the same tail.
 ///   Two staged types agree invariantly at one stage and agreeing bases; under
@@ -1122,8 +1126,10 @@ fn endpoints_agree(
 ///   instances rigid and defined, static lambdas alike and unlike, two rigid
 ///   returned codes of one call at distinct ids, a dependent arrow against a
 ///   plain one whose codomain ignores the binder, names it, or reads the
-///   ambient context past it, and a dangling id; the fast path is pinned
-///   against the structural decision by property.
+///   ambient context past it, a family argument written as a call against the
+///   value it returns and against another value, a family argument that reduces
+///   but is no call against its value, and a dangling id; the fast path is
+///   pinned against the structural decision by property.
 /// - witness: `conversion::tests::one_id_converts_without_being_read`
 /// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
 /// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
@@ -1144,6 +1150,8 @@ fn endpoints_agree(
 /// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
 /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
 /// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+/// - witness: `tests::native_formers::a_family_argument_written_as_a_call_converts_with_its_value_3579`
+/// - witness: `tests::native_formers::term_indices_are_structural_in_both_checkers`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -1186,8 +1194,15 @@ fn convert(
             Pairing::Terms(left, right) => match pose_open(context, left, right)? {
                 Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
                 Maybe::Absent(open::Absent::Closed) => {
+                    // The kernel reads a side written as a call by reduction.
+                    // It compares every other side as syntax.
+                    let called = [left, right].into_iter().any(|side| {
+                        matches!(context.arena().value(side), Some(&Value::Returned(_)))
+                    });
                     gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
+                        || called
+                            && endpoints_agree(context, left, right)? == Agreement::Convertible
                 },
             },
             Pairing::Endpoints(left, right) => match pose_open(context, left, right)? {

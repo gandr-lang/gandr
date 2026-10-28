@@ -1,16 +1,25 @@
-// Vectors: lists indexed by their length, a family whose constructors each
-// state the index their value stands at (Dybjer, _Inductive families_,
-// doi:10.1007/BF01211308). The kind `Nat -> Type` reads the length's type
-// before the universe; `VNil` stands at zero and `VCons` at the successor of
-// its tail's length, so a vector's type says how long it is. What a vector
-// refuses is in the pathological twin.
+// Vectors are lists indexed by their length.
+//
+// A vector's type states its length. A function then states the length that
+// it returns.
+//
+// The kind `Nat -> Type` reads the type of the length before the universe.
+// `VNil` stands at zero. `VCons` stands at one past the length of its tail. A
+// length written as a call stands at the length that the call computes. Thus
+// `plus(m, Zero)` is the length `m`. The pathological twin holds the refusals.
+//
+// - see: Dybjer, _Inductive families_, FAC 1994, doi:10.1007/BF01211308 — a
+//   family whose constructors each state the index they stand at
+// - see: #3579 — a family's argument written as a call converts with its value
 
 // The naturals the lengths count in.
 import "./data-base.gandr";
 
 /// Vectors of elements of `a`, indexed by their length.
 pub data Vec(a : Type) : Nat -> Type {
+  /// The empty vector, at length zero.
   VNil : Vec(a, Zero);
+  /// An element before a vector `n` long, at one past `n`.
   VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n));
 }
 
@@ -27,3 +36,6 @@ pub def pair() -> Vec(Integer, Succ(Succ(Zero))) {
     (VCons(Zero, 2, (VNil : Vec(Integer, Zero))) : Vec(Integer, Succ(Zero)))
   )
 }
+
+/// A vector `m` long is `plus(m, Zero)` long. The sum computes `m`.
+def padded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Zero)) { v }
