@@ -91,6 +91,60 @@ own_fork() {
   echo HEAD
 }
 
+# The trunk's changes the checked-out branch builds on that the top's branch
+# `$1` lacks (#3654), one `<hash> <subject>` a line, oldest last: the trunk's
+# first-parent commits after the top's merge base with it, up to the
+# branch's. Prints nothing when the top holds every change the branch forked
+# from.
+trunk_lacked() {
+  git log --first-parent --format='%h %s' \
+    "$(git merge-base "origin/$1" "origin/$trunk")..$(git merge-base HEAD "origin/$trunk")"
+}
+
+# Stack the checked-out branch `$1` on the top `$2`, a reading of
+# `await_top` or `null`, and leave the top it stacked on in `stacked_top`
+# (#3654). With no top there is nothing to rebase. Otherwise the branch's own
+# commits (`own_fork`) are rebased onto the top's branch. That rebase
+# conflicts when the top forked from the trunk before a change the own
+# commits build on (`trunk_lacked`), though they apply to the trunk: the top
+# carries the change only once it merges. A top in the merge queue, or set to
+# enter it, merges soon, so the stacking waits for it every
+# `pr_stack_poll` seconds (30 by default) and reads the top again, up to 30
+# minutes. A top not queued, a wait past 30 minutes, and a conflict with the
+# top's own changes are refused, the first two naming the trunk's changes the
+# top lacks.
+stack_on_top() {
+  local own=$1 deadline=$((SECONDS + 1800)) base number fork lacked
+  stacked_top=$2
+  while [[ $stacked_top != null ]]; do
+    base=$(jq -r .head <<< "$stacked_top")
+    number=$(jq -r .number <<< "$stacked_top")
+    git fetch --quiet origin "$base" "$trunk"
+    git merge-base --is-ancestor "origin/$base" HEAD && return 0
+    fork=$(own_fork "$own" "$base")
+    git rebase --quiet --update-refs --onto "origin/$base" "$fork" > /dev/null 2>&1 && return 0
+    git rebase --abort
+    lacked=$(trunk_lacked "$base")
+    if [[ -z $lacked ]]; then
+      echo "the rebase of $own onto $base (#$number, the top) conflicts; resolve it on $own, run the hooks, and run \`pr:open\` again" >&2
+      return 1
+    fi
+    if [[ $(in_queue "$number") != true ]]; then
+      printf 'the rebase of %s onto %s (#%s, the top) conflicts: the top lacks these changes of %s the branch builds on, and it is not queued; run `pr:open` again once it merges or a newer top holds them:\n%s\n' \
+        "$own" "$base" "$number" "$trunk" "$(sed 's/^/  /' <<< "$lacked")" >&2
+      return 1
+    fi
+    if (( SECONDS >= deadline )); then
+      printf 'the top #%s has been queued for 30 minutes without merging and still lacks these changes of %s the branch builds on; run `pr:open` again once it merges:\n%s\n' \
+        "$number" "$trunk" "$(sed 's/^/  /' <<< "$lacked")" >&2
+      return 1
+    fi
+    echo "the top #$number lacks $(wc -l <<< "$lacked") changes of $trunk the branch builds on; waiting for it to merge from the queue" >&2
+    sleep "${pr_stack_poll:-30}"
+    stacked_top=$(await_top "$own")
+  done
+}
+
 # The revision the checked-out change is measured from (#3148), on a trunk
 # fetched first: a pull request below that merged since the seat last
 # fetched is the trunk's, never read as this change's own paths.

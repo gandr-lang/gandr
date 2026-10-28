@@ -1,0 +1,30 @@
+[
+  {
+    "name": "#3654: a queued top that lacks the trunk change the branch builds on is waited out, and the branch opens on the trunk once the top merges",
+    "top": "behind",
+    "lower": "apart",
+    "queued": true,
+    "output": "stacked on main, waited"
+  },
+  {
+    "name": "#3654: a top not queued that lacks the trunk change the branch builds on is refused, naming the change",
+    "top": "behind",
+    "lower": "apart",
+    "queued": false,
+    "output": "refused: lacks these changes of main the branch builds on, and it is not queued (names trunk B)"
+  },
+  {
+    "name": "a top that holds the trunk change takes the branch's own commit",
+    "top": "current",
+    "lower": "apart",
+    "queued": true,
+    "output": "stacked on lower"
+  },
+  {
+    "name": "a conflict with the top's own change is refused without a wait, naming no trunk change",
+    "top": "current",
+    "lower": "clashes",
+    "queued": true,
+    "output": "refused: conflicts; resolve"
+  }
+]
