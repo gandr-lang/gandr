@@ -3276,3 +3276,39 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         "the family crosses with its index and each constructor's"
     );
 }
+
+/// A constructor at a type a definition computes checks at the family the
+/// definition returns, and the kernel admits it (#3570).
+#[test]
+fn a_constructor_at_a_computed_type_checks_at_its_family_3570()
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let boxes = ConstantIndex::from(0_usize);
+    let box_type = arena.value_type_data(boxes, vec![]);
+    let code = arena.value_quote(box_type);
+    let boxed = arena.value_constant(ConstantIndex::from(1_usize));
+    let computed = arena.value_type_element(boxed, Level::zero());
+    let made = arena.value_constructor(computed, ConstructorTag::from(0_usize), vec![unit]);
+    let (report, crossed) = run(&mut arena, &[
+        Declaration::data(
+            boxes,
+            DataSignature::new(vec![], vec![vec![unit_type]], kind).into(),
+            OriginToken::from(0_usize),
+        ),
+        definition(ConstantIndex::from(1_usize), kind, code),
+        definition(ConstantIndex::from(2_usize), computed, made),
+    ]);
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "the constructor reads the computed type at the family it unfolds to: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+        "and the kernel admits it: {:?}",
+        crossed.readmitted()[2].outcome()
+    );
+}

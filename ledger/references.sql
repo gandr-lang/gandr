@@ -330,6 +330,7 @@ INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kerne
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-checker','judgement::native','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);

@@ -5,6 +5,15 @@
 //! expected classifier. Projection returns the named field's type. Equality
 //! stays exact in its labels; assignability is directional. The empty record
 //! is the record top, not a top for arbitrary values.
+//!
+//! A nominal constructor reads its annotation at its weak head, as each
+//! former's rule reads its type, so an annotation that a definition computes
+//! reads as the family the definition returns.
+//!
+//! # References
+//!
+//! - `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule
+//!   reads its type at its weak head before it reads a view.
 
 use alloc::vec::Vec;
 
@@ -52,10 +61,12 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: `term` is a constructor node.
     /// - ensures: the annotation forms before the declaration-ordered field
-    ///   checks; their success synthesizes that same nominal annotation.
-    /// - fails: wrong nominal shape, unknown tag, or wrong field arity; an
-    ///   annotation at other indices than the constructor states
-    ///   ([`Self::stands_at`]).
+    ///   checks; their success synthesizes that same nominal annotation. The
+    ///   fields and the stated indices read the annotation at its weak head, so
+    ///   an annotation a definition computes reads as its family.
+    /// - fails: wrong nominal shape at the weak head, unknown tag, or wrong
+    ///   field arity; an annotation at other indices than the constructor
+    ///   states ([`Self::stands_at`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -63,9 +74,11 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — distinct heads, arities, tags and field types
-    ///   separate the nominal introduction rule; so do a vector's indices.
+    ///   separate the nominal introduction rule; so do a vector's indices and
+    ///   an annotation whose definition unfolds to the family.
     /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `tests::native_formers::a_constructor_at_a_computed_type_checks_at_its_family_3570`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn native_constructor(
@@ -121,8 +134,11 @@ impl Machine<'_, '_>
             | &Value::Reify(_)
             | &Value::Row(_) => return Err(CheckRefusal::MachineInvariant),
         };
+        // A type a definition computes is read at its weak head, so a call
+        // that returns a family reads as the family it returns.
+        let head = self.context.whnf_value_type(datatype)?;
         if !matches!(
-            self.context.arena().value_type(datatype),
+            self.context.arena().value_type(head),
             Some(ValueType::Data { .. })
         ) {
             return Err(CheckRefusal::ShapeMismatch {
@@ -131,7 +147,7 @@ impl Machine<'_, '_>
                 found: TypeNode::Value(datatype),
             });
         }
-        let signature = former::signature(self.context, datatype)?;
+        let signature = former::signature(self.context, head)?;
         let declared = signature
             .constructors()
             .get(usize::from(tag))
@@ -139,13 +155,13 @@ impl Machine<'_, '_>
         if declared.len() != count {
             return Err(CheckRefusal::ConstructorArity(term));
         }
-        self.stands_at(term, datatype, tag)?;
-        self.read_fields(term, datatype, tag)?;
+        self.stands_at(term, head, tag)?;
+        self.read_fields(term, head, tag)?;
         self.wait(Frame::NativeYield(Produced::ValueType(datatype.into())));
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let expected = former::field_at(
                 self.context,
-                (datatype, term),
+                (head, term),
                 field_type,
                 gandr_kernel_term::FieldPosition::from(index),
             )?;
@@ -224,7 +240,10 @@ impl Machine<'_, '_>
     ///   [`CheckRefusal::StageNotBelow`] for a constructor with no field whose
     ///   own type is a family of its block where no hypothesis shows the wanted
     ///   stage above the first ([`crate::recursion::room`]); otherwise as
-    ///   [`Self::native_constructor`].
+    ///   [`Self::native_constructor`], but at the annotation as written: one
+    ///   that reads as a family only at its weak head is refused
+    ///   [`CheckRefusal::NotADataType`], and the lowering writes no such
+    ///   constructor in a body yet (#3665).
     /// - panics: none.
     ///
     /// # Errors
