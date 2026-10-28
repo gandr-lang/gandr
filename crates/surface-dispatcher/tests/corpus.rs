@@ -19,12 +19,15 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_sequent::FocusRefusal;
+use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::Outcome;
+use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Seal;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Pool;
@@ -37,6 +40,7 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::judge_module;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -809,6 +813,85 @@ fn no_subject_declares_a_name_twice()
         twice,
         Vec::<String>::new(),
         "each name a subject exports is declared once, in the source that owns it"
+    );
+}
+
+/// #2520: a `reads` claim settles against the footprint the content table
+/// carries for its declaration, the items named in any order: a data type's
+/// fields, a case reading its scrutinee's type through its constructors, a
+/// call reading its callee in a value position, and a body reading nothing.
+/// A claim naming other items is unsettled, the carried footprint produced.
+#[test]
+fn a_reads_claim_settles_against_the_carried_footprint_2520()
+{
+    let text = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+data Flag : Type { On : Flag; Off : Flag; }
+@[ reads((Flag, Nat)) ]
+data Either : Type { Count : (m : Nat) --> Either; Mark : (f : Flag) --> Either; }
+@[ reads((Either, Nat)) ]
+def side(n : Nat, e : Either) -> -F Nat { case e -> -F Nat { Count(_m) => n, Mark(_f) => n } }
+@[ reads((side, Nat, Flag, Either)) ]
+def marked() -> -F Nat { side(Succ(Zero), Mark(On)) }
+def answer : Integer ;
+@[ reads(()) ]
+def answer = 42 ;
+@[ reads(Either) ]
+def short(x : Nat) -> -F Nat { return x }
+";
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut lowerings = LoweringCount::default();
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, SourceText::from(text), &mut lowerings)
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the module is read");
+    };
+    let Composed::Settled { report, .. } = judge_module(
+        CorpusRoot::Fixture,
+        (module, SourceText::from(text)),
+        arena,
+        &HostGrant::UNBOUNDED,
+    )
+    .expect("the source composes")
+    else {
+        panic!("the source settles");
+    };
+    let read = |spelled: &str| Outcome::Reads(RunSpelling::from(String::from(spelled)));
+    let claims: Vec<(String, Outcome, Settlement)> = report
+        .declarations()
+        .iter()
+        .filter(|declaration| matches!(declaration.stated(), &Stated::Verdict(Outcome::Reads(_))))
+        .map(|declaration| {
+            (
+                declaration.name().to_string(),
+                declaration.outcome(),
+                declaration.settlement(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        claims,
+        vec![
+            (
+                String::from("Either"),
+                read("(Flag, Nat)"),
+                Settlement::Settled
+            ),
+            (
+                String::from("side"),
+                read("(Either, Nat)"),
+                Settlement::Settled
+            ),
+            (
+                String::from("marked"),
+                read("(side, Nat, Flag, Either)"),
+                Settlement::Settled
+            ),
+            (String::from("answer"), read("()"), Settlement::Settled),
+            (String::from("short"), read("Nat"), Settlement::Unsettled),
+        ],
+        "each claim settles against the footprint its declaration carries"
     );
 }
 

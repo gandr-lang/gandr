@@ -96,6 +96,7 @@ use crate::expectation::Expectations;
 use crate::expectation::Membership;
 use crate::expectation::Outcome;
 use crate::expectation::Stated;
+use crate::expectation::reads_as_stated;
 use crate::expectation::web_as_stated;
 use crate::refusal::CorpusRefusal;
 use crate::refusal::Refusal;
@@ -622,7 +623,7 @@ impl<'source> DeclarationReport<'source>
             matches!(ret, Outcome::RefusesRunning(name, ref actual) if name == refusal.name() && actual == spelled)
         }
         (&Stated::Verdict(Outcome::RefusesRunning(..)), &Maybe::Absent(_))
-        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..)) | Stated::Malformed(_)), _) => {
+        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Reads(_)) | Stated::Malformed(_)), _) => {
             ret == Outcome::Refuses(refusal.name())
         }
     },
@@ -634,6 +635,9 @@ impl<'source> DeclarationReport<'source>
                 }
                 Stated::Verdict(Outcome::Decomposes(ref stated)) => {
                     matches!(ret, Outcome::Decomposes(ref actual) if *actual == web_as_stated(stated, spelled))
+                }
+                Stated::Verdict(Outcome::Reads(ref stated)) => {
+                    matches!(ret, Outcome::Reads(ref actual) if *actual == reads_as_stated(stated, spelled))
                 }
                 Stated::Verdict(Outcome::RunsTracing(..)) => {
                     matches!(ret, Outcome::RunsTracing(ref actual, ref channels) if actual == spelled && channels_settle(channels, &self.traced) == Settlement::Settled)
@@ -661,6 +665,9 @@ impl<'source> DeclarationReport<'source>
                     Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
                     Stated::Verdict(Outcome::Decomposes(ref stated)) => {
                         Outcome::Decomposes(web_as_stated(stated, spelled))
+                    },
+                    Stated::Verdict(Outcome::Reads(ref stated)) => {
+                        Outcome::Reads(reads_as_stated(stated, spelled))
                     },
                     Stated::Verdict(Outcome::RunsTracing(..)) => {
                         Outcome::RunsTracing(spelled.clone(), self.traced.clone())
@@ -730,6 +737,12 @@ impl<'source> DeclarationReport<'source>
                         self.ran, Maybe::Present(ref actual) if web_as_stated(expected, actual) == *expected
                     )
             }
+            Stated::Verdict(Outcome::Reads(ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(
+                        self.ran, Maybe::Present(ref actual) if reads_as_stated(expected, actual) == *expected
+                    )
+            }
             Stated::Verdict(Outcome::RefusesRunning(name, ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
@@ -764,6 +777,10 @@ impl<'source> DeclarationReport<'source>
             Stated::Verdict(Outcome::Decomposes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if web_as_stated(expected, actual) == *expected)
+            },
+            Stated::Verdict(Outcome::Reads(ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Present(ref actual) if reads_as_stated(expected, actual) == *expected)
             },
             Stated::Verdict(Outcome::RefusesRunning(name, ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)
@@ -829,7 +846,8 @@ impl<'source> DeclarationReport<'source>
                 | Outcome::Normalizes(_)
                 | Outcome::Decomposes(_)
                 | Outcome::RefusesRunning(..)
-                | Outcome::RunsTracing(..),
+                | Outcome::RunsTracing(..)
+                | Outcome::Reads(_),
             )
             | Stated::Malformed(_) => 0_usize,
         };
@@ -1126,7 +1144,7 @@ impl Error for SettleFault
                                         } | Verdict::Synthesised { .. })
                                     ))
                                     || (matches!(
-                                        declaration.stated, Stated::Verdict(Outcome::Normalizes(_))
+                                        declaration.stated, Stated::Verdict(Outcome::Normalizes(_) | Outcome::Reads(_))
                                     ) && matches!(
                                         declaration.produced, Produced::Judged(Verdict::Data
                                         | Verdict::Checked { .. } | Verdict::Synthesised { .. })
@@ -1146,7 +1164,7 @@ impl Error for SettleFault
                                         } | Verdict::Synthesised { .. })
                                     ))
                                     || (matches!(
-                                        declaration.stated, Stated::Verdict(Outcome::Normalizes(_))
+                                        declaration.stated, Stated::Verdict(Outcome::Normalizes(_) | Outcome::Reads(_))
                                     ) && !matches!(
                                         declaration.produced, Produced::Judged(Verdict::Data
                                         | Verdict::Checked { .. } | Verdict::Synthesised { .. })
@@ -1161,7 +1179,7 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unstated) => {
                                 !matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..) | Outcome::RunsTracing(..))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..) | Outcome::RunsTracing(..) | Outcome::Reads(_))
                                 )
                             }
                         }
@@ -1415,6 +1433,12 @@ where
                 ),
             ) => Maybe::Present(normalized(module, lowered, line)),
             (
+                &Stated::Verdict(Outcome::Reads(_)),
+                Produced::Judged(
+                    Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                ),
+            ) => Maybe::Present(runner.reads(lowered.constant())),
+            (
                 &Stated::Verdict(
                     Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..),
                 ),
@@ -1425,7 +1449,7 @@ where
                 | Produced::Guarded(_),
             )
             | (
-                &Stated::Verdict(Outcome::Normalizes(_)),
+                &Stated::Verdict(Outcome::Normalizes(_) | Outcome::Reads(_)),
                 Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_))
                 | Produced::Unlowered(_)
                 | Produced::Guarded(_),
@@ -1743,6 +1767,40 @@ fn boundary_at(
         .map(AttributeEntry::span)
 }
 
+/// The admission positions of `module`'s declarations that state the items
+/// they read, in declaration order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each declaration one of whose attributes, read as [`settle`]
+///   reads them, is `reads`, and no other.
+/// - provides: whether a runner needs any footprint before the module is
+///   settled.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — sources stating `reads` with a written, an empty and a
+///   malformed payload, each declaration asked what it reads named, and one
+///   declaration of two stating none.
+/// - witness: `settle::tests::a_reads_claim_settles_against_the_items_read_2520`
+#[spec(ensures: |ret| ret.iter().all(|constant| module.declarations().iter().any(|lowered| lowered.constant() == *constant
+    && attributes(module.attributes(), lowered).any(|entry| entry.name() == RegisteredAttribute::READS))))]
+#[inline]
+#[must_use]
+pub fn stating_reads(module: &LoweredModule<'_>) -> Vec<ConstantIndex>
+{
+    module
+        .declarations()
+        .iter()
+        .filter(|lowered| {
+            attributes(module.attributes(), lowered)
+                .any(|entry| entry.name() == RegisteredAttribute::READS)
+        })
+        .map(LoweredDeclaration::constant)
+        .collect()
+}
+
 /// The entries filed under the form that introduced `lowered` when it writes
 /// no half of its own: the attributes written before the application or the
 /// module whose header bound it.
@@ -2007,6 +2065,7 @@ mod tests
     use super::Surviving;
     use super::settle;
     use super::settle_after;
+    use super::stating_reads;
     use crate::expectation::ExpectationFault;
     use crate::expectation::ExpectationSchema;
     use crate::expectation::Membership;
@@ -2758,6 +2817,20 @@ mod tests
                 }]),
             }
         }
+
+        /// Records what a declaration reads and spells it as `(Nat, side)`
+        /// whatever the position.
+        ///
+        /// # Specification
+        /// trivial.
+        fn reads(
+            &mut self,
+            constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            self.0.push(("reads", usize::from(constant)));
+            RunSpelling::from(String::from("(Nat, side)"))
+        }
     }
 
     /// #2077: a `decomposes` payload is the web's tree, unquoted; an accepted
@@ -2826,6 +2899,98 @@ mod tests
                 "`{source}` under the {root} root decomposes and settles as pinned"
             );
         }
+    }
+
+    /// #2520: a `reads` payload names the items a declaration mentions; it
+    /// settles when the runner names the same items in any order, a data
+    /// declaration's included, and a payload that names no items is a
+    /// malformed expectation that asks for nothing. Every declaration asked
+    /// what it reads is one [`stating_reads`] names, and a declaration that
+    /// states no `reads` is not.
+    #[test]
+    fn a_reads_claim_settles_against_the_items_read_2520()
+    {
+        let read = |spelled: &str| Outcome::Reads(RunSpelling::from(String::from(spelled)));
+        let rows = [
+            (
+                CorpusRoot::Strict,
+                "@[ reads((side, Nat)) ] def a = 3 ;",
+                read("(side, Nat)"),
+                Settlement::Settled,
+                &[("reads", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ reads(Nat) ] def a = 3 ;",
+                read("(Nat, side)"),
+                Settlement::Unsettled,
+                &[("reads", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ reads((Nat, side, Nat)) ] data D : Type { E : D; }",
+                read("(Nat, side, Nat)"),
+                Settlement::Settled,
+                &[("reads", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ reads(()) ] def a = 3 ;",
+                read("(Nat, side)"),
+                Settlement::Unsettled,
+                &[("reads", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ reads(f(x)) ] def a = 3 ;",
+                Outcome::Checks(ObligationCount::from(0_usize)),
+                Settlement::Unsettled,
+                &[][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ reads(Nat) ] def a : Integer ;",
+                Outcome::Checks(ObligationCount::from(1_usize)),
+                Settlement::Unsettled,
+                &[][..],
+            ),
+        ];
+        for (root, source, outcome, settlement, asks) in rows {
+            let module = checked(SourceText::from(source));
+            let stating: BTreeSet<ConstantIndex> =
+                stating_reads(&module.module).into_iter().collect();
+            let mut asked = Asked::default();
+            let report = settle(
+                root,
+                &module.arena,
+                &module.module,
+                &module.verdicts,
+                &mut asked,
+            )
+            .expect("the verdicts are the module's own");
+            assert_eq!(
+                (
+                    only(&report).outcome(),
+                    only(&report).settlement(),
+                    asked.0.as_slice()
+                ),
+                (outcome, settlement, asks),
+                "`{source}` under the {root} root reads and settles as pinned"
+            );
+            assert!(
+                asked
+                    .0
+                    .iter()
+                    .all(|&(_, position)| stating.contains(&ConstantIndex::from(position))),
+                "`{source}`: each declaration asked what it reads states it"
+            );
+        }
+        let module = checked(SourceText::from("def b = 3 ; @[ reads(Nat) ] def a = 3 ;"));
+        assert_eq!(
+            stating_reads(&module.module),
+            [ConstantIndex::from(1_usize)],
+            "only the declaration stating `reads` is named"
+        );
     }
 
     /// #3338: a `traces` entry beside `runs` states one channel's web; the

@@ -268,8 +268,8 @@ enum Unsettled
 /// - requires: nothing.
 /// - ensures: obligations exactly when both stated and produced outcomes are
 ///   checks; every refusal, stated run, stated normal form, stated
-///   decomposition, stated run with its channels or malformed expectation is
-///   verdict-shaped.
+///   decomposition, stated run with its channels, stated footprint or malformed
+///   expectation is verdict-shaped.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -294,7 +294,8 @@ fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
                 | Outcome::Normalizes(_)
                 | Outcome::Decomposes(_)
                 | Outcome::RefusesRunning(..)
-                | Outcome::RunsTracing(..),
+                | Outcome::RunsTracing(..)
+                | Outcome::Reads(_),
             )
             | Stated::Malformed(_)),
             _,

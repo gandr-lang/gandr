@@ -218,6 +218,7 @@ pub use crate::content::site;
 pub use crate::footprint::Footprint;
 pub use crate::footprint::HoleMark;
 pub use crate::footprint::footprint_of;
+pub use crate::footprint::footprints;
 pub use crate::order::ItemHandle;
 pub use crate::order::SpliceCensus;
 pub use crate::order::handle;

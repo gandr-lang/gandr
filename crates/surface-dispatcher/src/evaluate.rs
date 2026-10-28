@@ -154,6 +154,9 @@ use anodized::spec;
 use gandr_core_checker::Judged;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Verdict;
+use gandr_core_incremental::Footprint;
+use gandr_core_incremental::Reference;
+use gandr_core_incremental::footprints;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::Definition;
@@ -191,6 +194,8 @@ use gandr_surface_corpus::Channel;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::TracedRun;
+use gandr_surface_corpus::reads_spelled;
+use gandr_surface_corpus::stating_reads;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_lowering::ChannelName;
@@ -212,6 +217,8 @@ use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::web_spelled;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
+
+use crate::compose::item_program;
 
 mod console;
 mod entry;
@@ -420,6 +427,10 @@ pub struct Program<'source>
     /// among which its last declaration is read: every position, unless the
     /// source is laid after others in its unit.
     own: Range<ConstantIndex>,
+    /// What each declaration stating a `reads` mentions, spelled as its
+    /// payload is written, by admission position: none for a module whose
+    /// declarations state none.
+    reads: BTreeMap<ConstantIndex, RunSpelling>,
 }
 
 /// The part of a program a module's leading declarations make: each of them
@@ -1075,6 +1086,7 @@ impl<'source> Program<'source>
             );
         }
         let entry = entry::entry_of(core, module, verdicts);
+        let reads = footprint_spellings(core, module);
         Self {
             arena,
             definitions,
@@ -1090,6 +1102,7 @@ impl<'source> Program<'source>
             entry,
             holes: hole::hole_sites(core, module),
             own: ConstantIndex::from(0_usize) .. ConstantIndex::from(usize::MAX),
+            reads,
         }
     }
 
@@ -2746,6 +2759,96 @@ fn reaching(
     reached
 }
 
+/// How a declaration reads when its item's content holds a node no arena
+/// resolves: no footprint, and no `reads` payload writes this.
+const UNRESOLVED_NODE: &str = "no footprint: a node of the item does not resolve";
+
+/// How a declaration reads when its footprint holds a reference to no item:
+/// no `reads` payload writes this.
+const UNRESOLVED_REFERENCE: &str = "no footprint: a reference names no item";
+
+/// How a declaration reads when no item of the module's item program is it:
+/// no `reads` payload writes this.
+const NO_ITEM: &str = "no footprint: no item stands at this position";
+
+/// What each declaration of `module` that states a `reads` mentions, spelled
+/// as a `reads` payload writes it, by admission position.
+///
+/// # Specification
+/// - requires: `module` was lowered into `core`.
+/// - ensures: empty when no declaration states a `reads` ([`stating_reads`]);
+///   else one spelling for each such declaration that is an item of the
+///   module's item program ([`item_program`]), [`footprint_spelled`] of the
+///   footprint read off its content table's roots.
+/// - fails: never; a module whose positions do not ascend has no item program,
+///   and no declaration of it has a footprint.
+/// - panics: none.
+/// - intension: the item program is built once, over a copy of `core`, and only
+///   for a module one of whose declarations states what it reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source whose declarations read a data type, its
+///   constructors, a function and nothing, each settled against its claim.
+/// - witness: `tests::corpus::a_reads_claim_settles_against_the_carried_footprint_2520`
+#[spec(ensures: |ref ret| ret.keys().all(|constant| stating_reads(module).contains(constant)))]
+fn footprint_spellings(
+    core: &CoreArena,
+    module: &LoweredModule<'_>,
+) -> BTreeMap<ConstantIndex, RunSpelling>
+{
+    let stating: BTreeSet<ConstantIndex> = stating_reads(module).into_iter().collect();
+    if stating.is_empty() {
+        return BTreeMap::new();
+    }
+    let Ok(program) = item_program(module, core.clone())
+    else {
+        return BTreeMap::new();
+    };
+    program
+        .items()
+        .iter()
+        .zip(footprints(&program))
+        .filter(|&(item, _)| stating.contains(&item.declaration().constant()))
+        .map(|(item, footprint)| (item.declaration().constant(), footprint_spelled(&footprint)))
+        .collect()
+}
+
+/// The `reads` spelling of `footprint`: each item it names, by its key.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`reads_spelled`] of the keys of the items `footprint` reads, in
+///   any position; [`UNRESOLVED_NODE`] for an opaque footprint, and for no
+///   other, and [`UNRESOLVED_REFERENCE`] for one reading a position no item
+///   holds, or a key that is no text.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`footprint_spellings`].
+/// - witness: `tests::corpus::a_reads_claim_settles_against_the_carried_footprint_2520`
+#[spec(ensures: |ref ret| (footprint.opacity() == gandr_core_incremental::Opacity::Opaque)
+    == (*ret == RunSpelling::from(String::from(UNRESOLVED_NODE))))]
+fn footprint_spelled(footprint: &Footprint) -> RunSpelling
+{
+    if footprint.opacity() == gandr_core_incremental::Opacity::Opaque {
+        return RunSpelling::from(String::from(UNRESOLVED_NODE));
+    }
+    let mut names = Vec::with_capacity(footprint.reads().len());
+    for read in footprint.reads() {
+        let Reference::Item { ref key, .. } = *read
+        else {
+            return RunSpelling::from(String::from(UNRESOLVED_REFERENCE));
+        };
+        let Ok(name) = core::str::from_utf8(key.as_ref())
+        else {
+            return RunSpelling::from(String::from(UNRESOLVED_REFERENCE));
+        };
+        names.push(name);
+    }
+    reads_spelled(names)
+}
+
 impl Runner for Program<'_>
 {
     /// Spells the outcome of running the declaration at `constant` under a
@@ -2828,6 +2931,23 @@ impl Runner for Program<'_>
     ) -> RunSpelling
     {
         RunSpelling::from(self.evaluate_decomposed(constant).to_string())
+    }
+
+    /// Spells the items the declaration at `constant` mentions, as the
+    /// footprint its content table carries names them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.reads
+            .get(&constant)
+            .cloned()
+            .unwrap_or_else(|| RunSpelling::from(String::from(NO_ITEM)))
     }
 }
 

@@ -1,0 +1,68 @@
+/// `bicontextual-core` carries each core node's support and each item's footprint, the half of the bicontextual judgement that stands today.
+///
+/// Implemented: every core node carries its exact support from its mint, the content table reads each item's footprint off its roots, and the kernel keys its check memo by the binders a goal reads.
+/// Not implemented: #340 owes one judgement that takes its context in and returns the support it read, its modes routed by polarity and chirality, and a consumer of the command IL, and #3123 owes the kernel's judgement.
+///
+/// Each item states with `reads` the items its footprint names, and the corpus run settles the claim against the footprint its content table carries.
+/// A declaration reads its types, the data its constructors build and its callees, and never a bound variable.
+/// A node's support and the memo key have no surface reading, and `bicontextual-kernel-key` shows the key.
+///
+/// - see: #1904 — not implemented: environments as values, the context the judgement takes in
+/// - see: corpus/ledger/features/bicontextual-kernel-key.gandr
+/// - see: crates/core-incremental/src/footprint.rs
+/// - see: crates/core-term/src/support.rs
+
+/// The naturals, whose successor reads them.
+@[ reads(Nat) ]
+data Nat : Type {
+  /// Zero.
+  Zero : Nat;
+  /// The natural after `n`.
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A flag, whose constructors read nothing.
+@[ reads(()) ]
+data Flag : Type {
+  /// On.
+  On : Flag;
+  /// Off.
+  Off : Flag;
+}
+
+/// A natural or a flag, whose fields read `Nat` and `Flag`.
+@[ reads((Flag, Nat)) ]
+data Either : Type {
+  /// A natural.
+  Count : (m : Nat) --> Either;
+  /// A flag.
+  Mark : (f : Flag) --> Either;
+}
+
+/// Answers `n` whichever side `e` takes. The case reads `Either` through its constructors, and never the fields it binds.
+@[ reads((Either, Nat)) ]
+def side(n : Nat, e : Either) -> -F Nat {
+  case e -> -F Nat {
+    Count(_m) => n,
+    Mark(_f) => n
+  }
+}
+
+/// Calls `side` on a flag. It reads its callee and the data each constructor builds.
+@[ reads((side, Nat, Flag, Either)) ]
+def marked() -> -F Nat {
+  side(Succ(Zero), Mark(On))
+}
+
+/// An integer, which names no item.
+def answer : Integer ;
+
+/// The answer's value reads nothing.
+@[ reads(()) ]
+def answer = 42 ;
+
+/// Returns its parameter. It reads the type `Nat`, and never the bound `x`.
+@[ reads(Nat) ]
+def closed(x : Nat) -> -F Nat {
+  return x
+}

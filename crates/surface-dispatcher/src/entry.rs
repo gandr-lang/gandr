@@ -865,7 +865,8 @@ impl<'step> Entries<'step>
                                         Outcome::Runs(_)
                                         | Outcome::Normalizes(_)
                                         | Outcome::Decomposes(_)
-                                        | Outcome::RunsTracing(..),
+                                        | Outcome::RunsTracing(..)
+                                        | Outcome::Reads(_),
                                     ),
                                     Outcome::Checks(_),
                                 ) => Unsettlement::Obligations,
@@ -886,7 +887,8 @@ impl<'step> Entries<'step>
                                     | Outcome::Normalizes(_)
                                     | Outcome::Decomposes(_)
                                     | Outcome::RefusesRunning(..)
-                                    | Outcome::RunsTracing(..),
+                                    | Outcome::RunsTracing(..)
+                                    | Outcome::Reads(_),
                                 ) => Unsettlement::RunOutcome,
                                 (
                                     &Stated::Verdict(Outcome::Normalizes(_)),
@@ -895,8 +897,19 @@ impl<'step> Entries<'step>
                                     | Outcome::Runs(_)
                                     | Outcome::Decomposes(_)
                                     | Outcome::RefusesRunning(..)
-                                    | Outcome::RunsTracing(..),
+                                    | Outcome::RunsTracing(..)
+                                    | Outcome::Reads(_),
                                 ) => Unsettlement::NormalForm,
+                                (
+                                    &Stated::Verdict(Outcome::Reads(_)),
+                                    Outcome::Reads(_)
+                                    | Outcome::Refuses(_)
+                                    | Outcome::Runs(_)
+                                    | Outcome::Normalizes(_)
+                                    | Outcome::Decomposes(_)
+                                    | Outcome::RefusesRunning(..)
+                                    | Outcome::RunsTracing(..),
+                                ) => Unsettlement::Reads,
                                 (&Stated::Malformed(_), _) => Unsettlement::Malformed,
                             };
                             Subject::Unsettled {
