@@ -28,8 +28,8 @@
 //! named. The universe of representable sorts classifies a theory's sort
 //! member only, so read anywhere else it is misplaced, malformed source. A
 //! form of the wrong sort where a declaration is read is a stray, malformed
-//! source, except the operator declaration and the extern block, which name
-//! their own issues; an expression at a source's top level, where only
+//! source, except the extern block, which names its own issue; an expression
+//! at a source's top level, where only
 //! declarations stand, is malformed source too, as is a form of the wrong sort
 //! anywhere else. An
 //! action on a name that is no fork's end is delegation, and a family read at
@@ -105,17 +105,16 @@ impl LoweringRefusal<'_>
     ///   a form out of the fragment's form, sort and boundary, an unstated
     ///   component's or an undescribed member's fault — and never of a span or
     ///   a name. A form reserved or unadmitted, an indexed reading, an action
-    ///   on no endpoint, an operator declaration or an extern block where a
-    ///   declaration is read, a graded bridge, an unread ascription, an
-    ///   implicit telescope out of shape, a model component that relates a
-    ///   many-out operation's results, states a circuit rule, binds a variable
-    ///   or reads a computation sort, and a member the description route or its
-    ///   cell layer has not built a reading for are unimplemented, each naming
-    ///   its issue; the exhausted allowance, the grammar mismatch, the unknown
-    ///   mold, an undecided coincidence check, an unminted declaration, a host
-    ///   table in conflict and a circuit redex off its own boundary are engine
-    ///   faults; every other refusal, a misplaced form and a stray root child
-    ///   among them, is malformed source.
+    ///   on no endpoint, an extern block where a declaration is read, a graded
+    ///   bridge, an unread ascription, an implicit telescope out of shape, a
+    ///   model component that relates a many-out operation's results, states a
+    ///   circuit rule, binds a variable or reads a computation sort, and a
+    ///   member the description route or its cell layer has not built a reading
+    ///   for are unimplemented, each naming its issue; the exhausted allowance,
+    ///   the grammar mismatch, the unknown mold, an undecided coincidence
+    ///   check, an unminted declaration, a host table in conflict and a circuit
+    ///   redex off its own boundary are engine faults; every other refusal, a
+    ///   misplaced form and a stray root child among them, is malformed source.
     /// - provides: the fact a report groups by, and the issue every face of an
     ///   unimplemented refusal names.
     /// - fails: never.
@@ -141,7 +140,7 @@ impl LoweringRefusal<'_>
                 sort: FragmentSort::Declaration,
                 form,
                 ..
-            } if form == FormName::OPERATOR_DECLARATION || form == FormName::EXTERN_BLOCK => {
+            } if form == FormName::EXTERN_BLOCK => {
                 matches!(ret, FailureClass::Unimplemented(_))
             },
             | Self::OutOfFragment {
@@ -404,10 +403,10 @@ impl LoweringRefusal<'_>
 /// - ensures: a reserved or unadmitted form names the issue tracking the
 ///   feature it carries; a misplaced form is malformed source; a form of the
 ///   wrong sort where a declaration is read names the issue of the item it is
-///   when it is an item the lowering does not reach, an operator declaration or
-///   an extern block, and is malformed source for every other, a stray; an
-///   indexed reading names the indexed family's, an action on no endpoint
-///   delegation's; every other boundary is malformed source.
+///   when it is the item the lowering does not reach, an extern block, and is
+///   malformed source for every other, a stray; an indexed reading names the
+///   indexed family's, an action on no endpoint delegation's; every other
+///   boundary is malformed source.
 /// - provides: the lowering classifier's arm for `OutOfFragment`.
 /// - fails: never.
 /// - panics: none.
@@ -422,7 +421,7 @@ impl LoweringRefusal<'_>
             || matches!(boundary, FragmentBoundary::Indexed | FragmentBoundary::Endpoint)
             || (boundary == FragmentBoundary::WrongSort
                 && sort == FragmentSort::Declaration
-                && (form == FormName::OPERATOR_DECLARATION || form == FormName::EXTERN_BLOCK)))
+                && form == FormName::EXTERN_BLOCK))
         && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
 )]
 #[must_use]
@@ -501,9 +500,9 @@ impl FragmentFeature
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a reserved or unadmitted form is the feature it carries; an
-    ///   operator declaration or an extern block of the wrong sort where a
-    ///   declaration is read is its own feature, and any other form so is a
-    ///   stray; every other crossing is its boundary.
+    ///   extern block of the wrong sort where a declaration is read is its own
+    ///   feature, and any other form so is a stray; every other crossing is its
+    ///   boundary.
     /// - provides: the qualifier a refusal name of `OutOfFragment` carries.
     /// - fails: never.
     /// - panics: none.
@@ -516,7 +515,7 @@ impl FragmentFeature
             ret == Self::Unbuilt(feature)
         },
         | FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => matches!(ret,
-            Self::Stray | Self::Unbuilt(Unbuilt::OperatorDeclaration | Unbuilt::ExternBlock)),
+            Self::Stray | Self::Unbuilt(Unbuilt::ExternBlock)),
         | _ => ret == Self::Crossed(boundary),
     })]
     #[inline]
@@ -532,10 +531,7 @@ impl FragmentFeature
                 Self::Unbuilt(feature)
             },
             FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => {
-                if form == FormName::OPERATOR_DECLARATION {
-                    Self::Unbuilt(Unbuilt::OperatorDeclaration)
-                }
-                else if form == FormName::EXTERN_BLOCK {
+                if form == FormName::EXTERN_BLOCK {
                     Self::Unbuilt(Unbuilt::ExternBlock)
                 }
                 else {
@@ -1297,12 +1293,6 @@ mod tests
                 FailureClass::MalformedSource,
             ),
             (
-                "operator_declaration",
-                FragmentSort::Declaration,
-                FragmentBoundary::WrongSort,
-                FailureClass::Unimplemented(TrackingIssue::OPERATOR_DECLARATION),
-            ),
-            (
                 "extern_block",
                 FragmentSort::Declaration,
                 FragmentBoundary::WrongSort,
@@ -1376,23 +1366,14 @@ mod tests
         );
     }
 
-    /// Where a declaration is read, an operator declaration and an extern
-    /// block are keyed by their own features, the keys their unadmitted
-    /// readings carry, and any other form as a stray.
+    /// Where a declaration is read, an extern block is keyed by its own
+    /// feature, the key its unadmitted reading carries, and any other form as
+    /// a stray.
     #[test]
-    fn a_declaration_position_keys_an_operator_declaration_apart()
+    fn a_declaration_position_keys_an_extern_block_apart()
     {
         use super::FragmentFeature;
 
-        assert_eq!(
-            FragmentFeature::of(
-                FormName::OPERATOR_DECLARATION,
-                FragmentSort::Declaration,
-                FragmentBoundary::WrongSort
-            ),
-            FragmentFeature::Unbuilt(Unbuilt::OperatorDeclaration),
-            "an operator declaration where a declaration is read is its own feature"
-        );
         assert_eq!(
             FragmentFeature::of(
                 FormName::EXTERN_BLOCK,

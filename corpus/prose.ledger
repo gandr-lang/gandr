@@ -1070,7 +1070,7 @@ corpus/surface/control-flow.gandr Passive 71a5dc6685f98a92
 corpus/surface/data-field-decorations.gandr Passive 834c113cf3ff5d55
 corpus/surface/data-field-decorations.gandr Passive a1a8578faa0beda6
 corpus/surface/higher-cells/cat-shape.gandr Passive fa82895c3c56fce1
-corpus/surface/operator-and-rec-block.gandr Tense 4e21c3eaae7f8ff3
+corpus/surface/rec-block.gandr Tense 4e21c3eaae7f8ff3
 corpus/surface/shell-double-quoting.gandr Tense ce5e21081a6191bd
 corpus/surface/shell-parameter-expansion.gandr Tense 3660527e693cf3d2
 corpus/surface/shell-parameter-expansion.gandr Tense ce6290c65a67804c

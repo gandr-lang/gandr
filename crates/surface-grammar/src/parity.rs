@@ -10,8 +10,8 @@
 //! vocabulary.
 //!
 //! The kinds only this grammar has — `data` and `codata` declarations,
-//! `def rec` with copatterns, the loop forms, `import`, operator-fixity
-//! declarations, and their reserved members — are listed apart in
+//! `def rec` with copatterns, the loop forms, `import`, and their reserved
+//! members — are listed apart in
 //! [`PBG_ONLY_KINDS`](crate::PBG_ONLY_KINDS), so [`named_kind_parity`] never
 //! enumerates them. The two lists are disjoint.
 //!

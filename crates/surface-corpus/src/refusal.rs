@@ -3708,7 +3708,6 @@ mod tests
         for text in [
             "OutOfFragment.projection_expression",
             "OutOfFragment.grade.declaration",
-            "OutOfFragment.operator_declaration",
             "OutOfFragment.WrongSort.declaration",
             "OutOfFragment.TopLevel",
             "OutOfFragment.WrongSort",

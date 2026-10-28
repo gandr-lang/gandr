@@ -118,8 +118,6 @@ pub enum Unbuilt
     RestPattern,
     /// The union type `A | B`.
     Union,
-    /// The operator declaration `op infixl 6 "spelling" ;`.
-    OperatorDeclaration,
     /// A recursive call's claim the lowering does not read: two claims at once,
     /// a resident that is no claim, a measure, a stage or a cost.
     RecursiveClaim,
@@ -265,7 +263,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 79_usize] = [
+    pub const ALL: [Self; 78_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -281,7 +279,6 @@ impl Unbuilt
         Self::ListPattern,
         Self::RestPattern,
         Self::Union,
-        Self::OperatorDeclaration,
         Self::RecursiveClaim,
         Self::SharedFork,
         Self::Dup,
@@ -384,7 +381,6 @@ impl Unbuilt
             Self::ListPattern => "list_pattern",
             Self::RestPattern => "rest_pattern",
             Self::Union => "union_type",
-            Self::OperatorDeclaration => "operator_declaration",
             Self::RecursiveClaim => "instantiation_expression.computation",
             Self::SharedFork => "fork_shared_statement",
             Self::Dup => "dup_expression",
@@ -480,7 +476,7 @@ impl Unbuilt
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
             Self::Union => TrackingIssue::UNION,
-            Self::OperatorDeclaration | Self::PrefixOperator => TrackingIssue::OPERATOR_DECLARATION,
+            Self::PrefixOperator => TrackingIssue::USER_OPERATORS,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,
             Self::SharedFork | Self::Dup | Self::Acquire | Self::Release => {
                 TrackingIssue::SHARED_SESSIONS

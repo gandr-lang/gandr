@@ -2706,7 +2706,7 @@ mod tests
               "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}"
               "import ${1:identifier};"
               "world ${1:identifier};"
-              "op infixl ${1:number} \"${2:string_fragment}\";"
+              "rec { ${1:item} \\}"
         "#]]
         .assert_eq(&rendered);
     }

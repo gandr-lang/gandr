@@ -14170,39 +14170,31 @@ mod tests
     }
 
     /// A source of one item the lowering does not reach refuses that item, not
-    /// the source: an operator declaration and an extern block alone each
-    /// carry their refusal (#1753).
+    /// the source: an extern block alone carries its refusal (#1753).
     #[test]
     fn a_lone_item_out_of_the_fragment_refuses_itself_1753()
     {
         let pbg = grammar();
-        for (text, held) in [
-            ("op prefix 9 \"!\" ;", "op"),
-            (
-                "extern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}",
-                "extern",
-            ),
-        ] {
-            let tree = parsed(&pbg, SourceText::from(text));
-            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
-            let read: Vec<_> = collected
-                .slots
-                .iter()
-                .map(|slot| {
-                    (
-                        slot.name,
-                        slot.role,
-                        matches!(slot.refusal, Maybe::Present(_)),
-                    )
-                })
-                .collect();
+        let text = "extern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}";
+        let tree = parsed(&pbg, SourceText::from(text));
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        let read: Vec<_> = collected
+            .slots
+            .iter()
+            .map(|slot| {
+                (
+                    slot.name,
+                    slot.role,
+                    matches!(slot.refusal, Maybe::Present(_)),
+                )
+            })
+            .collect();
 
-            assert_eq!(
-                read,
-                [(SurfaceName::from(held), Role::Held, true)],
-                "the item alone is held with its own refusal: {text}"
-            );
-        }
+        assert_eq!(
+            read,
+            [(SurfaceName::from("extern"), Role::Held, true)],
+            "the item alone is held with its own refusal"
+        );
     }
 
     /// A module with no member declares no slot, yet it declares: beside it

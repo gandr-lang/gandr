@@ -4347,14 +4347,6 @@ surface/n-ary-products.gandr:nesting_is_written:bcc805e77e4e502e uncommented
 surface/n-ary-products.gandr:single:2e3f6a7702a326f4 uncommented
 surface/n-ary-products.gandr:single_is_not_its_member:0b0212c0936a3904 uncommented
 surface/n-ary-products.gandr:triple:03f6d232f67b72ad uncommented
-surface/operator-and-rec-block.gandr:<file> unshaped:HeadParagraphs
-surface/operator-and-rec-block.gandr:<file> unshaped:ReferenceOutsideReferences
-surface/operator-and-rec-block.gandr:<file> unshaped:Semicolon
-surface/operator-and-rec-block.gandr:<file> unshaped:WhatLength
-surface/operator-and-rec-block.gandr:comment:16b0d72e17586436 unshaped:ItemShape
-surface/operator-and-rec-block.gandr:comment:20304ec1a2dcd48d unshaped:ItemShape
-surface/operator-and-rec-block.gandr:comment:23847a2f48aab802 unshaped:ItemShape
-surface/operator-and-rec-block.gandr:comment:5ea5a4a7fbae3bca unshaped:ItemShape
 surface/shell-double-quoting.gandr:<file> unshaped:HeadParagraphs
 surface/shell-double-quoting.gandr:<file> unshaped:ReferenceOutsideReferences
 surface/shell-double-quoting.gandr:<file> unshaped:Semicolon
