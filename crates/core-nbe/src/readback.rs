@@ -60,6 +60,24 @@
 //! checked, and a level that counts outside the binders this readback opened is
 //! refused by name rather than wrapped into a different variable.
 //!
+//! # A shared value reads back once
+//!
+//! The domain shares a value wherever an environment hands it on, so one
+//! domain node can stand at many positions of a term. The run keeps a table
+//! from a domain value and its open binders to the core value that it built
+//! there. A value task whose key the table holds pushes that core value. It
+//! reads nothing and evaluates no closure again. So a shared value reads back
+//! once at each binder depth, and the core term shares its node wherever the
+//! domain does. This is the compact normal form of useful sharing. A chain of
+//! n doublings reads back to n + 1 values, where a walk without the table
+//! builds 2^(n+1).
+//!
+//! The key fixes the result, because the run fixes its mode, its definitions
+//! and the hole that it writes. So the table holds under every duplication
+//! stance. It keys by identity inside one run and holds no content. It stays
+//! outside the trusted base, because the kernel checks the term that readback
+//! builds.
+//!
 //! # One arena is read, one is written, and the faults say which
 //!
 //! Readback resolves domain ids constantly and reads **no** core node but a
@@ -114,7 +132,16 @@
 //! subsidize its successor. The measured minimum succeeds independently and one
 //! less refuses. Witness:
 //! `readback::tests::budget_search_does_not_reuse_forcing_from_failed_attempts`.
+//!
+//! # References
+//!
+//! - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: Accattoli's
+//!   habilitation, § 4.2, useful sharing. Strong reduction substitutes only
+//!   where a redex follows, and its result is a compact normal form. The table
+//!   builds that form, because it reads a shared value once at each binder
+//!   depth.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -626,6 +653,15 @@ enum Task
         /// The binders open where it stands.
         binders: OpenBinders,
     },
+    /// Record the value result on top of the stack as the readback of a
+    /// domain value at its open binders.
+    Remember
+    {
+        /// The domain node.
+        value: DomainValueId,
+        /// The binders open where it stands.
+        binders: OpenBinders,
+    },
     /// Assemble a native product path.
     PathProduct,
     /// Assemble transport beneath a neutral path.
@@ -919,6 +955,9 @@ struct Machine<'run>
     fuel: Fuel,
     /// The hole this run writes as it reads, if any.
     writing: Writing,
+    /// The core value this run built for each domain value at its open
+    /// binders.
+    read: BTreeMap<(DomainValueId, OpenBinders), ValueId>,
 }
 
 impl<'run> Machine<'run>
@@ -967,6 +1006,7 @@ impl<'run> Machine<'run>
             mode,
             fuel,
             writing: Writing::Nothing,
+            read: BTreeMap::new(),
         }
     }
 
@@ -1973,7 +2013,8 @@ pub fn read_written(
 /// # Specification
 /// - requires: the machine's task stack holds the run's initial task.
 /// - ensures: on success the task stack is empty and the result stacks hold
-///   exactly what the run produced.
+///   exactly what the run produced. A remember task spends no fuel, so the fuel
+///   counts the reading work alone.
 /// - provides: the one loop; every rule is an arm of it, so there is no call
 ///   cycle for the recursion gate to find and no host frame per term node. The
 ///   clauses state a non-empty task stack at entry and an empty one on success;
@@ -2007,13 +2048,17 @@ fn run(
 ) -> Result<(), ReadbackFault>
 {
     while let Some(task) = machine.tasks.pop() {
-        let Some(remaining) = u32::from(machine.fuel).checked_sub(1_u32)
-        else {
-            #[cfg(feature = "tracing")]
-            tracing::warn!("readback fuel exhausted");
-            return Err(ReadbackFault::OutOfFuel);
-        };
-        machine.fuel = Fuel::from(remaining);
+        // A remember task records a result and reads nothing. The value task
+        // that pushed it already spent the step.
+        if !matches!(task, Task::Remember { .. }) {
+            let Some(remaining) = u32::from(machine.fuel).checked_sub(1_u32)
+            else {
+                #[cfg(feature = "tracing")]
+                tracing::warn!("readback fuel exhausted");
+                return Err(ReadbackFault::OutOfFuel);
+            };
+            machine.fuel = Fuel::from(remaining);
+        }
         step(core, domain, machine, task)?;
     }
     Ok(())
@@ -2284,6 +2329,8 @@ fn run(
             && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::RecordProjection(..) | Computation::TupleProjection(..)))),
         | Task::Value { .. } | Task::Comp { .. } | Task::Spine(_) | Task::QuotedValueType { .. }
         | Task::QuotedCompType { .. } | Task::QuotedCode { .. } | Task::Suspended { .. } => true,
+        | Task::Remember { value, binders } => machine.values.len() == entry_values
+            && machine.values.last().is_some_and(|read| machine.read.get(&(value, binders)) == Some(read)),
         | Task::Substitute { body, count } => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(usize::from(count)).is_some_and(|left| match body {
                 | TermId::Value(_) => machine.values.len() == left.saturating_add(1_usize)
@@ -2356,6 +2403,14 @@ fn step(
             Ok(())
         },
         Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
+        Task::Remember { value, binders } => {
+            let read = *machine
+                .values
+                .last()
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let _earlier = machine.read.insert((value, binders), read);
+            Ok(())
+        },
         Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
         Task::Constructor { tag, fields } => {
             let count = domain.fields(fields).map_err(ReadbackFault::Domain)?.len();
@@ -3713,10 +3768,12 @@ fn step_quoted_comp_type(
 ///   node's held core id names the core value holding its payload, which is the
 ///   same cross-arena precondition every domain constructor inherits and which
 ///   this arm splices rather than re-checks.
-/// - ensures: a retained face pushes the source id and mints nothing; a leaf
-///   pushes its rebuilt node — a literal by splicing the id that already holds
-///   its payload; a composite pushes its children's tasks and its own assembly
-///   frame, so the frame runs after them.
+/// - ensures: a retained face pushes the source id and mints nothing. A value
+///   that this run already read at these binders pushes the core value that it
+///   built and reads nothing. Otherwise a remember task goes beneath the
+///   value's own work. A leaf pushes its rebuilt node, and a literal splices
+///   the id that already holds its payload. A composite pushes its children's
+///   tasks and its own assembly frame, so the frame runs after them.
 /// - provides: the value half of the transition relation. The clause states
 ///   that a success pushes at least one value result or task and consumes
 ///   neither result stack; which node was pushed, and which frame was queued
@@ -3727,23 +3784,20 @@ fn step_quoted_comp_type(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the face choice ahead of the
-///   nine-arm match, separated by a retained face, and by one case per arm —
-///   the two leaves, the pair, the injection, the lift, the thunk, the neutral,
-///   the code, and the static lambda.
+/// - hypothesis: L3 — the decision surface is the face choice and the table
+///   lookup ahead of the nine-arm match. A retained face, a value read twice at
+///   one depth and at two depths, and one case per arm separate it. The arms
+///   are the two leaves, the pair, the injection, the lift, the thunk, the
+///   neutral, the code, and the static lambda.
 /// - witness: `readback::tests::an_unreduced_value_reads_back_as_its_own_source`
 /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
 /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
 /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
 /// - witness: `readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
-// economy: a rebuilt node is minted fresh, with no table keyed on the domain
-// node, so a domain value reachable by two paths is read back twice and the
-// sharing an environment carried is expanded into a tree. The ceiling is the
-// expansion of the domain's own sharing, which a duplicated binder makes
-// exponential rather than merely quadratic. Upgrade path: a memo from
-// (domain node, open binders) to the minted core id, held on the machine — the
-// same sharing decision the duplication parameter owns, which is why it belongs
-// behind that parameter rather than inside this walk.
+/// - witness: `readback::tests::a_shared_value_reads_back_once_at_each_binder_depth`
+// economy: the table keys on every open binder, so a closed value reads back
+// once at each binder depth that it stands under. A key on the levels that the
+// value reaches would share it across depths.
 #[spec(
     captures: [
         entry_values = machine.values.len(),
@@ -3770,6 +3824,11 @@ fn step_value(
         machine.values.push(source);
         return Ok(());
     }
+    if let Some(&read) = machine.read.get(&(value, binders)) {
+        machine.values.push(read);
+        return Ok(());
+    }
+    machine.tasks.push(Task::Remember { value, binders });
     match node {
         DomainValue::Constructor {
             datatype,
