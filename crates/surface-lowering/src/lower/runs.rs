@@ -298,7 +298,7 @@ impl Lowerer<'_, '_>
     pub(super) fn nested_sites(
         &self,
         origins: &OriginTable,
-        resumed: Option<Resumed<'_>>,
+        resumed: Option<Resumed<'_, '_>>,
     ) -> BTreeMap<NodeIndex, NestedSite>
     {
         origins

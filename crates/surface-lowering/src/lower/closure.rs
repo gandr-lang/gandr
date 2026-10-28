@@ -110,7 +110,7 @@ struct Suspended<'closure>
     /// The tables the closure's own module finished with, which every
     /// document resumed after it leads with; none when finishing it alone
     /// refuses.
-    finished: Option<Finished>,
+    finished: Option<Finished<'closure>>,
 }
 
 /// What lowering a closure came to.

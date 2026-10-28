@@ -361,6 +361,10 @@ mod reduct;
 
 mod sealing;
 
+mod layered;
+
+use self::layered::Layered;
+
 mod world;
 
 pub use self::data::Constructor;
@@ -10722,6 +10726,43 @@ pub struct FlattenedSlot<'source>
     pub fixed: Vec<(Name, ValueTypeId)>,
 }
 
+/// The tables a declaration's checking reads by its key, as the module a
+/// closure's lowering finishes alone holds them: shared with every module
+/// lowered after the closure.
+///
+/// # Specification
+/// - requires: built by [`LoweredModule::take_keyed_tables`] from a module
+///   lowered whole.
+/// - ensures: each table is that module's.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — a type-level block.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a document resumed after its closure reads each table as
+///   the whole lowering's module does.
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+#[derive(Clone, Debug)]
+pub struct KeyedTables<'source>
+{
+    /// As [`LoweredModule::operation_rules`] reads them.
+    operation_rules: Arc<BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>>,
+    /// As [`LoweredModule::stages`] reads them.
+    stage_bounds: Arc<BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>>,
+    /// As [`LoweredModule::region_names`] reads them.
+    region_names: Arc<BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>>,
+    /// As [`LoweredModule::implicits`] reads them.
+    implicits: Arc<BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>>,
+    /// As [`LoweredModule::model_slots`] reads them.
+    model_slots: Arc<BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>>>,
+    /// As [`LoweredModule::supplies`] reads them.
+    supplies: Arc<BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>>,
+    /// As [`LoweredModule::handler_laws`] reads them.
+    handler_laws: Arc<BTreeMap<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>>,
+    /// As [`LoweredModule::models`] reads them.
+    models: Arc<BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>>,
+}
+
 /// One module, lowered: its declarations, its attributes, its origins, its
 /// imports, and the outermost scope its names were declared in.
 ///
@@ -10805,29 +10846,29 @@ pub struct LoweredModule<'source>
     recognition: Recognition,
     /// The rules each operation's definition was written as, over module
     /// positions, by its position.
-    operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    operation_rules: Layered<ConstantIndex, gandr_kernel_term::OperationRules>,
     /// The bound of each stage binder of each function quantified over
     /// stages, in written order, by the function's declaration key.
-    stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
+    stage_bounds: Layered<UnitKey, Vec<gandr_kernel_term::StageBound>>,
     /// The name of each region binder of each definition over regions, by
     /// ordinal, by the definition's position.
-    region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    region_names: Layered<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     /// Each function written with an implicit telescope, the parameters of
     /// its merged telescope in order: an implicit's name, none for an
     /// explicit parameter, by the function's position.
-    implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    implicits: Layered<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     /// Each function written with a model implicit, each such slot of its
     /// merged telescope, by the function's position.
-    model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>>,
+    model_slots: Layered<ConstantIndex, Vec<FlattenedSlot<'source>>>,
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
-    supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    supplies: Layered<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
     /// The laws each capability scope over a theory owes it, read through the
     /// scope's clauses, by the declaration whose body holds the scope.
-    handler_laws: BTreeMap<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>,
+    handler_laws: Layered<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>,
     /// Each model slot a call omits, its candidates minted, by the
     /// declaration whose body makes the call.
-    models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
+    models: Layered<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
     /// The theory each derived rule's statement is read under, `T` in `T.r`,
     /// by the statement's position.
     qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
@@ -10881,14 +10922,14 @@ impl<'source> LoweredModule<'source>
             origins,
             imports,
             recognition,
-            operation_rules: BTreeMap::new(),
-            stage_bounds: BTreeMap::new(),
-            region_names: BTreeMap::new(),
-            implicits: BTreeMap::new(),
-            model_slots: BTreeMap::new(),
-            supplies: BTreeMap::new(),
-            handler_laws: BTreeMap::new(),
-            models: BTreeMap::new(),
+            operation_rules: Layered::whole(BTreeMap::new()),
+            stage_bounds: Layered::whole(BTreeMap::new()),
+            region_names: Layered::whole(BTreeMap::new()),
+            implicits: Layered::whole(BTreeMap::new()),
+            model_slots: Layered::whole(BTreeMap::new()),
+            supplies: Layered::whole(BTreeMap::new()),
+            handler_laws: Layered::whole(BTreeMap::new()),
+            models: Layered::whole(BTreeMap::new()),
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
             forgets: Vec::new(),
@@ -10943,7 +10984,7 @@ impl<'source> LoweredModule<'source>
         operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
     ) -> Self
     {
-        self.operation_rules = operation_rules;
+        self.operation_rules = Layered::whole(operation_rules);
         self
     }
 
@@ -11023,7 +11064,7 @@ impl<'source> LoweredModule<'source>
         stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
     ) -> Self
     {
-        self.stage_bounds = stage_bounds;
+        self.stage_bounds = Layered::whole(stage_bounds);
         self
     }
 
@@ -11039,7 +11080,7 @@ impl<'source> LoweredModule<'source>
         region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     ) -> Self
     {
-        self.region_names = region_names;
+        self.region_names = Layered::whole(region_names);
         self
     }
 
@@ -11055,7 +11096,7 @@ impl<'source> LoweredModule<'source>
         implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     ) -> Self
     {
-        self.implicits = implicits;
+        self.implicits = Layered::whole(implicits);
         self
     }
 
@@ -11071,7 +11112,7 @@ impl<'source> LoweredModule<'source>
         model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>>,
     ) -> Self
     {
-        self.model_slots = model_slots;
+        self.model_slots = Layered::whole(model_slots);
         self
     }
 
@@ -11087,7 +11128,7 @@ impl<'source> LoweredModule<'source>
         supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
     ) -> Self
     {
-        self.supplies = supplies;
+        self.supplies = Layered::whole(supplies);
         self
     }
 
@@ -11103,7 +11144,7 @@ impl<'source> LoweredModule<'source>
         laws: BTreeMap<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>,
     ) -> Self
     {
-        self.handler_laws = laws;
+        self.handler_laws = Layered::whole(laws);
         self
     }
 
@@ -11119,7 +11160,7 @@ impl<'source> LoweredModule<'source>
         models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
     ) -> Self
     {
-        self.models = models;
+        self.models = Layered::whole(models);
         self
     }
 
@@ -11325,6 +11366,88 @@ impl<'source> LoweredModule<'source>
     )
     {
         (self.in_scope, self.resolutions, self.nested)
+    }
+
+    /// The module's tables by declaration, taken out of it to be shared with
+    /// every module lowered after it: the module is left holding none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each table of the answer holds this module's entries; the
+    ///   module's own tables by declaration are left empty.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer's tables are read through accessors of a
+    ///   module resumed after this one, which the witness compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`KeyedTables`].
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+    pub(crate) fn take_keyed_tables(&mut self) -> KeyedTables<'source>
+    {
+        KeyedTables {
+            operation_rules: core::mem::replace(
+                &mut self.operation_rules,
+                Layered::whole(BTreeMap::new()),
+            )
+            .shared(),
+            stage_bounds: core::mem::replace(
+                &mut self.stage_bounds,
+                Layered::whole(BTreeMap::new()),
+            )
+            .shared(),
+            region_names: core::mem::replace(
+                &mut self.region_names,
+                Layered::whole(BTreeMap::new()),
+            )
+            .shared(),
+            implicits: core::mem::replace(&mut self.implicits, Layered::whole(BTreeMap::new()))
+                .shared(),
+            model_slots: core::mem::replace(&mut self.model_slots, Layered::whole(BTreeMap::new()))
+                .shared(),
+            supplies: core::mem::replace(&mut self.supplies, Layered::whole(BTreeMap::new()))
+                .shared(),
+            handler_laws: core::mem::replace(
+                &mut self.handler_laws,
+                Layered::whole(BTreeMap::new()),
+            )
+            .shared(),
+            models: core::mem::replace(&mut self.models, Layered::whole(BTreeMap::new())).shared(),
+        }
+    }
+
+    /// This module, lowered after a closure whose module's tables by
+    /// declaration are `closure`: each of its own such tables read after the
+    /// closure's.
+    ///
+    /// # Specification
+    /// - requires: each of this module's tables by declaration holds no key
+    ///   `closure`'s holds.
+    /// - ensures: each accessor of those tables answers a closure's declaration
+    ///   from `closure` and any other from this module's own.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the tables are read through accessors at each
+    ///   declaration, which the witness compares with the whole lowering's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`KeyedTables`].
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+    #[must_use]
+    pub(crate) fn after_closure(
+        mut self,
+        closure: &KeyedTables<'source>,
+    ) -> Self
+    {
+        self.operation_rules = self.operation_rules.after(&closure.operation_rules);
+        self.stage_bounds = self.stage_bounds.after(&closure.stage_bounds);
+        self.region_names = self.region_names.after(&closure.region_names);
+        self.implicits = self.implicits.after(&closure.implicits);
+        self.model_slots = self.model_slots.after(&closure.model_slots);
+        self.supplies = self.supplies.after(&closure.supplies);
+        self.handler_laws = self.handler_laws.after(&closure.handler_laws);
+        self.models = self.models.after(&closure.models);
+        self
     }
 
     /// This module, carrying each written name the lowering resolved, with
@@ -12104,7 +12227,10 @@ impl<'source> LoweredModule<'source>
         [declaration.definition(), declaration.signature()]
             .into_iter()
             .find_map(|key| match key {
-                Maybe::Present(key) => self.stage_bounds.get(&key).map(Vec::as_slice),
+                Maybe::Present(key) => match self.stage_bounds.get(&key) {
+                    Maybe::Present(bounds) => Some(bounds.as_slice()),
+                    Maybe::Absent(_) => None,
+                },
                 Maybe::Absent(_) => None,
             })
             .unwrap_or_default()
@@ -12127,7 +12253,7 @@ impl<'source> LoweredModule<'source>
     ///   separate the two answers, and the two binders' order is their
     ///   ordinals'.
     /// - witness: `lower::staged::tests::a_definition_s_region_binders_are_named_by_ordinal_2138`
-    #[spec(ensures: |ret| ret.is_empty() != self.region_names.contains_key(&constant))]
+    #[spec(ensures: |ret| ret.is_empty() != matches!(self.region_names.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
     pub fn region_names(
@@ -12135,10 +12261,10 @@ impl<'source> LoweredModule<'source>
         constant: ConstantIndex,
     ) -> &[Option<SurfaceName<'source>>]
     {
-        self.region_names
-            .get(&constant)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        match self.region_names.get(&constant) {
+            Maybe::Present(names) => names.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The parameters of the function at `constant`, in the merged
@@ -12159,7 +12285,7 @@ impl<'source> LoweredModule<'source>
     ///   parameter written after it answers the explicit one first, and a
     ///   function with no telescope answers nothing.
     /// - witness: `lower::implicit::tests::a_telescope_names_its_implicits_in_the_merged_order_2267`
-    #[spec(ensures: |ret| ret.is_empty() != self.implicits.contains_key(&constant))]
+    #[spec(ensures: |ret| ret.is_empty() != matches!(self.implicits.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
     pub fn implicits(
@@ -12167,10 +12293,10 @@ impl<'source> LoweredModule<'source>
         constant: ConstantIndex,
     ) -> &[Option<SurfaceName<'source>>]
     {
-        self.implicits
-            .get(&constant)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        match self.implicits.get(&constant) {
+            Maybe::Present(names) => names.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The model implicits the telescope of the function at `constant`
@@ -12188,7 +12314,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`FlattenedSlot`].
     /// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
-    #[spec(ensures: |ret| ret.is_empty() != self.model_slots.contains_key(&constant))]
+    #[spec(ensures: |ret| ret.is_empty() != matches!(self.model_slots.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
     pub fn model_slots(
@@ -12196,10 +12322,10 @@ impl<'source> LoweredModule<'source>
         constant: ConstantIndex,
     ) -> &[FlattenedSlot<'source>]
     {
-        self.model_slots
-            .get(&constant)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        match self.model_slots.get(&constant) {
+            Maybe::Present(slots) => slots.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The stages `declaration`'s calls supply their callees' binders at,
@@ -12226,10 +12352,10 @@ impl<'source> LoweredModule<'source>
         declaration: &LoweredDeclaration<'source>,
     ) -> &[gandr_core_term::staged::Supply]
     {
-        self.supplies
-            .get(&declaration.constant())
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        match self.supplies.get(&declaration.constant()) {
+            Maybe::Present(supplies) => supplies.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The laws `declaration`'s capability scopes owe the theories they
@@ -12257,10 +12383,10 @@ impl<'source> LoweredModule<'source>
         declaration: &LoweredDeclaration<'source>,
     ) -> &[gandr_core_term::handler::HandlerLaw]
     {
-        self.handler_laws
-            .get(&declaration.constant())
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        match self.handler_laws.get(&declaration.constant()) {
+            Maybe::Present(laws) => laws.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The model slots `declaration`'s calls omit, each with its candidates:
@@ -12287,10 +12413,10 @@ impl<'source> LoweredModule<'source>
         declaration: &LoweredDeclaration<'source>,
     ) -> &[gandr_core_term::model::ModelSlot]
     {
-        self.models
-            .get(&declaration.constant())
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        match self.models.get(&declaration.constant()) {
+            Maybe::Present(slots) => slots.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
     }
 
     /// The rules `declaration`'s operation was written as, over module
@@ -12316,10 +12442,10 @@ impl<'source> LoweredModule<'source>
         declaration: &LoweredDeclaration<'source>,
     ) -> gandr_kernel_term::OperationRules
     {
-        self.operation_rules
-            .get(&declaration.constant())
-            .cloned()
-            .unwrap_or_default()
+        match self.operation_rules.get(&declaration.constant()) {
+            Maybe::Present(rules) => rules.clone(),
+            Maybe::Absent(_) => gandr_kernel_term::OperationRules::default(),
+        }
     }
 
     /// The worlds `declaration`'s `entry` attribute names, its home first and
