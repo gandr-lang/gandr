@@ -12,7 +12,10 @@
 # through cargo-mutants' `cap_lints`, which would replace these flags
 # instead of adding to them, so every build of a run shares one set. Four
 # mutants build at once under a jobserver of eight tasks; nextest runs each
-# one's tests.
+# one's tests. Each scratch copy carries the checkout's `.git`
+# (`--copy-vcs true`): a sweep test reads the change against the merge base,
+# which needs a Git work tree (#3344). From a worktree that is the gitlink
+# alone.
 # A whole crate takes hours, which is why a witness batch reruns only the
 # survivors it answers (`mutants:named`). Further arguments pass through to
 # cargo-mutants (`--shard k/n`, `--list`, `--timeout`). Outcomes land in
@@ -53,7 +56,7 @@ output=${MUTANTS_OUTPUT:-mutants.out/$crate}
 mkdir -p "$output"
 source .config/mise/mutants.bash
 hold_mutants_lock "mise run mutants -- $*"
-exec "${mutants_scope[@]}" cargo mutants --test-tool nextest -j 4 --jobserver-tasks 8 --output "$output" "$@"
+exec "${mutants_scope[@]}" cargo mutants --test-tool nextest -j 4 --jobserver-tasks 8 --copy-vcs true --output "$output" "$@"
 '''
 
 # The survivors a witness batch answers, rerun alone: each `file:function`
