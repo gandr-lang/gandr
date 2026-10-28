@@ -18,6 +18,7 @@
 pub mod error;
 
 use core::fmt;
+use core::time::Duration;
 use std::io::Write as _;
 use std::process::Command;
 use std::process::Stdio;
@@ -172,15 +173,160 @@ pub fn run(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// How many times [`read`] runs an invocation GitHub answers with a server
+/// error before it refuses: a transient error is read past, and a lasting one
+/// still fails the read.
+const READ_ATTEMPTS: usize = 3;
+
+/// What `gh` writes to standard error when GitHub answers with a server
+/// error, as in `gh: Server Error (HTTP 502)`.
+const SERVER_ERROR: &str = "(HTTP 5";
+
+/// The pause [`read`] takes after a server error before running the
+/// invocation again.
+pub const READ_PAUSE: Duration = Duration::from_secs(2);
+
+/// Runs the read-only invocation `command` as [`run`] does, and runs it again
+/// after `pause` while GitHub answers it with a server error (`HTTP 5xx`),
+/// for at most three attempts in all.
+///
+/// A write is never given to `read`: running it again could repeat it.
+///
+/// # Specification
+/// - requires: `command` only reads.
+/// - ensures: the first answer of up to three attempts; an attempt that exits
+///   with a server error is followed by another, and every other outcome is
+///   returned as it is.
+/// - provides: the reads a night makes surviving one transient server error.
+/// - fails: as [`run`]: the first failure that is not a server error, or the
+///   third attempt's server error.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an invocation answering after one server error, one
+///   refused with a client error, and one refused with a server error every
+///   time; a missing retry, a retried client error or a fourth attempt changes
+///   the attempts counted.
+/// - witness: `tests::a_server_error_is_read_again_3492`
+/// - witness: `tests::a_client_error_is_refused_at_once`
+/// - witness: `tests::a_lasting_server_error_is_refused_after_three_attempts`
+#[inline]
+pub fn read(
+    command: &mut Command,
+    pause: Duration,
+) -> Result<String, GitHubError>
+{
+    for _ in 1 .. READ_ATTEMPTS {
+        match run(command, Feed::Nothing) {
+            Err(GitHubError::Exited { ref stderr, .. }) if stderr.contains(SERVER_ERROR) => {
+                std::thread::sleep(pause);
+            },
+            answer => return answer,
+        }
+    }
+    run(command, Feed::Nothing)
+}
+
 #[cfg(test)]
 mod tests
 {
+    use core::time::Duration;
     use std::process::Command;
 
     use super::Body;
     use super::Feed;
     use super::GitHubError;
+    use super::read;
     use super::run;
+
+    /// An emptied counter file of its own for the test named `$name`.
+    macro_rules! counter {
+        ($name:literal) => {{
+            let path = std::env::temp_dir().join(format!(
+                "gandr-workflow-github-{}-{}",
+                std::process::id(),
+                $name
+            ));
+            let _absent = std::fs::remove_file(&path);
+            path
+        }};
+    }
+
+    /// A `sh` command that counts its attempts in the file `$count` and
+    /// fails, writing `$stderr`, until its attempt `$answers_at`, then
+    /// answers `answered`.
+    macro_rules! flaky {
+        ($count:expr, $stderr:literal, $answers_at:literal) => {{
+            let mut command = Command::new("sh");
+            command.args([
+                "-c",
+                r#"echo x >> "$0"; n=$(wc -l < "$0"); if [ "$n" -lt "$2" ]; then echo "$1" >&2; exit 1; fi; echo answered"#,
+                &$count.to_string_lossy(),
+                $stderr,
+                $answers_at,
+            ]);
+            command
+        }};
+    }
+
+    /// How many attempts the counter file `$count` holds.
+    macro_rules! attempts {
+        ($count:expr) => {
+            std::fs::read_to_string(&$count)
+                .expect("the command counted its attempts")
+                .lines()
+                .count()
+        };
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_server_error_is_read_again_3492()
+    {
+        let count = counter!("server-once");
+        let answer = read(
+            &mut flaky!(count, "gh: Server Error (HTTP 502)", "2"),
+            Duration::ZERO,
+        );
+        assert_eq!(answer, Ok(String::from("answered\n")), "#3492");
+        assert_eq!(attempts!(count), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_client_error_is_refused_at_once()
+    {
+        let count = counter!("client");
+        let answer = read(
+            &mut flaky!(count, "gh: Not Found (HTTP 404)", "9"),
+            Duration::ZERO,
+        );
+        assert!(
+            matches!(answer, Err(GitHubError::Exited { ref stderr, .. }) if stderr == "gh: Not Found (HTTP 404)"),
+            "{answer:?}"
+        );
+        assert_eq!(attempts!(count), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_lasting_server_error_is_refused_after_three_attempts()
+    {
+        let count = counter!("server-lasting");
+        let answer = read(
+            &mut flaky!(count, "gh: Server Error (HTTP 503)", "9"),
+            Duration::ZERO,
+        );
+        assert!(
+            matches!(answer, Err(GitHubError::Exited { ref stderr, .. }) if stderr == "gh: Server Error (HTTP 503)"),
+            "{answer:?}"
+        );
+        assert_eq!(attempts!(count), 3, "#3492");
+    }
 
     #[cfg(unix)]
     #[test]
