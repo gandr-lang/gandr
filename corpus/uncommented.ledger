@@ -1243,9 +1243,6 @@ model/effects/exit.gandr:<file> unshaped:HeadParagraphs
 model/effects/exit.gandr:<file> unshaped:SentenceLength
 model/effects/exit.gandr:<file> unshaped:WhatLength
 model/effects/exit.gandr:comment:4c9cc8eacc3460cc unshaped:ItemShape
-model/effects/hello.gandr:<file> unshaped:HeadParagraphs
-model/effects/hello.gandr:<file> unshaped:Semicolon
-model/effects/hello.gandr:<file> unshaped:SentenceLength
 model/effects/rows.gandr:<file> unshaped:HeadParagraphs
 model/effects/rows.gandr:<file> unshaped:Semicolon
 model/effects/rows.gandr:<file> unshaped:SentenceLength

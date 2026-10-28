@@ -24,7 +24,7 @@ The standard library: the package every gandr program can read, built and checke
 | `std.rand` | a randomness capability; distributions and draws | `corpus/model/effects/domhringr.gandr` § `Random` | `cap_rand::thread_rng`, `cap_rand::rngs::CapRng` | reserved |
 | `std.process` | `Proc`: exit and the process's arguments, under the capability `main` is given | `corpus/model/control/capability-region.gandr`, `corpus/model/control/program-exit.gandr` | rustix `process`; `cap-std` has no process type | reserved |
 | `std.env` | the environment's variables, read under `main`'s authority | none | none: `cap-std` leaves the environment ambient, so the capability is gandr's own | reserved |
-| `std.console` | `Console`: the standard streams | `corpus/model/effects/hello.gandr` | the standard streams' descriptors, borrowed as `BorrowedFd` (I/O safety) | reserved |
+| `std.console` | `print`, one line written to standard output through the console's root capability, which `std.authority`'s `console` opens; standard error and standard input as the host offers them (#2970) | `corpus/model/effects/hello.gandr` | the standard streams' descriptors, borrowed as `BorrowedFd` (I/O safety) | landed |
 | `std.nat`, `std.list`, `std.string` | the native data, their eliminators and everyday functions, each law beside it as a derived cell | `corpus/model/basics/`, `corpus/model/builtins/lists.gandr`, `corpus/model/builtins/strings.gandr` | none: no host access | reserved |
 | `math` | identity, equivalences, h-levels, the circle | the HoTT exemplars (#628) | none | declined here: a library of its own, which builds on `std` |
 
