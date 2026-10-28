@@ -8057,6 +8057,39 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Admit the read, at `site`, of the declaration at `reached`: the phase
+    /// rule, then the inert rule.
+    ///
+    /// # Specification
+    /// - requires: `site` is a name or a path read as a value, and `reached` is
+    ///   the declaration's slot it resolved to.
+    /// - ensures: nothing when both rules admit the read.
+    /// - provides: the one admission every read of a declaration's slot passes;
+    ///   no read site runs either rule alone.
+    /// - fails: [`LoweringRefusal::PhaseDependence`] where [`Self::phased`]
+    ///   refuses the read; else [`LoweringRefusal::InertRead`] where
+    ///   [`Self::inert_read`] does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::phased`] and [`Self::inert_read`].
+    /// - witness: `tests::modules::a_type_member_reads_types_and_never_values`
+    /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
+    /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+    #[spec(ensures: |ret| matches!(ret, Ok(()) | Err(LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. })))]
+    fn admit_read(
+        &self,
+        site: Site,
+        reached: SlotIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        self.phased(site, reached)?;
+        self.inert_read(site, inert::Read::Slot(reached))
+    }
+
     /// The plan a name that resolved to `resolved` stands as, read as a value
     /// at `site` under `frame`.
     ///
@@ -8068,11 +8101,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   constant it names.
     /// - provides: the one place a term name inside a type reads the type's
     ///   telescope rather than the term context.
-    /// - fails: [`LoweringRefusal::PhaseDependence`] for a declaration the
-    ///   member `site` belongs to may not read, as [`Self::phased`] decides;
-    ///   [`LoweringRefusal::InertRead`] for an inert field read by a
-    ///   declaration that is none ([`Self::inert_read`]);
-    ///   [`LoweringRefusal::ImplicitUnsupplied`] for a declaration with
+    /// - fails: [`LoweringRefusal::PhaseDependence`] and
+    ///   [`LoweringRefusal::InertRead`] where [`Self::admit_read`] refuses the
+    ///   read; [`LoweringRefusal::ImplicitUnsupplied`] for a declaration with
     ///   implicits named anywhere but a call supplying them; the wrong-sort
     ///   refusal for a flattened model implicit, which is its components and no
     ///   value ([`Self::unflattened`]).
@@ -8129,11 +8160,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Resolved::Binder(_) => Ok(resolved.term()),
             Resolved::Declaration { constant, .. } => {
-                self.phased(site, SlotIndex::from(usize::from(constant)))?;
-                self.inert_read(
-                    site,
-                    inert::Read::Slot(SlotIndex::from(usize::from(constant))),
-                )?;
+                self.admit_read(site, SlotIndex::from(usize::from(constant)))?;
                 self.supplied_or_refused(site, constant)?;
                 Ok(resolved.term())
             },
@@ -11230,10 +11257,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   phase.
     /// - provides: the position rule and the phase rule for a path.
     /// - fails: yields [`LoweringRefusal::ForwardMemberReference`] for a member
-    ///   declared at or after it; [`LoweringRefusal::PhaseDependence`] for a
-    ///   value read inside a type, as [`Self::phased`] decides;
-    ///   [`LoweringRefusal::InertRead`] for an inert field read by a
-    ///   declaration that is none, as [`Self::inert_read`] decides.
+    ///   declared at or after it; [`LoweringRefusal::PhaseDependence`] and
+    ///   [`LoweringRefusal::InertRead`] where [`Self::admit_read`] refuses the
+    ///   read.
     /// - panics: none.
     ///
     /// # Errors
@@ -11287,8 +11313,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 declared,
             });
         }
-        self.phased(site, target)?;
-        self.inert_read(site, inert::Read::Slot(target))?;
+        self.admit_read(site, target)?;
         self.plan(site, Plan::Constant(constant));
 
         Ok(())
