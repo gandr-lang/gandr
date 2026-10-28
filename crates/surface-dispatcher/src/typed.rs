@@ -107,7 +107,6 @@ use alloc::vec::Vec;
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::CodeDefinitions;
 use gandr_core_checker::Formations;
@@ -219,7 +218,9 @@ use crate::compose::JudgedClosure;
 use crate::compose::Lowered;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
+use crate::compose::Opening;
 use crate::compose::adapt;
+use crate::compose::checking_context;
 use crate::compose::judge_lowering;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
@@ -1441,23 +1442,16 @@ impl TypeTable
             Checking::Whole => None,
         };
         let run = {
-            let (mut context, own_declarations) = match after {
+            let (opening, own_declarations) = match after {
                 Some((checkpoint, closure)) => (
-                    CheckingContext::resume(&mut arena, checkpoint.clone()),
+                    Opening::Resumed(checkpoint),
                     declarations.get(closure.len() ..).unwrap_or_default(),
                 ),
-                None => (
-                    CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-                    declarations.as_slice(),
-                ),
+                None => (Opening::UNBOUNDED, declarations.as_slice()),
             };
-            context.decide_closed_on(crate::tier::Emitted::boxed());
-            context.keep_pattern_holes(&pattern_holes(&module));
+            let mut context =
+                checking_context(&mut arena, opening, &module, &pattern_holes(&module));
             context.keep_formations(Formations::Firsts(wanted));
-            // A model stands at a model of a theory its own includes by the
-            // maps the module mints, as the judgement reads it.
-            context.keep_reducts(module.reducts());
-            context.keep_reducts(module.forgets());
             let typed = type_module(&mut context, own_declarations);
             TypedRun::read(&context, typed, written)
         };

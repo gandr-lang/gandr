@@ -176,6 +176,7 @@ use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::Demand;
 use gandr_core_checker::Formations;
+use gandr_core_checker::Grants;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ModuleRun;
@@ -1853,17 +1854,10 @@ fn judge_closure<'held>(
     let (mut module, mut arena) = closure.alone()?;
     let declarations = adapt(&module);
     let entry = grant.entry(&declared_worlds(&module));
-    let holes = pattern_holes(&module);
-    let grants = grant.grants(&mut arena);
+    let opening = Opening::Fresh(grant.grants(&mut arena), entry.clone());
     let mut run = ModuleRun::new();
     let checkpoint = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        context.decide_closed_on(crate::tier::Emitted::boxed());
-        context.grant(grants);
-        context.enter_at(entry.clone());
-        context.keep_pattern_holes(&holes);
-        context.keep_reducts(module.reducts());
-        context.keep_reducts(module.forgets());
+        let mut context = checking_context(&mut arena, opening, &module, &pattern_holes(&module));
         run.judge(&mut context, &declarations, |_, _, _| {});
         context.checkpoint()
     };
@@ -2679,24 +2673,25 @@ where
         (verdicts, None)
     }
     else {
-        let (mut context, mut run, judged) = if let Some(closure) = after {
-            let context = CheckingContext::resume(&mut arena, closure.checkpoint.clone());
-            let judged = declarations
-                .get(closure.declarations.len() ..)
-                .unwrap_or_default();
-            (context, closure.run.clone(), judged)
-        }
-        else {
-            let grants = grant.grants(&mut arena);
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-            context.grant(grants);
-            context.enter_at(entry);
-            (context, ModuleRun::new(), declarations.as_slice())
-        };
-        context.decide_closed_on(crate::tier::Emitted::boxed());
-        context.keep_pattern_holes(&holes);
-        context.keep_reducts(module.reducts());
-        context.keep_reducts(module.forgets());
+        let (opening, mut run, judged) = after.map_or_else(
+            || {
+                (
+                    Opening::Fresh(grant.grants(&mut arena), entry),
+                    ModuleRun::new(),
+                    declarations.as_slice(),
+                )
+            },
+            |closure| {
+                (
+                    Opening::Resumed(&closure.checkpoint),
+                    closure.run.clone(),
+                    declarations
+                        .get(closure.declarations.len() ..)
+                        .unwrap_or_default(),
+                )
+            },
+        );
+        let mut context = checking_context(&mut arena, opening, &module, &holes);
         if let Some(ref written) = written {
             run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
@@ -3785,6 +3780,73 @@ pub fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
         .collect()
 }
 
+/// How [`checking_context`] opens the checking context of a module.
+#[derive(Debug)]
+pub enum Opening<'held>
+{
+    /// A new context, bounded by the grants and entered at the entry a host's
+    /// grant reads off the module.
+    Fresh(Grants, HostEntry),
+    /// A context resumed from a copy of the checkpoint, which holds the
+    /// grants and the entry it was taken under.
+    Resumed(&'held Checkpoint),
+}
+
+impl Opening<'static>
+{
+    /// A new context under [`HostGrant::UNBOUNDED`]: every held capability
+    /// is owed, and every declaration stands where it states.
+    pub const UNBOUNDED: Self = Self::Fresh(Grants::Unbounded, HostEntry::Unbounded);
+}
+
+/// The checking context of `module` over `arena`, opened as `opening` says:
+/// the closed tier handed, `holes` read as the module's pattern holes, and
+/// the reducts and forgetting maps the module mints kept.
+///
+/// # Specification
+/// - requires: `holes` are the [`pattern_holes`] of `module`; a resumed
+///   checkpoint was taken over `arena`, or over an arena that `arena` copies
+///   with more nodes minted after.
+/// - ensures: the context holds each of `holes` as a pattern hole and each
+///   reduct and forgetting map of `module`, and offers each closed pair to the
+///   emitted tier first; a fresh context holds the grants and enters at the
+///   entry, and a resumed one holds the checkpoint's tables.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the tier is a trait object no predicate compares, and
+///   the holes and reducts are the context's own to read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the judgement of a closure, the judgement of a document,
+///   the formatter's checker and the table typed alone open their contexts
+///   here, so each holds the same settings.
+/// - witness: `typed::tests::a_pattern_hole_refuses_its_match_in_both_tables_3617`
+/// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+/// - witness: `format::tests::a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared`
+#[must_use]
+pub fn checking_context<'arena>(
+    arena: &'arena mut CoreArena,
+    opening: Opening<'_>,
+    module: &LoweredModule<'_>,
+    holes: &[HoleId],
+) -> CheckingContext<'arena>
+{
+    let mut context = match opening {
+        Opening::Fresh(grants, entry) => {
+            let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+            context.grant(grants);
+            context.enter_at(entry);
+            context
+        },
+        Opening::Resumed(checkpoint) => CheckingContext::resume(arena, checkpoint.clone()),
+    };
+    context.decide_closed_on(crate::tier::Emitted::boxed());
+    context.keep_pattern_holes(holes);
+    context.keep_reducts(module.reducts());
+    context.keep_reducts(module.forgets());
+    context
+}
+
 /// The checker the formatter's meaning check asks for elaborated bodies.
 ///
 /// It judges a lowered module whole, as [`judge`] judges one under the
@@ -3834,17 +3896,9 @@ impl gandr_surface_format::Elaborate for Elaborating
         module: &LoweredModule<'_>,
     ) -> gandr_surface_format::Elaboration
     {
-        let grant = HostGrant::UNBOUNDED;
         let declarations = adapt(module);
-        let entry = grant.entry(&declared_worlds(module));
-        let grants = grant.grants(arena);
-        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
-        context.decide_closed_on(crate::tier::Emitted::boxed());
-        context.grant(grants);
-        context.enter_at(entry);
-        context.keep_pattern_holes(&pattern_holes(module));
-        context.keep_reducts(module.reducts());
-        context.keep_reducts(module.forgets());
+        let mut context =
+            checking_context(arena, Opening::UNBOUNDED, module, &pattern_holes(module));
         let report = check_module(&mut context, &declarations);
         let definitions = report.definitions();
         gandr_surface_format::Elaboration {
