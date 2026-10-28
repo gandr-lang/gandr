@@ -625,7 +625,7 @@ enum Held
     /// for the declaration, lower to different core (#808).
     Apart,
     /// A printing of a constructor at a type a definition computes, which
-    /// names no family the printer reads it by (#3570).
+    /// names no family the printer reads it by (#3669).
     Computed,
 }
 
@@ -643,7 +643,7 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::Computed => "#3570, a constructor at a type a definition computes",
+            Self::Computed => "#3669, a constructor at a type a definition computes",
         })
     }
 }

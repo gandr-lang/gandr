@@ -9,7 +9,9 @@
 // below the code it came from. Nothing about induction-recursion is new to
 // the kernel: the decoder is a function into the universe, and a decode is
 // the type the code it returns quotes. The codes and the decoder are named
-// apart from the closed universe's, whose arrow code is not dependent.
+// apart from the closed universe's, whose arrow code is not dependent. A
+// universe indexed by a level takes the same admission. Each code's field
+// decodes the code before it, at the level the field holds.
 
 // The naturals.
 import "../data/data-base.gandr";
@@ -57,3 +59,35 @@ def appliedDecoded() -> -F Nat { idDecoded(Succ(Zero)) }
 @[ checks ]
 def idNat : +U (Nat -> -F Nat);
 def idNat = idDecoded;
+
+/// A universe indexed by a level, and its decoder, in one block. A code's
+/// field decodes the code before it, at the level the field holds.
+rec {
+  /// The codes at each level: the naturals, and the dependent functions.
+  @[ checks ]
+  data UM : Nat -> Type {
+    /// The naturals, at every level.
+    NatM : (n : Nat) --> UM(n);
+    /// The dependent functions from a coded domain at a level.
+    PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n);
+  }
+
+  /// The decoder at each level. It recurses below the code.
+  @[ checks ]
+  def rec elM(n : Nat, u : UM(n)) -> -F Type {
+    case u {
+      NatM(m) => return Nat,
+      PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
+    }
+  }
+}
+
+/// The natural code at level zero.
+@[ checks ]
+def natAtZero : UM(Zero);
+def natAtZero = NatM(Zero);
+
+/// Zero at the decode of the natural code at level zero.
+@[ checks ]
+def zeroAtLevel : elM(Zero, natAtZero);
+def zeroAtLevel = Zero;
