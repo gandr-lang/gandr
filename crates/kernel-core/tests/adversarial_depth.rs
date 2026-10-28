@@ -32,7 +32,6 @@ use gandr_kernel_core::SupportContext;
 use gandr_kernel_core::SupportPlane;
 use gandr_kernel_core::check_declaration_with_memo;
 use gandr_kernel_core::shift_value_type;
-use gandr_kernel_core::substitute_comp_type;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -225,90 +224,24 @@ fn the_two_machines_are_total_on_a_chain_deep_term()
 /// The number of `thunk`-over-`returner` links in the rewrite chain.
 const REWRITE_CHAIN_LINKS: u32 = 20_000;
 
-/// Instantiate a chain-deep computation type and read the answer back.
-///
-/// The chain is closed, so every link rewrites to itself and the walk hands
-/// the root back unchanged — and it still descends the full depth to
-/// find that out, because a chain's links are distinct content and the
-/// memo short-circuits nothing. A recursive substitution over a chain
-/// this deep needs megabytes of frames and cannot fit the worker's
-/// stack; an explicit task stack on the heap needs none.
-///
-/// The returned memo entry count lets the outer witness assert the descent
-/// after the arena has been dropped on the same small stack, so a shallow
-/// fixture cannot masquerade as a deep traversal.
-///
-/// # Specification
-/// - requires: nothing; the caller runs this on the small-stack worker.
-/// - ensures: substituting into the closed chain hands back the very node it
-///   came from; the returned substitution memo count reaches one entry per
-///   link, so the outer witness observes the descent after teardown.
-/// - provides: the reuse path's depth claim: the walk descends the full depth,
-///   mints nothing, and needs no frames on the worker's stack.
-/// - fails: never.
-/// - panics: when the chain does not instantiate to itself, when the descent
-///   did not reach one entry per link, or when the chain length does not fit a
-///   machine index.
-///
-/// # Adequacy
-/// - hypothesis: L3: a 20,000-link closed chain is reused and torn down on a
-///   256 KiB stack; the returned memo count distinguishes full descent from a
-///   shallow fixture.
-/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
-#[spec(ensures: |ret| ret >= MemoEntryCount::from(usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize")))]
-fn instantiate_a_deep_chain() -> MemoEntryCount
-{
-    let mut arena = TermArena::new();
-    let mut node = arena.value_type_unit();
-    for _link in 0 .. REWRITE_CHAIN_LINKS {
-        let returner = arena.comp_type_returner(node);
-        node = arena.value_type_thunk(returner);
-    }
-    let root = arena.comp_type_returner(node);
-    let replacement = arena.value_unit();
-    let mut table = ContentTable::new();
-    let mut memo = RewriteMemo::new();
-    let instantiated = substitute_comp_type(&mut arena, &mut table, &mut memo, root, replacement);
-    assert_eq!(
-        root, instantiated,
-        "a closed chain instantiates to the very node it came from"
-    );
-    memo.plane_entry_count(RewritePlane::Substitute)
-}
-
-#[test]
-fn the_rewrite_machines_are_total_on_a_chain_deep_term()
-{
-    let worker = std::thread::Builder::new()
-        .stack_size(SMALL_STACK_BYTES)
-        .spawn(instantiate_a_deep_chain)
-        .expect("the small-stack worker starts");
-    let entries = worker.join().expect("the small-stack worker finishes");
-    let links = usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize");
-    assert!(
-        entries >= MemoEntryCount::from(links),
-        "the reuse walk descended every link"
-    );
-}
-
 /// Shift a chain-deep type whose leaf is a code, and read the rewritten
 /// spine back.
 ///
-/// The closed-chain case above pins the depth of the *reuse* path, where
-/// the walk descends and mints nothing. This pins the depth of the
-/// minting path: the chain's innermost node is a type read off a bound
-/// variable, so every link's rewrite changes and the walk re-mints the
-/// whole spine. A recursive shift over a chain this deep cannot fit the
-/// worker's stack; an explicit task stack on the heap needs none.
+/// A closed chain is answered at its root without being opened, so the
+/// walk's depth is pinned on a chain its rewrite changes: the chain's
+/// innermost node is a type read off a bound variable, so every link's
+/// rewrite changes and the walk re-mints the whole spine. A recursive shift
+/// over a chain this deep cannot fit the worker's stack; an explicit task
+/// stack on the heap needs none.
 ///
 /// # Specification
 /// - requires: nothing; the caller runs this on the small-stack worker.
 /// - ensures: shifting the code-carrying chain re-mints the whole spine and the
 ///   rewritten spine reads back link for link; the returned shift memo count
 ///   lets the outer witness observe the descent after teardown.
-/// - provides: the minting path's depth claim, where the closed-chain case pins
-///   the reuse path's: the innermost node is a type read off a bound variable,
-///   so every link's rewrite changes.
+/// - provides: the walk's depth claim: the innermost node is a type read off a
+///   bound variable, so every link's rewrite changes and no link is answered
+///   whole.
 /// - fails: never.
 /// - panics: when the rewritten spine does not read back as the shift requires.
 ///
