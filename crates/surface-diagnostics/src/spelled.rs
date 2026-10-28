@@ -85,7 +85,9 @@ use gandr_surface_lowering::ConstructorSpelling;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::ReadAs;
 use gandr_surface_lowering::Role;
+use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Constructors;
@@ -559,7 +561,7 @@ fn spell<'failure>(
     if named.is_empty() {
         return TypeSpellings::default();
     }
-    let paths = constant_names(module);
+    let paths = constant_names(module, module.unit().last());
     let names: Vec<Name<'_>> = paths.iter().map(|path| Name::from(path.as_str())).collect();
     let families = Families::of(module);
     let constructors = families.naming();
@@ -719,8 +721,8 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
         .collect()
 }
 
-/// The name a printer writes for each constant of `module`, by admission
-/// position.
+/// The path of each constant of `module` in the source that declares it, by
+/// admission position.
 ///
 /// A name is the declaration's path from the top level, its segments joined
 /// by `.`; a position no declaration holds is the empty name. The words of a
@@ -734,8 +736,8 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
 ///   declared position holds its declaration's path, so a member of a module, a
 ///   sealed abstract type among them, reads as it is written outside it, and
 ///   the words of a family's loops hold the path type at their point.
-/// - provides: the constant names a [`CoreSource`] reads to spell a type that
-///   mentions a declaration.
+/// - provides: the paths a declaration is found by, and the names
+///   [`constant_names`] starts from.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -751,7 +753,7 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
     ret.get(usize::from(declaration.constant())).is_some()))]
 #[inline]
 #[must_use]
-pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
+pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
 {
     let positions = module
         .declarations()
@@ -779,6 +781,85 @@ pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
             }
         }
     }
+    paths
+}
+
+/// `paths`, each name that the source `reader` writes otherwise written as
+/// it writes it.
+///
+/// A declaration that `reader` reads through an import under another name
+/// takes that name: `far.placements` through `import "…" as far ;`, and a
+/// flow's member name through an import via the flow.
+///
+/// # Specification
+/// - requires: `paths` is [`constant_paths`] of `module`.
+/// - ensures: each non-empty position [`LoweredModule::reads`] answers for
+///   `reader` holds the name it answers; every other position is unchanged.
+/// - provides: the names a printer writes in the source `reader`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the names are the lowering's record, which a clause
+///   would restate whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration read through an alias is spelled after it
+///   for its reader and bare for its own source.
+/// - witness: `tests::diagnostics::a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498`
+#[inline]
+pub fn read_by(
+    module: &LoweredModule<'_>,
+    reader: SourceIndex,
+    paths: &mut [String],
+)
+{
+    for (constant, read) in module.reads(reader) {
+        let Some(slot) = paths.get_mut(usize::from(constant))
+        else {
+            continue;
+        };
+        if slot.is_empty() {
+            continue;
+        }
+        *slot = match read {
+            ReadAs::Under(under) => {
+                alloc::format!("{}.{slot}", <&str>::from(SourceFragment::from(under)))
+            },
+            ReadAs::Member { under, member } => alloc::format!(
+                "{}.{}",
+                <&str>::from(SourceFragment::from(under)),
+                <&str>::from(SourceFragment::from(member))
+            ),
+            ReadAs::Opened(member) => String::from(<&str>::from(SourceFragment::from(member))),
+        };
+    }
+}
+
+/// The name a printer writes for each constant of `module`, by admission
+/// position, in the source `reader`: [`constant_paths`], [`read_by`]
+/// `reader`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`constant_paths`], then [`read_by`].
+/// - provides: the constant names a [`CoreSource`] reads to spell a type that
+///   mentions a declaration, in the source `reader`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`constant_paths`] and [`read_by`].
+/// - witness: `tests::diagnostics::a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498`
+#[spec(ensures: |ret| module.declarations().iter().all(|declaration|
+    ret.get(usize::from(declaration.constant())).is_some()))]
+#[inline]
+#[must_use]
+pub fn constant_names(
+    module: &LoweredModule<'_>,
+    reader: SourceIndex,
+) -> Vec<String>
+{
+    let mut paths = constant_paths(module);
+    read_by(module, reader, &mut paths);
     paths
 }
 

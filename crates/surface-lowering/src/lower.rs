@@ -4901,6 +4901,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
 
+        let reads = collected.reads();
         let module = LoweredModule::new(
             declarations,
             data,
@@ -4940,6 +4941,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_offer(offer)
         .with_reducts(reducts)
         .with_forgets(forgets)
+        .with_reading(collected.unit, reads)
         .with_forgettings(forgettings);
         Ok(match resumed {
             Some(resumed) => {

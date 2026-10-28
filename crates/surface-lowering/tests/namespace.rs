@@ -34,6 +34,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::ModuleImports;
 use gandr_surface_lowering::Onto;
+use gandr_surface_lowering::ReadAs;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unexported;
@@ -3594,6 +3595,71 @@ fn an_import_via_a_flow_reads_its_source_through_it_3378()
             named("answer") == 0 && named("tag") == 1 && named("relayed") == 1,
             "the renaming `answer` declares nothing, and `tag` its one image: {found:?}"
         );
+    }
+}
+
+/// #3498: an importer reads each declaration of its source as its import
+/// binds it. Under an alias, the declaration's path follows the alias.
+/// Through a flow, the member's name stands for the declaration that the
+/// flow binds to it, after the alias where the import writes one. An
+/// unqualified import reads every declaration by its own path.
+#[test]
+fn an_importer_reads_a_declaration_as_its_import_binds_it_3498()
+{
+    let pbg = grammar();
+    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = 9 ; }\n";
+    let flowed = |import: &str| [VERSIONS, flow, import].concat();
+    for (importer, expected) in [
+        (
+            String::from("import \"./base.gandr\" as base ;\ndef relayed = base.reply ;"),
+            &[("label", "base.*"), ("reply", "base.*")][..],
+        ),
+        (
+            flowed(
+                "import \"./base.gandr\" as old : Older via downgrade ;\ndef relayed = old.answer ;",
+            ),
+            &[("reply", "old.answer"), ("tag", "old.tag")][..],
+        ),
+        (
+            flowed("import \"./base.gandr\" : Older via downgrade ;\ndef relayed = answer ;"),
+            &[("reply", "answer"), ("tag", "tag")][..],
+        ),
+        (
+            String::from("import \"./base.gandr\" ;\ndef relayed = reply ;"),
+            &[][..],
+        ),
+    ] {
+        let (text, unit) = laid(&[
+            (SourceText::from(NEWER), &[]),
+            (SourceText::from(importer.as_str()), &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+            ]),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        let mut found: Vec<(String, String)> = module
+            .reads(SourceIndex::from(1_usize))
+            .filter_map(|(constant, read)| {
+                let declared = module
+                    .declarations()
+                    .iter()
+                    .find(|declaration| declaration.constant() == constant)?;
+                let written = match read {
+                    ReadAs::Under(under) => format!("{}.*", under.as_ref()),
+                    ReadAs::Member { under, member } => {
+                        format!("{}.{}", under.as_ref(), member.as_ref())
+                    },
+                    ReadAs::Opened(member) => String::from(member.as_ref()),
+                };
+                Some((String::from(declared.name().as_ref()), written))
+            })
+            .collect();
+        found.sort();
+        let expected: Vec<(String, String)> = expected
+            .iter()
+            .map(|&(name, written)| (String::from(name), String::from(written)))
+            .collect();
+        assert_eq!(found, expected, "`{importer}`");
     }
 }
 

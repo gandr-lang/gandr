@@ -431,6 +431,7 @@ pub use crate::import::ImportSignature;
 pub use crate::import::ImportUri;
 pub use crate::import::ModuleImports;
 pub use crate::import::Opening;
+pub use crate::import::ReadAs;
 pub use crate::import::alias_scope;
 pub use crate::import::aliased;
 pub use crate::lower::Arguments;

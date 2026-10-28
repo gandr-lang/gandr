@@ -352,7 +352,7 @@ fn forgets(
     base: ByteOffset,
 ) -> Vec<(ByteSpan, Crossed)>
 {
-    let owned = constant_names(module);
+    let owned = constant_names(module, module.unit().source_at(base));
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(module);
     let constructors = families.naming();

@@ -513,6 +513,17 @@ impl Unit
         &self.sources
     }
 
+    /// The last source admitted: the one the unit was read for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn last(&self) -> SourceIndex
+    {
+        SourceIndex(self.sources.len().saturating_sub(1_usize))
+    }
+
     /// The source whose text holds `offset`: the last source starting at or
     /// before it.
     ///

@@ -40,12 +40,8 @@ use gandr_surface_format::Selection;
 use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
-use gandr_surface_lowering::ImportBinding;
-use gandr_surface_lowering::ImportResolution;
-use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::ScopeAnswer;
-use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::WrittenModel;
 use gandr_surface_lowering::lower_unit;
@@ -627,10 +623,6 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
-    /// A printing naming a declaration of a source its own reads only
-    /// through an alias, by that declaration's own name, which the reading
-    /// source does not bind (#3498).
-    Aliased,
 }
 
 impl fmt::Display for Held
@@ -647,7 +639,6 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::Aliased => "#3498, a name read through an alias spelled bare",
         })
     }
 }
@@ -882,8 +873,7 @@ struct Read
 /// Each completed declaration `written` writes as a `def`, read by the
 /// printer in both forms; nothing when the source does not lower. A
 /// `theory` block is left out: the parity writes a declaration back as a
-/// `def`, a form its name cannot take. One whose printing names a
-/// declaration of a source `written` reads only through an alias is held.
+/// `def`, a form its name cannot take.
 ///
 /// # Specification
 /// trivial.
@@ -934,7 +924,7 @@ fn read(
         .filter(|&(_, reduct)| module.reducts().binary_search(&reduct).is_ok())
         .collect();
     let forgettings = gandr_surface_format::forgettings(&module, &arena, &crossed);
-    let owned = constant_names(&module);
+    let owned = constant_names(&module, unit.source_at(ByteOffset::from(base)));
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming();
@@ -1033,55 +1023,6 @@ fn read(
         .collect();
     implied.sort_unstable();
     let bodied = source.implying(&implied);
-    // The names of the declarations of each source this one reads only
-    // through an alias, which the printer spells bare (#3498), less the
-    // names this source declares itself.
-    let last = unit.source_at(ByteOffset::from(base));
-    let targets = |aliased: bool| -> BTreeSet<SourceIndex> {
-        module
-            .imports()
-            .iter()
-            .filter(|import| {
-                import.source() == last
-                    && matches!(import.binding(), ImportBinding::Aliased(_)) == aliased
-            })
-            .filter_map(|import| match import.resolution() {
-                ImportResolution::Path(ImportTarget::Source(target)) => Some(target),
-                ImportResolution::Path(
-                    ImportTarget::Unresolved | ImportTarget::Cycle | ImportTarget::Unlocked,
-                )
-                | ImportResolution::Foreign => None,
-            })
-            .collect()
-    };
-    let opened = targets(false);
-    let behind: BTreeSet<SourceIndex> = targets(true).difference(&opened).copied().collect();
-    let named = |declaration: &gandr_surface_lowering::LoweredDeclaration<'_>| {
-        owned
-            .get(usize::from(declaration.constant()))
-            .cloned()
-            .unwrap_or_default()
-    };
-    let own: BTreeSet<String> = module
-        .declarations()
-        .iter()
-        .filter(|declaration| usize::from(declaration.span().start()) >= base)
-        .map(named)
-        .collect();
-    let foreign: BTreeSet<String> = module
-        .declarations()
-        .iter()
-        .filter(|declaration| behind.contains(&unit.source_at(declaration.span().start())))
-        .map(named)
-        .filter(|name| !name.is_empty() && !own.contains(name))
-        .collect();
-    let aliased = |spellings: &[&String]| {
-        spellings.iter().any(|spelled| {
-            tokens(SourceFragment::from(spelled.as_str()))
-                .iter()
-                .any(|token| foreign.contains(token))
-        })
-    };
     let mut read = Read::default();
     for declaration in module.declarations() {
         if usize::from(declaration.span().start()) < base {
@@ -1149,10 +1090,6 @@ fn read(
             ),
         ) {
             (Spelt::Whole(sugared_type, sugared), Spelt::Whole(explicit_type, explicit)) => {
-                if aliased(&[&sugared_type, &sugared, &explicit_type, &explicit]) {
-                    let _previous = read.held.insert(name, Held::Aliased);
-                    continue;
-                }
                 read.printed.push(Printed {
                     name,
                     forms,
@@ -1166,10 +1103,6 @@ fn read(
                 });
             },
             (Spelt::Declared(sugared), Spelt::Declared(explicit)) => {
-                if aliased(&[&sugared, &explicit]) {
-                    let _previous = read.held.insert(name, Held::Aliased);
-                    continue;
-                }
                 read.printed.push(Printed {
                     name,
                     forms,

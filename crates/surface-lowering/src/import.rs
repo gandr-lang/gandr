@@ -263,6 +263,31 @@ pub enum ImportBinding<'source>
     Qualified(SurfaceName<'source>),
 }
 
+/// The name a source writes for a declaration of a source it imports, where
+/// that name is not the declaration's own path.
+///
+/// A printer writes this name in the importer's place, so the importer reads
+/// it back as the same declaration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ReadAs<'source>
+{
+    /// The declaration's path after the module the import binds:
+    /// `far.placements` for `import "…" as far ;`.
+    Under(SurfaceName<'source>),
+    /// A member of a flow's domain after the module the import binds:
+    /// `published.answer` for `import "…" as published : S via f ;`.
+    Member
+    {
+        /// The module the import binds.
+        under: SurfaceName<'source>,
+        /// The member's name.
+        member: SurfaceName<'source>,
+    },
+    /// A member of a flow's domain by its own name, which the import binds
+    /// unqualified: `answer` for `import "…" : S via f ;`.
+    Opened(SurfaceName<'source>),
+}
+
 /// The segments of `name`, a name or a module path as written: each name
 /// between its dots, its layout trimmed.
 ///
