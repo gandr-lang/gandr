@@ -35,13 +35,13 @@ def row_key:
 # `fixed`, `accepted` or `runner shift`, the last three the statuses a hotpath
 # index settles a row with (#3369). A cell ends at an unescaped `|`, and a
 # `\|` in the first cell reads as `|` (#3371), so a mutant name holding one
-# keys whole. A `## Readings` or `## Concerns` table is a unit's shape, and a
-# `## Settled` table measures settled rows: neither is rows.
+# keys whole. A `## Sources`, `## Readings` or `## Concerns` table is a unit's
+# shape, and a `## Settled` table measures settled rows: none is rows.
 def collector_rows:
   def rule: test("^\\s*\\|(\\s*:?-+:?\\s*\\|)+\\s*$");
   (lines
     | reduce .[] as $line ({shape: false, kept: []};
-        (if $line | test("^## ") then .shape = ($line | test("^## (Readings|Concerns|Settled)\\s*(:.*)?$")) else . end)
+        (if $line | test("^## ") then .shape = ($line | test("^## (Sources|Readings|Concerns|Settled)\\s*(:.*)?$")) else . end)
         | if .shape then . else .kept += [$line] end)
     | .kept) as $lines
   | [$lines[] | select(test("^\\s*[-*] \\[ \\]")) | sub("^\\s*[-*] \\[ \\]\\s*"; "") | row_key]
@@ -61,6 +61,29 @@ def keyed:
     else [.head | match("`([^`]+)`"; "g") | .captures[0].string] as $keys
     | if ($keys | length) == 0 then null else {line: $line, keys: $keys, text: (.text | sub("\\s+$"; ""))} end
     end;
+
+# The roles a `## Sources` row gives its source (#3594).
+def source_roles: ["primary", "secondary", "not read"];
+
+# The rows of the body's `## Sources` table (#3594), each as {line, keys,
+# role, text}. The table has the columns Source, Role and What it gives. The
+# header row and the rule are not rows. The keys are the backquoted spans of
+# the first cell, so `` `units.md` § units-issue `` keys `units.md`. The role
+# is the second cell, lowercased and unbolded. The text is the third cell. The
+# cells are read from the line itself, so a cell held in backquotes keeps them.
+# A cell ends at an unescaped `|`, so a `\|` stays inside its cell.
+def source_rows:
+  (section("Sources") // [])
+  | .[]
+  | select(test("^\\s*\\|"))
+  | . as $line
+  | sub("^\\s*\\|"; "") | sub("(?<!\\\\)\\|\\s*$"; "") | [splits("(?<!\\\\)\\|")] | map(gsub("^\\s+|\\s+$"; ""))
+  | select(all(test("^:?-+:?$")) | not)
+  | select((.[0] // "" | ascii_downcase) != "source")
+  | {line: $line,
+     keys: [.[0] // "" | match("`([^`]+)`"; "g") | .captures[0].string],
+     role: (.[1] // "" | gsub("\\*"; "") | ascii_downcase),
+     text: (.[2] // "")};
 
 # A `## Sources read` item replacing a source,
 # `- supersedes: `<old key>` — <confirmation>`, as {line, old, confirmation},

@@ -14,9 +14,11 @@ Bisect the series' hotpath reports over `main` from the last passing report to `
 
 ## Sources
 
-- `{{policy}}` — primary: the budget and the reason it states
-- `crates/workflow-hotpath-guard` — primary: the guard that reads the report against the policy
-- `docs/agents/ci-local.md` — secondary: the hotpath check's place among the checks
+| Source | Role | What it gives |
+| ------ | ---- | ------------- |
+| `{{policy}}` | primary | the budget and the reason it states |
+| `crates/workflow-hotpath-guard` | primary | the guard that reads the report against the policy |
+| `docs/agents/ci-local.md` | secondary | the hotpath check's place among the checks |
 
 ## Readings
 

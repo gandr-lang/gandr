@@ -6,7 +6,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the correspondence | primary | what the paragraphs say |\n| `lineage.md` | primary | the picture |\n| `module-and-package-design.md` § typed-manifests | secondary | background |\n"
         }
       ],
       "absorption": null
@@ -20,7 +20,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the correspondence | primary | what the paragraphs say |\n| `lineage.md` | primary | the picture |\n| `module-and-package-design.md` § typed-manifests | secondary | background |\n"
         }
       ],
       "absorption": {
@@ -63,7 +63,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the correspondence | primary | what the paragraphs say |\n| `lineage.md` | primary | the picture |\n| `module-and-package-design.md` § typed-manifests | secondary | background |\n"
         }
       ],
       "absorption": {
@@ -106,7 +106,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` § the correspondence — **primary**: what the paragraphs say\n- `lineage.md` — **primary**: the picture\n- `module-and-package-design.md` § typed-manifests — **secondary**: background\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the correspondence | primary | what the paragraphs say |\n| `lineage.md` | primary | the picture |\n| `module-and-package-design.md` § typed-manifests | secondary | background |\n"
         }
       ],
       "absorption": {
@@ -149,7 +149,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `storage-metatheory-programme.md` — **primary**: a\n- `module-and-package-design.md` — primary: b\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` | primary | a |\n| `module-and-package-design.md` | primary | b |\n"
         }
       ],
       "absorption": {
@@ -192,7 +192,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `manifest.md` — **primary**: the manifest\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `manifest.md` | primary | the manifest |\n"
         }
       ],
       "absorption": {
@@ -235,7 +235,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `crates/storage-metatheory-programme.md` — **primary**: a tree file\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `crates/storage-metatheory-programme.md` | primary | a tree file |\n"
         }
       ],
       "absorption": {
@@ -278,7 +278,7 @@
       "issues": [
         {
           "number": 3155,
-          "body": "## Problem\n\nx\n\n## Sources\n\n- `plans/a/manifest.md` — **primary**: the absorbed one\n- `plans/b/manifest.md` — **primary**: the design one\n"
+          "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `plans/a/manifest.md` | primary | the absorbed one |\n| `plans/b/manifest.md` | primary | the design one |\n"
         }
       ],
       "absorption": {

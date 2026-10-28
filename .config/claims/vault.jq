@@ -37,21 +37,21 @@ def vault_reading($pages; $tree):
 # The tree's filenames, from their newline-separated text, as a set.
 def vault_tree: split("\n") | map(select(. != "") | {key: ., value: true}) | from_entries;
 
-# Each vault page the lines of an issue's `## Sources` name, as its reading
-# with the line naming it and whether the line marks the page primary.
+# Each vault page the rows of an issue's `## Sources` name (`source_rows`,
+# #3594), as its reading with the row naming it and whether the row's role is
+# primary. A row names a page by a key that is a bare filename ending `.md`.
 def vault_sources($pages; $tree):
   .[]
-  | select(test("^[-*] "))
-  | . as $line
-  | vault_names[]
+  | . as $row
+  | [$row.keys[] | select(test("^[^/\\s]+\\.md$"))] | unique[]
   | vault_reading($pages; $tree)
   | select(. != null)
-  | . + {line: $line, primary: ($line | test("\\bprimary\\b"; "i"))};
+  | . + {line: $row.line, primary: ($row.role == "primary")};
 
 # What `unit:check` prints for a reading: a refusal for a name no page
 # carries, otherwise a line showing what the name resolves to.
 def vault_shown:
-  if .verdict == "unknown" then "refuse\t`## Sources` line `\(.line)` names `\(.name)`, which no vault page carries: name the vault page by its filename, or the tree's file by its path"
+  if .verdict == "unknown" then "refuse\t`## Sources` row `\(.line)` names `\(.name)`, which no vault page carries: name the vault page by its filename, or the tree's file by its path"
   elif .verdict == "resolved" then "show\t`\(.name)` → `vault:\(.mint)`"
   elif .verdict == "ambiguous" then "show\t`\(.name)` → \(.count) vault pages carry it, so no one mint"
   else "show\t`\(.name)` → a vault page with no `mint:`"

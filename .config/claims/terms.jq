@@ -9,8 +9,8 @@
 # `## Concerns`: those sections answer the vocabulary, and the axes' and the
 # concerns' names are fixed. An owner is named when its key stands in
 # `## Sources`: a page's filename (a `§` after it names a section and is no
-# part of the key), a tree path, or `#<issue>` not followed by a digit. A
-# line `- <owner> — not read: <why>` names it too, so a seat may decline.
+# part of the key), a tree path, or `#<issue>` not followed by a digit. A row
+# whose role is `not read` names it too, so a seat may decline (#3594).
 
 include "sections";
 
@@ -34,4 +34,4 @@ def named($text):
 | ([$prose | match($row.match; "gi").string] | unique) as $met
 | select($met | length > 0)
 | select(any($row.owns[]; named($sources)) | not)
-| "terms: \($met | map("`\(.)`") | join(", ")) name\(if ($met | length) == 1 then "s" else "" end) \($row.name), owned by \($row.owns | map("`\(.)`") | join(", ")) (\($row.reason)): cite one in `## Sources`, or write `- <owner> — not read: <why>`"
+| "terms: \($met | map("`\(.)`") | join(", ")) name\(if ($met | length) == 1 then "s" else "" end) \($row.name), owned by \($row.owns | map("`\(.)`") | join(", ")) (\($row.reason)): cite one in `## Sources`, or add the row `| `<owner>` | not read | <why> |`"

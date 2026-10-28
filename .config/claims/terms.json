@@ -3,7 +3,7 @@
     "name": "#3158: a unit naming a store and a heap with no storage source is refused once for the row, naming what it met",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n- `futures-are-cuts.md` — **primary**: the writer\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `futures-are-cuts.md` | primary | the writer |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -19,13 +19,13 @@
         }
       ]
     },
-    "output": "terms: `heap`, `store` name storage, owned by `storage-metatheory-programme.md`, `crates/storage-values`, `#317` (the storage tier): cite one in `## Sources`, or write `- <owner> — not read: <why>`"
+    "output": "terms: `heap`, `store` name storage, owned by `storage-metatheory-programme.md`, `crates/storage-values`, `#317` (the storage tier): cite one in `## Sources`, or add the row `| `<owner>` | not read | <why> |`"
   },
   {
     "name": "#3158: the same unit citing the row's page in `## Sources` passes",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n- `storage-metatheory-programme.md` § the tier — **primary**: the store\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the tier | primary | the store |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -47,7 +47,7 @@
     "name": "#3158: a `- <owner> — not read: <why>` line names the owner, so a declined page passes",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n- `crates/storage-values` — not read: the writer's store is the emitter's heap, not the value plane\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `crates/storage-values` | not read | the writer's store is the emitter's heap, not the value plane |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -69,7 +69,7 @@
     "name": "#3158: an issue key matches whole, so `#3170` does not name `#317`",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n- `#3170` — **primary**: a later rung\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `#3170` | primary | a later rung |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -85,13 +85,13 @@
         }
       ]
     },
-    "output": "terms: `heap`, `store` name storage, owned by `storage-metatheory-programme.md`, `crates/storage-values`, `#317` (the storage tier): cite one in `## Sources`, or write `- <owner> — not read: <why>`"
+    "output": "terms: `heap`, `store` name storage, owned by `storage-metatheory-programme.md`, `crates/storage-values`, `#317` (the storage tier): cite one in `## Sources`, or add the row `| `<owner>` | not read | <why> |`"
   },
   {
     "name": "#3158: a term only in `## Sources`, `## Readings` or `## Concerns` is no term of the unit; one in the title is",
     "input": {
       "title": "kernel: attest a verdict",
-      "body": "Plain prose.\n\n## Sources\n\n- `stores.md` — **primary**: a heap of notes\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested, no store |\n",
+      "body": "Plain prose.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `stores.md` | primary | a heap of notes |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested, no store |\n",
       "terms": [
         {
           "name": "storage",
@@ -107,13 +107,13 @@
         }
       ]
     },
-    "output": "terms: `attest` names verdict, owned by `integrity-never-substitutes-validity.md § kernel-verdict-reuse`, `#2799` (a hash never admits): cite one in `## Sources`, or write `- <owner> — not read: <why>`"
+    "output": "terms: `attest` names verdict, owned by `integrity-never-substitutes-validity.md § kernel-verdict-reuse`, `#2799` (a hash never admits): cite one in `## Sources`, or add the row `| `<owner>` | not read | <why> |`"
   },
   {
     "name": "#3158: a page's `§` names its section and is no part of the key; a page with none passes for the row",
     "input": {
       "title": "kernel: attest a verdict",
-      "body": "Plain prose.\n\n## Sources\n\n- `integrity-never-substitutes-validity.md` — **primary**: the rule\n",
+      "body": "Plain prose.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `integrity-never-substitutes-validity.md` | primary | the rule |\n",
       "terms": [
         {
           "name": "storage",
