@@ -59,6 +59,8 @@ struct Sources
 mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -69,24 +71,36 @@ mod sweeps
     /// The sample: thirty-two corpus sources ranked by their BLAKE3 digest
     /// under this name, the first of every class — `strict` and each directory
     /// below `fixture` — and every one the change adds or modifies
-    /// (`gandr-workflow-sweep`), each walked as its own path. The `sweeps` and
-    /// nightly profiles walk the two roots whole: the whole corpus submitted
-    /// with specifications enforced takes seconds, not a slice of the nightly
-    /// budget.
+    /// (`gandr-workflow-sweep`), each walked as its own path. The nightly
+    /// profile walks the night's slice the same way, and the `sweeps` profile
+    /// walks the two roots whole.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_source_submits_as_the_walk_composes_it"),
         size: SampleSize(32),
     };
 
+    /// The nights the nightly profile takes to submit every source: a
+    /// seventh a night, the count the nightly's sweeps share (#3013). The two
+    /// roots submitted whole with specifications enforced for 87 s on the
+    /// nightly runner (run 40602657172).
+    const NIGHTS: Nights = Nights(7);
+
     #[test]
     fn every_source_submits_as_the_walk_composes_it()
     {
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let paths: Vec<PathBuf> = match sweep.coverage() {
-            Coverage::Full => vec![corpus(CorpusRoot::Strict), corpus(CorpusRoot::Fixture)],
-            Coverage::Sampled => {
-                let visited = sweep.visit(
+        // A night's slice is drawn by digest alone, so it may hold no source
+        // of a small class; a sample and the whole hold one of each.
+        let (paths, classed): (Vec<PathBuf>, bool) = match (sweep.coverage(), sweep.rotation()) {
+            (Coverage::Full, Rotation::Whole) => (
+                vec![corpus(CorpusRoot::Strict), corpus(CorpusRoot::Fixture)],
+                true,
+            ),
+            (Coverage::Full, Rotation::Night(_)) | (Coverage::Sampled, _) => {
+                eprintln!("{}", sweep.rotation());
+                let visited = sweep.visit_rotating(
                     SAMPLE,
+                    NIGHTS,
                     &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
                 );
                 assert!(
@@ -94,7 +108,10 @@ mod sweeps
                     "the sample is drawn: {}",
                     visited.len()
                 );
-                visited.into_iter().map(|source| source.path).collect()
+                (
+                    visited.into_iter().map(|source| source.path).collect(),
+                    sweep.coverage() == Coverage::Sampled,
+                )
             },
         };
         let mut sources = Sources::default();
@@ -105,14 +122,22 @@ mod sweeps
                 ControlFlow::Continue(())
             },
         );
-        assert!(
-            sources.strict > 0_usize,
-            "the strict root is populated: {sources:?}"
-        );
-        assert!(
-            sources.fixture > 0_usize,
-            "the fixture root is populated: {sources:?}"
-        );
+        if classed {
+            assert!(
+                sources.strict > 0_usize,
+                "the strict root is populated: {sources:?}"
+            );
+            assert!(
+                sources.fixture > 0_usize,
+                "the fixture root is populated: {sources:?}"
+            );
+        }
+        else {
+            assert!(
+                sources.strict.saturating_add(sources.fixture) > 0_usize,
+                "the night's slice submits a source: {sources:?}"
+            );
+        }
     }
 }
 

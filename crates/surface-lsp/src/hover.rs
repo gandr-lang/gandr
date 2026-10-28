@@ -3288,9 +3288,10 @@ mod tests
         };
 
         /// The nights the nightly profile takes to hover every source's tiles:
-        /// half a night. The whole corpus hovered for 44 s to 60 s on the
-        /// nightly runner.
-        const NIGHTS: Nights = Nights(2);
+        /// a seventh a night, the count the nightly's sweeps share (#3013).
+        /// Half of the corpus hovered for 66 s on the nightly runner (run
+        /// 40602657172).
+        const NIGHTS: Nights = Nights(7);
 
         /// No tile of the corpus hovers nothing, and none outside a refusal is
         /// one the engine typed nothing at.

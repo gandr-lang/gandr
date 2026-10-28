@@ -523,9 +523,10 @@ mod sweeps
     };
 
     /// The nights the nightly profile takes to read back every source: a
-    /// third a night. The whole corpus read back for 88 s to 125 s on the
-    /// nightly runner.
-    const NIGHTS: Nights = Nights(3);
+    /// seventh a night, the count the nightly's sweeps share (#3013). A third
+    /// of the corpus read back for 73 s on the nightly runner (run
+    /// 40602657172).
+    const NIGHTS: Nights = Nights(7);
 
     /// The most a sampled run lets one source's read-back lower: its printed
     /// types times the bytes its check reads. Each type read back is appended

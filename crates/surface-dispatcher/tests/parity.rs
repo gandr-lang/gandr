@@ -1689,12 +1689,22 @@ mod sweeps
         size: SampleSize(64),
     };
 
+    /// The nights the nightly profile takes to compare every source's forms:
+    /// a seventh a night, the count the nightly's sweeps share (#3013). The
+    /// whole corpus took 67 s on the nightly runner (run 40602657172).
+    const NIGHTS: Nights = Nights(7);
+
     #[test]
     fn the_formatter_spells_each_form_as_the_printer_does_755()
     {
         let grammar = built_in().expect("the built-in grammar builds");
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
+        eprintln!("{}", sweep.rotation());
+        let sources = sweep.visit_rotating(
+            SAMPLE,
+            NIGHTS,
+            &corpus::sources().expect("the corpus reads"),
+        );
         let mut all = Vec::new();
         for source in sources {
             let text = std::fs::read_to_string(&source.path).expect("a corpus source is readable");
@@ -1718,9 +1728,10 @@ mod sweeps
     };
 
     /// The nights the nightly profile takes to compare every source's
-    /// declarations: a quarter a night. The whole corpus took 80 s to 147 s on
-    /// the nightly runner, the slowest of its sweeps.
-    const BODIES_NIGHTS: Nights = Nights(4);
+    /// declarations: a seventh a night, the count the nightly's sweeps share
+    /// (#3013). A quarter of the corpus took 72 s on the nightly runner (run
+    /// 40602657172).
+    const BODIES_NIGHTS: Nights = Nights(7);
 
     /// The most bytes of text a source of the body parity's sample lays out,
     /// its import closure then itself: 16 KiB. The parity lowers that text
@@ -1814,7 +1825,7 @@ mod sweeps
             "### The formatter at parity with the printer (#755)\n\nOver {}.\n\n| declarations | count |\n| --- | --- |\n{}\n\n| signatures as written | count |\n| --- | --- |\n| as the printer spells them sugared | {} |\n| as the printer spells them explicitly | {} |\n| alike in both forms | {} |\n| as the printer spells them in neither | {} |\n",
             match rotation {
                 Rotation::Whole => String::from("the whole corpus"),
-                Rotation::Night(_) => format!("the night's quarter of the corpus: {rotation}"),
+                Rotation::Night(_) => format!("the night's seventh of the corpus: {rotation}"),
             },
             rows.join("\n"),
             counted.sugared,

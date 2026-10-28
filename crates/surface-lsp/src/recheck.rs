@@ -1879,9 +1879,10 @@ mod tests
         };
 
         /// The nights the nightly profile takes to recheck every source: a
-        /// third a night. The whole corpus rechecked for 86 s on the nightly
-        /// runner.
-        const NIGHTS: Nights = Nights(3);
+        /// seventh a night, the count the nightly's sweeps share (#3013). A
+        /// third of the corpus rechecked for 59 s on the nightly runner (run
+        /// 40602657172).
+        const NIGHTS: Nights = Nights(7);
 
         /// #1521: a corpus source, rechecked, keeps the table its hovers would
         /// otherwise type — after its closure's lowering when it imports a

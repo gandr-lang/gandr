@@ -1436,12 +1436,12 @@ mod sweeps
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// How many parts the nightly typing cuts every source into, one typed a
-    /// night: a sixty-fourth of typing the whole corpus each night, and of
-    /// its costliest source, every keystroke within sixty-four nights. A
-    /// quarter of every source typed for 317 s to 480 s on the nightly runner,
-    /// a sixteenth for 139 s to 163 s and a thirty-second for 90 s, past its
-    /// share of the nightly budget.
-    const TYPED_NIGHTS: Nights = Nights(64);
+    /// night: a sixty-eighth of typing the whole corpus each night, and of
+    /// its costliest source, every keystroke within sixty-eight nights. The
+    /// fewest that keep its night within half the nightly sweeps' test wall
+    /// (#3013): a sixty-fourth typed for 181 s on the nightly runner (run
+    /// 40602657172), the whole about 11,600 s.
+    const TYPED_NIGHTS: Nights = Nights(68);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
     /// oracle.
@@ -1450,10 +1450,11 @@ mod sweeps
         size: SampleSize(24),
     };
 
-    /// The nights the nightly erasure takes to erase every source: a
-    /// sixteenth a night. A quarter erased for 89 s to 93 s on the nightly
-    /// runner, and an eighth for 60 s.
-    const ERASED_NIGHTS: Nights = Nights(16);
+    /// The nights the nightly erasure takes to erase every source: a seventh
+    /// a night, the count the nightly's sweeps share (#3013). A sixteenth
+    /// erased for 30 s on the nightly runner (run 40602657172), and an eighth
+    /// for 60 s before it.
+    const ERASED_NIGHTS: Nights = Nights(7);
 
     /// The most keystrokes a sampled erasure spends on one source. Each
     /// keystroke checks the whole text left, so erasing a source line by line
@@ -1515,9 +1516,10 @@ mod sweeps
     };
 
     /// The nights the nightly hover sweep takes to hover every source: a
-    /// sixteenth a night. A quarter hovered for 84 s to 94 s on the nightly
-    /// runner, and an eighth for 68 s.
-    const HOVERED_NIGHTS: Nights = Nights(16);
+    /// seventeenth a night, the fewest that keep its night within half the
+    /// nightly sweeps' test wall (#3013). A sixteenth hovered for 176 s on the
+    /// nightly runner (run 40602657172), the whole about 2,820 s.
+    const HOVERED_NIGHTS: Nights = Nights(17);
 
     /// The most a sampled hover of one source costs, counted as the positions
     /// it hovers times the bytes its check reads ([`checked`]): 4 MiB. A
