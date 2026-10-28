@@ -1184,6 +1184,15 @@ done <<< "$landings"
 # by default); without RECOVERY_FILE set the task prints what it would file
 # and files nothing. GH_REPO names the repository; GITHUB_RUN_URL, when set,
 # is linked from each body.
+#
+# The task keeps the open recovery collectors' rows (#3326,
+# `.config/claims/swept.jq`, its cases held by `check:claims`): over a whole
+# report, the one ending in its `mutants swept:` line, each family row of a
+# collector is ticked once the night's cause of its name and kind no longer
+# lists the family, and unticked when it lists it again. A night without the
+# cause is a clear run, counted on the body; the third in a row closes the
+# collector, its comment naming the landing whose body `Advances` it, the
+# latest merged.
 ["ci:recovery-file"]
 description = "File each cause of the recovery sweep's report on one issue"
 tools.jq = "1.8.1"
@@ -1254,6 +1263,35 @@ while IFS= read -r line; do
     --label priority:high --label effort:easy --body-file "$scratch/body.md")
   echo "filed $url: $title ($count mutants)"
 done < "$report"
+if ! grep -q -E '^[0-9]+ mutants swept: ' "$report"; then
+  echo "the report ends in no \`mutants swept:\` line, so no collector's rows are read from it" >&2
+  exit 0
+fi
+[[ -n $repo ]] || exit 0
+claims=$(git rev-parse --show-toplevel)/.config/claims
+jq -R 'capture("^cause: `(?<name>[^`]+)` (?<kind>deleted|missed): [0-9]+ mutants in [0-9]+ families: (?<families>.*)$")
+    | .families |= (split(",") | map(gsub("^\\s+|\\s+$"; "")))' "$report" \
+  | jq -s . > "$scratch/causes.json"
+gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"recovery:" in:title' --json number,title,body > "$scratch/open.json"
+jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/open.json" '{causes: $causes[0], issues: $issues[0]}' \
+  | jq -c -L "$claims" -f "$claims/swept.jq" \
+  | while IFS= read -r swept; do
+      number=$(jq -r .number <<< "$swept")
+      close=$(jq -r .close <<< "$swept")
+      if [[ -z $file ]]; then
+        echo "would mark #$number's rows ($(jq -r .clear <<< "$swept") clear run(s))$([[ $close == true ]] && echo ', and close it')"
+        continue
+      fi
+      jq -r .body <<< "$swept" > "$scratch/swept.md"
+      gh issue edit "$number" --repo "$repo" --body-file "$scratch/swept.md" > /dev/null
+      echo "marked #$number's rows ($(jq -r .clear <<< "$swept") clear run(s))"
+      if [[ $close == true ]]; then
+        landing=$(gh pr list --repo "$repo" --state merged --limit 100 --search "\"#$number\" in:body" --json number,mergedAt,body \
+          | jq -r --arg n "$number" '[.[] | select(.body | test("(?i)\\badvances\\s+#\($n)\\b"))] | max_by(.mergedAt) | .number // empty')
+        gh issue close "$number" --repo "$repo" --comment "The recovery sweep has found no mutant of this cause for three nights${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)}, so every family is marked where it was made; $(if [[ -n $landing ]]; then echo "the landing: #$landing."; else echo "no merged pull request advances it."; fi)" > /dev/null
+        echo "closed #$number${landing:+ (the landing: #$landing)}"
+      fi
+    done
 {% endraw %}'''
 
 # A worktree is removed when its branch lands, mechanically: nothing else
@@ -1622,10 +1660,13 @@ fi
 # the claim opens with one `restate: `<axis>`: <question>` line per such
 # axis. An issue with an open `blocked by` dependency is not picked (#2902):
 # each one ranked ahead of the pick is printed on stderr as `blocked: #n by
-# #a, #b`, its open blockers read from GitHub. Each `collector` in the area
-# is printed first, on stderr, as `collector: #n (k open rows)` (#3111):
-# never a candidate, it shows the carving due. It adds `status:claimed` and
-# prints the claim as `#n <title>`; `--dry-run` prints it without claiming.
+# #a, #b`, its open blockers read from GitHub. A `kind:defect` `collector` in
+# the area holding an open row heads the order (#3326): it is claimed as the
+# defect it is, its rows worked by the landing, and prints no section due,
+# keeping its own shape. Any other collector in the area holding an open row
+# is printed first, on stderr, as `collector: #n (k open rows)` (#3111), the
+# carving due. It adds `status:claimed` and prints the claim as `#n <title>`;
+# `--dry-run` prints it without claiming.
 # No candidate prints `no claim: <area>` and exits 1.
 ["claim:next"]
 description = "Claim the next item in an area's claim order"
@@ -2580,7 +2621,9 @@ fi
 # Each issue the body works, an epic or a `collector` aside, passes
 # `unit:check` and carries the coordinator's `shape:signed` (#3134,
 # `.config/claims/signed.jq`): the seat that sections an issue on its claim
-# pages for the label and works on, and the landing waits for it.
+# pages for the label and works on, and the landing waits for it. A body
+# working a `collector` (#3326) `Advances` it, never closes it, and lists the
+# rows it clears under `## Rows`, each an open row as the collector keys it.
 #
 # Vault pages are cited by their mint (#2793). With the vault checkout
 # `$XDG_CONFIG_HOME/gandr/references` names, the task writes each page's

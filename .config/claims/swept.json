@@ -1,0 +1,92 @@
+[
+  {
+    "name": "#3326: a family the night's cause no longer lists is ticked, one it lists again unticked, the spellings `c_d` and `c-d` one family",
+    "input": {
+      "causes": [{ "name": "OutsideLoop", "kind": "deleted", "families": ["c-d", "e"] }],
+      "issues": [
+        {
+          "number": 7,
+          "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
+          "body": "The cause.\n\n- [ ] `a-b`\n- [x] `c_d`\n- [ ] `e` — #9\n"
+        }
+      ]
+    },
+    "output": {
+      "number": 7,
+      "body": "The cause.\n\n- [x] `a-b`\n- [ ] `c_d`\n- [ ] `e` — #9\n",
+      "clear": 0,
+      "close": false
+    }
+  },
+  {
+    "name": "#3326: a night without the cause ticks every row and counts a clear run on the body",
+    "input": {
+      "causes": [{ "name": "OutsideLoop", "kind": "missed", "families": ["a-b"] }],
+      "issues": [
+        {
+          "number": 7,
+          "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
+          "body": "The cause.\n\n- [ ] `a-b`\n"
+        }
+      ]
+    },
+    "output": {
+      "number": 7,
+      "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 1 -->\n",
+      "clear": 1,
+      "close": false
+    }
+  },
+  {
+    "name": "#3326: the third clear run in a row closes the collector",
+    "input": {
+      "causes": [],
+      "issues": [
+        {
+          "number": 7,
+          "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
+          "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 2 -->\n"
+        }
+      ]
+    },
+    "output": {
+      "number": 7,
+      "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 3 -->\n",
+      "clear": 3,
+      "close": true
+    }
+  },
+  {
+    "name": "#3326: a cause back after a clear run takes the count off and reopens its row",
+    "input": {
+      "causes": [{ "name": "OutsideLoop", "kind": "deleted", "families": ["a-b"] }],
+      "issues": [
+        {
+          "number": 7,
+          "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
+          "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 2 -->\n"
+        }
+      ]
+    },
+    "output": { "number": 7, "body": "The cause.\n\n- [ ] `a-b`\n", "clear": 0, "close": false }
+  },
+  {
+    "name": "#3326: a collector whose rows already match the night is left alone, and a title of no cause and kind is not read",
+    "input": {
+      "causes": [{ "name": "OutsideLoop", "kind": "deleted", "families": ["a-b"] }],
+      "issues": [
+        {
+          "number": 7,
+          "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
+          "body": "- [ ] `a-b`\n"
+        },
+        {
+          "number": 8,
+          "title": "recovery: an extra closer is refused at the stray",
+          "body": "- [ ] `a-b`\n"
+        }
+      ]
+    },
+    "output": ""
+  }
+]

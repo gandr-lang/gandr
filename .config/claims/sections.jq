@@ -24,6 +24,30 @@ def section($name):
 # A section's list items: its lines opening `- ` or `* `.
 def items: .[] | select(test("^[-*] "));
 
+# A row's key: its first backquoted span, or its text trimmed when it has
+# none, so `` `hold_expression` `` and `hold_expression — …` key alike.
+def row_key:
+  (capture("`(?<key>[^`]+)`") // null | .key) // (sub("\\s+—.*$"; "") | gsub("^\\s+|\\s+$"; ""));
+
+# A collector body's open rows (#3111, #3326), each by its key: its unchecked
+# `- [ ]` items, keyed by the item's text, and its table rows, keyed by the
+# first cell, header and rule left out, none of whose cells opens `landed` or
+# `fixed`. A `## Readings` or `## Concerns` table is a unit's shape, not rows.
+def collector_rows:
+  def rule: test("^\\s*\\|(\\s*:?-+:?\\s*\\|)+\\s*$");
+  (lines
+    | reduce .[] as $line ({shape: false, kept: []};
+        (if $line | test("^## ") then .shape = ($line | test("^## (Readings|Concerns)\\s*(:.*)?$")) else . end)
+        | if .shape then . else .kept += [$line] end)
+    | .kept) as $lines
+  | [$lines[] | select(test("^\\s*[-*] \\[ \\]")) | sub("^\\s*[-*] \\[ \\]\\s*"; "") | row_key]
+    + [range(0; $lines | length) as $i
+        | $lines[$i]
+        | select(test("^\\s*\\|") and (rule | not))
+        | select(($lines[$i + 1] // "" | rule) | not)
+        | select(test("\\|\\s*(landed|fixed)\\b"; "i") | not)
+        | sub("^\\s*\\|\\s*"; "") | split("|")[0] | row_key];
+
 # An item as {line, keys, text}, or null when it is not `- <head> — <text>`
 # with at least one backquoted key in its head.
 def keyed:
