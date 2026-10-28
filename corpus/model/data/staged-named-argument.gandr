@@ -1,0 +1,102 @@
+/// This source calls recursions staged past their first parameter at named values.
+///
+/// It pins how the kernel unfolds a constant at a staged fixpoint's gate.
+///
+/// `le` recurses under a case on its second parameter, so the lowering stages its fixpoint there. The fixpoint takes the first parameter as a leading argument. Called at a named value, the fixpoint sticks at its gate on the name. The checker unfolds the name there, and the kernel replays that unfolding at the staged argument, past the leading one, before the gate opens.
+///
+/// - see: #3387
+/// - see: #626
+import "./data-base.gandr";
+
+/// One, named.
+def oneByName : Nat = Succ(Zero);
+
+/// Whether the first natural is at most the second.
+def rec le(a : Nat, b : Nat) -> Bool {
+  case a {
+    Zero => true,
+    Succ(p) => case b {
+      Zero => false,
+      Succ(q) => le[<](p, q),
+    },
+  }
+}
+
+/// Zero is at most one, the second argument through the name.
+def zeroAtMostOne : Path(Bool, le(Zero, oneByName), true) = here(true);
+
+/// One is at most one, both arguments through the name.
+def oneAtMostOne : Path(Bool, le(oneByName, oneByName), true) = here(true);
+
+/// Zero is at most three, a name reached through the name `two`.
+def zeroAtMostThree : Path(Bool, le(Zero, three), true) = here(true);
+
+/// One is at most three, the gate opening on a name at each call.
+def oneAtMostThree : Path(Bool, le(oneByName, three), true) = here(true);
+
+/// Three is not at most one.
+def threeAboveOne : Path(Bool, le(three, oneByName), false) = here(false);
+
+/// Whether the first natural is at most both the second and the third; it recurses on the third.
+def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
+  case a {
+    Zero => true,
+    Succ(p) => case b {
+      Zero => false,
+      Succ(q) => case c {
+        Zero => false,
+        Succ(r) => leBoth[<](p, q, r),
+      },
+    },
+  }
+}
+
+/// Zero comes first, and the third reaches its gate through a name.
+def zeroFirst : Path(Bool, leBoth(Zero, oneByName, three), true) = here(true);
+
+/// Positive binary numerals, the high bit outermost.
+data Pos : Type {
+  /// One.
+  H : Pos;
+  /// Twice `p`.
+  O : (p : Pos) --> Pos;
+  /// Twice `p`, and one.
+  I : (p : Pos) --> Pos;
+}
+
+/// How two positives compare.
+data Cmp : Type {
+  /// The first is below the second.
+  Lt : Cmp;
+  /// The two are equal.
+  Eq : Cmp;
+  /// The first is above the second.
+  Gt : Cmp;
+}
+
+/// Two, named.
+def twoPos : Pos = O(H);
+
+/// Compare two positives low bit first, `k` the verdict the lower bits gave.
+def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp {
+  case a {
+    H => case b {
+      H => k,
+      O(q) => Lt,
+      I(q) => Lt,
+    },
+    O(p) => case b {
+      H => Gt,
+      O(q) => cmpPos[<](p, q, k),
+      I(q) => cmpPos[<](p, q, Lt),
+    },
+    I(p) => case b {
+      H => Gt,
+      O(q) => cmpPos[<](p, q, Gt),
+      I(q) => cmpPos[<](p, q, k),
+    },
+  }
+}
+
+/// One is below two, the second positive through the name.
+def oneBelowTwo : Path(Cmp, cmpPos(H, twoPos, Eq), Lt) = here(Lt);

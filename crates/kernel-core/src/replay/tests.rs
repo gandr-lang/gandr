@@ -1735,6 +1735,62 @@ fn a_stuck_fixpoint_compares_its_leading_arguments_626()
 }
 
 #[test]
+fn a_staged_fixpoint_unfolds_the_constant_at_its_staged_argument_3387()
+{
+    // `k = fix. λa. λb. case b { Z ⇒ return a; S(x) ⇒ k a x }`, staged at its
+    // second binder, applied to `Z` and the defined `one = S(Z)`: stuck at
+    // its gate on `one`, past the leading `Z`. The dialogue unfolds `one`
+    // there, so `k Z one` reads as `k Z S(Z)` and runs to `return Z`; a
+    // δ-step landing on the leading `Z` would leave `k S(Z) one` stuck at
+    // `one`, apart from `return Z`.
+    let mut arena = TermArena::new();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let motive = arena.comp_type_returner(nat);
+    let leading = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let on_zero = arena.computation_return(leading);
+    let recursive = arena.value_variable(DeBruijnIndex::from(3_u32));
+    let forced = arena.computation_force(recursive);
+    let kept = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let applied = arena.computation_application(forced, kept);
+    let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = arena.computation_application(applied, field);
+    let on_successor = arena.computation_lambda(call);
+    let cases = arena.computation_data_case(field, motive, alloc::vec![on_zero, on_successor]);
+    let staged = arena.computation_lambda(cases);
+    let body = arena.computation_lambda(staged);
+    let k = arena.computation_fixpoint(body, FixpointEvidence::Staged {
+        position: gandr_kernel_term::StagedPosition::from(1_usize),
+    });
+    let one = ConstantIndex::from(1_usize);
+    let named = arena.value_constant(one);
+    let unfoldings = Unfoldings::new(Vec::from([Unfoldable::Opaque, Unfoldable::Body(successor)]));
+    let from_zero = arena.computation_application(k, zero);
+    let stuck = arena.computation_application(from_zero, named);
+    let returned = arena.computation_return(zero);
+
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(stuck, returned),
+            EngineClaim::Convertible,
+            &[
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(one),
+                },
+                ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(one),
+                },
+                SHARED,
+            ]
+        ),
+        KernelVerdict::Convertible
+    );
+}
+
+#[test]
 fn an_endpoint_reads_a_bind_through_its_stuck_call()
 {
     // `⟨pred x to n. return S(n)⟩` against `S(⟨pred x⟩)`, `pred` a
