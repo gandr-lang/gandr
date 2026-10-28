@@ -4,12 +4,13 @@
 //! program's identity. Its two files are gandr, each read as a workspace's
 //! `members` is: checked alone over what it imports, then run. A site's file
 //! declares `module Site : Model(Site)` of `std.manifold`, the key one place
-//! proves and the sockets it is reached at. A manifold's file declares
-//! `module Manifold : Model(Manifold)`, the program it deploys, beside `pub
-//! def placements : List(Placement)`, each world of the program bound to a
-//! site. [`Site::read`] and [`Manifold::read`] read them into exactly what the
-//! driver's `--net-bind` and `--world` flags build: the sockets a host binds
-//! and the key it proves, and the [`WorldBindings`] a run ships by.
+//! proves, the sockets it is reached at, and the name of the secret proving
+//! the key. A manifold's file declares `module Manifold : Model(Manifold)`, the
+//! program it deploys, beside `pub def placements : List(Placement)`, each
+//! world of the program bound to a site. [`Site::read`] and [`Manifold::read`]
+//! read them into exactly what the driver's `--net-bind` and `--world` flags
+//! build: the sockets a host binds and the key it proves, and the
+//! [`WorldBindings`] a run ships by.
 //!
 //! # Boundaries
 //!
@@ -19,8 +20,12 @@
 //!   key yet, so no address names the program.
 //! - **One process per world.** A placement counting other than one instance is
 //!   refused by name.
-//! - **A site's secret stays with its host.** The file names the public key;
-//!   the hosting process proves it with the secret it holds.
+//! - **A site's secret stays with its host.** The file names the secret, never
+//!   its value. [`Site::secret`] reads the value where the host stands: from
+//!   the `Secrets` model of `std.secret` a host's own file declares, or from
+//!   the variable [`Site::variable`] names. A run never holds it: the model
+//!   answers a sealed `Secret.T`, which never crosses to a world and prints
+//!   opaque.
 //!
 //! # References
 //!
@@ -37,10 +42,13 @@ use core::str::FromStr as _;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
+use gandr_kernel_term::StringLiteral;
 use gandr_runtime_net::Lookup;
 use gandr_runtime_net::NodeId;
 use gandr_runtime_net::Peer;
 use gandr_runtime_net::PeerError;
+use gandr_runtime_net::Secret;
 use gandr_runtime_net::WorldName;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::decode_escapes;
@@ -49,9 +57,15 @@ use quenchant_shape::shape::Maybe;
 
 use crate::evaluate::WorldBindings;
 use crate::evaluate::declaration_name;
+use crate::workspace::Answered;
 use crate::workspace::Spelling;
 use crate::workspace::Unran;
+use crate::workspace::answered_alone;
 use crate::workspace::ran_alone;
+
+/// The prefix of the variable a site's secret is read from when no model is
+/// given; the secret's name, spelled for the environment, follows it.
+const SECRET_VARIABLE: &str = "GANDR_SECRET_";
 
 /// One place a world runs at, as its file's `Site` model states it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,6 +76,8 @@ pub struct Site
     /// The sockets it binds and is dialled at; none when it is found by its
     /// key alone.
     sockets: Vec<SocketAddr>,
+    /// The name of the secret proving the key.
+    secret: String,
 }
 
 impl Site
@@ -71,9 +87,10 @@ impl Site
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the file checked alone over what it imports, and its
-    ///   `Site.key` and `Site.sockets` run: the key read as 64 hexadecimal
-    ///   digits, and each `,`-separated entry of the sockets, blank entries
-    ///   skipped, read as `ip:port`.
+    ///   `Site.key`, `Site.sockets` and `Site.secret` run: the key read as 64
+    ///   hexadecimal digits, each `,`-separated entry of the sockets, blank
+    ///   entries skipped, read as `ip:port`, and the secret's name kept as
+    ///   written.
     /// - provides: the place `gandr host --site` binds and proves.
     /// - fails: as [`Undeployed`] names, at the first field that does not read.
     /// - panics: none.
@@ -87,23 +104,32 @@ impl Site
     /// [`Undeployed::Unkeyed`] and [`Undeployed::Unsocketed`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the corpus site reads its key and socket; a site
-    ///   whose key and socket do not read and one declaring no sockets are
-    ///   refused at that field.
+    /// - hypothesis: L3 — the corpus site reads its key, socket and secret's
+    ///   name; a site whose key and socket do not read, one declaring no
+    ///   sockets and one declaring no secret are refused at that field.
     /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
     /// - witness: `manifold::tests::a_field_that_does_not_read_is_refused_by_name_3374`
     #[inline]
     pub fn read(file: &Path) -> Result<Self, Undeployed>
     {
-        let [key, sockets] = ran_alone(file, [Stated::Key.name(), Stated::Sockets.name()])
-            .map_err(|unran| Undeployed::of(file, unran))?;
+        let [key, sockets, secret] = ran_alone(file, [
+            Stated::Key.name(),
+            Stated::Sockets.name(),
+            Stated::Secret.name(),
+        ])
+        .map_err(|unran| Undeployed::of(file, unran))?;
         let key = strung(file, Stated::Key, key)?;
         let key = NodeId::from_str(&key).map_err(|refused| Undeployed::Unkeyed {
             file: file.to_path_buf(),
             refused,
         })?;
         let sockets = socketed(file, Written(&strung(file, Stated::Sockets, sockets)?))?;
-        Ok(Self { key, sockets })
+        let secret = strung(file, Stated::Secret, secret)?;
+        Ok(Self {
+            key,
+            sockets,
+            secret,
+        })
     }
 
     /// The key the site proves.
@@ -140,39 +166,143 @@ impl Site
         discovered(&self.sockets)
     }
 
-    /// Whether the key `proving` is the site's.
+    /// The variable a host's environment holds the site's secret in when it
+    /// is given no `Secrets` model: `GANDR_SECRET_` and the secret's name,
+    /// upper-cased, each character other than a letter, a digit or `_` spelled
+    /// `_`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: nothing when `proving` is the site's key;
-    ///   [`Undeployed::Unproven`] naming both keys otherwise.
-    /// - provides: the refusal of a host whose secret proves another key than
-    ///   the site it hosts.
-    /// - fails: [`Undeployed::Unproven`].
+    /// - ensures: [`SECRET_VARIABLE`] followed by one character per character
+    ///   of the secret's name: its ASCII upper case when it is an ASCII letter,
+    ///   itself when it is an ASCII digit or `_`, and `_` otherwise.
+    /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the clause is the keys' equality the body computes,
-    ///   a constant-time walk over both; the witness observes both outcomes.
-    ///
-    /// # Errors
-    /// [`Undeployed::Unproven`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the corpus site is proven by its key and refused for
-    ///   another.
-    /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
+    /// - hypothesis: L3 — `far` is `GANDR_SECRET_FAR`, and a name holding a
+    ///   hyphen, a dot and a non-ASCII letter spells each as `_`.
+    /// - witness: `manifold::tests::a_site_reads_its_secret_from_the_model_given_3375`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body maps each character of the name once; the check maps it once more"
+        )
+    )]
+    #[spec(ensures: |ret| ret.strip_prefix(SECRET_VARIABLE).is_some_and(|spelled|
+        spelled.chars().eq(self.secret.chars().map(|character| match character {
+            | 'a'..='z' => character.to_ascii_uppercase(),
+            | 'A'..='Z' | '0'..='9' | '_' => character,
+            | _ => '_',
+        }))))]
     #[inline]
-    pub fn proven(
-        &self,
-        proving: NodeId,
-    ) -> Result<(), Undeployed>
+    #[must_use]
+    pub fn variable(&self) -> String
     {
-        if proving == self.key {
-            return Ok(());
+        let mut variable = String::from(SECRET_VARIABLE);
+        variable.extend(self.secret.chars().map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                character.to_ascii_uppercase()
+            }
+            else {
+                '_'
+            }
+        }));
+        variable
+    }
+
+    /// The secret proving the site's key, read where `from` says.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: from a model's file, its `Secrets.secret` applied to the
+    ///   secret's name, as [`answered_alone`] reads it, sealed answer and all;
+    ///   from the environment, the variable [`Self::variable`] names. Either
+    ///   text is read as [`Secret`] reads its spelling, and the secret is the
+    ///   one proving the site's key.
+    /// - provides: the secret `gandr host --site` proves the site's key with.
+    /// - fails: as [`Undeployed`] names; no refusal spells the secret.
+    /// - panics: none.
+    /// - executable: none — the model's answer is a run of its program, and the
+    ///   environment is the process's; the witness observes each outcome.
+    ///
+    /// # Errors
+    /// From a model: [`Undeployed::Unread`], [`Undeployed::Refused`],
+    /// [`Undeployed::Undeclared`] and [`Undeployed::Unanswered`]. From the
+    /// environment: [`Undeployed::Unsecreted`]. Either:
+    /// [`Undeployed::Unkeyable`] and [`Undeployed::Unproven`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus secrets model answers the far site's
+    ///   secret, which proves its key; a model answering another site's secret
+    ///   is unproven, one answering no key is unkeyable without being spelled,
+    ///   and a file declaring no model is undeclared. The environment's
+    ///   outcomes are observed by the driver's
+    ///   `a_host_reads_its_site_s_secret_by_name_3375`.
+    /// - witness: `manifold::tests::a_site_reads_its_secret_from_the_model_given_3375`
+    #[inline]
+    pub fn secret(
+        &self,
+        from: Secrets<'_>,
+    ) -> Result<Secret, Undeployed>
+    {
+        let (text, secreted) = match from {
+            Secrets::Model(file) => {
+                let answered = answered_alone(
+                    file,
+                    Stated::Secrets.name(),
+                    StringLiteral::new(self.secret.clone()),
+                )
+                .map_err(|unran| Undeployed::of(file, unran))?;
+                let secreted = Secreted::Model {
+                    file: file.to_path_buf(),
+                    name: self.secret.clone(),
+                };
+                match answered {
+                    Maybe::Present(Answered::Text(text)) => (text, secreted),
+                    Maybe::Present(Answered::Other(ended)) => {
+                        return Err(Undeployed::Unanswered {
+                            from: secreted,
+                            ended,
+                        });
+                    },
+                    Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                        return Err(Undeployed::Undeclared {
+                            file: file.to_path_buf(),
+                            field: Stated::Secrets,
+                        });
+                    },
+                }
+            },
+            Secrets::Environment => {
+                let variable = self.variable();
+                match std::env::var(&variable) {
+                    Ok(text) => (text, Secreted::Variable(variable)),
+                    Err(std::env::VarError::NotPresent) => {
+                        return Err(Undeployed::Unsecreted { variable });
+                    },
+                    Err(std::env::VarError::NotUnicode(_)) => {
+                        return Err(Undeployed::Unkeyable {
+                            from: Secreted::Variable(variable),
+                        });
+                    },
+                }
+            },
+        };
+        let Ok(secret) = Secret::from_str(text.trim())
+        else {
+            return Err(Undeployed::Unkeyable { from: secreted });
+        };
+        let proving = secret.node_id();
+        if proving != self.key {
+            return Err(Undeployed::Unproven {
+                site: self.key,
+                proving,
+                from: secreted,
+            });
         }
-        Err(Undeployed::Unproven {
-            site: self.key,
-            proving,
-        })
+        Ok(secret)
     }
 }
 
@@ -360,7 +490,7 @@ pub struct Placed
     pub count: String,
 }
 
-/// A field a site's or a manifold's file states.
+/// A field a site's, a manifold's or a secrets model's file states.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Stated
 {
@@ -368,10 +498,14 @@ pub enum Stated
     Key,
     /// `Site.sockets`.
     Sockets,
+    /// `Site.secret`.
+    Secret,
     /// `Manifold.artifact`.
     Artifact,
     /// `placements`.
     Placements,
+    /// `Secrets.secret`.
+    Secrets,
 }
 
 impl Stated
@@ -385,9 +519,61 @@ impl Stated
         SurfaceName::from(match self {
             Self::Key => "Site.key",
             Self::Sockets => "Site.sockets",
+            Self::Secret => "Site.secret",
             Self::Artifact => "Manifold.artifact",
             Self::Placements => "placements",
+            Self::Secrets => "Secrets.secret",
         })
+    }
+}
+
+/// Where a host reads its site's secret from.
+#[derive(Clone, Copy, Debug)]
+pub enum Secrets<'file>
+{
+    /// The `Secrets` model of `std.secret` the file declares.
+    Model(&'file Path),
+    /// The process's environment, at [`Site::variable`].
+    Environment,
+}
+
+/// Where a secret was read, for a refusal naming it without its value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Secreted
+{
+    /// A model's answer at the secret's name.
+    Model
+    {
+        /// The model's file.
+        file: PathBuf,
+        /// The secret's name.
+        name: String,
+    },
+    /// An environment variable.
+    Variable(String),
+}
+
+impl fmt::Display for Secreted
+{
+    /// The read, as a host would write it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Model { ref file, ref name } => write!(
+                f,
+                "`{}(\"{name}\")` of `{}`",
+                Stated::Secrets.name(),
+                file.display()
+            ),
+            Self::Variable(ref variable) => write!(f, "`{variable}`"),
+        }
     }
 }
 
@@ -496,6 +682,28 @@ pub enum Undeployed
         site: NodeId,
         /// The key the secret proves.
         proving: NodeId,
+        /// Where the secret was read.
+        from: Secreted,
+    },
+    /// The environment holds no secret for the site.
+    Unsecreted
+    {
+        /// The variable read.
+        variable: String,
+    },
+    /// A secret read spells no key.
+    Unkeyable
+    {
+        /// Where it was read.
+        from: Secreted,
+    },
+    /// A `Secrets` model answers the site's secret with other than a string.
+    Unanswered
+    {
+        /// The model's read.
+        from: Secreted,
+        /// How its run ended instead, spelled.
+        ended: String,
     },
 }
 
@@ -543,11 +751,14 @@ impl fmt::Display for Undeployed
                 "`{}` declares no `{field}`: declare {}",
                 file.display(),
                 match field {
-                    Stated::Key | Stated::Sockets => {
+                    Stated::Key | Stated::Sockets | Stated::Secret => {
                         "`module Site : Model(Site)` from `std.manifold`"
                     },
                     Stated::Artifact => "`module Manifold : Model(Manifold)` from `std.manifold`",
                     Stated::Placements => "`pub def placements : List(Placement)`",
+                    Stated::Secrets => {
+                        "`module Secrets : Model(Secrets) with sort K = Secret.T` from `std.secret`"
+                    },
                 }
             ),
             Self::Unstrung {
@@ -595,11 +806,30 @@ impl fmt::Display for Undeployed
                 artifact.display(),
                 program.display()
             ),
-            Self::Unproven { site, proving } => write!(
+            Self::Unproven {
+                site,
+                proving,
+                ref from,
+            } => write!(
                 f,
-                "the site proves the key {site}, and the secret given proves {proving}: give the \
-                 site's secret in `GANDR_NET_SECRET`"
+                "the site proves the key {site}, and the secret read from {from} proves \
+                 {proving}: give the site's own secret there"
             ),
+            Self::Unsecreted { ref variable } => write!(
+                f,
+                "no secret is given for the site: set `{variable}`, or give a `Secrets` model \
+                 with `--secrets`"
+            ),
+            Self::Unkeyable { ref from } => write!(
+                f,
+                "the secret read from {from} spells no key: give 64 hexadecimal digits"
+            ),
+            Self::Unanswered {
+                ref from,
+                ref ended,
+            } => {
+                write!(f, "{from} answers no string: its run ended `{ended}`")
+            },
         }
     }
 }

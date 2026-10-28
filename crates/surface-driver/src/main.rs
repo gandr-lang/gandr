@@ -33,7 +33,7 @@
 //! | `gandr run --world <world>=<key>@<ip:port> <file>` | as `run`, each migration to a world bound to another key shipped to it and its answer read back; repeatable, one per world | as `run`, and an entry that may migrate to a world no `--world` binds |
 //! | `gandr run --manifold <manifold> <file>` | as `run --world`, each world bound to the site the manifold's `placements` place it at | as `run --world`, a manifold that does not read or deploys another source, or `--world` given beside it |
 //! | `gandr host --world <world>=<key>@<ip:port> --migrations <n> <file>` | its peer spelling, `<key>@<ip:port>`, on standard error once bound; a line per migration a `run` of the same source ships here, `ran a migration at <world>, fetching <n> chunks` or `refused a migration at <world>: <reason>` | a network that fails before `n` are answered, or a source that never reached the machine |
-//! | `gandr host --site <site> [--manifold <manifold>] <file>` | as `host --world`, bound at the site's sockets under its key, hosting the worlds the manifold places at the site, or, with no manifold, every world the entry may migrate to | as `host --world`, a site or manifold that does not read, a secret that proves another key than the site's, or `--net-bind` or `--world` given beside the file it desugars from |
+//! | `gandr host --site <site> [--secrets <secrets>] [--manifold <manifold>] <file>` | as `host --world`, bound at the site's sockets under its key, proven by the secret the site names, read through the `Secrets` model the secrets file declares or from `GANDR_SECRET_<NAME>`, hosting the worlds the manifold places at the site, or, with no manifold, every world the entry may migrate to | as `host --world`, a site, secrets file or manifold that does not read, a secret that is not given, spells no key or proves another key than the site's, or `--net-bind`, `--net-secret` or `--world` given beside the file it desugars from |
 //! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
 //! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
 //! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
@@ -364,6 +364,7 @@ use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Running;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
+use gandr_surface_dispatcher::Secrets;
 use gandr_surface_dispatcher::Site;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
@@ -700,10 +701,16 @@ enum Command
             required_unless_present_any = ["site", "manifold"]
         )]
         worlds: Vec<WorldBinding>,
-        /// A site's file: the key this process proves, which its secret must
-        /// prove, and the sockets it binds, in place of `--net-bind`.
+        /// A site's file: the key this process proves, the name of the secret
+        /// proving it, and the sockets it binds, in place of `--net-bind` and
+        /// `--net-secret`.
         #[arg(long, value_name = "FILE")]
         site: Option<PathBuf>,
+        /// A file declaring the `Secrets` model of `std.secret` the site's
+        /// secret is read through, in place of the environment variable
+        /// `GANDR_SECRET_<NAME>`.
+        #[arg(long, value_name = "FILE", requires = "site")]
+        secrets: Option<PathBuf>,
         /// A manifold's file, binding the program's worlds to sites as
         /// `--world` does, in place of it.
         #[arg(long, value_name = "FILE")]
@@ -951,6 +958,8 @@ enum Doubled
     Worlds,
     /// `--net-bind` and `--site` both say where the host binds.
     Sockets,
+    /// `--net-secret` and `--site` both say what proves the host's key.
+    Secret,
 }
 
 impl core::fmt::Display for Doubled
@@ -975,22 +984,26 @@ impl core::fmt::Display for Doubled
                 "`--net-bind` and `--site` both say where the host binds: `--net-bind` is what a \
                  site desugars to, so give one"
             ),
+            Self::Secret => write!(
+                f,
+                "`--net-secret` and `--site` both say what proves the host's key: a site's \
+                 secret is read by its name, from `--secrets` or `GANDR_SECRET_<NAME>`, so unset \
+                 `--net-secret` and `GANDR_NET_SECRET`"
+            ),
         }
     }
 }
 
-/// The binding the site at `file` makes, its key proven by the secret `net`
-/// gives.
+/// The binding the site at `file` makes, its key proven by the secret the
+/// site names, read where `secrets` says.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the site read, the secret `net` gives — a fresh one when it gives
-///   none — proving the site's key, the binding at each of the site's sockets,
-///   finding peers by multicast DNS when it names none and as `net` says
-///   otherwise.
+/// - ensures: the site read, its secret read where `secrets` says and proving
+///   the site's key, the binding at each of the site's sockets, finding peers
+///   by multicast DNS when it names none and as `lookup` says otherwise.
 /// - provides: the network `gandr host --site` binds.
-/// - fails: as [`Site::read`], and [`Undeployed::Unproven`] for a secret that
-///   proves another key.
+/// - fails: as [`Site::read`] and [`Site::secret`].
 /// - panics: none.
 /// - executable: none — the clause reads the site's file again.
 ///
@@ -998,25 +1011,27 @@ impl core::fmt::Display for Doubled
 /// As above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a host given the corpus site and its secret serves the
-///   migration model at the site's socket, and one given another secret is
-///   refused naming both keys.
+/// - hypothesis: L3 — a host given the corpus site and its secret in the
+///   environment serves the migration model at the site's socket; one given the
+///   corpus secrets model binds the site's peer; one whose secret is missing,
+///   spells no key or proves another key is refused.
 /// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+/// - witness: `tests::net::a_host_reads_its_site_s_secret_by_name_3375`
 fn sited(
     file: &Path,
-    net: NetFlags,
+    secrets: Secrets<'_>,
+    lookup: Lookup,
 ) -> Result<Binding, Undeployed>
 {
     let site = Site::read(file)?;
-    let secret = net.secret.unwrap_or_else(Secret::generate);
-    site.proven(secret.node_id())?;
+    let secret = site.secret(secrets)?;
     let binding = site
         .sockets()
         .iter()
         .fold(Binding::new(secret), |binding, &socket| binding.at(socket));
     Ok(match site.lookup() {
         Lookup::Mdns => binding.lookup(Lookup::Mdns),
-        Lookup::Explicit => binding.lookup(net.lookup),
+        Lookup::Explicit => binding.lookup(lookup),
     })
 }
 
@@ -1676,6 +1691,7 @@ fn main() -> ExitCode
             path,
             worlds,
             site,
+            secrets,
             manifold,
             migrations,
             net,
@@ -1686,10 +1702,18 @@ fn main() -> ExitCode
             if site.is_some() && net.bind.is_some() {
                 return doubled(Doubled::Sockets);
             }
+            if site.is_some() && net.secret.is_some() {
+                return doubled(Doubled::Secret);
+            }
             hosting.network = Some(match site {
-                Some(file) => match sited(&file, *net) {
-                    Ok(binding) => binding,
-                    Err(refused) => return undeployed(&refused),
+                Some(file) => {
+                    let secrets = secrets
+                        .as_deref()
+                        .map_or(Secrets::Environment, Secrets::Model);
+                    match sited(&file, secrets, net.lookup) {
+                        Ok(binding) => binding,
+                        Err(refused) => return undeployed(&refused),
+                    }
                 },
                 None => Binding::from(*net),
             });

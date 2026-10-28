@@ -2575,6 +2575,71 @@ fn a_repeated_sealing_site_is_refused_and_mints_nothing()
     );
 }
 
+/// A sealed atom no signature marks `mobile` is met wherever a type holds it:
+/// alone, in a pair, in a list, in a function's answer, and an atom the run
+/// formed no abstract type at; a marked atom and a type naming no atom hold
+/// none (#3375).
+#[test]
+fn an_unmarked_atom_is_met_wherever_a_type_holds_it_3375()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let [unmarked, mobile, foreign] = [0_usize, 1, 7].map(ConstantIndex::from);
+    let secret = arena.value_type_abstract(unmarked);
+    let report = arena.value_type_abstract(mobile);
+    let stranger = arena.value_type_abstract(foreign);
+    let paired = arena.value_type_product(&[integer, secret]);
+    let listed = arena.value_type_list(secret);
+    let returned = arena.comp_type_returner(secret);
+    let function = arena.comp_type_arrow(integer, returned);
+    let answered = arena.value_type_thunk(function);
+    let reported = arena.value_type_product(&[report, integer]);
+    let module = [
+        sealed(At(0), small, integer, 0_usize.into(), 0_usize.into()),
+        Declaration::abstract_type(
+            mobile,
+            AbstractType::new(
+                small,
+                integer,
+                0_usize.into(),
+                SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(1_usize)),
+            )
+            .marked(crate::worlds::Mobility::Mobile),
+            OriginToken::from(101_usize),
+        ),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let checked = check_module(&mut context, &module);
+    for (ty, held, what) in [
+        (secret, Maybe::Present(unmarked), "the atom alone"),
+        (paired, Maybe::Present(unmarked), "the atom in a pair"),
+        (listed, Maybe::Present(unmarked), "the atom in a list"),
+        (
+            answered,
+            Maybe::Present(unmarked),
+            "the atom a function answers",
+        ),
+        (
+            stranger,
+            Maybe::Present(foreign),
+            "an atom no abstract type formed at",
+        ),
+        (
+            reported,
+            Maybe::Absent(super::unmarked::Absent::Unheld),
+            "a marked atom",
+        ),
+        (
+            integer,
+            Maybe::Absent(super::unmarked::Absent::Unheld),
+            "a type naming no atom",
+        ),
+    ] {
+        assert_eq!(checked.unmarked_atom(&arena, ty), held, "{what}");
+    }
+}
+
 #[test]
 fn an_atom_naming_no_abstract_type_is_refused()
 {

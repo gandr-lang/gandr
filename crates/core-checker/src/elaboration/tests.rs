@@ -1471,7 +1471,8 @@ fn two_candidates_passing_one_member_are_one_elaboration_2333()
 fn a_model_slot_no_candidate_answers_is_refused_739()
 {
     // Only `Flag`, over the unit type, where the argument forces the
-    // integers; and a scope holding no model at all.
+    // integers; and a scope holding no model at all. Each refusal names the
+    // integers, the type the argument forces (#3375).
     let mut arena = CoreArena::new();
     let mut deferrals = super::Deferrals::default();
     let (holes, at, [_, unit]) = forced_slot(&mut arena, &mut deferrals);
@@ -1486,8 +1487,17 @@ fn a_model_slot_no_candidate_answers_is_refused_739()
             },
         ])
     });
-    assert_eq!(refuted, Err((at, CheckRefusal::ModelUnanswered { at })));
-    assert_eq!(empty, Err((at, CheckRefusal::ModelUnanswered { at })));
+    for refusal in [refuted, empty] {
+        assert!(
+            matches!(
+                refusal,
+                Err((named, CheckRefusal::ModelUnanswered { at: hole, forced: crate::Forced::Type(forced) }))
+                    if named == at && hole == at
+                        && matches!(arena.value_type(forced), Some(ValueType::Base(BaseType::Integer)))
+            ),
+            "the refusal names the integers the argument forces: {refusal:?}"
+        );
+    }
 }
 
 #[test]

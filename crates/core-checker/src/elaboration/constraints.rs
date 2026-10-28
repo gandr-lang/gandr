@@ -839,9 +839,10 @@ impl Deferrals
     ///   whose holes the judgement met, and a candidate of another arity, or
     ///   carrying another number of fixed sorts, are left out.
     /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
-    ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
-    ///   the first candidate left and every one not converting with it, when
-    ///   two elaborations are left.
+    ///   no candidate is left, naming the type the first met hole the solver
+    ///   bound to a type's code stands for; [`CheckRefusal::ModelAmbiguous`]
+    ///   there, naming the first candidate left and every one not converting
+    ///   with it, when two elaborations are left.
     /// - panics: none.
     ///
     /// # Errors
@@ -868,7 +869,7 @@ impl Deferrals
     /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
     #[spec(ensures: |ret| match ret {
         | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
-        | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
+        | Err((at, refusal)) => matches!(refusal, CheckRefusal::ModelUnanswered { at: named, .. } if named == at),
         | Ok(()) => true,
     })]
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Deferrals"))]
@@ -964,7 +965,22 @@ impl Deferrals
                     }
                 },
                 (0, _) | (_, None) => {
-                    return Err((first, CheckRefusal::ModelUnanswered { at: first }));
+                    // The first component the call's arguments solved to a
+                    // type's code is the type no candidate answers at.
+                    let forced = holes
+                        .iter()
+                        .find_map(|&(_, _, meta)| match self.metas.solution(meta) {
+                            Maybe::Present(solved) => match arena.value(solved) {
+                                Some(&Value::Quote(quoted)) => Some(quoted),
+                                _ => None,
+                            },
+                            Maybe::Absent(_) => None,
+                        })
+                        .map_or(
+                            crate::refusal::Forced::Unforced,
+                            crate::refusal::Forced::Type,
+                        );
+                    return Err((first, CheckRefusal::ModelUnanswered { at: first, forced }));
                 },
                 _ => {
                     return Err((first, CheckRefusal::ModelAmbiguous {

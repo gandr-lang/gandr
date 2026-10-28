@@ -2339,7 +2339,10 @@ pub mod tests
                 at: value,
                 reason: gandr_core_checker::Unsolved::Unforced,
             },
-            CheckRefusal::ModelUnanswered { at: value },
+            CheckRefusal::ModelUnanswered {
+                at: value,
+                forced: gandr_core_checker::Forced::Unforced,
+            },
             CheckRefusal::ModelAmbiguous {
                 at: value,
                 survivors: gandr_core_term::model::Survivors::default(),

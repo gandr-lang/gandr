@@ -38,8 +38,9 @@ module A = MkCounter(Seed);
 /// Its second, whose type is not the first's.
 module B = MkCounter(Seed);
 
-/// One step of the first application, at its own abstract type.
-@[ runs("1") ]
+/// One step of the first application, at its own abstract type, which a run
+/// answers opaque at the application's seal.
+@[ runs("⟨opaque at A⟩ : () => A.T") ]
 def a_once() -> A.T { A.step(A.seed) }
 
 /// Two steps of the second application, read back as an integer.

@@ -1,6 +1,6 @@
 /// `deployment-file` reads a deployment's site and manifold as the flags they desugar to.
 ///
-/// Implemented: a site names the key its place proves and the sockets a dialer reaches it at, and `gandr host --site` binds them under the secret that proves the key; a manifold names the program it deploys by its path and places each world at a site, and `gandr run --manifold` and `gandr host --manifold` take its world bindings; a flag beside the file it desugars from is refused.
+/// Implemented: a site names the key its place proves, the sockets a dialer reaches it at and the name of the key's secret, and `gandr host --site` binds them under the secret that name reads; a manifold names the program it deploys by its path and places each world at a site, and `gandr run --manifold` and `gandr host --manifold` take its world bindings; a flag beside the file it desugars from is refused.
 /// Not implemented: a manifold that names its program by its address, and a world that runs as more than one process; #3381 owes the first.
 ///
 /// A deployment's files hold no entry: they settle as models do, and the driver runs each field to its string.
@@ -17,6 +17,8 @@ pub module Site : Model(Site) {
   def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
   /// The socket its host binds.
   def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
 }
 
 /// The program this deployment runs.

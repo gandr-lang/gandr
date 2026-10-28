@@ -1288,8 +1288,9 @@ impl fmt::Display for MessageText<'_>
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
-                refusal: refusal @ Refusal::Checking(CheckRefusal::ModelUnanswered { at }),
+                refusal: refusal @ Refusal::Checking(CheckRefusal::ModelUnanswered { at, forced }),
                 origins,
+                spellings,
                 ..
             } => match origins.omitted(at) {
                 Maybe::Present(&Omitted::Model {
@@ -1302,8 +1303,24 @@ impl fmt::Display for MessageText<'_>
                         "no module in scope answers the model implicit `{implicit}` this call to \
                          `{function}` omits"
                     )?;
+                    let forced = match forced {
+                        gandr_core_checker::Forced::Type(ty) => {
+                            match spellings.get(gandr_core_checker::TypeNode::Value(ty)) {
+                                Maybe::Present(spelled) => Some(spelled.as_ref()),
+                                Maybe::Absent(_) => None,
+                            }
+                        },
+                        gandr_core_checker::Forced::Unforced => None,
+                    };
+                    match forced {
+                        Some(spelled) => write!(f, " at `{spelled}`")?,
+                        None if !candidates.is_empty() => {
+                            f.write_str(" at the types its arguments force")?;
+                        },
+                        None => {},
+                    }
                     if !candidates.is_empty() {
-                        f.write_str(" at the types its arguments force: ")?;
+                        f.write_str(": ")?;
                         named(f, candidates.iter().map(String::as_str))?;
                         f.write_str(if candidates.len() == 1 {
                             " does not"

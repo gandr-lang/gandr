@@ -301,6 +301,8 @@ pub use crate::ledger::ShownFeature;
 pub use crate::ledger::Status;
 pub use crate::ledger::SyntaxLedger;
 pub use crate::manifold::Manifold;
+pub use crate::manifold::Secreted;
+pub use crate::manifold::Secrets;
 pub use crate::manifold::Site;
 pub use crate::manifold::Stated;
 pub use crate::manifold::Undeployed;

@@ -2,13 +2,15 @@
 // Lillibridge, _A Type-Theoretic Approach to Higher-Order Modules with
 // Sharing_, POPL 1994, doi:10.1145/174675.176927): outside the seal its type
 // is abstract, so a value of it is reached only through the members the
-// signature exposes.
+// signature exposes. A run answering one is opaque at the seal, since its
+// type is not marked `mobile`.
 
 // The sealed counter `Seed`.
 import "./functor-pair.gandr";
 
-/// One step from the counter's zero, a value of its abstract type.
-@[ runs("1") ]
+/// One step from the counter's zero: a value of its abstract type, which a
+/// run answers opaque at the seal.
+@[ runs("⟨opaque at Seed⟩ : () => Seed.T") ]
 def one() -> Seed.T { Seed.next(Seed.zero) }
 
 /// That value read back through the exposed reader.

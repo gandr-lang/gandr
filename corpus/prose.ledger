@@ -1219,7 +1219,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MissingPay
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MissingRecordField.txt Procedure 2beddbca6d6aaa1d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ModelAmbiguous.txt Procedure d9826d302e91310b
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ModelImplicitValue.txt Procedure ef1d0c6a1228362b
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ModelUnanswered.txt Procedure 93591876c27f0113
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ModelUnanswered.txt Procedure a6e470d43e91167e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NestedOccurrence.txt Procedure 4afcd4accd9ec98b
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NoUniverseAbove.txt Procedure c1d1f1a1b2e4e34d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NonCovariantMotive.txt Procedure 197aae62a2bd61f5
@@ -1465,10 +1465,10 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/modules/inert-fi
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/inert-field.txt Procedure 0b1fe9c1e58df6a9
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/inert-field.txt Procedure f43265b374f6605f
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure 26d9ff6919ba277d
+crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure 30d812f3c1961dba
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure 595e44f6adfd7ed9
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure bdfd9978bea1d29b
+crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure ac24b91c638a34e1
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure c51f5bc23add4ab5
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure c7e60d68c8516640
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-supply.txt Procedure ef1d0c6a1228362b
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-include.txt Procedure 625f34805e9ea304
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-laws.txt Procedure 6dd4420754dc5df4
@@ -1539,6 +1539,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-r
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d203717a6c072f2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure c7bd7e2325683c3a
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure ef85c85b9b0f6951
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/secret-crosses.txt Procedure c4b41bb602de3f53
 crates/surface-render-terminal/tests/golden/nested-application.txt Procedure dcd8e6b6a2087870
 crates/surface-render-terminal/tests/golden/nested-force.txt Procedure 9aee6bb840c488e8
 crates/surface-render-terminal/tests/golden/shadowed-builtin.txt Procedure 5757d98aeb18730d

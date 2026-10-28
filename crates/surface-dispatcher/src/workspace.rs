@@ -22,10 +22,20 @@
 //!   metadata is written in gandr rather than in a manifest language, and a
 //!   workspace's members are named the same way.
 
+use core::convert::Infallible;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_term::Computation;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::StringLiteral;
+use gandr_runtime_emitter::HostHandler;
+use gandr_runtime_emitter::HostReply;
+use gandr_runtime_emitter::HostRequest;
+use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
@@ -40,6 +50,8 @@ use crate::compose::Composed;
 use crate::compose::LoweringCount;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
+use crate::evaluate::Program;
+use crate::evaluate::Terminal;
 use crate::evaluate::declaration_name;
 use crate::manifold::Placed;
 use crate::package::Package;
@@ -236,6 +248,87 @@ pub fn ran_alone<const NAMES: usize>(
     names: [SurfaceName<'_>; NAMES],
 ) -> Result<[Maybe<String, declaration_name::Absent>; NAMES], Unran>
 {
+    alone(source, |program| {
+        names.map(|name| match program.named(name) {
+            Maybe::Present(constant) => Maybe::Present(program.evaluate(constant).to_string()),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        })
+    })
+}
+
+/// What the function `function` of the source at `source` answers at the
+/// string `argument`, read as its host reads it, the source checked once as
+/// [`ran_alone`] checks it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the source checked as [`ran_alone`] checks it, and `function`
+///   forced and applied to `argument` on the program's machine, every operation
+///   no handler of the run claims declined. A run answering a string is
+///   [`Answered::Text`] holding it whole, whatever seal keeps the answer's
+///   type; any other end is [`Answered::Other`]. `Undeclared` when the source
+///   declares no `function`.
+/// - provides: a host's reading of a value only it may hold, such as the secret
+///   a site's `Secrets` model answers, which no printed run spells.
+/// - fails: as [`ran_alone`].
+/// - panics: none.
+/// - executable: none — the function is run on the program's machine, which a
+///   predicate could only check by running it again.
+///
+/// # Errors
+/// [`Unran`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus secrets model answers the far site's secret at
+///   its name, sealed as it is, and a source declaring no such function is
+///   undeclared; an answer other than a string is not generated.
+/// - witness: `manifold::tests::a_site_reads_its_secret_from_the_model_given_3375`
+#[inline]
+pub fn answered_alone(
+    source: &Path,
+    function: SurfaceName<'_>,
+    argument: StringLiteral,
+) -> Result<Maybe<Answered, declaration_name::Absent>, Unran>
+{
+    alone(source, |program| {
+        let constant = match program.named(function) {
+            Maybe::Present(constant) => constant,
+            Maybe::Absent(absent) => return Maybe::Absent(absent),
+        };
+        let mut core = CoreArena::new();
+        let argument = core.value_literal(Literal::Text(argument));
+        let read = match program.call(constant, &[argument], &mut core, &mut Unhosted) {
+            Ok(Terminal::Read(read)) => read,
+            Ok(Terminal::Ended(ended)) => {
+                return Maybe::Present(Answered::Other(ended.to_string()));
+            },
+            Err(never) => match never {},
+        };
+        Maybe::Present(match core.computation(read) {
+            Some(&Computation::Return(answer)) => match core.value(answer) {
+                Some(&Value::Literal(Literal::Text(ref text))) => {
+                    Answered::Text(String::from(text.as_ref()))
+                },
+                Some(_) | None => Answered::Other(String::from("a value other than a string")),
+            },
+            Some(_) | None => Answered::Other(String::from("a computation other than a return")),
+        })
+    })
+}
+
+/// What `read` makes of the program the source at `source` composes to,
+/// checked alone over the sources it imports.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Unran`], as [`ran_alone`].
+fn alone<Read>(
+    source: &Path,
+    read: impl FnOnce(&mut Program<'_>) -> Read,
+) -> Result<Read, Unran>
+{
     let text = std::fs::read_to_string(source).map_err(|error| Unran::Unread {
         message: error.to_string(),
     })?;
@@ -262,21 +355,47 @@ pub fn ran_alone<const NAMES: usize>(
         .map_err(|fault| Unran::Refused {
             why: fault.to_string(),
         })?;
-    let mut program = match composed {
-        Composed::Settled { program, .. } => program,
-        Composed::Refused(refusal) => {
-            return Err(Unran::Refused {
-                why: refusal.to_string(),
-            });
-        },
-    };
-    Ok(names.map(|name| match program.named(name) {
-        Maybe::Present(constant) => Maybe::Present(program.evaluate(constant).to_string()),
-        Maybe::Absent(absent) => Maybe::Absent(absent),
-    }))
+    match composed {
+        Composed::Settled { mut program, .. } => Ok(read(&mut program)),
+        Composed::Refused(refusal) => Err(Unran::Refused {
+            why: refusal.to_string(),
+        }),
+    }
 }
 
-/// Why [`ran_alone`] ran nothing.
+/// What a function a source declares answered its host.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Answered
+{
+    /// A string, whole.
+    Text(String),
+    /// Any other end, spelled: the evaluation the run ended with, or the kind
+    /// of value it answered, never the value.
+    Other(String),
+}
+
+/// A host answering nothing: every operation offered stays unhandled.
+struct Unhosted;
+
+impl HostHandler for Unhosted
+{
+    type Abort = Infallible;
+
+    /// Decline the operation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        _request: HostRequest<'_>,
+        _values: &mut HostValues<'_>,
+    ) -> HostReply<Infallible>
+    {
+        HostReply::Decline
+    }
+}
+
+/// Why [`ran_alone`] or [`answered_alone`] ran nothing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Unran
 {

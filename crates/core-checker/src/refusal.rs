@@ -1233,6 +1233,9 @@ pub enum CheckRefusal
     {
         /// The hole the call nominated for the slot's first component.
         at: ValueId,
+        /// The type the call's arguments force a component of the slot to
+        /// code, when they force one: what no model in scope answers at.
+        forced: Forced,
     },
     /// A call omits a model slot more than one model in scope answers once
     /// the call's arguments force what they force.
@@ -1621,11 +1624,11 @@ impl CheckRefusal
     ///   synthesised, a static Pi over no classifier of codes the child it
     ///   stands over, a session action and a leftover endpoint the endpoint's
     ///   session type, a capability refusal the capability type it met, an
-    ///   unasserted law the statement it would admit, and a refused crossing
-    ///   the former that does not cross, each expecting a former the refusal
-    ///   names rather than a type; a forged capability expects the capability
-    ///   type it stood at and found nothing; every other refusal compares no
-    ///   types.
+    ///   unasserted law the statement it would admit, a refused crossing the
+    ///   former that does not cross, and an unanswered model slot the type its
+    ///   call's arguments force, each expecting a former the refusal names
+    ///   rather than a type; a forged capability expects the capability type it
+    ///   stood at and found nothing; every other refusal compares no types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
     ///   [`compared::Absent::Unnamed`] absence.
@@ -1657,7 +1660,8 @@ impl CheckRefusal
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
         | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found }
         | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. }
-        | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. } =>
+        | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. }
+        | Self::ModelUnanswered { forced: Forced::Type(found), .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
     })]
@@ -1748,6 +1752,10 @@ impl CheckRefusal
             | Self::Located {
                 defect: crate::worlds::LocatedDefect::Immobile { former: found, .. },
                 ..
+            }
+            | Self::ModelUnanswered {
+                forced: Forced::Type(found),
+                ..
             } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
             Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
@@ -1822,6 +1830,19 @@ impl CheckRefusal
         };
         Compared { expected, found }
     }
+}
+
+/// What the call of an unanswered model slot forces the slot to.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Forced
+{
+    /// The type the call's arguments force a component of the slot to code.
+    Type(ValueTypeId),
+    /// The call's arguments solve no component of the slot to a type's code.
+    Unforced,
 }
 
 quenchant_shape::reason_enum! {

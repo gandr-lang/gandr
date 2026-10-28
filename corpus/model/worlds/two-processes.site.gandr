@@ -4,9 +4,10 @@
 // is reached at. Written as a file, the place stays out of the program and
 // out of the flags.
 //
-// `gandr host --site` binds these sockets in place of `--net-bind`, and proves
-// the key with the secret `GANDR_NET_SECRET` holds. The secret never stands in
-// the file. This key is the one the two-process test's host secret proves.
+// `gandr host --site` binds these sockets in place of `--net-bind`. It proves
+// the key with the secret this site names: `GANDR_SECRET_FAR` holds it, or
+// the model `--secrets` names. The secret never stands in the file. This key
+// is the one the two-process test's host secret proves.
 //
 // - see: `two-processes.manifold.gandr` — the manifold placing `far` here
 // - see: `two-processes.gandr` — the program it hosts
@@ -21,4 +22,6 @@ pub module Site : Model(Site) {
   def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
   /// The socket it binds, where a dialer reaches it.
   def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
 }

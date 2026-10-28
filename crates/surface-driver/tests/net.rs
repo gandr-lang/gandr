@@ -1,12 +1,14 @@
 //! Two `gandr` processes on one host: one serving the ping exemplar and one
 //! pinging it over `Net`, and one hosting the migration model's far world and
 //! one running it, bound by flags and by the site and manifold they desugar
-//! from.
+//! from; and a host reading its site's secret by name.
 
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
 use core::str::FromStr as _;
 use std::ffi::OsStr;
+use std::io::BufRead as _;
+use std::io::BufReader;
 use std::net::UdpSocket;
 use std::path::Path;
 use std::process::Command;
@@ -188,15 +190,15 @@ fn two_processes_run_the_far_world_s_migrations_there()
 }
 
 /// #3374: the same two processes bound by files. `gandr host --site` binds
-/// the socket the corpus site names under its key, which `GANDR_NET_SECRET`
-/// proves, and prints that peer first on standard error; `gandr run
-/// --manifold` ships both migrations to the site the manifold places `far`
-/// at. The run exits 42 and the host prints a line for each migration, as
-/// with the flags. The corpus files are laid in a scratch tree as the corpus
-/// holds them, the site's socket a free one. Each refusal exits 2 before
-/// anything runs: a run given `--world` beside the manifold, naming both; a
-/// run of another source than the manifold deploys, naming both paths; and a
-/// host whose secret proves another key than the site's, naming both keys.
+/// the socket the corpus site names under its key, which the secret
+/// `GANDR_SECRET_FAR` holds proves (#3375), and prints that peer first on
+/// standard error; `gandr run --manifold` ships both migrations to the site
+/// the manifold places `far` at. The run exits 42 and the host prints a line
+/// for each migration, as with the flags. The corpus files are laid in a
+/// scratch tree as the corpus holds them, the site's socket a free one. Each
+/// refusal exits 2 before anything runs: a run given `--world` beside the
+/// manifold, naming both; and a run of another source than the manifold
+/// deploys, naming both paths.
 #[test]
 fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
 {
@@ -240,7 +242,8 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         .arg("--migrations")
         .arg("2")
         .arg(&model)
-        .env("GANDR_NET_SECRET", HOST_SECRET)
+        .env("GANDR_SECRET_FAR", HOST_SECRET)
+        .env_remove("GANDR_NET_SECRET")
         .env("XDG_CONFIG_HOME", &unconfigured)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -289,7 +292,7 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
     let refused = |arguments: &[&OsStr]| {
         let output = Command::new(env!("CARGO_BIN_EXE_gandr"))
             .args(arguments)
-            .env("GANDR_NET_SECRET", SERVER_SECRET)
+            .env_remove("GANDR_NET_SECRET")
             .env("XDG_CONFIG_HOME", &unconfigured)
             .output()
             .expect("the refused command runs");
@@ -321,21 +324,120 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
         code == Some(2_i32) && refusal.contains("the manifold deploys"),
         "a run of a source the manifold does not deploy never runs, naming both: {refusal}"
     );
-    let (code, refusal) = refused(&[
-        OsStr::new("host"),
-        OsStr::new("--site"),
-        site.as_os_str(),
-        OsStr::new("--migrations"),
-        OsStr::new("1"),
-        model.as_os_str(),
-    ]);
+}
+
+/// #3375: a host reads its site's secret by the name the site gives it.
+/// Given the corpus secrets model, `gandr host --site` binds the site's peer
+/// and prints it first on standard error. Each refusal exits 2 before
+/// anything binds: a secret in `GANDR_SECRET_FAR` proving another key, naming
+/// both keys and the variable; the variable unset, naming it; a secret
+/// spelling no key, never spelling it; and `GANDR_NET_SECRET` given beside the
+/// site, naming `--net-secret` and `--site`.
+#[test]
+fn a_host_reads_its_site_s_secret_by_name_3375()
+{
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let read = |relative: &str| {
+        std::fs::read_to_string(corpus.join(relative)).expect("the corpus file reads")
+    };
+    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .and_then(|probe| probe.local_addr())
+        .expect("a free loopback port");
+    let scratch = Scratch::new(Path::new("net-secrets-3375"));
+    let lay = |relative: &str, text: &str| scratch.file(Path::new(relative), Text::from(text));
+    for module in ["manifold", "secret"] {
+        let relative = format!("library/std/src/{module}.gandr");
+        lay(&relative, &read(&relative));
+    }
+    let model = lay(
+        "corpus/model/worlds/two-processes.gandr",
+        &read("corpus/model/worlds/two-processes.gandr"),
+    );
+    let site = lay(
+        "corpus/model/worlds/two-processes.site.gandr",
+        &read("corpus/model/worlds/two-processes.site.gandr")
+            .replace("127.0.0.1:7433", &socket.to_string()),
+    );
+    let secrets = lay(
+        "corpus/model/worlds/two-processes.secrets.gandr",
+        &read("corpus/model/worlds/two-processes.secrets.gandr"),
+    );
+    let key = Secret::from_str(HOST_SECRET)
+        .expect("the secret is hex")
+        .node_id();
+    let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
+    let hosting = |variables: &[(&str, &str)]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_gandr"));
+        command
+            .arg("host")
+            .arg("--site")
+            .arg(&site)
+            .env_remove("GANDR_NET_SECRET")
+            .env_remove("GANDR_SECRET_FAR")
+            .env("XDG_CONFIG_HOME", &unconfigured);
+        for &(name, value) in variables {
+            command.env(name, value);
+        }
+        command
+    };
+    let mut host = hosting(&[])
+        .arg("--secrets")
+        .arg(&secrets)
+        .arg(&model)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the host starts");
+    let mut first = String::new();
+    let read_first = BufReader::new(host.stderr.take().expect("the host's standard error"))
+        .read_line(&mut first);
+    host.kill().expect("the bound host stops");
+    let _ended = host.wait();
+    read_first.expect("the host's first line reads");
+    let first = first.trim_end();
+    let peer = Peer::new(key).at(socket).to_string();
+    assert!(
+        first == peer || first.starts_with(&format!("{peer}@")),
+        "a host given the corpus secrets model binds the site's peer: {first}"
+    );
+    let refused = |variables: &[(&str, &str)]| {
+        let output = hosting(variables)
+            .arg(&model)
+            .output()
+            .expect("the refused host runs");
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    let (code, refusal) = refused(&[("GANDR_SECRET_FAR", SERVER_SECRET)]);
     let proving = Secret::from_str(SERVER_SECRET)
         .expect("the secret is hex")
         .node_id()
         .to_string();
     assert!(
-        code == Some(2_i32) && refusal.contains(&key.to_string()) && refusal.contains(&proving),
-        "a host whose secret proves another key than its site's never binds, naming both: \
-         {refusal}"
+        code == Some(2_i32)
+            && refusal.contains(&key.to_string())
+            && refusal.contains(&proving)
+            && refusal.contains("`GANDR_SECRET_FAR`"),
+        "a host whose secret proves another key than its site's never binds, naming both and \
+         the variable: {refusal}"
+    );
+    let (code, refusal) = refused(&[]);
+    assert!(
+        code == Some(2_i32)
+            && refusal.contains("no secret is given")
+            && refusal.contains("`GANDR_SECRET_FAR`"),
+        "a host given no secret never binds, naming the variable: {refusal}"
+    );
+    let (code, refusal) = refused(&[("GANDR_SECRET_FAR", "hunter2")]);
+    assert!(
+        code == Some(2_i32) && refusal.contains("spells no key") && !refusal.contains("hunter2"),
+        "a secret spelling no key is refused without being spelled: {refusal}"
+    );
+    let (code, refusal) = refused(&[("GANDR_NET_SECRET", HOST_SECRET)]);
+    assert!(
+        code == Some(2_i32) && refusal.contains("`--net-secret`") && refusal.contains("`--site`"),
+        "a network secret beside a site is refused, naming both: {refusal}"
     );
 }

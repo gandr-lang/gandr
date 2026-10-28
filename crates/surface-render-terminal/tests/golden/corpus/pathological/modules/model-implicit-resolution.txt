@@ -1,16 +1,16 @@
-error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits; supply one as `stepped[s = …](…)`
+error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at `Integer`; supply one as `stepped[s = …](…)`
    ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:19:31
    │
 19 │ def nothingYet() -> Integer { stepped(4) }
-   │                               ━━━━━━━━━━ a model implicit no module answers
+   │                               ━━━━━━━━━━ a model implicit no module answers: found `Integer`
    │
    ╰ note: `nothingYet` is refused with ModelUnanswered, as its expectation states
 
-error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at the types its arguments force: `Up` and `Tens` do not; supply one as `stepped[s = …](…)`
+error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at `String`: `Up` and `Tens` do not; supply one as `stepped[s = …](…)`
    ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:45:28
    │
 45 │ def textual() -> Integer { stepped("four") }
-   │                            ━━━━━━━━━━━━━━━ a model implicit no module answers
+   │                            ━━━━━━━━━━━━━━━ a model implicit no module answers: found `String`
    │
    ╰ note: `textual` is refused with ModelUnanswered, as its expectation states
 
