@@ -2273,19 +2273,19 @@ epics=0
 while read -r entry; do
   epic=$(jq -r .epic <<< "$entry")
   set_now=$(deps_blocked_by "$repo" "$epic" | jq -c '[.[].number]')
+  set=$set_now
   added=0
   for member in $(jq -r --argjson set "$set_now" '.members[] | select(IN($set[]) | not)' <<< "$entry"); do
-    if [[ ${usage_dry_run:-false} == true ]]; then
-      added=$((added + 1))
-    elif deps_set_block "$repo" "$epic" "$member" > /dev/null 2>&1; then
-      added=$((added + 1))
-    else
-      printf '#%s: GitHub refused #%s as a blocked-by dependency\n' "$epic" "$member"
+    if [[ ${usage_dry_run:-false} != true ]] && ! why=$(deps_set_block "$repo" "$epic" "$member" 2>&1 > /dev/null); then
+      printf '#%s: GitHub refused #%s as a blocked-by dependency: %s\n' "$epic" "$member" "$(awk 'NF { line = $0 } END { print line }' <<< "$why")"
       refused=$((refused + 1))
+      continue
     fi
+    added=$((added + 1))
+    set=$(jq -c --argjson n "$member" '. + [$n]' <<< "$set")
   done
-  read -r open total < <(jq -r --argjson set "$set_now" --argjson states "$states" \
-    '(.members + $set | unique) as $all | "\([$all[] | select($states[tostring] == "open")] | length) \($all | length)"' <<< "$entry")
+  read -r open total < <(jq -r --argjson states "$states" \
+    '"\([.[] | select($states[tostring] == "open")] | length) \(length)"' <<< "$set")
   printf '#%s: %s %s; %s open of %s blocked-by\n' "$epic" "$([[ ${usage_dry_run:-false} == true ]] && echo 'would add' || echo added)" "$added" "$open" "$total"
   epics=$((epics + 1))
 done < <(jq -c '.[]' <<< "$plan")

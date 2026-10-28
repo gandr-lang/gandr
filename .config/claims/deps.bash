@@ -101,7 +101,7 @@ deps_block() {
 # Set $2 blocked by $3, which a read has found it is not; prints `set #2
 # blocked by #3`.
 deps_set_block() {
-  gh api -X POST "repos/$1/issues/$2/dependencies/blocked_by" -F issue_id="$(deps_id "$1" "$3")" > /dev/null
+  gh api -X POST "repos/$1/issues/$2/dependencies/blocked_by" -F issue_id="$(deps_id "$1" "$3")" > /dev/null || return
   printf 'set #%s blocked by #%s\n' "$2" "$3"
 }
 
