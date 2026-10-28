@@ -2825,6 +2825,11 @@ INSERT INTO purpose VALUES('surface-lsp','server::Server','struct','One connecti
 INSERT INTO purpose VALUES('surface-lsp','server::Settled','struct','What settling a connection''s ended judgements and admissions produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Workspace','struct','What every connection to one server shares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::serve','function','Serve the protocol over `input` and `output` until the session ends.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','session_trace::Divergence','struct','Where a replay parted from its trace, and how.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','session_trace::Parted','enum','How a replay parted from its trace at a line.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','session_trace::Replayed','struct','How much of a trace a replay met.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','session_trace::TraceLine','struct','A line of a trace, counted from one.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','session_trace::replay','function','Hold a fresh connection to a session''s recorded trace, parting at the first line whose answer it does not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::ResultId','struct','What names a full answer to a later request that holds it: for a token stream, the hexadecimal BLAKE3 digest of its integers, each in little-endian bytes; for any other answer, of its JSON text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::TOKEN_MODIFIERS','constant','The advertised token modifiers, in the order a token''s modifier bits index.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::TOKEN_TYPES','constant','The advertised token types, in the order a token''s type integer indexes: the standard types, then `unresolvedReference`.',NULL,'fits','sound',NULL);

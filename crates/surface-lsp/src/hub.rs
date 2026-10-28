@@ -118,6 +118,7 @@ use crate::server::Peer;
 use crate::server::Served;
 use crate::server::Server;
 use crate::server::Workspace;
+use crate::session_trace::SessionTrace;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::read_frame;
@@ -434,12 +435,14 @@ fn connection<Log>(
         })
     });
     let mut server = Server::new(peer);
+    let mut trace = SessionTrace::asked();
     let inbox = Inbox::default();
     let changes = inbox.changes();
     let mut admissions = Admissions::new(pool, inbox.changes());
     lock(workspace).hear_edits(peer, inbox.changes());
     if writer.is_ok() {
         let _ended = paced(&mut reading, inbox, |met, deadlines| {
+            trace.met(&met, &mut *lock(log));
             let mut held = lock(workspace);
             let (reported, messages, flow) = match met {
                 Met::Closed => {
@@ -454,13 +457,13 @@ fn connection<Log>(
                 },
                 Met::Quiet(uri) => {
                     for message in server.release(&mut held, &uri) {
-                        drop(outbox.send(message));
+                        sent(&outbox, &mut trace, message);
                     }
                     return Ok(ControlFlow::Continue(()));
                 },
                 Met::Proposed => {
                     for message in server.proposed_elsewhere(&held) {
-                        drop(outbox.send(message));
+                        sent(&outbox, &mut trace, message);
                     }
                     return Ok(ControlFlow::Continue(()));
                 },
@@ -477,17 +480,17 @@ fn connection<Log>(
                     }
                     drop(held);
                     for message in settled.messages {
-                        drop(outbox.send(message));
+                        sent(&outbox, &mut trace, message);
                     }
                     deadlines.note(&settled.judged, server.quiet(), Instant::now());
                     deadlines.settled(&settled.log);
-                    logged(&server, &settled.log, (log, &outbox));
+                    logged(&server, &settled.log, (log, &outbox, &mut trace));
                     return Ok(ControlFlow::Continue(()));
                 },
                 Met::Changed(paths) => {
                     let reported = server.reported_on_disk(&held, &paths);
                     for message in reported.begin {
-                        drop(outbox.send(message));
+                        sent(&outbox, &mut trace, message);
                     }
                     server.changed_on_disk(&mut held, &paths);
                     (reported.end, Vec::new(), Flow::Continue)
@@ -495,7 +498,7 @@ fn connection<Log>(
                 Met::Edited(paths) => {
                     let reported = server.reported_elsewhere(&held, &paths);
                     for message in reported.begin {
-                        drop(outbox.send(message));
+                        sent(&outbox, &mut trace, message);
                     }
                     server.edited_elsewhere(&mut held, &paths);
                     (reported.end, Vec::new(), Flow::Continue)
@@ -503,7 +506,7 @@ fn connection<Log>(
                 Met::Frame { message, later } => {
                     let reported = server.reported(&held, &message);
                     for message in reported.begin {
-                        drop(outbox.send(message));
+                        sent(&outbox, &mut trace, message);
                     }
                     let outcome = server.answer(&mut held, message, later);
                     (reported.end, outcome.messages, outcome.flow)
@@ -517,14 +520,14 @@ fn connection<Log>(
                 held.watched_on_disk(watched);
             }
             for message in messages {
-                drop(outbox.send(message));
+                sent(&outbox, &mut trace, message);
             }
             let now = server.admit(&mut held, &mut admissions);
             for message in admissions.ended(reported) {
-                drop(outbox.send(message));
+                sent(&outbox, &mut trace, message);
             }
             drop(held);
-            logged(&server, &now, (log, &outbox));
+            logged(&server, &now, (log, &outbox, &mut trace));
             Ok(match flow {
                 Flow::Exit(_) => {
                     let settled =
@@ -557,13 +560,13 @@ fn connection<Log>(
 }
 
 /// Write `lines` to `log`, and send the trace of them `server`'s client asked
-/// for through `outbox`.
+/// for through `outbox`, noting each in `trace`.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each line is written to `log` with a line terminator, a line
 ///   `log` refuses dropped, then each trace message `server` makes of them is
-///   sent, a message the closed writer refuses dropped.
+///   sent as [`sent`] states.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the log and the writer are opaque.
@@ -574,7 +577,7 @@ fn connection<Log>(
 fn logged<Log>(
     server: &Server,
     lines: &[Logged],
-    (log, outbox): (&Mutex<Log>, &Sender<Outgoing>),
+    (log, outbox, trace): (&Mutex<Log>, &Sender<Outgoing>, &mut SessionTrace),
 ) where
     Log: Write,
 {
@@ -584,8 +587,23 @@ fn logged<Log>(
     }
     drop(written);
     for message in server.traced(lines) {
-        drop(outbox.send(message));
+        sent(outbox, trace, message);
     }
+}
+
+/// Note `message` in `trace`, then send it through `outbox`, a message the
+/// closed writer refuses dropped.
+///
+/// # Specification
+/// trivial.
+fn sent(
+    outbox: &Sender<Outgoing>,
+    trace: &mut SessionTrace,
+    message: Outgoing,
+)
+{
+    trace.wrote(&message);
+    drop(outbox.send(message));
 }
 
 /// Carry frames between a client and the hub at the other end of `hub`:

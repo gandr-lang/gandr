@@ -328,6 +328,7 @@ use crate::saved::Saved;
 use crate::search::Declared;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
+use crate::session_trace::SessionTrace;
 use crate::signature::Signatures;
 use crate::signature::help;
 use crate::sweep::Seen;
@@ -8958,34 +8959,126 @@ pub fn serve<Input, Output, Log>(
     input: &mut Input,
     output: &mut Output,
     log: &mut Log,
-    (mut workspace, pool): (Workspace, &Pool),
+    (workspace, pool): (Workspace, &Pool),
 ) -> Result<Served, TransportFault>
 where
     Input: BufRead + Send,
     Output: Write,
     Log: Write,
 {
-    let mut server = Server::default();
     let inbox = Inbox::default();
-    let mut admissions = Admissions::new(pool, inbox.changes());
+    let mut drive = Drive::new(workspace, pool, inbox.changes(), SessionTrace::asked());
     paced(input, inbox, |met, deadlines| {
+        drive.met(met, deadlines, (&mut *output, &mut *log))
+    })
+}
+
+/// One connection as [`serve`] drives it: its [`Server`], the workspace it
+/// serves, the judgements and admissions it starts, and the trace its client
+/// asks for.
+///
+/// # Specification
+/// - executable: none — the connection is opaque; [`Drive::met`] carries the
+///   clauses.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every served session and every replay drives one.
+/// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
+/// - witness: `tests::replay::a_recorded_scene_replays_against_a_fresh_server`
+pub struct Drive<'pool>
+{
+    /// The connection.
+    server: Server,
+    /// The workspace it serves.
+    workspace: Workspace,
+    /// The judgements and admissions it started.
+    admissions: Admissions<'pool>,
+    /// The trace its client asked for.
+    trace: SessionTrace,
+}
+
+impl<'pool> Drive<'pool>
+{
+    /// A connection waiting for `initialize` over `workspace`, whose
+    /// judgements and admissions run on `pool`, each that ends waking its loop
+    /// through `waking`, and which writes `trace`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn new(
+        workspace: Workspace,
+        pool: &'pool Pool,
+        waking: Changes,
+        trace: SessionTrace,
+    ) -> Self
+    {
+        Self {
+            server: Server::default(),
+            workspace,
+            admissions: Admissions::new(pool, waking),
+            trace,
+        }
+    }
+
+    /// Handle what the loop met, writing each message the connection
+    /// produces to `output` and each line to `log`, and say whether the
+    /// session goes on.
+    ///
+    /// # Specification
+    /// - requires: `met` is what the connection's loop meets next.
+    /// - ensures: as [`serve`] states of the thing met, the trace noting it
+    ///   first and each message after it is written, as [`SessionTrace::met`]
+    ///   and [`SessionTrace::wrote`] state; the session ends at `exit` and at
+    ///   the stream's close.
+    /// - provides: the one drive of a connection, which [`serve`] and a replay
+    ///   share.
+    /// - fails: the first [`TransportFault`] of `output`, and
+    ///   [`TransportFault::Encode`] for a message that does not encode.
+    /// - panics: resumes a judgement's or an admission's panic.
+    /// - executable: none — the streams are opaque.
+    ///
+    /// # Errors
+    /// [`TransportFault`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`serve`]'s witnesses, and a replay meets each
+    ///   thing a trace recorded here.
+    /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
+    /// - witness: `tests::replay::a_recorded_scene_replays_against_a_fresh_server`
+    pub fn met<Output, Log>(
+        &mut self,
+        met: Met<'_>,
+        deadlines: &mut Deadlines,
+        (output, log): (&mut Output, &mut Log),
+    ) -> Result<ControlFlow<Served>, TransportFault>
+    where
+        Output: Write,
+        Log: Write,
+    {
+        let Self {
+            ref mut server,
+            ref mut workspace,
+            ref mut admissions,
+            ref mut trace,
+        } = *self;
+        trace.met(&met, log);
         let (message, later) = match met {
             Met::Closed => {
-                let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+                let settled = server.admitted(workspace, admissions, Awaiting::All);
                 for line in &settled.log {
                     let _unlogged = writeln!(log, "{line}");
                 }
                 return Ok(ControlFlow::Break(server.closed()));
             },
             Met::Quiet(uri) => {
-                for message in &server.release(&mut workspace, &uri) {
-                    written(output, message)?;
+                for message in &server.release(workspace, &uri) {
+                    written((output, trace), message)?;
                 }
                 return Ok(ControlFlow::Continue(()));
             },
             Met::Admitted => {
-                let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::Ended);
-                wrote_settled((output, log), &server, deadlines, &settled)?;
+                let settled = server.admitted(workspace, admissions, Awaiting::Ended);
+                wrote_settled((output, log, trace), server, deadlines, &settled)?;
                 return Ok(ControlFlow::Continue(()));
             },
             // No watch and no other connection holds this loop's inbox.
@@ -8994,22 +9087,22 @@ where
             },
             Met::Frame { message, later } => (message, later),
         };
-        let reported = server.reported(&workspace, &message);
+        let reported = server.reported(workspace, &message);
         for message in &reported.begin {
-            written(output, message)?;
+            written((output, trace), message)?;
         }
-        let outcome = server.answer(&mut workspace, message, later);
+        let outcome = server.answer(workspace, message, later);
         for message in &outcome.messages {
-            written(output, message)?;
+            written((output, trace), message)?;
         }
-        let now = server.admit(&mut workspace, &mut admissions);
+        let now = server.admit(workspace, admissions);
         for message in &admissions.ended(reported.end) {
-            written(output, message)?;
+            written((output, trace), message)?;
         }
-        logged((output, log), &server, &now)?;
+        logged((output, log, trace), server, &now)?;
         Ok(match outcome.flow {
             Flow::Exit(served) => {
-                let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+                let settled = server.admitted(workspace, admissions, Awaiting::All);
                 for line in &settled.log {
                     let _unlogged = writeln!(log, "{line}");
                 }
@@ -9017,17 +9110,17 @@ where
             },
             Flow::Continue => ControlFlow::Continue(()),
         })
-    })
+    }
 }
 
 /// Write `lines` to `log`, and the trace of them `server`'s client asked for
-/// to `output`.
+/// to `output`, noting each in `trace`.
 ///
 /// # Specification
 /// - requires: nothing of the streams.
 /// - ensures: each line is written to `log` with a line terminator, a line
 ///   `log` refuses dropped, then each trace message `server` makes of them as
-///   one frame.
+///   [`written()`] states.
 /// - fails: the first fault of `output`.
 /// - panics: none.
 /// - executable: none — the streams are opaque.
@@ -9039,7 +9132,7 @@ where
 /// - hypothesis: L2 — every line a served session logs passes here.
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 fn logged<Output, Log>(
-    (output, log): (&mut Output, &mut Log),
+    (output, log, trace): (&mut Output, &mut Log, &mut SessionTrace),
     server: &Server,
     lines: &[Logged],
 ) -> Result<(), TransportFault>
@@ -9051,7 +9144,7 @@ where
         let _unlogged = writeln!(log, "{line}");
     }
     for message in &server.traced(lines) {
-        written(output, message)?;
+        written((output, trace), message)?;
     }
     Ok(())
 }
@@ -9063,7 +9156,7 @@ where
 ///
 /// # Specification
 /// - requires: nothing of the streams.
-/// - ensures: each message as one frame, in order; the deadlines as
+/// - ensures: each message as [`written()`] states, in order; the deadlines as
 ///   [`Deadlines::note`] states of the judged lines at the server's quiet
 ///   interval from now, then as [`Deadlines::settled`] states of the lines;
 ///   then the lines as [`logged`] states.
@@ -9080,7 +9173,7 @@ where
 /// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
 /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 fn wrote_settled<Output, Log>(
-    (output, log): (&mut Output, &mut Log),
+    (output, log, trace): (&mut Output, &mut Log, &mut SessionTrace),
     server: &Server,
     deadlines: &mut Deadlines,
     settled: &Settled,
@@ -9090,20 +9183,21 @@ where
     Log: Write,
 {
     for message in &settled.messages {
-        written(output, message)?;
+        written((output, trace), message)?;
     }
     deadlines.note(&settled.judged, server.quiet(), Instant::now());
     deadlines.settled(&settled.log);
-    logged((output, log), server, &settled.log)
+    logged((output, log, trace), server, &settled.log)
 }
 
-/// Write `message` to `output` as one frame.
+/// Write `message` to `output` as one frame, then note it in `trace`.
 ///
 /// # Specification
 /// - requires: nothing of the stream.
-/// - ensures: the message's JSON encoding is written as one frame.
+/// - ensures: the message's JSON encoding is written as one frame, then noted
+///   as [`SessionTrace::wrote`] states.
 /// - fails: [`TransportFault::Encode`] for a message that does not encode, and
-///   the stream's fault for a frame it refuses.
+///   the stream's fault for a frame it refuses, which notes nothing.
 /// - panics: none.
 /// - executable: none — the stream is opaque.
 ///
@@ -9114,14 +9208,16 @@ where
 /// - hypothesis: L2 — every frame a served session writes passes here.
 /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 fn written<Output>(
-    output: &mut Output,
+    (output, trace): (&mut Output, &mut SessionTrace),
     message: &Outgoing,
 ) -> Result<(), TransportFault>
 where
     Output: Write,
 {
     let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
-    write_frame(output, &Body::from(encoded))
+    write_frame(output, &Body::from(encoded))?;
+    trace.wrote(message);
+    Ok(())
 }
 
 #[cfg(test)]

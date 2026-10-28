@@ -41,7 +41,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Semantic tokens for the whole document, as edits of the last answer, and for a range, each use typed by its referent; `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request withdrawn by a `$/cancelRequest`, or by a change of the document it reads, before it is handled is answered without being run ([`quiet`](src/quiet.rs)); one about a document being judged waits for its publication.
-- Progress and trace: an open and a recheck of changed files reported to a client showing progress; each log line sent as `$/logTrace` at the client's level.
+- Progress and trace: an open and a recheck of changed files reported to a client showing progress; each log line sent as `$/logTrace` at the client's level; a session's messages traced to the file `sessionTrace` names, which `replay` holds a fresh server to.
 - Signature help: the head the called name was written with, its documentation, and the argument at the cursor.
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a named tab stop.
 - The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node to the whole document.
@@ -71,7 +71,7 @@ gandr serve --linger-ms 600000
 
 `gandr lsp --capabilities` prints the `initialize` result as one line and exits; `gandr lsp` carries a session on standard input and output to the current directory's hub until `exit`, starting one when none runs; `gandr lsp --standalone` serves the session in its own process; `gandr serve` runs the hub itself, here lingering ten minutes after its last client. The crate-level example serves a session from `initialize` to `exit` in memory.
 
-The crate's tests run with `cargo nextest run -p gandr-surface-lsp`; the crate-level example runs with `cargo test -p gandr-surface-lsp --doc`.
+Tests: `cargo nextest run -p gandr-surface-lsp`; the example: `cargo test -p gandr-surface-lsp --doc`.
 
 ## Where the detail lives
 
