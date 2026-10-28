@@ -2064,6 +2064,10 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::ShownFeature'
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum','Where a feature stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Manifold','struct','The binding of a program''s worlds onto sites, as its file''s `Manifold` model and `placements` state it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Site','struct','One place a world runs at, as its file''s `Site` model states it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Stated','enum','A field a site''s or a manifold''s file states.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Undeployed','enum','Why a site''s or a manifold''s file deploys nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Absence','enum','Whether reconciling a held file writes it where none stands, or leaves none because the model states nothing it would record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Body','struct','The body of a file the checker wrote, below its digest header.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Differing','enum','What reconciling does with a file the checker wrote whose text is not the render: keep it or rewrite it.',NULL,'fits','sound',NULL);

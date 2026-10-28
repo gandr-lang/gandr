@@ -596,9 +596,9 @@ impl Package
             package: self.root.clone(),
             why,
         };
-        let came = match ran_alone(&self.library, SurfaceName::from(DEPENDENCIES)) {
-            Ok(Maybe::Present(came)) => came,
-            Ok(Maybe::Absent(declaration_name::Absent::Undeclared)) => return Ok(Vec::new()),
+        let came = match ran_alone(&self.library, [SurfaceName::from(DEPENDENCIES)]) {
+            Ok([Maybe::Present(came)]) => came,
+            Ok([Maybe::Absent(declaration_name::Absent::Undeclared)]) => return Ok(Vec::new()),
             Err(Unran::Unread { message }) => return Err(undeclared(message)),
             Err(Unran::Refused { why }) => return Err(undeclared(why)),
         };

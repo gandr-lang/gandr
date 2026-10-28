@@ -540,8 +540,9 @@ impl Script
     ///   source is laid after the prelude alone, composed under its root, its
     ///   step built as a walk builds it, and [`execute`] runs it, its entry
     ///   given the script's arguments, its network and its bindings keyed by
-    ///   the laid text; a script that hosts is [`host`]ed instead, and one with
-    ///   no network or bindings hosts nothing.
+    ///   the laid text; a script that hosts is [`host`]ed instead, its worlds
+    ///   those its bindings bind to its key, or, with no bindings, every world
+    ///   its entry may migrate to; one with no network hosts nothing.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
@@ -606,10 +607,25 @@ impl Script
             });
         match composed {
             Ok(mut composed) => {
-                let worlds = self.bindings.as_ref().map(|bindings| Worlds {
-                    bindings,
-                    program: ProgramKey::of(source),
-                });
+                // A host given no bindings hosts every world its entry may
+                // migrate to.
+                let here =
+                    if let (&None, Some(_), Some(net), &Composed::Settled { ref program, .. }) =
+                        (&self.bindings, self.hosting, self.net.as_deref(), &composed)
+                    {
+                        Some(program.here(net.node_id()))
+                    }
+                    else {
+                        None
+                    };
+                let worlds = self
+                    .bindings
+                    .as_ref()
+                    .or(here.as_ref())
+                    .map(|bindings| Worlds {
+                        bindings,
+                        program: ProgramKey::of(source),
+                    });
                 let net = self.net.as_deref_mut();
                 let ran = match (self.hosting, net, worlds) {
                     (Some(migrations), Some(net), Some(worlds)) => {

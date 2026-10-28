@@ -376,7 +376,7 @@ INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','kerne
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package','background','789bc36ba84f20d6634372c6b1f1a66e5c430e92','2026-10-27','20e46b8104c5c27d7eafb30d517d4929d769231e');
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::export','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','workspace','background','6a4b391e83941ecd2b396e4f4ae81d78988b9dad','2026-10-27','d11437f6c12b0561f8df34658b70aa16c65f4e09');
+INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','workspace','background','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','ec86c18a244f7869da25774f1cd9e8c036e54687');
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-driver','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','5630fb4598d9bfdaafb4ddf50a51da4d99bc1bb6','2026-10-27','e18d7dd7526358fee7a1b74909f23cbf4c6580e3');
@@ -384,12 +384,13 @@ INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runti
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','world','lineage','d227718fbc539a3db230514cb50abf203d886502','2026-10-28','6db0dd5cfa53eba7b76907725b7af86fe7e58687');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-net','chunks','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-net','worlds','lineage','daeb019c78602ef2ece79a9d2b4eddc95b845090','2026-10-28','d4e403dc44a1660c699c0eeccee846f3425d6c63');
-INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-dispatcher','evaluate::worlds','lineage','160a05347739d1395d5d374fbcbd514621bf01e7','2026-10-28','4812f5881deefda41b2e45fb5ecc6fd30646d7dc');
-INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-driver','','background','9ef81b174827f51bc3aad8056c781ee7314e7912','2026-10-28','5444238eed504abcf239d6f8f79836933f78a05f');
+INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-dispatcher','evaluate::worlds','lineage','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','0cbd81d6bac8dbfd0e75506fa1358690e005e035');
+INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-driver','','background','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','d652b81bcfb6c8aeee18777b58d0ca2f3aa8d077');
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::export','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','runtime-emitter','','background','d227718fbc539a3db230514cb50abf203d886502','2026-10-28','40b599e4bc409cd6a2c651f62f3551969426e4ae');
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-dispatcher','evaluate','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-dispatcher','manifold','lineage','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','386c0110f5b3bf28253d5ca2bc0ea9a438558b61');
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-driver','','background',NULL,NULL,NULL);
 COMMIT;

@@ -514,6 +514,19 @@ impl Endpoint
         &self.sockets
     }
 
+    /// This endpoint as a dialer names it: its key at each socket it bound.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn peer(&self) -> Peer
+    {
+        self.sockets
+            .iter()
+            .fold(Peer::new(self.node), |peer, &socket| peer.at(socket))
+    }
+
     /// Dial `peer` and open a stream to it.
     ///
     /// # Specification

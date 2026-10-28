@@ -31,7 +31,9 @@
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
 //! | `gandr run --world <world>=<key>@<ip:port> <file>` | as `run`, each migration to a world bound to another key shipped to it and its answer read back; repeatable, one per world | as `run`, and an entry that may migrate to a world no `--world` binds |
-//! | `gandr host --world <world>=<key>@<ip:port> --migrations <n> <file>` | a line per migration a `run` of the same source ships here, `ran a migration at <world>, fetching <n> chunks` or `refused a migration at <world>: <reason>` | a network that fails before `n` are answered, or a source that never reached the machine |
+//! | `gandr run --manifold <manifold> <file>` | as `run --world`, each world bound to the site the manifold's `placements` place it at | as `run --world`, a manifold that does not read or deploys another source, or `--world` given beside it |
+//! | `gandr host --world <world>=<key>@<ip:port> --migrations <n> <file>` | its peer spelling, `<key>@<ip:port>`, on standard error once bound; a line per migration a `run` of the same source ships here, `ran a migration at <world>, fetching <n> chunks` or `refused a migration at <world>: <reason>` | a network that fails before `n` are answered, or a source that never reached the machine |
+//! | `gandr host --site <site> [--manifold <manifold>] <file>` | as `host --world`, bound at the site's sockets under its key, hosting the worlds the manifold places at the site, or, with no manifold, every world the entry may migrate to | as `host --world`, a site or manifold that does not read, a secret that proves another key than the site's, or `--net-bind` or `--world` given beside the file it desugars from |
 //! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
 //! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
 //! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
@@ -192,7 +194,10 @@
 //!   world it runs at to that process.
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
 //!   ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local
-//!   artifact, the endpoint of a one-role choreography.
+//!   artifact, the endpoint of a one-role choreography; and §
+//!   compilation-recipe-refinements — a deployment binds worlds to sites and
+//!   never enters the artifact's identity, so `--manifold` and `--site` desugar
+//!   to `--world` and `--net-bind`.
 //! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a dependent
 //!   fetches each path dependency's export from the store by its address, the
 //!   coordinate only naming where to check it first (`depended`; §
@@ -342,6 +347,7 @@ use gandr_surface_dispatcher::Lock;
 use gandr_surface_dispatcher::LockFault;
 use gandr_surface_dispatcher::Manifest;
 use gandr_surface_dispatcher::ManifestFault;
+use gandr_surface_dispatcher::Manifold;
 use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
@@ -358,6 +364,7 @@ use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Running;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
+use gandr_surface_dispatcher::Site;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Standing;
@@ -365,6 +372,7 @@ use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Unaddressed;
+use gandr_surface_dispatcher::Undeployed;
 use gandr_surface_dispatcher::Unexported;
 use gandr_surface_dispatcher::Unmanifested;
 use gandr_surface_dispatcher::Unpathed;
@@ -639,12 +647,12 @@ enum Command
     /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`, and
     /// `Console.print(s)` writes `s` as a line of standard output. A `Net`
     /// operation binds the program's network on first use, as the `--net-*`
-    /// flags say. A migration runs in this process, or, when `--world` binds
-    /// any world, where those bindings bind its world; an entry that may
-    /// migrate to a world no `--world` binds never runs. Exits with that
+    /// flags say. A migration runs in this process, or, when `--world` or a
+    /// manifold binds any world, where those bindings bind its world; an entry
+    /// that may migrate to a world nothing binds never runs. Exits with that
     /// code, its low byte; otherwise 1 when the run is blamed on a goal or
-    /// stops short of one, and 2 when the source never reaches the machine or
-    /// declares no `main`.
+    /// stops short of one, and 2 when the source never reaches the machine,
+    /// declares no `main`, or is not the program its manifold deploys.
     Run
     {
         /// The source file to run.
@@ -656,6 +664,10 @@ enum Command
         /// repeated, one per world.
         #[arg(long = "world", value_name = "WORLD=KEY@IP:PORT")]
         worlds: Vec<WorldBinding>,
+        /// A manifold's file, binding the program's worlds to sites as
+        /// `--world` does, in place of it.
+        #[arg(long, value_name = "FILE")]
+        manifold: Option<PathBuf>,
         /// Where the program's network binds and what key it proves.
         // Boxed: a key outweighs every other verb's flags.
         #[command(flatten)]
@@ -663,12 +675,15 @@ enum Command
     },
     /// Host the worlds of a source: check it as `run` does, then run each
     /// migration another `gandr run` of the same source ships to a world its
-    /// bindings bind to this process's key.
+    /// bindings bind to this process's key, or, with none, to any world its
+    /// entry may migrate to.
     ///
-    /// Prints `ran a migration at <world>, fetching <n> chunks` for each it
-    /// runs, and `refused a migration at <world>: <reason>` for each it
-    /// refuses. Exits 0 when it has answered `--migrations`, 1 when the
-    /// network fails first, and 2 when the source never reaches the machine.
+    /// Prints its peer spelling, `<key>@<ip:port>`, on standard error once
+    /// bound. Prints `ran a migration at <world>, fetching <n> chunks` for
+    /// each migration it runs, and `refused a migration at <world>: <reason>`
+    /// for each it refuses. Exits 0 when it has answered `--migrations`, 1
+    /// when the network fails first, and 2 when the source never reaches the
+    /// machine, or its site or manifold refuses.
     Host
     {
         /// The source file whose worlds are hosted.
@@ -676,8 +691,20 @@ enum Command
         /// A world bound to the host it runs at, as `<world>=<key>@<ip:port>`;
         /// repeated, one per world. Each bound to this process's key is
         /// hosted here.
-        #[arg(long = "world", value_name = "WORLD=KEY@IP:PORT", required = true)]
+        #[arg(
+            long = "world",
+            value_name = "WORLD=KEY@IP:PORT",
+            required_unless_present_any = ["site", "manifold"]
+        )]
         worlds: Vec<WorldBinding>,
+        /// A site's file: the key this process proves, which its secret must
+        /// prove, and the sockets it binds, in place of `--net-bind`.
+        #[arg(long, value_name = "FILE")]
+        site: Option<PathBuf>,
+        /// A manifold's file, binding the program's worlds to sites as
+        /// `--world` does, in place of it.
+        #[arg(long, value_name = "FILE")]
+        manifold: Option<PathBuf>,
         /// How many migrations to answer before exiting.
         #[arg(long, value_name = "COUNT", default_value = "1")]
         migrations: NonZeroUsize,
@@ -906,10 +933,118 @@ struct Hosting
 {
     /// The network, bound on first use.
     network: Option<Binding>,
-    /// The world bindings, when `--world` binds a world.
+    /// The world bindings, when `--world` or a manifold binds a world.
     bindings: Option<WorldBindings>,
     /// How many migrations `host` answers.
     migrations: Option<MigrationCount>,
+}
+
+/// A binding given twice, once by a flag and once by the file it desugars
+/// from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Doubled
+{
+    /// `--world` and `--manifold` both bind the program's worlds.
+    Worlds,
+    /// `--net-bind` and `--site` both say where the host binds.
+    Sockets,
+}
+
+impl core::fmt::Display for Doubled
+{
+    /// Both spellings given, and which to keep.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Worlds => write!(
+                f,
+                "`--world` and `--manifold` both bind the program's worlds: `--world` is what a \
+                 manifold desugars to, so give one"
+            ),
+            Self::Sockets => write!(
+                f,
+                "`--net-bind` and `--site` both say where the host binds: `--net-bind` is what a \
+                 site desugars to, so give one"
+            ),
+        }
+    }
+}
+
+/// The binding the site at `file` makes, its key proven by the secret `net`
+/// gives.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the site read, the secret `net` gives — a fresh one when it gives
+///   none — proving the site's key, the binding at each of the site's sockets,
+///   finding peers by multicast DNS when it names none and as `net` says
+///   otherwise.
+/// - provides: the network `gandr host --site` binds.
+/// - fails: as [`Site::read`], and [`Undeployed::Unproven`] for a secret that
+///   proves another key.
+/// - panics: none.
+/// - executable: none — the clause reads the site's file again.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host given the corpus site and its secret serves the
+///   migration model at the site's socket, and one given another secret is
+///   refused naming both keys.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+fn sited(
+    file: &Path,
+    net: NetFlags,
+) -> Result<Binding, Undeployed>
+{
+    let site = Site::read(file)?;
+    let secret = net.secret.unwrap_or_else(Secret::generate);
+    site.proven(secret.node_id())?;
+    let binding = site
+        .sockets()
+        .iter()
+        .fold(Binding::new(secret), |binding, &socket| binding.at(socket));
+    Ok(match site.lookup() {
+        Lookup::Mdns => binding.lookup(Lookup::Mdns),
+        Lookup::Explicit => binding.lookup(net.lookup),
+    })
+}
+
+/// The manifold at `file`, once it is found to deploy the source at
+/// `program`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the manifold read and found to deploy `program`.
+/// - provides: the bindings `gandr run --manifold` and `gandr host --manifold`
+///   are given.
+/// - fails: as [`Manifold::read`] and [`Manifold::deploying`].
+/// - panics: none.
+/// - executable: none — the clause reads the manifold's file and the file
+///   system again.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus manifold deploys the migration model to the
+///   corpus site across two processes, and refuses a run of another source.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+fn manifolded(
+    file: &Path,
+    program: &Path,
+) -> Result<Manifold, Undeployed>
+{
+    let manifold = Manifold::read(file)?;
+    manifold.deploying(program)?;
+    Ok(manifold)
 }
 
 /// How much of each report `check` and `test` print.
@@ -1512,20 +1647,56 @@ fn main() -> ExitCode
             path,
             arguments,
             worlds,
+            manifold,
             net,
         }) => {
-            hosting.network = Some(Binding::from(*net));
-            hosting.bindings = (!worlds.is_empty()).then(|| WorldBindings::new(worlds));
+            if manifold.is_some() && !worlds.is_empty() {
+                return doubled(Doubled::Worlds);
+            }
+            let mut binding = Binding::from(*net);
+            hosting.bindings = match manifold {
+                Some(file) => match manifolded(&file, &path) {
+                    Ok(manifold) => {
+                        if manifold.lookup() == Lookup::Mdns {
+                            binding = binding.lookup(Lookup::Mdns);
+                        }
+                        Some(manifold.into_bindings())
+                    },
+                    Err(refused) => return undeployed(&refused),
+                },
+                None => (!worlds.is_empty()).then(|| WorldBindings::new(worlds)),
+            };
+            hosting.network = Some(binding);
             (Invocation::Run { path, arguments }, Verbosity::User)
         },
         Some(Command::Host {
             path,
             worlds,
+            site,
+            manifold,
             migrations,
             net,
         }) => {
-            hosting.network = Some(Binding::from(*net));
-            hosting.bindings = Some(WorldBindings::new(worlds));
+            if manifold.is_some() && !worlds.is_empty() {
+                return doubled(Doubled::Worlds);
+            }
+            if site.is_some() && net.bind.is_some() {
+                return doubled(Doubled::Sockets);
+            }
+            hosting.network = Some(match site {
+                Some(file) => match sited(&file, *net) {
+                    Ok(binding) => binding,
+                    Err(refused) => return undeployed(&refused),
+                },
+                None => Binding::from(*net),
+            });
+            hosting.bindings = match manifold {
+                Some(file) => match manifolded(&file, &path) {
+                    Ok(manifold) => Some(manifold.into_bindings()),
+                    Err(refused) => return undeployed(&refused),
+                },
+                None => (!worlds.is_empty()).then(|| WorldBindings::new(worlds)),
+            };
             hosting.migrations = Some(MigrationCount::from(migrations.get()));
             (
                 Invocation::Run {
@@ -2316,6 +2487,52 @@ fn unpathed(unpathed: &Unpathed) -> ExitCode
     ExitCode::from(FAULTED)
 }
 
+/// Refuse a `run` or a `host` whose site or manifold refuses.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr:` and why the file refused;
+///   exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of a deployment that binds nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run of another source than the corpus manifold deploys
+///   exits two before any source is read, naming both paths.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn undeployed(refused: &Undeployed) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = writeln!(stderr, "gandr: {refused}");
+    ExitCode::from(FAULTED)
+}
+
+/// Refuse a `run` or a `host` given one binding twice.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line on standard error, `gandr:` and both spellings given;
+///   exits `2`, a malformed invocation, whether or not the line could be
+///   written.
+/// - provides: the exit of a deployment spelled by both a flag and a file.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run given `--world` beside the corpus manifold exits
+///   two, naming both.
+/// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
+fn doubled(doubled: Doubled) -> ExitCode
+{
+    let mut stderr = std::io::stderr().lock();
+    let _written = writeln!(stderr, "gandr: {doubled}");
+    ExitCode::from(FAULTED)
+}
+
 /// Render `outcome` and choose the exit code.
 ///
 /// # Specification
@@ -2335,10 +2552,11 @@ fn unpathed(unpathed: &Unpathed) -> ExitCode
 ///   dependency's export's when that is worse. A script follows [`script`], its
 ///   entry's `Net` operations served on a network bound as `hosting` says, its
 ///   migrations sent where `hosting`'s bindings bind them, or its worlds served
-///   when `hosting` serves: what it prints goes to standard output, its
-///   diagnostics to standard error and its run status chooses the exit. A
-///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
-///   and a census [`cells`].
+///   when `hosting` serves, the network bound first and its peer spelling,
+///   `<key>@<ip:port>`, the first line on standard error: what it prints goes
+///   to standard output, its diagnostics to standard error and its run status
+///   chooses the exit. A staging follows [`stage`], a formatting [`fmt`], a
+///   ledger task [`ledger`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -2403,7 +2621,16 @@ fn render(
         ),
         Outcome::Script(mut runnable) => {
             if let Some(binding) = hosting.network {
-                runnable.network(Net::new(binding));
+                let mut net = Net::new(binding);
+                // A host binds now and names itself, so a runner can be told
+                // where it is; a binding refused here is refused again, and
+                // reported, at the host's first arrival.
+                if hosting.migrations.is_some()
+                    && let Ok(endpoint) = net.endpoint()
+                {
+                    writeln!(stderr, "{}", endpoint.peer())?;
+                }
+                runnable.network(net);
             }
             if let Some(bindings) = hosting.bindings {
                 runnable.bindings(bindings);
