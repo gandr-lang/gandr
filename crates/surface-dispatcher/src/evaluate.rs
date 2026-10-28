@@ -4773,6 +4773,191 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         }
     }
 
+    /// The constant `program` declares as `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn constant(
+        program: &Program<'_>,
+        name: &SurfaceName<'_>,
+    ) -> ConstantIndex
+    {
+        program
+            .declarations
+            .iter()
+            .find(|&(_, declared)| declared.name == *name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name")
+    }
+
+    /// A host that declines every operation offered to it.
+    #[derive(Debug)]
+    struct Declining;
+
+    impl gandr_runtime_emitter::HostHandler for Declining
+    {
+        type Abort = Infallible;
+
+        /// Decline the operation.
+        ///
+        /// # Specification
+        /// trivial.
+        fn handle(
+            &mut self,
+            _request: gandr_runtime_emitter::HostRequest<'_>,
+            _values: &mut gandr_runtime_emitter::HostValues<'_>,
+        ) -> gandr_runtime_emitter::HostReply<Infallible>
+        {
+            gandr_runtime_emitter::HostReply::Decline
+        }
+    }
+
+    /// The tree sum's two halves as one cut forked on the driver's pool, at
+    /// four threads and at one. The writer forces `right` over its own store.
+    /// The reader forces `left`, reads the writer's sum through the cell and
+    /// adds the two. On each tier the reader answers the sum of the
+    /// sequential schedule, and the writer's store keeps its half.
+    #[test]
+    fn a_cut_forked_on_the_drivers_pool_answers_as_the_sequential_schedule()
+    {
+        let source = tree_sum();
+        let mut program = program(source.as_str());
+        let both = forced(&mut program, &SurfaceName::from("both"));
+        let (left, right) = (
+            constant(&program, &SurfaceName::from("left")),
+            constant(&program, &SurfaceName::from("right")),
+        );
+        let mut terms = gandr_core_term::CoreArena::new();
+        let integer = terms.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let unit_type = terms.value_type_unit();
+        let cell = gandr_core_term::effect::EffectSig::new(gandr_runtime_emitter::CELL.into(), [
+            gandr_core_term::effect::EffectOp {
+                name: gandr_runtime_emitter::READ.into(),
+                payload: unit_type,
+                reply: integer,
+            },
+        ])
+        .expect("one operation");
+        let right = terms.value_constant(right);
+        let forced_right = terms.computation_force(right);
+        let suspended = terms.value_thunk(forced_right);
+        let writer = terms.computation_return(suspended);
+        let left = terms.value_constant(left);
+        let forced_left = terms.computation_force(left);
+        let unit = terms.value_unit();
+        let read = terms.computation_perform(cell, gandr_runtime_emitter::READ.into(), unit);
+        let add = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "add")
+            .expect("the prelude adds integers");
+        let operands = [
+            terms.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into()),
+            terms.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into()),
+        ];
+        let added = terms
+            .computation_primitive(add, gandr_core_term::primitive::Arguments::Binary(operands));
+        let then = terms.computation_bind(read, added);
+        let reader = terms.computation_bind(forced_left, then);
+        let mut provenance = gandr_core_sequent::Provenance::new();
+        let writer = gandr_core_sequent::focus_computation(
+            &terms,
+            writer,
+            &mut program.arena,
+            &mut provenance,
+        )
+        .expect("the writer focuses");
+        let reader = gandr_core_sequent::focus_computation(
+            &terms,
+            reader,
+            &mut program.arena,
+            &mut provenance,
+        )
+        .expect("the reader focuses");
+        let program = &program;
+        let fuel = Fuel::from(super::RUN_BUDGET);
+        let wide =
+            crate::pool::Pool::new(crate::width::Width::Threads(crate::width::Threads::from(
+                core::num::NonZeroUsize::new(4_usize).expect("four threads"),
+            )));
+        let serial = crate::pool::Pool::default();
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let mut whole = Store::new();
+            let sequential = gandr_runtime_emitter::evaluate_on(
+                tier,
+                &program.arena,
+                &program.definitions,
+                both,
+                fuel,
+                gandr_runtime_emitter::RunInputs::new(&mut whole),
+            );
+            let sequential = summed(&whole, &sequential);
+            assert_eq!(
+                sequential,
+                Some(Sum(2048_u64)),
+                "the sequential schedule sums both halves on {tier:?}"
+            );
+            for pool in [&wide, &serial] {
+                let mut written = Store::new();
+                let answered = gandr_runtime_emitter::evaluate_on(
+                    tier,
+                    &program.arena,
+                    &program.definitions,
+                    writer,
+                    fuel,
+                    gandr_runtime_emitter::RunInputs::new(&mut written),
+                );
+                let Ok(super::Outcome::Halted(thunk)) = answered
+                else {
+                    panic!("the writer's program answers on {tier:?}: {answered:?}");
+                };
+                let Some(&gandr_core_sequent::HeapValue::Thunk { body, environment }) =
+                    written.value(thunk)
+                else {
+                    panic!("the writer's program answers a thunk on {tier:?}");
+                };
+                let mut read_into = Store::new();
+                let forked = gandr_runtime_emitter::evaluate_cut_on(
+                    pool,
+                    tier,
+                    (&program.arena, &program.definitions),
+                    (
+                        gandr_runtime_emitter::Writer {
+                            body,
+                            environment,
+                            store: &mut written,
+                        },
+                        gandr_runtime_emitter::Reader {
+                            root: reader,
+                            store: &mut read_into,
+                            host: &mut Declining,
+                        },
+                    ),
+                    fuel,
+                );
+                assert_eq!(
+                    summed(&written, &forked.writer),
+                    Some(Sum(1024_u64)),
+                    "the writer sums its half on {tier:?} at {:?}",
+                    pool.width()
+                );
+                let read = forked.reader.map(|ended| match ended {
+                    gandr_runtime_emitter::HostOutcome::Completed(outcome) => outcome,
+                    gandr_runtime_emitter::HostOutcome::Aborted(never) => match never {},
+                });
+                assert_eq!(
+                    summed(&read_into, &read),
+                    sequential,
+                    "the reader answers the sequential schedule's sum on {tier:?} at {:?}",
+                    pool.width()
+                );
+            }
+        }
+    }
+
     /// The command a sweep answered for a command.
     ///
     /// # Specification

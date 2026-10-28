@@ -224,7 +224,7 @@ pub fn arrive(
 ///
 /// # Errors
 /// As [`commit`] and [`deref()`].
-fn cross(
+pub(crate) fn cross(
     from: &Store,
     value: HeapValueId,
     to: &mut Store,

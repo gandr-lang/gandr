@@ -1322,6 +1322,7 @@ dependencies = [
 name = "gandr-runtime-emitter"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-fork",
  "gandr-core-sequent",
  "gandr-core-session",
  "gandr-core-term",
