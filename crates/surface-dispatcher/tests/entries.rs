@@ -190,6 +190,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type .", Standing::Owed(0)),
     ("Type =>", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
+    ("Type Bridge", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
     ("Type Char", Standing::Owed(0)),

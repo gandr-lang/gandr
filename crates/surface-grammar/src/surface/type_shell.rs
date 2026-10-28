@@ -81,7 +81,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 53 && rules.iter().take(39).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(39).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "package_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 54 && rules.iter().take(40).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(40).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "package_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -110,7 +110,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 39 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "package_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 40 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "package_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -427,41 +427,47 @@ fn add_type_rules(
     // nested in another's carrier would mold as the universe form and fail. The
     // universe alternative comes first, so where both read a carrier spelled
     // `Type` alike the universe reading is the lesser mold.
-    rules.push(rule(
-        RuleName("path_type"),
-        ty,
-        type_application,
-        Regex::seq([
-            tile(TileLabel("Path")),
-            tile(TileLabel("(")),
-            Regex::alt([
-                Regex::seq([
-                    tile(TileLabel("Type")),
-                    Regex::optional(Regex::seq([
-                        tile(TileLabel("[")),
-                        Regex::alt([tile(TileLabel("+")), tile(TileLabel("-"))]),
+    //
+    // The bridge type `Bridge(C, e1, e2)` relates its endpoints as the path
+    // type identifies them, and is read at the same sorts for the same
+    // reasons, so it is the same production under its own head tile.
+    for (name, head) in [("path_type", "Path"), ("bridge_type", "Bridge")] {
+        rules.push(rule(
+            RuleName(name),
+            ty,
+            type_application,
+            Regex::seq([
+                tile(TileLabel(head)),
+                tile(TileLabel("(")),
+                Regex::alt([
+                    Regex::seq([
+                        tile(TileLabel("Type")),
                         Regex::optional(Regex::seq([
-                            tile(TileLabel(",")),
-                            tile(TileLabel("number")),
+                            tile(TileLabel("[")),
+                            Regex::alt([tile(TileLabel("+")), tile(TileLabel("-"))]),
+                            Regex::optional(Regex::seq([
+                                tile(TileLabel(",")),
+                                tile(TileLabel("number")),
+                            ])),
+                            tile(TileLabel("]")),
                         ])),
-                        tile(TileLabel("]")),
-                    ])),
-                    tile(TileLabel(",")),
-                    Regex::sort(ty),
-                    tile(TileLabel(",")),
-                    Regex::sort(ty),
+                        tile(TileLabel(",")),
+                        Regex::sort(ty),
+                        tile(TileLabel(",")),
+                        Regex::sort(ty),
+                    ]),
+                    Regex::seq([
+                        Regex::sort(ty),
+                        tile(TileLabel(",")),
+                        Regex::sort(Sort::Expression),
+                        tile(TileLabel(",")),
+                        Regex::sort(Sort::Expression),
+                    ]),
                 ]),
-                Regex::seq([
-                    Regex::sort(ty),
-                    tile(TileLabel(",")),
-                    Regex::sort(Sort::Expression),
-                    tile(TileLabel(",")),
-                    Regex::sort(Sort::Expression),
-                ]),
+                tile(TileLabel(")")),
             ]),
-            tile(TileLabel(")")),
-        ]),
-    ));
+        ));
+    }
     // A type application's head is a type name or a type variable: a
     // declaration's name is lowercase, so a type operator a declaration binds
     // is applied under the spelling a type position reads it by, `small` or

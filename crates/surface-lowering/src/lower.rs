@@ -1346,7 +1346,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1402,6 +1402,7 @@ fn ending(former: Former) -> Ending
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::BridgeType
         | Former::RelationType
         | Former::ManifestType
         | Former::CapabilityType
@@ -1447,7 +1448,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1552,6 +1553,7 @@ fn iterating(former: Former) -> Ending
                     | Former::StaticAbstraction
                     | Former::ParenthesizedType
                     | Former::PathType
+                    | Former::BridgeType
                     | Former::RelationType
                     | Former::ManifestType
                     | Former::CapabilityType
@@ -1638,6 +1640,7 @@ const fn family_of(former: Former) -> Family
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::BridgeType
         | Former::RelationType
         | Former::ManifestType
         | Former::CapabilityType
@@ -2087,6 +2090,34 @@ enum Carrier
     Universe(Universe),
 }
 
+/// The former a path-shaped type relates its endpoints by.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Relating
+{
+    /// `Path(A, a, b)`, element identity.
+    Path,
+    /// `Bridge(A, a, b)`, relatedness: no reflexivity, transport or J.
+    Bridge,
+}
+
+impl Relating
+{
+    /// The head tile the form is written under.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn head(self) -> TileName
+    {
+        match self {
+            Self::Path => TileName::PATH,
+            Self::Bridge => TileName::BRIDGE,
+        }
+    }
+}
+
 /// The code a decode reads its type from, and the head a static application
 /// applies.
 ///
@@ -2513,8 +2544,9 @@ enum Plan
     /// A match, compiled to the decision tree at this position of the
     /// lowerer's match store.
     Case(native::CaseIndex),
-    /// An element path type over its carrier and its two endpoints.
-    Path(Carrier, NodeIndex, NodeIndex),
+    /// An element path type or a bridge type over its carrier and its two
+    /// endpoints.
+    Path(Relating, Carrier, NodeIndex, NodeIndex),
     /// Reflexivity at its point.
     Here(NodeIndex),
     /// Function extensionality between its two functions.
@@ -6936,7 +6968,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::ValueFunctionType => self.value_function(site, cursor),
             Former::StaticAbstraction => self.static_abstraction(site, cursor),
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
-            Former::PathType => self.path_type(site, cursor),
+            Former::PathType => self.path_type(site, cursor, Relating::Path),
+            Former::BridgeType => self.path_type(site, cursor, Relating::Bridge),
             Former::RelationType => self.relation_type(site, cursor),
             Former::ManifestType => self.manifest_model(site, cursor),
             Former::CapabilityType => self.capability_type(site, cursor),
@@ -12720,17 +12753,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `written` is the arguments the head was written with, left
     ///   to right, and the last the store holds; `manifests` is each manifest
     ///   sort's name beside the type it is, in written order.
-    /// - ensures: the arguments leave the store; a head named `Path` and
-    ///   applied to three arguments is the path type [`Self::written_path`]
-    ///   plans, one named `Flow` and applied to three the directed identity
-    ///   type [`Self::flow_type`] plans, one named `Stack` and applied to two
-    ///   the continuation type [`Self::stack_type`] plans, one named `Iso` and
-    ///   applied to two the quasi-inverse `A ≅ B` [`Self::relation_of`] plans,
-    ///   one named `Model` and applied to one the bundled record
-    ///   [`Self::model_type`] plans with its manifest sorts; any other head
-    ///   applied to one argument resolves against the unary table, stands at
-    ///   the sort its former produces, reads its argument at the sort the
-    ///   former takes, and is planned over it.
+    /// - ensures: the arguments leave the store; a head named `Path` or
+    ///   `Bridge` and applied to three arguments is the path or bridge type
+    ///   [`Self::written_path`] plans, one named `Flow` and applied to three
+    ///   the directed identity type [`Self::flow_type`] plans, one named
+    ///   `Stack` and applied to two the continuation type [`Self::stack_type`]
+    ///   plans, one named `Iso` and applied to two the quasi-inverse `A ≅ B`
+    ///   [`Self::relation_of`] plans, one named `Model` and applied to one the
+    ///   bundled record [`Self::model_type`] plans with its manifest sorts; any
+    ///   other head applied to one argument resolves against the unary table,
+    ///   stands at the sort its former produces, reads its argument at the sort
+    ///   the former takes, and is planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
@@ -12794,9 +12827,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.fault(sort.span, FormFault::MisplacedTile));
         }
         if let Some(written) = triple
-            && name.as_ref() == TileName::PATH.as_ref()
+            && let Some(relating) = [Relating::Path, Relating::Bridge]
+                .into_iter()
+                .find(|relating| name.as_ref() == relating.head().as_ref())
         {
-            return self.written_path(site, written);
+            return self.written_path(site, written, relating);
         }
         if let Some(written) = triple
             && name.as_ref() == identity::FLOW
@@ -12820,6 +12855,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let spelled = matches!(former, Maybe::Present(_))
             || [
                 TileName::PATH.as_ref(),
+                TileName::BRIDGE.as_ref(),
                 identity::FLOW,
                 STACK,
                 identity::ISO,
@@ -12899,6 +12935,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.name_at(head);
         let spelled = [
             TileName::PATH.as_ref(),
+            TileName::BRIDGE.as_ref(),
             identity::FLOW,
             STACK,
             identity::ISO,
@@ -16348,7 +16385,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Lowered::ValueType(id)
                 })
             }),
-            Plan::Path(carrier, left, right) => {
+            Plan::Path(relating, carrier, left, right) => {
                 let over = match carrier {
                     Carrier::Written(carrier) => self.value_type_at(carrier),
                     Carrier::Universe(universe) => {
@@ -16362,7 +16399,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 over.and_then(|over| {
                     self.value_at(left).and_then(|from| {
                         self.value_at(right).map(|to| {
-                            let id = sink.arena.value_type_path(over, from, to);
+                            let id = match relating {
+                                Relating::Path => sink.arena.value_type_path(over, from, to),
+                                Relating::Bridge => sink.arena.value_type_bridge(over, from, to),
+                            };
                             sink.origins.record_value_type(id, origin);
                             Lowered::ValueType(id)
                         })
@@ -21206,6 +21246,7 @@ pub fn parse_literal(
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::BridgeType
         | Former::RelationType
         | Former::ManifestType
         | Former::CapabilityType

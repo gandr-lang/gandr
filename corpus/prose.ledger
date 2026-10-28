@@ -89,6 +89,7 @@ corpus/ledger/features/atom-identity.gandr Tense 7603649f2df3b584
 corpus/ledger/features/atom-identity.gandr Tense bb84656c8f060822
 corpus/ledger/features/atom-sorts.gandr Tense cc759d9ddaaa8c8e
 corpus/ledger/features/atom-sorts.gandr IngMain 19e3828b3b43a596
+corpus/ledger/features/bridge-types.gandr Tense 92c3319fec697391
 corpus/ledger/features/buffer-tokens.gandr Tense f4f7a065eeef72c2
 corpus/ledger/features/circuit-algebras.gandr Passive f2291e3931f119fa
 corpus/ledger/features/circuit-algebras.gandr Tense a6a1495519873222
@@ -1431,6 +1432,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.tx
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure b8715358ac806eba
 crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/ua-by-hand-unnatural.txt Procedure 4797678d36947fb9
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/atom-identity.txt Procedure 02a6dd8aa9cfc435
+crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt Procedure 921d4bf9ff1bfecc
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/cell-not-a-loop.txt Procedure 8177cf64e07d14fb
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 18aa93537ee9b3fa
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 5acc3f19f3b29f8d

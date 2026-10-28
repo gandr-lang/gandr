@@ -476,6 +476,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from(
             "call the declaration before the migration returns, and return what it answers",
         ),
+        CheckRefusal::BridgeAtSealedType { .. } => String::from(
+            "give the abstract type an `identity` attribute that names its relation, or relate \
+             points of a type that is not sealed",
+        ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
@@ -487,7 +491,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
         | CheckRefusal::AtomTransport { .. }
-        | CheckRefusal::BridgeAtSealedType { .. }
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
@@ -577,7 +580,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 28] = [
+    const WORDED: [&str; 29] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -606,6 +609,7 @@ mod tests
         "NotOpen.Homed",
         "NotATranslation",
         "SignatureMismatch.Sort",
+        "BridgeAtSealedType",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

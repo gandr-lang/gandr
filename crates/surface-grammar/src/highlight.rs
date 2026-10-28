@@ -176,8 +176,8 @@ const OPERATORS: &[&str] = &[
 
 /// The primitive type spellings, and the universes.
 const PRIMITIVE_TYPES: &[&str] = &[
-    "Any", "Boolean", "Buf", "Cap", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type",
-    "Type+", "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
+    "Any", "Boolean", "Bridge", "Buf", "Cap", "Char", "Integer", "Never", "Path", "String",
+    "Symbol", "Type", "Type+", "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
 ];
 
 /// The keywords whose next identifier names what the declaration defines.

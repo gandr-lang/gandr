@@ -1,0 +1,39 @@
+error[ShapeMismatch]: expected an element path type `Path(A, a, b)`
+   ╭▸ corpus/pathological/identity/bridge.gandr:16:40
+   │
+16 │ def fourHere : Bridge(Integer, 4, 4) = here(4);
+   │                ┬────────────────────   ━━━━━━━ its type is not of the required shape: found `Bridge(Integer, 4, 4)`
+   │                │
+   │                the type met, where an element path type `Path(A, a, b)` is required
+   │
+   ╰ note: `fourHere` is refused with ShapeMismatch, as its expectation states
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/identity/bridge.gandr:20:54
+   │
+20 │ def otherDigits : Bridge(List(Integer), [1], [2]) = (unit, unit);
+   │                                                     ┬┯━━━───────
+   │                                                     ││
+   │                                                     │its type does not convert: expected `Void`, found `Unit`
+   │                                                     checked against `Bridge(List(Integer), cons(1, nil), cons(2, nil))`; while checking the next premise of this
+   │
+   ├ note: `otherDigits` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[BridgeAtSealedType]: this bridge reaches an abstract type with no identity attribute, so it has no relation to read
+   ╭▸ corpus/pathological/identity/bridge.gandr:36:17
+   │
+36 │ def hiddenOne : Bridge(Hidden.T, Hidden.one, Hidden.one) = unit;
+   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a bridge reaching an atom stating no interface: found `Bridge(Hidden.T, Hidden.one, Hidden.one)`
+   │
+   ├ note: `hiddenOne` is refused with BridgeAtSealedType, as its expectation states
+   ╰ help: give the abstract type an `identity` attribute that names its relation, or relate points of a type that is not sealed
+
+error[OutsideFold]: a bridge is read at units, integers, strings, the universe, pairs, binary sums, lists, pure functions, abstract types with a relation and closed data types
+   ╭▸ corpus/pathological/identity/bridge.gandr:40:73
+   │
+40 │ def threeWay : Bridge(Unit + Unit + Unit, +{.0 = unit}, +{.0 = unit}) = unit;
+   │                                                                         ━━━━ a code the bridge fold has no clause for: found `Unit + Unit + Unit`
+   │
+   ├ note: `threeWay` is refused with OutsideFold, as its expectation states
+   ╰ note: tracked by #642 <https://github.com/gandr-lang/gandr/issues/642>

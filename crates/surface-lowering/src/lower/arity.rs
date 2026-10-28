@@ -1389,6 +1389,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ValueFunctionType
                 | Former::StaticAbstraction
                 | Former::PathType
+                | Former::BridgeType
                 | Former::RelationType
                 | Former::ManifestType
                 | Former::CapabilityType

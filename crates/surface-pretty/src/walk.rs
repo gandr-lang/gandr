@@ -9863,9 +9863,15 @@ impl Walk<'_, '_>
                 let _ = parts.text("Flow").arguments(Arity(3_usize));
                 writes(Production("type_application"), Binding::Atom)
             },
+            // `Bridge(List(Integer), [1, 2], [1, 2])`: its endpoints are terms,
+            // as a path's are, so it spells through its own production.
             Former::Bridge { .. } => {
-                let _ = parts.text("Bridge").arguments(Arity(3_usize));
-                writes(Production("type_application"), Binding::Atom)
+                let _ = parts.text("Bridge(").piece(Binding::Sequence);
+                for _end in 0_usize .. 2_usize {
+                    let _ = parts.text(",").part(Part::Space).piece(Binding::Sequence);
+                }
+                let _ = parts.part(Part::Tight).text(")");
+                writes(Production("bridge_type"), Binding::Atom)
             },
             Former::Relation { relation, .. } => {
                 let spelled = relation_spelled(relation);
