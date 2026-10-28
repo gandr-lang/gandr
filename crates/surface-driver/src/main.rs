@@ -340,11 +340,9 @@ use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Hosted;
-use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::Input;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
-use gandr_surface_dispatcher::LIBRARY;
 use gandr_surface_dispatcher::LOCK;
 use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
@@ -3104,8 +3102,16 @@ fn run(
     // Each settled manifold the walk read, judged as a deployment after it.
     let mut manifolds: Vec<PathBuf> = Vec::new();
     let visited = walk.visit(pool, |mut step| {
-        if checking {
-            file_export(&step, packages, &mut exportings);
+        // The step's place among the packages, read once for its export and
+        // its manifest.
+        let attributed = if checking {
+            attributed(&step, packages)
+        }
+        else {
+            None
+        };
+        if let Some(ref attributed) = attributed {
+            file_export(&step, packages, attributed, &mut exportings);
         }
         match step {
             Step::Source { .. } => {
@@ -3135,7 +3141,9 @@ fn run(
                     }
                 }
                 if checking {
-                    read_manifest(&mut step, packages, &mut manifests);
+                    if let Some(ref attributed) = attributed {
+                        read_manifest(&mut step, packages, attributed, &mut manifests);
+                    }
                     read_manifold(&step, &mut manifolds);
                 }
             },
@@ -3402,15 +3410,66 @@ fn manifested(
     }
 }
 
+/// Where a step's source sits among the run's packages.
+///
+/// # Specification
+/// trivial.
+struct Attributed
+{
+    /// The step's path, canonical.
+    canonical: PathBuf,
+    /// The place of the innermost package whose root holds it.
+    place: usize,
+}
+
+/// The package `step` is a source of: of `packages`, the one whose root is
+/// the longest that holds the step's path.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the step's canonical path and the place of the package whose root
+///   is the longest that holds it, the innermost package's when two roots hold
+///   it; none for a path that does not canonicalize or that lies under no
+///   package's root.
+/// - provides: the one attribution of a step that its export and its manifest
+///   both read, so the path canonicalizes once.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the canonical path is the file system's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package checked whole exports what its walk admitted
+///   and writes the manifest its library states, and two libraries sharing an
+///   import each write their own.
+/// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+/// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+fn attributed(
+    step: &Step<'_>,
+    packages: &[Packaged],
+) -> Option<Attributed>
+{
+    let (Step::Source { path, .. } | Step::Fault { path, .. }) = *step;
+    let canonical = path.canonicalize().ok()?;
+    let (_, place) = packages
+        .iter()
+        .enumerate()
+        .filter(|&(_, packaged)| canonical.starts_with(packaged.package.root()))
+        .map(|(place, packaged)| (packaged.package.root().as_os_str().len(), place))
+        .max_by_key(|&(depth, _)| depth)?;
+    Some(Attributed { canonical, place })
+}
+
 /// Read the manifest a package's library states, when `step` is that library
 /// and settled, into the package's place in `manifests`.
 ///
 /// # Specification
-/// - requires: `manifests` holds one place per package, in order.
-/// - ensures: a settled source step whose canonical path is the library of a
-///   package has that package's place set to [`Manifest::of`] its program, its
-///   report of the library's own declarations, and the package; any other step
-///   changes nothing.
+/// - requires: `manifests` holds one place per package, in order, and
+///   `attributed` is the step's attribution.
+/// - ensures: a settled source step whose canonical path is the library of the
+///   package it is attributed to has that package's place set to
+///   [`Manifest::of`] its program, its report of the library's own
+///   declarations, and the package; any other step changes nothing.
 /// - provides: the manifest `run` reconciles after the walk.
 /// - fails: never; a library that states no manifest is the place's error.
 /// - panics: none.
@@ -3427,11 +3486,11 @@ fn manifested(
 fn read_manifest(
     step: &mut Step<'_>,
     packages: &[Packaged],
+    attributed: &Attributed,
     manifests: &mut [Option<Result<Manifest, Unmanifested>>],
 )
 {
     let Step::Source {
-        path,
         standing: Standing::Settled,
         composed:
             Composed::Settled {
@@ -3444,17 +3503,10 @@ fn read_manifest(
     else {
         return;
     };
-    if path.file_name().is_none_or(|name| name != LIBRARY) {
-        return;
-    }
-    let Ok(canonical) = path.canonicalize()
-    else {
-        return;
-    };
-    if let Some(place) = packages
-        .iter()
-        .position(|packaged| packaged.package.library() == canonical)
-        && let (Some(packaged), Some(slot)) = (packages.get(place), manifests.get_mut(place))
+    if let (Some(packaged), Some(slot)) = (
+        packages.get(attributed.place),
+        manifests.get_mut(attributed.place),
+    ) && packaged.package.library() == attributed.canonical
     {
         *slot = Some(Manifest::of(program, report, &packaged.package));
     }
@@ -3544,20 +3596,17 @@ fn deployed(
     })
 }
 
-/// File `step` into the export of the package it is a source of: of
-/// `packages`, the one whose root is the longest that holds the step's path.
+/// File `step` into the export of the package it is attributed to.
 ///
 /// # Specification
-/// - requires: `exportings` holds one export per package, in order.
-/// - ensures: a step whose canonical path lies under the root of a package of
-///   `packages` is taken by [`Exporting::take`] into that package's place, by
-///   its path from the root, the innermost package's when two roots hold it; a
-///   step under no package's root, or whose path does not canonicalize, changes
-///   nothing.
+/// - requires: `exportings` holds one export per package, in order, and
+///   `attributed` is the step's attribution.
+/// - ensures: the step is taken by [`Exporting::take`] into the place of the
+///   package it is attributed to, by its path from that package's root.
 /// - provides: the export `run` commits after the walk.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the clause is the body's one search; the CLI witness
+/// - executable: none — the clause is the body's one take; the CLI witness
 ///   observes the export a package's check commits.
 ///
 /// # Adequacy
@@ -3567,27 +3616,13 @@ fn deployed(
 fn file_export(
     step: &Step<'_>,
     packages: &[Packaged],
+    attributed: &Attributed,
     exportings: &mut [Exporting],
 )
 {
-    let (Step::Source { path, .. } | Step::Fault { path, .. }) = *step;
-    let Ok(canonical) = path.canonicalize()
-    else {
-        return;
-    };
-    let innermost = packages
-        .iter()
-        .enumerate()
-        .filter_map(|(place, packaged)| {
-            let root = packaged.package.root();
-            canonical
-                .strip_prefix(root)
-                .ok()
-                .map(|from| (root.as_os_str().len(), place, from))
-        })
-        .max_by_key(|&(depth, ..)| depth);
-    if let Some((_, place, from)) = innermost
-        && let Some(exporting) = exportings.get_mut(place)
+    if let Some(packaged) = packages.get(attributed.place)
+        && let Ok(from) = attributed.canonical.strip_prefix(packaged.package.root())
+        && let Some(exporting) = exportings.get_mut(attributed.place)
     {
         exporting.take(from, step);
     }
@@ -3652,17 +3687,18 @@ fn exported(
 ///
 /// # Specification
 /// - requires: `lock` is the lock `package` holds.
-/// - ensures: for each alias of `lock`, in order, the identity its pointer
-///   names is read from `store` and the root of its address, [`Export::root`],
-///   looked up. An export that the root names and that re-admits
-///   ([`Export::readmit`]) settles, and at the detailed and debug levels prints
-///   `export: <root>: <alias>: <n> declarations re-admitted from <export root>`
-///   on standard output. A root that names nothing is `gandr: <root>: <alias>:
-///   no export at <export root>; check <dependency> first` on standard error
-///   and leaves the verdict, the dependency being judged from its sources in
-///   the dependent's unit. An identity or an export the store cannot read back,
-///   and an export the kernel refuses, are `gandr: <root>: <alias>: <why>` on
-///   standard error and fault the run.
+/// - ensures: for each alias of `lock`, in order, the address of the identity
+///   its pointer names is read from `store` as [`Lock::resolved`] reads it, and
+///   the root of the address, [`Export::root`], looked up. An export that the
+///   root names and that re-admits ([`Export::readmit`]) settles, and at the
+///   detailed and debug levels prints `export: <root>: <alias>: <n>
+///   declarations re-admitted from <export root>` on standard output. A root
+///   that names nothing is `gandr: <root>: <alias>: no export at <export root>;
+///   check <dependency> first` on standard error and leaves the verdict, the
+///   dependency being judged from its sources in the dependent's unit. An
+///   identity or an export the store cannot read back, and an export the kernel
+///   refuses, are `gandr: <root>: <alias>: <why>` on standard error and fault
+///   the run.
 /// - provides: the read of each dependency's export `run` takes for each
 ///   package whose lock is held, after every export of the run committed.
 /// - fails: the first write error on either stream.
@@ -3689,19 +3725,21 @@ fn depended(
 {
     let root = package.root().display();
     let mut verdict = RunVerdict::Settled;
-    for (alias, locked) in lock
-        .aliases()
-        .filter_map(|alias| lock.locked(alias).map(|locked| (alias, locked)))
-    {
-        let identity: Identity = match store.deref(locked.pointer) {
-            Ok(identity) => identity,
-            Err(fault) => {
+    for (alias, locked, address) in lock.resolved(store) {
+        let address = match address {
+            Ok(address) => address,
+            Err(Unaddressed::Unstored { ref fault, .. }) => {
                 writeln!(stderr, "gandr: {root}: {alias}: {fault}")?;
                 verdict = RunVerdict::Faulted;
                 continue;
             },
+            Err(ref unaddressed) => {
+                writeln!(stderr, "gandr: {root}: {alias}: {unaddressed}")?;
+                verdict = RunVerdict::Faulted;
+                continue;
+            },
         };
-        let name = Export::root(&identity.address);
+        let name = Export::root(&address);
         let Maybe::Present(pointer) = store.roots().root(&name)
         else {
             let Coordinate::Path(ref path) = locked.coordinate;

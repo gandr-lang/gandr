@@ -321,13 +321,59 @@ impl Lock
         self.0.keys()
     }
 
+    /// Each alias the lock records, in order, with the dependency it locks and
+    /// the address of the identity its pointer names, read back through
+    /// `store`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per alias, in order: the alias, its locked
+    ///   dependency, and the address of the identity its pointer names, or
+    ///   [`Unaddressed::Unstored`] where the store cannot read the pointer back
+    ///   as an identity.
+    /// - provides: the one reading of the lock's pointers that
+    ///   [`Lock::addresses`] and a dependent's re-admission of its
+    ///   dependencies' exports share.
+    /// - fails: never; a pointer the store cannot read back is its entry's
+    ///   [`Unaddressed`].
+    /// - panics: none.
+    /// - executable: none — the identities are the store's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lock::addresses`], which reads each entry.
+    /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
+    /// - witness: `tests::package::a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157`
+    #[inline]
+    pub fn resolved<'lock>(
+        &'lock self,
+        store: &'lock Store,
+    ) -> impl Iterator<
+        Item = (
+            &'lock Alias,
+            &'lock Locked,
+            Result<PackageAddress, Unaddressed>,
+        ),
+    > + 'lock
+    {
+        self.0.iter().map(|(alias, locked)| {
+            let address = store
+                .deref::<Identity>(locked.pointer)
+                .map(|identity| identity.address)
+                .map_err(|fault| Unaddressed::Unstored {
+                    alias: alias.clone(),
+                    fault: Box::new(fault),
+                });
+            (alias, locked, address)
+        })
+    }
+
     /// The addresses the lock records, once each, read back through `store`:
     /// what the package's own address digests of its dependencies.
     ///
     /// # Specification
     /// - requires: `store` holds what the lock's pointers name.
     /// - ensures: the address of the identity each pointer names, once each, in
-    ///   order.
+    ///   order, as [`Lock::resolved`] reads them.
     /// - provides: the dependencies' part of [`Package::identity`].
     /// - fails: [`Unaddressed::Unstored`] at the first alias whose pointer the
     ///   store cannot read back as an identity.
@@ -349,18 +395,9 @@ impl Lock
         store: &Store,
     ) -> Result<BTreeSet<PackageAddress>, Unaddressed>
     {
-        let mut addresses = BTreeSet::new();
-        for (alias, locked) in &self.0 {
-            let identity: Identity =
-                store
-                    .deref(locked.pointer)
-                    .map_err(|fault| Unaddressed::Unstored {
-                        alias: alias.clone(),
-                        fault: Box::new(fault),
-                    })?;
-            let _fresh = addresses.insert(identity.address);
-        }
-        Ok(addresses)
+        self.resolved(store)
+            .map(|(_, _, address)| address)
+            .collect()
     }
 
     /// The lock as the checker writes it: the header, then the body.
