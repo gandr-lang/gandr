@@ -606,6 +606,241 @@ impl ArenaWatermark
             .0,
         }
     }
+
+    /// The [`Value`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn values(self) -> ArenaLength
+    {
+        ArenaLength(self.values)
+    }
+
+    /// The [`Computation`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn computations(self) -> ArenaLength
+    {
+        ArenaLength(self.computations)
+    }
+
+    /// The [`ValueType`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn value_types(self) -> ArenaLength
+    {
+        ArenaLength(self.value_types)
+    }
+
+    /// The [`CompType`] family's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn comp_types(self) -> ArenaLength
+    {
+        ArenaLength(self.comp_types)
+    }
+}
+
+/// How many truncations that dropped a node an arena has made.
+///
+/// A reader that names an arena's nodes by their positions keeps the stamp it
+/// last read, and [`TermArena::truncated_since`] tells it the lowest length
+/// each family reached after that stamp: every position at or above it may
+/// hold another node now.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TruncationStamp(u64);
+
+/// What a reader that last read a stamp learns from its arena: the stamp now,
+/// and the lowest length each family reached since.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Truncated
+{
+    /// The stamp to read from next.
+    now: TruncationStamp,
+    /// Each family's lowest length since the stamp read from: its present
+    /// length where no truncation since dropped one of its nodes.
+    floor: ArenaWatermark,
+}
+
+impl Truncated
+{
+    /// The stamp to read from next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn now(self) -> TruncationStamp
+    {
+        self.now
+    }
+
+    /// Each family's lowest length since the stamp read from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn floor(self) -> ArenaWatermark
+    {
+        self.floor
+    }
+}
+
+/// One truncation of one family: the length it left, and the stamp it took.
+#[derive(Clone, Copy, Debug)]
+struct Floor
+{
+    /// The stamp the truncation took.
+    stamp: TruncationStamp,
+    /// The length it left the family at.
+    length: ArenaLength,
+}
+
+/// One family's floors, oldest first, ascending in stamp and in length.
+///
+/// A truncation drops every floor at or above the length it leaves before it
+/// records its own, so the oldest floor after a stamp is the lowest length the
+/// family reached since, and the stack holds one floor per length still
+/// standing above a lower one.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default)]
+struct Floors(Vec<Floor>);
+
+impl Floors
+{
+    /// Record a truncation to `length` that took `stamp`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn lower(
+        &mut self,
+        stamp: TruncationStamp,
+        length: ArenaLength,
+    )
+    {
+        while self.0.last().is_some_and(|floor| floor.length >= length) {
+            let _dropped = self.0.pop();
+        }
+        self.0.push(Floor { stamp, length });
+    }
+
+    /// The lowest length a truncation after `stamp` left, or `present` when
+    /// none did.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn since(
+        &self,
+        stamp: TruncationStamp,
+        present: ArenaLength,
+    ) -> ArenaLength
+    {
+        self.0
+            .iter()
+            .rev()
+            .take_while(|floor| floor.stamp > stamp)
+            .last()
+            .map_or(present, |floor| floor.length)
+    }
+}
+
+/// The truncations an arena has made, for the readers that name its nodes by
+/// their positions.
+///
+/// Not part of the arena's content: two arenas holding the same nodes are
+/// equal whatever truncations brought each there.
+#[derive(Clone, Debug, Default)]
+struct Truncations
+{
+    /// How many truncations dropped a node.
+    stamp: TruncationStamp,
+    /// The [`Value`] family's floors.
+    values: Floors,
+    /// The [`Computation`] family's floors.
+    computations: Floors,
+    /// The [`ValueType`] family's floors.
+    value_types: Floors,
+    /// The [`CompType`] family's floors.
+    comp_types: Floors,
+}
+
+impl PartialEq for Truncations
+{
+    /// Always: the record is how an arena reached its nodes, not what it
+    /// holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        _other: &Self,
+    ) -> bool
+    {
+        true
+    }
+}
+
+impl Eq for Truncations
+{
+}
+
+impl Truncations
+{
+    /// Record a truncation from `before` to `after`, when it dropped a node.
+    ///
+    /// The stamp saturates at a count no session reaches.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn record(
+        &mut self,
+        before: ArenaWatermark,
+        after: ArenaWatermark,
+    )
+    {
+        if after == before {
+            return;
+        }
+        self.stamp = TruncationStamp(self.stamp.0.saturating_add(1));
+        let stamp = self.stamp;
+        for (floors, was, now) in [
+            (&mut self.values, before.values, after.values),
+            (
+                &mut self.computations,
+                before.computations,
+                after.computations,
+            ),
+            (&mut self.value_types, before.value_types, after.value_types),
+            (&mut self.comp_types, before.comp_types, after.comp_types),
+        ] {
+            if now < was {
+                floors.lower(stamp, ArenaLength(now));
+            }
+        }
+    }
 }
 
 /// The append-only arena owning every term and type node of one environment.
@@ -663,6 +898,9 @@ pub struct TermArena
     /// The empty endpoint dialogues every reflexivity minted without a
     /// dialogue shares, so minting one allocates no evidence.
     unrelated: alloc::sync::Arc<crate::EndpointDialogues>,
+    /// The truncations that dropped a node, for the readers that name nodes
+    /// by position; not part of the arena's content.
+    truncations: Truncations,
 }
 
 /// One family's nodes in allocation order.
@@ -1163,6 +1401,7 @@ impl TermArena
         watermark: ArenaWatermark,
     )
     {
+        let before = self.watermark();
         self.values.truncate(ArenaLength(watermark.values));
         self.value_supports.truncate(ArenaLength(watermark.values));
         self.computations
@@ -1176,6 +1415,66 @@ impl TermArena
         self.comp_types.truncate(ArenaLength(watermark.comp_types));
         self.comp_type_supports
             .truncate(ArenaLength(watermark.comp_types));
+        let after = self.watermark();
+        self.truncations.record(before, after);
+    }
+
+    /// What a reader that last read `since` learns: the stamp now, and the
+    /// lowest length each family was truncated to after it.
+    ///
+    /// A reader that names this arena's nodes by their positions, as the
+    /// kernel's content table does, forgets every name at or above the floor
+    /// before it reads one, so no name outlives a truncation below it,
+    /// whichever of the arena's truncation sites made it.
+    ///
+    /// # Specification
+    /// - requires: `since` is the default stamp or one this arena returned.
+    /// - ensures: `None` exactly when no truncation after `since` dropped a
+    ///   node; otherwise the present stamp, and per family the lowest length a
+    ///   truncation after `since` left, or the present length where none did.
+    /// - provides: the epoch a position-keyed reader syncs against.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — truncations to lower, higher and equal lengths, read
+    ///   from stamps before, between and after them, with each family truncated
+    ///   apart; a truncation that drops nothing takes no stamp. Reading the
+    ///   newest floor rather than the lowest, or stamping a no-op, changes an
+    ///   answer.
+    /// - witness: `arena::tests::a_reader_learns_the_lowest_length_truncated_to_since_its_stamp`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.map_or(self.truncations.stamp == since, |truncated| {
+        truncated.now == self.truncations.stamp
+            && truncated.floor.clamped_into(ArenaWatermark::default(), self.watermark())
+                == truncated.floor
+    }))]
+    pub fn truncated_since(
+        &self,
+        since: TruncationStamp,
+    ) -> Option<Truncated>
+    {
+        let truncations = &self.truncations;
+        if truncations.stamp == since {
+            return None;
+        }
+        let present = self.watermark();
+        Some(Truncated {
+            now: truncations.stamp,
+            floor: ArenaWatermark {
+                values: truncations.values.since(since, present.values()).0,
+                computations: truncations
+                    .computations
+                    .since(since, present.computations())
+                    .0,
+                value_types: truncations
+                    .value_types
+                    .since(since, present.value_types())
+                    .0,
+                comp_types: truncations.comp_types.since(since, present.comp_types()).0,
+            },
+        })
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -4706,6 +5005,79 @@ mod tests
         );
         arena.truncate_to(ArenaWatermark::default());
         assert_eq!(arena, TermArena::new());
+    }
+
+    #[test]
+    fn a_reader_learns_the_lowest_length_truncated_to_since_its_stamp()
+    {
+        use super::ArenaLength;
+        use super::TruncationStamp;
+
+        let floor = |arena: &TermArena, since: TruncationStamp| {
+            arena
+                .truncated_since(since)
+                .map(|truncated| (truncated.floor().values(), truncated.floor().value_types()))
+        };
+        let length = ArenaLength::from;
+        let mut arena = TermArena::new();
+        let start = TruncationStamp::default();
+        assert_eq!(
+            floor(&arena, start),
+            None,
+            "a fresh arena has truncated nothing"
+        );
+        let _first = arena.value_unit();
+        let low = arena.watermark();
+        let _second = arena.value_unit();
+        let _type = arena.value_type_unit();
+        let middle = arena.watermark();
+        let _third = arena.value_unit();
+        let here = arena.watermark();
+        arena.truncate_to(here);
+        assert_eq!(
+            floor(&arena, start),
+            None,
+            "a truncation that drops nothing takes no stamp"
+        );
+        arena.truncate_to(middle);
+        assert_eq!(
+            floor(&arena, start),
+            Some((length(2), length(1))),
+            "values fall to two; the value types, untruncated, read their present length"
+        );
+        let between = arena
+            .truncated_since(start)
+            .map_or(start, super::Truncated::now);
+        assert_eq!(
+            floor(&arena, between),
+            None,
+            "nothing since the stamp just read"
+        );
+        let _again = arena.value_unit();
+        let _more = arena.value_unit();
+        arena.truncate_to(low);
+        let after_low = arena
+            .truncated_since(between)
+            .map_or(between, super::Truncated::now);
+        let _regrown = arena.value_unit();
+        let higher = arena.watermark();
+        let _past = arena.value_unit();
+        arena.truncate_to(higher);
+        assert_eq!(
+            floor(&arena, between),
+            Some((length(1), length(0))),
+            "the lowest truncation since the stamp, not the newest one"
+        );
+        assert_eq!(
+            floor(&arena, start),
+            Some((length(1), length(0))),
+            "an older stamp reads the same lowest floor"
+        );
+        assert_eq!(
+            floor(&arena, after_low),
+            Some((length(2), length(0))),
+            "a stamp after the low truncation reads only the higher one"
+        );
     }
 
     #[test]

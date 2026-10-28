@@ -121,6 +121,7 @@ use gandr_kernel_strata::LevelOffset;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaLength;
+use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -133,6 +134,7 @@ use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::TruncationStamp;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
@@ -787,6 +789,10 @@ pub struct ContentTable
     interned: HashIndex,
     /// The id already assigned to each arena node.
     placed: Placements,
+    /// The arena's truncation stamp the placements were last synced to: a
+    /// placement at or above the floor of a later truncation is forgotten
+    /// before any placement is read, so a name never outlives its node.
+    seen: TruncationStamp,
     /// How many records the stream holds.
     records: u64,
     /// The record being built.
@@ -995,6 +1001,42 @@ impl PlacementColumn
                 core::mem::replace(slot, PlacementSlot(id)).placement()
             })
     }
+
+    /// Unplace every offset at or above `from`, returning how many held an id.
+    ///
+    /// The page `from` falls on is cleared from its slot; every page above it
+    /// is emptied, keeping its capacity for the next write.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn forget_from(
+        &mut self,
+        from: ArenaLength,
+    ) -> PlacementCount
+    {
+        let from = usize::from(from);
+        let first = from.checked_shr(PLACEMENT_PAGE_SHIFT).unwrap_or(0);
+        let mut forgotten = 0_usize;
+        for (number, page) in self.pages.iter_mut().enumerate().skip(first) {
+            let start = if number == first {
+                from & PLACEMENT_SLOT_MASK
+            }
+            else {
+                0
+            };
+            for slot in page.iter_mut().skip(start) {
+                if *slot != PlacementSlot::UNPLACED {
+                    *slot = PlacementSlot::UNPLACED;
+                    forgotten = forgotten.saturating_add(1);
+                }
+            }
+            if start == 0 {
+                page.clear();
+            }
+        }
+        PlacementCount(forgotten)
+    }
 }
 
 impl Placements
@@ -1093,6 +1135,41 @@ impl Placements
     {
         self.count
     }
+
+    /// Forget every placement at or above `floor`'s length for its family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every node at or above its family's floor reads
+    ///   [`placement::Absent::Unplaced`]; every node below it reads as before;
+    ///   the count falls by the placements forgotten.
+    /// - provides: the retirement a truncation of the arena owes the names of
+    ///   the nodes it dropped.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentTable::forget_truncated`].
+    /// - witness: `encoding::tests::a_kept_table_names_every_node_as_a_fresh_walk_does`
+    #[inline]
+    #[spec(captures: before = self.count, ensures: self.count.0 <= before.0)]
+    fn forget_from(
+        &mut self,
+        floor: ArenaWatermark,
+    )
+    {
+        let forgotten = [
+            self.values.forget_from(floor.values()),
+            self.computations.forget_from(floor.computations()),
+            self.value_types.forget_from(floor.value_types()),
+            self.comp_types.forget_from(floor.comp_types()),
+        ]
+        .into_iter()
+        .fold(0_usize, |sum, PlacementCount(count)| {
+            sum.saturating_add(count)
+        });
+        self.count = PlacementCount(self.count.0.saturating_sub(forgotten));
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -1167,12 +1244,117 @@ impl ContentTable
         );
     }
 
+    /// Forget the names of the constants from `first` on: the members a failed
+    /// block admitted, which its rollback removes from the environment.
+    ///
+    /// # Specification
+    /// - requires: every arena node that references one of those constants was
+    ///   truncated with the block, so no kept placement reads their names.
+    /// - ensures: the table names exactly the constants before `first` it named
+    ///   before.
+    /// - provides: the entries [`Self::name_constants`] extends again after a
+    ///   rollback, so a constant admitted at a reused position is named as its
+    ///   own admission names it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block refused after one of its members was
+    ///   admitted, then a plain definition admitted at that member's position;
+    ///   a table that kept the member's positional name names the definition by
+    ///   position, where a fresh table names it by its content.
+    /// - witness: `env::tests::a_definition_at_a_refused_member_s_position_is_named_by_its_content`
+    #[inline]
+    #[spec(ensures: self.constants.len() <= usize::from(first))]
+    pub(crate) fn forget_constants_from(
+        &mut self,
+        first: ConstantIndex,
+    )
+    {
+        self.constants.truncate(usize::from(first));
+    }
+
+    /// How the table names the constant at `index`, when it has named it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    pub(crate) fn constant_name(
+        &self,
+        index: ConstantIndex,
+    ) -> Option<ConstantName>
+    {
+        self.constants.get(usize::from(index)).copied()
+    }
+
+    /// Assign `node` and everything it reaches a content id, returning its own,
+    /// after forgetting every placement a truncation of `arena` since the last
+    /// one read has dropped ([`Self::forget_truncated`]).
+    ///
+    /// # Specification
+    /// - requires: `arena` is the one this table has been used with.
+    /// - ensures: as [`Self::place_synced`], against placements that name only
+    ///   nodes the arena still holds at their positions.
+    /// - provides: every entry into the table's names; the placements outlive
+    ///   the arena's truncations only below them, so the table may be kept for
+    ///   an environment's life.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — generated mints, truncations to earlier marks and
+    ///   re-mints at the reused positions, each placement read against a walk
+    ///   that consults no placement; a placement kept across a truncation below
+    ///   it names the dropped node and differs.
+    /// - witness: `encoding::tests::a_kept_table_names_every_node_as_a_fresh_walk_does`
+    #[inline]
+    #[spec(ensures: |ret| self.placed.get(node) == Maybe::Present(ret) && ret.0 < self.records)]
+    fn place(
+        &mut self,
+        arena: &TermArena,
+        node: AnyNode,
+    ) -> ContentId
+    {
+        self.forget_truncated(arena);
+        self.place_synced(arena, node)
+    }
+
+    /// Forget every placement at or above the floor of the truncations
+    /// `arena` has made since the table last synced to it.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the one this table has been used with.
+    /// - ensures: the table's stamp is the arena's; every placement of a node
+    ///   at or above its family's floor is forgotten and every other kept. The
+    ///   records stay: they are content.
+    /// - provides: the epoch that retires a declaration's scratch, an abandoned
+    ///   staging or a refused block from the names, whichever truncation site
+    ///   dropped it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::place`].
+    /// - witness: `encoding::tests::a_kept_table_names_every_node_as_a_fresh_walk_does`
+    #[inline]
+    #[spec(ensures: arena.truncated_since(self.seen).is_none())]
+    fn forget_truncated(
+        &mut self,
+        arena: &TermArena,
+    )
+    {
+        if let Some(truncated) = arena.truncated_since(self.seen) {
+            self.placed.forget_from(truncated.floor());
+            self.seen = truncated.now();
+        }
+    }
+
     /// Assign `node` and everything it reaches a content id, returning its own.
     ///
     /// # Specification
-    /// - requires: `arena` is the one this table has been used with, and it has
-    ///   only grown since — a session's arena is append-only until the choke
-    ///   point truncates, which is after the session ends.
+    /// - requires: `arena` is the one this table has been used with, and the
+    ///   placements are synced to its truncations ([`Self::forget_truncated`]),
+    ///   so each names the node its position holds.
     /// - ensures: two nodes receive one id exactly when their reachable content
     ///   is structurally identical. The walk is iterative over an explicit task
     ///   stack, so it is total on any term depth, and each distinct node is
@@ -1215,7 +1397,7 @@ impl ContentTable
                 Maybe::Absent(placement::Absent::Unplaced) => true,
             }
     )]
-    fn place(
+    fn place_synced(
         &mut self,
         arena: &TermArena,
         node: AnyNode,
@@ -3844,6 +4026,7 @@ mod tests
 
     use anodized::spec;
     use gandr_kernel_term::AnyNode;
+    use gandr_kernel_term::ArenaWatermark;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
@@ -3856,6 +4039,8 @@ mod tests
     use gandr_kernel_term::Sign;
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::ValueId;
+    use gandr_kernel_term::ValueTypeId;
     use quenchant_shape::shape::Maybe;
 
     use super::BinderDepth;
@@ -5146,5 +5331,138 @@ mod tests
             "two definitions keep two names however alike their content: a key \
              never answers for one with the other"
         );
+    }
+
+    /// One step of a generated arena history a kept table follows.
+    #[derive(Clone, Debug)]
+    enum History
+    {
+        /// Mint a value variable at this index.
+        Variable(u32),
+        /// Mint a pair of two live values, chosen by the draws.
+        Pair(usize, usize),
+        /// Mint the unit type.
+        Unit,
+        /// Mint a product of two live types, chosen by the draws.
+        Product(usize, usize),
+        /// Remember the arena's watermark.
+        Mark,
+        /// Truncate the arena to a remembered watermark, chosen by the draw.
+        Truncate(usize),
+        /// Name a live node through the kept table, chosen by the draw.
+        Name(usize),
+    }
+
+    /// A generated step of an arena history.
+    ///
+    /// # Specification
+    /// trivial.
+    fn history() -> impl proptest::strategy::Strategy<Value = History>
+    {
+        use proptest::prelude::Just;
+        use proptest::prelude::any;
+        use proptest::strategy::Strategy as _;
+        proptest::prop_oneof![
+            (0_u32 .. 4).prop_map(History::Variable),
+            (any::<usize>(), any::<usize>()).prop_map(|(left, right)| History::Pair(left, right)),
+            Just(History::Unit),
+            (any::<usize>(), any::<usize>())
+                .prop_map(|(left, right)| History::Product(left, right)),
+            Just(History::Mark),
+            any::<usize>().prop_map(History::Truncate),
+            any::<usize>().prop_map(History::Name),
+        ]
+    }
+
+    /// The name a walk that consults no placement gives `node` in `table`.
+    ///
+    /// The table interns exactly, so the name is the one `node`'s content has,
+    /// whatever the kept placements say.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the one `table` has been used with.
+    /// - ensures: the id of `node`'s content in `table`; the kept placements
+    ///   are as they were.
+    /// - provides: the reference the kept table's names are read against.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the case compares this name with the kept one.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the case it serves.
+    /// - witness: `encoding::tests::a_kept_table_names_every_node_as_a_fresh_walk_does`
+    fn named_afresh(
+        table: &mut ContentTable,
+        arena: &TermArena,
+        node: AnyNode,
+    ) -> ContentId
+    {
+        let kept = core::mem::take(&mut table.placed);
+        let named = table.place_synced(arena, node);
+        table.placed = kept;
+        named
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(1024))]
+
+        /// A table kept across truncations names every node as a walk that
+        /// consults no placement does: a placement kept across a truncation
+        /// below it would name the node the truncation dropped.
+        #[test]
+        fn a_kept_table_names_every_node_as_a_fresh_walk_does(
+            steps in proptest::collection::vec(history(), 0 .. 64),
+        ) {
+            let mut arena = TermArena::new();
+            let mut table = ContentTable::new();
+            let mut values: Vec<ValueId> = Vec::new();
+            let mut types: Vec<ValueTypeId> = Vec::new();
+            let mut marks: Vec<ArenaWatermark> = Vec::new();
+            let pick = |count: usize, draw: usize| draw.checked_rem(count);
+            for step in steps {
+                match step {
+                    History::Variable(index) => {
+                        values.push(arena.value_variable(DeBruijnIndex::from(index)));
+                    },
+                    History::Pair(left, right) => {
+                        let chosen = pick(values.len(), left)
+                            .zip(pick(values.len(), right))
+                            .and_then(|(left, right)| values.get(left).zip(values.get(right)));
+                        if let Some((&left, &right)) = chosen {
+                            values.push(arena.value_tuple(&[left, right]));
+                        }
+                    },
+                    History::Unit => types.push(arena.value_type_unit()),
+                    History::Product(left, right) => {
+                        let chosen = pick(types.len(), left)
+                            .zip(pick(types.len(), right))
+                            .and_then(|(left, right)| types.get(left).zip(types.get(right)));
+                        if let Some((&left, &right)) = chosen {
+                            types.push(arena.value_type_product(&[left, right]));
+                        }
+                    },
+                    History::Mark => marks.push(arena.watermark()),
+                    History::Truncate(draw) => {
+                        if let Some(&mark) = pick(marks.len(), draw).and_then(|at| marks.get(at)) {
+                            arena.truncate_to(mark);
+                            values.retain(|&value| arena.value(value).is_some());
+                            types.retain(|&value_type| arena.value_type(value_type).is_some());
+                        }
+                    },
+                    History::Name(draw) => {
+                        let live = values
+                            .iter()
+                            .map(|&value| AnyNode::Value(value))
+                            .chain(types.iter().map(|&value_type| AnyNode::ValueType(value_type)));
+                        let count = values.len().saturating_add(types.len());
+                        if let Some(node) = pick(count, draw).and_then(|at| live.clone().nth(at)) {
+                            let kept = table.place(&arena, node);
+                            let fresh = named_afresh(&mut table, &arena, node);
+                            proptest::prop_assert_eq!(kept, fresh);
+                        }
+                    },
+                }
+            }
+        }
     }
 }

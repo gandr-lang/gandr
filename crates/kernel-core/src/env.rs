@@ -1216,6 +1216,28 @@ pub type Entries = Family<AdmittedDeclaration>;
 /// No admitted declaration: what a judgement over an empty environment reads.
 pub(crate) static NO_ENTRIES: Entries = Entries::new();
 
+/// The session an environment lends each admission's check: its content table
+/// names the environment's nodes once for the environment's life.
+///
+/// A clone starts an empty session of its own and names the nodes it reads
+/// afresh.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct Names(crate::support::SupportContext);
+
+impl Clone for Names
+{
+    /// An empty session: the clone names its nodes afresh.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self::default()
+    }
+}
+
 /// The append-only kernel environment: one arena, and the admitted
 /// declarations in admission order.
 #[derive(Clone, Debug, Default)]
@@ -1238,6 +1260,9 @@ pub struct Environment
     /// The verdict state: the policy, the key chain, the receipts verified
     /// and the verdicts checked here.
     verdicts: crate::verdict::Verdicts,
+    /// The session every admission's check is lent, whose names outlive the
+    /// admission.
+    names: Names,
 }
 
 impl Environment
@@ -1304,6 +1329,7 @@ impl Environment
             outstanding: self.outstanding.clone(),
             manifest: self.manifest.clone(),
             verdicts: self.verdicts.handed_on(),
+            names: Names::default(),
         }
     }
 
@@ -1661,6 +1687,7 @@ impl Environment
                     ref mut arena,
                     ref entries,
                     ref manifest,
+                    ref mut names,
                     ..
                 } = *self;
                 (
@@ -1668,6 +1695,7 @@ impl Environment
                         arena,
                         check::Judgement::new(entries, &levels).unsealing(manifest),
                         &declaration,
+                        &mut names.0,
                     ),
                     Admission::Checked,
                 )
@@ -1908,6 +1936,13 @@ impl Environment
             },
             Err(error) => {
                 self.entries.truncate(base);
+                // The members admitted before the refusal leave the
+                // environment, so their names leave the table: a constant
+                // admitted at a reused position is named as its own admission
+                // names it.
+                self.names
+                    .0
+                    .forget_constants_from(ConstantIndex::from(usize::from(base)));
                 self.manifest = manifest;
                 self.arena.truncate_to(rejected);
                 Err(error)
@@ -1964,6 +1999,7 @@ impl Environment
                 ref mut arena,
                 ref entries,
                 ref manifest,
+                ref mut names,
                 ..
             } = *self;
             check::form_declared(
@@ -1975,6 +2011,7 @@ impl Environment
                         members,
                     ),
                 member.declared_id(),
+                &mut names.0,
             )?;
             self.arena.truncate_to(content_end);
         }
@@ -1993,6 +2030,7 @@ impl Environment
                     ref mut arena,
                     ref entries,
                     ref manifest,
+                    ref mut names,
                     ..
                 } = *self;
                 let judgement = check::Judgement::new(entries, &levels)
@@ -2005,7 +2043,7 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member)?
+                check::check_declaration(arena, judgement, member, &mut names.0)?
             };
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
@@ -3382,6 +3420,55 @@ mod tests
             }),
             environment.add_decl(forward).map(|_admitted| ()),
             "the environment is append-only, so a forward reference names nothing"
+        );
+    }
+
+    #[test]
+    fn a_definition_at_a_refused_member_s_position_is_named_by_its_content()
+    {
+        let mut environment = Environment::new();
+        let admitted = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        let refused = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_variable(DeBruijnIndex::from(0_u32));
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        assert!(
+            environment.add_block(vec![admitted, refused]).is_err(),
+            "a block whose second member reads an unbound variable is refused"
+        );
+        let definition = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        let definition = environment
+            .add_decl(definition)
+            .expect("a unit definition admits")
+            .position();
+        let reference = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_constant(definition);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        let _reference = environment
+            .add_decl(reference)
+            .expect("a reference to the definition admits");
+        assert!(
+            matches!(
+                environment.names.0.constant_name(definition),
+                Some(crate::encoding::ConstantName::Definition { .. })
+            ),
+            "the refused member's positional name leaves the table with it, so \
+             the definition admitted at its position is named by its content"
         );
     }
 

@@ -91,6 +91,7 @@ use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Binders;
 use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Reads;
 use gandr_kernel_term::TermArena;
@@ -120,6 +121,14 @@ use crate::rewrite::RewritePlane;
 /// caller who wants to hand a memo an entry must build that entry through the
 /// same session it then hands to the check. There is no way to mint a key that
 /// outlives its call by accident.
+///
+/// **An environment keeps one session for its life** and lends it to each
+/// admission's check. Its content table keeps the names of the
+/// environment's nodes across admissions, so a later declaration reads an
+/// earlier one's nodes by the names they already have; a truncation of the
+/// arena retires the names of the nodes it drops. The memo, the rewrite memo
+/// and the open accruals stay each admission's own
+/// ([`SupportContext::begin_admission`]).
 #[derive(Clone, Debug, Default)]
 pub struct SupportContext
 {
@@ -245,6 +254,51 @@ impl SupportContext
     )
     {
         self.table.name_constants(entries);
+    }
+
+    /// Open an admission's check on this session: its rewrite memo, its open
+    /// accruals and its read buffer start empty, and the table keeps the
+    /// names it holds.
+    ///
+    /// The rewrite memo answers with arena ids, which the previous admission's
+    /// truncation may have dropped, so it is each admission's own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn begin_admission(&mut self)
+    {
+        self.rewrites = RewriteMemo::new();
+        self.open.clear();
+        self.read.clear();
+    }
+
+    /// Forget the names of the constants from `first` on, as
+    /// [`ContentTable::forget_constants_from`] does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn forget_constants_from(
+        &mut self,
+        first: ConstantIndex,
+    )
+    {
+        self.table.forget_constants_from(first);
+    }
+
+    /// How this session's table names the constant at `index`, as
+    /// [`ContentTable::constant_name`] reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    pub(crate) fn constant_name(
+        &self,
+        index: ConstantIndex,
+    ) -> Option<crate::encoding::ConstantName>
+    {
+        self.table.constant_name(index)
     }
 
     /// The two halves a rewrite needs: the content numbering its key is derived

@@ -1190,6 +1190,8 @@ INSERT INTO purpose VALUES('kernel-term','arena::CompTypeId','struct','The id of
 INSERT INTO purpose VALUES('kernel-term','arena::ComputationId','struct','The id of a Computation node in a TermArena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','arena::Family','struct','One family''s nodes in allocation order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','arena::TermArena','struct','The append-only arena owning every term and type node of one environment.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','arena::Truncated','struct','What a reader that names an arena''s nodes by position learns since its stamp: the stamp now and each family''s lowest length since.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','arena::TruncationStamp','struct','The count of an arena''s truncations that dropped a node, which a reader naming its nodes by position keeps to learn what was truncated since.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','arena::ValueId','struct','The id of a Value node in a TermArena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','arena::ValueTypeId','struct','The id of a ValueType node in a TermArena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::BaseType','enum','A rigid base-type atom.',NULL,'fits','sound',NULL);
