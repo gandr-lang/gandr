@@ -24,8 +24,6 @@ CREATE TABLE reference(
   PRIMARY KEY(key, crate, module),
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
-INSERT INTO reference VALUES('Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century','core-nbe','closure','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century','kernel-core','replay::environment','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-core','replay','lineage',NULL,NULL,NULL);
@@ -431,5 +429,7 @@ INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surfa
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-lowering','module::functor','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-lsp','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-parser','mold','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-nbe','closure','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','8a4aef58d20e532ef6cf0061b142b25438ea96f3');
+INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','kernel-core','replay::environment','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','09b037f2241cfe424dc51ce6595f10e36ed945af');
 INSERT INTO reference VALUES('vault:01a183de-4e71-7f03-aa71-7821123f3c40','core-sequent','closure','exemplar',NULL,NULL,NULL);
 COMMIT;

@@ -67,5 +67,17 @@
       "refused\ta References line gives its key a role and what it decides: - `Wrapped-2020-a_key_with_no_role` — <exemplar|lineage|background>: <what it decides>\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs:11",
       "mirror\tGavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems\tdemo-crate\t\texemplar\tcrates/demo-crate/README.md:5"
     ]
+  },
+  {
+    "name": "#3666: a vault page cited by its mint at a nested module and in its README is one cite and one mirror, and the entry's `hal:` identifier is no locator",
+    "files": {
+      "crates/demo-crate/src/replay/environment.rs": "//! The environment.\n//!\n//! # References\n//!\n//! - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: Accattoli's\n//!   habilitation, § 3.9, the value of variables.\n",
+      "crates/demo-crate/README.md": "# demo-crate\n\n## References\n\n- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of the habilitation. `hal:tel-05454767` — § 3.9's practical values.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\treplay::environment\t\tcrates/demo-crate/src/replay/environment.rs",
+      "cite\tvault:01a183de-4ab1-7660-a88a-04b9e8d318e3\tdemo-crate\treplay::environment\texemplar\tcrates/demo-crate/src/replay/environment.rs:5",
+      "mirror\tvault:01a183de-4ab1-7660-a88a-04b9e8d318e3\tdemo-crate\t\texemplar\tcrates/demo-crate/README.md:5"
+    ]
   }
 ]

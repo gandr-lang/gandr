@@ -44,8 +44,8 @@
 //!
 //! # References
 //!
-//! - `Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century`
-//!   — exemplar: § 3.9, the value of variables. Practical values disable the
+//! - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: Accattoli's
+//!   habilitation, § 3.9, the value of variables. Practical values disable the
 //!   substitution of a variable for a variable. The substitution steps then
 //!   stay linear in the β-steps, not quadratic.
 //!
