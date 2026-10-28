@@ -51,10 +51,30 @@
 //! with no reset, a resume of a value that is no stack, and a view ended
 //! twice or never stop the run stuck, each named by the command it stopped
 //! at.
+//!
+//! # Sessions
+//!
+//! A run's tasks take turns on its thread and its frame region: the scheduler
+//! is the run's own, held in its host state, and switches tasks only at a
+//! call. Every task's frames stand on the joined frame just below the base,
+//! whose block ends the task. A fork makes a channel, one queue of messages
+//! per end, each end a capability held in a cell; it queues the child's
+//! closure with the child's end and answers the parent's end, and the parent
+//! runs on. A send and a select queue their message at the peer's end, or hand
+//! it to the task waiting there, which joins the back of the ready queue. A
+//! receive and an offer take the oldest message at their end, or capture the
+//! task's frames from the base and continue the next task ready: a child is
+//! entered as its closure with its end in hand, a waiting task's frames are
+//! replayed and its top frame popped with what it took. A task's end gives a
+//! child's answer up, keeps the root's, and continues the next task ready;
+//! once every task has ended the root's answer pops the halt frame. With no
+//! task ready and one waiting, the run is stuck at the actions the tasks wait
+//! at.
 
 use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::collections::VecDeque;
 use alloc::collections::btree_map::Entry;
 
 use gandr_core_sequent::CommandArena;
@@ -67,6 +87,7 @@ use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
 use gandr_core_session::DialogueWeb;
 use gandr_core_session::Facing;
+use gandr_core_term::FieldLabel;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
@@ -148,6 +169,8 @@ const INDEX: usize = 5;
 /// The fields of a view at a place: its value, state, written value, held
 /// cell and index.
 const PLACED: usize = 5;
+/// The fields of a session's end: its channel's number and its party.
+const END_FIELDS: usize = 2;
 
 /// A stack's words before its frames: the header, the captured frames' base
 /// and top.
@@ -272,6 +295,8 @@ pub struct Calls<'run, 'host>
     literals: Vec<Literal>,
     /// Why the host last refused a call, when it named a reason.
     refused: Option<Refused>,
+    /// The run's tasks and channels.
+    scheduler: Scheduler<'run>,
 }
 
 impl core::fmt::Debug for Calls<'_, '_>
@@ -338,6 +363,9 @@ pub enum Refused
     Transfer(TransferRefusal),
     /// This migration answered nothing, for the reason named.
     Migration(CommandId, Unmigrated),
+    /// Every task waits at a receive or an offer and none is ready: the
+    /// actions they wait at, in the order the tasks forked.
+    Deadlock(Vec<CommandId>),
 }
 
 /// The parts a run's host state holds: the function lowered from `arena`
@@ -362,6 +390,347 @@ pub struct Parts<'run, 'host>
     pub store: &'run mut Store,
     /// The host unclaimed operations are offered to, if any.
     pub offer: Option<&'run mut (dyn Offer + 'host)>,
+}
+
+/// A task of a run: the root, numbered zero, or a fork's child, numbered in
+/// the order its fork ran.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Task(usize);
+
+impl Task
+{
+    /// The task a run starts as.
+    const ROOT: Self = Self(0);
+}
+
+/// A channel of a run, numbered in the order its fork ran: what its ends'
+/// first field holds.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChannelIndex(usize);
+
+/// One of a channel's two ends: the child's, or its parent's.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Party
+{
+    /// The end the fork's child holds.
+    Child,
+    /// The end the forking task holds.
+    Parent,
+}
+
+impl Party
+{
+    /// The other end.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn peer(self) -> Self
+    {
+        match self {
+            Self::Child => Self::Parent,
+            Self::Parent => Self::Child,
+        }
+    }
+
+    /// The word an end's second field holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn word(self) -> Word
+    {
+        Word::from(match self {
+            Self::Child => 0_usize,
+            Self::Parent => 1_usize,
+        })
+    }
+
+    /// The end an end's second field names.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a word naming neither end.
+    fn of(word: Word) -> Result<Self, Refusal>
+    {
+        match usize::from(word) {
+            0 => Ok(Self::Child),
+            1 => Ok(Self::Parent),
+            _ => Err(Refusal::Operands),
+        }
+    }
+}
+
+/// What a send or a select puts on a channel.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Message<'run>
+{
+    /// A send's payload.
+    Payload(Word),
+    /// A select's label.
+    Label(&'run FieldLabel),
+}
+
+/// What a task waiting at an end takes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Waits<'run>
+{
+    /// A receive's payload, answered in a fresh cell.
+    Payload,
+    /// An offer's label, answered by its position among these.
+    Label(&'run [FieldLabel]),
+}
+
+/// A task waiting at an end: its frames, captured from the base, the action
+/// it waits at and what it takes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Parked<'run>
+{
+    /// The task.
+    task: Task,
+    /// Its frames.
+    stack: Word,
+    /// The receive or offer it waits at.
+    at: CommandId,
+    /// What it takes.
+    waits: Waits<'run>,
+}
+
+/// A task ready to run.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Ready
+{
+    /// A fork's child, entered as its closure with its end's cell in hand.
+    Start
+    {
+        /// The child.
+        task: Task,
+        /// Its closure.
+        closure: Word,
+        /// Its end's cell.
+        end: Word,
+    },
+    /// A task that waited: its frames replayed and its top frame popped with
+    /// what it took.
+    Resume
+    {
+        /// The task.
+        task: Task,
+        /// Its frames.
+        stack: Word,
+        /// What it took: a payload's cell, or a label's position.
+        answer: Word,
+    },
+}
+
+/// One end of a channel: the messages sent to it and not yet taken, oldest
+/// first, and the task waiting at it.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct End<'run>
+{
+    /// The messages.
+    queued: VecDeque<Message<'run>>,
+    /// The task waiting, if any.
+    waiting: Option<Parked<'run>>,
+}
+
+/// A channel: its two ends.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Channel<'run>
+{
+    /// The child's end.
+    child: End<'run>,
+    /// The parent's end.
+    parent: End<'run>,
+}
+
+/// A run's tasks: its channels, the tasks ready, oldest first, the task
+/// running, and the root's answer once the root has ended. Scheduling is
+/// deterministic: a fork's parent runs on, and a child or a task a message
+/// readies joins the back of the queue.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Scheduler<'run>
+{
+    /// The joined frame's code word; zero for a run that acts on no session.
+    joined: Word,
+    /// The channels, by number.
+    channels: Vec<Channel<'run>>,
+    /// The tasks ready.
+    ready: VecDeque<Ready>,
+    /// The task running.
+    running: Task,
+    /// The last task forked; the root before any fork.
+    forked: Task,
+    /// How many tasks wait at an end.
+    parked: usize,
+    /// The root's answer, once the root has ended.
+    answer: Option<Word>,
+}
+
+impl<'run> Scheduler<'run>
+{
+    /// The scheduler of a run whose joined frame resumes at `joined`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new(joined: Word) -> Self
+    {
+        Self {
+            joined,
+            channels: Vec::new(),
+            ready: VecDeque::new(),
+            running: Task::ROOT,
+            forked: Task::ROOT,
+            parked: 0,
+            answer: None,
+        }
+    }
+
+    /// The end `party` of the channel `channel`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a channel no fork made.
+    fn end(
+        &mut self,
+        channel: ChannelIndex,
+        party: Party,
+    ) -> Result<&mut End<'run>, Refusal>
+    {
+        let held = self.channels.get_mut(channel.0).ok_or(Refusal::Operands)?;
+        Ok(match party {
+            Party::Child => &mut held.child,
+            Party::Parent => &mut held.parent,
+        })
+    }
+
+    /// The actions the waiting tasks wait at, in the order the tasks forked.
+    ///
+    /// # Specification
+    /// trivial.
+    fn waiting(&self) -> Vec<CommandId>
+    {
+        let mut parked: Vec<(Task, CommandId)> = self
+            .channels
+            .iter()
+            .flat_map(|channel| [&channel.child, &channel.parent])
+            .filter_map(|end| end.waiting.map(|parked| (parked.task, parked.at)))
+            .collect();
+        parked.sort_unstable_by_key(|&(task, _)| task);
+        parked.into_iter().map(|(_, at)| at).collect()
+    }
+}
+
+/// A fresh end `party` of the channel `channel`, in a fresh cell as a linear
+/// binder holds it: a capability whose fields are the channel's number and
+/// the party.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Heap`] past the heap's limit.
+fn endpoint(
+    runtime: &mut Runtime,
+    channel: ChannelIndex,
+    party: Party,
+) -> Result<Word, Refusal>
+{
+    let fields = Arity::try_from(END_FIELDS).map_err(|_overflow| Refusal::Operands)?;
+    let end = allocate(runtime, &[
+        object_header(Kind::Capability, fields)?,
+        Word::from(channel.0),
+        party.word(),
+    ])?;
+    allocate_cell(runtime, &[end])
+}
+
+/// The channel and the party of the end the cell `held` holds.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for a value that is no cell holding an end.
+fn end_of(held: Word) -> Result<(ChannelIndex, Party), Refusal>
+{
+    // SAFETY: a cell holds its value first.
+    let end = unsafe { *cell(held)?.wrapping_add(VALUE) };
+    if kind(end)? != Kind::Capability {
+        return Err(Refusal::Operands);
+    }
+    let object = end.to_pointer::<Word>();
+    // SAFETY: an object's first word is its header.
+    if usize::from(Header::from_word(unsafe { *object }).arity()) != END_FIELDS {
+        return Err(Refusal::Operands);
+    }
+    // SAFETY: an end holds its channel's number, then its party.
+    let channel = ChannelIndex(usize::from(unsafe { *object.wrapping_add(1) }));
+    // SAFETY: as above.
+    let party = Party::of(unsafe { *object.wrapping_add(2) })?;
+    Ok((channel, party))
+}
+
+/// What a task waiting for `waits` takes of `message`: a payload in a fresh
+/// cell, or a label's position among the offer's labels.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for a message other than the task waits for, or a
+/// label the offer lacks; [`Refusal::Heap`] past the heap's limit.
+fn delivered(
+    runtime: &mut Runtime,
+    message: Message<'_>,
+    waits: Waits<'_>,
+) -> Result<Word, Refusal>
+{
+    match (message, waits) {
+        (Message::Payload(payload), Waits::Payload) => allocate_cell(runtime, &[payload]),
+        (Message::Label(label), Waits::Label(labels)) => labels
+            .iter()
+            .position(|held| held == label)
+            .map(Word::from)
+            .ok_or(Refusal::Operands),
+        (Message::Payload(_), Waits::Label(_)) | (Message::Label(_), Waits::Payload) => {
+            Err(Refusal::Operands)
+        },
+    }
 }
 
 impl<'run, 'host> Calls<'run, 'host>
@@ -404,6 +773,11 @@ impl<'run, 'host> Calls<'run, 'host>
             offer,
             literals: lowered.literals.clone(),
             refused: None,
+            scheduler: Scheduler::new(
+                lowered
+                    .joined
+                    .map_or(Word::ZERO, |label| codes.label(label)),
+            ),
         }
     }
 
@@ -546,8 +920,9 @@ impl<'run, 'host> Calls<'run, 'host>
     /// # Errors
     /// [`Refusal::Operands`] for an operand the callee does not take, an
     /// evaluation the prelude refuses, a control operation the run cannot
-    /// answer or a migration that answers nothing; [`Refusal::Heap`] or
-    /// [`Refusal::Frames`] past a region's limit.
+    /// answer, a migration that answers nothing or a session action no task
+    /// is ready to follow; [`Refusal::Heap`] or [`Refusal::Frames`] past a
+    /// region's limit.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the named programs halt alike on both tiers with the
@@ -625,6 +1000,16 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Reify(ref shape) => self.reify(runtime, shape),
             Callee::Decompose => self.decompose(runtime, first),
             Callee::Migrate { at, world, body } => self.migrated(runtime, (at, world, body), first),
+            Callee::Fork(_) => self.forked(runtime, first),
+            Callee::Send(_) => self.sent(runtime, first, Message::Payload(second)),
+            Callee::Select { ref label, .. } => self.sent(runtime, first, Message::Label(label)),
+            Callee::Receive(at) => self.awaited(runtime, first, at, Waits::Payload),
+            Callee::Offer { at, ref labels } => {
+                self.awaited(runtime, first, at, Waits::Label(labels))
+            },
+            Callee::Branch(ref arms) => self.branched(runtime, arms, first),
+            Callee::Close(_) => end_of(first).and_then(|_end| unit(runtime)),
+            Callee::Joined => self.finished(runtime, first),
             Callee::Undefined(_) | Callee::Cyclic(_) => Err(Refusal::Operands),
         };
         if matches!(answered, Err(Refusal::Operands)) && self.refused.is_none() {
@@ -645,7 +1030,15 @@ impl<'run, 'host> Calls<'run, 'host>
                 | Callee::Resumed
                 | Callee::Aborted
                 | Callee::Reify(_)
-                | Callee::Decompose => Some(Refused::Operands),
+                | Callee::Decompose
+                | Callee::Fork(_)
+                | Callee::Send(_)
+                | Callee::Receive(_)
+                | Callee::Select { .. }
+                | Callee::Offer { .. }
+                | Callee::Branch(_)
+                | Callee::Close(_)
+                | Callee::Joined => Some(Refused::Operands),
             };
         }
         answered
@@ -1567,6 +1960,220 @@ impl<'run, 'host> Calls<'run, 'host>
                 Ok(answer)
             },
             _ => Err(Refusal::Operands),
+        }
+    }
+
+    /// Fork: make a channel, queue the child's closure `closure` with the
+    /// child's end, and answer the parent's end.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Heap`] past the heap's limit.
+    fn forked(
+        &mut self,
+        runtime: &mut Runtime,
+        closure: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let channel = ChannelIndex(self.scheduler.channels.len());
+        let theirs = endpoint(runtime, channel, Party::Child)?;
+        let ours = endpoint(runtime, channel, Party::Parent)?;
+        self.scheduler.channels.push(Channel::default());
+        let task = Task(self.scheduler.forked.0.saturating_add(1));
+        self.scheduler.forked = task;
+        self.scheduler.ready.push_back(Ready::Start {
+            task,
+            closure,
+            end: theirs,
+        });
+        Ok(ours)
+    }
+
+    /// Put `message` on the end the cell `held` holds: handed to the task
+    /// waiting at the peer's end, which joins the back of the ready queue,
+    /// or queued there. Answers the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`end_of`] and [`delivered`].
+    fn sent(
+        &mut self,
+        runtime: &mut Runtime,
+        held: Word,
+        message: Message<'run>,
+    ) -> Result<Word, Refusal>
+    {
+        let (channel, party) = end_of(held)?;
+        let peer = self.scheduler.end(channel, party.peer())?;
+        match peer.waiting.take() {
+            Some(parked) => {
+                let answer = delivered(runtime, message, parked.waits)?;
+                self.scheduler.parked = self.scheduler.parked.saturating_sub(1);
+                self.scheduler.ready.push_back(Ready::Resume {
+                    task: parked.task,
+                    stack: parked.stack,
+                    answer,
+                });
+            },
+            None => peer.queued.push_back(message),
+        }
+        unit(runtime)
+    }
+
+    /// Take what `waits` names at the end the cell `held` holds, for the
+    /// action `at`: the oldest message queued there, or, with none, park the
+    /// running task's frames at the end and continue the next task ready.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`end_of`], [`delivered`], [`Self::capture`] and [`Self::switch`].
+    fn awaited(
+        &mut self,
+        runtime: &mut Runtime,
+        held: Word,
+        at: CommandId,
+        waits: Waits<'run>,
+    ) -> Result<Word, Refusal>
+    {
+        let (channel, party) = end_of(held)?;
+        if let Some(message) = self.scheduler.end(channel, party)?.queued.pop_front() {
+            return delivered(runtime, message, waits);
+        }
+        let base = runtime.frame_base();
+        let stack = self.capture(runtime, base)?;
+        let task = self.scheduler.running;
+        self.scheduler.end(channel, party)?.waiting = Some(Parked {
+            task,
+            stack,
+            at,
+            waits,
+        });
+        self.scheduler.parked = self.scheduler.parked.saturating_add(1);
+        self.switch(runtime)
+    }
+
+    /// Continue at the arm of `arms` whose position is `position`, in the
+    /// window in reach.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a position past the arms.
+    fn branched(
+        &self,
+        runtime: &mut Runtime,
+        arms: &[Label],
+        position: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let arm = arms.get(usize::from(position)).ok_or(Refusal::Operands)?;
+        let window = runtime.environment();
+        runtime.jump(self.codes.label(*arm), window);
+        Ok(position)
+    }
+
+    /// End the running task, its answer `answer`, at the joined frame's
+    /// block. The joined frame is written back below the base, where the
+    /// block's own call overwrote it; the root's answer is kept and a child's
+    /// given up. Once every task has ended, the root's answer pops the halt
+    /// frame; otherwise the next task ready continues.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::switch`].
+    fn finished(
+        &mut self,
+        runtime: &mut Runtime,
+        answer: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let below = runtime.frame_base().wrapping_sub(2);
+        // SAFETY: a run that acts on a session sets its base past the halt
+        // frame and the joined frame above it.
+        unsafe {
+            *below = self.scheduler.joined;
+        }
+        // SAFETY: as above.
+        unsafe {
+            *below.wrapping_add(1) = Word::from_pointer(runtime.environment());
+        }
+        if self.scheduler.running == Task::ROOT {
+            self.scheduler.answer = Some(answer);
+        }
+        else {
+            let sites = self.sites;
+            // SAFETY: a task's end owns its answer, which nothing reads once
+            // the task has ended.
+            unsafe {
+                give_up(runtime, answer, |object| owned(object, sites));
+            }
+        }
+        match self.scheduler.answer {
+            Some(root) if self.scheduler.ready.is_empty() && self.scheduler.parked == 0 => {
+                runtime.set_frame_top(below);
+                Ok(root)
+            },
+            Some(_) | None => self.switch(runtime),
+        }
+    }
+
+    /// Continue the next task ready, its frames from the base: a child is
+    /// entered as its closure with its end's cell in hand, a task that waited
+    /// has its frames replayed and its top frame popped with what it took.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] with no task ready, recorded as
+    /// [`Refused::Deadlock`]; as [`Self::replay`].
+    fn switch(
+        &mut self,
+        runtime: &mut Runtime,
+    ) -> Result<Word, Refusal>
+    {
+        let base = runtime.frame_base();
+        runtime.set_frame_top(base);
+        match self.scheduler.ready.pop_front() {
+            Some(Ready::Start { task, closure, end }) => {
+                self.scheduler.running = task;
+                let entry = closure.to_pointer::<Word>();
+                // SAFETY: a closure's word after its header is its entry's
+                // code word.
+                let code = unsafe { *entry.wrapping_add(1) };
+                runtime.jump(code, entry);
+                Ok(end)
+            },
+            Some(Ready::Resume {
+                task,
+                stack,
+                answer,
+            }) => {
+                self.scheduler.running = task;
+                let _replayed = self.replay(runtime, stack)?;
+                let top = runtime.frame_top().wrapping_sub(2);
+                // SAFETY: the task's frames end in the frame its receive or
+                // offer pushed.
+                let code = unsafe { *top };
+                // SAFETY: as above.
+                let window = unsafe { *top.wrapping_add(1) };
+                runtime.set_frame_top(top);
+                runtime.jump(code, window.to_pointer());
+                Ok(answer)
+            },
+            None => {
+                self.refused = Some(Refused::Deadlock(self.scheduler.waiting()));
+                Err(Refusal::Operands)
+            },
         }
     }
 }

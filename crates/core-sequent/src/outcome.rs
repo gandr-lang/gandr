@@ -2,6 +2,7 @@
 //! region, or a named reason the run stopped short of one. Every executor of
 //! the IL answers in these terms, and the dispatcher spells them.
 
+use alloc::vec::Vec;
 use core::fmt;
 
 use gandr_kernel_term::ConstantIndex;
@@ -58,6 +59,9 @@ pub enum Stuck
     /// An access's index named no element of its held list: negative, or
     /// past the list's end.
     Outside(CommandId),
+    /// Every task of the run waits on a session and none is ready: the
+    /// receive or offer each waits at, in the order the tasks forked.
+    Deadlock(Vec<CommandId>),
 }
 
 impl fmt::Display for Stuck
@@ -92,6 +96,13 @@ impl fmt::Display for Stuck
             },
             Self::Unended(at) => write!(f, "access {at} reached its end with its view unended"),
             Self::Outside(at) => write!(f, "access {at} names no element of its held list"),
+            Self::Deadlock(ref waiting) => {
+                f.write_str("every task waits on a session, at")?;
+                for at in waiting {
+                    write!(f, " {at}")?;
+                }
+                Ok(())
+            },
         }
     }
 }

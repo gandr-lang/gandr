@@ -55,7 +55,7 @@ use gandr_runtime_emitter::world::arrive;
 ///
 /// # Specification
 /// trivial.
-fn budget() -> Fuel
+pub fn budget() -> Fuel
 {
     Fuel::from(1_usize << 20)
 }
@@ -65,7 +65,7 @@ fn budget() -> Fuel
 ///
 /// # Specification
 /// trivial.
-fn tiers() -> &'static [Tier]
+pub fn tiers() -> &'static [Tier]
 {
     if PATCHER {
         &[Tier::Native, Tier::Executor]
@@ -78,13 +78,13 @@ fn tiers() -> &'static [Tier]
 /// The decimal digits of a test literal.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct Digits(&'static str);
+pub struct Digits(pub &'static str);
 
 /// The non-negative integer literal `digits` in `core`.
 ///
 /// # Specification
 /// trivial.
-fn integer(
+pub fn integer(
     core: &mut CoreArena,
     digits: Digits,
 ) -> ValueId
@@ -109,7 +109,7 @@ fn innermost(core: &mut CoreArena) -> ValueId
 ///
 /// # Specification
 /// trivial.
-fn focused(
+pub fn focused(
     core: &CoreArena,
     program: ComputationId,
 ) -> (CommandArena, CommandId)

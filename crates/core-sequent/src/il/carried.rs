@@ -21,9 +21,9 @@ use super::NodeScope;
 use super::Opens;
 use super::ProducerNode;
 use super::Scoping;
+use super::command_annotations;
 use super::command_children;
 use super::command_named;
-use super::command_signature;
 use super::consumer_annotations;
 use super::consumer_children;
 use super::consumer_named;
@@ -235,9 +235,7 @@ impl CommandArena
     {
         let mut scoping = Scoping::new();
         scoping.name(command_named(node), core::iter::empty());
-        if let Some(signature) = command_signature(node) {
-            self.gather_annotations(&mut scoping, signature.types())?;
-        }
+        self.gather_annotations(&mut scoping, command_annotations(node))?;
         command_children(node, |child, opens| {
             self.gather_child(&mut scoping, child, opens)
         })?;

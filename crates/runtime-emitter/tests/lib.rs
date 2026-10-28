@@ -23,6 +23,8 @@ mod forms;
 #[cfg(test)]
 mod seam;
 #[cfg(test)]
+mod sessions;
+#[cfg(test)]
 #[path = "../../runtime-stencils/tests/support.rs"]
 mod support;
 #[cfg(test)]

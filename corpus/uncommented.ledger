@@ -3214,10 +3214,6 @@ pathological/desc/theory-data-oper-spelling.gandr:Theory.Nat:766735245ec8870b un
 pathological/desc/theory-data-oper-spelling.gandr:Theory.add:a125672ff8f5e91e uncommented
 pathological/desc/theory-data-oper-spelling.gandr:Theory.succ:a2bb1bfc212a6691 uncommented
 pathological/desc/theory-data-oper-spelling.gandr:Theory:2ab24fe2c27d0f9d uncommented
-pathological/drop/cancelled-peer.gandr:<file> unshaped:HeadParagraphs
-pathological/drop/cancelled-peer.gandr:<file> unshaped:SentenceLength
-pathological/drop/cancelled-peer.gandr:<file> unshaped:WhatLength
-pathological/drop/cancelled-peer.gandr:comment:30f5163f83ddc7e5 unshaped:ItemShape
 pathological/effects/domhringr.gandr:<file> unshaped:HeadParagraphs
 pathological/effects/domhringr.gandr:<file> unshaped:ReferenceOutsideReferences
 pathological/effects/domhringr.gandr:<file> unshaped:WhatLength

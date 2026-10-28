@@ -862,6 +862,25 @@ pub enum CommandNode
         /// The continuation outside the form.
         continuation: ConsumerId,
     },
+    /// A session action `𝓢` with its continuation. A send, a selection and a
+    /// close return the unit; a receive runs its body with the payload bound
+    /// as the innermost linear producer; an offer runs the arm of the label
+    /// its peer selected; a fork runs its child as a task of its own over the
+    /// child's end and continues with its parent over the other end, each end
+    /// bound so.
+    Session
+    {
+        /// The action. A receive's body and each half of a fork bind one
+        /// linear producer and one return covariable, an offer's arm one
+        /// return covariable; a fork's protocol is an annotation.
+        action: gandr_core_term::session::SessionAction<
+            ProducerId,
+            CommandId,
+            gandr_core_term::ValueTypeId,
+        >,
+        /// The continuation outside the action.
+        continuation: ConsumerId,
+    },
 }
 
 /// The three node families of the arena.
@@ -1758,7 +1777,7 @@ impl CommandArena
                 && self.producer_count() == entry.producers
                 && self.consumer_count() == entry.consumers
                 && self.command(id).is_some_and(|node| {
-                    command_signature(node).is_none_or(|signature| signature.types().all(|ty| self.annotations.value_type(ty).is_some()))
+                    command_annotations(node).all(|ty| self.annotations.value_type(ty).is_some())
                         && command_children(node, |child, _| self.slots(child).map(|_| ()).ok_or(())).is_ok()
                 }),
             | Err(_) => self.watermark() == entry,
@@ -2077,8 +2096,10 @@ where
 ///   continuation; a shift's body under one producer binder and one covariable,
 ///   its continuation; a cut's producer and consumer; a memory form's values,
 ///   its bodies each under the linear binders the form opens over it and one
-///   covariable, its continuation. `each`'s first refusal is answered and no
-///   later child visited.
+///   covariable, its continuation; a session action's payload, its bodies each
+///   under the linear binders the action opens over it and one covariable, its
+///   continuation. `each`'s first refusal is answered and no later child
+///   visited.
 /// - panics: none.
 /// - intension: allocates nothing.
 /// - executable: none — the listing is the statement; the witnesses observe it
@@ -2209,6 +2230,21 @@ where
             }
             each(NodeAddress::Consumer(continuation), at)?;
         },
+        CommandNode::Session {
+            ref action,
+            continuation,
+        } => {
+            for value in action.values() {
+                each(NodeAddress::Producer(value), at)?;
+            }
+            for body in action.computations() {
+                each(
+                    NodeAddress::Command(body),
+                    Opens::memory(action.child_binders()),
+                )?;
+            }
+            each(NodeAddress::Consumer(continuation), at)?;
+        },
     }
     Ok(())
 }
@@ -2284,7 +2320,7 @@ pub fn consumer_named(node: &ConsumerNode) -> core::option::IntoIter<(Zone, DeBr
 }
 
 /// The producer occurrence a command names itself: the linear slot a memory
-/// form lends, ends or consumes.
+/// form lends, ends or consumes, and the endpoint a session action acts on.
 ///
 /// # Specification
 /// trivial.
@@ -2309,6 +2345,10 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. }
         | CommandNode::World { .. } => None,
+        CommandNode::Session { ref action, .. } => match action.endpoint() {
+            quenchant_shape::shape::Maybe::Present(endpoint) => Some((Zone::Linear, endpoint)),
+            quenchant_shape::shape::Maybe::Absent(_) => None,
+        },
     }
     .into_iter()
 }
@@ -2338,26 +2378,37 @@ pub fn consumer_annotations(
     .flatten()
 }
 
-/// The interface a command carries, whose types are its annotations: an
-/// operation's or a handler's.
+/// The annotations a command carries: an operation's or a handler's interface
+/// types, and a fork's protocol.
 ///
 /// # Specification
 /// trivial.
 #[inline]
-pub const fn command_signature(node: &CommandNode) -> Option<&gandr_core_term::effect::EffectSig>
+pub fn command_annotations(
+    node: &CommandNode
+) -> impl Iterator<Item = gandr_core_term::ValueTypeId> + '_
 {
-    match *node {
+    let (signature, action) = match *node {
         CommandNode::Perform { ref signature, .. } | CommandNode::Handle { ref signature, .. } => {
-            Some(signature)
+            (Some(signature), None)
         },
+        CommandNode::Session { ref action, .. } => (None, Some(action)),
         CommandNode::Resume { .. }
         | CommandNode::Abandon { .. }
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. }
         | CommandNode::Memory { .. }
-        | CommandNode::World { .. } => None,
-    }
+        | CommandNode::World { .. } => (None, None),
+    };
+    signature
+        .into_iter()
+        .flat_map(gandr_core_term::effect::EffectSig::types)
+        .chain(
+            action
+                .into_iter()
+                .flat_map(gandr_core_term::session::SessionAction::value_types),
+        )
 }
 
 mod carried;

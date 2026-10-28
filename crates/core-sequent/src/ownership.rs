@@ -489,6 +489,12 @@ impl Ownership
                 CommandNode::Handle { ref clauses, .. } => {
                     mark(2, clauses.len().saturating_add(2), Share::Kept);
                 },
+                // reason: exactly one of an offer's arms runs, after the
+                // action's payload, which it has none of.
+                CommandNode::Session {
+                    action: gandr_core_term::session::SessionAction::Offer { ref arms, .. },
+                    ..
+                } => mark(0, arms.len(), Share::Arm),
                 CommandNode::Perform { .. }
                 | CommandNode::Resume { .. }
                 | CommandNode::Abandon { .. }
@@ -496,7 +502,8 @@ impl Ownership
                 | CommandNode::Shift { .. }
                 | CommandNode::Cut { .. }
                 | CommandNode::Memory { .. }
-                | CommandNode::World { .. } => {},
+                | CommandNode::World { .. }
+                | CommandNode::Session { .. } => {},
             },
         }
         Ok(())
