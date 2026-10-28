@@ -13171,7 +13171,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of it to at least one argument is the call, a computation the position
     ///   nests. Every argument is read as a value under the site's frame, and a
     ///   binder so named is recorded by [`Self::name_in_type`]: quoted in a
-    ///   body quote, mentioned elsewhere.
+    ///   body quote, mentioned elsewhere. Each argument of a decode or an
+    ///   unquote counts in the type's telescope, as a family's arguments do, so
+    ///   a lambda among them reads each variable from outside it at its index.
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
@@ -13196,13 +13198,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   operator and left to the position, a function called where a type is
     ///   read, and a binder holding a thunk called where a type is read and in
     ///   a type-position call's argument, each asserted as the exact core node
-    ///   read back out of the arena.
+    ///   read back out of the arena; a lambda in a type-valued call's argument,
+    ///   in a signature's type, reading outer variables at their indices.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
     /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
     /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
+    /// - witness: `lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -13324,6 +13328,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
             }
+        }
+        // Each argument of a decode or an unquote is a value the type reads:
+        // it counts in that type's telescope, as a family's arguments do.
+        if matches!(plan, Plan::Decode(..) | Plan::Unquote(..)) {
+            self.in_type
+                .extend(stretch(&self.operands, applied).iter().copied());
         }
 
         self.plan(site, plan);
@@ -28304,6 +28314,98 @@ mod tests
             [at(0), at(1), at(0), at(0)],
             "`L(p)` over one parameter, `L(a)` and `L(b)` over two, and the codata `S(p)`, each \
              argument at its parameter's index in the body"
+        );
+    }
+
+    /// #3616: a lambda in the argument of a type-valued call, in a signature's
+    /// type, makes the arrow binding each variable it reads dependent, and
+    /// reads that variable at its index under the lambda, as a lambda in a
+    /// family's argument does.
+    #[test]
+    fn a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def idf(d : Type, c : Type, x : d) -> -F d { return x } def fam(d : Type, c : \
+                 Type, f : +U (d -> -F d)) -> -F Type { return d } def k10(d : Type, c : Type, w \
+                 : d, v : fam(d, c, thunk { fn (a) { idf(d, c, w) } })) -> -F Unit { return unit \
+                 } def k11(d : Type, c : Type, w : d, v : fam(d, c, thunk { fn (a) { return w } \
+                 })) -> -F Unit { return unit }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        // Whether each arrow of the declared type is dependent, and the body of
+        // the lambda the fourth parameter's call takes last.
+        let lambda = |arena: &CoreArena, at: usize| {
+            let mut arrow = match arena.value_type(declared_of(lowered[at])) {
+                Some(&ValueType::Thunk(arrow)) => arrow,
+                other => panic!("a function's type is a thunk: {other:?}"),
+            };
+            let mut dependent = Vec::new();
+            let mut domains = Vec::new();
+            while let Some(
+                &(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain }),
+            ) = arena.comp_type(arrow)
+            {
+                dependent.push(matches!(arena.comp_type(arrow), Some(&CompType::Pi { .. })));
+                domains.push(domain);
+                arrow = codomain;
+            }
+            let [_, _, _, decoded] = *domains
+            else {
+                panic!("four parameters: {domains:?}");
+            };
+            let Some(&ValueType::Element { code, .. }) = arena.value_type(decoded)
+            else {
+                panic!("a call where a type is read decodes");
+            };
+            let Some(&Value::Returned(called)) = arena.value(code)
+            else {
+                panic!("the code is what the call returns");
+            };
+            let Some(&Computation::Application(_, argument)) = arena.computation(called)
+            else {
+                panic!("the call applies the family to its last argument");
+            };
+            let Some(&Value::Thunk(suspended)) = arena.value(argument)
+            else {
+                panic!("the last argument is a thunk");
+            };
+            let Some(&Computation::Lambda(body)) = arena.computation(suspended)
+            else {
+                panic!("the thunk holds a lambda");
+            };
+            (dependent, body)
+        };
+        let index = |arena: &CoreArena, value| match arena.value(value) {
+            Some(&Value::Variable { index, .. }) => u32::from(index),
+            other => panic!("a variable: {other:?}"),
+        };
+        // `idf(d, c, w)`: the three values the call applies, first to last.
+        let (calling, mut call) = lambda(&arena, 2_usize);
+        let mut applied = Vec::new();
+        while let Some(&Computation::Application(function, argument)) = arena.computation(call) {
+            applied.push(index(&arena, argument));
+            call = function;
+        }
+        applied.reverse();
+        let (returning, body) = lambda(&arena, 3_usize);
+        let Some(&Computation::Return(returned)) = arena.computation(body)
+        else {
+            panic!("`return w`");
+        };
+
+        assert_eq!(
+            ((calling, applied), (returning, index(&arena, returned))),
+            (
+                (vec![true, true, true, false], vec![3_u32, 2, 1]),
+                (vec![true, true, true, false], 1_u32)
+            ),
+            "`w` is read inside the lambda, so its arrow is dependent; under `d, c, w` and the \
+             lambda's own `a`, `idf(d, c, w)` reads `d`, `c` and `w` at 3, 2 and 1, and `return \
+             w` reads `w` at 1"
         );
     }
 
