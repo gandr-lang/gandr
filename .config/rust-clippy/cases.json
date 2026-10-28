@@ -1,0 +1,42 @@
+[
+  {
+    "name": "#3531: a driver build's clone of rust-clippy reads the pinned commit as master, and its parent with it, as Dylint's walk needs",
+    "pin": "sets",
+    "channel": "nightly-2026-06-25",
+    "repository": "served",
+    "source": "upstream",
+    "run": "clone",
+    "exit": 0,
+    "output": "{sets}\n[toolchain]\nchannel = \"nightly-2026-05-13\""
+  },
+  {
+    "name": "#3531: a repository fetched once is kept: the next driver build reads it with its source gone",
+    "pin": "sets",
+    "channel": "nightly-2026-06-25",
+    "repository": "served",
+    "source": "absent",
+    "run": "clone",
+    "exit": 0,
+    "output": "{sets}\n[toolchain]\nchannel = \"nightly-2026-05-13\""
+  },
+  {
+    "name": "#3531: a pin naming another channel than the toolchain's is refused, and the command does not run",
+    "pin": "sets",
+    "channel": "nightly-2026-07-09",
+    "repository": "served",
+    "source": "upstream",
+    "run": "touch",
+    "exit": 1,
+    "output": "rust-clippy {sets} sets nightly-2026-06-25, the toolchain is nightly-2026-07-09: run mise run toolchain:bump"
+  },
+  {
+    "name": "#3531: a pin whose parent names the same channel is refused, for depth 2 would not serve the walk, and the command does not run",
+    "pin": "after",
+    "channel": "nightly-2026-06-25",
+    "repository": "after",
+    "source": "upstream",
+    "run": "touch",
+    "exit": 1,
+    "output": "rust-clippy {after} does not set nightly-2026-06-25: its parent names it too"
+  }
+]
