@@ -9,6 +9,8 @@ use super::*;
 use crate::boundary::ProducerArity;
 use crate::check::check_command;
 use crate::il::ConstructorTag;
+use crate::ownership::Ownership;
+use crate::ownership::reach;
 use crate::pretty::render_command;
 use crate::pretty::render_producer;
 
@@ -444,5 +446,54 @@ fn beta_enters_a_closure_through_a_bind_chain()
         let mark = arena.watermark();
         assert_eq!(Ok(None), beta(&mut arena, command), "{what} is no redex");
         assert_eq!(mark, arena.watermark(), "{what} mints nothing");
+    }
+}
+
+/// A forced recursive thunk whose body names a capture enters to bindings
+/// that hold the thunk itself. The thunk keeps its body, so the reduct runs
+/// a copy of the body's root, and the ownership reading places every node
+/// the reduct reaches.
+#[test]
+fn beta_gives_a_recursive_thunk_and_its_reduct_their_own_body_3635()
+{
+    let mut arena = CommandArena::new();
+    let captured = variable(&mut arena, DeBruijnIndex::from(1_u32));
+    let answer = covariable(&mut arena, CovariableIndex::from(0_u32));
+    let body = arena
+        .mint_cut(Polarity::Positive, captured, answer)
+        .expect("children resolve");
+    let thunk = arena
+        .mint_producer(ProducerNode::Fixpoint {
+            body,
+            evidence: gandr_kernel_term::FixpointEvidence::Partial,
+        })
+        .expect("children resolve");
+    let observer = top(&mut arena);
+    let forced = frame(&mut arena, DestructorTag::Force, Box::from([]), observer);
+    let cut = arena
+        .mint_cut(Polarity::Negative, thunk, forced)
+        .expect("children resolve");
+    let entered = beta(&mut arena, cut)
+        .expect("the redex enters")
+        .expect("it is a redex");
+    assert_eq!(
+        "⟨μα. ⟨fix{x; force(α) ⇒ ⟨x1 |+ α0⟩} |+ μ̃x. ⟨x1 |+ α0⟩⟩ |+ ★⟩",
+        render_command(&arena, entered)
+    );
+    let root = [NodeAddress::Command(entered)];
+    let mut reached = alloc::vec::Vec::new();
+    reach(
+        &arena,
+        &root,
+        &mut alloc::collections::BTreeSet::new(),
+        &mut reached,
+    )
+    .expect("the reduct's nodes resolve");
+    let ownership = Ownership::of(&arena, &root, &reached).expect("the reduct's nodes resolve");
+    for node in reached {
+        assert!(
+            ownership.entry(node).is_some(),
+            "the ownership reading places {node}"
+        );
     }
 }

@@ -371,15 +371,17 @@ fn sweep(
 /// - requires: nothing.
 /// - ensures: for a cut of an abstract closure or a closure former against an
 ///   application or projection frame its copattern object answers, or a force
-///   frame against its thunk or recursive thunk, `Some` of the bindings over
-///   the answering body: each frame continuation bound by a `μ`, then each
-///   environment value, a recursive thunk's own closure and each frame argument
-///   bound by a `μ̃`, each renamed past the binders above it; for a cut `⟨μα.
-///   D⟨⟨f | α⟩⟩ | F⟩` whose closure `f` answers the one-continuation frame `F`,
-///   where `D` is a chain of links and only the hole names `α`, `Some` of `⟨μβ.
-///   D⟨B⟩ | k⟩`, with `B` the bindings entering `f` against `F` renamed past
-///   `β` and the binders of `D`, its continuation `k` replaced by `β`; `None`
-///   for any other command, the arena then unchanged.
+///   frame against its thunk or recursive thunk, `Some` of the bindings over a
+///   fresh copy of the answering body's root, so the bindings and a closure
+///   that keeps the body share no node of it that two parents read: each frame
+///   continuation bound by a `μ`, then each environment value, a recursive
+///   thunk's own closure and each frame argument bound by a `μ̃`, each renamed
+///   past the binders above it; for a cut `⟨μα. D⟨⟨f | α⟩⟩ | F⟩` whose closure
+///   `f` answers the one-continuation frame `F`, where `D` is a chain of links
+///   and only the hole names `α`, `Some` of `⟨μβ. D⟨B⟩ | k⟩`, with `B` the
+///   bindings entering `f` against `F` renamed past `β` and the binders of `D`,
+///   its continuation `k` replaced by `β`; `None` for any other command, the
+///   arena then unchanged.
 /// - provides: the closure's β, the environment and the arguments substituted
 ///   together, and its distant form, which keeps the frame's continuation
 ///   outside the context.
@@ -397,9 +399,12 @@ fn sweep(
 ///   applied renders its bindings exactly, and a cut of a value against a match
 ///   is no redex; the constant function under one bind link, applied, renders
 ///   its distant reduct exactly, and a context whose link names `α`, a hole
-///   under a frame and a hole sending to another covariable are no redex.
+///   under a frame and a hole sending to another covariable are no redex; a
+///   forced recursive thunk whose body names a capture enters to bindings the
+///   ownership reading places node for node.
 /// - witness: `closure::tests::beta_binds_the_environment_and_the_argument_together`
 /// - witness: `closure::tests::beta_enters_a_closure_through_a_bind_chain`
+/// - witness: `closure::tests::beta_gives_a_recursive_thunk_and_its_reduct_their_own_body_3635`
 /// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
 #[spec(
     captures: [entry = arena.watermark()],
@@ -1563,7 +1568,14 @@ fn entered(
     }
     values.extend(arguments);
     let bound = continuations.len();
-    let mut command = body;
+    // reason: the closure may stay reachable beside the reduct and keep its
+    // body, and a node two parents read differently has no ownership reading,
+    // so the reduct runs a copy of the body's root over the same children.
+    let root = arena
+        .command(body)
+        .ok_or(ClosureRefusal::Dangling(NodeAddress::Command(body)))?
+        .clone();
+    let mut command = arena.mint_command(root)?;
     for (position, &value) in values.iter().enumerate().rev() {
         let shifted = rename(arena, NodeAddress::Producer(value), Renaming::Shift {
             producers: position,
