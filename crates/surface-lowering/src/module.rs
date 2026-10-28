@@ -261,7 +261,6 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
-use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::NameSegment;
@@ -384,6 +383,8 @@ pub use self::foreign::BoundarySlot;
 use self::foreign::Foreign;
 pub use self::foreign::ForeignInterface;
 pub use self::foreign::ForeignType;
+use self::foreign::Interfaces;
+pub use self::foreign::Provider;
 use self::functor::Applied;
 pub use self::functor::Argument;
 pub use self::functor::BodyScope;
@@ -1596,10 +1597,9 @@ pub struct Collected<'source>
     pub declared_uses: Vec<(ByteSpan, SlotIndex)>,
     /// The bytes of each import a name lookup was answered through.
     pub reached: BTreeSet<ByteSpan>,
-    /// Each interface an `extern "rust"` block declares, by the source
-    /// declaring it and its name: read where its source reads a row or a
-    /// call, ahead of the host's interface of its name.
-    pub foreign: BTreeMap<(SourceIndex, EffectName), Arc<ForeignInterface>>,
+    /// The interface names each source reads: the host's interfaces, with
+    /// each `extern "rust"` block of the source over them.
+    pub interfaces: Interfaces,
     /// Each extern block carrying `boundary`, by the slot its check takes.
     pub boundaries: BTreeMap<SlotIndex, BoundarySlot>,
     /// Each world written with a requirement, `world w requires [ … ] ;`, by
@@ -3269,7 +3269,7 @@ pub fn begin_collection<'source>(
         receivers: BTreeMap::new(),
         declared_uses: Vec::new(),
         reached: BTreeSet::new(),
-        foreign: BTreeMap::new(),
+        interfaces: Interfaces::default(),
         boundaries: BTreeMap::new(),
         requirements: BTreeMap::new(),
         offers: BTreeMap::new(),

@@ -89,6 +89,9 @@ pub const STDERR: &str = "Stderr";
 pub const STDIN: &str = "Stdin";
 /// The network interface: a stream to a peer named by its key.
 pub const NET: &str = "Net";
+/// The names of the ten interfaces, in the order [`HostSignatures::interfaces`]
+/// returns them.
+pub const INTERFACES: [&str; 10] = [EXEC, FS, PROC, ENV, RING, DIV, CONSOLE, STDERR, STDIN, NET];
 
 /// The ten interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -227,6 +230,7 @@ impl HostSignatures
     /// - requires: nothing; the arena may already hold unrelated terms.
     /// - ensures: every operation payload and reply resolves in this arena;
     ///   list-valued fields are native Lists, and no signature is executed.
+    ///   Each interface carries the name [`INTERFACES`] holds at its place.
     /// - fails: conflicting operation names in the signature table.
     /// - panics: none.
     ///
@@ -244,6 +248,7 @@ impl HostSignatures
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
+            && host.interfaces().iter().zip(INTERFACES).all(|(signature, name)| signature.name().as_ref() == name)
             && host.div.operations().len() == 0_usize) || ret.is_err())]
     #[inline]
     pub fn new(arena: &mut CoreArena) -> Result<Self, EffectConflict>

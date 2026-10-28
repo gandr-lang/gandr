@@ -233,6 +233,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::module::ForeignInterface;
 use crate::module::ForeignType;
+use crate::module::Provider;
 use crate::origin::ClauseBinder;
 use crate::origin::ClausePlace;
 use crate::origin::Insertion;
@@ -791,13 +792,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        let source = self.current.source;
-        for (_, interface) in self
-            .collected
-            .foreign
-            .iter()
-            .filter(|&(&(at, _), _)| at == source)
-        {
+        for interface in self.collected.interfaces.blocks(self.current.source) {
             let _minted = sink.foreign(interface);
         }
     }
@@ -1565,7 +1560,8 @@ impl<'source> Lowerer<'_, 'source>
             Interface::Theory(Arc::clone(theory))
         }
         else if let Performer::Interface(ref named) = performer
-            && let Some(foreign) = self.collected.foreign_named(head.span.start(), named)
+            && let Some(&Provider::Block(ref foreign)) =
+                self.collected.interface(head.span.start(), named)
         {
             if !foreign
                 .operations
@@ -1721,8 +1717,8 @@ impl<'source> Lowerer<'_, 'source>
             .then_some((Performer::Capability(target.node, None), selected)))
     }
 
-    /// The interface named `written` where `at` stands: the one an extern
-    /// block of that source declares, or else the host's.
+    /// The interface named `written` where `at` stands, as that source reads
+    /// it.
     ///
     /// # Specification
     /// trivial.
@@ -1733,11 +1729,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Option<EffectName>
     {
         let interface = EffectName::from(written.as_ref());
-        if self.collected.foreign_named(at, &interface).is_some() {
-            return Some(interface);
-        }
-        let table = HostSignatures::new(&mut CoreArena::new()).ok()?;
-        matches!(table.named(&interface), Maybe::Present(_)).then_some(interface)
+        self.collected.interface(at, &interface).map(|_| interface)
     }
 
     /// Whether the computation `bound` a run statement binds, read where
@@ -2331,16 +2323,19 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the host interface of the name, where the host declares one
-    ///   and the manifest is empty; otherwise the theory the name resolves to
-    ///   where the form stands, read as an interface whose value sorts the
-    ///   manifest fixes ([`theory::operations`]), held for the form at `at`.
+    /// - ensures: the interface the source reads the name as, where it reads
+    ///   one and the manifest is empty. The source reads a block of its own
+    ///   over the host's interface of the name. Otherwise the theory the name
+    ///   resolves to where the form stands, read as an interface whose value
+    ///   sorts the manifest fixes ([`theory::operations`]), held for the form
+    ///   at `at`.
     /// - fails: [`LoweringRefusal::UnresolvedName`] at a manifest sort the
-    ///   interface does not declare, a host interface declaring none;
-    ///   [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest fixes
-    ///   twice; the refusals of [`crate::module::Collected::presented_theory`]
-    ///   for a name neither the host nor a theory answers; an unadmitted form
-    ///   for a theory whose value codes no presentation;
+    ///   interface does not declare, an interface the source reads declaring
+    ///   none; [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest
+    ///   fixes twice; the refusals of
+    ///   [`crate::module::Collected::presented_theory`] for a name neither the
+    ///   source's interfaces nor a theory answers; an unadmitted form for a
+    ///   theory whose value codes no presentation;
     ///   [`LoweringRefusal::UninterfacedMember`] at the theory's name, for its
     ///   first member out of shape or first law no clause reads; an unadmitted
     ///   form for a scope over a theory no declaration owns.
@@ -2369,25 +2364,17 @@ impl<'source> Lowerer<'_, 'source>
     {
         let handled = self.name_at(written);
         let named = EffectName::from(handled.as_ref());
-        // A declared extern block shadows the host interface of its name.
-        if let Some(foreign) = self.collected.foreign_named(written.span.start(), &named) {
+        if let Some(provider) = self.collected.interface(written.span.start(), &named) {
             if let Some(&(sort, _)) = manifest.first() {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: sort.span,
                     name: self.name_at(sort),
                 });
             }
-            return Ok(Interface::Foreign(Arc::clone(foreign)));
-        }
-        let table = host(site)?;
-        if let Maybe::Present(interface) = table.named(&named) {
-            if let Some(&(sort, _)) = manifest.first() {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: sort.span,
-                    name: self.name_at(sort),
-                });
-            }
-            return Ok(Interface::Host(interface.name().clone()));
+            return Ok(match *provider {
+                Provider::Block(ref foreign) => Interface::Foreign(Arc::clone(foreign)),
+                Provider::Host => Interface::Host(named),
+            });
         }
         let (presented, presentation) =
             self.collected
