@@ -3370,6 +3370,33 @@ fn a_program_prints_hello_world_2279()
     );
 }
 
+/// #2970: `gandr run` hands a program its standard input and its standard
+/// error beside standard output. The answering exemplar reads one line and
+/// answers `yes` on standard output and anything else, the end of input too,
+/// on standard error.
+#[test]
+fn a_program_reads_and_answers_on_the_standard_streams_2970()
+{
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+    let answer = corpus.join("model/console/answer.gandr");
+    for (input, out, err) in [
+        ("yes\n", "agreed\n", ""),
+        ("no\n", "", "declined\n"),
+        ("", "", "declined\n"),
+    ] {
+        let output = piped(&[Path::new("run"), answer.as_path()], Text::from(input));
+        assert_eq!(
+            (
+                code(&output),
+                stdout(&output).as_str(),
+                stderr(&output).as_str()
+            ),
+            (Code(0), out, err),
+            "{input:?}"
+        );
+    }
+}
+
 /// A run that reaches a goal is blamed on it, on standard error, and
 /// exits one.
 #[test]

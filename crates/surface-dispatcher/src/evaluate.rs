@@ -221,6 +221,7 @@ mod worlds;
 
 pub use console::Captured;
 pub use console::Console;
+pub use console::Input;
 pub use console::Line;
 pub use console::Printed;
 pub use entry::Entered;

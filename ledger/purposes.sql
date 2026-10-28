@@ -688,10 +688,12 @@ INSERT INTO purpose VALUES('core-term','effect::host::ENV','constant','The read-
 INSERT INTO purpose VALUES('core-term','effect::host::EXEC','constant','The process execution interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::FS','constant','The filesystem interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::HostAccess','enum','How a host operation meets the host: it only reads it, or it changes what another task could observe.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The eight host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The ten host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::NET','constant','The network interface''s name: a stream to a peer named by its key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PROC','constant','The early process-exit interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The completion ring''s buffer interface''s name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::STDERR','constant','The error stream interface''s name: a line written to the process''s standard error.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::STDIN','constant','The input interface''s name: a line read from the process''s standard input.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::access','function','How an interface''s operation meets the host, so two forked halves may share an interface whose shared operations only read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::divergence','function','The divergence interface''s signature: named Div with no operation, so it names no type and needs no arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::FailureClass','enum','Whose fact a refusal records: a user absence, an unimplemented feature, a malformed source, or an engine fault.',NULL,'fits','sound',NULL);
@@ -2028,8 +2030,9 @@ INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Unfinished','enum','W
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Unrunnable','enum','Why a declaration never reached the machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::ValueSpelling','struct','A value, spelled: the text `gandr run` prints for a run that returned one, laid out by the printer every face shares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::channel::Absent','enum','Why a play is reported by no channel name: no source wrote its fork.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Captured','struct','A console keeping every line it is handed, in order.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Console','trait','Where a run''s printed lines go.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Captured','struct','A console keeping every line it is handed, in order, each stream apart, and answering reads from the input it was fed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Console','trait','Where a run''s printed lines go and where its input comes from.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Input','enum','What reading a line of input came to: the line with its newline, or a failure.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Line','struct','A line a run prints, without its newline.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Printed','enum','Whether a console wrote a line.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::entry::Entered','enum','What running a program''s entry came to.',NULL,'fits','sound',NULL);
