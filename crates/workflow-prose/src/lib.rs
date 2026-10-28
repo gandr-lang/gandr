@@ -1,14 +1,17 @@
 //! **Prose**: the sentence rules that need a parse, held over the corpus
 //! comments, the rendered diagnostics and the crate READMEs, with the
-//! committed debt in a ledger.
+//! committed debt in a ledger, and over a pull request's or an issue's body,
+//! with none.
 //!
 //! - [`passage`] reads the text: a corpus source's `///` paragraphs, a README's
-//!   prose paragraphs, a rendered diagnostic's headline, label and advice.
+//!   prose paragraphs, a rendered diagnostic's headline, label and advice, and
+//!   a body's paragraphs and list items.
 //! - [`parse`] runs the parse script under the pinned spaCy venv's interpreter
 //!   and reads back each passage's sentences and tokens.
 //! - [`rules`] judges each sentence: a passive outside the stated list, a past
 //!   tense, a stack of four nouns, an `-ing` main verb, a glossary word in the
-//!   wrong part of speech; and each diagnostic's procedural form.
+//!   wrong part of speech; a body's sentence past 25 words, or joined to the
+//!   next by a semicolon or a dash; and each diagnostic's procedural form.
 //! - [`glossary`] reads `corpus/glossary.toml`.
 //! - [`ledger`] keys each finding by file, rule and sentence digest.
 //!

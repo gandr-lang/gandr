@@ -1827,8 +1827,43 @@ fi
 echo "body check OK: nothing on the private-names list in ${usage_title:+the title and }${#files[@]} file(s)"
 {% endraw %}'''
 
+# A public body keeps the explanatory register (#3591; the agents'
+# guidance, baseline.md § explanatory-prose). `body:prose <file>...` reads
+# each body's paragraphs and list items and holds each sentence to the body
+# rules of `crates/workflow-prose/README.md`: a passive outside the stated
+# list, a tense other than the present, more than 25 words, a semicolon
+# between sentences and a dash between clauses. A code block, a table, a
+# heading, an HTML comment and the block `pr:open` writes are not read, and
+# an item of a mechanism's form is read from its answer. Each finding prints
+# its file, line, rule, sentence and fix, and the check exits 1. Bodies keep
+# no ledger. `pr:open` runs it on the body before it pushes, and `issue:file`
+# on a body it files with no `--template`. The nightly `report:prose` runs
+# it over every open body.
+["body:prose"]
+description = "Refuse a body whose sentences break the body rules of the prose gate"
+usage = 'arg "<file>..." help="the body files to read"'
+tools.python = "3.14.9"
+tools."github:astral-sh/uv" = "0.13.5"
+tools."pipx:spacy" = { version = "3.8.18", uvx_args = "--python 3.14.9 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+python="$(mise where pipx:spacy)/spacy/bin/python"
+eval "files=(${usage_file:?})"
+paths=()
+for file in "${files[@]}"; do paths+=("$(realpath "$file")"); done
+status=0
+(cd "$root" && .config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" --body "${paths[@]}") || status=$?
+if ((status == 1)); then
+  echo "body:prose FAILED: rewrite each sentence above as its fix states (baseline.md § explanatory-prose)" >&2
+fi
+exit "$status"
+{% endraw %}'''
+
 # The one way a seat or the coordinator files an issue: `issue:file <title>
-# <body> [label]...` runs `body:check` on the title and the body, then
+# <body> [label]...` runs `body:check` on the title and the body, and
+# `body:prose` on a body filed with no `--template` (#3591), then
 # `gh issue create` with each label, printing the issue's address. The labels
 # are the full set or the issue is refused (#2902): exactly one `kind:`,
 # `priority:` and `effort:`, one or more `area:`, a missing `priority:` or
@@ -1894,6 +1929,9 @@ elif [[ -n ${usage_fields:-} ]]; then
   exit 2
 fi
 mise run --quiet body:check --title "${usage_title:?}" "$body" >&2
+if [[ -z $template ]]; then
+  mise run --quiet body:prose "$body" >&2
+fi
 jq -R -s -r -L "$claims" 'include "targets"; strays[]
   | "issue:file: note: the line `\(.line)` carries `\(.keyword)`, a closing keyword; it does nothing here, but closes the issue it names if the words reach a pull request body"' "$body" >&2
 eval "labels=(${usage_label:-})"
@@ -2330,6 +2368,86 @@ else
   [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
   gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
   echo "updated #$number: $count finding(s)"
+fi
+{% endraw %}'''
+
+# The nightly prose report (#3591): `report:prose` reads every open issue
+# body and every open pull request body under the body rules (`body:prose`),
+# in one parse, and writes one row per body that breaks a rule on one
+# `collector` issue, `report: prose`, opened by the first finding, updated
+# each night, and closed by a night with none. A collector's own body is not
+# read. GH_REPO names the repository; without REPORT_FILE set the task prints
+# the report and writes nothing.
+["report:prose"]
+description = "Report each open issue and pull request body that breaks a body rule, on one issue"
+tools.jq = "1.8.1"
+tools.python = "3.14.9"
+tools."github:astral-sh/uv" = "0.13.5"
+tools."pipx:spacy" = { version = "3.8.18", uvx_args = "--python 3.14.9 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+write=${REPORT_FILE:-}
+title='report: prose'
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir "$scratch/bodies"
+gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
+  --jq '.[] | select(any(.labels[]; .name == "collector") | not) | {number, body: (.body // "")}' > "$scratch/open.jsonl"
+while read -r item; do
+  jq -r .body <<< "$item" > "$scratch/bodies/$(jq .number <<< "$item").md"
+done < "$scratch/open.jsonl"
+shopt -s nullglob
+bodies=("$scratch"/bodies/*.md)
+touch "$scratch/findings.txt"
+if ((${#bodies[@]} > 0)); then
+  python="$(mise where pipx:spacy)/spacy/bin/python"
+  status=0
+  (cd "$root" && .config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" --body "${bodies[@]}") > "$scratch/findings.txt" || status=$?
+  ((status <= 1)) || { echo "report:prose: the body parse failed (exit $status)" >&2; exit "$status"; }
+fi
+awk -v dir="$scratch/bodies/" 'index($0, dir) == 1 {
+    split(substr($0, length(dir) + 1), part, ":")
+    number = part[1]; sub(/\.md$/, "", number)
+    rule = part[3]; sub(/^ /, "", rule)
+    count[number]++
+    if (!((number, rule) in seen)) { seen[number, rule] = 1; rules[number] = rules[number] (rules[number] == "" ? "" : ", ") rule }
+  }
+  END { for (number in count) printf "%s\t%d\t%s\n", number, count[number], rules[number] }' "$scratch/findings.txt" | sort -n > "$scratch/rows.tsv"
+count=$(awk 'END { print NR }' "$scratch/rows.tsv")
+{
+  printf 'The nightly reads each open issue body and each open pull request body under the body rules (`mise run body:prose`, #3591). '
+  printf 'It read %s bodies tonight. The table gives each body that breaks a rule.\n\n' "${#bodies[@]}"
+  printf '| Body | Findings | Rules |\n| --- | --- | --- |\n'
+  awk -F'\t' '{ printf "| #%s | %s | %s |\n", $1, $2, $3 }' "$scratch/rows.tsv"
+  printf '\nRun `mise run body:prose <file>` on a body for each sentence and its fix.\n\nfrom: %s\n' "${GITHUB_RUN_URL:-a run by hand}"
+} > "$scratch/body.md"
+gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,title,state \
+  | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
+number=$(jq -r '.number // empty' "$scratch/filed.json")
+state=$(jq -r '.state // empty' "$scratch/filed.json")
+if [[ -z $write ]]; then
+  cat "$scratch/body.md"
+  echo "report:prose: $count bodies with a finding; REPORT_FILE unset, nothing written" >&2
+  exit 0
+fi
+if ((count == 0)); then
+  if [[ $state == OPEN ]]; then
+    gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+    gh issue close "$number" --repo "$repo" --reason completed > /dev/null
+    echo "closed #$number: no findings"
+  else
+    echo "report:prose: no findings"
+  fi
+elif [[ -z $number ]]; then
+  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
+else
+  [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
+  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  echo "updated #$number: $count bodies with a finding"
 fi
 {% endraw %}'''
 
@@ -2870,8 +2988,9 @@ if [[ -z "$unblocks" ]]; then
   fi
 fi
 # The title and the body, as they will be posted, name nothing private
-# (`body:check`, #2530).
+# (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
+mise run --quiet body:prose "$body"
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})

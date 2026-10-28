@@ -1924,7 +1924,10 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
 # finding refuses, a fixed one leaves a stale line, and `--write` rewrites
 # it. The merge group runs it too (`ci.yml`'s `prose-gate`, #3082): the
-# interpreter is this task's tool, installed there by the same pins.
+# interpreter is this task's tool, installed there by the same pins. The
+# filers' templates under `.config/issues/templates/` keep the body rules
+# with no ledger (#3591): `issue:file --template` files a mechanism's body
+# unread, so the template is held here.
 ["check:prose"]
 description = "The parsed sentence rules, against the prose ledger"
 tools.python = "3.14.9"
@@ -1938,6 +1941,7 @@ python="$(mise where pipx:spacy)/spacy/bin/python"
 extra=()
 if [[ ${usage_write:-false} == true ]]; then extra+=(--write); fi
 .config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" "${extra[@]}"
+.config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" --body .config/issues/templates/*.md
 '''
 
 # Workflow tools are build-time policy, never package dependencies. Check

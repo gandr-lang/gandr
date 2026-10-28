@@ -292,6 +292,11 @@ jobs:
   # tracker alone, so they build nothing. The obligations report's search
   # leaves out every pull request the token cannot read, and writes zeros
   # rather than failing, so the job grants `pull-requests: read` (#3576).
+  # Then the prose report (`mise run report:prose`, #3591): each open issue
+  # body and each open pull request body that breaks a body rule, on one
+  # `report: prose` issue. It builds the `prose` binary and parses under the
+  # spaCy venv `check:prose` pins, restored from the cache the merge group's
+  # prose lane saves.
   #
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
@@ -378,6 +383,25 @@ jobs:
       - name: report the obligations answered
         if: *not-cancelled
         run: mise run report:obligations
+      - name: locate the prose tools
+        id: prose-tools
+        if: *not-cancelled
+        shell: bash
+        run: |
+          printf 'installs=%s/installs\n' "${MISE_DATA_DIR:-$HOME/.local/share/mise}" >> "$GITHUB_OUTPUT"
+          printf 'pins=%s\n' "$(sed -n '/^\["check:prose"\]/,/^usage/p' .config/mise/tasks/mise-tasks-check.toml | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: restore the prose tools
+        if: *not-cancelled
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.prose-tools.outputs.installs }}/python
+            ${{ steps.prose-tools.outputs.installs }}/github-astral-sh-uv
+            ${{ steps.prose-tools.outputs.installs }}/pipx-spacy
+          key: prose-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}
+      - name: report the prose of the open bodies
+        if: *not-cancelled
+        run: mise run report:prose
       - name: compare each lane with its budget
         if: *not-cancelled
         run: >-

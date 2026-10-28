@@ -1,14 +1,14 @@
 ## The shape
 
-`{{workflow}}` sums {{total}} s over its jobs, past its budget of {{budget}} s, and `{{job}}` is the job that grew. A sweep that cannot fit rotates or samples; no timeout is raised and no test is ignored (`AGENTS.md`, hosted CI budget).
+`{{workflow}}` sums {{total}} s over its jobs, past its budget of {{budget}} s. `{{job}}` is the job whose time rises. A sweep that cannot fit rotates or samples. No seat raises a timeout or ignores a test (`AGENTS.md`, hosted CI budget).
 
-- `{{job}}` rotates, each run taking a fixed share of its work by the run's date, or samples, each run a seeded subset whose seed the log prints; the whole runs across the rotation.
-- The workflow's sum returns under {{budget}} s, read from its runs' job timings.
+- `{{job}}` rotates or samples. A rotating run takes a fixed share of the work by the run's date. A sampling run takes a seeded subset. Its log prints the seed. The rotation covers the whole set across runs.
+- The job timings of its runs show the workflow's sum under {{budget}} s.
 - The regression is the lane budget's own reading of the workflow's next runs.
 
 ## Try first
 
-Time `{{job}}`'s parts in its last run's log and split them into shares by cost: the share count whose largest part fits the budget's remainder decides rotation over sampling.
+Time the parts of `{{job}}` in its last run's log. Split them into shares by cost. The share count whose largest part fits the budget's remainder decides between rotation and sampling.
 
 ## Sources
 

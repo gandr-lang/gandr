@@ -1,11 +1,12 @@
 //! The passages the check reads: a corpus source's `///` paragraphs, a crate
-//! README's prose paragraphs, and a rendered diagnostic's message, label and
-//! advice.
+//! README's prose paragraphs, a rendered diagnostic's message, label and
+//! advice, and a pull request's or an issue's body.
 //!
 //! A passage is a paragraph joined onto one line, so a sentence wrapped over
 //! several comment lines parses whole. A list item, a `- see:` reference, a
 //! heading, a table, a fenced block and an indented continuation are not
-//! paragraphs and are left out: their fragments are not sentences.
+//! paragraphs and are left out: their fragments are not sentences. A body is
+//! the exception: each of its list items is a passage of its own.
 
 use core::fmt;
 use std::fs;
@@ -16,7 +17,7 @@ use crate::error::ProseError;
 /// Where a passage was read from.
 ///
 /// # Specification
-/// - provides: the three kinds of text the check reads.
+/// - provides: the four kinds of text the check reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Source
 {
@@ -26,6 +27,8 @@ pub enum Source
     Readme,
     /// A rendered diagnostic's advice.
     Diagnostic,
+    /// A pull request's or an issue's body.
+    Body,
 }
 
 /// A one-based line number in a file.
@@ -249,6 +252,226 @@ pub fn readme(
             continue;
         }
         paragraph.push(Line(index.saturating_add(1)), Text(raw));
+    }
+    paragraph.close();
+    paragraph.passages
+}
+
+/// The lines that open and close the block `pr:open` writes, which no rule
+/// reads.
+const OBLIGATIONS: [&str; 2] = [
+    "<!-- quenchant-obligations:start -->",
+    "<!-- quenchant-obligations:end -->",
+];
+
+/// The keywords of a line that only links issues.
+const LINKS: [&str; 5] = ["Closes ", "Fixes ", "Resolves ", "Advances ", "Part of "];
+
+/// Whether an HTML comment is open at a line's edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Comment
+{
+    /// No comment is open.
+    Closed,
+    /// A comment opened and has not closed.
+    Open,
+}
+
+/// `line` with its HTML comments left out, given the comment state where it
+/// starts, and the state where it ends.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a comment inside a line and one across lines are left
+///   out; a comment kept, or text after its close dropped, changes the
+///   passages.
+/// - witness: `passage::tests::a_body_reads_its_paragraphs_and_items`
+fn uncommented(
+    line: Text<'_>,
+    start: Comment,
+) -> (String, Comment)
+{
+    let mut kept = String::new();
+    let mut rest = line.0;
+    let mut state = start;
+    loop {
+        let marker = match state {
+            Comment::Open => "-->",
+            Comment::Closed => "<!--",
+        };
+        let Some((before, after)) = rest.split_once(marker)
+        else {
+            if state == Comment::Closed {
+                kept.push_str(rest);
+            }
+            return (kept, state);
+        };
+        state = match state {
+            Comment::Open => Comment::Closed,
+            Comment::Closed => {
+                kept.push_str(before);
+                Comment::Open
+            },
+        };
+        rest = after;
+    }
+}
+
+/// The text of a list item, its marker and any checkbox left out, or nothing
+/// when `line` is not a list item.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dash, a star and a numbered item are items and a
+///   sentence is not; another reading joins an item to its neighbour.
+/// - witness: `passage::tests::a_body_reads_its_paragraphs_and_items`
+fn itemised(line: Text<'_>) -> Option<Text<'_>>
+{
+    let item = ["- ", "* ", "+ "]
+        .into_iter()
+        .find_map(|marker| line.0.strip_prefix(marker))
+        .or_else(|| {
+            let (number, rest) = line.0.split_once(". ")?;
+            (!number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())).then_some(rest)
+        })?;
+    Some(Text(
+        ["[x] ", "[X] ", "[ ] "]
+            .into_iter()
+            .find_map(|checkbox| item.strip_prefix(checkbox))
+            .unwrap_or(item),
+    ))
+}
+
+/// The text after the label `text` opens with: a few lowercase words and a
+/// colon, as `taken:` or `stays design:`. Nothing when it opens with none.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `taken: the binary` loses its label and `the cache is
+///   stale` has none; a label read in prose changes the passages.
+/// - witness: `passage::tests::a_body_reads_its_paragraphs_and_items`
+fn unlabelled(text: Text<'_>) -> Option<Text<'_>>
+{
+    let (label, after) = text.0.split_once(": ")?;
+    (!label.is_empty()
+        && label.len() <= 24
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || b" /-".contains(&byte)))
+    .then_some(Text(after))
+}
+
+/// The part of a list item a reader parses. An item of the form a mechanism
+/// writes, a head, a dash and an answer, is read from its answer: a head
+/// holding code or an issue, or an answer opening with a label, marks the
+/// form. The answer's label and a leading `no —` or `yes —` are left out.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `## Sources read` item, a `no —` reading and a plain
+///   item with a dash; reading the head, or the plain item's answer alone,
+///   changes the passages.
+/// - witness: `passage::tests::a_body_reads_its_paragraphs_and_items`
+fn answered(item: Text<'_>) -> Text<'_>
+{
+    let Some((head, answer)) = item.0.split_once(" — ")
+    else {
+        return item;
+    };
+    let label = unlabelled(Text(answer));
+    if !(head.contains('`') || head.starts_with('#') || label.is_some()) {
+        return item;
+    }
+    let answer = label.map_or(answer, |after| after.0);
+    Text(
+        ["no — ", "yes — "]
+            .into_iter()
+            .find_map(|verdict| answer.strip_prefix(verdict))
+            .unwrap_or(answer),
+    )
+}
+
+/// The prose of a pull request's or an issue's body.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one passage per paragraph of consecutive plain lines and one per
+///   list item, an item's indented continuation lines joining it; an item of a
+///   mechanism's form is read from its answer, as [`answered`] states. A blank
+///   line, a heading, a table row, a quotation, an HTML line, a line that only
+///   links issues and a `from:` line end the open passage and are not read.
+///   Every line of a fenced block and of the block `pr:open` writes between its
+///   obligations markers is not read, nor is the text of an HTML comment. Each
+///   passage starts on its first line.
+/// - provides: the body text the sentence rules read.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the scan is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body with a paragraph, items, a form item, a fence, a
+///   table, a comment, a link line and the obligations block; reading any
+///   skipped line, or joining two items, changes the passages.
+/// - witness: `passage::tests::a_body_reads_its_paragraphs_and_items`
+#[inline]
+#[must_use]
+pub fn body(
+    path: Text<'_>,
+    text: Text<'_>,
+) -> Vec<Passage>
+{
+    let mut paragraph = Paragraph::new(path, Source::Body);
+    let mut fenced = false;
+    let mut obliged = false;
+    let mut commented = Comment::Closed;
+    for (index, raw) in text.0.lines().enumerate() {
+        let trimmed = raw.trim();
+        if OBLIGATIONS.contains(&trimmed) {
+            obliged = trimmed == OBLIGATIONS[0];
+            paragraph.close();
+            continue;
+        }
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fenced = !fenced;
+            paragraph.close();
+            continue;
+        }
+        if fenced || obliged {
+            continue;
+        }
+        let (kept, state) = uncommented(Text(raw), commented);
+        commented = state;
+        let bare = kept.trim();
+        let linking = bare.starts_with("from:")
+            || LINKS.into_iter().any(|keyword| {
+                bare.strip_prefix(keyword).is_some_and(|issues| {
+                    issues
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || b"#, ".contains(&byte))
+                })
+            });
+        let unhashed = bare.trim_start_matches('#');
+        let heading =
+            unhashed.len() != bare.len() && (unhashed.is_empty() || unhashed.starts_with(' '));
+        if bare.is_empty() || heading || bare.starts_with(['|', '<', '>']) || linking {
+            paragraph.close();
+            continue;
+        }
+        let line = Line(index.saturating_add(1));
+        if let Some(item) = itemised(Text(bare)) {
+            paragraph.close();
+            paragraph.push(line, answered(item));
+            continue;
+        }
+        paragraph.push(line, Text(bare));
     }
     paragraph.close();
     paragraph.passages
@@ -601,6 +824,7 @@ mod tests
     use super::Placed;
     use super::Source;
     use super::Text;
+    use super::body;
     use super::comments;
     use super::gather;
     use super::golden;
@@ -639,6 +863,36 @@ mod tests
             .map(|passage| format!("{}:{}", passage.line, passage.text))
             .collect();
         assert_eq!(read, ["3:One paragraph wrapped.", "16:Two."]);
+    }
+
+    #[test]
+    fn a_body_reads_its_paragraphs_and_items()
+    {
+        let text = "## Observed\n\nThe gate reads\nthe body. <!-- hidden -->\n\n- one item\n  \
+                    continued\n- [x] `main.rs` — taken: the binary reads it\n- `univalent` — no \
+                    — nothing is transported\n- the cache is stale — it fails\n1. numbered\n\n```sh\n\
+                    This was code.\n```\n\n| a | b |\n> quoted text\n<!--\nhidden too\n-->\nCloses \
+                    #12, #13\nfrom: the owner\n<!-- quenchant-obligations:start -->\nIt was written \
+                    by the tool.\n<!-- quenchant-obligations:end -->\n#12 holds it.\nLast.\n";
+        let passages = body(Text("pr.md"), Text(text));
+        let read: Vec<String> = passages
+            .iter()
+            .map(|passage| format!("{}:{}", passage.line, passage.text))
+            .collect();
+        assert_eq!(read, [
+            "3:The gate reads the body.",
+            "6:one item continued",
+            "8:the binary reads it",
+            "9:nothing is transported",
+            "10:the cache is stale — it fails",
+            "11:numbered",
+            "27:#12 holds it. Last.",
+        ]);
+        assert!(
+            passages
+                .iter()
+                .all(|passage| passage.source == Source::Body)
+        );
     }
 
     #[test]

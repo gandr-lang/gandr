@@ -1,16 +1,16 @@
 ## The shape
 
-`{{function}}` measures {{count}} against its budget of {{budget}} on `main` at `{{commit}}`, so the hotpath check fails on `main` and every pull request against it repeats the breach. The budget is in `{{policy}}`, whose reason reads: {{reason}}.
+`{{function}}` measures {{count}} against its budget of {{budget}} on `main` at `{{commit}}`. The hotpath check fails on `main`. Each pull request against `main` repeats the breach. The budget is in `{{policy}}`. Its reason reads: {{reason}}.
 
-- Find the landing that moved the count past the budget.
-- Then one of two, decided by that landing:
-  - the count grew where the policy's reason forbids it: the fix is at that landing's site, and the count returns under the budget;
-  - the count grew with the series and the reason still holds: the budget rises, with the policy's comment updated to the new count and the reason for the rise.
+- Find the landing that moves the count past the budget.
+- Then choose one of two fixes. That landing decides which.
+  - The count grows where the policy's reason forbids it. The fix is at that landing's site. The count returns under the budget.
+  - The count grows with the series, and the reason still holds. The budget rises. The policy's comment states the new count and the reason for the rise.
 - The regression is the hotpath check itself: `main`'s report passes the budget.
 
 ## Try first
 
-Bisect the series' hotpath reports over `main` from the last passing report to `{{commit}}`, running `hotpath:report` at each step, to the landing that moved `{{function}}` past {{budget}}. The landing decides which of the two fixes applies.
+Bisect the series' hotpath reports over `main`, from the last passing report to `{{commit}}`. Run `hotpath:report` at each step. The bisection ends at the landing that moves `{{function}}` past {{budget}}. That landing decides which of the two fixes applies.
 
 ## Sources
 
