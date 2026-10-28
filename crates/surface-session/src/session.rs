@@ -155,7 +155,7 @@
 //! (`resumed::Absent::Tried`), and the kernel is offered nothing. The method
 //! takes `&self`, so the session — its form store, resume, snapshot, imports,
 //! documentation, lowering count and admission — is unchanged by construction.
-//! The candidates are judged on the session's width, each thread taking the
+//! The candidates are judged on the session's pool, each worker taking the
 //! next candidate, and ranked: compositions the lowering read before those it
 //! refused whole, both before a fault; then fewer refused declarations, so a
 //! wrong fill ranks below one that leaves a goal; then fewer unsettled
@@ -278,12 +278,8 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::sync::Weak;
 use core::fmt;
-use core::num::NonZeroUsize;
-use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering;
 use std::path::Path;
 use std::sync::OnceLock;
-use std::thread;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
@@ -295,6 +291,8 @@ use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge::LeadingCount;
 use gandr_core_checker::bridge::Readmitted;
 use gandr_core_checker::bridge::crossed;
+use gandr_core_fork::Fork;
+use gandr_core_fork::Serial;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointAddress;
 use gandr_core_incremental::CheckpointObserver;
@@ -337,6 +335,7 @@ use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Recorded;
 use gandr_surface_dispatcher::Recording;
@@ -344,9 +343,7 @@ use gandr_surface_dispatcher::Resumption;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
-use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::TypeTable;
-use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::judge_member;
 use gandr_surface_dispatcher::judge_member_after_retiring;
@@ -1619,8 +1616,9 @@ pub struct Session<Store, Blocks>
     decisions: Decisions,
     /// Every form of the latest parsed revision, by identity.
     forms: FormStore,
-    /// The threads a revision's changed forms are molded on.
-    threads: Threads,
+    /// The pool a revision's changed forms are molded on and a trial's
+    /// candidates are judged on.
+    pool: Arc<Pool>,
     /// The kernel admission the latest judgement left to run.
     admission: Maybe<Pending, admission::Absent>,
     /// The checkpoints of the latest admission taken, in item order: how far
@@ -1844,8 +1842,8 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - requires: nothing.
     /// - ensures: retains the supplied grammar, root and stores, with the
     ///   default checking budget, no accepted revision, imports or snapshot, an
-    ///   empty form store molding on the host's performance cores
-    ///   ([`Width::PerformanceCores`]), and zero lowering attempts.
+    ///   empty form store molding on the calling thread alone, and zero
+    ///   lowering attempts.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1883,7 +1881,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             lowerings: LoweringCount::default(),
             decisions: Decisions::held(),
             forms: FormStore::default(),
-            threads: Width::PerformanceCores.threads(),
+            pool: Arc::default(),
             admission: Maybe::Absent(admission::Absent::Idle),
             admitted: Vec::new(),
             runs: closures::Runs::new(),
@@ -1892,33 +1890,31 @@ impl<Store, Blocks> Session<Store, Blocks>
         }
     }
 
-    /// The session molding each revision's changed forms on the threads
-    /// `width` answers.
+    /// The session molding each revision's changed forms and judging a
+    /// trial's candidates on `pool`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the session unchanged but for the threads it molds on, asked
-    ///   of `width` once, here.
-    /// - provides: the driver's width, carried to the edit loop.
+    /// - ensures: the session unchanged but for the pool it forks on.
+    /// - provides: the driver's pool, carried to the edit loop, so the session
+    ///   starts no thread of its own.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — generated edits submit to the walk's compositions at
-    ///   one thread and at the host's width alike.
+    /// - hypothesis: L3 — generated edits submit to the walk's compositions,
+    ///   and trial candidates judge as a fresh session judges them, on a serial
+    ///   pool and on a wide one alike.
     /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
-    /// - witness: `session::tests::a_session_molds_on_the_width_it_is_given`
-    #[spec(ensures: |ret| ret.threads == width.threads())]
+    /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+    #[spec(captures: handed = Arc::clone(&pool), ensures: |ret| Arc::ptr_eq(&ret.pool, &handed))]
     #[inline]
     #[must_use]
-    pub fn with_width(
+    pub fn with_pool(
         self,
-        width: Width,
+        pool: Arc<Pool>,
     ) -> Self
     {
-        Self {
-            threads: width.threads(),
-            ..self
-        }
+        Self { pool, ..self }
     }
 
     /// A session reopened over `revision`, resuming from the checkpoints
@@ -1991,9 +1987,9 @@ impl<Store, Blocks> Session<Store, Blocks>
         let mut lowerings = LoweringCount::default();
         let mut decisions = Decisions::held();
         let mut forms = FormStore::default();
-        let threads = Width::PerformanceCores.threads();
+        let pool = Arc::<Pool>::default();
         let (parsed, _census) = forms
-            .parse(&grammar, revision, threads)
+            .parse(&grammar, revision, &*pool)
             .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
         let lowering = lower_parsed(&grammar, parsed, &mut lowerings, &mut decisions)
             .map_err(SessionFault::Compose)?;
@@ -2054,7 +2050,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 lowerings,
                 decisions,
                 forms,
-                threads,
+                pool,
                 admission: Maybe::Absent(admission::Absent::Idle),
                 admitted: Vec::new(),
                 runs: closures::Runs::new(),
@@ -2279,25 +2275,24 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - ensures: any admission an earlier judgement left is dropped first.
     ///   `revision` is parsed through the session's form store — every form
     ///   whose identity the store holds taken up, the rest molded on the
-    ///   session's threads — into the parse
-    ///   [`parse`](gandr_surface_parser::parse) gives it, and the store then
-    ///   holds the revision's forms; the submission carries how many forms were
-    ///   molded. The parse is lowered exactly once, and the lowering count is
-    ///   one more. A revision the lowering reads is judged and settled by the
-    ///   dispatcher's [`judge`](gandr_surface_dispatcher::judge) — the
-    ///   composition `gandr check` gives the same text under the same root, its
-    ///   kernel artifact not yet exported — and the same declarations are
-    ///   submitted to the incremental checker, which resumes from the latest
-    ///   accepted revision and persists the new checkpoints; the submission
-    ///   carries the [`diff`] of the latest accepted revision's snapshot and
-    ///   this one's, and no kernel checkpoint yet
-    ///   ([`admitted::Absent::Pending`]); the session then holds the revision's
-    ///   resume, import scope and snapshot, and its admission. A revision the
-    ///   lowering refuses as a whole is reported as [`Composed::Refused`] with
-    ///   no resume, no edits and no kernel checkpoint, and leaves no admission.
-    ///   Its accepted state is unchanged, but the lowering attempt is counted.
-    ///   Either way the submission carries the parse's completion obligations,
-    ///   in source order.
+    ///   session's pool — into the parse [`parse`](gandr_surface_parser::parse)
+    ///   gives it, and the store then holds the revision's forms; the
+    ///   submission carries how many forms were molded. The parse is lowered
+    ///   exactly once, and the lowering count is one more. A revision the
+    ///   lowering reads is judged and settled by the dispatcher's
+    ///   [`judge`](gandr_surface_dispatcher::judge) — the composition `gandr
+    ///   check` gives the same text under the same root, its kernel artifact
+    ///   not yet exported — and the same declarations are submitted to the
+    ///   incremental checker, which resumes from the latest accepted revision
+    ///   and persists the new checkpoints; the submission carries the [`diff`]
+    ///   of the latest accepted revision's snapshot and this one's, and no
+    ///   kernel checkpoint yet ([`admitted::Absent::Pending`]); the session
+    ///   then holds the revision's resume, import scope and snapshot, and its
+    ///   admission. A revision the lowering refuses as a whole is reported as
+    ///   [`Composed::Refused`] with no resume, no edits and no kernel
+    ///   checkpoint, and leaves no admission. Its accepted state is unchanged,
+    ///   but the lowering attempt is counted. Either way the submission carries
+    ///   the parse's completion obligations, in source order.
     /// - provides: the interactive half of a submission: everything a face
     ///   renders, before the kernel has been offered anything.
     /// - fails: [`SessionFault::Compose`] when the parse or the lowering
@@ -2684,7 +2679,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             );
             let (own, forms) = self
                 .forms
-                .parse(&self.grammar, document, self.threads)
+                .parse(&self.grammar, document, &*self.pool)
                 .map_err(parse_fault)?;
             let written = Maybe::Present(path_imports(&self.grammar, own.tree()));
             let parsed = own
@@ -2734,7 +2729,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         else {
             let (parsed, forms) = self
                 .forms
-                .parse(&self.grammar, revision, self.threads)
+                .parse(&self.grammar, revision, &*self.pool)
                 .map_err(parse_fault)?;
             let written = if usize::from(base) == 0 {
                 Maybe::Present(path_imports(&self.grammar, parsed.tree()))
@@ -2943,13 +2938,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   [`SessionFault::Compose`]. The admission-order fault only the
     ///   incremental checker's item source raises is not reached, since a trial
     ///   offers it nothing.
-    /// - panics: only by propagating a judging thread's panic.
-    /// - economy: the candidates are judged on as many threads as the session's
-    ///   width answers, never more than the candidates, the calling thread
-    ///   among them, each thread taking the next candidate no thread has taken;
-    ///   a lone candidate molds on the session's threads instead. Each
-    ///   candidate reuses every form the store holds; nothing is copied out of
-    ///   the session.
+    /// - panics: only by propagating a judging job's panic.
+    /// - economy: several candidates are judged on the session's pool, each
+    ///   worker taking the next candidate no worker has taken, and each
+    ///   candidate molds its forms on the worker that judges it. A lone
+    ///   candidate molds its forms on the pool instead. Each candidate reuses
+    ///   every form the store holds; nothing is copied out of the session.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — candidates that settle, owe a goal, refuse a
@@ -3015,43 +3009,30 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Vec<Trial<'text>>
     {
         let (grammar, forms, root) = (&self.grammar, &self.forms, self.root);
-        let threads = usize::from(NonZeroUsize::from(self.threads)).min(candidates.len());
-        let molding = if candidates.len() == 1 {
-            self.threads
+        let pool: &Pool = &self.pool;
+        let mut slots: Vec<CandidateSlot<'_, 'text, '_>> = candidates
+            .iter()
+            .map(|candidate| (candidate, None))
+            .collect();
+        if let [(&candidate, ref mut outcome)] = *slots.as_mut_slice() {
+            *outcome = Some(try_candidate(grammar, forms, root, candidate, pool));
         }
         else {
-            Threads::ONE
-        };
-        let slots: Vec<OnceLock<Result<Submission<'text>, SessionFault<'text>>>> =
-            candidates.iter().map(|_| OnceLock::new()).collect();
-        let next = AtomicUsize::new(0);
-        let work = || {
-            loop {
-                let index = next.fetch_add(1, Ordering::Relaxed);
-                let (Some(&candidate), Some(slot)) = (candidates.get(index), slots.get(index))
-                else {
-                    break;
-                };
-                let _first = slot.set(try_candidate(grammar, forms, root, candidate, molding));
-            }
-        };
-        thread::scope(|scope| {
-            for _ in 1 .. threads {
-                if thread::Builder::new().spawn_scoped(scope, work).is_err() {
-                    break;
-                }
-            }
-            work();
-        });
+            pool.each(
+                &mut slots,
+                || (),
+                |&mut (), &mut (&candidate, ref mut outcome)| {
+                    *outcome = Some(try_candidate(grammar, forms, root, candidate, &Serial));
+                },
+            );
+        }
         let mut trials: Vec<Trial<'text>> = slots
             .into_iter()
-            .zip(candidates)
             .enumerate()
-            .map(|(index, (slot, &candidate))| Trial {
+            .map(|(index, (&candidate, outcome))| Trial {
                 candidate: CandidateIndex(index),
-                outcome: slot
-                    .into_inner()
-                    .unwrap_or_else(|| try_candidate(grammar, forms, root, candidate, molding)),
+                outcome: outcome
+                    .unwrap_or_else(|| try_candidate(grammar, forms, root, candidate, &Serial)),
             })
             .collect();
         trials.sort_by_cached_key(trial_rank);
@@ -3322,7 +3303,7 @@ impl<Store, Blocks> Session<Store, Blocks>
 
     /// Parse `revision` through the session's form store, leaving the store
     /// as it was: every form the latest submission molded is taken up and the
-    /// rest molded on the session's threads.
+    /// rest molded on the session's pool.
     ///
     /// # Specification
     /// trivial.
@@ -3336,7 +3317,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Result<ParseResult<'text>, MeldError>
     {
         self.forms
-            .parse_held(&self.grammar, revision, self.threads)
+            .parse_held(&self.grammar, revision, &*self.pool)
             .map(|(parsed, _census)| parsed)
     }
 
@@ -3378,7 +3359,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             &self.forms,
             revision,
             Some((unit, base)),
-            self.threads,
+            &*self.pool,
         )
         .map(|(parsed, _census, _closure)| parsed)
     }
@@ -3400,7 +3381,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   the lowering faults.
     /// - provides: the table a hover reads, typed in the document's size.
     /// - fails: never; a fault answers `None`.
-    /// - panics: only by propagating a panic of `read` or a molding thread's.
+    /// - panics: only by propagating a panic of `read` or a molding job's.
     /// - executable: none — the table is the dispatcher's typed run, whose own
     ///   specification states what it holds.
     ///
@@ -3424,7 +3405,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             &self.forms,
             revision,
             Some((unit, base)),
-            self.threads,
+            &*self.pool,
         )
         .ok()?;
         read(
@@ -4004,7 +3985,7 @@ fn closure_of<'revision, 'unit>(
 ///   of `revision` and no closure.
 /// - fails: the commit's [`MeldError`], and a join the closure's tree refuses
 ///   as [`MeldError::Build`].
-/// - panics: only by propagating a molding thread's panic.
+/// - panics: only by propagating a molding job's panic.
 ///
 /// # Errors
 /// As the specification's fails clause.
@@ -4015,13 +3996,15 @@ fn closure_of<'revision, 'unit>(
 /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
 /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, _, _)| parsed.tree().source() == revision))]
-fn parse_held_laid<'text>(
+fn parse_held_laid<'text, F>(
     grammar: &Pbg,
     forms: &FormStore,
     revision: SourceText<'text>,
     laid: Option<(&Unit, ByteOffset)>,
-    threads: Threads,
+    fork: &F,
 ) -> Result<(ParseResult<'text>, FormCensus, Option<Arc<Closure>>), MeldError>
+where
+    F: Fork,
 {
     let held = laid
         .and_then(|(unit, base)| closure_of(revision, unit, base))
@@ -4033,14 +4016,14 @@ fn parse_held_laid<'text>(
                     .get(<&str>::from(closure.lowering().text()).len() ..)
                     .unwrap_or_default(),
             );
-            let (parsed, census) = forms.parse_held(grammar, document, threads)?;
+            let (parsed, census) = forms.parse_held(grammar, document, fork)?;
             let joined = parsed
                 .after(closure.lowering().tree(), revision)
                 .map_err(MeldError::Build)?;
             Ok((joined, census, Some(closure)))
         },
         Some(Held::Whole) | None => forms
-            .parse_held(grammar, revision, threads)
+            .parse_held(grammar, revision, fork)
             .map(|(parsed, census)| (parsed, census, None)),
     }
 }
@@ -4051,8 +4034,8 @@ fn parse_held_laid<'text>(
 /// # Specification
 /// - requires: `forms` is the session's form store and `root` its root;
 ///   `laid`'s candidate is laid out as its laying says.
-/// - ensures: the candidate is parsed through `forms` without changing it, on
-///   `threads` threads, as [`Session::parse_held_unit`] parses it, lowered
+/// - ensures: the candidate is parsed through `forms` without changing it,
+///   molding through `fork`, as [`Session::parse_held_unit`] parses it, lowered
 ///   alone or over its laying's unit under a count of its own, and judged and
 ///   settled by the dispatcher's [`judge_member`] from its laying's base on;
 ///   the submission carries the composition, standing and completion
@@ -4062,7 +4045,7 @@ fn parse_held_laid<'text>(
 /// - fails: [`SessionFault::Compose`] when the parse or the lowering faults or
 ///   the settle comparison refuses the verdicts, the kernel disagreement taking
 ///   the settle fault's place as in [`Session::judge`].
-/// - panics: only by propagating a molding thread's panic.
+/// - panics: only by propagating a molding job's panic.
 ///
 /// # Errors
 /// As above.
@@ -4078,13 +4061,15 @@ fn parse_held_laid<'text>(
         && matches!(submission.resumed, Maybe::Absent(resumed::Absent::Tried))
         && matches!(submission.edits, Maybe::Absent(resumed::Absent::Tried))
         && matches!(submission.kernel, Maybe::Absent(_))))]
-fn try_candidate<'text>(
+fn try_candidate<'text, F>(
     grammar: &Pbg,
     forms: &FormStore,
     root: SourceRoot,
     laid: (SourceText<'text>, Laying<'_>),
-    threads: Threads,
+    fork: &F,
 ) -> Result<Submission<'text>, SessionFault<'text>>
+where
+    F: Fork,
 {
     let (candidate, laying) = laid;
     let base = laying.base();
@@ -4092,7 +4077,7 @@ fn try_candidate<'text>(
         Laying::Alone => None,
         Laying::Member { unit, base: own } => Some((unit, own)),
     };
-    let (parsed, census, _closure) = parse_held_laid(grammar, forms, candidate, laid_out, threads)
+    let (parsed, census, _closure) = parse_held_laid(grammar, forms, candidate, laid_out, fork)
         .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
     let lowering = match laying {
         Laying::Alone => lower_parsed(
@@ -4151,6 +4136,12 @@ fn try_candidate<'text>(
         written: Maybe::Absent(imported::Absent::Tried),
     })
 }
+
+/// A trial's candidate, beside the outcome the worker that judges it writes.
+type CandidateSlot<'slot, 'text, 'unit> = (
+    &'slot (SourceText<'text>, Laying<'unit>),
+    Option<Result<Submission<'text>, SessionFault<'text>>>,
+);
 
 /// Where a trial ranks among a trial's candidates: lower is better.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -4301,43 +4292,4 @@ fn deprecations_of(
         })
         .filter_map(|key| Some((key.form(), module.attributes().deprecation(key, arena)?)))
         .collect()
-}
-
-#[cfg(test)]
-mod tests
-{
-    use core::num::NonZeroUsize;
-
-    use gandr_core_incremental::BackendArtifact;
-    use gandr_core_incremental::MemoryCheckpointStore;
-    use gandr_storage_records::InMemoryBlockStore;
-    use gandr_surface_dispatcher::SourceRoot;
-    use gandr_surface_dispatcher::Threads;
-    use gandr_surface_dispatcher::Width;
-    use gandr_surface_grammar::built_in;
-
-    use super::Session;
-
-    /// Each width a session is given is the one its edit loop molds on,
-    /// whatever width it held before.
-    #[test]
-    fn a_session_molds_on_the_width_it_is_given()
-    {
-        let fresh = Session::new(
-            built_in().expect("the built-in grammar builds"),
-            SourceRoot::Strict,
-            MemoryCheckpointStore::default(),
-            InMemoryBlockStore::default(),
-            BackendArtifact::from(b"session width".as_slice()),
-        );
-        let two = Threads::from(NonZeroUsize::new(2_usize).expect("two is not zero"));
-        let three = Threads::from(NonZeroUsize::new(3_usize).expect("three is not zero"));
-        let widened = fresh.with_width(Width::Threads(two));
-        assert_eq!(widened.threads, two);
-        let rewidened = widened.with_width(Width::Threads(three));
-        assert_eq!(
-            rewidened.threads, three,
-            "a second width replaces the first"
-        );
-    }
 }

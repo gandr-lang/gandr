@@ -190,7 +190,7 @@ fn submits_as_composed(
         InMemoryBlockStore::default(),
         backend(),
     )
-    .with_width(three());
+    .with_pool(three());
     // A source is submitted over the prelude and the siblings it imports.
     let own = <&str>::from(text)
         .get(usize::from(base) ..)

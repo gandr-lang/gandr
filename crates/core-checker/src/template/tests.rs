@@ -2318,7 +2318,7 @@ fn edit_traces() -> Vec<Trace>
 /// the right half before the left: every worker a stranger to the others.
 struct Scrambled;
 
-impl crate::fork::Fork for Scrambled
+impl gandr_core_fork::Fork for Scrambled
 {
     /// Every item from a fresh state, last first.
     ///
@@ -2371,7 +2371,7 @@ fn admitted<F>(
     fork: &F,
 ) -> Vec<String>
 where
-    F: crate::fork::Fork,
+    F: gandr_core_fork::Fork,
 {
     memo.admit_families(
         arena,
@@ -2414,7 +2414,7 @@ fn forked_families_equal_one_by_one_admission_across_the_edit_traces()
             }));
             let forked = [
                 (
-                    admitted(&mut serial, &arena, &families, &crate::fork::Serial),
+                    admitted(&mut serial, &arena, &families, &gandr_core_fork::Serial),
                     &serial,
                 ),
                 (

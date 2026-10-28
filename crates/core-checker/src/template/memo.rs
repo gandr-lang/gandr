@@ -80,6 +80,7 @@
 use alloc::borrow::Cow;
 use core::time::Duration;
 
+use gandr_core_fork::Fork;
 use gandr_kernel_core::admission::Choice;
 use gandr_kernel_core::admission::Proposal;
 use gandr_kernel_core::admission::Refusal;
@@ -118,7 +119,6 @@ use super::draft::Walk;
 use super::draft::Widening;
 use super::harvest::FamilyKey;
 use super::spec;
-use crate::fork::Fork;
 
 #[cfg(test)]
 pub(super) mod tests;

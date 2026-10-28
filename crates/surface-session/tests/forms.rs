@@ -5,6 +5,7 @@
 //! the resume's typings — over generated modules of both roots, edited by
 //! every class of edit, at one thread and at several.
 
+use alloc::sync::Arc;
 use core::convert::Infallible;
 use core::ops::ControlFlow;
 
@@ -117,7 +118,7 @@ fn agree(
         walked,
         "{context}: the composition is the walk's"
     );
-    let mut whole = session(root).with_width(Width::SERIAL);
+    let mut whole = session(root);
     let fresh = whole
         .submit(source)
         .expect("the whole revision submits as before");
@@ -163,9 +164,9 @@ proptest! {
         chain in edits(FormCount::from(6_usize)),
     ) {
         let root = if fixture { SourceRoot::Fixture } else { SourceRoot::Strict };
-        let width = if wide { three() } else { Width::SERIAL };
+        let pool = if wide { three() } else { Arc::default() };
         let mut module = module(FormCount::from(forms), root);
-        let mut incremental = session(root).with_width(width);
+        let mut incremental = session(root).with_pool(pool);
         let _first = agree(&mut incremental, root, Text::from(&module.text()), &"the generated module");
         for edit in &chain {
             module.edit(edit);
@@ -206,7 +207,7 @@ fn large_edit_script(root: SourceRoot)
 {
     let forms = FormCount::from(LARGE);
     let mut module = module(forms, root);
-    let mut incremental = session(root).with_width(three());
+    let mut incremental = session(root).with_pool(three());
     let first = agree(
         &mut incremental,
         root,
@@ -468,7 +469,7 @@ mod sweeps
         let deleted = String::from(cut(first_end).1);
         let (front, last) = cut(last_start);
         let moved = format!("{last}\n{front}");
-        let mut incremental = session(root).with_width(three());
+        let mut incremental = session(root).with_pool(three());
         for (revision, name) in [
             (&original, "the source"),
             (&inserted, "an insertion"),

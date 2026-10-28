@@ -23,11 +23,13 @@ path = "tests/lib.rs"
 # renderer seam's highlight roles and line kinds through ratatui, on the
 # terminal through ratatui's crossterm backend and off it on ratatui's test
 # backend. The loop's lines are offered as syntax source text. The side view
-# reads the render bus's frames, the seam's serde image, as JSON lines.
+# reads the render bus's frames, the seam's serde image, as JSON lines. The
+# loop molds on the driver's pool, which the dispatcher holds.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-render-terminal.workspace = true

@@ -548,7 +548,6 @@ mod failure;
 #[cfg(test)]
 mod fixture;
 mod flow;
-pub mod fork;
 mod formation;
 mod former;
 mod forward;

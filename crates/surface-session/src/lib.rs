@@ -19,7 +19,7 @@
 //! The session keeps every top-level form of the latest parsed revision,
 //! molded and parked under its identity — the exact spelling of everything
 //! its molding reads. A revision takes up each form whose identity the store
-//! holds and molds the rest across the session's width, so an edit molds the
+//! holds and molds the rest on the session's pool, so an edit molds the
 //! forms it changed and the few whose lookahead reaches into it, and the
 //! joined parse equals the whole parse of the revision. [`Submission::forms`]
 //! counts them.

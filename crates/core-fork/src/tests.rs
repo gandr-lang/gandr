@@ -46,3 +46,18 @@ fn serial_runs_each_item_in_order_from_one_state()
         }
     }
 }
+
+#[test]
+fn serial_runs_the_left_half_before_the_right()
+{
+    let order = AtomicUsize::new(0);
+    let (left, right) = Serial.join(
+        || ('l', order.fetch_add(1, Ordering::Relaxed)),
+        || ('r', order.fetch_add(1, Ordering::Relaxed)),
+    );
+    assert_eq!(
+        (left, right),
+        (('l', 0), ('r', 1)),
+        "the left half runs first, and the pair is in argument order"
+    );
+}

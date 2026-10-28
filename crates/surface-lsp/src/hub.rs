@@ -272,18 +272,18 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   [`crate::bus::serve`]. Every other accepted connection is served as
 ///   [`Server::handle`], [`Server::admit`] and [`Server::admitted`] state, over
 ///   the documents every connection shares, `workspace` holding what the user's
-///   configuration names, its judgements and kernel admissions running on
-///   `pool`, each connection answered from its own copy: its answers and
-///   publications reach it in the order its handling made them, and each
-///   synchronisation's timing line goes to `log`. For a connection whose client
-///   watches no file, the hub watches the files its copies' closures name, as
-///   [`Server::followed`] reads them, and a change to one on disk is handled as
-///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
-///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
-///   the end of its stream, or at a stream fault; it then holds nothing and its
-///   socket is shut. The hub returns once no connection has been open for
-///   `linger`, its socket file removed first so a late client starts a fresh
-///   hub.
+///   configuration names, its sessions, judgements and kernel admissions
+///   running on its pool, each connection answered from its own copy: its
+///   answers and publications reach it in the order its handling made them, and
+///   each synchronisation's timing line goes to `log`. For a connection whose
+///   client watches no file, the hub watches the files its copies' closures
+///   name, as [`Server::followed`] reads them, and a change to one on disk is
+///   handled as [`Server::changed_on_disk`] states; a watch that cannot start
+///   is said once in `log` and the hub serves on unwatched. A connection ends
+///   at `exit`, at the end of its stream, or at a stream fault; it then holds
+///   nothing and its socket is shut. The hub returns once no connection has
+///   been open for `linger`, its socket file removed first so a late client
+///   starts a fresh hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -312,14 +312,14 @@ pub fn run_hub<Log>(
     linger: Duration,
     mut log: Log,
     lines: Option<Face>,
-    (workspace, pool): (Workspace, Pool),
+    workspace: Workspace,
 ) -> Result<(), io::Error>
 where
     Log: Write + Send + 'static,
 {
     listener.set_nonblocking(true)?;
+    let pool = Arc::clone(workspace.pool());
     let workspace = Arc::new(Mutex::new(workspace));
-    let pool = Arc::new(pool);
     let disk = match Disk::new() {
         Ok(disk) => Some(disk),
         Err(error) => {
@@ -807,10 +807,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(echo),
-                (
-                    super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
-                    super::Pool::new(gandr_surface_dispatcher::Width::SERIAL),
-                ),
+                super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
             )
             .expect("the hub serves");
         })
@@ -1406,10 +1403,7 @@ mod tests
                 Duration::from_millis(10),
                 io::sink(),
                 Some(echo),
-                (
-                    super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
-                    super::Pool::new(gandr_surface_dispatcher::Width::SERIAL),
-                ),
+                super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
             )
             .is_ok(),
             "a socket another hand removed is not a fault"

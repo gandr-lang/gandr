@@ -299,6 +299,7 @@
 )]
 extern crate alloc;
 
+use alloc::sync::Arc;
 use core::net::SocketAddr;
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
@@ -1904,8 +1905,9 @@ fn main() -> ExitCode
 }
 
 /// Serve the language server over standard input and output until the
-/// session ends, its user's configuration naming `spelling`, its kernel
-/// admissions on a pool at the host's width, and choose the exit code.
+/// session ends, its user's configuration naming `spelling`, its sessions,
+/// judgements and kernel admissions on a pool at the host's width, and choose
+/// the exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -1933,19 +1935,20 @@ fn lsp(spelling: Spelling) -> ExitCode
         &mut input,
         &mut output,
         &mut log,
-        (workspace(spelling), &Pool::new(Width::PerformanceCores)),
+        workspace(spelling),
     ))
 }
 
 /// The workspace a language server or a hub serves over: its user's
-/// configuration naming `spelling`, and its saves kept in the directory
-/// [`config::checkpoints`] names. A directory that cannot be made keeps no
-/// save, noted on standard error, and the server serves on.
+/// configuration naming `spelling`, its saves kept in the directory
+/// [`config::checkpoints`] names, and its work on [`host_pool`]. A directory
+/// that cannot be made keeps no save, noted on standard error, and the server
+/// serves on.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a workspace spelled `spelling`, keeping saves when a cache
-///   directory is named and can be made.
+/// - ensures: a workspace spelled `spelling` on a pool at the host's width,
+///   keeping saves when a cache directory is named and can be made.
 /// - provides: one workspace for `gandr lsp` and `gandr serve`.
 /// - fails: never.
 /// - panics: none.
@@ -1957,7 +1960,7 @@ fn lsp(spelling: Spelling) -> ExitCode
 /// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
 fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
 {
-    let workspace = gandr_surface_lsp::Workspace::spelled(spelling);
+    let workspace = gandr_surface_lsp::Workspace::spelled(spelling).pooled(host_pool());
     let Some(directory) = config::checkpoints()
     else {
         return workspace;
@@ -1973,6 +1976,16 @@ fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
             workspace
         },
     }
+}
+
+/// The pool at the host's performance cores that a face's sessions mold on
+/// and its judgements run on.
+///
+/// # Specification
+/// trivial.
+fn host_pool() -> Arc<Pool>
+{
+    Arc::new(Pool::new(Width::PerformanceCores))
 }
 
 /// The exit code a language-server session that ended as `served` owes.
@@ -2270,7 +2283,7 @@ fn hub(
                 linger,
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
-                (workspace(spelling), Pool::new(Width::PerformanceCores)),
+                workspace(spelling),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => hub_fault(&error),
@@ -2289,8 +2302,9 @@ fn hub(
     }
 }
 
-/// Run the read-evaluate loop on the standard streams, writing its types and
-/// values in `spelling`, and choose the exit code.
+/// Run the read-evaluate loop on the standard streams, its session on
+/// [`host_pool`], writing its types and values in `spelling`, and choose the
+/// exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -2321,12 +2335,15 @@ fn repl(
     let input = std::io::stdin();
     let mut output = std::io::stdout().lock();
     let ended = match (face, input.is_terminal()) {
-        (Face::Batch, _) | (Face::ByInput, false) => {
-            gandr_surface_repl::run_batch(input.lock(), &mut output, RenderStyle::Plain, spelling)
-        },
+        (Face::Batch, _) | (Face::ByInput, false) => gandr_surface_repl::run_batch(
+            input.lock(),
+            &mut output,
+            RenderStyle::Plain,
+            (spelling, host_pool()),
+        ),
         (Face::ByInput, true) => {
             let style = RenderStyle::for_terminal(TerminalCapability::from(output.is_terminal()));
-            gandr_surface_repl::run_interactive(&mut output, style, spelling)
+            gandr_surface_repl::run_interactive(&mut output, style, (spelling, host_pool()))
         },
     };
     let noted = match ended {
@@ -2341,8 +2358,8 @@ fn repl(
     }
 }
 
-/// Run the terminal face, or its smoke face, writing its types and values in
-/// `spelling`, and choose the exit code.
+/// Run the terminal face, or its smoke face, its session on [`host_pool`],
+/// writing its types and values in `spelling`, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -2384,7 +2401,7 @@ fn tui(
             std::io::stderr(),
             "gandr: the terminal face needs a terminal on standard input and output; `gandr repl` reads a pipe"
         ),
-        (Screen::Terminal, true) => match gandr_surface_tui::run(spelling) {
+        (Screen::Terminal, true) => match gandr_surface_tui::run(spelling, host_pool()) {
             Ok(Ended::Completed) => return ExitCode::SUCCESS,
             Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
             Err(error) => writeln!(std::io::stderr(), "gandr: the terminal failed: {error}"),

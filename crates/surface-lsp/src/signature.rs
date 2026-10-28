@@ -1945,7 +1945,7 @@ mod tests
         let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
         let text = SourceText::from(written.as_str());
         let uri = DocumentUri::from(format!("file://{}", path.display()).as_str());
-        let mut session = open(&uri);
+        let mut session = open(&uri, &Arc::default());
         let rechecked = recheck(
             &uri,
             &mut session,

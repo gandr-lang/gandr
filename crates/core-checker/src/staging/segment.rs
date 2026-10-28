@@ -8,6 +8,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use anodized::spec;
+use gandr_core_fork::Fork;
 use gandr_kernel_term::stage::Arena;
 use gandr_kernel_term::stage::Budget;
 use gandr_kernel_term::stage::Certificate;
@@ -18,7 +19,6 @@ use gandr_kernel_term::stage::TermId;
 use gandr_kernel_term::stage::Type;
 
 use super::SourceIndex;
-use crate::fork::Fork;
 use crate::template::Grouping;
 
 /// Which worker normalized a segment: the merge keeps one placement per

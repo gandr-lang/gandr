@@ -540,15 +540,11 @@ impl Streams
             flushed: signal,
         };
         let serving = std::thread::spawn(move || {
-            let pool = gandr_surface_dispatcher::Pool::new(gandr_surface_dispatcher::Width::SERIAL);
             serve(
                 &mut inbox,
                 &mut outbox,
                 &mut io::sink(),
-                (
-                    gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
-                    &pool,
-                ),
+                gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
             )
         });
         Self {

@@ -8,8 +8,8 @@
 //! boundaries ([`FormSplit`]). Each run's identity ([`FormSplit::identity`])
 //! spells what its molding reads: its tokens, the lookahead past it, and
 //! whether it starts the source. A run whose identity the store holds is taken
-//! up from the parked unit ([`FormUnit::resume`]); the others are molded,
-//! across as many threads as the session's width answers, largest first. The
+//! up from the parked unit ([`FormUnit::resume`]); the others are molded
+//! through the session's fork, largest first. The
 //! units are joined in run order and committed; the join's seam checks
 //! re-mold any run whose boundary was not real, so the parse equals the whole
 //! parse of the revision whatever the store held. The store then holds
@@ -24,9 +24,9 @@
 //! (`Labeling::relabel`), which scans only around the edit, and split at its
 //! predicted form boundaries; a form whose identity the store holds, molded
 //! under the session's grammar, is taken up from its parked unit
-//! (`FormUnit::resume`), and the rest are molded across the session's width
-//! (`Session::with_width`, the host's performance cores by default), largest
-//! first. The units are joined in source order and committed into the
+//! (`FormUnit::resume`), and the rest are molded on the pool the driver hands
+//! the session (`Session::with_pool`, the calling thread alone by default),
+//! largest first. The units are joined in source order and committed into the
 //! revision's tree, which digests each top-level form once as it is laid out.
 //! The store then holds exactly the revision's units, so its memory is one
 //! revision's forms whatever the history. `Submission::forms` counts the
@@ -102,13 +102,10 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use core::num::NonZeroUsize;
-use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering;
-use std::sync::mpsc;
+use core::cmp::Reverse;
 
 use anodized::spec;
-use gandr_surface_dispatcher::Threads;
+use gandr_core_fork::Fork;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::FormIdentity;
 use gandr_surface_parser::FormSplit;
@@ -270,7 +267,7 @@ impl FormStore
 {
     /// Parse `revision` under `grammar`, relabeling it from the latest
     /// revision's labeling, taking up every form whose identity the store
-    /// holds and molding the rest on `threads` threads.
+    /// holds and molding the rest through `fork`.
     ///
     /// # Specification
     /// - requires: nothing; the store may hold units of any revision and any
@@ -286,7 +283,7 @@ impl FormStore
     ///   units were not molded over molds every form, which is the whole
     ///   revision.
     /// - fails: [`MeldError`] when the commit's arena cannot be built.
-    /// - panics: only by propagating a molding thread's panic.
+    /// - panics: only by propagating a molding job's panic.
     /// - economy: the revision is labeled around its edit; each run's identity
     ///   is looked up once, each taken-up unit's checkpoint is cloned once into
     ///   the join, each molded unit is parked once, and the store is pruned in
@@ -306,12 +303,14 @@ impl FormStore
     #[spec(ensures: |ret| self.units.len() <= ret.as_ref().map_or(usize::MAX, |&(_, census)| usize::from(census.forms))
         && (ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, census)| parsed.tree().source() == revision
             && census.molded <= census.forms)))]
-    pub fn parse<'text>(
+    pub fn parse<'text, F>(
         &mut self,
         grammar: &Pbg,
         revision: SourceText<'text>,
-        threads: Threads,
+        fork: &F,
     ) -> Result<(ParseResult<'text>, FormCensus), MeldError>
+    where
+        F: Fork,
     {
         let mut molder = Molder::new(grammar);
         let text = <&str>::from(revision);
@@ -350,7 +349,7 @@ impl FormStore
                 },
             }
         }
-        let molded = mold_runs(grammar, &split, &missing, threads);
+        let molded = mold_runs(grammar, &split, &missing, fork);
         let census = FormCensus {
             forms: FormCount(runs.len()),
             molded: FormCount(molded.len()),
@@ -395,7 +394,7 @@ impl FormStore
     }
 
     /// Parse `revision` under `grammar`, taking up every form whose identity
-    /// the store holds and molding the rest on `threads` threads, keeping
+    /// the store holds and molding the rest through `fork`, keeping
     /// nothing: the store is unchanged.
     ///
     /// # Specification
@@ -410,7 +409,7 @@ impl FormStore
     ///   every form it shares with the latest one without disturbing the store
     ///   another trial or the next submission reads.
     /// - fails: [`MeldError`] when the commit's arena cannot be built.
-    /// - panics: only by propagating a molding thread's panic.
+    /// - panics: only by propagating a molding job's panic.
     /// - economy: each run's identity is looked up once and each taken-up
     ///   unit's checkpoint cloned once into the join; nothing is parked.
     ///
@@ -425,12 +424,14 @@ impl FormStore
     /// - witness: `forms::tests::a_held_parse_keeps_the_store`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, census)|
         parsed.tree().source() == revision && census.molded <= census.forms))]
-    pub fn parse_held<'text>(
+    pub fn parse_held<'text, F>(
         &self,
         grammar: &Pbg,
         revision: SourceText<'text>,
-        threads: Threads,
+        fork: &F,
     ) -> Result<(ParseResult<'text>, FormCensus), MeldError>
+    where
+        F: Fork,
     {
         let mut molder = Molder::new(grammar);
         let split = FormSplit::labeled(
@@ -455,11 +456,10 @@ impl FormStore
             .filter(|&(_, (_, parked))| parked.is_none())
             .map(|(position, (&run, _))| (RunPosition(position), run))
             .collect();
-        let mut molded: BTreeMap<usize, FormUnit<'_>> =
-            mold_runs(grammar, &split, &missing, threads)
-                .into_iter()
-                .map(|(RunPosition(position), unit)| (position, unit))
-                .collect();
+        let mut molded: BTreeMap<usize, FormUnit<'_>> = mold_runs(grammar, &split, &missing, fork)
+            .into_iter()
+            .map(|(RunPosition(position), unit)| (position, unit))
+            .collect();
         let census = FormCensus {
             forms: FormCount(runs.len()),
             molded: FormCount(molded.len()),
@@ -483,80 +483,62 @@ impl FormStore
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RunPosition(usize);
 
-/// Mold `runs` of `split` on as many threads as `threads` answers, never more
-/// than the runs, the calling thread among them, each taking the largest run
-/// by tokens no thread has taken.
+/// Mold `runs` of `split` through `fork`, offering the largest run by tokens
+/// first, each fork worker molding with a molder of its own.
 ///
 /// # Specification
 /// - requires: each run is one of `split`'s.
 /// - ensures: one unit per run, beside the position it came with, each as
-///   [`FormSplit::mold`] molds it; fewer than two runs, or one thread, mold on
-///   the calling thread alone. A thread the host refuses to start leaves its
-///   runs to the others.
-/// - panics: only by propagating a molding thread's panic.
+///   [`FormSplit::mold`] molds it. Whatever the fork's width, every unit is the
+///   one a lone molder builds.
+/// - panics: only by propagating a molding job's panic.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the generated edits submit alike at one thread and at the
-///   host's width, and a whole revision molds every run.
+///   host's width, and serial and pooled forks of every width mold the same
+///   units for a whole revision and for a part of it.
 /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
 /// - witness: `forms::tests::every_width_molds_the_same_units`
 #[spec(ensures: |ret| ret.len() == runs.len())]
-fn mold_runs<'pbg>(
+fn mold_runs<'pbg, F>(
     grammar: &'pbg Pbg,
     split: &FormSplit<'_>,
     runs: &[(RunPosition, TokenRun)],
-    threads: Threads,
+    fork: &F,
 ) -> Vec<(RunPosition, FormUnit<'pbg>)>
+where
+    F: Fork,
 {
-    let threads = usize::from(NonZeroUsize::from(threads)).min(runs.len());
-    if threads <= 1 {
-        let mut molder = Molder::new(grammar);
-        return runs
-            .iter()
-            .map(|&(position, run)| (position, split.mold(&mut molder, run)))
-            .collect();
-    }
-    let mut order: Vec<&(RunPosition, TokenRun)> = runs.iter().collect();
-    order.sort_by_key(|&&(position, run)| {
+    let mut slots: Vec<(RunPosition, TokenRun, Option<FormUnit<'pbg>>)> = runs
+        .iter()
+        .map(|&(position, run)| (position, run, None))
+        .collect();
+    slots.sort_by_key(|&(position, run, _)| {
         (
-            core::cmp::Reverse(usize::from(run.end()).saturating_sub(usize::from(run.start()))),
+            Reverse(usize::from(run.end()).saturating_sub(usize::from(run.start()))),
             position,
         )
     });
-    let cursor = AtomicUsize::new(0);
-    let take = || order.get(cursor.fetch_add(1, Ordering::Relaxed)).copied();
-    let (sender, receiver) = mpsc::channel();
-    std::thread::scope(|scope| {
-        for _ in 1 .. threads {
-            let sender = sender.clone();
-            let take = &take;
-            let _started = std::thread::Builder::new().spawn_scoped(scope, move || {
-                let mut molder = Molder::new(grammar);
-                while let Some(&(position, run)) = take() {
-                    if sender
-                        .send((position, split.mold(&mut molder, run)))
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            });
-        }
-        drop(sender);
-        let mut molder = Molder::new(grammar);
-        let mut units = Vec::with_capacity(runs.len());
-        while let Some(&(position, run)) = take() {
-            units.push((position, split.mold(&mut molder, run)));
-        }
-        units.extend(receiver.iter());
-        units
-    })
+    fork.each(
+        &mut slots,
+        || Molder::new(grammar),
+        |molder, &mut (_, run, ref mut unit)| *unit = Some(split.mold(molder, run)),
+    );
+    slots
+        .into_iter()
+        .filter_map(|(position, _, unit)| unit.map(|unit| (position, unit)))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests
 {
+    use core::num::NonZeroUsize;
+
+    use gandr_core_fork::Serial;
+    use gandr_surface_dispatcher::Pool;
     use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_grammar::built_in;
     use gandr_surface_parser::FormSplit;
     use gandr_surface_parser::FormUnit;
@@ -586,7 +568,7 @@ mod tests
             .map(|(position, run)| (RunPosition(position), run))
             .collect();
         assert_eq!(runs.len(), 12);
-        let serial = mold_runs(&grammar, &split, &runs, Threads::ONE);
+        let serial = mold_runs(&grammar, &split, &runs, &Serial);
         let parked = |mut units: Vec<(RunPosition, FormUnit<'_>)>| {
             units.sort_by_key(|&(position, _)| position);
             units
@@ -602,27 +584,35 @@ mod tests
                 .collect::<Vec<_>>(),
             (0 .. 12).collect::<Vec<_>>()
         );
-        for width in [2_usize, 5, 64] {
-            let threads = Threads::from(core::num::NonZeroUsize::new(width).expect("not zero"));
-            assert_eq!(
-                parked(mold_runs(&grammar, &split, &runs, threads)),
-                serial,
-                "{width} threads"
-            );
-        }
         let some: Vec<_> = runs
             .iter()
             .copied()
             .filter(|&(RunPosition(position), _)| position % 3 == 1)
             .collect();
+        let serial_some = serial
+            .iter()
+            .filter(|&&(position, _)| position % 3 == 1)
+            .cloned()
+            .collect::<Vec<_>>();
         assert_eq!(
-            parked(mold_runs(&grammar, &split, &some, Threads::ONE)),
-            serial
-                .iter()
-                .filter(|&&(position, _)| position % 3 == 1)
-                .cloned()
-                .collect::<Vec<_>>()
+            parked(mold_runs(&grammar, &split, &some, &Serial)),
+            serial_some
         );
+        for width in [2_usize, 5, 64] {
+            let pool = Pool::new(Width::Threads(Threads::from(
+                NonZeroUsize::new(width).expect("not zero"),
+            )));
+            assert_eq!(
+                parked(mold_runs(&grammar, &split, &runs, &pool)),
+                serial,
+                "{width} threads"
+            );
+            assert_eq!(
+                parked(mold_runs(&grammar, &split, &some, &pool)),
+                serial_some,
+                "{width} threads, a part of the runs"
+            );
+        }
     }
 
     #[test]
@@ -634,20 +624,16 @@ mod tests
         let grammar = built_in().expect("the grammar builds");
         let source = SourceText::from(SOURCE);
         let mut store = FormStore::default();
-        let (_, first) = store
-            .parse(&grammar, source, Threads::ONE)
-            .expect("commits");
+        let (_, first) = store.parse(&grammar, source, &Serial).expect("commits");
         assert_eq!(usize::from(first.molded()), 12);
-        let (_, again) = store
-            .parse(&grammar, source, Threads::ONE)
-            .expect("commits");
+        let (_, again) = store.parse(&grammar, source, &Serial).expect("commits");
         assert_eq!(usize::from(again.molded()), 0);
         let mut rules = grammar.rules().to_vec();
         let _circuit = rules.pop();
         let other = gandr_surface_grammar::Pbg::build(grammar.dag().clone(), rules)
             .expect("the grammar less one circuit rule builds");
         assert_ne!(other.fingerprint(), grammar.fingerprint());
-        let (parsed, census) = store.parse(&other, source, Threads::ONE).expect("commits");
+        let (parsed, census) = store.parse(&other, source, &Serial).expect("commits");
         assert_eq!(usize::from(census.molded()), 12);
         assert_eq!(parsed, parse(&other, source).expect("commits"));
     }
@@ -663,7 +649,7 @@ mod tests
         let edited = SourceText::from(edited.as_str());
         let empty = FormStore::default();
         let (parsed, census) = empty
-            .parse_held(&grammar, edited, Threads::ONE)
+            .parse_held(&grammar, edited, &Serial)
             .expect("commits");
         assert_eq!(parsed, parse(&grammar, edited).expect("commits"));
         assert_eq!(
@@ -673,11 +659,11 @@ mod tests
         );
         let mut store = FormStore::default();
         let _first = store
-            .parse(&grammar, SourceText::from(SOURCE), Threads::ONE)
+            .parse(&grammar, SourceText::from(SOURCE), &Serial)
             .expect("commits");
         for _ in 0_u8 .. 2_u8 {
             let (parsed, held) = store
-                .parse_held(&grammar, edited, Threads::ONE)
+                .parse_held(&grammar, edited, &Serial)
                 .expect("commits");
             assert_eq!(parsed, parse(&grammar, edited).expect("commits"));
             assert!(
@@ -687,16 +673,14 @@ mod tests
             assert_eq!(usize::from(held.forms()), 12);
         }
         let (_, again) = store
-            .parse(&grammar, SourceText::from(SOURCE), Threads::ONE)
+            .parse(&grammar, SourceText::from(SOURCE), &Serial)
             .expect("commits");
         assert_eq!(
             usize::from(again.molded()),
             0,
             "the store still holds every form of the revision it parsed"
         );
-        let (_, submitted) = store
-            .parse(&grammar, edited, Threads::ONE)
-            .expect("commits");
+        let (_, submitted) = store.parse(&grammar, edited, &Serial).expect("commits");
         assert!(
             usize::from(submitted.molded()) > 0,
             "nothing the held parses molded was parked for the next parse"

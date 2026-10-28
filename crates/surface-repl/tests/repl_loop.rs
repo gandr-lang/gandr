@@ -8,6 +8,8 @@
 //! The loop's cases, in a `cfg(test)` module so the crate's lint wall reads
 //! them as test code rather than as shipping code.
 
+use alloc::sync::Arc;
+use core::num::NonZeroUsize;
 use std::io;
 use std::path::Path;
 
@@ -21,8 +23,11 @@ use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Spelling;
@@ -939,7 +944,7 @@ fn finishing_twice_reports_once()
 /// # Adequacy
 /// - hypothesis: L3 — exact successful output, an incomplete final buffer and
 ///   an input fault distinguish output and ending mistakes.
-/// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+/// - witness: `tests::repl_loop::an_unparseable_pipe_reports_rather_than_going_quiet`
 /// - witness: `tests::repl_loop::unreadable_input_ends_the_batch_faulted`
 #[spec(ensures: |ret| !matches!(ret.0, Ended::Faulted(Fault::Editor(_)))
         && (ret.1.is_empty() || ret.1.ends_with('\n')))]
@@ -948,8 +953,13 @@ where
     Input: std::io::BufRead,
 {
     let mut output = Vec::new();
-    let ended = run_batch(input, &mut output, RenderStyle::Plain, Spelling::Unicode)
-        .expect("the transcript is written");
+    let ended = run_batch(
+        input,
+        &mut output,
+        RenderStyle::Plain,
+        (Spelling::Unicode, Arc::default()),
+    )
+    .expect("the transcript is written");
     (
         ended,
         String::from_utf8(output).expect("the transcript is UTF-8"),
@@ -966,8 +976,13 @@ fn a_value_is_written_in_the_spelling_asked_782()
                  String ;\ndef r = 1 ;\n";
     let transcript = |spelling| {
         let mut output = Vec::new();
-        let _ended = run_batch(input.as_bytes(), &mut output, RenderStyle::Plain, spelling)
-            .expect("the transcript is written");
+        let _ended = run_batch(
+            input.as_bytes(),
+            &mut output,
+            RenderStyle::Plain,
+            (spelling, Arc::default()),
+        )
+        .expect("the transcript is written");
         String::from_utf8(output).expect("the transcript is UTF-8")
     };
     for (spelling, word, relation) in [
@@ -983,34 +998,48 @@ fn a_value_is_written_in_the_spelling_asked_782()
 }
 
 /// A piped session loading a corpus source and asking a type prints the
-/// echo, a type line and a value line per declaration, then the answer.
+/// echo, a type line and a value line per declaration, then the answer, on
+/// a serial pool and on a wide one alike.
 #[test]
 fn piped_value_prints_a_transcript()
 {
     let input = format!(":load {}\n:type answer\n:q\n", CORPUS[0]);
-    let (ended, transcript) = piped(input.as_bytes());
-    assert!(matches!(ended, Ended::Completed));
-    let integer = base(BaseType::Integer);
-    let string = base(BaseType::String);
-    let unit = spell(&[ContentNode::Product(Vec::new())], NodeIndex::from(0))
-        .expect("the unit type lays out")
-        .to_string();
-    let expected = [
-        format!("▸ :load {}", CORPUS[0]),
-        format!("answer : {integer}"),
-        "= 42".to_owned(),
-        format!("greeting : {string}"),
-        r#"= "hello, gandr""#.to_owned(),
-        format!("nothing : {unit}"),
-        "= unit".to_owned(),
-        format!("copy : {integer}"),
-        "= 42".to_owned(),
-        format!("echo : {integer}"),
-        "= 42".to_owned(),
-        "▸ :type answer".to_owned(),
-        format!(": {integer}"),
-    ];
-    assert_eq!(transcript.lines().collect::<Vec<_>>(), expected);
+    let wide = Pool::new(Width::Threads(Threads::from(
+        NonZeroUsize::new(3).expect("three is not zero"),
+    )));
+    for pool in [Arc::default(), Arc::new(wide)] {
+        let mut output = Vec::new();
+        let ended = run_batch(
+            input.as_bytes(),
+            &mut output,
+            RenderStyle::Plain,
+            (Spelling::Unicode, pool),
+        )
+        .expect("the transcript is written");
+        let transcript = String::from_utf8(output).expect("the transcript is UTF-8");
+        assert!(matches!(ended, Ended::Completed));
+        let integer = base(BaseType::Integer);
+        let string = base(BaseType::String);
+        let unit = spell(&[ContentNode::Product(Vec::new())], NodeIndex::from(0))
+            .expect("the unit type lays out")
+            .to_string();
+        let expected = [
+            format!("▸ :load {}", CORPUS[0]),
+            format!("answer : {integer}"),
+            "= 42".to_owned(),
+            format!("greeting : {string}"),
+            r#"= "hello, gandr""#.to_owned(),
+            format!("nothing : {unit}"),
+            "= unit".to_owned(),
+            format!("copy : {integer}"),
+            "= 42".to_owned(),
+            format!("echo : {integer}"),
+            "= 42".to_owned(),
+            "▸ :type answer".to_owned(),
+            format!(": {integer}"),
+        ];
+        assert_eq!(transcript.lines().collect::<Vec<_>>(), expected);
+    }
 }
 
 /// A block's rows: the echo's rows across a `\r\n`, a diagnostic's rows,
@@ -1146,7 +1175,7 @@ fn the_terminal_face_discards_on_interrupt_and_submits_at_the_end()
         &mut script,
         &mut output,
         RenderStyle::Plain,
-        Spelling::Unicode,
+        (Spelling::Unicode, Arc::default()),
     )
     .expect("the transcript is written");
     assert!(matches!(ended, Ended::Completed));
@@ -1292,7 +1321,7 @@ fn write_and_flush_failures_keep_their_kind()
         b"def n = 1 ;\n".as_slice(),
         &mut output,
         RenderStyle::Plain,
-        Spelling::Unicode,
+        (Spelling::Unicode, Arc::default()),
     )
     .expect_err("the transcript exceeds the writer's limit");
     assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
@@ -1304,8 +1333,13 @@ fn write_and_flush_failures_keep_their_kind()
             flush_error: true,
             ..Probe::default()
         };
-        let error = run_batch(input, &mut output, RenderStyle::Plain, Spelling::Unicode)
-            .expect_err("flush is refused");
+        let error = run_batch(
+            input,
+            &mut output,
+            RenderStyle::Plain,
+            (Spelling::Unicode, Arc::default()),
+        )
+        .expect_err("flush is refused");
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(output.flushes, 1);
         assert_eq!(output.bytes, [0_u8; 0]);
@@ -1333,7 +1367,7 @@ fn terminal_endings_stop_reads_and_flush_once()
             &mut source,
             &mut output,
             RenderStyle::Plain,
-            Spelling::Unicode,
+            (Spelling::Unicode, Arc::default()),
         )
         .expect("the writer succeeds");
         if failed {

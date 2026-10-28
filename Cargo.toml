@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/core-checker",
+  "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
   "crates/core-sequent",
@@ -311,6 +312,14 @@ default-features = false
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
 
+# The fork a check hands its independent jobs to, and its serial reference.
+# consumers:
+# - core-checker
+# - surface-dispatcher
+# - surface-session
+[workspace.dependencies.gandr-core-fork]
+path = "crates/core-fork"
+
 # Incremental checking over the core judgement: the item seam, validated
 # resume, content-addressed checkpoints, the synthesis stream and the kernel
 # verdict store.
@@ -589,6 +598,7 @@ path = "crates/surface-diagnostics"
 # - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
+# - surface-tui
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 

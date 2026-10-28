@@ -21,11 +21,13 @@
 //! gate would only make the default binary unable to do what its verb says.
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use std::io;
 use std::io::Write;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_syntax::SourceText;
@@ -179,8 +181,8 @@ impl LineSource for Terminal
     }
 }
 
-/// Run the loop over the lines `source` answers, writing each block to
-/// `output`.
+/// Run the loop over the lines `source` answers, its session molding on
+/// `pool`, writing each block to `output`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -210,19 +212,19 @@ pub fn drive<Source, Output>(
     source: &mut Source,
     output: &mut Output,
     style: RenderStyle,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Arc<Pool>),
 ) -> io::Result<Ended>
 where
     Source: LineSource,
     Output: Write,
 {
-    let ended = converse(source, output, style, spelling)?;
+    let ended = converse(source, output, style, (spelling, pool))?;
     output.flush()?;
     Ok(ended)
 }
 
-/// Offer every line `source` answers to a fresh loop, writing each block to
-/// `output`.
+/// Offer every line `source` answers to a fresh loop on `pool`, writing each
+/// block to `output`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -245,14 +247,14 @@ fn converse<Source, Output>(
     source: &mut Source,
     output: &mut Output,
     style: RenderStyle,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Arc<Pool>),
 ) -> io::Result<Ended>
 where
     Source: LineSource,
     Output: Write,
 {
     let mut repl = match SessionLoop::new(style) {
-        Ok(repl) => repl.spelling(spelling),
+        Ok(repl) => repl.spelling(spelling).pooled(pool),
         Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     loop {
@@ -283,8 +285,8 @@ where
     Ok(Ended::Completed)
 }
 
-/// Run the loop on the terminal, through the line editor, writing each block
-/// to `output`.
+/// Run the loop on the terminal, its session molding on `pool`, through the
+/// line editor, writing each block to `output`.
 ///
 /// # Specification
 /// - requires: standard input is a terminal; the editor falls back to plain
@@ -317,7 +319,7 @@ where
 pub fn run_interactive<Output>(
     output: &mut Output,
     style: RenderStyle,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Arc<Pool>),
 ) -> io::Result<Ended>
 where
     Output: Write,
@@ -345,5 +347,10 @@ where
             None
         },
     };
-    drive(&mut Terminal { editor, watch }, output, style, spelling)
+    drive(
+        &mut Terminal { editor, watch },
+        output,
+        style,
+        (spelling, pool),
+    )
 }

@@ -296,10 +296,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(serve),
-                (
-                    gandr_surface_lsp::Workspace::spelled(gandr_surface_lsp::Spelling::Unicode),
-                    gandr_surface_lsp::Pool::new(gandr_surface_lsp::Width::SERIAL),
-                ),
+                gandr_surface_lsp::Workspace::spelled(gandr_surface_lsp::Spelling::Unicode),
             )
             .expect("the hub serves");
         })

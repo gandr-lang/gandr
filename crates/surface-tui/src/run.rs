@@ -52,10 +52,12 @@
 //! the grammar, the loop's construction, one full paint and the event loop
 //! without a terminal, and the driver's witness spawns it as a user would.
 
+use alloc::sync::Arc;
 use std::io;
 use std::io::Write;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_repl::Ended;
 use gandr_surface_repl::Fault;
@@ -225,11 +227,11 @@ impl InputSource for Leave
 /// # Specification
 /// - requires: submitted lines contain no line terminator, as [`App::handle`]
 ///   requires.
-/// - ensures: one fresh [`App`] is created, writing its types and values in
-///   `spelling`, and its current frame drawn before every read. Keys go through
-///   [`App::handle`]; redraw paints again. The run completes when a key or
-///   `:quit` asks to leave; a grammar that does not build, a failed read and a
-///   session fault each end it faulted.
+/// - ensures: one fresh [`App`] is created on `pool`, writing its types and
+///   values in `spelling`, and its current frame drawn before every read. Keys
+///   go through [`App::handle`]; redraw paints again. The run completes when a
+///   key or `:quit` asks to leave; a grammar that does not build, a failed read
+///   and a session fault each end it faulted.
 /// - provides: the face's one event loop, the same on the terminal, on the
 ///   smoke face and under a test's scripted keys.
 /// - fails: the backend's error when a frame cannot be drawn.
@@ -253,14 +255,14 @@ impl InputSource for Leave
 pub fn drive<Screen, Source>(
     terminal: &mut Terminal<Screen>,
     source: &mut Source,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Arc<Pool>),
 ) -> Result<Ended, Screen::Error>
 where
     Screen: Backend,
     Source: InputSource,
 {
     let mut app = match App::new(spelling) {
-        Ok(app) => app,
+        Ok(app) => app.pooled(pool),
         Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     loop {
@@ -282,9 +284,9 @@ where
 /// # Specification
 /// - requires: standard input and output are a terminal.
 /// - ensures: the terminal is put in raw mode on the alternate screen, the face
-///   runs as [`drive`] states over its key events, in `spelling`, and the
-///   terminal is restored on every ending — completed, faulted, failed, or a
-///   panic, whose hook restores it before reporting.
+///   runs as [`drive`] states over its key events, in `spelling` and on `pool`,
+///   and the terminal is restored on every ending — completed, faulted, failed,
+///   or a panic, whose hook restores it before reporting.
 /// - provides: `gandr tui`.
 /// - fails: the terminal's error when it cannot be claimed, drawn on or
 ///   restored; a failure to restore is reported only when the run itself
@@ -308,10 +310,13 @@ where
 /// - witness: `tests::terminal::the_terminal_face_reads_its_keys_and_restores_a_terminal`
 #[spec(ensures: |ref ret| !matches!(*ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 #[inline]
-pub fn run(spelling: Spelling) -> io::Result<Ended>
+pub fn run(
+    spelling: Spelling,
+    pool: Arc<Pool>,
+) -> io::Result<Ended>
 {
     let ended = match ratatui::try_init() {
-        Ok(mut terminal) => drive(&mut terminal, &mut Keyboard, spelling),
+        Ok(mut terminal) => drive(&mut terminal, &mut Keyboard, (spelling, pool)),
         Err(error) => Err(error),
     };
     let restored = ratatui::try_restore();
@@ -353,7 +358,11 @@ where
     Output: Write,
 {
     let Ok(mut terminal) = Terminal::new(TestBackend::new(80, 24));
-    let Ok(ended) = drive(&mut terminal, &mut Leave, Spelling::Unicode);
+    let Ok(ended) = drive(
+        &mut terminal,
+        &mut Leave,
+        (Spelling::Unicode, Arc::default()),
+    );
     if let Ended::Faulted(_) = ended {
         return Ok(ended);
     }

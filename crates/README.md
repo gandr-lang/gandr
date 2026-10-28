@@ -20,9 +20,9 @@ workflow  repository tooling and gates
 
 ## Map
 
-An arrow is one category's dependencies on another. Its label counts the `[dependencies]` edges between their crates. Dev and build dependencies are not counted. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot), one node per crate, clustered by category, each concern a dashed overlay through its crates.
+An arrow is one category's dependencies on another. Its label counts the `[dependencies]` edges between their crates. Dev and build dependencies are not counted. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
 
-[`ledger/README.md` § Files](../ledger/README.md#files) states how both maps are generated and checked, the interfaces that cut across crates (`concerns.sql`), what each library's public items are for (`purposes.sql`) and which sources its documentation cites (`references.sql`).
+[`ledger/README.md` § Files](../ledger/README.md#files) states how both maps are generated and checked, and what the concern, purpose and reference ledgers hold.
 
 <!-- crate-map:begin -->
 ```mermaid
@@ -45,7 +45,7 @@ flowchart BT
   runtime -->|3| storage
   surface -->|11| theory
   surface -->|12| kernel
-  surface -->|23| core
+  surface -->|25| core
   surface -->|8| storage
   surface -->|3| runtime
   workflow -->|4| surface
@@ -60,6 +60,7 @@ One row per directory: the directory and what it is. The package name follows fr
 # Rows sort lexicographically by directory; the dependency order is § Layering.
 crates/
 ├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary, residual readmission and guarded staging families
+├── core-fork/                     the fork a consumer hands its independent jobs to, and its serial reference
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
 ├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from

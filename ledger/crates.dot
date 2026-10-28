@@ -37,6 +37,7 @@ digraph crates {
   subgraph "cluster_core" {
     label = "core";
     "core-checker";
+    "core-fork";
     "core-incremental";
     "core-nbe";
     "core-sequent";
@@ -93,6 +94,7 @@ digraph crates {
     "workflow-sweep";
     "workflow-test-timing";
   }
+  "core-checker" -> "core-fork";
   "core-checker" -> "core-nbe";
   "core-checker" -> "core-session";
   "core-checker" -> "core-term";
@@ -183,6 +185,7 @@ digraph crates {
   "surface-diagnostics" -> "surface-pretty";
   "surface-diagnostics" -> "surface-syntax";
   "surface-dispatcher" -> "core-checker";
+  "surface-dispatcher" -> "core-fork";
   "surface-dispatcher" -> "core-incremental";
   "surface-dispatcher" -> "core-nbe";
   "surface-dispatcher" -> "core-sequent";
@@ -283,6 +286,7 @@ digraph crates {
   "surface-repl" -> "surface-session";
   "surface-repl" -> "surface-syntax";
   "surface-session" -> "core-checker";
+  "surface-session" -> "core-fork";
   "surface-session" -> "core-incremental";
   "surface-session" -> "core-nbe";
   "surface-session" -> "core-term";
@@ -296,6 +300,7 @@ digraph crates {
   "surface-session" -> "surface-parser";
   "surface-session" -> "surface-pretty";
   "surface-session" -> "surface-syntax";
+  "surface-tui" -> "surface-dispatcher";
   "surface-tui" -> "surface-grammar";
   "surface-tui" -> "surface-render-remote";
   "surface-tui" -> "surface-render-terminal";
@@ -337,8 +342,9 @@ digraph crates {
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
   "workflow-test-timing" -> "workflow-github";
-  "core-checker" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
-  "surface-dispatcher" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
+  "core-fork" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
+  "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
+  "surface-session" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];

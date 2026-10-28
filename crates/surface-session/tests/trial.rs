@@ -2,6 +2,7 @@
 //! any, each as a fresh session judges it, ranked, and the session left as it
 //! was.
 
+use alloc::sync::Arc;
 use core::num::NonZeroUsize;
 use std::path::Path;
 
@@ -10,6 +11,7 @@ use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
@@ -81,7 +83,7 @@ fn shown(submission: &Submission<'_>) -> Shown
 }
 
 /// A session under the strict root that has accepted [`BASE`], judging on
-/// `width`.
+/// `pool`.
 ///
 /// # Specification
 /// - requires: [`BASE`] submits without a fault.
@@ -89,28 +91,28 @@ fn shown(submission: &Submission<'_>) -> Shown
 /// - panics: when [`BASE`] faults.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — both trial witnesses start from it at one thread and at
-///   several.
+/// - hypothesis: L3 — both trial witnesses start from it on a serial pool and
+///   on a wide one.
 /// - witness: `tests::trial::a_trial_leaves_the_session_as_it_was`
 #[spec(ensures: |ret| matches!(ret.last(), Maybe::Present(_)))]
-fn based(width: Width) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
+fn based(pool: Arc<Pool>) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
 {
-    let mut session = session(SourceRoot::Strict).with_width(width);
+    let mut session = session(SourceRoot::Strict).with_pool(pool);
     let _base = submit(&mut session, BASE);
     session
 }
 
-/// The widths every trial runs at: one thread, and four.
+/// The pools every trial runs on: one thread, and four.
 ///
 /// # Specification
 /// trivial.
-fn widths() -> [Width; 2]
+fn pools() -> [Arc<Pool>; 2]
 {
     [
-        Width::SERIAL,
-        Width::Threads(Threads::from(
+        Arc::default(),
+        Arc::new(Pool::new(Width::Threads(Threads::from(
             NonZeroUsize::new(4).expect("four is not zero"),
-        )),
+        )))),
     ]
 }
 
@@ -118,8 +120,8 @@ fn widths() -> [Width; 2]
 fn each_candidate_is_judged_as_a_fresh_session_judges_it()
 {
     let candidates = CANDIDATES.map(SourceText::from);
-    for width in widths() {
-        let base = based(width);
+    for pool in pools() {
+        let base = based(pool);
         let trials = base.trial(&candidates);
         let order: Vec<usize> = trials
             .iter()
@@ -154,6 +156,17 @@ fn each_candidate_is_judged_as_a_fresh_session_judges_it()
                 "candidate {index} is judged as a fresh session judges it"
             );
         }
+        let [lone] = <[_; 1]>::try_from(base.trial(&candidates[1 ..= 1]))
+            .unwrap_or_else(|_| panic!("one candidate is one trial"));
+        assert_eq!(
+            shown(&lone.into_outcome().expect("the lone candidate submits")),
+            shown(
+                &session(SourceRoot::Strict)
+                    .judge(candidates[1])
+                    .expect("a fresh session judges the candidate")
+            ),
+            "a lone candidate, molded on the pool, is judged as a fresh session judges it"
+        );
     }
 }
 
@@ -161,9 +174,9 @@ fn each_candidate_is_judged_as_a_fresh_session_judges_it()
 fn a_trial_leaves_the_session_as_it_was()
 {
     let next = "def a = 2 ;\ndef f : Integer ;\ndef f = a ;\n";
-    for width in widths() {
-        let mut tried = based(width);
-        let mut untried = based(width);
+    for pool in pools() {
+        let mut tried = based(Arc::clone(&pool));
+        let mut untried = based(pool);
         let (snapshot, lowerings) = (tried.snapshot().clone(), tried.lowerings());
         let _trials = tried.trial(&CANDIDATES.map(SourceText::from));
         assert_eq!(

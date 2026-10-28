@@ -38,12 +38,15 @@ path = "tests/lib.rs"
 # one relation engine. A hole a call nominates for an omitted implicit is a
 # metavariable of the unifier's metacontext, solved by its solver. The pinned
 # anodized facade supplies the executable specifications; logic/BigInt stays
-# disabled in this no_std library. Nothing here names a surface crate: names,
-# spans and syntax stay above the core.
+# disabled in this no_std library. A staged program forks its independent
+# jobs through the fork crate's trait, on whatever pool the driver hands it.
+# Nothing here names a surface crate: names, spans and syntax stay above the
+# core.
 # `hotpath` profiles checking, a model slot's resolution and readmission for
 # the benchmark report.
 [dependencies]
 anodized.workspace = true
+gandr-core-fork.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-session.workspace = true
 gandr-core-term.workspace = true

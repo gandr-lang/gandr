@@ -116,6 +116,8 @@ pub fn report(
 #[cfg(test)]
 mod tests
 {
+    use alloc::sync::Arc;
+
     use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_render_remote::ByteRange;
@@ -154,7 +156,7 @@ mod tests
         let text = "def g : Integer ;\ndef g = ?gap ;\ndef f : Integer ;\ndef f = \"one\" ;\n";
         let mut published = recheck(
             &uri,
-            &mut open(&uri),
+            &mut open(&uri, &Arc::default()),
             SourceText::from(text),
             &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,

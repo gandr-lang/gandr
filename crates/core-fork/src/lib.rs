@@ -1,10 +1,18 @@
-//! The driver's fork: where a staged program's independent jobs run.
+//! The fork: where a check's independent jobs run.
 //!
-//! The checker names no thread. A program check hands its independent jobs —
-//! one per source, per certificate, per family — to a [`Fork`] the driver
-//! supplies, and the driver owns the threads, their number and their pool, as
-//! a walk's width is the driver's. [`Serial`] runs every job on the calling
-//! thread in order, and is the reference a forked check equals.
+//! A `no_std` crate names no thread. A check hands its independent jobs to a
+//! [`Fork`] that the driver supplies. The jobs are one per source, per
+//! certificate or per family. The driver owns the threads, their number and
+//! their pool, as it owns a walk's width. [`Serial`] runs every job on the
+//! calling thread in order. It is the reference that a forked check equals.
+//!
+//! The trait lives in a crate of its own. So a consumer at any layer from the
+//! core upward takes it without a dependency on the checker.
+
+#![no_std]
+
+#[cfg(test)]
+extern crate alloc;
 
 /// Runs independent jobs on the workers the driver provides.
 ///
@@ -81,9 +89,11 @@ pub trait Fork: Sync
 /// - executable: none — a unit marker; its methods carry the behavior.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a program checked at the serial width is the reference
-///   every forked width is compared with, report for report and term for term.
-/// - witness: `staging::tests::every_width_checks_the_serial_program`
+/// - hypothesis: L3 — no item, one item and several items, and a join that
+///   records which half ran first, distinguish a state made for nothing, a
+///   state per item, a skipped or reordered item and swapped halves.
+/// - witness: `tests::serial_runs_each_item_in_order_from_one_state`
+/// - witness: `tests::serial_runs_the_left_half_before_the_right`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Serial;
 
@@ -101,7 +111,7 @@ impl Fork for Serial
     /// - hypothesis: L3 — no item, one item and several items, each counting
     ///   the states made and the visits in order, distinguish a state made for
     ///   nothing, a state per item, a skipped item and a reordered one.
-    /// - witness: `fork::tests::serial_runs_each_item_in_order_from_one_state`
+    /// - witness: `tests::serial_runs_each_item_in_order_from_one_state`
     #[inline]
     fn each<Item, State, Start, Job>(
         &self,

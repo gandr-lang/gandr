@@ -10,7 +10,7 @@
 //! At one thread no pool is built, and every fork runs on the calling thread,
 //! the serial reference that every wider fork is tested against.
 //!
-//! The `no_std` crates name no thread. `gandr-core-checker`'s
+//! The `no_std` crates name no thread. `gandr-core-fork`'s
 //! [`Fork`] is their seam: [`Pooled`] runs a staged check's stages on this
 //! pool, and the walk and the formatting spawn their jobs on it directly,
 //! because each hands its steps over on the calling thread.
@@ -59,8 +59,8 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 
 use anodized::spec;
-use gandr_core_checker::fork::Fork;
-use gandr_core_checker::fork::Serial;
+use gandr_core_fork::Fork;
+use gandr_core_fork::Serial;
 use quenchant_shape::shape::Maybe;
 
 use crate::width::Threads;
@@ -294,6 +294,98 @@ impl Pool
     }
 }
 
+impl Default for Pool
+{
+    /// A pool of one thread: every fork runs on the calling thread.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new(Width::SERIAL)
+    }
+}
+
+/// The pool as a fork that any consumer is handed: the items run on the pool's
+/// own threads, or on the calling thread when the fork cannot use them.
+impl Fork for Pool
+{
+    /// Run `job` on every item on the pool's threads, each task taking items
+    /// from a shared cursor.
+    ///
+    /// # Specification
+    /// - ensures: `job` runs once per item. One item or none, a pool of one
+    ///   thread and a pool the host refused run every item on the calling
+    ///   thread from one state, and none of them starts a thread. Otherwise the
+    ///   items run on the pool's own threads as [`Pooled`] runs them.
+    /// - panics: a job's panic, at the end of the fork.
+    /// - executable: none — the schedule is the pool's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one item, many items and a serial pool, each
+    ///   recording the thread that every item ran on, distinguish a fork that
+    ///   starts the pool for one item, a fork that runs outside the pool's
+    ///   threads and a skipped item.
+    /// - witness: `pool::tests::a_pool_forks_on_its_own_threads`
+    #[inline]
+    fn each<Item, State, Start, Job>(
+        &self,
+        items: &mut [Item],
+        start: Start,
+        job: Job,
+    ) where
+        Item: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+    {
+        if items.len() <= 1 {
+            Serial.each(items, start, job);
+            return;
+        }
+        match self.forked() {
+            Ok(Forked::Pooled(threads, fork)) => {
+                let (start, job) = (&start, &job);
+                threads.install(move || fork.each(items, start, job));
+            },
+            Ok(Forked::Serial) | Err(_) => Serial.each(items, start, job),
+        }
+    }
+
+    /// Run both halves on the pool's threads through `rayon::join`, or the
+    /// left and then the right on the calling thread when the pool has one
+    /// thread or the host refused it.
+    ///
+    /// # Specification
+    /// - ensures: each half runs once, and the pair is their results in
+    ///   argument order.
+    /// - panics: a panic of either half.
+    /// - executable: none — the schedule is the pool's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a join on a wide pool and on a serial pool, each
+    ///   recording where its halves ran, distinguish halves run outside the
+    ///   pool and swapped results.
+    /// - witness: `pool::tests::a_pool_forks_on_its_own_threads`
+    #[inline]
+    fn join<Left, Right, LeftOutput, RightOutput>(
+        &self,
+        left: Left,
+        right: Right,
+    ) -> (LeftOutput, RightOutput)
+    where
+        Left: FnOnce() -> LeftOutput + Send,
+        Right: FnOnce() -> RightOutput + Send,
+        LeftOutput: Send,
+        RightOutput: Send,
+    {
+        match self.forked() {
+            Ok(Forked::Pooled(threads, fork)) => threads.install(move || fork.join(left, right)),
+            Ok(Forked::Serial) | Err(_) => Serial.join(left, right),
+        }
+    }
+}
+
 /// Where a staged check's jobs run.
 #[derive(Debug)]
 pub enum Forked<'pool>
@@ -432,7 +524,7 @@ mod tests
     use core::sync::atomic::AtomicUsize;
     use core::sync::atomic::Ordering;
 
-    use gandr_core_checker::fork::Fork as _;
+    use gandr_core_fork::Fork as _;
     use quenchant_shape::shape::Maybe;
 
     use super::Forked;
@@ -532,5 +624,58 @@ mod tests
                 "{count} items run on the caller: {on_caller}"
             );
         }
+    }
+
+    /// The pool forked as a consumer forks it: many items run on the pool's
+    /// own threads, one item runs on the caller and starts nothing, and a
+    /// serial pool keeps every item on the caller. A join gives its halves'
+    /// results in argument order at either width.
+    #[test]
+    fn a_pool_forks_on_its_own_threads()
+    {
+        let caller = std::thread::current().id();
+        let wide = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let mut one = [None];
+        wide.each(
+            &mut one,
+            || (),
+            |_state, ran| *ran = Some(std::thread::current().id()),
+        );
+        assert_eq!(one, [Some(caller)], "one item runs on the caller");
+        assert!(
+            wide.started.get().is_none(),
+            "a fork of one item starts no thread"
+        );
+        let inside = || matches!(wide.forked(), Ok(Forked::Pooled(threads, _)) if threads.current_thread_index().is_some());
+        let mut many = [false; 64];
+        wide.each(&mut many, || (), |_state, ran| *ran = inside());
+        assert!(
+            many.iter().all(|&ran| ran),
+            "every item runs on the pool's own threads"
+        );
+        assert_eq!(
+            wide.join(|| ('l', inside()), || ('r', inside())),
+            (('l', true), ('r', true)),
+            "both halves run on the pool, in argument order"
+        );
+        let serial = Pool::default();
+        let mut ran = [None; 8];
+        serial.each(
+            &mut ran,
+            || (),
+            |_state, ran| *ran = Some(std::thread::current().id()),
+        );
+        assert!(
+            ran.iter().all(|&ran| ran == Some(caller)),
+            "a serial pool keeps every item on the caller"
+        );
+        let here = || std::thread::current().id() == caller;
+        assert_eq!(
+            serial.join(|| ('l', here()), || ('r', here())),
+            (('l', true), ('r', true)),
+            "a serial join runs both halves on the caller, in argument order"
+        );
     }
 }

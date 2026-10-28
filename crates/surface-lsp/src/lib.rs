@@ -76,10 +76,8 @@
 //! use std::io::Cursor;
 //!
 //! use gandr_surface_lsp::Body;
-//! use gandr_surface_lsp::Pool;
 //! use gandr_surface_lsp::Served;
 //! use gandr_surface_lsp::Spelling;
-//! use gandr_surface_lsp::Width;
 //! use gandr_surface_lsp::Workspace;
 //! use gandr_surface_lsp::serve;
 //! use gandr_surface_lsp::write_frame;
@@ -97,10 +95,7 @@
 //!     &mut Cursor::new(input),
 //!     &mut output,
 //!     &mut Vec::new(),
-//!     (
-//!         Workspace::spelled(Spelling::Unicode),
-//!         &Pool::new(Width::SERIAL),
-//!     ),
+//!     Workspace::spelled(Spelling::Unicode),
 //! )?;
 //! assert_eq!(
 //!     served,

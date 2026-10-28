@@ -111,8 +111,6 @@ INSERT INTO purpose VALUES('core-checker','failure::Obligation','struct','One ru
 INSERT INTO purpose VALUES('core-checker','failure::Pursuit','struct','The goal a run was pursuing when it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','failure::Stage','enum','Where the machine stood when its run refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','flow::Statement','struct','A session statement the judgement decided: the relation, the two quotes, the classifier the bridge erases it at, the engine''s evidence and the payload pairs its paths are owed for.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','fork::Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','fork::Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedCompType','struct','A computation type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedValueType','struct','A value type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::classify_comp_type','function','The classifier of the formed computation type formed: the computation universe at its natural level.',NULL,'fits','sound',NULL);
@@ -262,6 +260,8 @@ INSERT INTO purpose VALUES('core-checker','worlds::Mobility','enum','Whether a s
 INSERT INTO purpose VALUES('core-checker','worlds::Predicate','enum','Which of the two crossing predicates a former fails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldMove','enum','One move of the world register a typed run keeps: a migration''s push, with the linear zone before and after its capability was spent, and its pop.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldName','struct','The name of a world, as a host names one before any source declares it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemCount','struct','Names a count of items or of the steps a resume took over them, so it cannot be passed where an ordinal or record count is wanted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemOrdinal','struct','Names where an item sits in its program''s source order, so a resume can count it and a stream report it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::LivenessEmpty','struct','Names whether a liveness map publishes nothing, so a consumer can test emptiness without opening the map.',NULL,'fits','sound',NULL);

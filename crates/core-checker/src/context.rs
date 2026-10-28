@@ -1054,7 +1054,7 @@ impl<'arena> CheckingContext<'arena>
     /// - ensures: every later endpoint pair whose two sides mention no variable
     ///   is offered to `tier` first; a context holds one tier, the last handed.
     /// - provides: the driver's hand-in of its tier, as a staging check is
-    ///   handed its [`crate::fork::Fork`].
+    ///   handed its [`gandr_core_fork::Fork`].
     /// - panics: none.
     /// - executable: none — the tier is a trait object no predicate compares.
     ///
