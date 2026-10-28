@@ -424,6 +424,88 @@ fn a_replacement_is_carried_under_the_binders_it_crosses()
     );
 }
 
+/// A closed value beside the substituted occurrence, and the closed
+/// replacement carried under the binder to it, are answered whole: the
+/// substitution records as many nodes however long either grows, and the
+/// carrying shift records none.
+#[test]
+fn a_substitution_opens_no_node_its_binder_cannot_reach_3464()
+{
+    /// A chain of `links` distinct pairs, each over the last and the literal
+    /// `leaf`, reading no binder.
+    ///
+    /// # Specification
+    /// - provides: a closed value with `links` distinct pairs above its leaf.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at one, sixteen and 256 links; a support reaching a
+    ///   binder would let the walk open the chain whatever its length.
+    /// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
+    #[spec(ensures: |ret| u32::from(arena.value_support(ret).depth()) == 0)]
+    fn closed_chain(
+        arena: &mut TermArena,
+        links: ChainLength,
+        leaf: Literal,
+    ) -> ValueId
+    {
+        let leaf = arena.value_literal(leaf);
+        (0 .. links.0).fold(leaf, |node, _| arena.value_tuple(&[node, leaf]))
+    }
+
+    // The entries each plane records for `\x. (closed, x)` substituted by a
+    // closed replacement, both chains `links` long, beside the answer.
+    let recorded = |links: ChainLength| {
+        let mut arena = TermArena::new();
+        let text = |name: &str| Literal::Text(StringLiteral::new(String::from(name)));
+        let closed = closed_chain(&mut arena, links, text("c"));
+        let replacement = closed_chain(&mut arena, links, text("r"));
+        let occurrence = arena.value_variable(index(BinderDepth::from(1_u32)));
+        let pair = arena.value_tuple(&[closed, occurrence]);
+        let body = arena.computation_return(pair);
+        let lambda = arena.computation_lambda(body);
+        let thunk = arena.value_thunk(lambda);
+        let mut table = ContentTable::new();
+        let mut memo = RewriteMemo::new();
+        let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
+        let Some(&Value::Thunk(result_lambda)) = arena.value(result)
+        else {
+            panic!("a substituted thunk is a thunk");
+        };
+        let Some(&Computation::Lambda(result_body)) = arena.computation(result_lambda)
+        else {
+            panic!("holding a lambda");
+        };
+        let Some(&Computation::Return(result_pair)) = arena.computation(result_body)
+        else {
+            panic!("whose body returns");
+        };
+        assert_eq!(
+            Some([closed, replacement].as_slice()),
+            arena.value(result_pair).and_then(Value::components),
+            "the closed value stands and the occurrence becomes the replacement as it was"
+        );
+        (
+            memo.plane_entry_count(RewritePlane::Substitute),
+            memo.plane_entry_count(RewritePlane::Shift),
+        )
+    };
+
+    let short = recorded(ChainLength(1));
+    assert_eq!(
+        MemoEntryCount::from(0_usize),
+        short.1,
+        "the closed replacement is not shifted"
+    );
+    for links in [ChainLength(16), ChainLength(256)] {
+        assert_eq!(
+            short,
+            recorded(links),
+            "a longer closed value opens no more nodes"
+        );
+    }
+}
+
 /// Every type is closed at a vocabulary where no former is indexed by a
 /// value term, so both rewrites hand back the node they were given — the
 /// sharing-preserving reuse, exhibited where it is total.

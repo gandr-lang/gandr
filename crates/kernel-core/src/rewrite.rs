@@ -31,6 +31,10 @@
 //! Reconstruction returns a node unchanged when its children did not change,
 //! rather than allocating another spelling. A zero shift returns its root
 //! directly, and an index already at the saturation ceiling is not re-minted.
+//! A shift, a substitution and an instantiation answer a node whose support
+//! stops short of the first index they act on with the node itself, without
+//! opening it, so a closed subterm, or a closed replacement carried under
+//! binders, costs one step whatever its size.
 //! An unreadable root bypasses memo lookup: two missing ids have no content
 //! whose equality would justify adopting one as the other's result. Other
 //! memo hits may reuse another equal-content result from the same session, so
@@ -871,7 +875,6 @@ where
 /// - witness: `rewrite::tests::a_closed_type_instantiates_to_itself`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
-/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
 #[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |source|
     matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
@@ -1432,9 +1435,12 @@ where
 ///   invalid memo aliases. L3 on a share's endpoint: read at the root, read
 ///   again under a binder when it is closed, kept under a binder when it is
 ///   open, and a twin of equal content minted apart kept, each asserted
-///   exactly.
+///   exactly. L3 on a closed value beside the substituted occurrence and a
+///   closed replacement: each plane's entries stay flat as either grows, which
+///   separates a walk opening what its rewrite cannot reach.
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
-/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
+/// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
+/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
 /// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
@@ -1485,6 +1491,13 @@ where
     while let Some(task) = tasks.pop() {
         match task {
             RewriteTask::Open(node, depth, step) => {
+                // A node reading no binder the rewrite acts on is answered
+                // whole: the walk would bring every child back unchanged, and
+                // a close over unchanged children reuses the node.
+                if reach(arena, step, node, depth) == Reach::Beyond {
+                    results.push(outcome_of(node));
+                    continue;
+                }
                 let instantiating = matches!(step, Rewrite::Instantiate { .. });
                 // An inactive memo never answers, so its support is never
                 // built: the memoless walk encodes nothing.
@@ -1882,6 +1895,75 @@ fn carried_occurrence(
         | Value::Quote(_)
         | Value::QuoteComputation(_)
         | Value::StaticApplication(..) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
+    }
+}
+
+/// Whether a rewrite has to open a node, read off the node's support.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// The node reads no binder the rewrite acts on: the walk answers it with
+    /// itself.
+    Beyond,
+    /// The node may read one, or the rewrite matches by something other than
+    /// how far a node reads: the walk opens it.
+    Within,
+}
+
+/// Whether `node`, met at `depth`, reads a binder `rewrite` acts on, so the
+/// walk opens it, or none, so the walk answers it with itself.
+///
+/// A shift acts on the indices at or past its cutoff measured from `depth`; a
+/// substitution and an instantiation act on the index `depth` names and every
+/// one past it. A node whose support stops short of that index holds none of
+/// them. A share, an abstraction and a rotation match by node, by constant or
+/// by band rather than by how far a node reads, so they open every node.
+///
+/// # Specification
+/// - requires: `depth` is the number of binders the walk has crossed to reach
+///   `node`.
+/// - ensures: [`Reach::Beyond`] exactly when the rewrite is a shift, a
+///   substitution or an instantiation and the node's support reaches no index
+///   at or past the first it acts on at `depth`; an unresolvable node's support
+///   reaches every binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on a substitution and on the shift carrying a closed
+///   replacement under binders: the nodes each walk opens stay as many as a
+///   closed value inside the subject, or the closed replacement, grows.
+/// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
+#[spec(ensures: |ret| ret == Reach::Within || matches!(rewrite,
+    Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. }))]
+#[inline]
+fn reach(
+    arena: &TermArena,
+    rewrite: Rewrite,
+    node: AnyNode,
+    depth: BinderDepth,
+) -> Reach
+{
+    let acted_on = match rewrite {
+        Rewrite::Shift { cutoff, .. } => cutoff.0.saturating_add(depth.0),
+        Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } => depth.0,
+        Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => {
+            return Reach::Within;
+        },
+    };
+    let support = match node {
+        AnyNode::Value(id) => arena.value_support(id),
+        AnyNode::Computation(id) => arena.computation_support(id),
+        AnyNode::ValueType(id) => arena.value_type_support(id),
+        AnyNode::CompType(id) => arena.comp_type_support(id),
+    };
+    if u32::from(support.depth()) <= acted_on {
+        Reach::Beyond
+    }
+    else {
+        Reach::Within
     }
 }
 

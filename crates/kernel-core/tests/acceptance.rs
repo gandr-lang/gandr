@@ -1491,13 +1491,15 @@ fn the_public_admission_entry_cannot_be_handed_a_memo()
 }
 
 /// The two rewrite machines account to their own planes through a real
-/// check, and the shifting machine's reuse is real rather than assumed.
+/// check, and each is consulted on a type it has to rewrite.
 ///
-/// The fixture is a thunked dependent arrow applied to a value under a
-/// lambda, so the check reaches both wiring sites: every variable
-/// synthesis raises its context slot past the binders between them, and
-/// the application at the dependent head instantiates the codomain at
-/// its argument.
+/// The fixture is `λ A. λ f. λ x. force f x` at
+/// `Π (A : U 0). U (Π (_ : El A). F (El A)) → El A → F (El A)`, so every type
+/// past the universe reads the code `A` binds. The synthesis of `f` raises a
+/// context slot reading `A` past the binders between them, and the
+/// application at the dependent head instantiates a codomain reading `A` past
+/// the head's own binder. Either rewrite answers a closed type whole and
+/// records nothing, so the fixture's types are open.
 ///
 /// **Both planes are asserted, and the shifting plane's count is the
 /// load-bearing one.** A rewrite that stopped being consulted would
@@ -1510,23 +1512,31 @@ fn the_rewrite_planes_account_separately_through_a_real_check()
     let declaration = {
         let mut builder = DeclarationBuilder::new(&mut arena);
         let mint = builder.arena();
-        // `λ f. λ x. force f x`, at `U (Π (_ : Unit). F Unit) → Unit → F Unit`
-        // spelled with the dependent arrow so the application's dependent arm
+        // `Π (A : U 0). U (Π (_ : El A). F (El A)) → El A → F (El A)`, the
+        // inner arrow spelled dependent so the application's dependent arm
         // fires.
-        let unit_type = mint.value_type_unit();
-        let returner = mint.comp_type_returner(unit_type);
-        let dependent = mint.comp_type_pi(unit_type, returner);
+        let zero = level(LevelConstant::from(0));
+        let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+        let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+        let element = mint.value_type_element(code, zero.clone());
+        let returner = mint.comp_type_returner(element);
+        let past_head = mint.value_variable(DeBruijnIndex::from(1_u32));
+        let past_element = mint.value_type_element(past_head, zero);
+        let past_returner = mint.comp_type_returner(past_element);
+        let dependent = mint.comp_type_pi(element, past_returner);
         let function_thunk = mint.value_type_thunk(dependent);
-        let inner = mint.comp_type_arrow(unit_type, returner);
+        let inner = mint.comp_type_arrow(element, returner);
         let outer = mint.comp_type_arrow(function_thunk, inner);
-        let declared = mint.value_type_thunk(outer);
+        let quantified = mint.comp_type_pi(universe, outer);
+        let declared = mint.value_type_thunk(quantified);
 
         let argument = mint.value_variable(DeBruijnIndex::from(0_u32));
         let function = mint.value_variable(DeBruijnIndex::from(1_u32));
         let head = mint.computation_force(function);
         let application = mint.computation_application(head, argument);
         let inner_lambda = mint.computation_lambda(application);
-        let outer_lambda = mint.computation_lambda(inner_lambda);
+        let middle_lambda = mint.computation_lambda(inner_lambda);
+        let outer_lambda = mint.computation_lambda(middle_lambda);
         let body = mint.value_thunk(outer_lambda);
         builder.def(LevelSignature::monomorphic(), declared, body)
     };
