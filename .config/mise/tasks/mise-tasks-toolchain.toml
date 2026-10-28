@@ -5,6 +5,8 @@
 # An external consumer takes the nightly from a reviewed full workflow commit
 # and changes its Dylint metadata revision in the same operation. The installer
 # reads that metadata too, so no independently editable binary revision exists.
+# Either way the CI image's rust-clippy commit, which the Dylint driver's build
+# reads, moves with them: the commit that set the channel under the Clippy tag.
 ["toolchain:bump"]
 description = "Move the compiler and its local or external lint source together"
 usage = '''
@@ -38,6 +40,7 @@ if [ -n "$revision" ]; then
     exit 1
   fi
   channel=$(gh api --jq .content "repos/gandr-lang/quenchant/contents/rust-toolchain.toml?ref=$revision" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p')
+  clippy_tag=$(gh api --jq .content "repos/gandr-lang/quenchant/contents/Cargo.toml?ref=$revision" | base64 -d | sed -n '/^\[workspace\.dependencies\.clippy_utils\]/,/^\[/s/^tag = "\([^"]*\)".*/\1/p')
 else
   if [ -z "$version" ] || [ -n "$old_revision" ]; then
     echo 'toolchain:bump: external consumers require --workflow-rev; local producers require a stable version' >&2
@@ -49,22 +52,43 @@ else
   # rust-clippy's release tag names the nightly its clippy_utils was built
   # against; the bump writes both pins from that one file.
   channel=$(gh api --jq .content "repos/rust-lang/rust-clippy/contents/rust-toolchain.toml?ref=rust-$version" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p')
+  clippy_tag=rust-$version
 fi
 case "$channel" in
   nightly-*) ;;
   *) echo 'toolchain:bump: source carries no usable nightly channel' >&2; exit 1 ;;
 esac
 
+# The tag's commit sets the channel on rust-clippy's first-parent line: the CI
+# image serves it to the driver's build as `master`, and the build's walk
+# stops there because the commit's first parent names an earlier channel.
+case "$clippy_tag" in
+  rust-[0-9]*) ;;
+  *) echo 'toolchain:bump: source carries no rust-<stable> clippy_utils tag' >&2; exit 1 ;;
+esac
+clippy_channel_at() {
+  gh api --jq .content "repos/rust-lang/rust-clippy/contents/rust-toolchain.toml?ref=$1" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p'
+}
+clippy_rev=$(gh api --jq .sha "repos/rust-lang/rust-clippy/commits/$clippy_tag")
+clippy_parent=$(gh api --jq '.parents[0].sha' "repos/rust-lang/rust-clippy/commits/$clippy_rev")
+if [ "$(clippy_channel_at "$clippy_rev")" != "$channel" ] || [ "$(clippy_channel_at "$clippy_parent")" = "$channel" ]; then
+  echo "toolchain:bump: rust-clippy $clippy_tag ($clippy_rev) does not set $channel" >&2
+  exit 1
+fi
+
 # Values enter Perl through environment variables, never program interpolation.
-export WORKFLOW_OLD_REV="$old_revision" WORKFLOW_NEW_REV="$revision" WORKFLOW_CHANNEL="$channel" WORKFLOW_STABLE="$version"
+export WORKFLOW_OLD_REV="$old_revision" WORKFLOW_NEW_REV="$revision" WORKFLOW_CHANNEL="$channel" WORKFLOW_STABLE="$version" CLIPPY_TAG="$clippy_tag" CLIPPY_REV="$clippy_rev"
 if [ -n "$revision" ]; then
   perl -0777 -pi -e 's{(^\[\[workspace\.metadata\.dylint\.libraries\]\]\n)(.*?)(?=^\[|\z)}{my ($head, $body) = ($1, $2); if ($body =~ /^git = "https:\/\/github\.com\/gandr-lang\/quenchant"$/m && $body =~ /^pattern = "crates\/quenchant-dylints"$/m) { $body =~ s/^rev = "\Q$ENV{WORKFLOW_OLD_REV}\E"$/rev = "$ENV{WORKFLOW_NEW_REV}"/m; } "$head$body"}gmse' Cargo.toml
 elif [ -f Cargo.toml ]; then
   perl -0777 -pi -e 's{(^\[workspace\.dependencies\.clippy_utils\]\n)(.*?)(?=^\[|\z)}{my ($head, $body) = ($1, $2); $body =~ s/^tag = ".*"$/tag = "rust-$ENV{WORKFLOW_STABLE}"/m; "$head$body"}gmse' Cargo.toml
 fi
 perl -pi -e 's/^channel = .*/channel = "$ENV{WORKFLOW_CHANNEL}"/' rust-toolchain.toml
+if [ -f .github/docker/ci.Dockerfile ]; then
+  perl -0777 -pi -e 's{^# rust-clippy.s \S+, the commit that set \S+\.\nARG RUST_CLIPPY_REV=[0-9a-f]{40}$}{# rust-clippy\x27s $ENV{CLIPPY_TAG}, the commit that set $ENV{WORKFLOW_CHANNEL}.\nARG RUST_CLIPPY_REV=$ENV{CLIPPY_REV}}m or die "ci.Dockerfile carries no RUST_CLIPPY_REV pin\n"' .github/docker/ci.Dockerfile
+fi
 
-echo "pinned channel $channel; workflow revision ${revision:-local-library}"
+echo "pinned channel $channel; workflow revision ${revision:-local-library}; rust-clippy $clippy_tag at $clippy_rev"
 echo 'clear ~/.dylint_drivers and target/dylint, then rerun the full gate wall'
 echo 'external consumers: mise run check'
 {% endraw %}
