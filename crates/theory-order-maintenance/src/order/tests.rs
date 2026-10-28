@@ -125,9 +125,12 @@ mod support
                 u64::from(occupied.label.0) < universe.0,
                 "labels stay inside the group's universe"
             );
+            let base = order
+                .base_label()
+                .expect("a listed element's base resolves");
             let key = order
-                .key(occupied)
-                .expect("a listed element's group and the base resolve");
+                .key(base, occupied)
+                .expect("a listed element's group resolves");
             if let Some(before) = previous_key {
                 assert!(key > before, "keys strictly increase in list order");
             }
@@ -410,7 +413,12 @@ fn top_labels_are_measured_around_the_circle()
     let last = order
         .occupied(order.tail.expect("a tail"))
         .expect("the tail is occupied");
-    assert_eq!(order.key(last).map(|key| key.top), Some(TopLabel(3)));
+    let base_label = order.base_label().expect("the base resolves");
+    assert_eq!(base_label, TopLabel(6));
+    assert_eq!(
+        order.key(base_label, last).map(|key| key.top),
+        Some(TopLabel(3))
+    );
     assert_invariant(&order);
     assert_cmp_consistent(&order);
     assert_eq!(
