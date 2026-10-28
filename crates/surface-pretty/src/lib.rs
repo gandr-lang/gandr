@@ -1285,7 +1285,6 @@ pub fn present_whole(
             })
         })
         .collect();
-    let slotted = |at: usize| paths.get(at).is_some_and(Option::is_some);
     let preferred: Vec<Option<Name<'_>>> = wanted
         .iter()
         .map(|region| Some(Name::from(region.as_str())))
@@ -1370,7 +1369,6 @@ pub fn present_whole(
             .find(|&&(_, held)| held == position)
             .and_then(|&(at, _)| names.get(at))
     };
-    let unwritten = |at: usize| labelled.iter().any(|&(held, _)| held == at);
     let bounding: Vec<Option<Name<'_>>> = binders
         .iter()
         .enumerate()
@@ -1447,66 +1445,91 @@ pub fn present_whole(
     });
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
-    let resident = |at: usize| implicit.get(at).is_some_and(Option::is_some);
-    let starts = |at: usize| slots.iter().position(|slot| slot.at == at);
-    let mut text = format!("{opener} {}", name.as_ref());
-    let mut written = Vec::new();
-    let prefixed = |at: usize| !unwritten(at) && (resident(at) || starts(at).is_some());
-    let regions_written: Vec<&String> = binders
+    // The header's entries, each once and in order, under one rule: the
+    // region binders no row's label carries, then each parameter where it is
+    // written. A capability a label names is written by the label, and a
+    // model slot's components past its first by the slot.
+    let mut header: Vec<Entry> = binders
         .iter()
         .enumerate()
         .filter(|&(position, _)| label_at(position).is_none())
-        .map(|(_, region)| region)
+        .map(|(position, _)| Entry::Region(position))
         .collect();
-    if !regions_written.is_empty() || (0_usize .. names.len()).any(prefixed) {
-        text.push_str(" @[");
-        for (entry, region) in regions_written.iter().enumerate() {
-            if entry > 0_usize {
-                text.push_str(", ");
-            }
-            text.push_str(region);
-            text.push_str(" : Region");
+    let labels: alloc::collections::BTreeSet<usize> = labelled.iter().map(|&(at, _)| at).collect();
+    let mut starts = alloc::collections::BTreeMap::new();
+    for (index, slot) in slots.iter().enumerate() {
+        let _first = starts.entry(slot.at).or_insert(index);
+    }
+    for at in 0_usize .. names.len() {
+        if labels.contains(&at) {
+            continue;
         }
-        let mut entry = regions_written.len();
-        for (at, (parameter, typed)) in names.iter().zip(&parts).enumerate() {
-            let started = starts(at);
-            if !prefixed(at) {
-                continue;
-            }
-            if entry > 0_usize {
+        if let Some(&index) = starts.get(&at) {
+            header.push(Entry::Model { at, index });
+        }
+        else if implicit.get(at).is_some_and(Option::is_some) {
+            header.push(Entry::Implicit(at));
+        }
+        else if paths.get(at).is_none_or(Option::is_none) {
+            header.push(Entry::Explicit(at));
+        }
+    }
+    let mut text = format!("{opener} {}", name.as_ref());
+    let mut written = Vec::new();
+    let mut telescope = header
+        .iter()
+        .filter(|entry| !matches!(entry, Entry::Explicit(_)))
+        .peekable();
+    if telescope.peek().is_some() {
+        text.push_str(" @[");
+        for (place, &entry) in telescope.enumerate() {
+            if place > 0_usize {
                 text.push_str(", ");
             }
-            entry = entry.saturating_add(1_usize);
-            if let Some(index) = started
-                && let (Some(slot), Some(sorts)) = (slots.get(index), fixed.get(index))
-            {
-                for part in [slot.name.as_ref(), " : Model(", slot.theory.as_ref(), ")"] {
-                    text.push_str(part);
-                }
-                for &(sort, ref typed) in sorts {
-                    for part in [" with sort ", sort.as_ref(), " = "] {
-                        text.push_str(part);
+            let at = match entry {
+                Entry::Region(position) => {
+                    if let Some(region) = binders.get(position) {
+                        text.push_str(region);
+                        text.push_str(" : Region");
                     }
-                    appended(&mut text, &mut written, typed);
-                }
-                continue;
+                    continue;
+                },
+                Entry::Model { at, index } => {
+                    if let (Some(slot), Some(sorts)) = (slots.get(index), fixed.get(index)) {
+                        for part in [slot.name.as_ref(), " : Model(", slot.theory.as_ref(), ")"] {
+                            text.push_str(part);
+                        }
+                        for &(sort, ref typed) in sorts {
+                            for part in [" with sort ", sort.as_ref(), " = "] {
+                                text.push_str(part);
+                            }
+                            appended(&mut text, &mut written, typed);
+                        }
+                        continue;
+                    }
+                    at
+                },
+                Entry::Implicit(at) | Entry::Explicit(at) => at,
+            };
+            if let (Some(parameter), Some(typed)) = (names.get(at), parts.get(at)) {
+                text.push_str(parameter);
+                text.push_str(" : ");
+                appended(&mut text, &mut written, typed);
             }
-            text.push_str(parameter);
-            text.push_str(" : ");
-            appended(&mut text, &mut written, typed);
         }
         text.push_str("] ");
     }
     text.push('(');
-    for (entry, (parameter, typed)) in names
-        .iter()
-        .zip(&parts)
-        .enumerate()
-        .filter(|&(at, _)| !resident(at) && !slotted(at) && !unwritten(at))
-        .map(|(_, written_parameter)| written_parameter)
-        .enumerate()
-    {
-        if entry > 0_usize {
+    let explicit = header.iter().filter_map(|&entry| match entry {
+        Entry::Explicit(at) => Some(at),
+        Entry::Region(_) | Entry::Model { .. } | Entry::Implicit(_) => None,
+    });
+    for (place, at) in explicit.enumerate() {
+        let (Some(parameter), Some(typed)) = (names.get(at), parts.get(at))
+        else {
+            continue;
+        };
+        if place > 0_usize {
             text.push_str(", ");
         }
         text.push_str(parameter);
@@ -1582,6 +1605,28 @@ fn appended(
     let before = written_bytes(Glyphs(text));
     names.extend(part.names.iter().map(|name| name.shifted(before)));
     text.push_str(part.as_ref());
+}
+
+/// An entry of a whole definition's header, where [`present_whole`] writes
+/// it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Entry
+{
+    /// The region binder at the position, `r : Region` in the telescope.
+    Region(usize),
+    /// The model slot `index` whose first component is the parameter `at`,
+    /// `s : Model(S)` in the telescope.
+    Model
+    {
+        /// The parameter of the slot's first component.
+        at: usize,
+        /// The slot's place among the definition's slots.
+        index: usize,
+    },
+    /// The implicit parameter at the place, `x : A` in the telescope.
+    Implicit(usize),
+    /// The explicit parameter at the place, `x : A` in the parentheses.
+    Explicit(usize),
 }
 
 /// Whether a definition's result is written as the row of the returner the
