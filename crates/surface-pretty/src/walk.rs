@@ -2563,18 +2563,14 @@ enum Listed
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the bind's bound and rest exactly when `node` reads as a bind
-///   whose bound reads as an application whose spine, read down through every
-///   application, ends at a force; absent otherwise.
-/// - provides: the runs [`Walk::inlined`] spells as the calls they bind.
+///   whose bound is a call ([`call`]); absent otherwise.
+/// - provides: the runs [`linear_runs`] peels off a block.
 /// - fails: never.
 /// - panics: none.
 ///
-/// # Termination
-/// Every turn reads one application nearer the spine's head, a finite term.
-///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Walk::inlined`].
-/// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+/// - hypothesis: L3 — as [`linear_runs`].
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Bind(..)))]
 fn bound_call<S>(
     source: &S,
@@ -2587,14 +2583,89 @@ where
     else {
         return None;
     };
-    let Former::Application(mut head, _) = source.read(bound)
+    call(source, bound).map(|bound| (bound, rest))
+}
+
+/// `node` when it is a call: an application whose spine, read down through
+/// every application, ends at a force.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `node` exactly when it reads as an application and the head its
+///   applications lead down to reads as a force; absent otherwise.
+/// - provides: the calls [`bound_call`] and [`nested_call`] find bound.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one application nearer the spine's head, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`bound_call`].
+/// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Application(..)))]
+fn call<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    let Former::Application(mut head, _) = source.read(node)
     else {
         return None;
     };
     while let Former::Application(inner, _) = source.read(head) {
         head = inner;
     }
-    matches!(source.read(head), Former::Force(_)).then_some((bound, rest))
+    matches!(source.read(head), Former::Force(_)).then_some(node)
+}
+
+/// The bound and the rest of `node` when it is a run binding a nested call,
+/// `x ← f(a); …`, or a run binding runs that end in one, `x ← (y ← f(a);
+/// g(y)); …`, as the lowering binds `h(g(f(a)))`: a bind whose bound is a
+/// call, or a bind whose bound and rest are each such, down to calls.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bind's bound and rest exactly when `node` reads as a bind
+///   whose bound is a call ([`call`]) or reads as binds every bound and last
+///   rest of which is a call; absent otherwise.
+/// - provides: the runs [`Walk::inlined`] spells as the calls they bind.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one node of the bound, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run binding a call and a run binding a run ending in a
+///   call distinguish a nested call from a run kept.
+/// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+/// - witness: `tests::goldens::a_run_bound_by_a_run_in_a_type_prints_nested_3280`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Bind(..)))]
+fn nested_call<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(S::Node, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let Former::Bind(bound, rest) = source.read(node)
+    else {
+        return None;
+    };
+    let mut pending = Vec::from([bound]);
+    while let Some(at) = pending.pop() {
+        if let Former::Bind(inner, after) = source.read(at) {
+            pending.push(inner);
+            pending.push(after);
+        }
+        else if call(source, at).is_none() {
+            return None;
+        }
+    }
+    Some((bound, rest))
 }
 
 /// The calls a block's `run` statements bind from `node` on, in order, and
@@ -4133,6 +4204,17 @@ enum Task<Node>
         node: Node,
         /// What the position admits.
         admits: Admits,
+        /// How many value formers enclose the node.
+        depth: ValueDepth,
+    },
+    /// Spell a computation a run binds where the run is written away: the
+    /// nested call it is when it is runs binding calls ([`nested_call`]),
+    /// `g(f(a))` for `y ← f(a); g(y)`, as [`Task::Visit`] spells it where a
+    /// computation goes on otherwise.
+    Inline
+    {
+        /// The bound computation.
+        node: Node,
         /// How many value formers enclose the node.
         depth: ValueDepth,
     },
@@ -8152,7 +8234,9 @@ impl Walk<'_, '_>
             // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
             // spells as the call it was written as, `g(f(a))`: a type has no
             // run to read back (#676).
-            Former::Nested(body) | Former::Returned(body) if bound_call(source, body).is_some() => {
+            Former::Nested(body) | Former::Returned(body)
+                if nested_call(source, body).is_some() =>
+            {
                 Self::inlined(source, body, below(depth, kind), tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
@@ -8963,10 +9047,10 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: `body` is the computation a nested or returned value at
     ///   `depth` stands for, and `tasks` is the walk's stack.
-    /// - ensures: every leading bind whose bound is a call ([`bound_call`]) is
-    ///   peeled; each bound call is scheduled as a computation where the body
-    ///   goes on, in order, each followed by one binder standing for it; the
-    ///   rest is scheduled under them all, and every binder is closed after it.
+    /// - ensures: every leading run binding a nested call ([`nested_call`]) is
+    ///   peeled; each bound is scheduled as a computation where the body goes
+    ///   on, in order, each followed by one binder standing for it; the rest is
+    ///   scheduled under them all, and every binder is closed after it.
     /// - provides: the nested call a type writes, which the lowering commutes
     ///   into runs and the type grammar cannot read back as runs.
     /// - fails: never.
@@ -8979,6 +9063,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — one run and two runs, the second's call naming the
     ///   first's binder, observe each call standing for its binder in order.
     /// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+    /// - witness: `tests::goldens::a_run_bound_by_a_run_in_a_type_prints_nested_3280`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -8999,7 +9084,7 @@ impl Walk<'_, '_>
     {
         let mut bounds = Vec::new();
         let mut rest = body;
-        while let Some((bound, next)) = bound_call(source, rest) {
+        while let Some((bound, next)) = nested_call(source, rest) {
             bounds.push(bound);
             rest = next;
         }
@@ -9018,10 +9103,10 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: `rest` stands under one binder per entry of `bounds`, the
     ///   last innermost, and `tasks` is the walk's stack.
-    /// - ensures: each bound call is scheduled as a computation where the body
-    ///   goes on, in order, each followed by one binder standing for it; the
-    ///   rest is scheduled under them all at `admits`, and every binder is
-    ///   closed after it.
+    /// - ensures: each bound is scheduled where the body goes on, in order, as
+    ///   [`Task::Inline`] spells it, each followed by one binder standing for
+    ///   it; the rest is scheduled under them all at `admits`, and every binder
+    ///   is closed after it.
     /// - provides: the calls [`Self::inlined`] and a block's linear runs write
     ///   where their binders are read.
     /// - fails: never.
@@ -9053,11 +9138,7 @@ impl Walk<'_, '_>
         });
         for &bound in bounds.iter().rev() {
             tasks.push(Task::Substitute(Arity(1_usize)));
-            tasks.push(Task::Visit {
-                node: bound,
-                admits: Admits::Computation(Tail::Continues),
-                depth,
-            });
+            tasks.push(Task::Inline { node: bound, depth });
             tasks.push(Task::Hold);
         }
     }
@@ -11412,6 +11493,21 @@ where
                     depth,
                     &mut tasks,
                 )?;
+            },
+            // A bound that is itself runs binding calls is written as the
+            // nested call it binds, `h(g(f(a)))` for `x ← (y ← f(a); g(y));
+            // h(x)`: no run is read back where a nested call is written (#3280).
+            Task::Inline { node, depth } => {
+                if nested_call(source, node).is_some() {
+                    Walk::inlined(source, node, depth, &mut tasks);
+                }
+                else {
+                    tasks.push(Task::Visit {
+                        node,
+                        admits: Admits::Computation(Tail::Continues),
+                        depth,
+                    });
+                }
             },
             Task::Returned { node, depth } => {
                 let Some(left) = walk.remaining.checked_sub(1_u32)

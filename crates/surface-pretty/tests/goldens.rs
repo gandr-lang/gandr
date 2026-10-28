@@ -2926,6 +2926,35 @@ fn a_run_bound_call_in_a_type_prints_nested_676()
     }
 }
 
+/// A nested call whose argument is itself a nested call, `t(t(t(u)))`, the
+/// lowering binds by a run whose bound is a run, `x ← (y ← t(u); t(y));
+/// t(x)`: it spells as the nested call in each form, the runs bound inside
+/// a bound written where their binders are read as the outer ones are.
+#[test]
+fn a_run_bound_by_a_run_in_a_type_prints_nested_3280()
+{
+    let names = [Name::from("t"), Name::from("u")];
+    let mut core = CoreArena::new();
+    let t = core.value_constant(ConstantIndex::from(0_usize));
+    let u = core.value_constant(ConstantIndex::from(1_usize));
+    let a = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(t);
+    let innermost = core.computation_application(forced, u);
+    let rest = core.computation_application(forced, a);
+    let inner = core.computation_bind(innermost, rest);
+    let outer = core.computation_bind(inner, rest);
+    let nested = core.value_nested(outer);
+    let source = CoreSource::new(&core, &names);
+    for form in [Form::Sugared, Form::Explicit] {
+        let presented = presented_in(&source, Root::Value(CoreNode::Value(nested)), wide(), form);
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            ("t(t(t(u)))", Fidelity::Faithful),
+            "{form:?}"
+        );
+    }
+}
+
 /// #736: a dependent arrow whose codomain decodes a called function literal
 /// prints its binder only where the literal's result names it. The binder
 /// handed to a literal returning `⌜Unit⌝` is spelled as the call's argument
