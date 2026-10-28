@@ -371,7 +371,7 @@ impl RewriteOutcome
 ///
 /// It holds no arena id: the canonical encoding of the subject, the binder
 /// depth, and the rewrite's parameter, plus that encoding's digest. Equality is
-/// byte equality of the encoding — the deciding comparison — and the digest
+/// word equality of the encoding — the deciding comparison — and the digest
 /// narrows a bucket without ever deciding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RewriteSupport
@@ -456,17 +456,17 @@ impl MemoKey for RewriteSupport
         self.digest
     }
 
-    /// The deciding comparison: byte equality of the canonical encodings.
+    /// The deciding comparison: word equality of the canonical encodings.
     ///
     /// The plane is compared first and is redundant — the encoding opens with
-    /// the goal's direction tag, and the two directions draw disjoint bytes —
+    /// the goal's direction tag, and the two directions draw disjoint tags —
     /// so the plane field is load-bearing for accounting rather than for
     /// agreement, exactly as it is on the checker's own key.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `ContentAgreement::Agree` exactly when the two supports carry
-    ///   the same plane and byte-equal canonical encodings; the digest is not
+    ///   the same plane and word-equal canonical encodings; the digest is not
     ///   read, so a collision reaches this comparison and loses.
     /// - provides: the deciding comparison every rewrite the session reuses is
     ///   served on.

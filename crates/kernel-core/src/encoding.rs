@@ -145,7 +145,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::rewrite::BinderDepth;
 
-/// A 64-bit quantity written into an encoding as a minimal unsigned varint.
+/// A 64-bit quantity written into an encoding as its minimal word image.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct EncodedWord(u64);
@@ -274,17 +274,6 @@ const _: () = {
     }
 };
 
-/// The byte a pair record reserves: one read binder, its index beside its
-/// type's content.
-const PAIR_TAG: u8 = 0xFD;
-
-/// The byte a cover record reserves: the set of pairs one goal reads.
-const COVER_TAG: u8 = 0xFC;
-
-/// The byte a context record reserves: a whole context's types, outermost
-/// first.
-const CONTEXT_TAG: u8 = 0xFB;
-
 /// The byte a goal record reserves: one question, the memo's key.
 const GOAL_TAG: u8 = 0xFA;
 
@@ -315,18 +304,13 @@ fn component_present() -> WireTag
     WireTag::from(0x01_u8)
 }
 
-/// The five records the memo key adds to a [`ContentTable`], beside the
+/// The two records the memo key adds to a [`ContentTable`], beside the
 /// nodes' own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum KeyRecord
 {
-    /// One read binder: its index and its type.
-    Pair,
-    /// The set of pairs one goal reads.
-    Cover,
-    /// A whole context, for a goal whose reads are not known.
-    Context,
-    /// One question: its direction, subject, expected type and binders.
+    /// One question: its direction, subject, expected type and the binders
+    /// it reads, inline.
     Goal,
     /// The parameters a judgement answers under.
     Parameters,
@@ -342,13 +326,28 @@ impl KeyRecord
     fn tag(self) -> WireTag
     {
         WireTag::from(match self {
-            Self::Pair => PAIR_TAG,
-            Self::Cover => COVER_TAG,
-            Self::Context => CONTEXT_TAG,
             Self::Goal => GOAL_TAG,
             Self::Parameters => PARAMETERS_TAG,
         })
     }
+}
+
+/// The tag a goal record writes before the binders it read.
+///
+/// # Specification
+/// trivial.
+fn telescope_read() -> WireTag
+{
+    WireTag::from(0x00_u8)
+}
+
+/// The tag a goal record writes before a whole context.
+///
+/// # Specification
+/// trivial.
+fn telescope_whole() -> WireTag
+{
+    WireTag::from(0x01_u8)
 }
 
 /// The parameters that a judgement answers under beside its goal. They are
@@ -476,22 +475,24 @@ impl DanglingFamily
     }
 }
 
-/// An owned canonical content encoding: one record's bytes.
+/// An owned canonical content encoding: one record's `u32` words.
 ///
 /// Records compare equal exactly when their content does, so this type is the
 /// interning's whole vocabulary. It is ordered so a table can be keyed on it.
+/// A tag takes one word, and so does each name and each number below 2^31. A
+/// record compares and hashes a word at a time.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ContentEncoding(Vec<u8>);
+pub struct ContentEncoding(Vec<u32>);
 
-impl AsRef<[u8]> for ContentEncoding
+impl AsRef<[u32]> for ContentEncoding
 {
-    /// The encoding's bytes.
+    /// The encoding's words.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn as_ref(&self) -> &[u8]
+    fn as_ref(&self) -> &[u32]
     {
         self.0.as_slice()
     }
@@ -509,7 +510,7 @@ impl ContentEncoding
         Self(Vec::new())
     }
 
-    /// Append one tag byte.
+    /// Append one tag word.
     ///
     /// # Specification
     /// trivial.
@@ -519,16 +520,18 @@ impl ContentEncoding
         tag: WireTag,
     )
     {
-        self.0.push(u8::from(tag));
+        self.0.push(u32::from(u8::from(tag)));
     }
 
-    /// Append the minimal unsigned varint image of `value`.
+    /// Append the minimal word image of `value`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: appends the little-endian base-128 image with no continuation
-    ///   byte past the highest set group, so a value has exactly one image and
-    ///   two encodings differ whenever the values they carry differ.
+    /// - ensures: appends the little-endian base-2^31 image. The top bit of
+    ///   every word but the last marks a continuation, and no word follows the
+    ///   highest set group. So a value has exactly one image, and two encodings
+    ///   differ whenever the values they carry differ. A value below 2^31 takes
+    ///   one word.
     /// - provides: the encoder's integer primitive, and with it the
     ///   length-prefix framing that makes the encoding prefix-free.
     /// - fails: never.
@@ -536,19 +539,20 @@ impl ContentEncoding
     ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — the predicate fixes every appended payload group,
-    ///   continuation bit and minimal width. Exact images at 0, 127, 128 and
-    ///   `u64::MAX` separate zero, the first group transition and the ceiling;
-    ///   these finite cases do not enumerate every word.
-    /// - witness: `encoding::tests::varint_images_are_minimal_at_the_boundaries`
+    ///   continuation bit and minimal width. Exact images at 0, 2^31 − 1, 2^31
+    ///   and `u64::MAX` separate zero, the first group transition and the
+    ///   ceiling. These finite cases do not enumerate every value.
+    /// - witness: `encoding::tests::word_images_are_minimal_at_the_boundaries`
+    #[inline]
     #[spec(
         captures: entry_len = self.0.len(),
         ensures: self.0.get(entry_len..).is_some_and(|image|
-            usize::try_from(64_u32.saturating_sub(value.0.leading_zeros()).max(1).div_ceil(7))
+            usize::try_from(64_u32.saturating_sub(value.0.leading_zeros()).max(1).div_ceil(31))
                 .is_ok_and(|groups| image.len() == groups)
-            && image.iter().enumerate().all(|(group, &byte)|
-                value.0.checked_shr(u32::try_from(group.saturating_mul(7)).unwrap_or(u32::MAX))
-                    .is_some_and(|remaining| u64::from(byte & 0x7f) == (remaining & 0x7f)
-                        && ((byte & 0x80) != 0) == (group.saturating_add(1) < image.len()))))
+            && image.iter().enumerate().all(|(group, &word)|
+                value.0.checked_shr(u32::try_from(group.saturating_mul(31)).unwrap_or(u32::MAX))
+                    .is_some_and(|remaining| u64::from(word & 0x7fff_ffff) == (remaining & 0x7fff_ffff)
+                        && ((word & 0x8000_0000) != 0) == (group.saturating_add(1) < image.len()))))
     )]
     fn put_word(
         &mut self,
@@ -557,16 +561,13 @@ impl ContentEncoding
     {
         let mut remaining = value.0;
         loop {
-            let low = u8::try_from(remaining & 0x7f).unwrap_or(0_u8);
-            remaining = u64::from(arith::div(
-                arith::Int::from(remaining),
-                arith::Int::from(128_u64),
-            ));
+            let low = u32::try_from(remaining & 0x7fff_ffff).unwrap_or(0_u32);
+            remaining = remaining.checked_shr(31).unwrap_or(0_u64);
             if remaining == 0_u64 {
                 self.0.push(low);
                 return;
             }
-            self.0.push(low | 0x80);
+            self.0.push(low | 0x8000_0000);
         }
     }
 
@@ -583,7 +584,7 @@ impl ContentEncoding
         self.put_word(EncodedWord(id.0));
     }
 
-    /// Append a byte length as a varint.
+    /// Append a length as its word image.
     ///
     /// # Specification
     /// trivial.
@@ -596,7 +597,7 @@ impl ContentEncoding
         self.put_word(EncodedWord(u64::try_from(length.0).unwrap_or(u64::MAX)));
     }
 
-    /// Append a component count as a varint.
+    /// Append a component count as its word image.
     ///
     /// # Specification
     /// trivial.
@@ -612,39 +613,45 @@ impl ContentEncoding
     /// Append length-prefixed text.
     ///
     /// The length prefix is the whole point: without it `"ab"` beside `"c"` and
-    /// `"a"` beside `"bc"` would produce one byte string, and two distinct
+    /// `"a"` beside `"bc"` would produce one word string, and two distinct
     /// literals would take one content id.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: appends the text's byte length and then its bytes, so two
-    ///   adjacent text components cannot be re-split — `"a"` beside `"bc"` and
-    ///   `"ab"` beside `"c"` take different images.
+    /// - ensures: appends the text's byte length, then its bytes packed four to
+    ///   a word in little-endian order. The last word is padded with zero
+    ///   bytes. So two adjacent text components cannot be re-split: `"a"`
+    ///   beside `"bc"` and `"ab"` beside `"c"` take different images.
     /// - provides: the framing that keeps the encoding injective over text
     ///   payloads, and so keeps two literals from taking one content id.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1/L3 — the appended suffix contains the original UTF-8
-    ///   bytes after their minimal byte-length prefix. Empty, multi-byte and
-    ///   127/128-byte text separates character counting, missing framing and
-    ///   prefix loss; adjacent split pairs separate ambiguous concatenation.
+    /// - hypothesis: L1/L3 — the appended suffix holds the minimal image of the
+    ///   byte length, then the packed bytes and their zero padding. Empty,
+    ///   multi-byte, four-byte and five-byte text separates character counting,
+    ///   a lost padding and a dropped word. Adjacent split pairs separate
+    ///   ambiguous concatenation.
     /// - witness: `encoding::tests::text_frames_count_bytes_and_preserve_component_boundaries`
     #[inline]
     #[spec(
         captures: entry_len = self.0.len(),
-        ensures: self.0.get(entry_len..).and_then(|image| image.strip_suffix(text.0.as_bytes()))
-            .is_some_and(|prefix| {
-                let length = text.0.len();
-                usize::try_from(usize::BITS.saturating_sub(length.leading_zeros()).max(1).div_ceil(7))
-                    .is_ok_and(|groups| prefix.len() == groups)
-                && prefix.iter().enumerate().all(|(group, &byte)|
-                    ((byte & 0x80) != 0) == (group.saturating_add(1) < prefix.len()))
-                && prefix.iter().rev().fold(0_u128, |value, &byte|
-                    value.saturating_mul(128).saturating_add(u128::from(byte & 0x7f)))
-                    == u128::try_from(length).unwrap_or(u128::MAX)
-            })
+        ensures: self.0.get(entry_len..).is_some_and(|image| {
+            let length = text.0.len();
+            image.split_at_checked(image.len().saturating_sub(length.div_ceil(4)))
+                .is_some_and(|(prefix, packed)| {
+                    usize::try_from(usize::BITS.saturating_sub(length.leading_zeros()).max(1).div_ceil(31))
+                        .is_ok_and(|groups| prefix.len() == groups)
+                    && prefix.iter().enumerate().all(|(group, &word)|
+                        ((word & 0x8000_0000) != 0) == (group.saturating_add(1) < prefix.len()))
+                    && prefix.iter().rev().fold(0_u128, |value, &word|
+                        value.saturating_mul(1_u128 << 31_u32).saturating_add(u128::from(word & 0x7fff_ffff)))
+                        == u128::try_from(length).unwrap_or(u128::MAX)
+                    && packed.iter().flat_map(|word| word.to_le_bytes()).take(length).eq(text.0.bytes())
+                    && packed.iter().flat_map(|word| word.to_le_bytes()).skip(length).all(|byte| byte == 0)
+                })
+        })
     )]
     fn put_text(
         &mut self,
@@ -653,36 +660,42 @@ impl ContentEncoding
     {
         let bytes = text.0.as_bytes();
         self.put_length(EncodingLength(bytes.len()));
-        self.0.extend_from_slice(bytes);
+        self.0.extend(bytes.chunks(4).map(|chunk| {
+            u32::from_le_bytes(core::array::from_fn(|index| {
+                chunk.get(index).copied().unwrap_or(0_u8)
+            }))
+        }));
     }
 
-    /// Append `record` framed by its own byte length.
+    /// Append `record` framed by its own length in words.
     ///
     /// # Specification
-    /// - requires: nothing; the record may be empty or contain arbitrary bytes.
-    /// - ensures: appends the record's minimal byte-length varint followed by
-    ///   its complete bytes, without changing the preceding encoding.
+    /// - requires: nothing; the record may be empty or hold arbitrary words.
+    /// - ensures: appends the minimal word image of the record's length in
+    ///   words, followed by its complete words, without changing the preceding
+    ///   encoding.
     /// - provides: unambiguous record boundaries in the canonical stream.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — the suffix predicate checks the minimal prefix and
-    ///   complete payload. Empty, binary and 128-byte records witness framing
-    ///   and preservation of an existing prefix; not every length is sampled.
-    /// - witness: `encoding::tests::record_frames_preserve_binary_payloads_at_the_group_boundary`
+    ///   complete payload. An empty record and one holding continued words
+    ///   witness the framing and an existing prefix's preservation. Not every
+    ///   length is sampled.
+    /// - witness: `encoding::tests::record_frames_preserve_their_words`
     #[inline]
     #[spec(
         captures: entry_len = self.0.len(),
         ensures: self.0.get(entry_len..).and_then(|image| image.strip_suffix(record.0.as_slice()))
             .is_some_and(|prefix| {
-                let length = (record.0.as_slice()).len();
-                usize::try_from(usize::BITS.saturating_sub(length.leading_zeros()).max(1).div_ceil(7))
+                let length = record.0.len();
+                usize::try_from(usize::BITS.saturating_sub(length.leading_zeros()).max(1).div_ceil(31))
                     .is_ok_and(|groups| prefix.len() == groups)
-                && prefix.iter().enumerate().all(|(group, &byte)|
-                    ((byte & 0x80) != 0) == (group.saturating_add(1) < prefix.len()))
-                && prefix.iter().rev().fold(0_u128, |value, &byte|
-                    value.saturating_mul(128).saturating_add(u128::from(byte & 0x7f)))
+                && prefix.iter().enumerate().all(|(group, &word)|
+                    ((word & 0x8000_0000) != 0) == (group.saturating_add(1) < prefix.len()))
+                && prefix.iter().rev().fold(0_u128, |value, &word|
+                    value.saturating_mul(1_u128 << 31_u32).saturating_add(u128::from(word & 0x7fff_ffff)))
                     == u128::try_from(length).unwrap_or(u128::MAX)
             })
     )]
@@ -695,25 +708,29 @@ impl ContentEncoding
         self.0.extend_from_slice(record.0.as_slice());
     }
 
-    /// The 128-bit digest of these bytes.
+    /// The 128-bit digest of these words.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the high and low words of FNV-1a-128 over these bytes, using
-    ///   its offset basis and prime modulo 2^128. Equal encodings have equal
-    ///   digests; unequal encodings are not promised unequal digests.
+    /// - ensures: the high and low words of the FNV-1a recurrence over these
+    ///   `u32` words, using its 128-bit offset basis and prime modulo 2^128.
+    ///   Each word is combined into the state by exclusive or, and the state is
+    ///   then multiplied by the prime. Equal encodings have equal digests.
+    ///   Unequal encodings are not promised unequal digests.
     /// - provides: the positive fast path a memo buckets on, and the content
     ///   identity a refusal's type witness carries. The executable fold states
-    ///   the algorithm, not collision freedom: byte equality still decides.
+    ///   the algorithm, not collision freedom: word equality still decides.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1/L3 — the fold fixes the recurrence and word split;
-    ///   empty and single-byte known answers separate the basis, multiplication
-    ///   and word order. Byte-change and transposition witnesses reject a
-    ///   constant or order-insensitive digest, not every possible collision.
-    /// - witness: `encoding::tests::the_digest_separates_a_one_byte_difference`
+    /// - hypothesis: L1/L3 — the fold fixes the recurrence and word split.
+    ///   Empty and single-word known answers separate the basis, the
+    ///   multiplication and the output's word order. A two-byte word's answer
+    ///   separates a word fold from a byte fold. Word-change and transposition
+    ///   witnesses reject a constant or order-insensitive digest, not every
+    ///   possible collision.
+    /// - witness: `encoding::tests::the_digest_separates_a_one_word_difference`
     /// - witness: `encoding::tests::the_digest_separates_a_transposition`
     #[inline]
     #[must_use]
@@ -721,12 +738,12 @@ impl ContentEncoding
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the check folds the bytes once, as the body does"
+            reason = "parity: the check folds the words once, as the body does"
         )
     )]
     #[spec(ensures: |ret| {
         let fingerprint = self.0.iter().fold(0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128,
-            |state, &byte| (state ^ u128::from(byte))
+            |state, &word| (state ^ u128::from(word))
                 .wrapping_mul(0x0000_0000_0100_0000_0000_0000_0000_013b_u128));
         ret == ContentDigest::new(
             DigestWord::from(u64::try_from(fingerprint >> 64_u32).unwrap_or(u64::MAX)),
@@ -734,14 +751,14 @@ impl ContentEncoding
     })]
     pub fn digest(&self) -> ContentDigest
     {
-        // FNV-1a over 128 bits: order-sensitive by construction, so a
-        // transposition moves it, and wrapping arithmetic because a hash is the
-        // one place bare modular arithmetic is the intended semantics.
+        // FNV-1a's recurrence over words: order-sensitive by construction, so
+        // a transposition moves it, and wrapping arithmetic because a hash is
+        // the one place bare modular arithmetic is the intended semantics.
         const BASIS: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128;
         const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b_u128;
         let mut state = BASIS;
-        for &byte in &self.0 {
-            state ^= u128::from(byte);
+        for &word in &self.0 {
+            state ^= u128::from(word);
             // reason: FNV-1a multiplies modulo 2^128.
             state = u128::from(arith::wrapping_mul(
                 arith::Int::from(state),
@@ -757,7 +774,7 @@ impl ContentEncoding
         ContentDigest::new(DigestWord::from(high), DigestWord::from(low))
     }
 
-    /// How many bytes this encoding holds.
+    /// How many words this encoding holds.
     ///
     /// # Specification
     /// trivial.
@@ -769,7 +786,8 @@ impl ContentEncoding
     }
 }
 
-/// The byte length of a [`ContentEncoding`].
+/// A length that frames a payload: a [`ContentEncoding`]'s words, or a
+/// text's bytes.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EncodingLength(usize);
@@ -777,7 +795,7 @@ pub struct EncodingLength(usize);
 /// How many components a composite position of an encoding carries.
 ///
 /// Distinct from [`EncodingLength`] because the two are different quantities
-/// that both spell as one machine word: a byte length frames a payload, and a
+/// that both spell as one machine word: a length frames a payload, and a
 /// component count says how many entries follow.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -839,20 +857,21 @@ enum EncodeTask
 /// subterms at different arena positions receive one id — which is exactly what
 /// makes a re-minted spine's untouched leaf reuse its answer, and what a memo
 /// keyed on arena identity forfeits. Beside the nodes' records it holds the
-/// memo key's — pairs, covers, contexts and goals — so a goal's key is a name
-/// in the same merged graph, built from its members' names.
+/// memo key's goals and parameters. A goal's record names its subject, its
+/// expected type and each binder it reads, so a goal's key is a name in the
+/// same merged graph, built from its members' names.
 ///
-/// Every record's bytes are held once, in the stream; the index files each
-/// record's id under its digest's hash, and a lookup compares the bytes there.
+/// Every record's words are held once, in the stream; the index files each
+/// record's id under its digest's hash, and a lookup compares the words there.
 /// Each arena node's id sits in a dense column for its family. Records are
 /// built in one reused buffer and walks run on one reused stack, so asking
 /// about content the table already holds allocates nothing.
 #[derive(Clone, Debug, Default)]
 pub struct ContentTable
 {
-    /// The framed record stream, in id order: every record's bytes, once.
+    /// The framed record stream, in id order: every record's words, once.
     stream: ContentEncoding,
-    /// Where each record's bytes sit in the stream, by id.
+    /// Where each record's words sit in the stream, by id.
     spans: Vec<RecordSpan>,
     /// Each record's id, filed under its digest's hash.
     interned: HashIndex,
@@ -866,7 +885,8 @@ pub struct ContentTable
     records: u64,
     /// The record being built.
     scratch: ContentEncoding,
-    /// The members of the cover or context being built.
+    /// The binder names of the goal, or the members of the parameters, being
+    /// written.
     members: Vec<ContentId>,
     /// The placement walk's task stack.
     tasks: Vec<EncodeTask>,
@@ -875,13 +895,13 @@ pub struct ContentTable
     constants: Vec<ConstantName>,
 }
 
-/// Where one record's bytes sit in a [`ContentTable`]'s stream.
+/// Where one record's words sit in a [`ContentTable`]'s stream.
 #[derive(Clone, Copy, Debug)]
 struct RecordSpan
 {
-    /// The offset of the record's first byte.
+    /// The offset of the record's first word.
     start: usize,
-    /// The offset past its last byte.
+    /// The offset past its last word.
     end: usize,
 }
 
@@ -1542,14 +1562,14 @@ impl ContentTable
     }
 
     /// The id this table holds for `record`, found by its digest `digest` and
-    /// decided by its bytes.
+    /// decided by its words.
     ///
     /// # Specification
     /// - requires: `digest` is `record`'s digest.
-    /// - ensures: the id whose record is byte-equal to `record`, or
+    /// - ensures: the id whose record is word-equal to `record`, or
     ///   [`record_held::Absent::Fresh`] when the table holds none. A digest
     ///   narrows the search and never decides it: every record sharing it is
-    ///   compared byte for byte.
+    ///   compared word for word.
     /// - provides: the lookup every interning step goes through; it reads the
     ///   stream in place and allocates nothing.
     /// - fails: never.
@@ -1577,7 +1597,7 @@ impl ContentTable
     }
 
     /// The probe for `record`, whose digest hashes to `hash`: the position of
-    /// the byte-equal record, or the slot a fresh one is filed at.
+    /// the word-equal record, or the slot a fresh one is filed at.
     ///
     /// # Specification
     /// - requires: `hash` is the table hash of `record`'s digest.
@@ -1637,17 +1657,17 @@ impl ContentTable
     }
 
     /// Assign the record in the scratch buffer an id under the digest `digest`,
-    /// reusing the one its bytes already hold.
+    /// reusing the one its words already hold.
     ///
     /// # Specification
     /// - requires: the scratch buffer holds one complete record whose members'
     ///   ids are already assigned.
-    /// - ensures: the id this table already holds for those exact bytes, or a
+    /// - ensures: the id this table already holds for those exact words, or a
     ///   fresh id whose record is appended to the stream and filed under
-    ///   `digest`'s hash. Ids are assigned in stream order, byte-equal records
+    ///   `digest`'s hash. Ids are assigned in stream order, word-equal records
     ///   take one id however many nodes spell them, and records sharing a
     ///   digest keep their own ids. The record count is at most the stream's
-    ///   byte length: each fresh record appends a nonempty length-prefixed
+    ///   word length: each fresh record appends a nonempty length-prefixed
     ///   image before the count advances. On supported targets that allocation
     ///   is bounded by `isize::MAX`, below `u64::MAX`; no representable table
     ///   overflows it. Past `u32::MAX` records the index files no more, so a
@@ -1661,7 +1681,7 @@ impl ContentTable
     ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — complete records with placed children enter a
-    ///   valid table. Fresh ids, exact-byte reuse and count/stream bounds are
+    ///   valid table. Fresh ids, exact-word reuse and count/stream bounds are
     ///   executable; shared and re-minted depth-16 graphs exercise both
     ///   branches, and two records forced under one digest exercise records
     ///   filed under one hash, not an unallocatable u64 ceiling.
@@ -1671,7 +1691,7 @@ impl ContentTable
         captures: [held = self.held(&self.scratch, digest), records_before = self.records,
             stream_before = self.stream.0.len()],
         ensures: |ret| u128::try_from(self.stream.0.len())
-            .is_ok_and(|bytes| u128::from(self.records) <= bytes)
+            .is_ok_and(|words| u128::from(self.records) <= words)
             && u64::try_from(self.spans.len()) == Ok(self.records) && ret.0 < self.records
             && (self.held(&self.scratch, digest) == Maybe::Present(ret)
                 || ret.0 >= u64::from(u32::MAX))
@@ -1711,122 +1731,6 @@ impl ContentTable
             self.interned.insert(slot, hash, position);
         }
         id
-    }
-
-    /// Name one read binder: the index `index` beside its type's content
-    /// `binder`.
-    ///
-    /// # Specification
-    /// - requires: `binder` is an id this table assigned.
-    /// - ensures: two pairs take one id exactly when their indices and their
-    ///   types' contents are equal.
-    /// - provides: the pair layer of the key, built once for every cover that
-    ///   reads a type of that content at that position.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one type read at two positions, and two types read at
-    ///   one, key apart; one type at one position keys alike.
-    /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
-    #[inline]
-    #[spec(requires: binder.0 < self.records, ensures: |ret| ret.0 < self.records)]
-    fn pair(
-        &mut self,
-        index: DeBruijnIndex,
-        binder: ContentId,
-    ) -> ContentId
-    {
-        self.scratch.0.clear();
-        self.scratch.put_tag(KeyRecord::Pair.tag());
-        self.scratch
-            .put_word(EncodedWord(u64::from(u32::from(index))));
-        self.scratch.put_content(binder);
-        self.intern_scratch()
-    }
-
-    /// Name the set of binders one goal reads: the pair of each read index
-    /// with its binder's type.
-    ///
-    /// # Specification
-    /// - requires: `read`'s indices ascend strictly, and each type is a node of
-    ///   `arena`. A read out of order names another cover, which can only split
-    ///   a support and never merge two.
-    /// - ensures: two reads take one id exactly when they read the same
-    ///   positions and find types of equal content at each. Members are written
-    ///   in index order, which is canonical because a cover reads each index
-    ///   once.
-    /// - provides: the cover layer of the key, built once for every goal whose
-    ///   node reads the same binders.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the empty read, one read at two positions, two types
-    ///   swapped between two positions, and the same read under two subjects
-    ///   separate a dropped member, a position-blind member and a lost share.
-    /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
-    /// - witness: `encoding::tests::one_key_record_per_distinct_question`
-    #[spec(ensures: |ret| ret.0 < self.records
-        && read.iter().all(|&(_, entry)| matches!(self.placed.get(AnyNode::ValueType(entry)), Maybe::Present(_))))]
-    fn cover(
-        &mut self,
-        arena: &TermArena,
-        read: &[(DeBruijnIndex, ValueTypeId)],
-    ) -> ContentId
-    {
-        let mut members = core::mem::take(&mut self.members);
-        members.clear();
-        for &(index, entry) in read {
-            let binder = self.place(arena, AnyNode::ValueType(entry));
-            members.push(self.pair(index, binder));
-        }
-        self.scratch.0.clear();
-        self.scratch.put_tag(KeyRecord::Cover.tag());
-        self.scratch.put_count(ComponentCount(members.len()));
-        for &member in &members {
-            self.scratch.put_content(member);
-        }
-        self.members = members;
-        self.intern_scratch()
-    }
-
-    /// Name a whole context: its types' contents, outermost first.
-    ///
-    /// # Specification
-    /// - requires: each type is a node of `arena`.
-    /// - ensures: two contexts take one id exactly when they have one length
-    ///   and types of equal content at every position; never the id of a cover.
-    /// - provides: the key's binders for a goal whose reads are not known.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a permuted context, a longer one and a read one of
-    ///   the same types key apart.
-    /// - witness: `encoding::tests::the_telescope_is_folded_in_order`
-    /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
-    #[spec(ensures: |ret| ret.0 < self.records
-        && context.iter().all(|&entry| matches!(self.placed.get(AnyNode::ValueType(entry)), Maybe::Present(_))))]
-    fn context(
-        &mut self,
-        arena: &TermArena,
-        context: &[ValueTypeId],
-    ) -> ContentId
-    {
-        let mut members = core::mem::take(&mut self.members);
-        members.clear();
-        for &entry in context {
-            members.push(self.place(arena, AnyNode::ValueType(entry)));
-        }
-        self.scratch.0.clear();
-        self.scratch.put_tag(KeyRecord::Context.tag());
-        self.scratch.put_count(ComponentCount(members.len()));
-        for &member in &members {
-            self.scratch.put_content(member);
-        }
-        self.members = members;
-        self.intern_scratch()
     }
 
     /// Name `parameters` by one record over their content. The record holds
@@ -2007,10 +1911,10 @@ AnyNode::Computation(id) => (arena.computation(id).is_some(), 1_u8),
 AnyNode::ValueType(id) => (arena.value_type(id).is_some(), 2_u8),
 AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         if readable {
-            record.0.first().is_some_and(|&tag| tag != DANGLING_TAG)
+            record.0.first().is_some_and(|&tag| tag != u32::from(DANGLING_TAG))
         } else {
-            record.0.len() == 2 && record.0.first() == Some(&DANGLING_TAG)
-                && record.0.get(1) == Some(&family)
+            record.0.len() == 2 && record.0.first() == Some(&u32::from(DANGLING_TAG))
+                && record.0.get(1) == Some(&u32::from(family))
         }
     })]
     fn write_record(
@@ -2093,7 +1997,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::QuoteComputation(quoted) => matches!(self.placed.get(AnyNode::CompType(quoted)), Maybe::Present(_)),
         },
         captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u8::from(match *value {
+        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *value {
             Value::Constructor { .. } => gandr_kernel_term::NODE_V_CONSTRUCTOR,
             Value::Record(_) => gandr_kernel_term::NODE_V_RECORD,
             Value::SessionPath { .. } => gandr_kernel_term::NODE_V_SESSION_PATH,
@@ -2127,7 +2031,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Quote(..) => gandr_kernel_term::NODE_V_QUOTE,
             Value::QuoteComputation(..) => gandr_kernel_term::NODE_V_QUOTE_COMPUTATION,
             Value::StaticApplication(..) => gandr_kernel_term::NODE_V_STATIC_APPLICATION,
-        }))
+        })))
     )]
     fn put_value(
         &self,
@@ -2417,7 +2321,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                             && branches.iter().all(|id| matches!(self.placed.get(AnyNode::Computation(*id)), Maybe::Present(_))),
         },
         captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
+        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *computation {
             Computation::DataCase { equations, .. } => if equations == gandr_kernel_term::EquationCount::NONE { gandr_kernel_term::NODE_C_DATA_CASE } else { gandr_kernel_term::NODE_C_INDEXED_DATA_CASE },
             Computation::SigmaSplit { .. } => gandr_kernel_term::NODE_C_SIGMA_SPLIT,
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
@@ -2439,7 +2343,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Case { .. } => gandr_kernel_term::NODE_C_CASE,
             Computation::With(..) => gandr_kernel_term::NODE_C_WITH,
             Computation::Project(..) => gandr_kernel_term::NODE_C_PROJECT,
-        }))
+        })))
     )]
     fn put_computation(
         &self,
@@ -2707,7 +2611,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Element { code, .. } => matches!(self.placed.get(AnyNode::Value(code)), Maybe::Present(_)),
         },
         captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u8::from(match *value_type {
+        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *value_type {
             ValueType::Data { .. } => gandr_kernel_term::NODE_VT_DATA,
             ValueType::Record(_) => gandr_kernel_term::NODE_VT_RECORD,
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
@@ -2729,7 +2633,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI,
             ValueType::Sigma { .. } => gandr_kernel_term::NODE_VT_SIGMA,
             ValueType::Staged { .. } => record_staged(),
-        }))
+        })))
     )]
     fn put_value_type(
         &self,
@@ -2933,14 +2837,14 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Codata { ref arguments, .. } => arguments.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
         },
         captures: entry_len = record.0.len(),
-        ensures: record.0.get(entry_len) == Some(&u8::from(match *comp_type {
+        ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *comp_type {
             CompType::Returner(..) => gandr_kernel_term::NODE_CT_RETURNER,
             CompType::Arrow { .. } => gandr_kernel_term::NODE_CT_ARROW,
             CompType::Pi { .. } => gandr_kernel_term::NODE_CT_PI,
             CompType::Element { .. } => gandr_kernel_term::NODE_CT_ELEMENT,
             CompType::With(..) => gandr_kernel_term::NODE_CT_WITH,
             CompType::Codata { .. } => gandr_kernel_term::NODE_CT_CODATA,
-        }))
+        })))
     )]
     fn put_comp_type(
         &self,
@@ -3608,19 +3512,24 @@ const fn sign_tag(sign: Sign) -> WireTag
 /// - witness: `encoding::tests::a_width_literal_keys_by_its_width`
 #[spec(
     captures: entry_len = record.0.len(),
-    ensures: match *literal {
-        Literal::Integer(ref integer) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_INTEGER))
-            && record.0.get(entry_len.saturating_add(1)) == Some(&u8::from(sign_tag(integer.sign())))
-            && record.0.ends_with(integer.magnitude().as_ref().as_bytes()),
-        Literal::Text(ref text) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_TEXT))
-            && record.0.ends_with(text.as_ref().as_bytes()),
-        Literal::Numeric(ref numeric) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_NUMERIC))
-            && record.0.get(entry_len.saturating_add(1)) == Some(&u8::from(sign_tag(numeric.sign())))
-            && record.0.ends_with(numeric.fraction().as_ref().as_bytes()),
-        Literal::Character(ref character) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_CHARACTER))
-            && record.0.ends_with(character.to_text().as_bytes()),
-        Literal::Float64(_) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_FLOAT64)),
-        Literal::Fixed(fixed) => record.0.get(entry_len) == Some(&u8::from(fixed_kind(fixed.width()))),
+    ensures: {
+        let packed = |text: &str| text.as_bytes().chunks(4).map(|chunk|
+            u32::from_le_bytes(core::array::from_fn(|index| chunk.get(index).copied().unwrap_or(0_u8))))
+            .collect::<Vec<u32>>();
+        match *literal {
+        Literal::Integer(ref integer) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_INTEGER)))
+            && record.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(integer.sign()))))
+            && record.0.ends_with(&packed(integer.magnitude().as_ref())),
+        Literal::Text(ref text) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_TEXT)))
+            && record.0.ends_with(&packed(text.as_ref())),
+        Literal::Numeric(ref numeric) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_NUMERIC)))
+            && record.0.get(entry_len.saturating_add(1)) == Some(&u32::from(u8::from(sign_tag(numeric.sign()))))
+            && record.0.ends_with(&packed(numeric.fraction().as_ref())),
+        Literal::Character(ref character) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_CHARACTER)))
+            && record.0.ends_with(&packed(character.to_text().as_str())),
+        Literal::Float64(_) => record.0.get(entry_len) == Some(&u32::from(u8::from(gandr_kernel_term::LITERAL_FLOAT64))),
+        Literal::Fixed(fixed) => record.0.get(entry_len) == Some(&u32::from(u8::from(fixed_kind(fixed.width())))),
+        }
     }
 )]
 fn put_literal(
@@ -3688,11 +3597,11 @@ fn put_literal(
             .chain(level.atoms().flat_map(|(variable, offset)|
                 [u64::from(u32::from(variable.index())), u64::from(offset)]));
         let expected = words.flat_map(|word| {
-    let groups = u64::BITS.saturating_sub(word.leading_zeros()).max(1).div_ceil(7);
+    let groups = u64::BITS.saturating_sub(word.leading_zeros()).max(1).div_ceil(31);
     (0 .. groups).map(move |group| {
-        let remaining = word.checked_shr(group.saturating_mul(7)).unwrap_or(0);
-        let low = u8::try_from(remaining & 0x7f).unwrap_or(0);
-        low | if group.saturating_add(1) < groups { 0x80 } else { 0 }
+        let remaining = word.checked_shr(group.saturating_mul(31)).unwrap_or(0);
+        let low = u32::try_from(remaining & 0x7fff_ffff).unwrap_or(0);
+        low | if group.saturating_add(1) < groups { 0x8000_0000 } else { 0 }
     })
 });
         record.0.get(entry_len..).is_some_and(|image| image.iter().copied().eq(expected))
@@ -3719,13 +3628,13 @@ fn put_level(
 /// # Specification
 /// - requires: `placed` yields the list's ids in the order the record lists
 ///   them.
-/// - ensures: appends the count's varint, then each id taken. The count frames
-///   the list. So two records that split their ids differently differ.
+/// - ensures: appends the count's word image, then each id taken. The count
+///   frames the list. So two records that split their ids differently differ.
 /// - provides: the framing that [`ContentTable::parameters`] writes its lists
 ///   with.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the appended bytes are the iterator's next items. A
+/// - executable: none — the appended words are the iterator's next items. A
 ///   predicate could restate them only by consuming them again.
 ///
 /// # Adequacy
@@ -3888,18 +3797,31 @@ pub enum Telescope<'context>
     Whole(&'context [ValueTypeId]),
 }
 
-impl Telescope<'_>
+impl<'context> Telescope<'context>
 {
+    /// The binder types the telescope folds in, in its order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn entries(self) -> impl Iterator<Item = ValueTypeId> + 'context
+    {
+        let (read, whole): (&[(DeBruijnIndex, ValueTypeId)], &[ValueTypeId]) = match self {
+            Self::Read(read) => (read, &[]),
+            Self::Whole(context) => (&[], context),
+        };
+        read.iter()
+            .map(|&(_, entry)| entry)
+            .chain(whole.iter().copied())
+    }
+
     /// The binder types the telescope folds in.
     ///
     /// # Specification
     /// trivial.
     fn types(self) -> Vec<ValueTypeId>
     {
-        match self {
-            Self::Read(read) => read.iter().map(|&(_, entry)| entry).collect(),
-            Self::Whole(context) => context.to_vec(),
-        }
+        self.entries().collect()
     }
 }
 
@@ -3907,11 +3829,12 @@ impl Telescope<'_>
 /// obligation's content, its expected type's content and its binders.
 ///
 /// The key is a name in the session's merged graph, built from its members'
-/// names: a goal names its subject, its expected type and its cover; a cover
-/// names its pairs; a pair names a type. Each record is interned once, so a
-/// type, a pair or a cover recurring under many goals is built once and shared
-/// by every goal that reads it, and two goals take one name exactly when every
-/// member agrees, down to the leaves.
+/// names. A goal names its subject and its expected type. Inline, it names
+/// each binder it reads, as the binder's index beside its type's name, or
+/// each type of a whole context. A type recurring under many goals is named
+/// once and shared by every goal that reads it. So a goal interns one record,
+/// and two goals take one name exactly when every member agrees, down to the
+/// leaves.
 ///
 /// # Specification
 /// - requires: `table` is this checking session's; a [`Telescope::Read`] holds
@@ -3966,10 +3889,11 @@ pub fn support_key(
 {
     let subject = table.place(arena, goal.subject());
     let expected = goal.expected().map(|node| table.place(arena, node));
-    let binders = match telescope {
-        Telescope::Read(read) => table.cover(arena, read),
-        Telescope::Whole(context) => table.context(arena, context),
-    };
+    let mut binders = core::mem::take(&mut table.members);
+    binders.clear();
+    for entry in telescope.entries() {
+        binders.push(table.place(arena, AnyNode::ValueType(entry)));
+    }
     let record = &mut table.scratch;
     record.0.clear();
     record.put_tag(KeyRecord::Goal.tag());
@@ -3984,7 +3908,24 @@ pub fn support_key(
             record.put_tag(component_absent());
         },
     }
-    record.put_content(binders);
+    match telescope {
+        Telescope::Read(read) => {
+            record.put_tag(telescope_read());
+            record.put_count(ComponentCount(read.len()));
+            for (&(index, _), &binder) in read.iter().zip(&binders) {
+                record.put_word(EncodedWord(u64::from(u32::from(index))));
+                record.put_content(binder);
+            }
+        },
+        Telescope::Whole(context) => {
+            record.put_tag(telescope_whole());
+            record.put_count(ComponentCount(context.len()));
+            for &binder in &binders {
+                record.put_content(binder);
+            }
+        },
+    }
+    table.members = binders;
     table.intern_scratch()
 }
 
@@ -4098,7 +4039,7 @@ impl RewriteGoal
 /// - witness: `encoding::tests::a_rewrite_key_separates_on_each_component`
 #[inline]
 #[must_use]
-#[spec(ensures: |ret| ret.0.first() == Some(&u8::from(goal.direction()))
+#[spec(ensures: |ret| ret.0.first() == Some(&u32::from(u8::from(goal.direction())))
     && matches!(table.placed.get(goal.subject()), Maybe::Present(_))
     && match goal {
         RewriteGoal::Shift { .. } | RewriteGoal::Abstract { .. } => true,
@@ -4359,39 +4300,33 @@ mod tests
     }
 
     #[test]
-    fn varint_images_are_minimal_at_the_boundaries()
+    fn word_images_are_minimal_at_the_boundaries()
     {
         let image_of = |value: u64| {
             let mut out = ContentEncoding::new();
             out.put_word(EncodedWord(value));
             out.0
         };
-        assert_eq!(vec![0x00_u8], image_of(0));
-        assert_eq!(vec![0x7f_u8], image_of(127));
-        assert_eq!(vec![0x80_u8, 0x01], image_of(128));
-        assert_eq!(
-            vec![
-                0xff_u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01
-            ],
-            image_of(u64::MAX)
-        );
+        assert_eq!(vec![0x00_u32], image_of(0));
+        assert_eq!(vec![0x7fff_ffff_u32], image_of(0x7fff_ffff));
+        assert_eq!(vec![0x8000_0000_u32, 0x01], image_of(0x8000_0000));
+        assert_eq!(vec![0xffff_ffff_u32, 0xffff_ffff, 0x03], image_of(u64::MAX));
     }
 
     #[test]
     fn text_frames_count_bytes_and_preserve_component_boundaries()
     {
-        let cases = [
+        let cases: [(String, Vec<u32>); 4] = [
             (String::new(), vec![0x00]),
-            (String::from("\u{e9}\0"), vec![0x03]),
-            ("x".repeat(127), vec![0x7f]),
-            ("x".repeat(128), vec![0x80, 0x01]),
+            (String::from("\u{e9}\0"), vec![0x03, 0x0000_a9c3]),
+            (String::from("abcd"), vec![0x04, 0x6463_6261]),
+            (String::from("abcde"), vec![0x05, 0x6463_6261, 0x0000_0065]),
         ];
-        for (text, prefix) in cases {
+        for (text, image) in cases {
             let mut encoded = ContentEncoding(vec![0x7e]);
             encoded.put_text(super::EncodedText(&text));
             let mut expected = vec![0x7e];
-            expected.extend_from_slice(&prefix);
-            expected.extend_from_slice(text.as_bytes());
+            expected.extend_from_slice(&image);
             assert_eq!(encoded.0, expected);
         }
         let mut split_one = ContentEncoding::new();
@@ -4404,15 +4339,11 @@ mod tests
     }
 
     #[test]
-    fn record_frames_preserve_binary_payloads_at_the_group_boundary()
+    fn record_frames_preserve_their_words()
     {
-        let cases = [
-            (vec![], vec![0x00]),
-            (vec![0xff, 0x00], vec![0x02]),
-            (vec![0xff; 128], vec![0x80, 0x01]),
-        ];
-        for (bytes, prefix) in cases {
-            let record = ContentEncoding(bytes);
+        let cases = [(vec![], vec![0x00]), (vec![0xffff_ffff, 0x00], vec![0x02])];
+        for (words, prefix) in cases {
+            let record = ContentEncoding(words);
             let mut encoded = ContentEncoding(vec![0x7e]);
             encoded.put_record(&record);
             let mut expected = vec![0x7e];
@@ -4423,7 +4354,7 @@ mod tests
     }
 
     #[test]
-    fn the_digest_separates_a_one_byte_difference()
+    fn the_digest_separates_a_one_word_difference()
     {
         let mut first = ContentEncoding::new();
         first.put_word(EncodedWord(1));
@@ -4432,7 +4363,7 @@ mod tests
         assert_ne!(
             first.digest(),
             second.digest(),
-            "a one-byte difference moves the digest, so the fast path prunes"
+            "a one-word difference moves the digest, so the fast path prunes"
         );
         assert_eq!(
             ContentEncoding::new().digest(),
@@ -4447,6 +4378,14 @@ mod tests
                 gandr_kernel_check_memo::DigestWord::from(0xd228_cb69_6f1a_8caf_u64),
                 gandr_kernel_check_memo::DigestWord::from(0x7891_2b70_4e4a_8964_u64)
             ),
+        );
+        assert_eq!(
+            ContentEncoding(vec![0x6261]).digest(),
+            gandr_kernel_check_memo::ContentDigest::new(
+                gandr_kernel_check_memo::DigestWord::from(0xd228_cb4b_6f1a_8caf_u64),
+                gandr_kernel_check_memo::DigestWord::from(0x7891_2b70_4e25_9f64_u64)
+            ),
+            "a word folds once, where its two bytes would fold twice"
         );
     }
 
@@ -5043,8 +4982,8 @@ mod tests
             Telescope::Read(&read),
         );
         assert_eq!(
-            table.records, 5_u64,
-            "the subject, the binder's type, its pair, the cover and the goal"
+            table.records, 3_u64,
+            "the subject, the binder's type and the goal, which holds the binder inline"
         );
         assert_eq!(
             first,
@@ -5056,7 +4995,7 @@ mod tests
             ),
             "asking again names the same goal"
         );
-        assert_eq!(table.records, 5_u64, "and adds no record");
+        assert_eq!(table.records, 3_u64, "and adds no record");
         let checked = support_key(
             &mut table,
             &arena,
@@ -5065,8 +5004,8 @@ mod tests
         );
         assert_ne!(checked, first, "checking is another question");
         assert_eq!(
-            table.records, 6_u64,
-            "whose expected type and cover are already named: only its goal record is new"
+            table.records, 4_u64,
+            "whose expected type and binder are already named: only its goal record is new"
         );
         let _reading = support_key(
             &mut table,
@@ -5075,9 +5014,9 @@ mod tests
             Telescope::Read(&read),
         );
         assert_eq!(
-            table.records, 8_u64,
+            table.records, 6_u64,
             "another subject reading the same binder adds its node and its goal, and shares the \
-             pair and the cover"
+             binder's type"
         );
     }
 
@@ -5140,10 +5079,10 @@ mod tests
             let key = support_key(&mut table, &arena, goal, Telescope::Whole(&[]));
             let mut record = ContentEncoding::new();
             table.write_record(&mut record, &arena, node);
-            assert_eq!(record.as_ref(), &[0xff_u8, family]);
+            assert_eq!(record.as_ref(), &[0xff_u32, u32::from(family)]);
             assert_eq!(
                 content_digest(&arena, node),
-                ContentEncoding(vec![2_u8, 0xff, family]).digest()
+                ContentEncoding(vec![2_u32, 0xff, u32::from(family)]).digest()
             );
             key
         });
@@ -5269,8 +5208,8 @@ mod tests
         };
         let zero = super::Level::zero();
         let constant = super::Level::constant(gandr_kernel_strata::LevelConstant::from(2_u64));
-        assert_eq!(image(&zero).0, [0x7e_u8, 0, 0]);
-        assert_eq!(image(&constant).0, [0x7e_u8, 2, 0]);
+        assert_eq!(image(&zero).0, [0x7e_u32, 0, 0]);
+        assert_eq!(image(&constant).0, [0x7e_u32, 2, 0]);
         let low = super::Level::var(super::LevelVar::new(
             gandr_kernel_strata::LevelVarIndex::from(0_u32),
         ));
@@ -5281,21 +5220,21 @@ mod tests
         .expect("the unit offset fits");
         let forward = low.max(&high);
         let reverse = high.max(&low);
-        assert_eq!(image(&forward).0, [0x7e_u8, 0, 2, 0, 0, 2, 1]);
+        assert_eq!(image(&forward).0, [0x7e_u32, 0, 2, 0, 0, 2, 1]);
         assert_eq!(image(&reverse), image(&forward));
         assert_eq!(image(&forward.max(&constant)).0, [
-            0x7e_u8, 2, 2, 0, 0, 2, 1
+            0x7e_u32, 2, 2, 0, 0, 2, 1
         ]);
         assert_eq!(
             image(&low.max(&high.succ().expect("the next offset fits"))).0,
-            [0x7e_u8, 0, 2, 0, 0, 2, 2]
+            [0x7e_u32, 0, 2, 0, 0, 2, 2]
         );
         let next = super::Level::var(super::LevelVar::new(
             gandr_kernel_strata::LevelVarIndex::from(3_u32),
         ))
         .succ()
         .expect("the unit offset fits");
-        assert_eq!(image(&low.max(&next)).0, [0x7e_u8, 0, 2, 0, 0, 3, 1]);
+        assert_eq!(image(&low.max(&next)).0, [0x7e_u32, 0, 2, 0, 0, 3, 1]);
     }
 
     #[test]
@@ -5335,14 +5274,15 @@ mod tests
             SupportGoal::SynthValue(body),
             Telescope::Whole(&[]),
         );
-        // The 17 distinct nodes, then the key's empty context and its goal.
-        assert_eq!(table.records, 19_u64);
+        // The 17 distinct nodes, then the key's goal, which holds its empty
+        // context inline.
+        assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(17));
         let length = usize::from(table.stream().length());
         assert!(
             length < 512,
             "a 65536-occurrence composite records its 17 distinct nodes, not its occurrences: \
-             {length} bytes"
+             {length} words"
         );
         // Asking again costs nothing: the session's table already holds it.
         let before = usize::from(table.stream().length());
@@ -5353,7 +5293,7 @@ mod tests
             Telescope::Whole(&[]),
         );
         assert_eq!(again, key);
-        assert_eq!(table.records, 19_u64);
+        assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(17));
         assert_eq!(
             before,
@@ -5372,7 +5312,7 @@ mod tests
             Telescope::Whole(&[]),
         );
         assert_eq!(reminted_key, key);
-        assert_eq!(table.records, 19_u64);
+        assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(34));
         assert_eq!(usize::from(table.stream().length()), before);
     }
