@@ -4331,6 +4331,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 break;
             }
         }
+        self.context.closed_binder();
     }
 
     /// Close the innermost binder this run opened.
@@ -4357,7 +4358,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     )]
     fn close(&mut self) -> Result<(), CheckRefusal>
     {
-        match self.context.binders().close(Zone::Intuitionistic) {
+        let closed = self.context.binders().close(Zone::Intuitionistic);
+        self.context.closed_binder();
+        match closed {
             Ok(_) => Ok(()),
             Err(_) => Err(CheckRefusal::MachineInvariant),
         }
@@ -4407,9 +4410,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .check_value(term, expected)
                     .or_else(|refusal| self.forged(term, expected, refusal)),
             },
-            Goal::Computation { term, direction } => match direction {
-                Direction::Synthesise => self.synthesise_comp(term),
-                Direction::Check(expected) => self.check_comp(term, expected),
+            Goal::Computation { term, direction } => {
+                // A case on a variable whose arms read a later binder at it is
+                // checked at the motive generalised over that binder.
+                let term = match crate::solution::refined_case(self.context, term)? {
+                    Maybe::Present(refined) => {
+                        self.context.record_refinement(term, &refined);
+                        refined.term
+                    },
+                    Maybe::Absent(_) => term,
+                };
+                match direction {
+                    Direction::Synthesise => self.synthesise_comp(term),
+                    Direction::Check(expected) => self.check_comp(term, expected),
+                }
             },
             Goal::Form(TypeNode::Value(at)) => self.form_value_type(at),
             Goal::Form(TypeNode::Computation(at)) => self.form_comp_type(at),
@@ -6189,6 +6203,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Lambda(body) => {
                 let (domain, codomain) = self.arrow_expected(term, expected)?;
                 self.context.binders().open(Zone::Intuitionistic, domain);
+                self.context.open_lambda(term);
                 self.wait(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
                     term: body,
@@ -7947,10 +7962,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `module::tests::a_call_beneath_a_type_read_argument_stands_as_written_762`
     #[spec(
         captures: [
-            before = self.context.nesting().get(&value).copied(),
+            before = self.context.nesting().get(&self.context.written(value)).copied(),
             nested = matches!(self.context.arena().value(value), Some(&Value::Nested(_))),
         ],
-        ensures: self.context.nesting().get(&value).copied() == match before {
+        ensures: self.context.nesting().get(&self.context.written(value)).copied() == match before {
             None | Some(Nesting::Ran(gandr_core_term::effect::Purity::Pure)) if nested => Some(Nesting::Returned),
             held => held,
         },
@@ -7968,7 +7983,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }
             let call = match self.context.arena().value(at) {
                 Some(&Value::Nested(call)) => {
-                    match self.context.nesting().get(&at) {
+                    match self.context.nesting().get(&self.context.written(at)) {
                         None | Some(&Nesting::Ran(gandr_core_term::effect::Purity::Pure)) => {
                             self.context.record_nesting(at, Nesting::Returned);
                         },
@@ -8596,7 +8611,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                 };
                 // A pure run a type after it reads stands as what it returns.
-                let decided = match (purity, self.context.nesting().get(&at)) {
+                let decided = match (
+                    purity,
+                    self.context.nesting().get(&self.context.written(at)),
+                ) {
                     (gandr_core_term::effect::Purity::Pure, Some(&Nesting::Returned)) => {
                         Nesting::Returned
                     },

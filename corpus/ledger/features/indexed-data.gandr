@@ -1,6 +1,6 @@
 /// `indexed-data`: Indexed data families.
-/// Implemented: data families indexed by values, a case checking each arm at its constructor's fields with one equation per index, and at a family of one index an arm whose constructor stands apart left out.
-/// Not implemented: pruning at several indices and refinement by unification at a match; #1314 owes the first and #3483 the second.
+/// Implemented: data families over value indices, whose case checks each arm at its constructor's fields with one equation per index. The solution of an equation with a variable side refines its arm. At a family of one index, the case leaves out an arm whose constructor stands apart.
+/// Not implemented: pruning at several indices and injectivity at a match; #1314 owes the first and #3515 the second.
 // Vectors: lists indexed by their length, a family whose constructors each
 // state the index their value stands at (Dybjer, _Inductive families_,
 // doi:10.1007/BF01211308). The kind `Nat -> Type` reads the length's type

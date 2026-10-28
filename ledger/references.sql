@@ -26,6 +26,7 @@ CREATE TABLE reference(
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century','core-nbe','closure','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century','kernel-core','replay::environment','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-core','replay','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
@@ -119,6 +120,7 @@ INSERT INTO reference VALUES('arXiv:2607.09564','core-checker','elaboration','ba
 INSERT INTO reference VALUES('arXiv:2607.09564','core-unify','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45749-6_17','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','eliminator','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','solution','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-48184-2_32','storage-values','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-48959-2_17','core-checker','','background',NULL,NULL,NULL);
@@ -380,6 +382,8 @@ INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surfa
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','surface-lowering','model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','theory-levitation','desc','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a1a9-7643-b2d9-98059c9273fb','runtime-emitter','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-checker','solution','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-term','rewrite','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','b2c8a4df8de0c7c5ff66936671cffeac70d29b8c','2026-10-27','e1dcbc647274f9f7095957e40ce3af95f7bc688b');
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','verdicts','lineage',NULL,NULL,NULL);

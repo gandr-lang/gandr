@@ -36,9 +36,9 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `Value::Hole`, `Value::Mark`, `Computation::Hole`, `Computation::Mark`, `ValueType::Unknown` and `CompType::Unknown`, with `hole::HoleId`, `hole::MarkIndex` and `hole::TermId`: the elaborator's hole surface.
 - `tactic::Tactic`, `hole::HoleId::spliced` and `hole::HoleOrigin::Spliced`: a splice's tactic, carried in its hole's name.
 - `hole::matched_thunk`, `matched_product` and `matched_sum` (answering `hole::Components`), `matched_static_pi`, `matched_list`, `matched_stack`, `matched_returner`, `matched_function` and `matched_with`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown.
-- `fill_hole`, `wrap_marks` and `substitute_environment`: filling by name, marking by node, and closing a suspended body over its environment.
+- `fill_hole`, `wrap_marks`, `substitute_environment`, `substitute_environment_value_type` and `substitute_environment_comp_type`: filling by name, marking by node, and closing a suspended body or a type over an environment.
 - `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers.
-- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint (`CoreArena::value_support` and its three siblings), a code wider than a word behind a `support::Slot` handle into a `support::WordArena`.
+- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint, as [`support`](src/support.rs) states.
 
 ## Expected features
 
@@ -128,6 +128,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — `HoldGrade` and `CapabilityGrade` are the tree's two-point grades, and the grade the page drafts keeps the count they forget.
+- `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
 
 ## License

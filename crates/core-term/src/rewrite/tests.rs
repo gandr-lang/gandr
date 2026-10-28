@@ -56,7 +56,9 @@ use super::strengthen_value;
 use super::strengthen_value_type;
 use super::strengthening;
 use super::substitute_environment;
+use super::substitute_environment_comp_type;
 use super::substitute_environment_traced;
+use super::substitute_environment_value_type;
 use super::wrap_marks;
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -3458,6 +3460,77 @@ fn an_environment_substitution_replaces_every_free_index()
     assert_eq!(
         substitute_environment(&mut arena, TermId::Computation(lambda), &[]),
         TermId::Computation(lambda)
+    );
+    assert_eq!(
+        mark,
+        arena.watermark(),
+        "an empty environment mints nothing"
+    );
+}
+
+#[test]
+fn an_environment_substitution_reaches_into_types()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let constant = arena.value_constant(ConstantIndex::from(5_usize));
+    let entries = [constant];
+    let [zero, one, two] =
+        [0_u32, 1, 2].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+    let path = arena.value_type_path(integer, zero, two);
+    let substituted = substitute_environment_value_type(&mut arena, path, &entries);
+    let index_of = |arena: &CoreArena, id| match arena.value(id) {
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        }) => Some(u32::from(index)),
+        Some(_) | None => None,
+    };
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = arena.value_type(substituted)
+    else {
+        panic!("the substituted path");
+    };
+    assert_eq!(
+        (carrier, left, index_of(&arena, right)),
+        (integer, constant, Some(1)),
+        "a covered index is its entry and one past the environment is lowered"
+    );
+    // `Π (_ : Integer). F Path(Integer, #0, #1)`: the codomain's own binder
+    // stands, and the covered index under it is the entry.
+    let under = arena.value_type_path(integer, zero, one);
+    let returns = arena.comp_type_returner(under);
+    let pi = arena.comp_type_pi(integer, returns);
+    let substituted = substitute_environment_comp_type(&mut arena, pi, &entries);
+    let Some(&CompType::Pi { domain, codomain }) = arena.comp_type(substituted)
+    else {
+        panic!("the substituted Π");
+    };
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(codomain)
+    else {
+        panic!("the substituted codomain");
+    };
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = arena.value_type(result)
+    else {
+        panic!("the substituted path under the Π");
+    };
+    assert_eq!(
+        (domain, carrier, index_of(&arena, left), right),
+        (integer, integer, Some(0), constant),
+        "the bound index stands under its Π"
+    );
+    let mark = arena.watermark();
+    assert_eq!(substitute_environment_comp_type(&mut arena, pi, &[]), pi);
+    assert_eq!(
+        substitute_environment_value_type(&mut arena, path, &[]),
+        path
     );
     assert_eq!(
         mark,

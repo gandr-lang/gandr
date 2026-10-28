@@ -392,6 +392,14 @@ pub struct CheckingContext<'arena>
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position.
     relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
+    /// The nodes the judgement refined by a solved variable since the
+    /// declaration under way began, each beside the node checked in its place.
+    refining: BTreeMap<ComputationId, ComputationId>,
+    /// What reads each refinement since the last take back as written.
+    readings: crate::solution::Written,
+    /// The refined nodes of each accepted declaration, by position, each beside
+    /// the node the kernel reads in its place, ascending by the refined node.
+    refinements: BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
     /// The laws each lawful declaration's folds rest on, by position, in its
     /// folded type's rule order.
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
@@ -600,6 +608,12 @@ pub struct Checkpoint
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
     /// [`CheckingContext::relations`].
     relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
+    /// The refinements the context records since its last take.
+    refining: BTreeMap<ComputationId, ComputationId>,
+    /// What reads each refinement since the last take back as written.
+    readings: crate::solution::Written,
+    /// [`CheckingContext::refinements`].
+    refinements: BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
     /// [`CheckingContext::laws`].
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// [`CheckingContext::operation_rules`].
@@ -756,6 +770,9 @@ impl<'arena> CheckingContext<'arena>
             updates: BTreeMap::new(),
             relating: BTreeMap::new(),
             relations: BTreeMap::new(),
+            refining: BTreeMap::new(),
+            readings: crate::solution::Written::default(),
+            refinements: BTreeMap::new(),
             laws: BTreeMap::new(),
             operation_rules: BTreeMap::new(),
             stage_signatures: BTreeMap::new(),
@@ -832,6 +849,9 @@ impl<'arena> CheckingContext<'arena>
             ref updates,
             ref relating,
             ref relations,
+            ref refining,
+            ref readings,
+            ref refinements,
             ref laws,
             ref operation_rules,
             ref stage_signatures,
@@ -884,6 +904,9 @@ impl<'arena> CheckingContext<'arena>
             updates: updates.clone(),
             relating: relating.clone(),
             relations: relations.clone(),
+            refining: refining.clone(),
+            readings: readings.clone(),
+            refinements: refinements.clone(),
             laws: laws.clone(),
             operation_rules: operation_rules.clone(),
             stage_signatures: stage_signatures.clone(),
@@ -959,6 +982,9 @@ impl<'arena> CheckingContext<'arena>
             updates,
             relating,
             relations,
+            refining,
+            readings,
+            refinements,
             laws,
             operation_rules,
             stage_signatures,
@@ -1011,6 +1037,9 @@ impl<'arena> CheckingContext<'arena>
             updates,
             relating,
             relations,
+            refining,
+            readings,
+            refinements,
             laws,
             operation_rules,
             stage_signatures,
@@ -1114,23 +1143,26 @@ impl<'arena> CheckingContext<'arena>
     /// Keep `typing`, when a typed run is recording: the one point every
     /// finished term judgement passes, whatever former judged it and in
     /// whichever run, so a former that judges its sub-terms records them
-    /// without knowing the record exists.
+    /// without knowing the record exists. A typing inside a refined term is
+    /// kept as its written term's, read in the written context
+    /// ([`crate::solution::Written::read_back`]).
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a recording log's typings grow by `typing` at their end;
-    ///   nothing changes otherwise.
+    /// - ensures: a recording log's typings grow by `typing` read back at their
+    ///   end; nothing changes otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a typed run's term and a strict judgement nested in a
-    ///   typed run separate recording from not.
+    ///   typed run separate recording from not. A refined arm's written terms
+    ///   read at the arm's own depth.
     /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
     /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
+    /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(
         captures: before = self.typings.as_ref().map(|log| log.typings.len()),
-        ensures: self.typings.as_ref().map(|log| log.typings.len()) == before.map(|count| count.saturating_add(1))
-            && self.typings.as_ref().is_none_or(|log| log.typings.last() == Some(&typing)),
+        ensures: self.typings.as_ref().map(|log| log.typings.len()) == before.map(|count| count.saturating_add(1)),
     )]
     pub(crate) fn keep_typing(
         &mut self,
@@ -1138,7 +1170,8 @@ impl<'arena> CheckingContext<'arena>
     )
     {
         if let Some(ref mut log) = self.typings {
-            log.typings.push(typing);
+            log.typings
+                .push(self.readings.read_back(self.arena, typing));
         }
     }
 
@@ -3243,11 +3276,13 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// Record how the judgement decided the computation `at` stands for where
-    /// a value is read.
+    /// a value is read. A value a refinement rewrote records its decision at
+    /// the written value, which the elaboration rebuilds.
     ///
     /// # Specification
     /// - requires: `nesting` is what the rule at `at` decided.
-    /// - ensures: `at` has `nesting` as its decision, replacing an earlier one.
+    /// - ensures: the written value `at` stands for has `nesting` as its
+    ///   decision, replacing an earlier one.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3255,14 +3290,16 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   an atom are each recorded as their rule decided.
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
     /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
-    #[spec(ensures: self.nesting.get(&at) == Some(&nesting))]
+    /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
+    #[spec(captures: written = self.written(at), ensures: self.nesting.get(&written) == Some(&nesting))]
     pub(crate) fn record_nesting(
         &mut self,
         at: ValueId,
         nesting: crate::nested::Nesting,
     )
     {
-        self.nesting.insert(at, nesting);
+        let written = self.written(at);
+        self.nesting.insert(written, nesting);
     }
 
     /// Every decision recorded since the last take: a run that holds one is
@@ -3294,26 +3331,29 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         core::mem::take(&mut self.nesting)
     }
 
-    /// Record that the value bridge carried the value `at` by `crossing`.
+    /// Record that the value bridge carried the value `at` by `crossing`, at
+    /// the written value `at` stands for.
     ///
     /// # Specification
     /// - requires: `crossing` names a kept map whose signature, at the
     ///   crossing's carriers, carries the type `at` synthesised to the type it
     ///   was checked against.
-    /// - ensures: `at` crosses by `crossing`, replacing an earlier record.
+    /// - ensures: the written value `at` stands for crosses by `crossing`,
+    ///   replacing an earlier record.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
     /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-    #[spec(captures: kept = crossing.clone(), ensures: self.crossings.get(&at) == Some(&kept))]
+    #[spec(captures: [kept = crossing.clone(), written = self.written(at)], ensures: self.crossings.get(&written) == Some(&kept))]
     pub(crate) fn record_crossing(
         &mut self,
         at: ValueId,
         crossing: gandr_core_term::Crossing,
     )
     {
-        self.crossings.insert(at, crossing);
+        let written = self.written(at);
+        self.crossings.insert(written, crossing);
     }
 
     /// Take every crossing recorded since the last take, leaving none.
@@ -3334,25 +3374,28 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// Record that the record update `at` keeps its base's fields at `kept`,
-    /// its overlay standing at every other label the update has.
+    /// its overlay standing at every other label the update has. The record
+    /// stands at the written value `at` stands for.
     ///
     /// # Specification
     /// - requires: `kept` is the base's labels the overlay does not write.
-    /// - ensures: `at` keeps `kept`, replacing an earlier record.
+    /// - ensures: the written value `at` stands for keeps `kept`, replacing an
+    ///   earlier record.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an update that overlays one field of two keeps the
     ///   other.
     /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
-    #[spec(captures: count = kept.len(), ensures: self.updates.get(&at).map(Vec::len) == Some(count))]
+    #[spec(captures: [count = kept.len(), written = self.written(at)], ensures: self.updates.get(&written).map(Vec::len) == Some(count))]
     pub(crate) fn record_update(
         &mut self,
         at: ValueId,
         kept: Vec<gandr_kernel_term::FieldLabel>,
     )
     {
-        self.updates.insert(at, kept);
+        let written = self.written(at);
+        self.updates.insert(written, kept);
     }
 
     /// Take every record update recorded since the last take, leaving none.
@@ -3456,6 +3499,152 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub const fn relations(&self) -> &BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>
     {
         &self.relations
+    }
+
+    /// Record that the judgement checks `refined` in the place of `at`: an arm
+    /// or a case refined by a solved variable ([`crate::solution`]).
+    ///
+    /// # Specification
+    /// - requires: `refined` is the term the judgement checks where `at` is
+    ///   read, in the same context, its rewrites in the order they were made.
+    /// - ensures: `at` has `refined`'s term as its refinement, replacing an
+    ///   earlier one, until the next take. Each rewrite stands for the written
+    ///   node its source stands for, and each generalising lambda for the
+    ///   binder it copies.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm refined by its equation crosses refined, and
+    ///   the kernel admits it. A refined arm that holds a nested call
+    ///   elaborates the call where it is written.
+    /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+    /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
+    #[spec(ensures: self.refining.get(&at) == Some(&refined.term))]
+    pub(crate) fn record_refinement(
+        &mut self,
+        at: ComputationId,
+        refined: &crate::solution::Refined,
+    )
+    {
+        let _earlier = self.refining.insert(at, refined.term);
+        self.readings.record(refined);
+    }
+
+    /// The written value `at` stands for: the value a refinement rewrote into
+    /// `at`, read back to the body as written, or `at` itself.
+    ///
+    /// # Specification
+    /// - ensures: as [`crate::solution::Written::value`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_refinement`].
+    /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
+    #[spec(ensures: |ret| ret == self.readings.value(at))]
+    #[must_use]
+    pub(crate) fn written(
+        &self,
+        at: ValueId,
+    ) -> ValueId
+    {
+        self.readings.value(at)
+    }
+
+    /// Open the binder of the lambda `at`, which the binders' innermost is:
+    /// a generalising lambda's binder stands for the binder it copies.
+    ///
+    /// # Specification
+    /// - requires: the lambda's binder is the innermost open.
+    /// - ensures: as [`crate::solution::Written::open`] at the binder's place.
+    /// - panics: none.
+    /// - executable: none — the record's open copies have no observer short of
+    ///   a typing read back, which the witness reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::solution::Written::open`].
+    /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
+    pub(crate) fn open_lambda(
+        &mut self,
+        at: ComputationId,
+    )
+    {
+        let depth = self.depth(Zone::Intuitionistic);
+        let place = BinderDepth::from(usize::from(depth).saturating_sub(1));
+        self.readings.open(at, place);
+    }
+
+    /// Close the copies past the binders open now.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`crate::solution::Written::close`] at the depth now.
+    /// - panics: none.
+    /// - executable: none — as [`CheckingContext::open_lambda`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::solution::Written::close`].
+    /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
+    pub(crate) fn closed_binder(&mut self)
+    {
+        let depth = self.depth(Zone::Intuitionistic);
+        self.readings.close(depth);
+    }
+
+    /// Take every refinement recorded since the last take, leaving none, and
+    /// forget what reads them back.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the refinements recorded since the last take, ascending by
+    ///   the node refined; none remain, and no node reads back.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_refinement`].
+    /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+    #[spec(ensures: self.refining.is_empty())]
+    pub(crate) fn take_refining(&mut self) -> Vec<(ComputationId, ComputationId)>
+    {
+        self.readings.clear();
+        core::mem::take(&mut self.refining).into_iter().collect()
+    }
+
+    /// Keep `refinements` as the refined nodes of the accepted declaration at
+    /// `constant`.
+    ///
+    /// # Specification
+    /// - requires: `refinements` is what [`CheckingContext::take_refining`]
+    ///   took after the judgement at `constant` accepted.
+    /// - ensures: `constant` has `refinements` as its refined nodes, replacing
+    ///   earlier ones, when any was refined; otherwise nothing changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_refinement`].
+    /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+    #[spec(captures: entry = refinements.len(), ensures: entry == 0 || self.refinements.get(&constant).map(Vec::len) == Some(entry))]
+    pub(crate) fn keep_refinements(
+        &mut self,
+        constant: ConstantIndex,
+        refinements: Vec<(ComputationId, ComputationId)>,
+    )
+    {
+        if !refinements.is_empty() {
+            self.refinements.insert(constant, refinements);
+        }
+    }
+
+    /// The refined nodes of each accepted declaration, by position, each
+    /// beside the node the kernel reads in its place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn refinements(&self)
+    -> &BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>
+    {
+        &self.refinements
     }
 
     /// Keep `laws` as the laws the declaration at `constant` rests its folds

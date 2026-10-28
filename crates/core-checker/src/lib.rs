@@ -569,6 +569,7 @@ mod respect;
 mod retire;
 mod seal;
 pub mod session;
+mod solution;
 pub mod stage;
 pub mod staging;
 mod support;

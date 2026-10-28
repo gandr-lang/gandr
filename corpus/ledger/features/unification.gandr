@@ -1,0 +1,46 @@
+/// `unification`: Unification and index refinement.
+/// Implemented: the solution step, which replaces the variable side of an arm's index equation by the other side, in the arm's goal and in each later binder the arm reads.
+/// Not implemented: injectivity, a clash as a refutation and a conversion failure as a refusal; #3515 owes them.
+// Values tagged by the code of their type: a family whose constructors each
+// state the code they stand at. A case on a tagged value solves each arm's
+// equation from its constructor's code to the scrutinee's, so the arm's goal
+// reads the constructor's code (Cockx and Abel, _Elaborating dependent
+// (co)pattern matching_, ICFP 2018, doi:10.1145/3236770). What the step does
+// not reach is in the pathological typed evaluator.
+
+/// The codes of two types.
+@[ checks ]
+data Code : Type {
+  /// The integers.
+  CInt : Code;
+  /// The unit type.
+  CUnit : Code;
+}
+
+/// The type each code decodes to.
+@[ checks ]
+def decode(c : Code) -> Type {
+  case c {
+    CInt => return Integer,
+    CUnit => return Unit
+  }
+}
+
+/// Values, indexed by the code of their type.
+@[ checks ]
+data Tagged : Code -> Type {
+  /// An integer.
+  AnInt : (i : Integer) --> Tagged(CInt);
+  /// The unit value.
+  AUnit : Tagged(CUnit);
+}
+
+/// A tagged value at its code's decode. Each arm's goal reads its own
+/// constructor's code.
+@[ checks ]
+def untag(c : Code, v : Tagged(c)) -> decode(c) {
+  case v {
+    AnInt(i) => i,
+    AUnit => unit
+  }
+}

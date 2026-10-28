@@ -1104,8 +1104,29 @@ impl Machine<'_, '_>
             {
                 self.wait(Frame::ArmEnded { zones, arm: branch });
             }
+            // An arm whose index equation has a variable side is checked as
+            // its refinement, which the bridge carries to the kernel.
+            let fields = constructors
+                .constructors()
+                .get(index)
+                .map_or(0, alloc::vec::Vec::len);
+            let checked = match crate::solution::refined_arm(
+                self.context,
+                branch,
+                expected,
+                (
+                    gandr_core_term::BinderDepth::from(fields),
+                    gandr_core_term::BinderDepth::from(constructors.indices().len()),
+                ),
+            )? {
+                Maybe::Present(refined) => {
+                    self.context.record_refinement(branch, &refined);
+                    refined.term
+                },
+                Maybe::Absent(_) => branch,
+            };
             self.wait(Frame::NativeNext(Goal::Computation {
-                term: branch,
+                term: checked,
                 direction: Direction::Check(expected),
             }));
             followed = true;
