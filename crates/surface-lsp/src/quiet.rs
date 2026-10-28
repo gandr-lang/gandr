@@ -651,6 +651,13 @@ impl Changes
 /// - witness: `quiet::tests::a_message_read_while_another_is_handled_comes_with_it`
 /// - witness: `quiet::tests::nothing_past_exit_is_read`
 /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the reader thread blocks on the client's frames while the session handles the last one"
+    )
+)]
 #[inline]
 pub fn paced<Input, Visit, Ended>(
     input: &mut Input,

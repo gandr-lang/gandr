@@ -134,7 +134,10 @@ env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{%
 # documentation predates it allows each refusing lint on its root, its count
 # in the comment beside the allow. `doc_history_prose` is a report, forced to
 # `warn` so the workspace's denied warnings never make it a refusal.
-env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature -D spec_clause_traversal -D rustdoc_shape --force-warn doc_history_prose"
+# `pool_only_threads` keeps work on the one pool (`gandr-core-fork`'s `Fork`):
+# a site that owns its thread states why in an `expect` at the site, and
+# `report:threads` lists those reasons in the nightly.
+env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature -D spec_clause_traversal -D rustdoc_shape -D pool_only_threads --force-warn doc_history_prose"
 # Every policy run also records what each specification names, one file per
 # compilation unit, for `evidence:obligations`. Recording always keeps one
 # configuration, so the lint state and the records never disagree; it adds no

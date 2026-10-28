@@ -8,6 +8,10 @@
 //!
 //! The trait lives in a crate of its own. So a consumer at any layer from the
 //! core upward takes it without a dependency on the checker.
+//!
+//! The `pool_only_threads` lint of the policy wall holds the rule. A call that
+//! starts a thread or a pool outside the driver's pool is refused. A site that
+//! owns its thread states why in an expectation at the site.
 
 #![no_std]
 

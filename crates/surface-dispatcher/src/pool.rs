@@ -160,6 +160,13 @@ impl Pool
     ///   each fork's items once from a state per busy worker.
     /// - witness: `pool::tests::a_serial_pool_starts_no_thread`
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "pool: this is the workspace's one work pool, built once at the host's width"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|started| (started.threads == Threads::ONE) == matches!(started.pool, Maybe::Absent(_))))]
     fn started(&self) -> &Result<Started, PoolFault>
     {
@@ -433,6 +440,13 @@ impl Fork for Pooled
     ///   skipped or repeated item and a state made per item or per idle worker.
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
     /// - witness: `pool::tests::one_item_runs_on_the_caller_and_many_on_the_workers`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "pool: `Fork::each` on the driver's pool, which its caller installs before it forks"
+        )
+    )]
     #[inline]
     fn each<Item, State, Start, Job>(
         &self,
@@ -476,6 +490,13 @@ impl Fork for Pooled
     ///
     /// # Specification
     /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "pool: `Fork::join` on the driver's pool, which its caller installs before it forks"
+        )
+    )]
     #[inline]
     fn join<Left, Right, LeftOutput, RightOutput>(
         &self,

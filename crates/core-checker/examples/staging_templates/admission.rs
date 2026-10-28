@@ -148,6 +148,13 @@ fn plain(
 /// # Adequacy
 /// - hypothesis: L2 — verdicts and work equal their serial observations.
 /// - witness: `admission::handoff::tests::scoped_rows_and_replay_keep_their_serial_counters`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: the example measures scoped threads against the pool, so it starts the threads it compares"
+    )
+)]
 #[spec(requires: threads.0 > 0)]
 fn replay_measure(
     arena: &Arena,
@@ -236,6 +243,13 @@ fn lookup(
 /// # Adequacy
 /// - hypothesis: L2 — independent rows cannot change verdict with scheduling.
 /// - witness: `admission::handoff::tests::scoped_rows_and_replay_keep_their_serial_counters`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: the example measures scoped threads against the pool, so it starts the threads it compares"
+    )
+)]
 #[spec(requires: threads.0 > 0 && members.len() == rows.len())]
 fn admission_measure(
     schema: &Schema,
@@ -319,6 +333,13 @@ fn admission_measure(
 /// - hypothesis: L2 — independent rows cannot change verdict with scheduling;
 ///   the calling differential compares every counter with the serial one.
 /// - witness: `admission::handoff::tests::scoped_rows_and_replay_keep_their_serial_counters`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: the example measures a rayon scope per width, so it forks on the pool it builds"
+    )
+)]
 #[spec(requires: members.len() == rows.len())]
 fn pooled_measure(
     schema: &Schema,
@@ -407,6 +428,13 @@ fn pooled_measure(
 ///   and the independent plain path distinguish replay removal from caching it.
 /// - witness: `template::tests::compressed_admission_matches_plain_families`
 /// - witness: `admission::handoff::tests::scoped_rows_and_replay_keep_their_serial_counters`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: the example builds one rayon pool per measured width"
+    )
+)]
 pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::ObservationError>
 {
     let mut workload = Vec::new();

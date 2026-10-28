@@ -339,6 +339,13 @@ impl Disk
     ///   or closed.
     /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
     /// - witness: `disk::tests::only_a_write_to_a_followed_file_is_handed_on`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "io: the arming and polling threads block on the watcher's requests and the poll interval for the hub's life"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|disk| disk.directories.is_empty()))]
     #[inline]
     pub fn new() -> notify::Result<Self>

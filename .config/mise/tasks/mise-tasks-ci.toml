@@ -2451,6 +2451,44 @@ else
 fi
 {% endraw %}'''
 
+# The threads outside the pool (#3610): every site that states
+# `expect(pool_only_threads, reason = "…")` in the crates, with its item and
+# its reason, as one Markdown table on standard output. The nightly writes it
+# into the reports job's summary, so a reason is read where it is listed. The
+# class is the reason's prefix: `io`, `world`, `pool` or `benchmark`. The
+# lint, not this list, refuses a thread with no stated reason.
+["report:threads"]
+description = "List each site that owns a thread outside the pool, with its stated reason"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+git ls-files -z -- 'crates/*.rs' | xargs -0 awk '
+  FNR == 1 { pending = 0 }
+  /^[[:space:]]*pool_only_threads,$/ { pending = 1; site = FILENAME ":" FNR; next }
+  pending == 1 && match($0, /reason = "[^"]*"/) {
+    reason = substr($0, RSTART + 10, RLENGTH - 11)
+    pending = 2
+    next
+  }
+  pending == 2 && match($0, /fn [A-Za-z_][A-Za-z0-9_]*/) {
+    item = substr($0, RSTART + 3, RLENGTH - 3)
+    class = reason
+    sub(/:.*/, "", class)
+    sub(/^[a-z]+: /, "", reason)
+    rows[++count] = sprintf("|%s|`%s`|`%s`|%s|", class, item, site, reason)
+    pending = 0
+  }
+  END {
+    print "## Threads outside the pool"
+    print ""
+    printf "%d sites own a thread and state why (`pool_only_threads`, #3610).\n\n", count
+    print "|Class|Item|Site|Reason|"
+    print "|---|---|---|---|"
+    for (row = 1; row <= count; row++) print rows[row]
+  }
+'
+'''
+
 # How the pull request obligations are answered (#2886): over the pull
 # requests merged in a period and the unit issues they close, five tables,
 # the lane (the closed unit's first `area:`) as the row and the ISO week of

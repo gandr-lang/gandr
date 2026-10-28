@@ -242,6 +242,13 @@ const READS: usize = 8;
 ///   the asserted value.
 /// - witness: `github::tests::reads_come_back_in_the_asked_order`
 /// - witness: `github::tests::the_first_refusal_in_order_is_reported`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: each thread blocks on one `gh` read; the work pool's threads are for compute and the tool holds no pool"
+    )
+)]
 #[inline]
 pub fn read_all<Item, Read, Reader>(
     items: &[Item],

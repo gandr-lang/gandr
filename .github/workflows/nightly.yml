@@ -296,7 +296,10 @@ jobs:
   # body and each open pull request body that breaks a body rule, on one
   # `report: prose` issue. It builds the `prose` binary and parses under the
   # spaCy venv `check:prose` pins, restored from the cache the merge group's
-  # prose lane saves.
+  # prose lane saves. Then the threads outside the pool (`mise run
+  # report:threads`, #3610): each site that states why it owns a thread, with
+  # its reason, in the job summary. It reads the tree alone, in under a
+  # second.
   #
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
@@ -402,6 +405,9 @@ jobs:
       - name: report the prose of the open bodies
         if: *not-cancelled
         run: mise run report:prose
+      - name: list the threads outside the pool
+        if: *not-cancelled
+        run: mise run --quiet report:threads >> "$GITHUB_STEP_SUMMARY"
       - name: compare each lane with its budget
         if: *not-cancelled
         run: >-
