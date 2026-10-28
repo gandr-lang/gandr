@@ -1007,6 +1007,49 @@ pub fn equivalent(
     )
 }
 
+/// Whether a constructor's stated index and its annotation's index are the
+/// same term. The kernel compares them as syntax and reads no call by
+/// reduction, so the checker does the same.
+///
+/// # Specification
+/// - requires: both terms stand under the binders open now, at one type.
+/// - ensures: the solver's verdict where a side is a hole or a mark; otherwise
+///   [`Agreement::Convertible`] exactly when the two terms are equal as syntax,
+///   path evidence aside.
+/// - fails: as the solver.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor annotated at a call that returns its stated
+///   index is refused in both checkers, though the call converts with that
+///   index in a type.
+/// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_stands_apart_from_its_stated_index_3624`
+#[spec(ensures: |ret| left != right || ret.is_err() || ret == Ok(Agreement::Convertible))]
+pub fn indices_agree(
+    context: &mut CheckingContext<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Agreement, CheckRefusal>
+{
+    let agrees = left == right
+        || match pose_open(context, left, right)? {
+            Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
+            Maybe::Absent(open::Absent::Closed) => {
+                gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                    == gandr_core_term::CertificateEquality::Equal
+            },
+        };
+    Ok(if agrees {
+        Agreement::Convertible
+    }
+    else {
+        Agreement::Apart
+    })
+}
+
 /// Whether two terms that a type conversion met are the same term. The terms
 /// are path endpoints, or family arguments with a call on one side. The
 /// derivation is kept where the machine's traced reading relates them.
