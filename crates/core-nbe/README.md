@@ -122,7 +122,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 
 - `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory` — background: Peter Dybjer, "Program Testing and the Meaning Explanations of Intuitionistic Type Theory", _Epistemology versus Ontology_, 2012 — a judgement tested by running it on generated input, the reading the spinal stance enters on.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — a sharing mechanism enters on a property test against its reference and an informal simulation argument.
-- `Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century` — exemplar: Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep.
+- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep.
 
 ## License
 

@@ -119,7 +119,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
 - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
-- `Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century` — exemplar: Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
+- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
 
 ## License
 
