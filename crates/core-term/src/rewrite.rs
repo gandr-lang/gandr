@@ -5426,25 +5426,18 @@ pub fn strengthen_value(
 }
 
 /// The classifier of a constructor of `family` over the field telescope
-/// `fields`.
-///
-/// It reads `U (A₀ → … → F family)`, an arrow where the rest names no binder
-/// of the field it crosses and a dependent arrow where it does.
+/// `fields`: [`constructor_classifier_at`] with `family` lifted past the
+/// fields.
 ///
 /// # Specification
 /// - requires: `family` and the first field are scoped in one context `Γ`, each
 ///   later field under `Γ` and the fields before it.
-/// - ensures: in `Γ`, the thunk of the chain over every field, `family` at the
-///   end; each field's binder dropped where nothing after it names it, so a
-///   telescope of independent fields reads as a chain of plain arrows.
+/// - ensures: as [`constructor_classifier_at`], `family` at the end; a family
+///   names no field, so only a field a later one names is bound.
 /// - provides: what a constructor's name answers at, wherever a constructor is
-///   shown as a function from its fields.
+///   shown as a function from its fields into the family it is read at.
 /// - fails: never.
 /// - panics: none.
-///
-/// # Termination
-/// - reason: a `for` loop over the fields, innermost first.
-/// - measure: the fields left.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a list's `cons` reads as plain arrows, and a field the
@@ -5460,7 +5453,44 @@ pub fn constructor_classifier(
 {
     let past = Binders::from(u32::try_from(fields.len()).unwrap_or(u32::MAX));
     let shifted = shift_value_type(arena, family, past).settle(arena);
-    let mut chain = arena.comp_type_returner(shifted);
+    constructor_classifier_at(arena, shifted, fields)
+}
+
+/// The classifier of a constructor over the field telescope `fields` whose
+/// value stands at `result`.
+///
+/// It reads `U (A₀ → … → F result)`, an arrow where the rest names no binder
+/// of the field it crosses and a dependent arrow where it does.
+///
+/// # Specification
+/// - requires: the first field is scoped in a context `Γ`, each later field
+///   under `Γ` and the fields before it, and `result` under `Γ` and every
+///   field.
+/// - ensures: in `Γ`, the thunk of the chain over every field, `result` at the
+///   end; each field's binder dropped where nothing after it names it, so a
+///   telescope of independent fields reads as a chain of plain arrows.
+/// - provides: what a constructor's name answers at where its result names its
+///   fields, as an indexed family's constructor stands at the index it states.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a `for` loop over the fields, innermost first.
+/// - measure: the fields left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field the result names is bound, and one nothing after
+///   it names is a plain arrow.
+/// - witness: `rewrite::tests::a_constructor_classifier_at_its_result_binds_the_fields_the_result_names`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
+#[inline]
+pub fn constructor_classifier_at(
+    arena: &mut CoreArena,
+    result: ValueTypeId,
+    fields: &[ValueTypeId],
+) -> ValueTypeId
+{
+    let mut chain = arena.comp_type_returner(result);
     for &field in fields.iter().rev() {
         chain = match strengthen_comp_type(arena, chain) {
             Maybe::Present(lowered) => {

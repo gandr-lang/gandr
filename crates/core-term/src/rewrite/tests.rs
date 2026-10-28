@@ -37,6 +37,7 @@ use super::Node;
 use super::Renaming;
 use super::Unenclosed;
 use super::constructor_classifier;
+use super::constructor_classifier_at;
 use super::cross_reducts;
 use super::elaborate_nested_traced;
 use super::fill_comp_type_hole;
@@ -1684,6 +1685,34 @@ fn a_constructor_classifier_binds_only_the_fields_named_after_them()
         spelling(&arena, expected),
         chain(&arena, plain),
         "independent fields read as plain arrows"
+    );
+}
+
+#[test]
+fn a_constructor_classifier_at_its_result_binds_the_fields_the_result_names()
+{
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(
+        crate::classifier::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let integer = arena.value_type_base(BaseType::Integer);
+    let chain = |arena: &CoreArena, classifier: ValueTypeId| match arena.value_type(classifier) {
+        Some(&ValueType::Thunk(chain)) => spelling(arena, chain),
+        _ => panic!("a constructor's classifier is a thunk"),
+    };
+    // `(a : Type, n : Integer)` standing at `El a`, read under both fields:
+    // the result names the first and not the second, and is not lifted.
+    let result = decoded(&mut arena, DeBruijnIndex::from(1));
+    let classified = constructor_classifier_at(&mut arena, result, &[universe, integer]);
+    let past_n = decoded(&mut arena, DeBruijnIndex::from(0));
+    let returner = arena.comp_type_returner(past_n);
+    let inner = arena.comp_type_arrow(integer, returner);
+    let expected = arena.comp_type_pi(universe, inner);
+    assert_eq!(
+        spelling(&arena, expected),
+        chain(&arena, classified),
+        "the field the result names is bound, the other a plain arrow"
     );
 }
 

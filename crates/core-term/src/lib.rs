@@ -17,8 +17,9 @@
 //!   [`instantiate_comp_type`] and [`instantiate_value`], the substitution
 //!   static beta takes, are iterative machines memoized per node, and every
 //!   walk enters only the nodes whose support reaches what it moves;
-//!   [`constructor_classifier`] reads a constructor's field telescope as the
-//!   function its name answers at; [`rename_value_traced`] and
+//!   [`constructor_classifier`] and [`constructor_classifier_at`] read a
+//!   constructor's field telescope as the function its name answers at, into
+//!   its family or the result it states; [`rename_value_traced`] and
 //!   [`rename_value_type_traced`] rename constants, atoms and region binders by
 //!   a [`Renaming`], the step a functor application instantiates its body by
 //!   and a call places a definition's regions by.
@@ -278,6 +279,7 @@ pub use crate::rewrite::abstract_constant_value_type;
 pub use crate::rewrite::build_type_updates;
 pub use crate::rewrite::build_updates;
 pub use crate::rewrite::constructor_classifier;
+pub use crate::rewrite::constructor_classifier_at;
 pub use crate::rewrite::cross_reducts;
 pub use crate::rewrite::delinearise;
 pub use crate::rewrite::elaborate_nested_traced;

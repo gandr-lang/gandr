@@ -49,6 +49,9 @@
 //!   naming a parameter at that parameter's classifier. A family the native
 //!   reading owns whole ([`crate::description::NativeFamily`]) reads the same
 //!   way, at its native signature, with or without parameters.
+//! - **An indexed family's** constructor names `F` at its parameters and then
+//!   at the index it states, read under its fields: `FZero : (n : Nat) -->
+//!   Fin(Succ(n))` answers at `+U ((n : Nat) -> -F Fin(Succ(n)))`.
 //! - **A codata family's** observations read under its parameters: each node of
 //!   an observation's type at its universe — the family itself at its kind, a
 //!   parameter read as a type at the universe its code is read out of — and
@@ -2149,8 +2152,10 @@ impl Typer<'_>
 
     /// Record every constructor, operation and rule of the unparameterised
     /// `data` family `description`, written as `written`, over `families`,
-    /// the type and universe of each family the module declares, and
-    /// `constructors`, each constructor's fields, family and tag.
+    /// the type and universe of each family the module declares,
+    /// `constructors`, each constructor's fields, family and tag, and
+    /// `stated`, the family's constant and its constructors' result index
+    /// rows when it is indexed.
     ///
     /// # Specification
     /// - requires: `written` is where the family's reader read its
@@ -2170,15 +2175,17 @@ impl Typer<'_>
     ///   their types and sorts, a field's sort at its family's universe and a
     ///   one-result operation's result at the family itself; an indexed
     ///   family's operation and rule answer at the family at the index its
-    ///   ports write.
+    ///   ports write, and its constructors at the index each states.
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
+    /// - witness: `described::tests::an_indexed_constructor_answers_at_the_index_it_states_3528`
     fn family(
         &mut self,
         description: &TheoryDesc<DescriptionGrade>,
         written: &WrittenMembers,
         families: &BTreeMap<Name, (ValueTypeId, ValueTypeId)>,
         constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)>,
+        stated: Option<(ConstantIndex, &[Vec<ValueId>])>,
     )
     {
         let closed = self.context(&Scope::default());
@@ -2191,15 +2198,16 @@ impl Typer<'_>
                 .map(|&(_, universe)| universe)
         };
         for (constructor, member) in description.ctors.iter().zip(&written.constructors) {
-            let Some(&(ref fields, family, _)) = constructors.get(&constructor.name)
+            let Some(&(ref fields, family, tag)) = constructors.get(&constructor.name)
             else {
                 continue;
             };
-            let ty = if fields.is_empty() {
-                family
-            }
-            else {
-                gandr_core_term::constructor_classifier(self.arena, family, fields)
+            let row = stated
+                .and_then(|(constant, rows)| rows.get(usize::from(tag)).map(|row| (constant, row)));
+            let ty = match row {
+                Some((constant, row)) => self.stated(constant, &[], fields, row),
+                None if fields.is_empty() => family,
+                None => gandr_core_term::constructor_classifier(self.arena, family, fields),
             };
             self.emit(member.named, DescribedRole::Name, ty, closed);
             for (&field, port) in fields.iter().zip(&member.fields) {
@@ -2482,10 +2490,12 @@ impl Typer<'_>
     ///   constructors, in the order `signature` lists them.
     /// - ensures: under the parameters, a constant constructor's name answers
     ///   at the family applied to them, one with fields at `+U (A₁ -> … -> -F
-    ///   F(…))`, a field a later one names bound by a dependent arrow; each
-    ///   field's name at its type where it names no field before it; the
-    ///   written result at the family's universe, and each of its arguments
-    ///   naming a parameter at that parameter's classifier.
+    ///   F(…))`, a field a later one names bound by a dependent arrow; an
+    ///   indexed family's constructor at the family applied to them and then to
+    ///   the index row it states, under its fields; each field's name at its
+    ///   type where it names no field before it; the written result at the
+    ///   family's universe, and each of its arguments naming a parameter at
+    ///   that parameter's classifier.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as [`Self::theory`].
@@ -2493,8 +2503,10 @@ impl Typer<'_>
     /// # Adequacy
     /// - hypothesis: L3 — `Maybe(a)`'s constructors, fields, result and its
     ///   argument answer under `a`, and `List(a)`'s tail, scoped past the
-    ///   head's binder, answers at `List(a)`.
+    ///   head's binder, answers at `List(a)`; `V(a)`'s constructors answer at
+    ///   `V(a, Z)` and `V(a, S(n))`.
     /// - witness: `described::tests::a_parameterised_constructor_answers_under_its_parameters`
+    /// - witness: `described::tests::an_indexed_constructor_answers_at_the_index_it_states_3528`
     fn parameterised(
         &mut self,
         parameters: &[FamilyParameter],
@@ -2522,12 +2534,16 @@ impl Typer<'_>
                 gandr_core_term::shift_value_type(self.arena, classifier, Binders::from(lift));
             classifiers.push(lifted.settle(self.arena));
         }
-        for (fields, member) in signature.constructors().iter().zip(&written.constructors) {
-            let ty = if fields.is_empty() {
-                family
-            }
-            else {
-                gandr_core_term::constructor_classifier(self.arena, family, fields)
+        for (tag, (fields, member)) in signature
+            .constructors()
+            .iter()
+            .zip(&written.constructors)
+            .enumerate()
+        {
+            let ty = match signature.results().get(tag) {
+                Some(row) => self.stated(constant, signature.parameters(), fields, row),
+                None if fields.is_empty() => family,
+                None => gandr_core_term::constructor_classifier(self.arena, family, fields),
             };
             self.emit(member.named, DescribedRole::Name, ty, context);
             let mut earlier = Binders::NONE;
@@ -2553,6 +2569,58 @@ impl Typer<'_>
             for (&argument, &classifier) in member.arguments.iter().zip(&classifiers) {
                 self.emit(argument, DescribedRole::Type, classifier, context);
             }
+        }
+    }
+
+    /// The type the name of a constructor of the indexed family `constant`
+    /// answers at: the family applied to a variable per entry of `parameters`
+    /// and then to `row`, the index the constructor states, under its
+    /// `fields`.
+    ///
+    /// # Specification
+    /// - requires: `parameters` is the family's parameter classifiers, `fields`
+    ///   the constructor's field telescope under them, and `row` its result
+    ///   index row under the parameters and every field, as
+    ///   [`DataSignature::results`] scopes it.
+    /// - ensures: under the parameters, `F(p₁, …, pₖ, row)` for a constructor
+    ///   of no field; `+U (A₁ -> … -> -F F(p₁, …, pₖ, row))` otherwise, each
+    ///   parameter variable lifted past the fields and each field the row names
+    ///   bound by a dependent arrow.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::theory`].
+    ///
+    /// # Termination
+    /// A `for` loop over the parameters.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `FZ` returns `Fin(S(n))` with `n` bound, `AtZ`
+    ///   answers at `At(Z)`, and `V(a)`'s constructors at `V(a, Z)` and `V(a,
+    ///   S(n))`, so a dropped row or an unlifted parameter shows.
+    /// - witness: `described::tests::an_indexed_constructor_answers_at_the_index_it_states_3528`
+    fn stated(
+        &mut self,
+        constant: ConstantIndex,
+        parameters: &[ValueTypeId],
+        fields: &[ValueTypeId],
+        row: &[ValueId],
+    ) -> ValueTypeId
+    {
+        let count = parameters.len();
+        let mut arguments = Vec::with_capacity(count.saturating_add(row.len()));
+        for index in (0 .. count).rev() {
+            let index = DeBruijnIndex::from(
+                u32::try_from(index.saturating_add(fields.len())).unwrap_or(u32::MAX),
+            );
+            arguments.push(self.arena.value_variable(Zone::Intuitionistic, index));
+        }
+        arguments.extend_from_slice(row);
+        let result = self.arena.value_type_data(constant, arguments);
+        if fields.is_empty() {
+            result
+        }
+        else {
+            gandr_core_term::constructor_classifier_at(self.arena, result, fields)
         }
     }
 
@@ -2815,11 +2883,15 @@ impl LoweredModule<'_>
                         continue;
                     }
                     if described.parameters.is_empty() {
+                        let stated = signatures
+                            .get(&described.description.id.name)
+                            .map(|&(constant, signature)| (constant, signature.results()));
                         typer.family(
                             &described.description,
                             &described.written,
                             &families,
                             &constructors,
+                            stated,
                         );
                     }
                     else if let Some(&(constant, signature)) =
