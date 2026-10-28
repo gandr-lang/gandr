@@ -9,6 +9,7 @@
 //! of every source.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
@@ -145,6 +146,7 @@ const COUNTED: &[&str] = &[
     "expression shell_block",
     "expression shell_word",
     "expression single_quoted_string",
+    "expression splice_expression",
     "expression string",
     "expression subshell",
     "expression telescope_expression",
@@ -1372,6 +1374,41 @@ fn a_line_comment_holds_the_newline_closing_it_456()
         commented,
         (0_usize ..= newline).collect::<Vec<_>>(),
         "the comment holds its text and its closing newline, nothing after"
+    );
+}
+
+/// A splice is a kind the hover coverage decides: every position of a source
+/// whose definition is a tactic's splice is owned by a kind counted or
+/// meaningless, the splice's own among them (#3198).
+#[test]
+fn a_splice_is_a_kind_the_hover_coverage_decides_3198()
+{
+    let source = Source {
+        uri: String::from("file:///splice.gandr"),
+        text: String::from("def id : (Integer) => Integer = ~intro(assumption) ;\n"),
+    };
+    let grammar = built_in().expect("the built-in grammar builds");
+    let kinds: BTreeSet<String> = hovered(&grammar, &source, Every(1))
+        .into_iter()
+        .filter_map(|hover| hover.owner.map(|owner| owner.kind))
+        .collect();
+    assert!(
+        kinds.contains("expression splice_expression"),
+        "the splice owns positions of its own: {kinds:?}"
+    );
+    let undecided: Vec<&String> = kinds
+        .iter()
+        .filter(|kind| {
+            !COUNTED.contains(&kind.as_str())
+                && !MEANINGLESS
+                    .iter()
+                    .any(|&(meaningless, _)| meaningless == kind.as_str())
+        })
+        .collect();
+    assert_eq!(
+        undecided,
+        Vec::<&String>::new(),
+        "every kind is counted or meaningless"
     );
 }
 
