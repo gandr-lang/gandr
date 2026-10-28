@@ -1,0 +1,13 @@
+// A world's requirement names a theory, refused where it names none.
+//
+// A role's requirement must name a signature that a site's offer can model.
+//
+// `world w requires R ;` states as a theory what a role at `w` needs of its
+// site. A requirement naming no theory is refused at the world, by the name
+// it gives.
+//
+// - see: `corpus/model/deployments/offers.gandr` — a world requiring `Store`
+
+/// A world requiring a theory nothing declares.
+@[ refuses("UnresolvedTypeHead") ]
+pub world lost requires Missing;

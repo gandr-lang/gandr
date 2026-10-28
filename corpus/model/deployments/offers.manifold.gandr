@@ -1,0 +1,27 @@
+// The manifold placing a role that requires `Store` at a site offering it.
+//
+// It witnesses a deployment the check admits: the site's offer holds every
+// member the role requires.
+//
+// `gandr check` of this file reads the program `Manifold.artifact` names and
+// resolves `far` among its worlds. It finds the site's file among its imports
+// by the site's key. The site's `Offers`, packed at `Model(Store)`, checks.
+//
+// - see: `offers.gandr` — the program it deploys
+// - see: `offers.site.gandr` — the site `far` runs at
+
+// The deployment theories, from `std.manifold` by its path.
+import "../../../library/std/src/manifold.gandr";
+// The site `far` is placed at.
+import "./offers.site.gandr" as far;
+
+/// The program this manifold deploys.
+pub module Manifold : Model(Manifold) {
+  /// The role-bearing program, beside this file.
+  def artifact = "offers.gandr";
+}
+
+/// `far` at the offering site, as one process.
+pub def placements : List(Placement) = [
+  At("far", far.site),
+];

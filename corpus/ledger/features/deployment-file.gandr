@@ -1,9 +1,9 @@
 /// `deployment-file` reads a deployment's site and manifold as the flags they desugar to.
 ///
-/// Implemented: a site names the key its place proves, the sockets a dialer reaches it at and the name of the key's secret, and `gandr host --site` binds them under the secret that name reads; a manifold names the program it deploys by its path and places each world at a site, and `gandr run --manifold` and `gandr host --manifold` take its world bindings; a flag beside the file it desugars from is refused.
+/// Implemented: a site names the key its place proves, the sockets a dialer reaches it at and the name of the key's secret, and exports its model packed; `gandr host --site` binds them under the secret that name reads; a manifold names the program it deploys by its path and places each world at a site's model, and `gandr run --manifold` and `gandr host --manifold` take its world bindings; a flag beside the file it desugars from is refused.
 /// Not implemented: a manifold that names its program by its address, and a world that runs as more than one process; #3381 owes the first.
 ///
-/// A deployment's files hold no entry: they settle as models do, and the driver runs each field to its string.
+/// A deployment's files hold no entry: they settle as models do, and the driver runs each field to its string. One file may hold both the site and the manifold placing a world at it.
 ///
 /// - see: corpus/model/worlds/two-processes.site.gandr
 /// - see: corpus/model/worlds/two-processes.manifold.gandr
@@ -21,6 +21,9 @@ pub module Site : Model(Site) {
   def secret = "far";
 }
 
+/// The place's model, which a placement holds.
+pub def site : Model(Site) = pack Site at Model(Site);
+
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) {
   /// The migration model, by its path beside this file.
@@ -29,5 +32,5 @@ pub module Manifold : Model(Manifold) {
 
 /// `far` at the site, as one process.
 pub def placements : List(Placement) = [
-  At("far", Site.key, Site.sockets),
+  At("far", site),
 ];

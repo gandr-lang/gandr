@@ -3,7 +3,10 @@ use std::path::PathBuf;
 
 use gandr_runtime_net::Lookup;
 use gandr_runtime_net::NodeId;
+use gandr_runtime_net::Secret;
 use gandr_runtime_net::WorldName;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use super::Manifold;
 use super::Secreted;
@@ -11,6 +14,9 @@ use super::Secrets;
 use super::Site;
 use super::Stated;
 use super::Undeployed;
+use crate::compose::Composed;
+use crate::walk::Step;
+use crate::workspace::stepped_alone;
 
 /// The corpus directory holding the migration model, its site and its
 /// manifold.
@@ -175,7 +181,9 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     let twice = manifold(
         "twice.gandr",
         &format!(
-            "pub def placements : List(Placement) = [Instances(\"far\", \"{SITE_KEY}\", \"\", 2)];\n"
+            "pub module Site : Model(Site) {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
+             \"\";\n  def secret = \"far\";\n}}\npub def placements : List(Placement) = \
+             [Instances(\"far\", pack Site at Model(Site), 2)];\n"
         ),
     );
     assert!(
@@ -234,6 +242,122 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         Site::read(&site("found.gandr", SITE_KEY, "")).map(|site| site.lookup()),
         Ok(Lookup::Mdns),
         "a site naming no socket is found by its key alone"
+    );
+}
+
+#[test]
+fn a_world_s_requirement_is_judged_against_its_site_s_offer_3376()
+{
+    let judged = |path: &Path| Manifold::read(path).expect("the manifold reads").judged();
+    let worlds = worlds();
+    let deployments = worlds.join("../deployments");
+    assert_eq!(
+        judged(&deployments.join("offers.manifold.gandr")),
+        Vec::new(),
+        "a site offering `Store` and more takes `far`, which requires `Store`"
+    );
+    assert_eq!(
+        judged(&worlds.join("two-processes.manifold.gandr")),
+        Vec::new(),
+        "a world requiring nothing is placed at a site offering nothing"
+    );
+    let states = |path: &Path| {
+        let text = std::fs::read_to_string(path).expect("the source reads");
+        stepped_alone(path, SourceText::from(text.as_str()), |step| {
+            let Step::Source {
+                composed:
+                    Composed::Settled {
+                        program, report, ..
+                    },
+                ..
+            } = step
+            else {
+                return false;
+            };
+            matches!(Manifold::stated(&program, &report), Maybe::Present(_))
+        })
+    };
+    assert_eq!(
+        (
+            states(&deployments.join("offers.manifold.gandr")),
+            states(&deployments.join("offers.site.gandr"))
+        ),
+        (Ok(true), Ok(false)),
+        "a manifold states its own artifact, and a site importing `std.manifold` beside it \
+         states none"
+    );
+    let refused = judged(&worlds.join("../../pathological/worlds/offers.gandr"));
+    assert!(
+        matches!(
+            refused.as_slice(),
+            [
+                Undeployed::Unoffered { world: far, why, .. },
+                Undeployed::Unworlded { world: nowhere, .. },
+            ] if far.as_ref() == "far"
+                && why.contains("no member `get`")
+                && nowhere.as_ref() == "nowhere"
+        ),
+        "a site lacking `get` is refused naming it, and a world the program lacks by its \
+         name: {refused:?}"
+    );
+
+    let scratch = Scratch::new(Path::new("offered"));
+    let _program = scratch.file(
+        Path::new("p.gandr"),
+        Text(
+            "pub theory Store {\n  oper get : (key : String) --> String;\n}\npub world far \
+             requires Store;\npub world lost requires Missing;\n",
+        ),
+    );
+    let site = |name: &str, key: &str, offers: &str| {
+        scratch.file(
+            Path::new(name),
+            Text(&format!(
+                "{offers}pub module Site : Model(Site) {{\n  def key = \"{key}\";\n  def \
+                 sockets = \"\";\n  def secret = \"far\";\n}}\npub def site : Model(Site) = \
+                 pack Site at Model(Site);\n"
+            )),
+        )
+    };
+    let _typed = site(
+        "typed.gandr",
+        SITE_KEY,
+        "pub theory Typed {\n  oper get : (key : Integer) --> String;\n}\npub module Offers : \
+         Model(Typed) {\n  def get(key : Integer) -> String { \"x\" }\n}\n",
+    );
+    let _bare = site("bare.gandr", OTHER_KEY, "");
+    let local = "11"
+        .repeat(32)
+        .parse::<Secret>()
+        .expect("the secret is hex")
+        .node_id();
+    let manifold = scratch.file(
+        Path::new("m.gandr"),
+        Text(&format!(
+            "import \"./typed.gandr\" as typed;\nimport \"./bare.gandr\" as bare;\npub module \
+             Manifold : Model(Manifold) {{\n  def artifact = \"p.gandr\";\n}}\npub module Local \
+             : Model(Site) {{\n  def key = \"{local}\";\n  def sockets = \"\";\n  def secret = \
+             \"local\";\n}}\npub def placements : List(Placement) = [\n  At(\"far\", \
+             typed.site),\n  At(\"far\", bare.site),\n  At(\"far\", pack Local at \
+             Model(Site)),\n  At(\"lost\", typed.site),\n];\n"
+        )),
+    );
+    let refused = judged(&manifold);
+    assert!(
+        matches!(
+            refused.as_slice(),
+            [
+                Undeployed::Unoffered { why: typed, .. },
+                Undeployed::Unoffered { why: bare, .. },
+                Undeployed::Unsited { .. },
+                Undeployed::Misworlded { world: lost, .. },
+            ] if typed.contains("expected `String => String`, found `Integer => String`")
+                && bare.contains("`Offers`")
+                && lost.as_ref() == "lost"
+        ),
+        "an offer at another type is refused naming both types, a site offering nothing is \
+         refused at its `Offers`, a site no imported file states is unsited, and a refused \
+         world is refused as it is: {refused:?}"
     );
 }
 

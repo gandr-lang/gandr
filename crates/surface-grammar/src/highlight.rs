@@ -161,9 +161,9 @@ const KEYWORDS: &[&str] = &[
     "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "law", "leta",
     "loop", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper",
     "pack", "package", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release",
-    "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail", "then", "theory",
-    "thunk", "type", "type(", "under", "unit", "unpack", "unwind", "val", "via", "where", "while",
-    "with", "world",
+    "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail",
+    "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack", "unwind", "val", "via",
+    "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the

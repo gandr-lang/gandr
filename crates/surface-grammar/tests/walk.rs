@@ -47,15 +47,14 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the flow declaration, `flow downgrade : Newer ~~> Older { … }`, and an
-/// import's `via` tail, `import hello : Older via downgrade ;`.
-const BUILT_IN_FINGERPRINT: u64 = 0xa682_ae50_27f7_5431;
+/// a world's requirement, `world far requires Store ;`.
+const BUILT_IN_FINGERPRINT: u64 = 0x9094_43b6_c413_c198;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3281);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3286);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -84,7 +83,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-->", 27),
     ("->", 14),
     ("-F", 3),
-    (".", 47),
+    (".", 48),
     ("..", 3),
     (":", 278),
     (":>", 2),
@@ -174,7 +173,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 452),
+    ("identifier", 453),
     ("if", 2),
     ("import", 1),
     ("in", 2),
@@ -208,6 +207,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("rec", 2),
     ("recv", 20),
     ("release", 20),
+    ("requires", 1),
     ("resume", 1),
     ("return", 1),
     ("rule", 16),
@@ -229,7 +229,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 2),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 122),
+    ("type_identifier", 124),
     ("type_variable", 62),
     ("typed_number", 2),
     ("u32", 1),

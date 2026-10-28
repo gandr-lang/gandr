@@ -617,6 +617,9 @@ impl TileName
     pub const MOBILE: Self = Self("mobile");
     /// The keyword `world`, opening a world declaration `world w ;`.
     pub const WORLD: Self = Self("world");
+    /// The contextual keyword `requires`, before the theory a world declaration
+    /// `world w requires R ;` names.
+    pub const REQUIRES: Self = Self("requires");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own

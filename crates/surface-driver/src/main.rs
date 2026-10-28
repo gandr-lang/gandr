@@ -10,7 +10,7 @@
 //! | Code | Meaning |
 //! | ---- | ------- |
 //! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, every exemplar held, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
-//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's library states no manifest, or its `gandr.toml` was edited by hand; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's library states no manifest, or its `gandr.toml` was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
 //! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed, or a source a census could not parse or lower, or that the lowering refused whole |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
@@ -20,7 +20,7 @@
 //!
 //! | Invocation | Prints | Fails on |
 //! | ---------- | ------ | -------- |
-//! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole | any unsettled declaration |
+//! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole, each refusal of a manifold's deployment | any unsettled declaration or refused deployment |
 //! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
 //! | `gandr check --grant <operations> <paths>` | as `check`, every capability a declaration holds bounded by the host operations named, comma-separated and repeatable (`--grant read,write`): one claiming another is refused by name; without the flag every held capability is owed | as `check`, and an operation no host interface offers |
 //! | `gandr check --entry <worlds> <paths>` | as `check`, every declaration entered at the worlds named, comma-separated as an `entry` attribute names them (`--entry operator,seat`): its home first, then one capability per later world; a declaration stating its own entry is checked within it, and a source declaring one of the worlds nowhere grants nothing; without the flag a declaration stands where it states | as `check` |
@@ -74,7 +74,12 @@
 //! `gandr.toml` with the library's `Package` model, `manifest: <path>:
 //! written`, `rewritten` or `unchanged` on standard output; a manifest edited
 //! by hand is left as it stands and is `gandr: <path>: drifted: …` on standard
-//! error. A refusal, an unsettled
+//! error. Each manifold the walk settles, a source declaring
+//! `Manifold.artifact` itself, is then judged as a deployment before any
+//! process starts: a placement of a world the program does not declare, and a
+//! world written `requires R` whose site's `Offers` does not check packed at
+//! `Model(R)`, is `gandr: <refusal>` on standard error
+//! (`gandr-surface-dispatcher`'s `manifold` module). A refusal, an unsettled
 //! declaration and a goal each print as a located source snippet — the class
 //! and message, the path with line and column, the lines the report covers with
 //! their marks — followed by a blank line (`gandr-surface-diagnostics`'s
@@ -3009,14 +3014,16 @@ fn stage(
 ///   does not cut, while a source path that does not spell unsettles it. Once
 ///   every export of the run is committed, each package whose lock is held
 ///   reads each path dependency's export by its address's root and re-admits it
-///   through the kernel, as [`depended`] states. Then the final report, at the
-///   detailed and debug levels the line `kernel: <n> recalled, <n> recorded,
-///   <n> unwritten; signed by <key>` when a verdict cache is installed, and the
-///   verdict, at the JSON level as one object whose `level` is `summary`. The
-///   exit is zero for settled, one for unsettled and two for faulted, as the
-///   walk's final report decides under the offered verb, or a lock, a manifest,
-///   an export or a dependency's export when that is worse, at every verbosity.
-///   Every byte written and the exit are the same at every width.
+///   through the kernel, as [`depended`] states, and under `check` each
+///   manifold the walk settled is judged as a deployment, as [`deployed`]
+///   states. Then the final report, at the detailed and debug levels the line
+///   `kernel: <n> recalled, <n> recorded, <n> unwritten; signed by <key>` when
+///   a verdict cache is installed, and the verdict, at the JSON level as one
+///   object whose `level` is `summary`. The exit is zero for settled, one for
+///   unsettled and two for faulted, as the walk's final report decides under
+///   the offered verb, or a lock, a manifest, an export, a dependency's export
+///   or a deployment when that is worse, at every verbosity. Every byte written
+///   and the exit are the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -3045,6 +3052,7 @@ fn stage(
 /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
 /// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3376`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -3072,6 +3080,8 @@ fn run(
     let mut manifests: Vec<Option<Result<Manifest, Unmanifested>>> =
         packages.iter().map(|_| None).collect();
     let mut exportings: Vec<Exporting> = packages.iter().map(|_| Exporting::default()).collect();
+    // Each settled manifold the walk read, judged as a deployment after it.
+    let mut manifolds: Vec<PathBuf> = Vec::new();
     let visited = walk.visit(pool, |mut step| {
         if checking {
             file_export(&step, packages, &mut exportings);
@@ -3105,6 +3115,7 @@ fn run(
                 }
                 if checking {
                     read_manifest(&mut step, packages, &mut manifests);
+                    read_manifold(&step, &mut manifolds);
                 }
             },
             Step::Fault { path, fault } => {
@@ -3138,6 +3149,10 @@ fn run(
             let reached = exported(&packaged.package, exporting, address, held, stderr)?;
             verdict = worse(verdict, reached);
         }
+    }
+    for manifold in &manifolds {
+        let reached = deployed(manifold, stderr)?;
+        verdict = worse(verdict, reached);
     }
     // Every export of the run is committed before any is read, so a dependent
     // reads a dependency the same run checked, whatever their order.
@@ -3422,6 +3437,89 @@ fn read_manifest(
     {
         *slot = Some(Manifest::of(program, report, &packaged.package));
     }
+}
+
+/// Keep `step`'s path among `manifolds` when its source is a manifold's that
+/// settled.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a settled source that [`Manifold::stated`] finds an artifact of
+///   its own in, by its program and report, has its path pushed; any other step
+///   changes nothing.
+/// - provides: the manifolds `run` judges as deployments once the walk ends.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause is the body's one match; the CLI witness
+///   observes each deployment judged.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a manifold checked is judged as a deployment, and a site
+///   beside it is not.
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3376`
+fn read_manifold(
+    step: &Step<'_>,
+    manifolds: &mut Vec<PathBuf>,
+)
+{
+    if let Step::Source {
+        path,
+        standing: Standing::Settled,
+        composed:
+            Composed::Settled {
+                ref program,
+                ref report,
+                ..
+            },
+        ..
+    } = *step
+        && let Maybe::Present(_) = Manifold::stated(program, report)
+    {
+        manifolds.push(path.to_path_buf());
+    }
+}
+
+/// Judge the manifold at `file` as a deployment, each refusal written to
+/// `stderr`, and the verdict it leaves the run at.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the manifold read as [`Manifold::read`] reads it and judged as
+///   [`Manifold::judged`] judges it; each refusal, the read's or the
+///   judgement's, is one `gandr: <why>` line on standard error and unsettles
+///   the run, and a deployment that holds prints nothing and settles.
+/// - provides: the deployment check `gandr check` makes of each manifold.
+/// - fails: the first write error.
+/// - panics: none.
+/// - executable: none — the judgement checks other sources; the CLI witness
+///   observes each outcome.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a deployment whose site offers what its world requires
+///   settles; one whose site lacks a member, and one placing a world the
+///   program lacks, are each refused by name.
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3376`
+fn deployed(
+    file: &Path,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let refused = match Manifold::read(file) {
+        Ok(manifold) => manifold.judged(),
+        Err(undeployed) => Vec::from([undeployed]),
+    };
+    for undeployed in &refused {
+        writeln!(stderr, "gandr: {undeployed}")?;
+    }
+    Ok(if refused.is_empty() {
+        RunVerdict::Settled
+    }
+    else {
+        RunVerdict::Unsettled
+    })
 }
 
 /// File `step` into the export of the package it is a source of: of

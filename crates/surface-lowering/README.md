@@ -23,7 +23,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 ## Provided features
 
 - `lower_module`, `LoweringBudget` and `Fuel`: the whole surface-to-core step under one allowance.
-- The static formers, the eager product with its pair, the infix sum, the `=>` alias and the dependent arrow `(x : A) -> C` it abbreviates, as `lower_module` writes them.
+- The static formers, the eager product with its pair, the infix sum, the `=>` alias and the dependent arrow `(x : A) -> C` it abbreviates.
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order.
 - `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, constructors and matches (`lower::native`).
 - `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: per match, its pattern table, the syntax nodes of its scrutinee, patterns and bodies, and each pattern's span.
@@ -33,7 +33,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.
 - `former_of`, `Former`, `FormName` and `Repair`: the named-kind dispatch and the names a diagnostic writes forms as.
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
-- `LoweringRefusal::classify` and `FailureClass`, the latter re-exported from `gandr-core-term`, which every producer of refusals in the core pipeline classifies into: the classifier.
+- `LoweringRefusal::classify` and `FailureClass`, re-exported from `gandr-core-term`: the classifier every producer of refusals in the core pipeline classifies into.
 - The closed attribute registry, its five diagnostics and the side table, filed for refused declarations too; [`attribute`](src/attribute.rs) names its types.
 - `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's, a module's or a source's documentation as one text, its links resolved ([`doc`](src/doc.rs)).
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
@@ -48,7 +48,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from a theory, checked and packed, and type members with parameters.
 - Binary sessions: session types, actions and the statements binding them, lowered to core session actions ([`lower::session`](src/lower/session.rs)).
-- Worlds: `world w ;` as `DeclarationOutcome::World`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
+- Worlds: `world w ;` as `DeclarationOutcome::World`, `requires R` as `LoweredModule::requirement`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
 
 ## Expected features
 

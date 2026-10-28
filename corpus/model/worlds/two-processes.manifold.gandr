@@ -4,10 +4,11 @@
 // processes without naming either in its source.
 //
 // This one deploys the migration model beside it and places `far` at the
-// site it imports, reading its key and socket there. `near`, where the entry
-// runs, is placed nowhere: it is the process that runs `main`. `gandr run
-// --manifold` and `gandr host --manifold` read it as the
-// `--world far=<key>@<ip:port>` it desugars to.
+// site it imports, whose model holds its key and socket. `near`, where the
+// entry runs, is placed nowhere: it is the process that runs `main`. `gandr
+// run --manifold` and `gandr host --manifold` read it as the `--world
+// far=<key>@<ip:port>` it desugars to, and `gandr check` of it resolves `far`
+// against the program's worlds.
 //
 // - see: `two-processes.site.gandr` — the site `far` runs at
 // - see: `two-processes.gandr` — the program it deploys
@@ -16,7 +17,7 @@
 // The deployment theories, from `std.manifold` by its path.
 import "../../../library/std/src/manifold.gandr";
 // The site `far` is placed at.
-import "./two-processes.site.gandr";
+import "./two-processes.site.gandr" as far;
 
 /// The program this manifold deploys.
 pub module Manifold : Model(Manifold) {
@@ -26,5 +27,5 @@ pub module Manifold : Model(Manifold) {
 
 /// `far` at the far site, as one process.
 pub def placements : List(Placement) = [
-  At("far", Site.key, Site.sockets),
+  At("far", far.site),
 ];

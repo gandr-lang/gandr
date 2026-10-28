@@ -7,7 +7,9 @@
 // `gandr host --site` binds these sockets in place of `--net-bind`. It proves
 // the key with the secret this site names: `GANDR_SECRET_FAR` holds it, or
 // the model `--secrets` names. The secret never stands in the file. This key
-// is the one the two-process test's host secret proves.
+// is the one the two-process test's host secret proves. It declares no
+// `Offers`, so it offers nothing, and the program's `far` requires nothing of
+// it.
 //
 // - see: `two-processes.manifold.gandr` — the manifold placing `far` here
 // - see: `two-processes.gandr` — the program it hosts
@@ -25,3 +27,6 @@ pub module Site : Model(Site) {
   /// The name of the key's secret.
   def secret = "far";
 }
+
+/// The far site's model, where a manifold places a world.
+pub def site : Model(Site) = pack Site at Model(Site);

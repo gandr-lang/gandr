@@ -51,6 +51,8 @@
 //! - Reversal: an attribute on signature components, or entries inferred from
 //!   the migrations a body makes.
 
+use alloc::vec::Vec;
+
 use anodized::spec;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
@@ -382,5 +384,54 @@ impl<'source> Lowerer<'_, 'source>
         let id = sink.arena.computation_world(form);
 
         Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Refuse each world of the current source whose requirement, `R` of
+    /// `world w requires R ;`, names no theory.
+    ///
+    /// # Specification
+    /// - requires: the current source's collection has run.
+    /// - ensures: each world of the current source written with a requirement
+    ///   whose path names no `theory` block holds, as a fault, the refusal the
+    ///   lookup gives at the path: an unresolved head, an unknown member or an
+    ///   unexported name. A slot already refused, or already faulted, keeps its
+    ///   own.
+    /// - fails: never; a refusal is carried by the world.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a world requiring a theory settles; one requiring a
+    ///   name no theory bears is refused at it.
+    /// - witness: `lower::world::tests::a_world_s_requirement_names_its_theory_3376`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() == before,
+    )]
+    pub(super) fn check_requirements(&mut self)
+    {
+        let source = self.current.source;
+        let mut refusals = Vec::new();
+        for (&slot, requirement) in &self.collected.requirements {
+            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            else {
+                continue;
+            };
+            if self.collected.unit.source_at(entry.named.span.start()) != source
+                || matches!(entry.refusal, Maybe::Present(_))
+            {
+                continue;
+            }
+            if let Err(refusal) = self.collected.presented_theory_in(
+                requirement.span.start(),
+                &requirement.prefix,
+                requirement.span,
+                requirement.name,
+            ) {
+                refusals.push((slot, refusal));
+            }
+        }
+        for (slot, refusal) in refusals {
+            let _first = self.faults.entry(slot).or_insert(refusal);
+        }
     }
 }
