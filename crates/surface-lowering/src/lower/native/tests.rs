@@ -2276,6 +2276,57 @@ fn an_annotation_no_form_carries_is_a_value_ascription_1543()
     );
 }
 
+/// A type-valued call's argument is a value the type grammar reads, and no
+/// parameter gives a constructor there its classifier. `(v : T)` gives it
+/// one, as at a path's endpoint, and the checker judges the call at that
+/// value (#3633).
+#[test]
+fn a_type_valued_calls_argument_takes_an_annotation_3633()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def isSome(m : Maybe(Integer)) -> Type {{ case m {{ None => return Void, Some(_x) => return Unit }} }}\n\
+         def held(h : isSome((Some(3) : Maybe(Integer)))) -> -F Unit {{ return h }}\n\
+         def absent(h : isSome((None : Maybe(Integer)))) -> -F Unit {{ return h }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["held", "absent"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers its annotated argument: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    let constant = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map(crate::module::LoweredDeclaration::constant)
+    };
+    let report = judged(&module, &mut arena);
+    let verdict = |name: &str| {
+        report
+            .judged()
+            .iter()
+            .find(|judged| Some(judged.constant()) == constant(name))
+            .map(gandr_core_checker::Judged::verdict)
+    };
+    assert!(
+        matches!(verdict("held"), Some(Verdict::Checked { .. })),
+        "`isSome` of the present option is `Unit`: {:?}",
+        verdict("held")
+    );
+    assert!(
+        matches!(verdict("absent"), Some(Verdict::Refused(_))),
+        "`isSome` of the absent option is `Void`, which no `Unit` inhabits: {:?}",
+        verdict("absent")
+    );
+}
+
 #[test]
 fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
 {
