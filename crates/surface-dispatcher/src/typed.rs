@@ -1668,7 +1668,7 @@ impl TypeTable
             .collect();
         endpoints.sort_by_key(|&(term, ..)| term);
         endpoints.dedup_by_key(|&mut (term, ..)| term);
-        let names = constant_names(&module);
+        let names = constant_names(&module, module.unit().last());
         // Each term the value bridge carried by a reduct, or by a forgetting
         // map at carriers the explicit form spells, with the map, which a face
         // names beside the term's type.

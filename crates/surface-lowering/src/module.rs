@@ -314,6 +314,7 @@ use crate::import::ImportSignature;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::import::Opens;
+use crate::import::ReadAs;
 use crate::import::Translation;
 use crate::import::direct;
 use crate::lower::ElidableExit;
@@ -2028,6 +2029,149 @@ impl<'source> Collected<'source>
         found
             .filter(|&slot| usize::from(slot) < self.slots.len())
             .map_or(Maybe::Absent(imported::Absent::Unbound), Maybe::Present)
+    }
+
+    /// The source whose top level holds the slot `entry`, and the name it is
+    /// declared under there: its own name, or the name of the outermost
+    /// module around it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the source and the name of the first top level the chain of
+    ///   modules around `entry` reaches; none when a module of the chain is not
+    ///   among the collection's.
+    /// - provides: the source and the top-level name an import of that source
+    ///   binds the slot by.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the chain is the collection's own nesting, which a
+    ///   clause would walk whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reads`].
+    /// - witness: `tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
+    fn top_level(
+        &self,
+        entry: &DeclarationSlot<'source>,
+    ) -> Option<(SourceIndex, SurfaceName<'source>)>
+    {
+        let mut name = entry.name;
+        let mut container = entry.container;
+        loop {
+            match container {
+                Container::TopLevel(source) => return Some((source, name)),
+                Container::Module(index) => {
+                    let structure = self.structures.get(index.0)?;
+                    name = structure.name;
+                    container = structure.container;
+                },
+            }
+        }
+    }
+
+    /// The name each source writes for each declaration of a source it
+    /// imports, where that name is not the declaration's own path.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for an import through a flow, each image of the flow's
+    ///   members and the declaration a renaming binds in its place are read by
+    ///   the member's name: bare where the import binds it unqualified, after
+    ///   the import's module otherwise. For any other import that binds a
+    ///   module, each declaration of its source whose top-level name it does
+    ///   not bind unqualified is read under that module. The first import of a
+    ///   source that reads a declaration decides its name.
+    /// - provides: the names a printer writes for an importer's reads
+    ///   ([`LoweredModule::reads`]).
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the names follow from each import's binding,
+    ///   opening and instance, which a clause would restate whole.
+    ///
+    /// # Clause cost
+    /// - bound: each import through a flow walks its instance's exports once,
+    ///   and each import that binds a module walks the slots once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration read through an alias is read under it,
+    ///   a flow's member by its name after the alias, and a declaration read
+    ///   unqualified is not entered.
+    /// - witness: `tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
+    pub(crate) fn reads(&self) -> BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>>
+    {
+        let mut reads: BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>> =
+            BTreeMap::new();
+        let mut tops: Option<Vec<(SourceIndex, SurfaceName<'source>, ConstantIndex)>> = None;
+        for import in self.imports.declarations() {
+            let ImportResolution::Path(ImportTarget::Source(target)) = import.resolution()
+            else {
+                continue;
+            };
+            let under = match import.binding() {
+                ImportBinding::Aliased(name) | ImportBinding::Qualified(name) => Some(name),
+                ImportBinding::Unqualified => None,
+            };
+            let read = reads.entry(import.source()).or_default();
+            if let Maybe::Present(ImportSignature {
+                via:
+                    Maybe::Present(Translation {
+                        instance: Maybe::Present(index),
+                        ..
+                    }),
+                ..
+            }) = *import.signature()
+            {
+                let Some(instance) = self.instances.get(usize::from(index))
+                else {
+                    continue;
+                };
+                let Some(structure) = self.structures.get(instance.structure.0)
+                else {
+                    continue;
+                };
+                for &export in &structure.exports {
+                    let Member::Slot(image) = export
+                    else {
+                        continue;
+                    };
+                    let Some(member) = self.slots.get(image.0).map(|entry| entry.name)
+                    else {
+                        continue;
+                    };
+                    let named = match (import.opens(member), under) {
+                        (Opens(true), _) => ReadAs::Opened(member),
+                        (Opens(false), Some(under)) => ReadAs::Member { under, member },
+                        (Opens(false), None) => continue,
+                    };
+                    let bound = instance.renamed.get(&image).copied().unwrap_or(image);
+                    for slot in [image, bound] {
+                        if let Some(entry) = self.slots.get(slot.0) {
+                            let _first = read.entry(entry.constant).or_insert(named);
+                        }
+                    }
+                }
+                continue;
+            }
+            let Some(under) = under
+            else {
+                continue;
+            };
+            let tops = tops.get_or_insert_with(|| {
+                self.slots
+                    .iter()
+                    .filter_map(|entry| {
+                        self.top_level(entry)
+                            .map(|(source, top)| (source, top, entry.constant))
+                    })
+                    .collect()
+            });
+            for &(source, top, constant) in tops.iter() {
+                if source == target && !import.opens(top).0 {
+                    let _first = read.entry(constant).or_insert(ReadAs::Under(under));
+                }
+            }
+        }
+        reads
     }
 
     /// Whether the slot `slot` is the image of a flow's member an import's
@@ -11233,6 +11377,11 @@ pub struct LoweredModule<'source>
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
     imports: ModuleImports<'source>,
+    /// The sources the lowering read, with where each starts.
+    unit: Unit,
+    /// The name each source writes for each declaration of a source it
+    /// imports, where that name is not the declaration's own path.
+    reads: BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>>,
     /// The outermost scope, with every declared name declared in it.
     recognition: Recognition,
     /// The rules each operation's definition was written as, over module
@@ -11319,6 +11468,8 @@ impl<'source> LoweredModule<'source>
             reached_imports: Vec::new(),
             origins,
             imports,
+            unit: Unit::single(),
+            reads: BTreeMap::new(),
             recognition,
             operation_rules: Layered::whole(BTreeMap::new()),
             stage_bounds: Layered::whole(BTreeMap::new()),
@@ -12595,6 +12746,54 @@ impl<'source> LoweredModule<'source>
     pub fn imports(&self) -> &[ImportDeclaration<'source>]
     {
         self.imports.declarations()
+    }
+
+    /// This module, read from the sources of `unit`, each source writing the
+    /// names `reads` holds for the declarations it imports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_reading(
+        mut self,
+        unit: Unit,
+        reads: BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>>,
+    ) -> Self
+    {
+        self.unit = unit;
+        self.reads = reads;
+        self
+    }
+
+    /// The sources the lowering read, with where each starts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unit(&self) -> &Unit
+    {
+        &self.unit
+    }
+
+    /// The name the source `reader` writes for each declaration of a source
+    /// it imports, where that name is not the declaration's own path, by the
+    /// declaration's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn reads(
+        &self,
+        reader: SourceIndex,
+    ) -> impl Iterator<Item = (ConstantIndex, ReadAs<'source>)> + '_
+    {
+        self.reads
+            .get(&reader)
+            .into_iter()
+            .flatten()
+            .map(|(&constant, &read)| (constant, read))
     }
 
     /// The scope `source`'s import aliases are bound in: each alias resolves

@@ -197,7 +197,8 @@ use gandr_surface_corpus::TracedRun;
 use gandr_surface_corpus::reads_spelled;
 use gandr_surface_corpus::stating_reads;
 use gandr_surface_diagnostics::Families;
-use gandr_surface_diagnostics::constant_names;
+use gandr_surface_diagnostics::constant_paths;
+use gandr_surface_diagnostics::read_by;
 use gandr_surface_lowering::ChannelName;
 use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -394,8 +395,12 @@ pub struct Program<'source>
     /// Each declaration's name and standing, by admission position; a
     /// position no declaration holds is absent.
     declarations: BTreeMap<ConstantIndex, Declared<'source>>,
-    /// The name the printer writes for each constant, by admission position.
+    /// The path of each constant in the source that declares it, by
+    /// admission position: what a declaration is found by.
     names: Vec<String>,
+    /// The name the printer writes for each constant in the source the
+    /// program is read for, by admission position.
+    printed: Vec<String>,
     /// The path of the module whose signature hides each hidden member, by
     /// the member's admission position.
     hidden: BTreeMap<ConstantIndex, String>,
@@ -1034,7 +1039,9 @@ impl<'source> Program<'source>
                 Maybe::Absent(_) => None,
             }
         }));
-        let names = constant_names(module);
+        let names = constant_paths(module);
+        let mut printed = names.clone();
+        read_by(module, module.unit().last(), &mut printed);
         // A run's value is read back into an arena of its own, whose cases
         // the module's would misname.
         let families = Families::declared(module);
@@ -1042,10 +1049,12 @@ impl<'source> Program<'source>
         let kept = kept_members(core, module, verdicts);
         if !hidden.is_empty() || !kept.is_empty() {
             let reaching = reaching(&declarations, &hidden);
-            let printed: Vec<Name<'_>> =
-                names.iter().map(|name| Name::from(name.as_str())).collect();
+            let printing: Vec<Name<'_>> = printed
+                .iter()
+                .map(|name| Name::from(name.as_str()))
+                .collect();
             let constructors = families.naming();
-            let source = CoreSource::new(core, &printed).naming(&constructors);
+            let source = CoreSource::new(core, &printing).naming(&constructors);
             // A leading declaration's references, and the members it can
             // reach, are the leading module's, so its type was spelled
             // there.
@@ -1093,6 +1102,7 @@ impl<'source> Program<'source>
             definitions,
             declarations,
             names,
+            printed,
             hidden,
             kept,
             sealed,
@@ -1255,7 +1265,7 @@ impl<'source> Program<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the highest admission position that holds a declaration and
-    ///   whose path is `path`, as [`constant_names`] spells it; `Undeclared`
+    ///   whose path is `path`, as [`constant_paths`] spells it; `Undeclared`
     ///   when none is.
     /// - provides: the reading of a package's manifest fields by their path,
     ///   `Package.name`.
@@ -2598,7 +2608,7 @@ impl<'source> Program<'source>
     ) -> Result<ValueSpelling, Unfinished>
     {
         let names: Vec<Name<'_>> = self
-            .names
+            .printed
             .iter()
             .map(|name| Name::from(name.as_str()))
             .collect();

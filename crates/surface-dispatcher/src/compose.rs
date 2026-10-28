@@ -5900,7 +5900,7 @@ def delivered() -> -F Unit {
         else {
             panic!("the module is read");
         };
-        let spelled = constant_names(&module);
+        let spelled = constant_names(&module, module.unit().last());
         let names: Vec<Name<'_>> = spelled
             .iter()
             .map(|name| Name::from(name.as_str()))
@@ -5982,7 +5982,7 @@ def delivered() -> -F Unit {
         else {
             panic!("the module is read");
         };
-        let spelled = constant_names(&module);
+        let spelled = constant_names(&module, module.unit().last());
         let names: Vec<Name<'_>> = spelled
             .iter()
             .map(|name| Name::from(name.as_str()))
@@ -6087,7 +6087,7 @@ def delivered() -> -F Unit {
         else {
             panic!("the module is read");
         };
-        let spelled = constant_names(&module);
+        let spelled = constant_names(&module, module.unit().last());
         let names: Vec<Name<'_>> = spelled
             .iter()
             .map(|name| Name::from(name.as_str()))
@@ -6213,7 +6213,7 @@ def delivered() -> -F Unit {
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),
         );
-        let spelled = constant_names(&module);
+        let spelled = constant_names(&module, module.unit().last());
         let names: Vec<Name<'_>> = spelled
             .iter()
             .map(|name| Name::from(name.as_str()))
@@ -6333,7 +6333,7 @@ def delivered() -> -F Unit {
             CertificateEquality::Equal,
             "the nested call and its bind check to one term"
         );
-        let spelled = constant_names(&module);
+        let spelled = constant_names(&module, module.unit().last());
         let names: Vec<Name<'_>> = spelled
             .iter()
             .map(|name| Name::from(name.as_str()))

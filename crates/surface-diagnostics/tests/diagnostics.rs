@@ -674,7 +674,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
     else {
         panic!("`down` is defined by a thunk");
     };
-    let spelled = constant_names(&module);
+    let spelled = constant_names(&module, module.unit().last());
     let names: Vec<Name<'_>> = spelled
         .iter()
         .map(|name| Name::from(name.as_str()))
@@ -744,7 +744,7 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
     else {
         panic!("`applies` is defined by a thunk");
     };
-    let spelled = constant_names(&module);
+    let spelled = constant_names(&module, module.unit().last());
     let names: Vec<Name<'_>> = spelled
         .iter()
         .map(|name| Name::from(name.as_str()))
@@ -804,7 +804,7 @@ fn a_declaration_s_binders_are_named_as_written_803()
         .map(|&(variable, _)| variable)
         .collect();
     let naming = Naming::of(&module, text);
-    let names = constant_names(&module);
+    let names = constant_names(&module, module.unit().last());
     let around: Vec<Vec<Option<String>>> = naming
         .declarations()
         .flat_map(|(_, roots)| {
@@ -859,7 +859,7 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
         .map(|&(variable, _)| variable)
         .collect();
     let naming = Naming::of(&module, text);
-    let names = constant_names(&module);
+    let names = constant_names(&module, module.unit().last());
     let around: Vec<Vec<Option<String>>> = naming
         .declarations()
         .flat_map(|(_, roots)| {
@@ -915,7 +915,7 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
         .collect();
     assert!(!variables.is_empty(), "the written `x` has an origin");
     let naming = Naming::of(&module, text);
-    let names = constant_names(&module);
+    let names = constant_names(&module, module.unit().last());
     let spelled = |around: Option<Vec<gandr_surface_diagnostics::Around<'_>>>| {
         around.map(|around| {
             around
@@ -976,7 +976,7 @@ fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
         .map(|&(variable, _)| variable)
         .collect();
     let naming = Naming::of(&module, text);
-    let names = constant_names(&module);
+    let names = constant_names(&module, module.unit().last());
     let regions: Vec<Vec<Option<String>>> = naming
         .declarations()
         .flat_map(|(_, roots)| {
@@ -1037,7 +1037,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
     else {
         panic!("`invLooper` is defined by a thunk");
     };
-    let spelled = constant_names(&module);
+    let spelled = constant_names(&module, module.unit().last());
     let names: Vec<Name<'_>> = spelled
         .iter()
         .map(|name| Name::from(name.as_str()))
@@ -3028,7 +3028,7 @@ fn a_words_point_spells_its_constructors_arguments()
     else {
         panic!("the source is one module");
     };
-    let names = constant_names(&module);
+    let names = constant_names(&module, module.unit().last());
     let points: Vec<_> = module
         .declarations()
         .iter()
@@ -3047,6 +3047,63 @@ fn a_words_point_spells_its_constructors_arguments()
             "Path(Nat, Pair(Zero, Zero), Pair(Zero, Zero))",
         ],
         "a point spells each constructor's arguments, comma-separated"
+    );
+}
+
+/// A declaration that a source reads through an alias is spelled after the
+/// alias for that source, and by its own name for the source that declares
+/// it (#3498).
+#[test]
+fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498()
+{
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let exported = "pub def reply : Integer = 42 ;\n";
+    let text = format!("{exported}import \"./base.gandr\" as base ;\ndef relayed = base.reply ;\n");
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(exported.len()), vec![
+            ImportTarget::Source(SourceIndex::from(0_usize)),
+        ]),
+    ])
+    .expect("two sources make a unit");
+    let parsed = gandr_surface_parser::parse(&pbg, SourceText::from(text.as_str()))
+        .expect("the unit parses");
+    let Lowered::Module { module, .. } = lower_parsed_unit(
+        &pbg,
+        parsed,
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let reply = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "reply")
+        .expect("`reply` is declared")
+        .constant();
+    let spelled = |reader: usize| {
+        constant_names(&module, SourceIndex::from(reader))
+            .get(usize::from(reply))
+            .cloned()
+    };
+    assert_eq!(
+        (spelled(0), spelled(1)),
+        (
+            Some(String::from("reply")),
+            Some(String::from("base.reply"))
+        ),
+        "the declaring source spells `reply` bare, and the importer after its alias"
     );
 }
 
