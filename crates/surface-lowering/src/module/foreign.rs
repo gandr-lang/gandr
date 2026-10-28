@@ -9,6 +9,15 @@
 //! block declares no name in the source's namespace, and its interface is read
 //! in the source declaring it alone.
 //!
+//! A source reads an interface name through one table. The host's interfaces
+//! seed the table. Each block of the source goes in over them. A block thus
+//! shadows the host's interface of its name. A source with no block reads the
+//! seed itself.
+//!
+//! Three forms read the host's interfaces alone: the operations of a
+//! capability type, the label of an instance in a row, and the interfaces of a
+//! world's offer.
+//!
 //! A block carrying `@[ boundary(rows) ]` takes one slot, entered in no name
 //! table: the check that each member realises the row the attribute names for
 //! it, in written order ([`BoundarySlot`]). The lowering mints its body, a call
@@ -29,12 +38,14 @@
 //!   interface of its name.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::effect::host::INTERFACES;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerWidth;
 use gandr_surface_syntax::ByteOffset;
@@ -66,6 +77,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
+use crate::unit::SourceIndex;
 
 /// The language whose blocks the collection reads.
 const RUST: &str = "rust";
@@ -186,29 +198,160 @@ pub struct BoundarySlot
 #[repr(transparent)]
 pub(super) struct Bounded(pub bool);
 
-impl Collected<'_>
+/// Where an interface a source reads by name comes from.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Provider
 {
-    /// The interface an extern block of the source holding `at` declares
-    /// under `name`.
+    /// The host's interface of the name.
+    Host,
+    /// The interface an extern block of the source declares under the name.
+    Block(Arc<ForeignInterface>),
+}
+
+/// The interface names each source reads.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Interfaces
+{
+    /// What a source with no block reads: the host's interfaces alone.
+    seed: BTreeMap<EffectName, Provider>,
+    /// What each source with a block reads: the seed with each block over it.
+    sources: BTreeMap<SourceIndex, BTreeMap<EffectName, Provider>>,
+}
+
+impl Default for Interfaces
+{
+    /// The host's interfaces, before any block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            seed: INTERFACES
+                .into_iter()
+                .map(|name| (EffectName::from(name), Provider::Host))
+                .collect(),
+            sources: BTreeMap::new(),
+        }
+    }
+}
+
+impl Interfaces
+{
+    /// Declare `interface`, the interface of an extern block of `source`,
+    /// under its name.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the interface kept under the source `at` stands in and
-    ///   `name`, when a block of that source declares one; none otherwise.
+    /// - ensures: `source` reads the name as the block. Every other source
+    ///   reads the name as before.
+    /// - fails: when a block of `source` already holds the name. What any
+    ///   source reads then stays as it was.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The bytes naming the block that holds the name first.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block over a fresh name, and a second block over
+    ///   one name.
+    /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
+    /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    #[spec(ensures: |ref ret| ret.as_ref().ok().is_none_or(|block|
+        matches!(self.named(source, &block.name), Some(&Provider::Block(ref held)) if Arc::ptr_eq(held, block))))]
+    pub(super) fn declare(
+        &mut self,
+        source: SourceIndex,
+        interface: ForeignInterface,
+    ) -> Result<Arc<ForeignInterface>, ByteSpan>
+    {
+        let read = self
+            .sources
+            .entry(source)
+            .or_insert_with(|| self.seed.clone());
+        match read.entry(interface.name.clone()) {
+            Entry::Occupied(mut held) => {
+                if let Provider::Block(ref first) = *held.get() {
+                    return Err(first.named);
+                }
+                let block = Arc::new(interface);
+                let _host = held.insert(Provider::Block(Arc::clone(&block)));
+                Ok(block)
+            },
+            Entry::Vacant(vacant) => {
+                let block = Arc::new(interface);
+                let _fresh = vacant.insert(Provider::Block(Arc::clone(&block)));
+                Ok(block)
+            },
+        }
+    }
+
+    /// What `source` reads the interface `name` as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the block of `source` declared under `name`, or else the
+    ///   host's interface of the name. A name neither holds reads as none.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a row and a call in the block's source read its
-    ///   interface.
+    /// - hypothesis: L3 — a row and a call in a block's source read its
+    ///   interface, and a scope handling `Proc` reads the host's.
     /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
-    #[spec(ensures: |ret| ret.is_none_or(|found| found.name == *name))]
-    pub(crate) fn foreign_named(
+    /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    #[spec(ensures: |ret| ret.is_none_or(|found| match *found {
+        Provider::Block(ref block) => block.name == *name,
+        Provider::Host => INTERFACES.contains(&name.as_ref()),
+    }))]
+    pub(crate) fn named(
+        &self,
+        source: SourceIndex,
+        name: &EffectName,
+    ) -> Option<&Provider>
+    {
+        self.sources.get(&source).unwrap_or(&self.seed).get(name)
+    }
+
+    /// The interfaces the extern blocks of `source` declare, in name order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn blocks(
+        &self,
+        source: SourceIndex,
+    ) -> impl Iterator<Item = &Arc<ForeignInterface>>
+    {
+        self.sources
+            .get(&source)
+            .into_iter()
+            .flat_map(BTreeMap::values)
+            .filter_map(|provider| match *provider {
+                Provider::Block(ref block) => Some(block),
+                Provider::Host => None,
+            })
+    }
+}
+
+impl Collected<'_>
+{
+    /// What the source holding `at` reads the interface `name` as.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn interface(
         &self,
         at: ByteOffset,
         name: &EffectName,
-    ) -> Option<&Arc<ForeignInterface>>
+    ) -> Option<&Provider>
     {
-        self.foreign.get(&(self.unit.source_at(at), name.clone()))
+        self.interfaces.named(self.unit.source_at(at), name)
     }
 }
 
@@ -226,8 +369,8 @@ impl<'source> Collector<'_, 'source>
     ///   second. A member beyond the form is refused out of the fragment at the
     ///   piece: a `type T ;` member, an untyped parameter, a mode, a type no
     ///   fixed width spells, or no result. Any other `rust` block is
-    ///   [`Foreign::Declared`], its interface kept under its source and name.
-    ///   No slot is taken either way.
+    ///   [`Foreign::Declared`], and its source reads the interface's name as
+    ///   it. No slot is taken either way.
     /// - provides: the extern half of [`super::collect_source`].
     /// - fails: the mold refusals of [`read_pieces`].
     /// - panics: none.
@@ -243,9 +386,12 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `lower::capability::tests::an_extern_block_declares_an_interface_its_callers_perform_2901`
     /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(
-        captures: before = (self.collected.slots.len(), self.collected.foreign.len()),
-        ensures: |ref ret| self.collected.slots.len() == before.0
-            && self.collected.foreign.len() == before.1.saturating_add(usize::from(matches!(*ret, Ok(Foreign::Declared(_))))),
+        captures: before = self.collected.slots.len(),
+        ensures: |ref ret| self.collected.slots.len() == before
+            && match *ret {
+                Ok(Foreign::Declared(ref interface)) => matches!(self.collected.interface(block.span.start(), &interface.name), Some(&Provider::Block(ref held)) if Arc::ptr_eq(held, interface)),
+                Ok(Foreign::Other | Foreign::Refused(_)) | Err(_) => true,
+            },
     )]
     pub(super) fn foreign(
         &mut self,
@@ -270,10 +416,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::foreign`].
     /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
-    #[spec(
-        captures: before = self.collected.foreign.len(),
-        ensures: |ref ret| self.collected.foreign.len() == before.saturating_add(usize::from(matches!(*ret, Foreign::Declared(_)))),
-    )]
+    #[spec(ensures: |ref ret| match *ret {
+        Foreign::Declared(ref interface) => matches!(self.collected.interface(block.span.start(), &interface.name), Some(&Provider::Block(ref held)) if Arc::ptr_eq(held, interface)),
+        Foreign::Other | Foreign::Refused(_) => true,
+    })]
     fn read_foreign(
         &mut self,
         block: Placed,
@@ -295,17 +441,15 @@ impl<'source> Collector<'_, 'source>
         match self.interface(&mut cursor) {
             Ok(interface) => {
                 let source = self.collected.unit.source_at(block.span.start());
-                let key = (source, interface.name.clone());
-                if let Some(first) = self.collected.foreign.get(&key) {
-                    return Foreign::Refused(LoweringRefusal::DuplicateDefinition {
-                        span: interface.named,
-                        name: self.spelled(interface.named),
-                        first: first.named,
-                    });
+                let named = interface.named;
+                match self.collected.interfaces.declare(source, interface) {
+                    Ok(declared) => Foreign::Declared(declared),
+                    Err(first) => Foreign::Refused(LoweringRefusal::DuplicateDefinition {
+                        span: named,
+                        name: self.spelled(named),
+                        first,
+                    }),
                 }
-                let interface = Arc::new(interface);
-                let _first = self.collected.foreign.insert(key, Arc::clone(&interface));
-                Foreign::Declared(interface)
             },
             Err(refusal) => Foreign::Refused(refusal),
         }
