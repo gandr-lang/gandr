@@ -6,8 +6,19 @@
 import "./file-base.gandr";
 
 /// A handle sent to a writer, which sends it back: the parent closes what it
-/// received, never the name it sent.
-@[ runs("unit") ]
+/// received, never the name it sent. Its two closes sit side by side, and the
+/// writer's channel plays each move in turn, its close beside the parent's
+/// last two.
+@[
+  runs("unit"),
+  traces(decomposes(owner, parallel(event(left, 0), event(right, 0)))),
+  traces(decomposes(writer, series(
+    event(right, 0),
+    event(left, 0),
+    event(left, 1),
+    parallel(event(left, 2), series(event(right, 1), event(right, 2)))
+  )))
+]
 def movedThrough() -> Unit {
   fork (owner : File.Handle) { close(owner) } as file;
   fork (writer : File.Writer) {

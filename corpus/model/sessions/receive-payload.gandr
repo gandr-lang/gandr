@@ -4,8 +4,16 @@
 // the receive: the unknown type is a whole type, and no type form goes on
 // with `(` after one.
 
-/// A seat that receives an order, a sum written in place, and closes.
-@[ runs("unit") ]
+/// A seat that receives an order, a sum written in place, and closes. The
+/// desk sends the order before the seat receives it, and the seat closes
+/// only after its receipt.
+@[
+  runs("unit"),
+  traces(decomposes(seat, series(
+    event(right, 0),
+    parallel(series(event(left, 0), event(left, 1)), event(right, 1))
+  )))
+]
 def receivesAnOrder() -> Unit {
   fork (seat : ?(+{go : Integer, stop : Unit}). end) {
     recv(seat) as order;
