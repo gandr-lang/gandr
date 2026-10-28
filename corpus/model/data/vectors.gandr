@@ -11,6 +11,8 @@
 // - see: Dybjer, _Inductive families_, FAC 1994, doi:10.1007/BF01211308 — a
 //   family whose constructors each state the index they stand at
 // - see: #3579 — a family's argument written as a call converts with its value
+// - see: #3625 — a constructor's field written as a call meets a type that
+//   writes the call
 
 // The naturals the lengths count in.
 import "./data-base.gandr";
@@ -39,3 +41,12 @@ pub def pair() -> Vec(Integer, Succ(Succ(Zero))) {
 
 /// A vector `m` long is `plus(m, Zero)` long. The sum computes `m`.
 def padded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Zero)) { v }
+
+/// An element before a vector `plus(m, k)` long. Its field writes the length
+/// as the sum that the types write.
+def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
+  a,
+  Succ(plus(m, k))
+) {
+  VCons(plus(m, k), x, v)
+}

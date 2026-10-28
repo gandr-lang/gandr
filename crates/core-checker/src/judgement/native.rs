@@ -140,6 +140,7 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::ConstructorArity(term));
         }
         self.stands_at(term, datatype, tag)?;
+        self.read_fields(term, datatype, tag)?;
         self.wait(Frame::NativeYield(Produced::ValueType(datatype.into())));
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let expected = former::field_at(
@@ -277,6 +278,7 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::ConstructorArity(term));
         }
         self.stands_at(term, datatype, tag)?;
+        self.read_fields(term, datatype, tag)?;
         self.wait(Frame::NativeYield(Produced::Checked));
         let block = crate::recursion::families(self.context, datatype)?;
         let mut holding = 0_usize;
@@ -417,6 +419,46 @@ impl Machine<'_, '_>
             }));
         }
         Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Decide each field of the constructor `term` that a type reads as a
+    /// value a type reads: a pure call written there stands as the value it
+    /// returns, which the annotation and the later fields' types read.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor value of `datatype` tagged `tag`.
+    /// - ensures: every field [`former::type_read_fields`] names is read by a
+    ///   type, as a dependent function's argument is.
+    /// - fails: as [`former::type_read_fields`];
+    ///   [`CheckRefusal::MachineInvariant`] for a field the constructor lacks.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`former::type_read_fields`].
+    /// - witness: `tests::native_formers::a_constructor_field_written_as_a_call_meets_its_annotation_3625`
+    #[spec(captures: depth = self.context.depth(Zone::Intuitionistic), ensures: self.context.depth(Zone::Intuitionistic) == depth)]
+    fn read_fields(
+        &mut self,
+        term: ValueId,
+        datatype: ValueTypeId,
+        tag: ConstructorTag,
+    ) -> Result<(), CheckRefusal>
+    {
+        for position in former::type_read_fields(self.context, datatype, tag)? {
+            let &Value::Constructor { ref fields, .. } = self.value(term)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let field = fields
+                .get(usize::from(position))
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.read_by_a_type(field);
+        }
+        Ok(())
     }
 
     /// Refuse a constructor of an indexed family whose annotation names other

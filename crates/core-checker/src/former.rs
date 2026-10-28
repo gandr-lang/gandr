@@ -43,6 +43,11 @@
 //! rejects. **Reversal.** Widen this boundary only with replay-checked index
 //! conversion and independent readmission witnesses.
 //!
+//! A field written as a call stands in a later type as the value it returns.
+//! The judgement decides it that way where a later field's type or a stated
+//! index reads it ([`type_read_fields`]), and the elaboration keeps it in
+//! place. A constructor's annotation then meets the call written in a type.
+//!
 //! The programmatic forms cross ordinary checked kernel admission, canonical
 //! artifacts, incremental support and edit snapshots, and
 //! `gandr-core-sequent`'s machine runs nominal constructors, cases and
@@ -925,6 +930,14 @@ pub fn field_at(
                 .ok_or(CheckRefusal::MachineInvariant)?,
             _ => return Err(CheckRefusal::MachineInvariant),
         };
+        // A field written as a call stands in a type as the value it returns,
+        // the form the elaboration keeps it in.
+        let value = if let Some(&Value::Nested(call)) = context.arena().value(value) {
+            context.arena_mut().value_returned(call)
+        }
+        else {
+            value
+        };
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
         let value = gandr_core_term::shift_value(context.arena_mut(), value, depth)
@@ -1103,6 +1116,86 @@ pub fn stated_at(
         stated,
         FieldPosition::from(fields.len()),
     )
+}
+
+/// The fields of the constructor tagged `tag` that a type reads: a later
+/// field's type, or an index the constructor states.
+///
+/// # Specification
+/// - requires: `datatype` is a Data application.
+/// - ensures: the position of every field whose binder a later field's type or
+///   a stated index names, ascending.
+/// - provides: the fields the judgement decides as values a type reads.
+/// - fails: as [`signature`]; [`CheckRefusal::MachineInvariant`] for a tag past
+///   the declaration's table or an unrepresentable binder count.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `More`'s count, which its tail's type and its stated
+///   index read, separates a read field from its tail, which no type reads.
+/// - witness: `tests::native_formers::a_constructor_field_written_as_a_call_meets_its_annotation_3625`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.windows(2).all(|pair| matches!(pair, [before, after] if usize::from(*before) < usize::from(*after)))))]
+pub fn type_read_fields(
+    context: &mut CheckingContext<'_>,
+    datatype: ValueTypeId,
+    tag: ConstructorTag,
+) -> Result<Vec<FieldPosition>, CheckRefusal>
+{
+    let signature = signature(context, datatype)?;
+    let fields = signature
+        .constructors()
+        .get(usize::from(tag))
+        .ok_or(CheckRefusal::MachineInvariant)?;
+    // A family indexed by nothing states no index.
+    let results = if signature.indices().is_empty() {
+        &[][..]
+    }
+    else {
+        signature
+            .results()
+            .get(usize::from(tag))
+            .map(Vec::as_slice)
+            .ok_or(CheckRefusal::MachineInvariant)?
+    };
+    let arena = context.arena();
+    let names = |support: Option<gandr_core_term::support::ThinningRef<'_>>,
+                 distance: usize,
+                 node: crate::refusal::CoreNode| {
+        let support = support.ok_or(CheckRefusal::DanglingNode { node })?;
+        let index = u32::try_from(distance).map_err(|_cause| CheckRefusal::MachineInvariant)?;
+        Ok::<_, CheckRefusal>(matches!(
+            support.rank(Zone::Intuitionistic, DeBruijnIndex::from(index)),
+            Maybe::Present(_)
+        ))
+    };
+    let mut read = Vec::new();
+    for position in 0 .. fields.len() {
+        let mut named = false;
+        for (later, &field) in fields.iter().enumerate().skip(position.saturating_add(1)) {
+            let distance = later
+                .checked_sub(position)
+                .and_then(|distance| distance.checked_sub(1))
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let node = crate::refusal::CoreNode::Type(TypeNode::Value(field));
+            named = named || names(arena.value_type_support(field), distance, node)?;
+        }
+        let distance = fields
+            .len()
+            .checked_sub(position)
+            .and_then(|distance| distance.checked_sub(1))
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        for &result in results {
+            let node = crate::refusal::CoreNode::Term(crate::refusal::TermNode::Value(result));
+            named = named || names(arena.value_support(result), distance, node)?;
+        }
+        if named {
+            read.push(FieldPosition::from(position));
+        }
+    }
+    Ok(read)
 }
 
 /// Form the ordinary branch function's classifier.
