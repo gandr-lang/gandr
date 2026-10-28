@@ -3472,6 +3472,237 @@ fn an_import_at_a_wider_signature_refuses_its_source_3098()
     }
 }
 
+/// The signatures the translation tests read a source at and through.
+const VERSIONS: &str = "theory Older { oper answer : Integer ; oper tag : Integer ; }\ntheory \
+                        Newer { oper reply : Integer ; oper label : Integer ; }\n";
+
+/// The newer source the translation tests import.
+const NEWER: &str = "pub def reply : Integer = 42 ;\npub def label : Integer = 7 ;";
+
+/// What the translation tests read of one declaration's outcome.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Seen
+{
+    /// Not refused.
+    Settled,
+    /// Refused `NotATranslation` at these bytes, naming this flow.
+    Untranslated(ByteSpan, String),
+    /// Refused `SignatureMismatch` at these bytes, naming this theory and
+    /// this member, with how.
+    Mismatched(ByteSpan, String, String, MatchFault),
+    /// Refused otherwise, as debugged.
+    Other(String),
+}
+
+/// The text `importer` is laid in after `exported`, which it imports, and
+/// each declaration's name with what its outcome is seen as.
+///
+/// # Specification
+/// trivial.
+fn translated(
+    pbg: &Pbg,
+    exported: SourceText<'_>,
+    importer: SourceText<'_>,
+) -> (String, Vec<(String, Seen)>)
+{
+    let (text, unit) = laid(&[
+        (exported, &[]),
+        (importer, &[ImportTarget::Source(SourceIndex::from(
+            0_usize,
+        ))]),
+    ]);
+    let module = lowered_unit(pbg, &parsed(pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let found = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            let seen = if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                if let LoweringRefusal::NotATranslation { span, name, .. } = refusal {
+                    Seen::Untranslated(span, String::from(name.as_ref()))
+                }
+                else if let LoweringRefusal::SignatureMismatch {
+                    span,
+                    signature,
+                    member,
+                    fault,
+                    ..
+                } = refusal
+                {
+                    Seen::Mismatched(
+                        span,
+                        String::from(signature.as_ref()),
+                        String::from(member.as_ref()),
+                        fault,
+                    )
+                }
+                else {
+                    Seen::Other(format!("{refusal:?}"))
+                }
+            }
+            else {
+                Seen::Settled
+            };
+            (String::from(declaration.name().as_ref()), seen)
+        })
+        .collect();
+    (text, found)
+}
+
+/// #3378: an import read through a flow binds its signature's members from
+/// the flow's definitions over its source, qualified or not: a renaming binds
+/// the source's own declaration, adding no constant, and any other member is
+/// the importer's own declaration.
+#[test]
+fn an_import_via_a_flow_reads_its_source_through_it_3378()
+{
+    let pbg = grammar();
+    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = 9 ; }\n";
+    for reads in [
+        "import \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : Integer ;\ndef \
+         relayed = old.answer ;\ndef tagged : Integer ;\ndef tagged = old.tag ;",
+        "import \"./base.gandr\" : Older via downgrade ;\ndef relayed : Integer ;\ndef relayed \
+         = answer ;\ndef tagged : Integer ;\ndef tagged = tag ;",
+    ] {
+        let (_, found) = translated(
+            &pbg,
+            SourceText::from(NEWER),
+            SourceText::from([VERSIONS, flow, reads].concat().as_str()),
+        );
+        assert!(
+            found.iter().all(|&(_, ref seen)| *seen == Seen::Settled),
+            "every declaration settles: {found:?}"
+        );
+        let named = |wanted: &str| {
+            found
+                .iter()
+                .filter(|&&(ref name, _)| name == wanted)
+                .count()
+        };
+        assert!(
+            named("answer") == 0 && named("tag") == 1 && named("relayed") == 1,
+            "the renaming `answer` declares nothing, and `tag` its one image: {found:?}"
+        );
+    }
+}
+
+/// #3378: a `via` reads the flow of its name declared before the import in
+/// the importer, or one the imported source declares `pub`; any other name is
+/// refused at the `via`, every declaration of the importer with it.
+#[test]
+fn a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378()
+{
+    let pbg = grammar();
+    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = label ; }\n";
+    let import = "import \"./base.gandr\" as old : Older via downgrade ;\n";
+    let read = "def relayed : Integer ;\ndef relayed = old.answer ;";
+    let refusals = |exported: &str, importer: &str| {
+        let (text, found) =
+            translated(&pbg, SourceText::from(exported), SourceText::from(importer));
+        let at = text.rfind("downgrade ;").expect("the via is written");
+        let named =
+            Seen::Untranslated(bytes(at, at + "downgrade".len()), String::from("downgrade"));
+        let untranslated = found
+            .iter()
+            .filter(|&&(_, ref seen)| *seen == named)
+            .count();
+        let others = found
+            .iter()
+            .filter(|&&(_, ref seen)| *seen != named && *seen != Seen::Settled)
+            .count();
+        (untranslated, others)
+    };
+    let published = [VERSIONS, NEWER, "\npub ", flow].concat();
+    assert_eq!(
+        refusals(&published, &[VERSIONS, import, read].concat()),
+        (0_usize, 0_usize),
+        "a flow the source publishes translates it"
+    );
+    let private = [VERSIONS, NEWER, "\n", flow].concat();
+    for (exported, importer) in [
+        (private.as_str(), [VERSIONS, import, read].concat()),
+        (NEWER, [VERSIONS, import, flow, read].concat()),
+        (NEWER, [VERSIONS, import, read].concat()),
+    ] {
+        let (untranslated, others) = refusals(exported, &importer);
+        assert!(
+            untranslated > 0 && others == 0,
+            "a flow its source keeps private, one declared after the import, and none at all \
+             each refuse the importer at the `via`: {untranslated} {others} `{importer}`"
+        );
+    }
+}
+
+/// #3378: an import read through a flow refuses every declaration of its
+/// source when the source does not hold the flow's domain, at the flow's
+/// name, or the flow's codomain does not hold the signature, at the
+/// signature, each naming the member, a declaration reading through the
+/// import included.
+#[test]
+fn a_translation_is_refused_at_its_domain_or_its_codomain_3378()
+{
+    let pbg = grammar();
+    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = label ; }\n";
+    for (exported, signature, at, (theory, member, fault)) in [
+        (
+            "pub def reply : Integer = 42 ;",
+            "Older",
+            "downgrade",
+            ("Newer", "label", MatchFault::Missing),
+        ),
+        (
+            "pub def reply : String = \"42\" ;\npub def label : Integer = 7 ;",
+            "Older",
+            "downgrade",
+            ("Newer", "reply", MatchFault::Sort),
+        ),
+        (
+            NEWER,
+            "Wider",
+            "Wider",
+            ("Wider", "extra", MatchFault::Missing),
+        ),
+    ] {
+        let importer = [
+            VERSIONS,
+            "theory Wider { oper answer : Integer ; oper extra : Integer ; }\n",
+            flow,
+            &format!(
+                "import \"./base.gandr\" as old : {signature} via downgrade ;\ndef one : Integer \
+                 ;\ndef one = 1 ;\ndef read : Integer ;\ndef read = old.answer ;"
+            ),
+        ]
+        .concat();
+        let (text, found) = translated(
+            &pbg,
+            SourceText::from(exported),
+            SourceText::from(importer.as_str()),
+        );
+        let start = text.rfind(at).expect("the refused name is written");
+        let expected = Seen::Mismatched(
+            bytes(start, start + at.len()),
+            String::from(theory),
+            String::from(member),
+            fault,
+        );
+        let refused = found
+            .iter()
+            .filter(|&&(_, ref seen)| *seen != Seen::Settled)
+            .collect::<Vec<_>>();
+        assert!(
+            refused.iter().all(|&&(_, ref seen)| *seen == expected)
+                && ["Older", "Newer", "Wider", "one", "read"]
+                    .iter()
+                    .all(|&name| refused.iter().any(|&&(ref named, _)| named == name)),
+            "`{signature} via downgrade` over `{exported}` refuses each declaration of the \
+             importer as {expected:?}: {found:?}"
+        );
+    }
+}
+
 #[test]
 fn a_constructor_an_import_binds_again_refuses_its_family()
 {

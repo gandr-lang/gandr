@@ -593,6 +593,7 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
+use crate::error::MatchFault;
 use crate::error::Unexported;
 use crate::form::Cursor;
 use crate::form::FormName;
@@ -609,10 +610,13 @@ use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::import::ImportResolution;
+use crate::import::ImportSignature;
 use crate::import::ModuleImports;
 use crate::import::Opening;
+use crate::import::Translation;
 use crate::layout::bracket_form;
 use crate::layout::misplaced;
+use crate::module::BodyScope;
 use crate::module::CodataIndex;
 use crate::module::Collected;
 use crate::module::ComponentScope;
@@ -625,6 +629,7 @@ use crate::module::DecoratedModule;
 use crate::module::FamilyIndex;
 use crate::module::FlattenedSlot;
 use crate::module::Forgetting;
+use crate::module::Functor;
 use crate::module::Half;
 use crate::module::HalfAt;
 use crate::module::Halves;
@@ -3080,6 +3085,9 @@ struct Lowerer<'run, 'source>
     /// names one that did not lower, or a family whose parameters disagree
     /// with its indices.
     faults: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
+    /// Each flow's instance over an import's source that the import's match
+    /// refuses: it declares nothing.
+    untranslated: BTreeSet<InstanceIndex>,
     /// The arguments every planned application reads, stretch by stretch.
     operands: Vec<NodeIndex>,
     /// The segments every planned interpolated string reads, stretch by
@@ -5049,6 +5057,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             kind_checks: BTreeMap::new(),
             modelled: BTreeMap::new(),
             faults: BTreeMap::new(),
+            untranslated: BTreeSet::new(),
             operands: Vec::new(),
             segments: Vec::new(),
             statements: Vec::new(),
@@ -5261,20 +5270,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   resolved to [`ImportTarget::Unresolved`] or [`ImportTarget::Cycle`]
     ///   holds [`LoweringRefusal::ImportUnresolved`] or
     ///   [`LoweringRefusal::ImportCycle`] at its declaration form, naming the
-    ///   import; each slot of a source whose import lists a name its module
-    ///   does not declare holds [`LoweringRefusal::UnknownMember`], and one its
-    ///   module keeps private [`LoweringRefusal::UnexportedName`], at the
-    ///   listed name; each top-level declared name, and each family whose
-    ///   constructor, a source imports from another that exports it under that
-    ///   name, every export or a listed one, holds
-    ///   [`LoweringRefusal::ImportShadows`] at its name, naming the import and
-    ///   the imported declaration — except a constructor the import entered as
-    ///   the very same constructor, as every source whose block takes the one
-    ///   `Theory` enters its constructors. A declaration its source keeps
-    ///   private binds nothing in an importer. An import resolved to
-    ///   [`ImportTarget::Unlocked`] refuses nothing here: it binds nothing, and
-    ///   a name read through it is refused where it is read. The import itself,
-    ///   and every source without such an import, is untouched.
+    ///   import; each slot of a source whose import is read via a name no flow
+    ///   bears holds [`LoweringRefusal::NotATranslation`] at the name, and one
+    ///   whose import's source publishes nothing of a name the flow's domain
+    ///   states holds [`LoweringRefusal::SignatureMismatch`] at the flow's
+    ///   name, naming the first such member — except a slot of a functor's
+    ///   template, which declares nothing; each slot of a source whose import
+    ///   lists a name its module does not declare holds
+    ///   [`LoweringRefusal::UnknownMember`], and one its module keeps private
+    ///   [`LoweringRefusal::UnexportedName`], at the listed name; each
+    ///   top-level declared name, and each family whose constructor, a source
+    ///   imports from another that exports it under that name, every export or
+    ///   a listed one, holds [`LoweringRefusal::ImportShadows`] at its name,
+    ///   naming the import and the imported declaration — except a constructor
+    ///   the import entered as the very same constructor, as every source whose
+    ///   block takes the one `Theory` enters its constructors. A declaration
+    ///   its source keeps private binds nothing in an importer. An import
+    ///   resolved to [`ImportTarget::Unlocked`] refuses nothing here: it binds
+    ///   nothing, and a name read through it is refused where it is read. The
+    ///   import itself, and every source without such an import, is untouched.
     /// - provides: the per-declaration refusal the corpus pins an import's
     ///   failure by.
     /// - fails: never; a refusal is carried by its declaration.
@@ -5289,6 +5303,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
+    /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before,
@@ -5333,6 +5348,64 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     continue;
                 },
             };
+            if let &Maybe::Present(ImportSignature {
+                via:
+                    Maybe::Present(Translation {
+                        named,
+                        name,
+                        flow: Maybe::Absent(_),
+                        ..
+                    }),
+                ..
+            }) = import.signature()
+            {
+                for (index, slot) in collected.slots.iter().enumerate() {
+                    if collected.unit.source_at(slot.named.span.start()) == source
+                        && collected.stratum_of(slot.container) == Stratum::Module
+                    {
+                        refusals.push((SlotIndex::from(index), LoweringRefusal::NotATranslation {
+                            span: named.span,
+                            name,
+                            refused: slot.named.span,
+                        }));
+                    }
+                }
+                continue;
+            }
+            if let &Maybe::Present(ImportSignature {
+                via:
+                    Maybe::Present(Translation {
+                        named,
+                        flow: Maybe::Present(flow),
+                        lacking: Maybe::Present(member),
+                        ..
+                    }),
+                ..
+            }) = import.signature()
+                && let Some(&Functor {
+                    scope: BodyScope::Domain { ref domain, .. },
+                    ..
+                }) = collected.functors.get(usize::from(flow))
+            {
+                let theory = self.name_at(domain.named);
+                for (index, slot) in collected.slots.iter().enumerate() {
+                    if collected.unit.source_at(slot.named.span.start()) == source
+                        && collected.stratum_of(slot.container) == Stratum::Module
+                    {
+                        refusals.push((
+                            SlotIndex::from(index),
+                            LoweringRefusal::SignatureMismatch {
+                                span: named.span,
+                                signature: theory,
+                                member,
+                                fault: MatchFault::Missing,
+                                refused: slot.named.span,
+                            },
+                        ));
+                    }
+                }
+                continue;
+            }
             if *import.opening() == Opening::Nothing {
                 continue;
             }
@@ -7391,10 +7464,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is the name's own node.
-    /// - ensures: the binder with its index and its written type; else the
-    ///   first module, innermost first, whose body declares the name: its
-    ///   member when that member's admission position is strictly earlier, and
-    ///   the forward-member refusal when it is not; else a top-level
+    /// - ensures: the binder with its index and its written type; else, in a
+    ///   flow's body, the component of the flow's domain of that name, whose
+    ///   slot precedes the body's, untyped, the body's own members never read;
+    ///   else the first module, innermost first, whose body declares the name:
+    ///   its member when that member's admission position is strictly earlier,
+    ///   and the forward-member refusal when it is not; else a top-level
     ///   declaration strictly earlier or another member of the mutual block
     ///   `site` belongs to, with its admission position and its signature's
     ///   written type; the data declaration `site` belongs to, untyped, for its
@@ -7429,13 +7504,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
     /// - witness: `lower::native::tests::an_unmarked_self_reference_is_refused_with_its_claim`
     /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(
         captures: before = self.fuel.remaining,
         ensures: |ret| {
             self.fuel.remaining <= before
                 && match ret {
                     | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
-                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. }))) || matches!((self.collected.block_of(SlotIndex::from(usize::from(constant))), self.collected.block_of(own)), (Maybe::Present(held), Maybe::Present(holding)) if held == holding)) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped) }))
+                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.constant == constant && ((entry.name == name && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. }))) || matches!((self.collected.block_of(SlotIndex::from(usize::from(constant))), self.collected.block_of(own)), (Maybe::Present(held), Maybe::Present(holding)) if held == holding)) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped) }) || matches!(self.collected.imported_slot(self.collected.unit.source_at(site.at.span.start()), name), Ok(Maybe::Present((slot, _))) if usize::from(slot) == usize::from(constant)))))
                     },
                     | Err(
                         LoweringRefusal::ForwardMemberReference {
@@ -7478,6 +7554,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
         );
         loop {
             self.fuel.spend()?;
+            // A flow's body reads its domain's members by name and never its
+            // own, so `def answer = answer ;` reads the domain's `answer`.
+            if let Maybe::Present((parameter, outer)) = self.domain_scope(container) {
+                if let Some(slot) = self.parameter_export(parameter, name)
+                    && let Some(entry) = self.collected.slots.get(usize::from(slot))
+                {
+                    let declared = match entry.signature {
+                        Maybe::Present(Half {
+                            operand: Operand::Written(written),
+                            ..
+                        }) => Maybe::Present(written.node),
+                        Maybe::Present(_) | Maybe::Absent(_) => {
+                            Maybe::Absent(binder_type::Absent::Untyped)
+                        },
+                    };
+                    return Ok(Maybe::Present(Resolved::Declaration {
+                        constant: entry.constant,
+                        declared,
+                    }));
+                }
+                container = outer;
+                continue;
+            }
             if let Some(&target) = self.collected.by_name.get(&(container, name))
                 && let Some(entry) = self.collected.slots.get(usize::from(target))
             {
@@ -7633,9 +7732,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `target` is a top-level declaration of a source the site's
-    ///   source imports.
-    /// - ensures: its constant and written signature type; the unresolved
-    ///   absence for a slot the collection does not hold.
+    ///   source imports, or the image of a flow's member an import of it binds.
+    /// - ensures: its constant and written signature type; for an image, its
+    ///   constant and no written type, whatever its visibility, since it is the
+    ///   importer's own; the unresolved absence for a slot the collection does
+    ///   not hold.
     /// - fails: [`LoweringRefusal::UnexportedName`] for a declaration its
     ///   source keeps private, and for one with a signature and no definition.
     /// - panics: none.
@@ -7647,6 +7748,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — the witnesses of [`Self::imported`].
     /// - witness: `tests::namespace::a_pending_declaration_is_not_exported`
     /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => self
             .collected
@@ -7668,6 +7770,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
+        if self.collected.translates(target).0 {
+            return Ok(Maybe::Present(Resolved::Declaration {
+                constant: entry.constant,
+                declared: Maybe::Absent(binder_type::Absent::Untyped),
+            }));
+        }
         if self.collected.slot_visibility(target) == Visibility::Private {
             return Err(self.private(site, name, target));
         }
@@ -7768,11 +7876,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `alias` is the head of the path at `site`, a name or a path
     ///   of names, and `selected` its selected name.
     /// - ensures: the top-level declaration the imported source declares under
-    ///   the selected name; the unaliased absence when `alias`, as written, is
-    ///   no alias or module path of the source or names an import of an address
-    ///   no source of the unit answers. A constructor is not selected through
-    ///   an alias: a selected name is lowercase, so a qualified constructor
-    ///   does not parse.
+    ///   the selected name, or, for an import read through a flow, the member
+    ///   its translation binds; the unaliased absence when `alias`, as written,
+    ///   is no alias or module path of the source or names an import of an
+    ///   address no source of the unit answers. A constructor is not selected
+    ///   through an alias: a selected name is lowercase, so a qualified
+    ///   constructor does not parse.
     /// - provides: the qualified reading of an aliased or qualified import.
     /// - fails: [`LoweringRefusal::UnknownMember`] for a name the imported
     ///   source does not declare, or that the signature the import is written
@@ -7797,6 +7906,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_pending_member_read_through_an_alias_is_refused_at_the_member`
     /// - witness: `tests::namespace::a_name_read_through_an_unlocked_alias_is_refused_at_it_3072`
     /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ref ret| matches!(
         *ret,
         Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. }
@@ -7840,10 +7950,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if !import.states(member).0 {
             return Err(unknown);
         }
-        let Some(&slot) = self
-            .collected
-            .by_name
-            .get(&(Container::TopLevel(target), member))
+        let found = match *import.signature() {
+            Maybe::Present(ImportSignature {
+                via: Maybe::Present(ref translation),
+                ..
+            }) => match self.collected.translated(translation, member) {
+                Maybe::Present(slot) => Some(slot),
+                Maybe::Absent(_) => None,
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => self
+                .collected
+                .by_name
+                .get(&(Container::TopLevel(target), member))
+                .copied(),
+        };
+        let Some(slot) = found
         else {
             return Err(unknown);
         };

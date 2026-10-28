@@ -2496,6 +2496,11 @@ INSERT INTO purpose VALUES('surface-lowering','import::ImportSignature','struct'
 INSERT INTO purpose VALUES('surface-lowering','import::ImportUri','struct','Holds an import''s URI, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ModuleImports','struct','Holds a module''s imports, so the imports'' targets are resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::Opening','enum','Names which of a module''s names an import binds by their own names, so an import list binds only what it lists.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::Translation','struct','Holds the flow an import is read through and its instance over the import''s source, so the import binds its signature''s members from the flow''s definitions.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::direct::Absent','enum','Names why an import is read through no flow, so its source is read as it is.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::lacked::Absent','enum','Names why a translation names no member its source lacks, so only a source off the flow''s domain is refused at collection.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::unflowed::Absent','enum','Names why a `via` resolves to no flow, so the import is refused at the name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::uninstantiated::Absent','enum','Names why a translation holds no instance over its source, so a read through it binds nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::unread::Absent','enum','Names why a signature''s stated names are not held, so an import narrows nothing while its source is collected.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::unsigned::Absent','enum','Names why an import is written at no signature, so it binds its source''s whole interface.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::Fuel','struct','Names the fuel a lowering''s budget spends, so the budget''s fuel is read.',NULL,'fits','sound',NULL);

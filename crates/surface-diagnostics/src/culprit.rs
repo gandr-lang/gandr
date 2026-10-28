@@ -165,9 +165,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ImportCycle { .. } => "leads back to this source",
         LoweringRefusal::UnlockedDependency { .. } => "no module or locked dependency of this name",
         LoweringRefusal::SignatureMismatch { fault, .. } => match fault {
-            MatchFault::Missing => "states a member the source does not export",
-            MatchFault::Sort => "states a member the source exports at another type",
-            MatchFault::Unstated => "states a member the match reads no type for",
+            MatchFault::Missing => "a member the import finds no declaration of",
+            MatchFault::Sort => "a member the import finds at another type",
+            MatchFault::Unstated => "a member the match reads no type for",
         },
         LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
         LoweringRefusal::UnexportedName {
@@ -252,6 +252,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
         LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
+        LoweringRefusal::NotATranslation { .. } => "no flow of this name",
         LoweringRefusal::ProjectionFromApplication { .. } => {
             "an application read before it is bound"
         },
@@ -652,9 +653,9 @@ mod tests
                 "no module or locked dependency of this name"
             },
             LoweringRefusal::SignatureMismatch { fault, .. } => match fault {
-                MatchFault::Missing => "states a member the source does not export",
-                MatchFault::Sort => "states a member the source exports at another type",
-                MatchFault::Unstated => "states a member the match reads no type for",
+                MatchFault::Missing => "a member the import finds no declaration of",
+                MatchFault::Sort => "a member the import finds at another type",
+                MatchFault::Unstated => "a member the match reads no type for",
             },
             LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
             LoweringRefusal::UnexportedName {
@@ -741,6 +742,7 @@ mod tests
             LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
             LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
+            LoweringRefusal::NotATranslation { .. } => "no flow of this name",
             LoweringRefusal::ProjectionFromApplication { .. } => {
                 "an application read before it is bound"
             },
@@ -1026,6 +1028,11 @@ mod tests
                 constructor: name,
             },
             LoweringRefusal::NotAFunctor { span: at, name },
+            LoweringRefusal::NotATranslation {
+                span: at,
+                name,
+                refused: at,
+            },
             LoweringRefusal::ProjectionFromApplication {
                 span: at,
                 functor: name,

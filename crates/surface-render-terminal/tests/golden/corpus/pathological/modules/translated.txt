@@ -1,0 +1,35 @@
+error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label` it finds no `pub` declaration of, so this source's declarations are not read
+   ╭▸ corpus/pathological/modules/translated.gandr:35:74
+   │
+15 │ theory Older {
+   │        ───── declared here
+   ‡
+35 │ import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
+   │                                                                          ━━━━━━━━ a member the import finds no declaration of
+   │
+   ├ note: `Older` is refused with SignatureMismatch.Missing, as its expectation states
+   ╰ help: drop `label` from `Tagged`, or declare `pub label` where the import reads it
+
+error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label` it finds no `pub` declaration of, so this source's declarations are not read
+   ╭▸ corpus/pathological/modules/translated.gandr:35:74
+   │
+22 │ theory Tagged {
+   │        ────── declared here
+   ‡
+35 │ import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
+   │                                                                          ━━━━━━━━ a member the import finds no declaration of
+   │
+   ├ note: `Tagged` is refused with SignatureMismatch.Missing, as its expectation states
+   ╰ help: drop `label` from `Tagged`, or declare `pub label` where the import reads it
+
+error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label` it finds no `pub` declaration of, so this source's declarations are not read
+   ╭▸ corpus/pathological/modules/translated.gandr:35:74
+   │
+35 │ import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
+   │                                                                          ━━━━━━━━ a member the import finds no declaration of
+   ‡
+39 │ def relayed() -> Integer { newer.answer }
+   │     ─────── declared here
+   │
+   ├ note: `relayed` is refused with SignatureMismatch.Missing, as its expectation states
+   ╰ help: drop `label` from `Tagged`, or declare `pub label` where the import reads it

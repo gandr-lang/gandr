@@ -175,6 +175,8 @@ const COUNTED: &[&str] = &[
     "item derive_declaration name",
     "item extern_block",
     "item extern_block name",
+    "item flow_declaration",
+    "item flow_declaration name",
     "item import_declaration",
     "item import_declaration name",
     "item module_declaration",

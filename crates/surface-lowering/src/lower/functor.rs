@@ -32,6 +32,7 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::read_pieces;
+use crate::module::BodyScope;
 use crate::module::Container;
 use crate::module::DeclarationOutcome;
 use crate::module::InstanceIndex;
@@ -174,6 +175,56 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Maybe::Absent(parameter_path::Absent::Outside)
+    }
+
+    /// The parameter of the flow whose body is the module `container` names,
+    /// and the scope enclosing that body.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for the body of a functor whose scope is
+    ///   [`BodyScope::Domain`], a flow's, its parameter and the body's own
+    ///   container; absent for any other container.
+    /// - provides: the domain half of [`Self::resolve_name`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow's body reads its domain's member by name, and
+    ///   an ordinary functor's body reads its own members.
+    /// - witness: `tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((parameter, outer)) => matches!(container, Container::Module(module)
+            if self.collected.structures.get(usize::from(module)).is_some_and(|structure| structure.container == outer
+                && matches!(structure.stratum, Stratum::Functor(functor)
+                    if self.collected.functors.get(usize::from(functor)).is_some_and(|found| found.parameter == parameter
+                        && matches!(found.scope, BodyScope::Domain { .. }))))),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn domain_scope(
+        &self,
+        container: Container,
+    ) -> Maybe<(StructureIndex, Container), parameter_path::Absent>
+    {
+        let Container::Module(module) = container
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        let Some(structure) = self.collected.structures.get(usize::from(module))
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        let Stratum::Functor(functor) = structure.stratum
+        else {
+            return Maybe::Absent(parameter_path::Absent::Outside);
+        };
+        match self.collected.functors.get(usize::from(functor)) {
+            Some(found) if matches!(found.scope, BodyScope::Domain { .. }) => {
+                Maybe::Present((found.parameter, structure.container))
+            },
+            Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
+        }
     }
 
     /// The kind a functor parameter's abstract component reads, when `atom`
@@ -449,11 +500,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: every earlier application is renamed.
-    /// - ensures: each body slot's constant renamed to its image's, each body
-    ///   atom to its image's atom, each parameter value component to the
-    ///   argument's member its witness checks and each parameter atom to the
-    ///   argument's type; the refusal of the argument's type component when
-    ///   that type did not lower.
+    /// - ensures: each body slot's constant renamed to its image's, or, for a
+    ///   flow's renaming, to the argument's member it binds; each body atom to
+    ///   its image's atom, each parameter value component to the argument's
+    ///   member its witness checks and each parameter atom to the argument's
+    ///   type; the refusal of the argument's type component when that type did
+    ///   not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -463,6 +515,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   argument's, which a source can write.
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::an_instance_names_its_argument_s_operations_2179`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ret| ret.is_ok() || self.collected.instances.get(usize::from(index)).is_some())]
     fn instance_renaming(
         &self,
@@ -491,7 +544,8 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let Some(mirror) = self.collected.slots.get(usize::from(image))
+            let read = instance.renamed.get(&image).copied().unwrap_or(image);
+            let Some(mirror) = self.collected.slots.get(usize::from(read))
             else {
                 continue;
             };
@@ -708,11 +762,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   function from it to the parameter's type, renamed; each image slot is
     ///   its template's declaration renamed, an abstract one sealed at the
     ///   image of its template's module. A template slot that refused is
-    ///   reported once, at the template, so its image declares nothing; an
-    ///   application whose argument's type did not lower, which the argument
-    ///   reports, declares nothing at all; one whose argument's type for an
-    ///   abstract component is a computation type refuses that component's
-    ///   witness at the argument's definition and declares nothing else.
+    ///   reported once, at the template, so its image declares nothing; nor
+    ///   does the image of a flow's renaming, whose readers read the source's
+    ///   declaration. An application whose argument's type did not lower, which
+    ///   the argument reports, declares nothing at all, nor does a translation
+    ///   its import's match refuses; one whose argument's type for an abstract
+    ///   component is a computation type refuses that component's witness at
+    ///   the argument's definition and declares nothing else.
     /// - provides: the declarations [`Self::assemble`] reads for an instance.
     /// - fails: never.
     /// - panics: none.
@@ -723,6 +779,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
     #[spec(
         captures: before = self.instantiated.len(),
         ensures: self.instantiated.len() >= before,
@@ -737,6 +795,9 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
+            if self.untranslated.contains(&InstanceIndex(position)) {
+                continue;
+            }
             let Some(template) = self
                 .collected
                 .functors
@@ -793,6 +854,9 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     continue;
                 };
+                if instance.renamed.contains_key(&image) {
+                    continue;
+                }
                 let Maybe::Present(own) = self.own_outcome(SlotIndex::from(template), slot)
                 else {
                     continue;

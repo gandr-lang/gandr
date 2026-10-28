@@ -1,0 +1,23 @@
+error[SignatureMismatch.Missing]: this import is read at `Wider`, whose `extra` it finds no `pub` declaration of, so this source's declarations are not read
+   ╭▸ corpus/pathological/modules/translated-uncovered.gandr:24:64
+   │
+16 │ theory Wider {
+   │        ───── declared here
+   ‡
+24 │ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
+   │                                                                ━━━━━ a member the import finds no declaration of
+   │
+   ├ note: `Wider` is refused with SignatureMismatch.Missing, as its expectation states
+   ╰ help: drop `extra` from `Wider`, or declare `pub extra` where the import reads it
+
+error[SignatureMismatch.Missing]: this import is read at `Wider`, whose `extra` it finds no `pub` declaration of, so this source's declarations are not read
+   ╭▸ corpus/pathological/modules/translated-uncovered.gandr:24:64
+   │
+24 │ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
+   │                                                                ━━━━━ a member the import finds no declaration of
+   ‡
+28 │ def widened() -> Integer { newer.answer }
+   │     ─────── declared here
+   │
+   ├ note: `widened` is refused with SignatureMismatch.Missing, as its expectation states
+   ╰ help: drop `extra` from `Wider`, or declare `pub extra` where the import reads it

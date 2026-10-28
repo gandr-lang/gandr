@@ -1,0 +1,62 @@
+// An importer written against an older signature reads a newer source through
+// a flow, twice.
+//
+// A package moves on while its importers stay. A flow bridges the two
+// signatures, published by the source or written by the importer.
+//
+// A flow checks as a functor between the two theories' models. A member it
+// defines as a domain member's name alone binds the source's own declaration.
+// Any other member is this source's own code.
+//
+// - see: #3378 — flows and `via`
+// - see: `model/modules/translated-newer.gandr` — the newer source
+// - see: `pathological/modules/translated.gandr` — a source off the domain
+
+/// The older signature, as this importer wrote it.
+theory Legacy {
+  /// The answer.
+  oper answer : Integer;
+}
+
+/// The older signature with a scaling beside the answer.
+theory Scaling {
+  /// The answer.
+  oper answer : Integer;
+  /// A number times the count.
+  oper scaled : (n : Integer) --> Integer;
+}
+
+/// The newer signature, as this importer reads it.
+theory Current {
+  /// The reply.
+  oper reply : Integer;
+  /// The count.
+  oper count : Integer;
+}
+
+/// A flow that reads the newer version with a scaling: the answer is the
+/// reply, and the count scales a number.
+flow scaling : Current ~~> Scaling {
+  def answer = reply;
+
+  def scaled(n : Integer) -> Integer { n * count }
+}
+
+// The newer version, read at the older signature through the flow it
+// publishes.
+import "./translated-newer.gandr" as published : Legacy via downgrade;
+
+// The newer version, read through the flow declared above.
+import "./translated-newer.gandr" as counted : Scaling via scaling;
+
+/// The newer reply, which this source reads as the older answer.
+@[ runs("42") ]
+def relayed() -> Integer { published.answer }
+
+/// The same reply, read through this source's own flow.
+@[ runs("42") ]
+def recounted() -> Integer { counted.answer }
+
+/// Two scaled by the newer source's count.
+@[ runs("6") ]
+def doubled() -> Integer { counted.scaled(2) }

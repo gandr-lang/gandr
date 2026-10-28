@@ -1,0 +1,28 @@
+// An import read through a flow that does not produce the signature it is
+// read at.
+//
+// The newer source's flow produces its `Older`, which states no `extra`. The
+// import would bind a member no definition stands behind.
+//
+// Every declaration here is refused at the signature, naming `extra`. The
+// match reads the flow's codomain by name and derived type, as a source's
+// interface is read.
+//
+// - see: #3378 — flows and `via`
+// - see: `pathological/modules/translated.gandr` — a source off the domain
+
+/// The older signature with a member no flow of the newer source produces.
+@[ refuses("SignatureMismatch.Missing") ]
+theory Wider {
+  /// The answer.
+  oper answer : Integer;
+  /// A member the flow does not define.
+  oper extra : Integer;
+}
+
+// The newer version, read through the flow it publishes.
+import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
+
+/// The answer, which is refused with its import.
+@[ refuses("SignatureMismatch.Missing") ]
+def widened() -> Integer { newer.answer }

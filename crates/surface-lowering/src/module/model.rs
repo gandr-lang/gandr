@@ -640,12 +640,17 @@ impl<'source> Collected<'source>
             });
         let module = match local {
             Some(module) => Some(module),
-            None => match self.through_imports(self.unit.source_at(at), name, |target| {
-                self.modules
-                    .get(&(Container::TopLevel(target), name))
-                    .copied()
-                    .filter(|&module| self.structure_visibility(module) == Visibility::Public)
-            }) {
+            None => match self.through_imports(
+                self.unit.source_at(at),
+                name,
+                |target| {
+                    self.modules
+                        .get(&(Container::TopLevel(target), name))
+                        .copied()
+                        .filter(|&module| self.structure_visibility(module) == Visibility::Public)
+                },
+                |_| None,
+            ) {
                 Ok(Maybe::Present((module, _import))) => Some(module),
                 Ok(Maybe::Absent(_)) => None,
                 Err(ambiguity) => {
@@ -735,35 +740,20 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands on the former's name, just past the
     ///   ascription's `:` or `:>` of the module form `form`.
     /// - ensures: the cursor past the last manifest sort's type, or past `)`
-    ///   when there is none; the signature derived from the value of the
-    ///   declaration `S` a `theory` block defined wholly before `form`, or one
-    ///   a source the module's source imports unqualified declares, and one
-    ///   component per derived component in its order, each named by its
-    ///   member's name at the ascription's `S` tile: an unindexed sort a
-    ///   manifest component of the type a `with sort` clause names for it, or
-    ///   else an abstract component of no kind; an indexed sort a derived
-    ///   family; and every other component — one the derivation cannot state
-    ///   among them — a derived value; and the `S` tile beside the slot of the
-    ///   declaration it names.
+    ///   when there is none; the signature [`Self::presented_model`] derives
+    ///   from `S` with the sorts the `with sort` clauses fix.
     /// - provides: the model half of [`Self::header`].
     /// - fails: a misplaced tile for a former out of shape; an unresolved head
-    ///   for a former other than `Model`, or for an `S` that names no
-    ///   declaration a `theory` block defined before the module or in an
-    ///   imported source; a shadowed import for an `S` two imports bind; an
-    ///   unadmitted form for a value that codes no presentation; an unknown
-    ///   member for a manifest sort `S` does not present, an unread ascription
-    ///   for one that is indexed, and a duplicate definition for a sort two
-    ///   clauses fix.
+    ///   for a former other than `Model`; what [`Self::presented_model`]
+    ///   refuses.
     /// - panics: none.
+    /// - executable: none — the components are [`Self::presented_model`]'s,
+    ///   whose clause checks them.
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`],
-    /// [`LoweringRefusal::UnresolvedTypeHead`],
-    /// [`LoweringRefusal::ImportShadows`],
-    /// [`LoweringRefusal::OutOfFragment`],
-    /// [`LoweringRefusal::UnknownMember`],
-    /// [`LoweringRefusal::UnreadAscription`] and
-    /// [`LoweringRefusal::DuplicateDefinition`].
+    /// [`LoweringRefusal::UnresolvedTypeHead`] and those of
+    /// [`Self::presented_model`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` model, a model of an imported theory
@@ -772,6 +762,140 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
     /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
+    pub(super) fn model_signature(
+        &self,
+        cursor: &mut Cursor<'_>,
+        form: Placed,
+    ) -> Result<ReadModel<'source>, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(former) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        let (theory, prefix) = self.theory_path(cursor, FormName::MODULE)?;
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        let mut manifests: Vec<(Placed, Placed)> = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
+            if let Maybe::Absent(_) = cursor.tile(TileName::SORT) {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+            let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+            else {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            };
+            if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+            let defined = one_in(FormName::MODULE, cursor.operands())?;
+            manifests.push((sort, defined));
+        }
+        let named = self.name_of(former);
+        if named.as_ref() != "Model" {
+            return Err(LoweringRefusal::UnresolvedTypeHead {
+                span: former.span,
+                name: named,
+                arity: HeadArity::Unary,
+            });
+        }
+        self.presented_model(form, FormName::MODULE, theory, &prefix, &manifests)
+    }
+
+    /// Read a theory's path, `Greeting` or `Gandr.Package`, as `Model(…)` and
+    /// a flow write one.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands where the path's first name belongs, in a
+    ///   form `written` names.
+    /// - ensures: the cursor past the path; its last name's tile, and each name
+    ///   before it with its bytes, in written order.
+    /// - fails: a misplaced tile, naming `written`, for a path that opens with
+    ///   no type name or a dot that no name follows.
+    /// - panics: none.
+    /// - executable: none — the segments are the tiles the cursor walks, which
+    ///   restating reads again.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a one-name theory and a dotted one, each read at its
+    ///   last name.
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    pub(super) fn theory_path(
+        &self,
+        cursor: &mut Cursor<'_>,
+        written: FormName,
+    ) -> Result<(Placed, Vec<(ByteSpan, SurfaceName<'source>)>), LoweringRefusal<'source>>
+    {
+        let Maybe::Present(mut theory) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Err(misplaced_in(written, cursor.here()));
+        };
+        // `Gandr.Package`: the segments before the last name the modules the
+        // theory is declared in.
+        let mut prefix = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            let next = match cursor.tile(TileName::TYPE_IDENTIFIER) {
+                Maybe::Present(next) => next,
+                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                    Maybe::Present(next) => next,
+                    Maybe::Absent(_) => return Err(misplaced_in(written, cursor.here())),
+                },
+            };
+            let segment = core::mem::replace(&mut theory, next);
+            prefix.push((segment.span, self.name_of(segment)));
+        }
+        Ok((theory, prefix))
+    }
+
+    /// The model signature the theory `theory`, declared in the modules
+    /// `prefix` names, derives, with the sorts `manifests` fix.
+    ///
+    /// # Specification
+    /// - requires: `theory` and `prefix` are a path [`Self::theory_path`] read
+    ///   in the form `form`, of the kind `written` names; each of `manifests` a
+    ///   sort's tile and the type a clause fixes it at.
+    /// - ensures: the signature derived from the value of the declaration
+    ///   `theory` names that a `theory` block defined wholly before `form`, or
+    ///   one a source the form's source imports unqualified declares, and one
+    ///   component per derived component in its order, each named by its
+    ///   member's name at the `theory` tile: an unindexed sort a manifest
+    ///   component of the type a manifest names for it, or else an abstract
+    ///   component of no kind; an indexed sort a derived family; and every
+    ///   other component — one the derivation cannot state among them — a
+    ///   derived value; and the `theory` tile beside the slot of the
+    ///   declaration it names.
+    /// - provides: the derivation [`Self::model_signature`] and a flow's two
+    ///   signatures share.
+    /// - fails: an unresolved head for a `theory` that names no declaration a
+    ///   `theory` block defined before the form or in an imported source; a
+    ///   shadowed import for a `theory` two imports bind; an unadmitted form,
+    ///   naming `written`, for a value that codes no presentation; an unknown
+    ///   member for a manifest sort the theory does not present, an unread
+    ///   ascription for one that is indexed, and a duplicate definition for a
+    ///   sort two manifests fix.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnresolvedTypeHead`],
+    /// [`LoweringRefusal::ImportShadows`],
+    /// [`LoweringRefusal::OutOfFragment`],
+    /// [`LoweringRefusal::UnknownMember`],
+    /// [`LoweringRefusal::UnreadAscription`] and
+    /// [`LoweringRefusal::DuplicateDefinition`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::model_signature`], and a flow's domain and
+    ///   codomain each derived from its theory.
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
     /// - witness: `tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -801,74 +925,24 @@ impl<'source> Collector<'_, 'source>
                 && found.0.iter().all(|component| component.named.span == found.2.0)
         }),
     )]
-    pub(super) fn model_signature(
+    pub(super) fn presented_model(
         &self,
-        cursor: &mut Cursor<'_>,
         form: Placed,
+        written: FormName,
+        theory: Placed,
+        prefix: &[(ByteSpan, SurfaceName<'source>)],
+        manifests: &[(Placed, Placed)],
     ) -> Result<ReadModel<'source>, LoweringRefusal<'source>>
     {
-        let Maybe::Present(former) = cursor.tile(TileName::TYPE_IDENTIFIER)
-        else {
-            return Err(misplaced_in(FormName::MODULE, cursor.here()));
-        };
-        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
-            return Err(misplaced_in(FormName::MODULE, cursor.here()));
-        }
-        let Maybe::Present(mut theory) = cursor.tile(TileName::TYPE_IDENTIFIER)
-        else {
-            return Err(misplaced_in(FormName::MODULE, cursor.here()));
-        };
-        // `Model(Gandr.Package)`: the segments before the last name the
-        // modules the theory is declared in.
-        let mut prefix = Vec::new();
-        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
-            let next = match cursor.tile(TileName::TYPE_IDENTIFIER) {
-                Maybe::Present(next) => next,
-                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
-                    Maybe::Present(next) => next,
-                    Maybe::Absent(_) => {
-                        return Err(misplaced_in(FormName::MODULE, cursor.here()));
-                    },
-                },
-            };
-            let segment = core::mem::replace(&mut theory, next);
-            prefix.push((segment.span, self.name_of(segment)));
-        }
-        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
-            return Err(misplaced_in(FormName::MODULE, cursor.here()));
-        }
-        let mut manifests: Vec<(Placed, Placed)> = Vec::new();
-        while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
-            if let Maybe::Absent(_) = cursor.tile(TileName::SORT) {
-                return Err(misplaced_in(FormName::MODULE, cursor.here()));
-            }
-            let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
-            else {
-                return Err(misplaced_in(FormName::MODULE, cursor.here()));
-            };
-            if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
-                return Err(misplaced_in(FormName::MODULE, cursor.here()));
-            }
-            let defined = one_in(FormName::MODULE, cursor.operands())?;
-            manifests.push((sort, defined));
-        }
-        let named = self.name_of(former);
-        if named.as_ref() != "Model" {
-            return Err(LoweringRefusal::UnresolvedTypeHead {
-                span: former.span,
-                name: named,
-                arity: HeadArity::Unary,
-            });
-        }
         let name = self.name_of(theory);
         let (position, presentation) =
             self.collected
-                .presented_theory_in(form.span.start(), &prefix, theory.span, name)?;
+                .presented_theory_in(form.span.start(), prefix, theory.span, name)?;
         let Ok(model) = crate::model::derive(presentation)
         else {
             return Err(LoweringRefusal::OutOfFragment {
                 span: theory.span,
-                form: FormName::MODULE,
+                form: written,
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::Unadmitted(Unbuilt::ModelSignature),
             });
@@ -879,7 +953,7 @@ impl<'source> Collector<'_, 'source>
             .map(|component| (self.name_of(component.named), &component.form))
             .collect();
         let mut fixed: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();
-        for &(sort, defined) in &manifests {
+        for &(sort, defined) in manifests {
             let named = self.name_of(sort);
             if let Some(&(first, _)) = fixed.get(&named) {
                 return Err(LoweringRefusal::DuplicateDefinition {

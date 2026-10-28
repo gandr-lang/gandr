@@ -8,6 +8,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -89,6 +90,12 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Mid tiles, required tails, the committed tree, checkpoints, repair at the declaration boundary | [`meld`](src/meld.rs) |
 | The completion query is a bound | [`closing`](src/closing.rs) |
 | No recursion over input, the corpus, grammar contracts, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `flow` is reserved; `via` stays contextual.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `via` names a translation.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming molds as a definition.
 
 ## License
 

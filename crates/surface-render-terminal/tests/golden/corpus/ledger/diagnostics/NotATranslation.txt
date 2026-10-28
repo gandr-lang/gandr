@@ -1,0 +1,23 @@
+error[NotATranslation]: this import is read via `upgrade`, which names no flow declared before it or published by its source, so this source's declarations are not read
+  ╭▸ corpus/ledger/diagnostics/NotATranslation.gandr:8:69
+  │
+3 │ theory Replying {
+  │        ──────── declared here
+  ‡
+8 │ import "../syntax/pub-declaration.gandr" as declared : Replying via upgrade;
+  │                                                                     ━━━━━━━ no flow of this name
+  │
+  ├ note: `Replying` is refused with NotATranslation, as its expectation states
+  ╰ help: declare `flow upgrade` before this import, or import a source that publishes it
+
+error[NotATranslation]: this import is read via `upgrade`, which names no flow declared before it or published by its source, so this source's declarations are not read
+   ╭▸ corpus/ledger/diagnostics/NotATranslation.gandr:8:69
+   │
+ 8 │ import "../syntax/pub-declaration.gandr" as declared : Replying via upgrade;
+   │                                                                     ━━━━━━━ no flow of this name
+   ‡
+11 │ def relayed = declared.reply;
+   │     ─────── declared here
+   │
+   ├ note: `relayed` is refused with NotATranslation, as its expectation states
+   ╰ help: declare `flow upgrade` before this import, or import a source that publishes it

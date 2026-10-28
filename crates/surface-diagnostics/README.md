@@ -131,6 +131,9 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the `FootprintsOverlap` label, authority both halves of a fork hold and one may change.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a member answering a `Type[-]` sort lands in the computation types.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the directed-univalence design (§ The surface family) — `NotATranslation`'s help declares the flow its `via` names.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — that help names the importer or the source as the flow's supplier.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a missing member is one declaration to write.
 
 ## License
 

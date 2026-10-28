@@ -292,17 +292,21 @@ fn lowered(
         } => match fault {
             MatchFault::Missing => write!(
                 f,
-                "this import is written at `{signature}`, whose `{member}` its source exports no `pub` declaration of, so this source's declarations are not read"
+                "this import is read at `{signature}`, whose `{member}` it finds no `pub` declaration of, so this source's declarations are not read"
             ),
             MatchFault::Sort => write!(
                 f,
-                "this import is written at `{signature}`, whose `{member}` its source exports at another type, so this source's declarations are not read"
+                "this import is read at `{signature}`, whose `{member}` it finds at another type, so this source's declarations are not read"
             ),
             MatchFault::Unstated => write!(
                 f,
-                "this import is written at `{signature}`, whose `{member}` the match reads no type for: give the source's declaration a signature, or state only operations"
+                "this import is read at `{signature}`, whose `{member}` the match reads no type for, so this source's declarations are not read"
             ),
         },
+        LoweringRefusal::NotATranslation { name, .. } => write!(
+            f,
+            "this import is read via `{name}`, which names no flow declared before it or published by its source, so this source's declarations are not read"
+        ),
         LoweringRefusal::ImportShadows { name, .. } => {
             write!(f, "`{name}` is bound by an import and again in this source")
         },
@@ -1733,6 +1737,11 @@ pub mod tests
                 constructor: name,
             },
             LoweringRefusal::NotAFunctor { span, name },
+            LoweringRefusal::NotATranslation {
+                span,
+                name,
+                refused: span,
+            },
             LoweringRefusal::ProjectionFromApplication {
                 span,
                 functor: name,

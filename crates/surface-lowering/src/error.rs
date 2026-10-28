@@ -1211,6 +1211,19 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// An import read `via f` whose `f` names no flow declared before the
+    /// import in its source, nor one its source publishes: every declaration
+    /// of the importing source is refused at the name.
+    NotATranslation
+    {
+        /// The bytes of the name after `via`.
+        span: ByteSpan,
+        /// The name as the import wrote it.
+        name: SurfaceName<'source>,
+        /// The name of the declaration refused.
+        refused: ByteSpan,
+    },
+
     /// A path projected from a functor application, `F(X).T` or `F(X).x`: an
     /// application names its instance only once a module binding binds it,
     /// `module A = F(X) ;`, so `A.T` is the spelling.
@@ -1963,11 +1976,11 @@ impl fmt::Display for LoweringRefusal<'_>
             } => match fault {
                 MatchFault::Missing => write!(
                     f,
-                    "the import's source exports no `{member}`, which the signature `{signature}` states"
+                    "the import finds no `{member}`, which the signature `{signature}` states"
                 ),
                 MatchFault::Sort => write!(
                     f,
-                    "the import's source exports `{member}` at another type than the signature `{signature}` states"
+                    "the import finds `{member}` at another type than the signature `{signature}` states"
                 ),
                 MatchFault::Unstated => write!(
                     f,
@@ -2080,6 +2093,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "`{name}` is applied as a functor, and no functor `{name}` is declared before \
                  the binding"
+            ),
+            Self::NotATranslation { name, .. } => write!(
+                f,
+                "the import is read via `{name}`, and no flow `{name}` is declared before the \
+                 import or published by its source"
             ),
             Self::ProjectionFromApplication { functor, .. } => write!(
                 f,
@@ -2506,6 +2524,7 @@ impl LoweringRefusal<'_>
             | Self::UnprovenLaw { span, .. }
             | Self::PartialField { span, .. }
             | Self::NotAFunctor { span, .. }
+            | Self::NotATranslation { span, .. }
             | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
             | Self::UnstatedComponent { span, .. }
