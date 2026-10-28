@@ -3819,6 +3819,52 @@ fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361()
     );
 }
 
+#[test]
+fn a_held_call_forced_twice_unfolds_twice_3314()
+{
+    // `twice(ident(thunk(return unit)))`, `twice` forcing its argument and
+    // then forcing it again, as a compound endpoint against `unit`. Held, the
+    // endpoint waits on `ident` at the first force, and after that unfolding
+    // at the second force, under another continuation: two unfoldings of one
+    // call, which is no cycle, and the kernel replays all three steps.
+    let mut core = CoreArena::new();
+    let function = identity(&mut core);
+    let first = innermost(&mut core);
+    let forced_first = core.computation_force(first);
+    let again = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let forced_again = core.computation_force(again);
+    let both = core.computation_bind(forced_first, forced_again);
+    let forcing_twice = core.computation_lambda(both);
+    let forcing_twice = core.value_thunk(forcing_twice);
+    let ident = core.value_constant(Name::Zero.constant());
+    let twice = core.value_constant(Name::One.constant());
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let suspended = core.value_thunk(returned);
+    let inner = call(&mut core, ident, &[suspended]);
+    let inner = core.value_returned(inner);
+    let outer = call(&mut core, twice, &[inner]);
+    let endpoint = core.value_returned(outer);
+    let sides = Sides::Values(unit, endpoint);
+    let held = World::new(core, &[(Name::Zero, function), (Name::One, forcing_twice)]).holding();
+
+    let (verdict, decisions) = held.traced(sides);
+    assert_eq!(MachineVerdict::Convertible, verdict, "{decisions:?}");
+    let unfolded = decisions
+        .iter()
+        .filter(|decision| matches!(decision, ConversionDecision::Unfold { .. }))
+        .count();
+    assert_eq!(
+        3_usize, unfolded,
+        "`twice` unfolds once and `ident` once at each force: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::Convertible,
+        held.replayed(sides, verdict, &decisions),
+        "the kernel replays all three unfoldings"
+    );
+}
+
 /// `(fix rec. λx. return x) R` for a rigid `R`: a fixpoint call stuck at
 /// a head nothing unfolds, as `wind(x)` is stuck at its variable.
 ///
