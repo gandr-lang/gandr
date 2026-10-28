@@ -4,12 +4,15 @@
 // host's binding, never in the source.
 //
 // One process hosts `far` with `gandr host`, and another runs `main` with
-// `gandr run`, each given the binding `--world far=<key>@<ip:port>`. The first
-// migration holds 42 at `far`. The second reads it there again, a capture the
-// hosting process already holds, so nothing is fetched. With no `--world`,
+// `gandr run`. Each is given the binding `--world far=<key>@<ip:port>`, or
+// the site and the manifold it desugars from. The first migration holds 42
+// at `far`. The second reads it there again, a capture the hosting process
+// already holds, so nothing is fetched. With no `--world` and no manifold,
 // both migrations run in this process and answer the same.
 //
 // - see: `crates/surface-driver/tests/net.rs` — the two processes
+// - see: `two-processes.site.gandr` — the site that hosts `far`
+// - see: `two-processes.manifold.gandr` — the manifold placing `far` there
 // - see: `twice.gandr` — the same migrations, in one process
 // - see: `corpus/pathological/worlds/open.gandr` — a thunk that cannot
 //   cross

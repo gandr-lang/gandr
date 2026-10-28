@@ -10,7 +10,8 @@
 //! [`Unrunnable::UnboundWorld`](super::Unrunnable::UnboundWorld) when it holds
 //! a capability for a world no binding names. A host hosting its worlds
 //! ([`Program::host`]) runs each migration shipped to a world its bindings
-//! bind to its own key.
+//! bind to its own key; one given no bindings binds every world its entry
+//! holds a capability for to its own key (`Program::here`).
 //!
 //! A migration's code is named by the [`ProgramKey`] of the program both
 //! hosts hold and the migration's place in it; each capture and the answer
@@ -65,6 +66,7 @@ use gandr_runtime_net::Arrival;
 use gandr_runtime_net::Code;
 use gandr_runtime_net::Configuration;
 use gandr_runtime_net::Net;
+use gandr_runtime_net::NodeId;
 use gandr_runtime_net::Peer;
 use gandr_runtime_net::PeerError;
 use gandr_runtime_net::WorldName;
@@ -211,6 +213,22 @@ impl WorldBindings
     ) -> Option<&Peer>
     {
         self.0.get(world)
+    }
+}
+
+impl FromIterator<(WorldName, Peer)> for WorldBindings
+{
+    /// The world bindings `iter` makes, each world to its host; a world bound
+    /// twice keeps its last host.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_iter<Bindings>(iter: Bindings) -> Self
+    where
+        Bindings: IntoIterator<Item = (WorldName, Peer)>,
+    {
+        Self(iter.into_iter().collect())
     }
 }
 
@@ -572,5 +590,22 @@ impl Program<'_>
                 .get(usize::from(world))
                 .is_none_or(|name| bindings.peer(&WorldName::from(name.as_str())).is_none())
         })
+    }
+
+    /// Every world the entry holds a capability for, each bound to the host
+    /// `here`: the bindings of a host that hosts every world shipped to it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn here(
+        &self,
+        here: NodeId,
+    ) -> WorldBindings
+    {
+        self.reaches
+            .iter()
+            .filter_map(|&world| self.names.get(usize::from(world)))
+            .map(|name| (WorldName::from(name.as_str()), Peer::new(here)))
+            .collect()
     }
 }

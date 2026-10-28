@@ -41,6 +41,7 @@ use crate::compose::LoweringCount;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
 use crate::evaluate::declaration_name;
+use crate::manifold::Placed;
 use crate::package::Package;
 use crate::package::package_root;
 use crate::root::classify;
@@ -166,13 +167,16 @@ impl Workspace
     #[inline]
     pub fn members(&self) -> Result<Vec<Package>, Unmembered>
     {
-        let came = match ran_alone(&self.source(), SurfaceName::from(MEMBERS)) {
-            Ok(Maybe::Present(came)) => came,
-            Ok(Maybe::Absent(declaration_name::Absent::Undeclared)) => {
-                return Err(Unmembered::Undeclared);
-            },
+        let [came] = match ran_alone(&self.source(), [SurfaceName::from(MEMBERS)]) {
+            Ok(came) => came,
             Err(Unran::Unread { message }) => return Err(Unmembered::Unread { message }),
             Err(Unran::Refused { why }) => return Err(Unmembered::Refused { why }),
+        };
+        let came = match came {
+            Maybe::Present(came) => came,
+            Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                return Err(Unmembered::Undeclared);
+            },
         };
         let Some(named) = Spelling(&came).listed()
         else {
@@ -196,36 +200,41 @@ impl Workspace
     }
 }
 
-/// What the declaration `name` of the source at `source` runs to, spelled,
-/// the source checked alone over the sources it imports.
+/// What each declaration of `names` in the source at `source` runs to,
+/// spelled, the source checked once, alone over the sources it imports.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the source read, laid out over its imports as the walk lays them
-///   out, lowered and judged under the strict root, and `name` run on the
-///   program's machine, its value spelled; `Undeclared` when the source
-///   declares no `name`.
-/// - provides: the one reading of a value a source states about its own package
-///   or workspace: a workspace's `members` and a library's `dependencies`.
+///   out, lowered and judged under the strict root, and each of `names` run on
+///   the program's machine in order, its value spelled; `Undeclared` at a name
+///   the source declares nowhere.
+/// - provides: the one reading of the values a source states about its own
+///   package, workspace, site or manifold: a workspace's `members`, a library's
+///   `dependencies`, a site's model and a manifold's.
 /// - fails: [`Unran::Unread`] for a source that cannot be read, and
 ///   [`Unran::Refused`] for one that does not compose or is refused as a whole.
 /// - panics: none.
-/// - executable: none — `name` is run on the program's machine, which a
+/// - executable: none — each name is run on the program's machine, which a
 ///   predicate could only check by running it again.
 ///
 /// # Errors
 /// [`Unran`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the witnesses of [`Workspace::members`] and
-///   [`Package::dependencies`].
+/// - hypothesis: L3 — the witnesses of [`Workspace::members`],
+///   [`Package::dependencies`], [`Site::read`] and [`Manifold::read`].
 /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
 /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+/// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
+///
+/// [`Site::read`]: crate::manifold::Site::read
+/// [`Manifold::read`]: crate::manifold::Manifold::read
 #[inline]
-pub fn ran_alone(
+pub fn ran_alone<const NAMES: usize>(
     source: &Path,
-    name: SurfaceName<'_>,
-) -> Result<Maybe<String, declaration_name::Absent>, Unran>
+    names: [SurfaceName<'_>; NAMES],
+) -> Result<[Maybe<String, declaration_name::Absent>; NAMES], Unran>
 {
     let text = std::fs::read_to_string(source).map_err(|error| Unran::Unread {
         message: error.to_string(),
@@ -261,10 +270,10 @@ pub fn ran_alone(
             });
         },
     };
-    Ok(match program.named(name) {
+    Ok(names.map(|name| match program.named(name) {
         Maybe::Present(constant) => Maybe::Present(program.evaluate(constant).to_string()),
         Maybe::Absent(absent) => Maybe::Absent(absent),
-    })
+    }))
 }
 
 /// Why [`ran_alone`] ran nothing.
@@ -354,6 +363,54 @@ impl Spelling<'_>
             let (alias, Self(rest)) = Self(spelling.0.strip_prefix("#{.alias = ")?).quoted()?;
             let (path, Self(rest)) = Self(rest.strip_prefix(", .coordinate = Path(")?).quoted()?;
             Some(((alias, path), Self(rest.strip_prefix(")}")?)))
+        })
+    }
+
+    /// The placements the spelling lists: `cons(At("far", "<key>",
+    /// "127.0.0.1:4733"), nil)` is the world `far` at that key and socket,
+    /// once, and `Instances("far", "<key>", "", 2)` is it twice; none for any
+    /// other spelling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each element of a spelling `cons(p₁, cons(p₂, … nil))` read
+    ///   in order, each `pᵢ` written `At(n, k, s)`, read with the count `1`, or
+    ///   `Instances(n, k, s, c)`, read with the count `c` as spelled, `n`, `k`
+    ///   and `s` quoted strings decoded; none when anything else stands
+    ///   anywhere in it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::listed`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a placement of each constructor, none, and one
+    ///   missing its sockets each read as listed or not.
+    /// - witness: `workspace::tests::a_run_s_spelling_lists_its_placements_3374`
+    pub(crate) fn placements(self) -> Option<Vec<Placed>>
+    {
+        self.listed_as(|spelling| {
+            let (counted, rest) = match spelling.0.strip_prefix("At(") {
+                Some(rest) => (false, rest),
+                None => (true, spelling.0.strip_prefix("Instances(")?),
+            };
+            let (name, Self(rest)) = Self(rest).quoted()?;
+            let (key, Self(rest)) = Self(rest.strip_prefix(", ")?).quoted()?;
+            let (sockets, Self(rest)) = Self(rest.strip_prefix(", ")?).quoted()?;
+            let (count, rest) = if counted {
+                rest.strip_prefix(", ")?.split_once(')')?
+            }
+            else {
+                ("1", rest.strip_prefix(')')?)
+            };
+            Some((
+                Placed {
+                    name,
+                    key,
+                    sockets,
+                    count: String::from(count),
+                },
+                Self(rest),
+            ))
         })
     }
 
@@ -543,6 +600,39 @@ mod tests
             Spelling("cons(#{.alias = \"hello\"}, nil)").dependencies(),
             None,
             "a dependency without its coordinate lists nothing"
+        );
+    }
+
+    #[test]
+    fn a_run_s_spelling_lists_its_placements_3374()
+    {
+        let placed = |name: &str, sockets: &str, count: &str| crate::manifold::Placed {
+            name: String::from(name),
+            key: String::from("k"),
+            sockets: String::from(sockets),
+            count: String::from(count),
+        };
+        assert_eq!(
+            Spelling(
+                "cons(At(\"far\", \"k\", \"127.0.0.1:4733\"), cons(Instances(\"near\", \"k\", \"\", \
+                 2), nil))"
+            )
+            .placements(),
+            Some(Vec::from([
+                placed("far", "127.0.0.1:4733", "1"),
+                placed("near", "", "2")
+            ])),
+            "a placement of each constructor reads in order, `At` counting one"
+        );
+        assert_eq!(
+            Spelling("nil").placements(),
+            Some(Vec::new()),
+            "no placement reads as none"
+        );
+        assert_eq!(
+            Spelling("cons(At(\"far\", \"k\"), nil)").placements(),
+            None,
+            "a placement without its sockets lists nothing"
         );
     }
 }

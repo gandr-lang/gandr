@@ -28,12 +28,12 @@ use quenchant_shape::shape::Maybe;
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
-struct Scratch(PathBuf);
+pub struct Scratch(PathBuf);
 
 /// The text of one scratch source.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-struct Text<'text>(&'text str);
+pub struct Text<'text>(&'text str);
 
 impl<'text> From<&'text str> for Text<'text>
 {
@@ -78,7 +78,7 @@ impl Scratch
             ensures: |ref ret| ret.0.is_dir()
                 && std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
         )]
-    fn new(test: &Path) -> Self
+    pub fn new(test: &Path) -> Self
     {
         let root = std::env::temp_dir().join(format!(
             "gandr-driver-{}-{}",
@@ -116,7 +116,7 @@ impl Scratch
                 .all(|component| matches!(component, std::path::Component::Normal(_))),
             ensures: |ref ret| ret.strip_prefix(&self.0).is_ok_and(|suffix| suffix == relative) && ret.is_file(),
         )]
-    fn file(
+    pub fn file(
         &self,
         relative: &Path,
         text: Text<'_>,

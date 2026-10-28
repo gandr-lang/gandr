@@ -1,0 +1,39 @@
+// `std.manifold`: the theories a site's file and a manifold's file are read
+// from. A site is one place a world runs at, its file declaring `module Site
+// : Model(Site)`. A manifold binds a program's worlds onto sites, its file
+// declaring `module Manifold : Model(Manifold)` beside the `placements` it
+// lists. `gandr host --site` and `gandr run --manifold` read them as the
+// `--net-bind` and `--world` flags they desugar to (#3374). Neither enters
+// the program's identity: a deployment binds a program to places and never
+// addresses it.
+
+/// One place a world runs at: the key it proves and where it is reached. The
+/// hosting process holds the key's secret; the file never does.
+pub theory Site {
+  /// The public key the site proves, 64 hexadecimal digits.
+  oper key : String;
+  /// The sockets the site binds and is dialled at, each `ip:port`, as one
+  /// line of `,`-separated entries until an operation's port can be a list
+  /// (#2993); empty when the site is found by its key alone, over multicast
+  /// DNS.
+  oper sockets : String;
+}
+
+/// The binding of a program's worlds onto sites: the program it deploys,
+/// beside the `placements` its file lists as `pub def placements :
+/// List(Placement)`, a definition of its own until an operation's port can be
+/// a list (#2993).
+pub theory Manifold {
+  /// The program deployed: the path of its source, read from the manifold's
+  /// file.
+  oper artifact : String;
+}
+
+/// One world of the program bound to a site, named by the site's key and
+/// sockets as its `Site` model states them.
+pub data Placement : Type {
+  /// The world `name` run as one process at the site.
+  At : (name : String, key : String, sockets : String) --> Placement;
+  /// The world `name` run as `count` processes at the site.
+  Instances : (name : String, key : String, sockets : String, count : Integer) --> Placement;
+}
