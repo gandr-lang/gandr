@@ -15064,7 +15064,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let unit = sink.arena.value_unit();
                 sink.origins.record_value(unit, origin);
                 let id = sink.arena.value_injection(side.into(), unit);
-                Maybe::Present(sink.value(id, origin))
+                sink.origins.record_value(id, origin);
+                // The literal synthesises `Bool`, as a number synthesises its
+                // carrier, so a model implicit it argues is resolved there
+                // (#3350).
+                let Lowered::ValueType(boolean) =
+                    sink.atom(TypeAtom::Boolean, origin.inserted(Insertion::Classifier))
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let ascribed = sink.arena.value_ascribe(id, boolean);
+                Maybe::Present(sink.value(ascribed, origin))
             },
             Plan::Literal(ref literal) => {
                 let id = sink.arena.value_literal(literal.clone());

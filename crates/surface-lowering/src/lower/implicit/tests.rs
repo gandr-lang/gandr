@@ -875,6 +875,39 @@ def own() -> Bool { 3 == 4 }
 }
 
 #[test]
+fn a_boolean_literal_forces_its_model_at_bool_3350()
+{
+    // `true == false` resolves `PartialEq` at the literals' carrier, `Bool`,
+    // as `3 == 3` does at `Integer`. No model in the prelude answers `Bool`,
+    // so the call is unanswered, never ambiguous among the models at other
+    // carriers.
+    let source = "def differ() -> Bool { true == false }\n";
+    let (text, unit) = crate::prelude::lay(
+        gandr_surface_syntax::SourceText::from(source),
+        &crate::unit::Unit::single(),
+    )
+    .unwrap();
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let differ = declaration_named(&module, SurfaceName::from("differ"));
+    let report = judged(&module, &mut arena);
+    let verdict = report
+        .judged()
+        .iter()
+        .find(|judged| judged.constant() == differ.constant())
+        .map(gandr_core_checker::Judged::verdict);
+    assert!(
+        matches!(
+            verdict,
+            Some(Verdict::Refused(
+                gandr_core_checker::CheckRefusal::ModelUnanswered { .. }
+            ))
+        ),
+        "no model of `PartialEq` answers `Bool`: {verdict:?}"
+    );
+}
+
+#[test]
 fn an_order_calls_the_prelude_s_order_2333()
 {
     // `<`, `<=`, `>` and `>=` call the prelude's `lt`, `le`, `gt` and `ge`,

@@ -820,7 +820,6 @@ corpus/model/universe/vacuous-pi.gandr Tense 724826e3bcec315d
 corpus/model/worlds/seat-and-operator.gandr Passive 334f203f881c4335
 corpus/model/worlds/seat-and-operator.gandr Passive 96a8849d52b7a675
 corpus/model/worlds/seat-and-operator.gandr Passive a364ab9e5083ecd8
-corpus/pathological/basics/booleans.gandr Passive 698529a5c823bec2
 corpus/pathological/basics/unannotated-list.gandr Tense 4c235b3b78fbad7a
 corpus/pathological/builtins/host-module-uncalled-selection.gandr Tense e891fde5389655c6
 corpus/pathological/builtins/host-module-wrong-arity.gandr Tense 8288de07e1cd71fe
@@ -1336,7 +1335,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-t
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-payload.txt Procedure 21920c631ffb9cde
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/missing-payload.txt Procedure b0bae31b8e56887c
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/unknown-attribute.txt Procedure 545a6d0bc1a68b22
-crates/surface-render-terminal/tests/golden/corpus/pathological/basics/booleans.txt Procedure 97faa91a592615ec
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/empty-block.txt Procedure 92d9a49f2738c191
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/fractions.txt Procedure 9518eeb94cf5c1bd
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/kernel-admission-boundary.txt Procedure 1dbe5724dc7f0628

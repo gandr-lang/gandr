@@ -1,6 +1,6 @@
 // Booleans as values, misused: a literal is a value of `Bool` and of no other
 // type.
 
-/// `true` where an integer is stated: `Bool` is a sum, and `Integer` is none.
-@[ refuses("ShapeMismatch") ]
+/// `true` where the declaration states an integer: the literal is a `Bool`, and a `Bool` is no `Integer`.
+@[ refuses("TypeMismatch") ]
 def counted : Integer = true;

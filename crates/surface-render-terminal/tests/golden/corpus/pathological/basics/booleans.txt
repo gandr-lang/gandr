@@ -1,9 +1,12 @@
-error[ShapeMismatch]: expected a sum type `A + B`
+error[TypeMismatch]: the type of this term does not match the type it is checked against
   ╭▸ corpus/pathological/basics/booleans.gandr:6:25
   │
 6 │ def counted : Integer = true;
-  │               ┬──────   ━━━━ its type is not of the required shape: found `Integer`
-  │               │
-  │               the type met, where a sum type `A + B` is required
+  │               ┬──────   ┯━━━
+  │               │         │
+  │               │         its type does not convert: expected `Integer`, found `Bool`
+  │               │         the type it synthesises
+  │               the type it is checked against
   │
-  ╰ note: `counted` is refused with ShapeMismatch, as its expectation states
+  ├ note: `counted` is refused with TypeMismatch, as its expectation states
+  ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -725,8 +725,8 @@ impl Typer<'_>
     /// The value `term` denotes under `scope`: a variable its index, an
     /// application `g(t₁, …)` the returned call `↑((force g) t₁ …)` of the
     /// variable `g` names, and a law's `true` or `false` its injection into
-    /// `Bool`; none for any other constructor, a results tuple or a name the
-    /// scope does not bind.
+    /// `Bool` ascribed `Bool`, as the lowering mints a literal; none for any
+    /// other constructor, a results tuple or a name the scope does not bind.
     ///
     /// # Specification
     /// trivial.
@@ -761,10 +761,12 @@ impl Typer<'_>
                             gandr_kernel_term::Side::Right
                         };
                         let unit = self.arena.value_unit();
-                        built.push(
-                            self.arena
-                                .value_injection(gandr_kernel_term::Summand::from(side), unit),
-                        );
+                        let injected = self
+                            .arena
+                            .value_injection(gandr_kernel_term::Summand::from(side), unit);
+                        let boolean =
+                            crate::lower::atom_type(self.arena, crate::resolve::TypeAtom::Boolean);
+                        built.push(self.arena.value_ascribe(injected, boolean));
                     },
                     TermView::Ctor { .. }
                     | TermView::Results { .. }
