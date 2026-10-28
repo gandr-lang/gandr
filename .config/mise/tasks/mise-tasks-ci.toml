@@ -326,30 +326,36 @@ run = ".config/mise/scope cargo nextest run --workspace --locked --profile night
 # the gate tests each crate with its default features alone (#1785). A crate
 # that declares no feature beyond `default` has nothing to turn on, and its
 # gate run already is this one. The crates declaring features, sorted by name,
-# rotate over three nights, the i-th on the nights whose day number is i
-# modulo 3. On the arm64 runner, from the plain state, the whole set builds in
-# four and a half minutes: with the sweeps' seven to fourteen, that is over
-# the nightly's fifteen minutes summed. A third builds in 2m20s to 2m44s, its
-# job in 194 to 216 s. A new feature puts its crate on the rotation by being
-# declared. GANDR_SWEEP_NIGHT=<day> replays another night, as for the sweeps;
+# rotate one a night, the i-th on the nights whose day number is i modulo
+# their count, so a new feature puts its crate on the rotation by being
+# declared and lengthens the cycle by a night. A night's cost is its crate's
+# build: the restored plain state holds the layers below `gandr-core-term`,
+# and the tower above them compiles with the night's features. A third of the
+# crates a night took 164 to 213 s on the arm64 runner, about its costliest
+# crate's alone, since the crates share that tower; the job's share is 186 s
+# (#3288). GANDR_SWEEP_NIGHT=<day> replays another night, as for the sweeps;
 # `--all` runs every such crate.
 ["ci:all-features"]
-description = "Each crate's tests with every feature on, over the night's third of the crates that declare features"
+description = "Each crate's tests with every feature on, over the night's crate of those that declare features"
 tools.jq = "1.8.1"
 usage = '''
-flag "--all" help="every crate that declares a feature, not the night's third"
+flag "--all" help="every crate that declares a feature, not the night's one"
 '''
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-nights=3
 night=${GANDR_SWEEP_NIGHT:-$(($(date -u +%s) / 86400))}
 mapfile -t crates < <(cargo metadata --locked --no-deps --format-version 1 | jq -r '[.packages[] | select(.features | keys - ["default"] | length > 0) | .name] | sort[]')
+# Counted by hand: mise renders the script as a template, where the hash
+# after an open brace opens a comment.
+nights=0
+for _ in "${crates[@]}"; do nights=$((nights + 1)); done
+if ((nights == 0)); then echo "no crate declares a feature"; exit 0; fi
 packages=()
 for index in "${!crates[@]}"; do
-  if [[ ${usage_all:-false} == true ]] || ((index % nights == night % nights)); then packages+=(--package "${crates[index]}"); fi
+  if [[ ${usage_all:-false} == true ]] || ((index == night % nights)); then packages+=(--package "${crates[index]}"); fi
 done
-echo "night $night: ${packages[*]}"
+echo "night $night, crate $((night % nights + 1)) of $nights: ${packages[*]}"
 .config/mise/scope cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" --all-features "${packages[@]}"
 '''
 
