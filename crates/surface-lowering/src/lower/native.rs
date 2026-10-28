@@ -10331,6 +10331,55 @@ impl<'tree> Readings<'tree>
     }
 }
 
+/// The levels a reading reaches from `start`, in prefix order, each with the
+/// branch `branch` finds for it: a level whose branch's switch stands above a
+/// binder past the level is followed by that branch's fields, each read so in
+/// turn; any other level ends its path.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `start` first; after each level whose branch is present at a
+///   depth at least the level, the levels of that branch's fields, the first
+///   field first; every level paired with what `branch` finds for it.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the specification facade wraps the body in a closure,
+///   which cannot return the opaque iterator; [`level_read`] and [`arm_read`]
+///   state what their readings of it ensure.
+///
+/// # Termination
+/// Each level the walk reaches is a field of the branch refining the level
+/// before it, past that level; the levels a chain's branches refine are
+/// distinct and their fields disjoint, so the walk reads each branch on the
+/// chain at most once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`level_read`] and [`arm_read`].
+/// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+/// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
+/// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+fn levels<'tree>(
+    start: TreeLevel,
+    mut branch: impl FnMut(TreeLevel) -> Maybe<&'tree Refining, refined::Absent>,
+) -> impl Iterator<Item = (TreeLevel, Maybe<&'tree Refining, refined::Absent>)>
+{
+    let mut pending = alloc::vec![start];
+    core::iter::from_fn(move || {
+        let at = pending.pop()?;
+        let found = branch(at);
+        if let Maybe::Present(refining) = found
+            && refining.depth.0 >= at.0
+        {
+            pending.extend(
+                (0 .. refining.arity).rev().map(|field| {
+                    TreeLevel(refining.depth.0.saturating_add(field).saturating_add(1))
+                }),
+            );
+        }
+        Some((at, found))
+    })
+}
+
 /// The value a leaf under `depth` tree binders, below the branch `under`,
 /// reads the level `level` at.
 ///
@@ -10345,10 +10394,7 @@ impl<'tree> Readings<'tree>
 /// - panics: none.
 ///
 /// # Termination
-/// Each level the walk reaches is a field of the branch refining the level
-/// before it, past that level; the levels a chain's branches refine are
-/// distinct and their fields disjoint, so the walk reads each branch on the
-/// chain at most once.
+/// As [`levels`], whose walk it reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an arm variable at a field a nested switch matched reads
@@ -10365,37 +10411,21 @@ fn level_read(
     level: TreeLevel,
 ) -> ValueId
 {
-    let refining = |at: TreeLevel| match readings.refines(under, at) {
-        Maybe::Present(branch) if branch.depth.0 >= at.0 => Maybe::Present(branch),
-        Maybe::Present(_) => Maybe::Absent(refined::Absent::Unswitched),
-        Maybe::Absent(reason) => Maybe::Absent(reason),
-    };
-    if let Maybe::Absent(_) = refining(level) {
+    if !matches!(readings.refines(under, level), Maybe::Present(branch) if branch.depth.0 >= level.0)
+    {
         return level_value(arena, scrutinised, depth, level);
     }
-    // Each level the reading reaches, in prefix order, with its branch.
-    let mut order: Vec<(TreeLevel, Maybe<&Refining, refined::Absent>)> = Vec::new();
-    let mut pending = alloc::vec![level];
-    while let Some(at) = pending.pop() {
-        let branch = refining(at);
-        if let Maybe::Present(branch) = branch {
-            pending.extend(
-                (0 .. branch.arity)
-                    .rev()
-                    .map(|field| TreeLevel(branch.depth.0.saturating_add(field).saturating_add(1))),
-            );
-        }
-        order.push((at, branch));
-    }
+    let order: Vec<(TreeLevel, Maybe<&Refining, refined::Absent>)> =
+        levels(level, |at| readings.refines(under, at)).collect();
     let mut values: Vec<ValueId> = Vec::with_capacity(order.len());
     for &(at, branch) in order.iter().rev() {
         let value = match branch {
-            Maybe::Present(branch) => {
+            Maybe::Present(branch) if branch.depth.0 >= at.0 => {
                 let from = values.len().saturating_sub(branch.arity);
                 let fields = values.drain(from ..).rev().collect();
                 constructed(arena, branch.family, branch.tag, fields)
             },
-            Maybe::Absent(_) => level_value(arena, scrutinised, depth, at),
+            Maybe::Present(_) | Maybe::Absent(_) => level_value(arena, scrutinised, depth, at),
         };
         values.push(value);
     }
@@ -10484,8 +10514,7 @@ fn arm_settled(
 /// - panics: none.
 ///
 /// # Termination
-/// As [`level_read`]: each level the walk reaches is a field past the level
-/// before it, so the walk reads each branch on the chain at most once.
+/// As [`levels`], whose walk it reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`arm_settled`].
@@ -10510,18 +10539,14 @@ fn arm_read(
         }
     }
     let mut read = Vec::new();
-    let mut pending = alloc::vec![TreeLevel::default()];
-    while let Some(at) = pending.pop() {
-        match refinings.switched(under, at) {
+    for (at, branch) in levels(TreeLevel::default(), |at| refinings.switched(under, at)) {
+        match branch {
             Maybe::Present(branch) if branch.depth.0 >= at.0 => {
                 read.push(Built::Constructed {
                     family: branch.family,
                     tag: branch.tag,
                     arity: branch.arity,
                 });
-                pending.extend((0 .. branch.arity).rev().map(|field| {
-                    TreeLevel(branch.depth.0.saturating_add(field).saturating_add(1))
-                }));
             },
             Maybe::Present(_) => return unnamed,
             Maybe::Absent(_) => {
