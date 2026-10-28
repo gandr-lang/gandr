@@ -287,6 +287,11 @@ impl core::fmt::Display for Declined
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every reason renders apart from the others, and one
+    ///   carrying a form, a value or a migration names it.
+    /// - witness: `run::tests::every_declined_run_renders_its_own_reason`
     #[inline]
     fn fmt(
         &self,
@@ -475,9 +480,11 @@ impl Ran
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every named program runs through this entry and is
-///   compared with each tier's outcome; the policy's spellings are witnessed
-///   apart.
+///   compared with each tier's outcome, under the default policy and, in a
+///   process of its own, under the cached one, before and after a native run
+///   fills the cache; the policy's spellings are witnessed apart.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::the_named_programs_agree_under_the_cached_policy`
 /// - witness: `run::tests::the_policy_reads_its_three_spellings`
 #[inline]
 pub fn evaluate(
@@ -817,6 +824,12 @@ where
 /// # Errors
 /// As [`on_tier`], but never [`Declined::NoPatcher`] or an emission refusal:
 /// the executor runs the command instead.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every named program answers through the policy what the
+///   executor answers, under the default policy and the cached one.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::the_named_programs_agree_under_the_cached_policy`
 pub fn by_policy(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
@@ -853,6 +866,12 @@ pub fn by_policy(
 /// As [`evaluate_on_with_host`]; [`Declined::Transfer`] as
 /// [`evaluate_traced_with_host`] names it when `hosting` records; and
 /// [`Declined::Capture`] naming a value of `captured` the run cannot hold.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every named program answers alike on both tiers, and a
+///   command over captures answers on each as forcing it in place does.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
 pub fn on_tier(
     tier: Tier,
     lowered: &Lowered,
@@ -876,6 +895,11 @@ pub fn on_tier(
 ///
 /// # Errors
 /// As [`on_tier`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`on_tier`], on the executor.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
 fn run_executor(
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
@@ -912,6 +936,12 @@ fn run_executor(
 ///
 /// # Errors
 /// As [`on_tier`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`on_tier`], emitting each function on its first
+///   native run.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
 #[cfg(gandr_patcher)]
 fn run_native(
     lowered: &Lowered,
@@ -973,6 +1003,11 @@ fn run_native(
 ///
 /// # Errors
 /// As [`on_tier`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — under the cached policy every named program answers what
+///   the executor answers, missing the cache and then served from it.
+/// - witness: `tests::agreement::the_named_programs_agree_under_the_cached_policy`
 fn run_cached(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
@@ -1004,6 +1039,12 @@ fn run_cached(
 ///
 /// # Errors
 /// As [`on_tier`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`on_tier`], for code emitted on a native run and code
+///   the cached policy serves.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::the_named_programs_agree_under_the_cached_policy`
 #[cfg(gandr_patcher)]
 fn run_emitted(
     emitted: &Emitted,
