@@ -2380,6 +2380,76 @@ fn a_dialogue_naming_the_wrong_unfolding_is_refused_by_name()
     );
 }
 
+#[test]
+fn a_closed_pair_is_converted_by_the_kernel_s_own_evaluation_2282()
+{
+    let evaluate = || {
+        Arc::new(EndpointDialogues {
+            left: Vec::new(),
+            right: Vec::from([ConversionDecision::Evaluate]),
+        })
+    };
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let boolean = boolean(staging.arena());
+    let declaration = staging.def(LevelSignature::monomorphic(), boolean.function, boolean.not);
+    let not = environment.add_decl(declaration).expect("not").position();
+    let staging = environment.stage();
+    let declaration = staging.def(
+        LevelSignature::monomorphic(),
+        boolean.function,
+        boolean.identity,
+    );
+    let identity = environment
+        .add_decl(declaration)
+        .expect("identity")
+        .position();
+    // `here(point)` at `Path(Bool, point, ⟨not true⟩)`: both sides are
+    // closed, so the kernel runs them and compares what they reach.
+    let closed = |environment: &mut Environment, point: ValueId| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let endpoint = applied(arena, not, &[boolean.truth]);
+        let path = arena.value_type_path(boolean.ty, point, endpoint);
+        let here = arena.value_here_relating(point, evaluate());
+        let declaration = staging.def(LevelSignature::monomorphic(), path, here);
+        environment.add_decl(declaration)
+    };
+    closed(&mut environment, boolean.falsity).expect("`not true` evaluates to `false`");
+    assert!(
+        matches!(
+            endpoint_refusal(&closed(&mut environment, boolean.truth)),
+            Some((EndpointSide::Right, KernelVerdict::Declined(_)))
+        ),
+        "`not true` evaluates apart from `true`"
+    );
+    // Under `λx`, `here(x)` at `Path(Bool, x, ⟨identity x⟩)`: the evaluation
+    // would meet the pair, but it reads the binder, so the decision does not
+    // apply.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let endpoint = applied(arena, identity, &[bound]);
+    let path = arena.value_type_path(boolean.ty, bound, endpoint);
+    let returns = arena.comp_type_returner(path);
+    let family = arena.comp_type_pi(boolean.ty, returns);
+    let declared = arena.value_type_thunk(family);
+    let here = arena.value_here_relating(bound, evaluate());
+    let body = arena.computation_return(here);
+    let body = arena.computation_lambda(body);
+    let body = arena.value_thunk(body);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    assert_eq!(
+        endpoint_refusal(&environment.add_decl(declaration)),
+        Some((
+            EndpointSide::Right,
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::default(),
+            })),
+        ))
+    );
+}
+
 /// Stage `law : Path(U(Bool → F Bool), k, k) = given` over the definitions of
 /// [`delayed_law`] and `axiom given : Path(U(Bool → F Bool), ⟨force delay⟩,
 /// k)`, every earlier declaration admitted and recorded. The ascription

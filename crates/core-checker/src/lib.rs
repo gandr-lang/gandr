@@ -575,6 +575,7 @@ pub mod staging;
 mod support;
 mod tactic;
 pub mod template;
+pub mod tier;
 pub mod ua;
 mod univalence;
 mod view;

@@ -1109,6 +1109,111 @@ fn an_opaque_footprint_is_never_adopted()
     );
 }
 
+/// A tier that meets every pair it is offered, whatever its sides compute.
+///
+/// # Specification
+/// trivial.
+struct Agreeing;
+
+impl gandr_core_checker::tier::ClosedTier for Agreeing
+{
+    /// Every pair meets.
+    ///
+    /// # Specification
+    /// trivial.
+    fn meet(
+        &mut self,
+        _core: &CoreArena,
+        _definitions: &gandr_core_checker::CodeDefinitions,
+        _pair: (gandr_core_term::ValueId, gandr_core_term::ValueId),
+    ) -> gandr_core_checker::tier::Meeting
+    {
+        gandr_core_checker::tier::Meeting::Met
+    }
+}
+
+/// Make an [`Agreeing`] tier.
+///
+/// # Specification
+/// trivial.
+fn agreeing() -> alloc::boxed::Box<dyn gandr_core_checker::tier::ClosedTier>
+{
+    alloc::boxed::Box::new(Agreeing)
+}
+
+/// A pass consults the tier its program carries, fresh and after leading
+/// items: a tier meeting every pair checks `here(1)` at `Path(Integer, 1,
+/// 2)`, which the machine refutes.
+#[test]
+fn a_pass_hands_its_context_the_program_s_tier_2282()
+{
+    let item = |position: usize, key: &str, signature, body| {
+        Item::new(
+            ItemKey::from(key),
+            Declaration::new(
+                ConstantIndex::from(position),
+                signature,
+                Maybe::Present(body),
+                OriginToken::from(position),
+            ),
+        )
+    };
+    // A revision is minted after its leading program was checked, into the
+    // arena that check grew, so the claim's nodes are minted wherever it
+    // stands.
+    let claim = |arena: &mut CoreArena| {
+        let integer_type = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let one = arena.value_literal(integer(Natural(1)));
+        let two = arena.value_literal(integer(Natural(2)));
+        let path = arena.value_type_path(integer_type, one, two);
+        let here = arena.value_here(one);
+        item(1, "claim", Maybe::Present(path), here)
+    };
+    let mut arena = CoreArena::new();
+    let one = arena.value_literal(integer(Natural(1)));
+    let leading_item = item(0, "lead", Maybe::Absent(signature::Absent::Unsigned), one);
+    let program = |arena: CoreArena, items: Vec<Item>, tiered: bool| {
+        let mut program = Program::new(arena, items).expect("positions ascend");
+        if tiered {
+            program.decide_closed_on(agreeing);
+        }
+        program
+    };
+    for tiered in [true, false] {
+        let mut whole = arena.clone();
+        let claimed = claim(&mut whole);
+        let fresh = check_program(
+            &mut program(whole, vec![leading_item.clone(), claimed], tiered),
+            CheckBudget::DEFAULT,
+        )
+        .expect("the order builds");
+        let mut leading_program = program(arena.clone(), vec![leading_item.clone()], tiered);
+        let (_, leading) =
+            lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+        let mut revision = leading_program.arena().clone();
+        let claimed = claim(&mut revision);
+        let after = resume_after(
+            Maybe::Absent(submitted::Absent::Fresh),
+            &Arc::new(leading),
+            &mut program(revision, vec![leading_item.clone(), claimed], tiered),
+        )
+        .expect("the order builds");
+        for resumed in [&fresh, &after] {
+            let typing = resumed.typings().last();
+            assert_eq!(
+                matches!(typing, Some(&Typing::Checked { .. })),
+                tiered,
+                "the claim checks exactly when its pass held the tier: {typing:?}"
+            );
+        }
+        assert_eq!(
+            after.adoptions().first(),
+            Some(&Adopted),
+            "the revision resumed after its leading item"
+        );
+    }
+}
+
 /// What the sealed counter's abstract type stands for.
 ///
 /// # Specification

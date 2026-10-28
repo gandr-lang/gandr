@@ -3032,6 +3032,97 @@ fn reflexivity_checks_by_endpoint_conversion()
     );
 }
 
+/// A tier that meets every pair it is offered.
+///
+/// # Specification
+/// trivial.
+struct Agreeing;
+
+impl crate::tier::ClosedTier for Agreeing
+{
+    /// Every pair meets.
+    ///
+    /// # Specification
+    /// trivial.
+    fn meet(
+        &mut self,
+        _core: &CoreArena,
+        _definitions: &crate::code::CodeDefinitions,
+        _pair: (ValueId, ValueId),
+    ) -> crate::tier::Meeting
+    {
+        crate::tier::Meeting::Met
+    }
+}
+
+#[test]
+fn a_closed_pair_the_tier_meets_carries_its_evaluation_2282()
+{
+    // def id : U (Integer -> F Integer) = thunk { \x. return x } ;
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer_type);
+    let arrow = arena.comp_type_arrow(integer_type, returns_integer);
+    let thunk_arrow = arena.value_type_thunk(arrow);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let identity_return = arena.computation_return(parameter);
+    let identity_lambda = arena.computation_lambda(identity_return);
+    let identity_body = arena.value_thunk(identity_lambda);
+    let identity = arena.value_constant(ConstantIndex::from(0_usize));
+    let called = |arena: &mut CoreArena, argument: ValueId| {
+        let forced = arena.computation_force(identity);
+        let applied = arena.computation_application(forced, argument);
+        arena.value_returned(applied)
+    };
+    // here(5) against Path(Integer, 5, ⟨id 5⟩): no side mentions a variable.
+    let five = arena.value_literal(integer(Numeral::Five));
+    let closed_endpoint = called(&mut arena, five);
+    let closed = arena.value_here(five);
+    let closed_path = arena.value_type_path(integer_type, five, closed_endpoint);
+    // \y. return here(y), against (y : Integer) -> F Path(Integer, y, ⟨id y⟩).
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let open_endpoint = called(&mut arena, bound);
+    let open = arena.value_here(bound);
+    let returns_here = arena.computation_return(open);
+    let reflexive = arena.computation_lambda(returns_here);
+    let open_path = arena.value_type_path(integer_type, bound, open_endpoint);
+    let returns_path = arena.comp_type_returner(open_path);
+    let pi = arena.comp_type_pi(integer_type, returns_path);
+    let [tiered, untiered] = [true, false].map(|handed| {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        if handed {
+            context.decide_closed_on(alloc::boxed::Box::new(Agreeing));
+        }
+        seed(&mut context, &[thunk_arrow]);
+        let declared = form_value_type(&mut context, thunk_arrow).unwrap();
+        context.define(ConstantIndex::from(0_usize), declared, identity_body);
+        let closed_path = form_value_type(&mut context, closed_path).unwrap();
+        check_value(&mut context, closed, closed_path).expect("`id 5` is `5`");
+        let pi = form_comp_type(&mut context, pi).unwrap();
+        check_comp(&mut context, reflexive, pi).expect("`id y` is `y`");
+        [closed, open].map(|at| {
+            context
+                .reflexivities()
+                .get(&at)
+                .map(|reflexivity| reflexivity.right().to_vec())
+                .expect("each reflexivity records its dialogues")
+        })
+    });
+    let evaluated = Vec::from([gandr_kernel_conversion_trace::ConversionDecision::Evaluate]);
+    let [ref closed_tiered, ref open_tiered] = tiered;
+    let [ref closed_untiered, ref open_untiered] = untiered;
+    assert_eq!(closed_tiered, &evaluated, "the tier meets the closed pair");
+    assert!(
+        !closed_untiered.is_empty() && closed_untiered != &evaluated,
+        "with no tier the machine relates it: {closed_untiered:?}"
+    );
+    assert_eq!(
+        open_tiered, open_untiered,
+        "an open pair is never offered to the tier"
+    );
+    assert_ne!(open_untiered, &evaluated);
+}
+
 /// A point the normaliser cannot run meets its endpoints by syntax alone:
 /// `here(y + 0)` checks against `Path(Integer, y + 0, y + 0)` whether the
 /// three sides are one node or three of the same syntax.

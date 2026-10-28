@@ -372,6 +372,9 @@ pub struct Program
     arena: CoreArena,
     /// The items and their references.
     layout: Layout,
+    /// What makes the tier each pass's context decides closed endpoint pairs
+    /// on, when the front end supplies one.
+    tier: Option<gandr_core_checker::tier::MakeTier>,
 }
 
 impl Program
@@ -487,6 +490,7 @@ impl Program
                     crate::content::Locus::Unlocated
                 },
             },
+            tier: None,
         })
     }
 
@@ -508,6 +512,42 @@ impl Program
     pub(crate) const fn layout(&self) -> &Layout
     {
         &self.layout
+    }
+
+    /// Decide each closed endpoint pair every later pass meets on a tier
+    /// `make` makes, one per pass.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later pass's context is handed a tier `make` made
+    ///   ([`gandr_core_checker::CheckingContext::decide_closed_on`]); the last
+    ///   maker handed is the one kept.
+    /// - provides: the front end's hand-in of its tier to the incremental
+    ///   checker, whose passes make their own contexts.
+    /// - panics: none.
+    /// - executable: none — a function pointer no predicate compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tier meeting every pair checks a claim the machine
+    ///   refutes on a fresh pass and on one resumed after leading items, and a
+    ///   program handed none refuses it on both.
+    /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
+    #[inline]
+    pub fn decide_closed_on(
+        &mut self,
+        make: gandr_core_checker::tier::MakeTier,
+    )
+    {
+        self.tier = Some(make);
+    }
+
+    /// What makes each pass's tier, when one was handed.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn tier(&self) -> Option<gandr_core_checker::tier::MakeTier>
+    {
+        self.tier
     }
 
     /// The arena, mutably, beside the layout: a pass grows the one while it

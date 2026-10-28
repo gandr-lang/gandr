@@ -717,7 +717,7 @@ fn translate(
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } | ConversionDecision::Evaluate => true,
 }))]
 fn engine(
     arena: &TermArena,
@@ -748,7 +748,7 @@ fn engine(
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } | ConversionDecision::Evaluate => true,
 }))]
 fn defining_engine(
     arena: &TermArena,

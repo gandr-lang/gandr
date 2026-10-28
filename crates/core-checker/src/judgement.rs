@@ -10259,10 +10259,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   and to the right one: the same node or the same syntax at once, a hole
     ///   or a mark consistently with anything, a metavariable among them posed
     ///   to the solver against the other side and refuted only when the solver
-    ///   refutes it, each with the empty dialogue, and otherwise by the
-    ///   normaliser's conversion with every definition admitted so far
-    ///   unfolding, returned endpoints held and an unread call of a binder
-    ///   whose calls return ([`crate::divergence::returning`]) discarded
+    ///   refutes it, each with the empty dialogue; a pair mentioning no
+    ///   variable that the context's tier meets
+    ///   ([`CheckingContext::decide_closed_on`]), with the one decision
+    ///   `Evaluate`; and otherwise by the normaliser's conversion with every
+    ///   definition admitted so far unfolding, returned endpoints held and an
+    ///   unread call of a binder whose calls return
+    ///   ([`crate::divergence::returning`]) discarded
     ///   ([`crate::code::CodeDefinitions::relation`]), with the trace it
     ///   recorded. A conversion that waits for a fill
     ///   ([`CheckingContext::awaits_fill`]) holds with the empty dialogue: the
@@ -10290,6 +10293,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   omitted model are met once the model is resolved, and refused when the
     ///   filled endpoints are apart.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_carries_its_evaluation_2282`
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
     /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
@@ -10330,6 +10334,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         miss: crate::EndpointMiss::Unshown,
                     });
                 }
+                continue;
+            }
+            if self.context.meet_closed(point, endpoint) == crate::tier::Meeting::Met {
+                *dialogue =
+                    Vec::from([gandr_kernel_conversion_trace::ConversionDecision::Evaluate]);
                 continue;
             }
             if returning.is_none() {

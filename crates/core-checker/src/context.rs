@@ -480,6 +480,10 @@ pub struct CheckingContext<'arena>
     /// to the models of one it includes: the value bridge crosses by one where
     /// a model of the first stands at a model of the second.
     reducts: Vec<gandr_kernel_term::ConstantIndex>,
+    /// The tier a closed endpoint pair is offered before the machine, when
+    /// the run handed one. A checkpoint does not keep it: a resumed context
+    /// takes its own.
+    tier: Option<alloc::boxed::Box<dyn crate::tier::ClosedTier>>,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -538,7 +542,8 @@ enum First
 /// # Specification
 /// - requires: taken between two judgements, no supported judgement logging and
 ///   no term-producing run recording ([`CheckingContext::checkpoint`]).
-/// - ensures: [`CheckingContext::resume`] over such an arena judges what the
+/// - ensures: [`CheckingContext::resume`] over such an arena, handed the tier
+///   the context held ([`CheckingContext::decide_closed_on`]), judges what the
 ///   context it was taken from would have judged next.
 /// - executable: none — a data type; the witness judges a module in two runs
 ///   with a checkpoint between and compares the report with one run's.
@@ -780,6 +785,7 @@ impl<'arena> CheckingContext<'arena>
             worlds: crate::worlds::Worlds::default(),
             pattern_holes: BTreeSet::new(),
             reducts: Vec::new(),
+            tier: None,
         }
     }
 
@@ -853,6 +859,7 @@ impl<'arena> CheckingContext<'arena>
             ref worlds,
             ref pattern_holes,
             ref reducts,
+            tier: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1035,7 +1042,73 @@ impl<'arena> CheckingContext<'arena>
             worlds,
             pattern_holes,
             reducts,
+            tier: None,
         }
+    }
+
+    /// Decide each closed endpoint pair the `here` rule meets on `tier`
+    /// before the machine.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later endpoint pair whose two sides mention no variable
+    ///   is offered to `tier` first; a context holds one tier, the last handed.
+    /// - provides: the driver's hand-in of its tier, as a staging check is
+    ///   handed its [`crate::fork::Fork`].
+    /// - panics: none.
+    /// - executable: none — the tier is a trait object no predicate compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a context handed a tier that meets every pair records
+    ///   `Evaluate` for a closed pair and the machine's dialogue for an open
+    ///   one; a context handed none records the machine's for both.
+    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_carries_its_evaluation_2282`
+    #[inline]
+    pub fn decide_closed_on(
+        &mut self,
+        tier: alloc::boxed::Box<dyn crate::tier::ClosedTier>,
+    )
+    {
+        self.tier = Some(tier);
+    }
+
+    /// Offer `point` and `endpoint` to the context's tier when both mention no
+    /// variable.
+    ///
+    /// # Specification
+    /// - requires: both values live in the context's arena.
+    /// - ensures: [`crate::tier::Meeting::Met`] exactly when the context holds
+    ///   a tier, neither value's support selects a variable of either zone, and
+    ///   the tier meets the pair over the definitions admitted so far;
+    ///   [`crate::tier::Meeting::Unmet`] otherwise.
+    /// - panics: none.
+    /// - executable: none — the tier's answer is its implementation's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::decide_closed_on`].
+    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_carries_its_evaluation_2282`
+    pub(crate) fn meet_closed(
+        &mut self,
+        point: ValueId,
+        endpoint: ValueId,
+    ) -> crate::tier::Meeting
+    {
+        let Some(tier) = self.tier.as_deref_mut()
+        else {
+            return crate::tier::Meeting::Unmet;
+        };
+        let arena: &CoreArena = self.arena;
+        let closed = |value: ValueId| {
+            arena.value_support(value).is_some_and(|support| {
+                [Zone::Intuitionistic, Zone::Linear]
+                    .into_iter()
+                    .all(|zone| support.indices(zone).len() == 0)
+            })
+        };
+        if !(closed(point) && closed(endpoint)) {
+            return crate::tier::Meeting::Unmet;
+        }
+        tier.meet(arena, &self.definitions, (point, endpoint))
     }
 
     /// Keep `typing`, when a typed run is recording: the one point every

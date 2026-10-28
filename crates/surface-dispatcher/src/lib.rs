@@ -177,6 +177,7 @@ mod report;
 mod root;
 mod script;
 mod stage;
+mod tier;
 mod typed;
 mod verdicts;
 mod walk;

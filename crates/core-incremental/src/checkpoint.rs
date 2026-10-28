@@ -2563,11 +2563,15 @@ where
         leading: start.answers(),
         own: Vec::with_capacity(encoded.len()),
     };
+    let tier = edited.tier();
     let (arena, layout) = edited.parts_mut();
     let mut context = match start {
         Start::Fresh(budget) => CheckingContext::new(arena, budget),
         Start::After(leading) => CheckingContext::resume(arena, leading.context.clone()),
     };
+    if let Some(make) = tier {
+        context.decide_closed_on(make());
+    }
     let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once.

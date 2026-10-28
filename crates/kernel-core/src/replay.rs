@@ -3583,7 +3583,8 @@ where
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
-            | ConversionDecision::NegativeSubgoal { .. } => Err(self.refuse(next)),
+            | ConversionDecision::NegativeSubgoal { .. }
+            | ConversionDecision::Evaluate => Err(self.refuse(next)),
         }
     }
 
