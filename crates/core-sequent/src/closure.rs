@@ -44,6 +44,16 @@
 //! only the values and continuations bound are renamed, past the binders
 //! above them.
 //!
+//! [`beta`] also enters a closure at a distance. In a cut
+//! `⟨μα. D⟨⟨f | α⟩⟩ | F⟩`, the context `D` is a chain of links. Each link
+//! cuts a head against zero or more destructor frames, and the innermost
+//! continuation is a `μ̃` that binds the value the next link stands under.
+//! When `f` answers `F` and only the hole names `α`, the cut becomes
+//! `⟨μβ. D⟨B⟩ | k⟩`. `B` enters `f` against `F` with its continuation
+//! replaced by `β`, and the continuation `k` of `F` stays outside `D`. The
+//! rewrite moves no frame into `D` and copies no continuation. The heads and
+//! frames of `D` are reused as written, and only its spine is rebuilt.
+//!
 //! # Renaming
 //!
 //! Both rewrites rename a term's free variables: the step moves the captured
@@ -72,6 +82,10 @@
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: abstract closures
 //!   in the sequent IL, conversion as rewrites with unique normal forms (§
 //!   kernel-reassessment-design item 4).
+//! - `vault:01a183de-4e71-7f03-aa71-7821123f3c40` — exemplar: Espírito Santo,
+//!   Kesner and Peyrot, the distant β of λJn (2024), `D⟨λx.t⟩(u, y.r) ↦
+//!   {D⟨{u/x}t⟩/y}r`, which reaches a redex through a chain of generalized
+//!   applications and keeps the continuation outside it.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -350,7 +364,8 @@ fn sweep(
     swept
 }
 
-/// Enter a closure cut against a frame its code answers.
+/// Enter a closure cut against a frame its code answers, directly or at a
+/// distance.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -359,10 +374,15 @@ fn sweep(
 ///   frame against its thunk or recursive thunk, `Some` of the bindings over
 ///   the answering body: each frame continuation bound by a `μ`, then each
 ///   environment value, a recursive thunk's own closure and each frame argument
-///   bound by a `μ̃`, each renamed past the binders above it; `None` for any
-///   other command, the arena then unchanged.
+///   bound by a `μ̃`, each renamed past the binders above it; for a cut `⟨μα.
+///   D⟨⟨f | α⟩⟩ | F⟩` whose closure `f` answers the one-continuation frame `F`,
+///   where `D` is a chain of links and only the hole names `α`, `Some` of `⟨μβ.
+///   D⟨B⟩ | k⟩`, with `B` the bindings entering `f` against `F` renamed past
+///   `β` and the binders of `D`, its continuation `k` replaced by `β`; `None`
+///   for any other command, the arena then unchanged.
 /// - provides: the closure's β, the environment and the arguments substituted
-///   together.
+///   together, and its distant form, which keeps the frame's continuation
+///   outside the context.
 /// - fails: [`ClosureRefusal::Annotation`] for a bound value whose annotation
 ///   names a renamed variable, a dangling node or a mint the arena refuses; the
 ///   arena is then at its entry mark.
@@ -375,8 +395,11 @@ fn sweep(
 /// - hypothesis: L2 — every redex of a converted generated program runs, once
 ///   entered, to the answer it ran to; L3 — the converted constant function
 ///   applied renders its bindings exactly, and a cut of a value against a match
-///   is no redex.
+///   is no redex; the constant function under one bind link, applied, renders
+///   its distant reduct exactly, and a context whose link names `α`, a hole
+///   under a frame and a hole sending to another covariable are no redex.
 /// - witness: `closure::tests::beta_binds_the_environment_and_the_argument_together`
+/// - witness: `closure::tests::beta_enters_a_closure_through_a_bind_chain`
 /// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
 #[spec(
     captures: [entry = arena.watermark()],
@@ -1450,7 +1473,8 @@ impl<'arena> Pass<'arena>
 }
 
 /// The bindings entering a closure cut against a frame its code answers,
-/// leaving a refusal's partial nodes for the caller to truncate.
+/// directly or at a distance, leaving a refusal's partial nodes for the
+/// caller to truncate.
 ///
 /// # Specification
 /// trivial.
@@ -1470,6 +1494,28 @@ fn enter(
     else {
         return Ok(None);
     };
+    if let Some(entered) = entered(arena, producer, consumer)? {
+        return Ok(Some(entered));
+    }
+    distant(arena, producer, consumer)
+}
+
+/// The bindings entering the closure `producer` against the frame `consumer`
+/// its code answers, leaving a refusal's partial nodes for the caller to
+/// truncate. `None`, the arena unchanged, when `producer` is no closure or
+/// its code does not answer `consumer`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`beta`].
+fn entered(
+    arena: &mut CommandArena,
+    producer: ProducerId,
+    consumer: ConsumerId,
+) -> Result<Option<CommandId>, ClosureRefusal>
+{
     let Some((environment, code)) = framed(arena, producer)?
     else {
         return Ok(None);
@@ -1554,6 +1600,220 @@ fn enter(
         command = arena.mint_cut(polarity, capture, shifted)?;
     }
     Ok(Some(command))
+}
+
+/// One link of a distant context: a cut whose destructor frames end in the
+/// `μ̃` that binds the value the next link stands under.
+#[derive(Clone, Copy, Debug)]
+struct Link
+{
+    /// The cut's polarity.
+    polarity: Polarity,
+    /// The producer the cut sends to its frames.
+    head: ProducerId,
+    /// How many destructor frames stand over the `μ̃`.
+    frames: usize,
+}
+
+/// A distant context `D` and the closure at its hole.
+struct Distant
+{
+    /// The links, outermost first.
+    links: Vec<Link>,
+    /// The destructor frames of every link, outermost first.
+    frames: Vec<ConsumerId>,
+    /// The closure the hole sends to the answer covariable `α0`.
+    closure: ProducerId,
+}
+
+/// The distant context `body` writes: a chain of links whose innermost
+/// command sends a closure to the answer covariable `α0`, where no head,
+/// frame argument or closure names `α0`. `None` for any other command.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ClosureRefusal::Dangling`] for a node the arena does not hold.
+fn distant_context(
+    arena: &CommandArena,
+    body: CommandId,
+) -> Result<Option<Distant>, ClosureRefusal>
+{
+    let answer = DeBruijnIndex::from(0_u32);
+    let names_answer = |node: NodeAddress| -> Result<bool, ClosureRefusal> {
+        Ok(arena
+            .node_scope(node)
+            .ok_or(ClosureRefusal::Dangling(node))?
+            .covariables()
+            .indices(Zone::Intuitionistic)
+            .any(|index| index == answer))
+    };
+    let mut links = Vec::new();
+    let mut frames = Vec::new();
+    let mut command = body;
+    loop {
+        let &CommandNode::Cut {
+            polarity,
+            producer: head,
+            consumer,
+        } = arena
+            .command(command)
+            .ok_or(ClosureRefusal::Dangling(NodeAddress::Command(command)))?
+        else {
+            return Ok(None);
+        };
+        if names_answer(NodeAddress::Producer(head))? {
+            return Ok(None);
+        }
+        let start = frames.len();
+        let mut at = consumer;
+        command = loop {
+            match *arena
+                .consumer(at)
+                .ok_or(ClosureRefusal::Dangling(NodeAddress::Consumer(at)))?
+            {
+                ConsumerNode::Covariable(index)
+                    if frames.len() == start && index == CovariableIndex::from(0_u32) =>
+                {
+                    return Ok(framed(arena, head)?.map(|_| Distant {
+                        links,
+                        frames,
+                        closure: head,
+                    }));
+                },
+                ConsumerNode::MuTilde { body } => break body,
+                ConsumerNode::Destructor {
+                    producers: ref arguments,
+                    consumers: ref continuations,
+                    ..
+                } => {
+                    let &[continuation] = &**continuations
+                    else {
+                        return Ok(None);
+                    };
+                    for &argument in arguments {
+                        if names_answer(NodeAddress::Producer(argument))? {
+                            return Ok(None);
+                        }
+                    }
+                    frames.push(at);
+                    at = continuation;
+                },
+                ConsumerNode::Covariable(_)
+                | ConsumerNode::Case { .. }
+                | ConsumerNode::DataCase { .. }
+                | ConsumerNode::Select { .. }
+                | ConsumerNode::ListFold { .. }
+                | ConsumerNode::Top => return Ok(None),
+            }
+        };
+        links.push(Link {
+            polarity,
+            head,
+            frames: frames.len().saturating_sub(start),
+        });
+    }
+}
+
+/// The distant β, leaving a refusal's partial nodes for the caller to
+/// truncate. A cut `⟨μα. D⟨⟨f | α⟩⟩ | F⟩` whose closure `f` answers the
+/// frame `F` becomes `⟨μβ. D⟨B⟩ | k⟩`: `B` enters `f` against `F` with its
+/// continuation `k` replaced by `β`. `None`, the arena unchanged, for any
+/// other cut.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`beta`].
+fn distant(
+    arena: &mut CommandArena,
+    producer: ProducerId,
+    consumer: ConsumerId,
+) -> Result<Option<CommandId>, ClosureRefusal>
+{
+    let &ProducerNode::Mu { body } = arena
+        .producer(producer)
+        .ok_or(ClosureRefusal::Dangling(NodeAddress::Producer(producer)))?
+    else {
+        return Ok(None);
+    };
+    let ConsumerNode::Destructor {
+        tag,
+        producers: ref arguments,
+        consumers: ref continuations,
+    } = *arena
+        .consumer(consumer)
+        .ok_or(ClosureRefusal::Dangling(NodeAddress::Consumer(consumer)))?
+    else {
+        return Ok(None);
+    };
+    let &[continuation] = &**continuations
+    else {
+        return Ok(None);
+    };
+    let Some(context) = distant_context(arena, body)?
+    else {
+        return Ok(None);
+    };
+    let mut arguments = arguments.to_vec();
+    let entry = arena.watermark();
+    // The frame's arguments stand outside `μα`; at the hole they stand under
+    // `μβ` and the `μ̃` of each link.
+    for argument in &mut arguments {
+        let shifted = rename(arena, NodeAddress::Producer(*argument), Renaming::Shift {
+            producers: context.links.len(),
+            covariables: 1,
+        })?;
+        let NodeAddress::Producer(shifted) = shifted
+        else {
+            return Err(ClosureRefusal::Dangling(shifted));
+        };
+        *argument = shifted;
+    }
+    let answer = arena.mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))?;
+    let frame = arena.mint_consumer(ConsumerNode::Destructor {
+        tag,
+        producers: arguments.into_boxed_slice(),
+        consumers: alloc::boxed::Box::from([answer]),
+    })?;
+    let Some(mut command) = entered(arena, context.closure, frame)?
+    else {
+        arena.truncate_to(entry);
+        return Ok(None);
+    };
+    // Rebuild the spine of `D` from the innermost link out. Every other node
+    // of `D` is reused as written.
+    let mut frames = context.frames.as_slice();
+    for link in context.links.iter().rev() {
+        let (outer, own) = frames.split_at(frames.len().saturating_sub(link.frames));
+        frames = outer;
+        let mut onward = arena.mint_consumer(ConsumerNode::MuTilde { body: command })?;
+        for &level in own.iter().rev() {
+            let ConsumerNode::Destructor {
+                tag, ref producers, ..
+            } = *arena
+                .consumer(level)
+                .ok_or(ClosureRefusal::Dangling(NodeAddress::Consumer(level)))?
+            else {
+                return Err(ClosureRefusal::Dangling(NodeAddress::Consumer(level)));
+            };
+            let producers = producers.clone();
+            onward = arena.mint_consumer(ConsumerNode::Destructor {
+                tag,
+                producers,
+                consumers: alloc::boxed::Box::from([onward]),
+            })?;
+        }
+        command = arena.mint_cut(link.polarity, link.head, onward)?;
+    }
+    let capture = arena.mint_producer(ProducerNode::Mu { body: command })?;
+    let polarity = consumer_polarity(arena.consumer(continuation).ok_or(
+        ClosureRefusal::Dangling(NodeAddress::Consumer(continuation)),
+    )?)
+    .unwrap_or(Polarity::Positive);
+    Ok(Some(arena.mint_cut(polarity, capture, continuation)?))
 }
 
 /// The polarity a cut binding the value `value` takes: the one it observes,

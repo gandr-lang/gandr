@@ -854,6 +854,59 @@ fn computation(
     }
 }
 
+/// A closed program `z ← W; (x ← M; λy. N) V` that applies a bind whose body
+/// is a function, over a seed and a fuel. `z` has the type of `V`, so `V`,
+/// `M` and `N` may read `z`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a resolvable closed computation of a supported generated type.
+/// - provides: a fixture whose function stands at the end of a bind, so its
+///   focused application holds the function at a distance from its frame, with
+///   an argument that may read a variable bound above the application.
+/// - panics: on a violated generation invariant.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every such program, with each closure entered directly or
+///   at a distance, runs to the answer it runs to as written on every tier the
+///   host has. Evidence uses the bounded strategy domain.
+/// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
+#[spec(ensures: |ref ret| match ret.root {
+    | GeneratedRoot::Computation(root) => ret.core.computation(root).is_some(),
+    | GeneratedRoot::Value(_) => false,
+})]
+fn applied_bind(
+    seed: Seed,
+    fuel: Fuel,
+) -> Generated
+{
+    let mut generator = Generator::new(seed);
+    let codomain = generator.computation_type();
+    let domain = generator.value_type();
+    let bound = generator.value_type();
+    let head = generator.intern(Ty::Returner(bound));
+    let first = generator.intern(Ty::Returner(domain));
+    let scope = generator.extend(Scope::Empty, domain);
+    let under_bind = generator.extend(scope, bound);
+    let under_lambda = generator.extend(under_bind, domain);
+    generator.tasks.extend([
+        Task::Bind,
+        Task::Application,
+        Task::Value(domain, scope, fuel),
+        Task::Bind,
+        Task::Lambda,
+        Task::Computation(codomain, under_lambda, fuel),
+        Task::Computation(head, scope, fuel),
+        Task::Computation(first, Scope::Empty, fuel),
+    ]);
+    generator.drive();
+    let root = generator.computations.pop().expect("the root computation");
+    Generated {
+        core: generator.core,
+        root: GeneratedRoot::Computation(root),
+    }
+}
+
 /// A closed, well-typed value over a seed and a fuel.
 ///
 /// # Specification
@@ -897,6 +950,15 @@ fn value(
 pub fn computations() -> impl Strategy<Value = Generated>
 {
     (any::<u64>(), 0_u32 ..= 5_u32).prop_map(|(seed, fuel)| computation(Seed(seed), Fuel(fuel)))
+}
+
+/// Closed applications of a bind whose body is a function.
+///
+/// # Specification
+/// trivial.
+pub fn applied_binds() -> impl Strategy<Value = Generated>
+{
+    (any::<u64>(), 0_u32 ..= 4_u32).prop_map(|(seed, fuel)| applied_bind(Seed(seed), Fuel(fuel)))
 }
 
 /// Closed, well-typed values.

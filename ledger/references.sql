@@ -425,4 +425,5 @@ INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surfa
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-lowering','module::functor','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-lsp','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-parser','mold','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a183de-4e71-7f03-aa71-7821123f3c40','core-sequent','closure','exemplar',NULL,NULL,NULL);
 COMMIT;
