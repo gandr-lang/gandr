@@ -62,6 +62,7 @@ members = [
   "crates/workflow-github",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
+  "crates/workflow-ledger",
   "crates/workflow-prose",
   "crates/workflow-spec-cost",
   "crates/workflow-sweep",
@@ -945,6 +946,14 @@ path = "crates/theory-spec-combinators"
 # - workflow-test-timing
 [workspace.dependencies.gandr-workflow-github]
 path = "crates/workflow-github"
+
+# The debt ledger the workflow checks share: the committed findings, one key
+# per line, a new finding refusing and a fixed one leaving its line stale.
+# consumers:
+# - surface-corpus (dev)
+# - workflow-prose
+[workspace.dependencies.gandr-workflow-ledger]
+path = "crates/workflow-ledger"
 
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.

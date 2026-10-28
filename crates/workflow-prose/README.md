@@ -56,7 +56,7 @@ cargo nextest run -p gandr-workflow-prose
 
 ## Where the detail lives
 
-The crate docs in `src/lib.rs` state the boundaries. `passage` reads the text, `parse` runs the script, `rules` states each rule's clause, `glossary` reads the glossary, and `ledger` keys a finding. `blake3` digests a sentence; `serde_json` and `toml` read the parse and the glossary.
+The crate docs in `src/lib.rs` state the boundaries. `passage` reads the text, `parse` runs the script, `rules` states each rule's clause, `glossary` reads the glossary, and `ledger` keys a finding. `gandr-workflow-ledger` reads the ledger, compares the findings with it and writes it. `blake3` digests a sentence; `serde_json` and `toml` read the parse and the glossary.
 
 ## License
 

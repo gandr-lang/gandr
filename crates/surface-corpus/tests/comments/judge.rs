@@ -97,20 +97,6 @@ impl Finding
         line.push_str(rule.0);
         Self { line, detail }
     }
-
-    /// A finding whose line and sentence are both `line`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[cfg(test)]
-    #[must_use]
-    pub(crate) fn from_line(line: Text<'_>) -> Self
-    {
-        Self {
-            line: line.0.to_owned(),
-            detail: line.0.to_owned(),
-        }
-    }
 }
 
 /// The built-in grammar the walk resolves molds under.
@@ -1017,7 +1003,7 @@ mod tests
             Text("// what the file shows\n\ndef bare = 1;\n"),
         )
         .expect("the source commits a tree");
-        let refused = discrepancies(&found, Text(""));
+        let refused = discrepancies(&found, Text("")).expect("the ledger reads");
         assert!(
             refused.iter().any(|row| row.line().0 == bare),
             "an empty ledger refuses `bare` by name"
@@ -1038,7 +1024,7 @@ mod tests
             "# key shape\n{}\n",
             key(Text("bare"), Text("def bare = 1;"))
         );
-        let refused = discrepancies(&found, Text(&ledger));
+        let refused = discrepancies(&found, Text(&ledger)).expect("the ledger reads");
         assert!(
             refused.is_empty(),
             "a ledger line for `bare` is not a refusal, and the header is not a line"
@@ -1053,7 +1039,7 @@ mod tests
             .expect("the source commits a tree");
         assert!(found.is_empty(), "a commented item owes nothing");
         let gone = key(Text("gone"), Text("def gone = 1;"));
-        let refused = discrepancies(&found, Text(&format!("{gone}\n")));
+        let refused = discrepancies(&found, Text(&format!("{gone}\n"))).expect("the ledger reads");
         assert!(
             refused
                 .iter()
@@ -1080,7 +1066,7 @@ mod tests
         let found =
             findings_of(&pbg, Text("sample.gandr"), source).expect("the source commits a tree");
         let ledger = format!("{}\n", key(Text("first"), Text("def first = 1;")));
-        let refused = discrepancies(&found, Text(&ledger));
+        let refused = discrepancies(&found, Text(&ledger)).expect("the ledger reads");
         assert!(
             refused
                 .iter()

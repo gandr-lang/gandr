@@ -88,14 +88,14 @@ crates/
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
 ├── surface-lowering/              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
-├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics projected from the model, semantic tokens from the highlighter's roles, and the engine hub that serves one workspace's clients over a Unix socket
+├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the model, semantic tokens from highlight roles, and the hub serving a workspace's clients on a Unix socket
 ├── surface-mcp/                   the Model Context Protocol server: the hub's open documents, their diagnostics and the language server's queries served to models as tools and resources
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
 ├── surface-render-terminal/       the terminal face of the diagnostics model: a diagnostic laid out as a located source snippet, plain or styled
 ├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
-├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
+├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions since the last and the parser's repairs, for the REPL, server and terminal
 ├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
 ├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
@@ -111,7 +111,7 @@ crates/
 ├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
-├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in the conjunctive band and its column disjunctions with a derivation or a countermodel
+├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in the conjunctive band and its column disjunctions, derived or refuted
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
@@ -120,6 +120,7 @@ crates/
 ├── workflow-github/               the workflow binaries' one `gh` runner
 ├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
+├── workflow-ledger/               the comment and prose gates' debt ledger
 ├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
 ├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly

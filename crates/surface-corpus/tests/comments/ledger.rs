@@ -1,19 +1,23 @@
-//! The committed ledger and the difference a run owes against it.
-
-use alloc::collections::BTreeSet;
+//! The committed ledger and the difference a run owes against it. The
+//! ledger's reading, verdict and writing are `gandr-workflow-ledger`'s; a key
+//! here is the whole line a finding owes.
 
 use anodized::spec;
+use gandr_workflow_ledger::Header;
+use gandr_workflow_ledger::Ledger;
+use gandr_workflow_ledger::LedgerError;
 
 use crate::comments::judge::Finding;
 
-/// The ledger's first line: the shape of every line after it.
-const HEADER: &str = "# key kind. The key is path:name:digest, or path:block.member:digest for a \
-                      block's member, the digest the first sixteen hex digits of BLAKE3 over the \
-                      item's text with whitespace collapsed and comments and the attribute block \
-                      left out; path:<file> for a source's head comment; path:comment:digest for \
-                      an item comment, the digest over its text. The kind is uncommented, or \
-                      unshaped:<rule> for a comment outside the shape \
-                      (crates/surface-corpus/README.md § Comments)";
+/// The ledger's header: the shape of every line after it.
+const HEADER: Header<'static> = Header(
+    "key kind. The key is path:name:digest, or path:block.member:digest for a block's member, \
+     the digest the first sixteen hex digits of BLAKE3 over the item's text with whitespace \
+     collapsed and comments and the attribute block left out; path:<file> for a source's head \
+     comment; path:comment:digest for an item comment, the digest over its text. The kind is \
+     uncommented, or unshaped:<rule> for a comment outside the shape \
+     (crates/surface-corpus/README.md § Comments)",
+);
 
 /// One way the findings and the ledger disagree.
 ///
@@ -112,12 +116,16 @@ impl core::fmt::Display for Discrepancy
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one [`Discrepancy::Unledgered`] per finding whose line the ledger
-///   does not hold, and one [`Discrepancy::Stale`] per ledger line, neither
-///   empty nor a `#` line, that no finding carries; ordered by line.
+/// - ensures: one [`Discrepancy::Unledgered`] per line a finding owes that the
+///   ledger does not hold, and one [`Discrepancy::Stale`] per held line,
+///   neither empty nor a `#` line, that no finding carries; ordered by line.
 /// - provides: the ratchet's verdict.
-/// - fails: never.
+/// - fails: never: every trimmed line reads as a key, a `String`'s parse being
+///   infallible; the `Result` is the shared ledger's reading.
 /// - panics: none.
+///
+/// # Errors
+/// As `fails` lists.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a missing line, a stale line and an exact match are three
@@ -125,96 +133,50 @@ impl core::fmt::Display for Discrepancy
 /// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
 /// - witness: `tests::comments::judge::tests::a_ledgered_item_passes`
 /// - witness: `tests::comments::judge::tests::a_stale_ledger_line_is_refused`
-/// - witness: `tests::comments::ledger::tests::a_blank_ledger_line_is_not_debt`
-#[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.line() <= right.line()))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |rows| rows.iter().zip(rows.iter().skip(1)).all(|(left, right)| left.line() <= right.line())))]
 #[inline]
-#[must_use]
 pub fn discrepancies(
     found: &[Finding],
     ledger: crate::comments::shape::Text<'_>,
-) -> Vec<Discrepancy>
+) -> Result<Vec<Discrepancy>, LedgerError>
 {
-    let owed: BTreeSet<&str> = found.iter().map(|finding| finding.line().0).collect();
-    let held = ledger_lines(ledger);
-    let mut rows = Vec::new();
-    for finding in found {
-        if !held.contains(finding.line().0) {
-            rows.push(Discrepancy::Unledgered {
-                line: finding.line().0.to_owned(),
-                detail: finding.detail().0.to_owned(),
-            });
-        }
-    }
-    for line in &held {
-        if !owed.contains(line.as_str()) {
-            rows.push(Discrepancy::Stale { line: line.clone() });
-        }
-    }
+    let held = Ledger::<String>::read(gandr_workflow_ledger::Text(ledger.0))?;
+    let verdict = held.check(found, |finding| finding.line().0.to_owned());
+    let mut rows: Vec<Discrepancy> = verdict
+        .new
+        .iter()
+        .map(|finding| Discrepancy::Unledgered {
+            line: finding.line().0.to_owned(),
+            detail: finding.detail().0.to_owned(),
+        })
+        .chain(
+            verdict
+                .stale
+                .iter()
+                .map(|&line| Discrepancy::Stale { line: line.clone() }),
+        )
+        .collect();
     rows.sort_by(|left, right| left.line().cmp(&right.line()));
-    rows
+    Ok(rows)
 }
 
-/// The ledger text of `found`: the header, then one sorted line per finding.
+/// The ledger text of `found`: the header, then one sorted line per finding,
+/// as `gandr_workflow_ledger::write` writes it; the bytes
+/// `CORPUS_COMMENTS_WRITE_LEDGER=1` commits.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the header line, then the findings' distinct lines in order, each
-///   line ended by a newline.
-/// - provides: the bytes `CORPUS_COMMENTS_WRITE_LEDGER=1` commits.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — empty, one line and two unsorted repeated lines render in
-///   order under the header, each once, each terminated.
-/// - witness: `tests::comments::ledger::tests::the_ledger_text_is_sorted_and_terminated`
-#[spec(ensures: |ret| ret.starts_with(HEADER) && ret.ends_with('\n'))]
+/// trivial.
 #[inline]
 #[must_use]
 pub fn ledger_text(found: &[Finding]) -> String
 {
-    let mut lines: Vec<&str> = found.iter().map(|finding| finding.line().0).collect();
-    lines.sort_unstable();
-    lines.dedup();
-    let mut text = String::from(HEADER);
-    text.push('\n');
-    for line in lines {
-        text.push_str(line);
-        text.push('\n');
-    }
-    text
-}
-
-/// The trimmed lines of a ledger, neither empty nor a `#` line.
-///
-/// # Specification
-/// trivial.
-fn ledger_lines(ledger: crate::comments::shape::Text<'_>) -> BTreeSet<String>
-{
-    ledger
-        .0
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_owned)
-        .collect()
+    gandr_workflow_ledger::write(HEADER, found.iter().map(|finding| finding.line().0))
 }
 
 #[cfg(test)]
 mod tests
 {
     use super::Discrepancy;
-    use super::HEADER;
-    use super::discrepancies;
-    use super::ledger_text;
-    use crate::comments::judge::Finding;
-
-    /// # Specification
-    /// trivial.
-    fn finding(line: crate::comments::shape::Text<'_>) -> Finding
-    {
-        Finding::from_line(line)
-    }
 
     #[test]
     fn each_disagreement_names_its_line()
@@ -236,30 +198,5 @@ mod tests
             "a stale line names itself"
         );
         assert!(!stale.to_string().contains("not in the ledger"));
-    }
-
-    #[test]
-    fn a_blank_ledger_line_is_not_debt()
-    {
-        let rows = discrepancies(
-            &[],
-            crate::comments::shape::Text(&format!("{HEADER}\n\n  \n")),
-        );
-        assert!(
-            rows.is_empty(),
-            "neither a blank ledger line nor the header is a stale finding"
-        );
-    }
-
-    #[test]
-    fn the_ledger_text_is_sorted_and_terminated()
-    {
-        assert_eq!(ledger_text(&[]), format!("{HEADER}\n"));
-        let text = ledger_text(&[
-            finding(crate::comments::shape::Text("b:z")),
-            finding(crate::comments::shape::Text("a:m")),
-            finding(crate::comments::shape::Text("b:z")),
-        ]);
-        assert_eq!(text, format!("{HEADER}\na:m\nb:z\n"));
     }
 }

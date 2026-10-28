@@ -87,7 +87,10 @@ mod gate
         let held = std::fs::read_to_string(&path).unwrap_or_else(|error| {
             panic!("{}: the ledger did not read: {error}", path.display());
         });
-        let rows = discrepancies(&found, crate::comments::shape::Text(&held));
+        let rows =
+            discrepancies(&found, crate::comments::shape::Text(&held)).unwrap_or_else(|error| {
+                panic!("{}: {error}", path.display());
+            });
         let rendered = rows
             .iter()
             .map(ToString::to_string)
