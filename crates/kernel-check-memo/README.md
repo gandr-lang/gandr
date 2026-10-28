@@ -20,15 +20,18 @@ The check-memo seam: a statically dispatched interface through which a checker s
 
 **Why.** A sharing-aware checker meets the same obligation many times over one shared graph, and re-checking each occurrence can cost work exponential in the sharing depth. A memo collapses that to one check per distinct support. Owning the memo outside the checker keeps the checker's own code a single function whose memoless and memoized forms differ only in a type parameter, so the two can be compared directly.
 
-**How.** `CheckMemo` carries an associated `MemoActivity` constant, so a consumer branches on liveness at compile time and the `NullMemo` instantiation compiles to the memoless code. A support implements `MemoKey`: an accounting plane, a `ContentDigest`, and a deciding `agreement` over canonical content. `HashedMemo` keeps its entries densely and files each in a `HashIndex` — open addressing with linear probing and a tag byte per slot — under its digest's hash; the digest narrows the search and `agreement` decides, so a digest collision costs one comparison and degrades to a miss. `recall` returns a `MemoHit` carrying the recorded support beside the outcome; `remember` reports what it did and refuses at the accounting ceiling.
+**How.** `CheckMemo` carries an associated `MemoActivity` constant, so a consumer branches on liveness at compile time and the `NullMemo` instantiation compiles to the memoless code. A support implements `MemoKey`: an accounting plane, a `ContentDigest`, and a deciding `agreement` over canonical content. `HashedMemo` keeps its entries densely and files each in a `HashIndex` — open addressing with linear probing and a tag byte per slot — under its digest's hash; the digest narrows the search and `agreement` decides, so a digest collision costs one comparison and degrades to a miss. `filed` hands back every entry filed under a digest, for a consumer that decides among them itself, and `recall` serves the first of them that agrees with the demanded support; each hit is a `MemoHit` carrying the recorded support beside the outcome. `remember` reports what it did and refuses at the accounting ceiling.
 
 ## References
 
 - `Courant-2026-lazy_concurrent_convertibility_checker` — background: Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10, POPL, Article 53, January 2026. `doi:10.1145/3776695` — §6.3 describes process re-sharing by hash-consing, a memo this seam can carry.
+- `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement) — a hit hands back the support its entry was recorded under, the judgement's own output, for the consumer to hold against the context that asks.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 3) — a consumer asks by a goal's question and decides among the entries filed under it, which `filed` hands back.
+- `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — an entry recorded by the context its judgement synthesized is found by its question and matched against the context that asks.
 
 ## Provided features
 
-- `CheckMemo`: the seam. One trait, an associated `MemoActivity` constant read at compile time, and four operations: `recall`, `remember`, `entry_count`, `plane_entry_count`.
+- `CheckMemo`: the seam. One trait, an associated `MemoActivity` constant read at compile time, and five operations: `filed`, `recall`, `remember`, `entry_count`, `plane_entry_count`.
 - `NullMemo`: the memo that never answers. Zero-sized, every method a constant.
 - `HashedMemo`: the storage half. Dense entries filed by digest hash, plus the per-plane census and `bucket_count`.
 - `HashIndex`, `TableHash`, `TablePosition` and `WordHasher`: the open-addressing index and its fixed-seed hash, which the kernel's interning, reach caches and rewrite memo file on too.

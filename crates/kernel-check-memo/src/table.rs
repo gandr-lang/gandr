@@ -392,6 +392,51 @@ impl HashIndex
         Probe::Vacant(slot)
     }
 
+    /// Every position filed under `hash`, in the order a probe for `hash`
+    /// meets them.
+    ///
+    /// # Specification
+    /// - requires: every filed position was filed under its key's hash.
+    /// - ensures: each position filed under `hash` once, and none filed under
+    ///   another hash; the walk stops at the first vacant slot, which every
+    ///   probe sequence reaches, and never passes the capacity.
+    /// - provides: the candidates a consumer decides among when more than one
+    ///   key filed under one hash may answer it.
+    /// - panics: none.
+    /// - executable: none — the result is a lazy iterator borrowing the index,
+    ///   which a predicate could only check by consuming it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — keys colliding on one hash beside a key under
+    ///   another, walked after growth, distinguish a walk that stops at the
+    ///   first match, one that trusts the home slot alone and one that leaks a
+    ///   neighbour.
+    /// - witness: `table::tests::filed_walks_every_position_under_one_hash`
+    #[inline]
+    pub fn filed(
+        &self,
+        hash: TableHash,
+    ) -> impl Iterator<Item = TablePosition>
+    {
+        let mut slot = self.home(hash);
+        let mut remaining = self.slots.len();
+        core::iter::from_fn(move || {
+            while remaining > 0 {
+                remaining = remaining.saturating_sub(1);
+                let stored = self.slots.get(slot.0)?;
+                if stored.position == VACANT {
+                    remaining = 0;
+                    return None;
+                }
+                slot = self.next(slot);
+                if stored.hash == hash {
+                    return Some(stored.position);
+                }
+            }
+            None
+        })
+    }
+
     /// File `position` under `hash` at `slot`, which a preceding
     /// [`probe`](Self::probe) for `hash` found vacant.
     ///
@@ -666,6 +711,43 @@ mod tests
             find(&index, &entries, shared, Key(40)),
             Probe::Vacant(_)
         ));
+    }
+
+    #[test]
+    fn filed_walks_every_position_under_one_hash()
+    {
+        let mut index = HashIndex::new();
+        let mut entries = Vec::new();
+        let shared = TableHash::from(7_u32);
+        let neighbour = TableHash::from(8_u32);
+        let mut under_shared = Vec::new();
+        for key in 0 .. 40 {
+            let hash = if key % 4 == 3 { neighbour } else { shared };
+            let Probe::Found(position) = intern(&mut index, &mut entries, hash, Key(key))
+            else {
+                panic!("interning files every key");
+            };
+            if hash == shared {
+                under_shared.push(position);
+            }
+        }
+        let mut walked: Vec<TablePosition> = index.filed(shared).collect();
+        walked.sort_unstable();
+        assert_eq!(
+            walked, under_shared,
+            "every position filed under the shared hash, each once, across growth, and none of its \
+             neighbour's interleaved run"
+        );
+        assert_eq!(
+            index.filed(TableHash::from(9_u32)).count(),
+            0,
+            "a hash nothing was filed under walks nothing"
+        );
+        assert_eq!(
+            HashIndex::new().filed(shared).count(),
+            0,
+            "nor does the empty table"
+        );
     }
 
     #[test]
