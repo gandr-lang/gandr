@@ -1,0 +1,65 @@
+// A typed evaluator as it should read, and what refuses it.
+//
+// Each expression's index is the object type it evaluates to, and its value is
+// the meaning of that index. A case on an expression binds each arm's index
+// equation and does not refine by it. So an arm's goal keeps the scrutinee's
+// index as written.
+//
+// The checker refuses each declaration below by the name its attribute
+// states. Each turns to `checks` as its rung lands, and the source then moves
+// to the model root.
+//
+// - see: #3483 — not implemented: refinement by solution, for `eval` and
+//   `evalInt`
+// - see: #3481 — the spike that wrote these programs
+
+/// The object language's types.
+data Ty : Type {
+  /// Integers.
+  TInt : Ty;
+  /// Booleans.
+  TBool : Ty;
+}
+
+/// The meaning of an object type, by a case on its code.
+def meaning(t : Ty) -> Type {
+  case t {
+    TInt => return Integer,
+    TBool => return Bool
+  }
+}
+
+/// Expressions, indexed by the type they evaluate to.
+data Expr : Ty -> Type {
+  /// An integer literal.
+  Lit : (i : Integer) --> Expr(TInt);
+  /// A boolean literal.
+  BoolLit : (b : Bool) --> Expr(TBool);
+  /// The sum of two integer expressions.
+  Add : (l : Expr(TInt), r : Expr(TInt)) --> Expr(TInt);
+  /// A choice between two expressions of one type.
+  If : (t : Ty, c : Expr(TBool), y : Expr(t), n : Expr(t)) --> Expr(t);
+}
+
+/// The evaluator, each arm's result the meaning of its index. The `Lit` arm
+/// binds the path from `TInt` to `t`, and its integer is checked at `meaning(t)`.
+@[ refuses("TypeMismatch") ]
+def rec eval(t : Ty, e : Expr(t)) -> meaning(t) {
+  case e {
+    Lit(i) => i,
+    BoolLit(b) => b,
+    Add(l, r) => eval[<](TInt, l) + eval[<](TInt, r),
+    If(u, c, y, n) => if eval[<](TBool, c) { eval[<](u, y) } else { eval[<](u, n) }
+  }
+}
+
+/// The evaluator at integers alone. The `If` arm binds the path from `u` to
+/// `TInt`, and its branch `y` stays at `u` where the recursive call reads `TInt`.
+@[ refuses("TypeMismatch") ]
+def rec evalInt(e : Expr(TInt)) -> Integer {
+  case e {
+    Lit(i) => i,
+    Add(l, r) => evalInt[<](l) + evalInt[<](r),
+    If(u, _, y, _) => evalInt[<](y)
+  }
+}

@@ -1,0 +1,67 @@
+// Vector programs as they should read, and what refuses each of them.
+//
+// A case on a vector binds each arm's index equation and prunes an arm whose
+// ends are apart. It does not refine by the equation. A result typed at the
+// scrutinee's index is refused where the arm's own index stands.
+//
+// The checker refuses each declaration below by the name its attribute
+// states. Each turns to `checks` as its rung lands, and the source then moves
+// to the model root.
+//
+// - see: #3483 — not implemented: refinement by solution, for `append`
+// - see: #3515 — not implemented: injectivity, for `tail` and `zip`
+// - see: #3516 — not implemented: an implicit under a constructor, for
+//   `firstOfPair`
+// - see: #3517 — not implemented: an implicit block on `def rec`, for `zip`
+//   and `append`
+// - see: #3481 — the spike that wrote these programs
+
+// The naturals the lengths count in.
+import "../../model/data/data-base.gandr";
+
+// The vectors and the vector two long.
+import "../../model/data/vectors.gandr";
+
+/// The first element, its element type and length implicit. `VNil` stands at
+/// zero, apart from `Succ(n)`, so the case leaves its arm out.
+def head @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> a {
+  case v {
+    VCons(_, h, _) => h
+  }
+}
+
+/// The rest of a vector at least one long. The arm binds the path from
+/// `Succ(m)` to `Succ(n)`, and the tail stands at `m` where the result reads `n`.
+@[ refuses("TypeMismatch") ]
+def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
+  case v {
+    VCons(m, _, t) => t
+  }
+}
+
+/// The head of the vector two long. The solver does not take apart the `Succ`
+/// that `n` stands under in `head`'s parameter.
+@[ refuses("TypeMismatch") ]
+def firstOfPair() -> Integer { head(pair()) }
+
+/// Pairs two vectors of one length, with its implicits as parameters. The
+/// `VNil` arm binds the path from zero to `n`, and its result stands at zero.
+@[ refuses("TypeMismatch") ]
+def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) {
+  case xs {
+    VNil => case ys { VNil => VNil },
+    VCons(m, x, xt) => case ys {
+      VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
+    }
+  }
+}
+
+/// One vector after another, at the length `plus(m, n)`. The `VNil` arm returns
+/// `ys` at `m`, and `plus(m, n)` computes to `m` only once `n` is zero.
+@[ refuses("TypeMismatch") ]
+def rec append(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> Vec(a, plus(m, n)) {
+  case xs {
+    VNil => ys,
+    VCons(k, x, xt) => VCons(plus(m, k), x, append[<](a, k, m, xt, ys))
+  }
+}
