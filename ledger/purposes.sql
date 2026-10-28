@@ -4096,6 +4096,7 @@ INSERT INTO purpose VALUES('workflow-lane-budget','github::Jobs','enum','Which o
 INSERT INTO purpose VALUES('workflow-lane-budget','github::Window','enum','Which workflow runs a report samples.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::cache_usage','function','The repository''s Actions cache usage.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::file','function','Files `report` on the one issue titled `title`: opened or updated while a lane is over budget, closed once every lane is within.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-lane-budget','github::read_all','function','Every item read, a fixed number at once, the results in the asked order and the first refusal in that order reported.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::recent_runs','function','The newest runs in `window`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::samples','function','The successful or the completed jobs of `run`, as `jobs` asks, each with its time.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::timed','function','Every active workflow with its newest completed runs timed.',NULL,'fits','sound',NULL);

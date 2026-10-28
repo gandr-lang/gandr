@@ -39,6 +39,13 @@ pub enum BudgetError
         /// Why it did not start, how it exited, or what it printed.
         message: String,
     },
+    /// A thread reading runs concurrently could not start, or stopped without
+    /// its reads' results.
+    Reader
+    {
+        /// Why the thread did not start, or that it stopped.
+        message: String,
+    },
     /// Standard output could not be written.
     Output
     {
@@ -97,6 +104,7 @@ impl fmt::Display for BudgetError
                 ref command,
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
+            Self::Reader { ref message } => write!(f, "a concurrent read: {message}"),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
             Self::Ceiling { ref runs } => write!(f, "the newest run passed its ceiling: {runs}"),
         }
@@ -143,6 +151,12 @@ mod tests
                     message: "HTTP 401: Bad credentials".into(),
                 },
                 "`gh issue list` failed: HTTP 401: Bad credentials",
+            ),
+            (
+                BudgetError::Reader {
+                    message: "the thread stopped without its reads".into(),
+                },
+                "a concurrent read: the thread stopped without its reads",
             ),
             (
                 BudgetError::Output {

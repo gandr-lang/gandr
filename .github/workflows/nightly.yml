@@ -297,6 +297,10 @@ jobs:
   # with its lane's shape, in the same commit; the name is the job's display
   # name. Each budget is about 1.5 times the lane's median once build state
   # was pruned, the toolchain installed once and Clippy given its own state.
+  # This job's share of the nightly's 900 s is 133 s, its 175 s in the
+  # dispatched run 40602657172 scaled by 900/1185 (#3013). The lane budget
+  # took 120 s of it reading over a hundred runs' jobs one `gh` call at a
+  # time, so it reads them eight at a time (#3290).
   #
   # The enforcing lanes are held by the cone a landing touched: deep when it
   # changed a file under crates/kernel-* or crates/core-*, Cargo.lock,
