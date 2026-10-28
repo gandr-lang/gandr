@@ -2256,6 +2256,69 @@ fn term_indices_are_structural_in_both_checkers()
 }
 
 #[test]
+fn a_family_argument_written_as_a_call_converts_with_its_value_3579()
+{
+    use gandr_core_term::Summand;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let truth = arena.value_type_sum(&[unit_type, unit_type]);
+    let returns_truth = arena.comp_type_returner(truth);
+    let asked = arena.comp_type_arrow(unit_type, returns_truth);
+    let asked = arena.value_type_thunk(asked);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let data = ConstantIndex::from(1_usize);
+    let declaration = Declaration::data(
+        data,
+        DataSignature::new(vec![truth], vec![vec![]], kind).into(),
+        OriginToken::from(1_usize),
+    );
+    let yes = arena.value_injection(Summand::from(0_usize), unit);
+    let no = arena.value_injection(Summand::from(1_usize), unit);
+    // `fn (_) { return yes }`, the definition the call unfolds.
+    let answered = arena.computation_return(yes);
+    let answered = arena.computation_lambda(answered);
+    let answered = arena.value_thunk(answered);
+    let answer = arena.value_constant(ConstantIndex::from(0_usize));
+    let answer = arena.computation_force(answer);
+    let call = arena.computation_application(answer, unit);
+    let call = arena.value_returned(call);
+    let called_type = arena.value_type_data(data, vec![call]);
+    let yes_type = arena.value_type_data(data, vec![yes]);
+    let no_type = arena.value_type_data(data, vec![no]);
+    let tag = ConstructorTag::from(0_usize);
+    let called_value = arena.value_constructor(called_type, tag, vec![]);
+    let (report, crossed) = run(&mut arena, &[
+        definition(ConstantIndex::from(0_usize), asked, answered),
+        declaration,
+        definition(ConstantIndex::from(2_usize), yes_type, called_value),
+        definition(ConstantIndex::from(3_usize), no_type, called_value),
+    ]);
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "a call stands at the value it returns: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+        "the kernel reads the call as its value: {:?}",
+        crossed.readmitted()[2].outcome()
+    );
+    assert!(
+        matches!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "a call is apart from a value it does not return: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(matches!(
+        crossed.readmitted()[3].outcome(),
+        Outcome::Marked(CheckRefusal::TypeMismatch(_))
+    ));
+}
+
+#[test]
 fn empty_data_elimination_preserves_the_ambient_scope()
 {
     let mut arena = CoreArena::new();

@@ -686,12 +686,6 @@ model/data/vector-cases.gandr:<file> unshaped:WhatLength
 model/data/vector-head.gandr:<file> unshaped:HeadParagraphs
 model/data/vector-head.gandr:<file> unshaped:Semicolon
 model/data/vector-head.gandr:<file> unshaped:SentenceLength
-model/data/vectors.gandr:<file> unshaped:HeadParagraphs
-model/data/vectors.gandr:<file> unshaped:Semicolon
-model/data/vectors.gandr:<file> unshaped:SentenceLength
-model/data/vectors.gandr:<file> unshaped:WhatLength
-model/data/vectors.gandr:Vec.VCons:97eb4f2f4a844953 uncommented
-model/data/vectors.gandr:Vec.VNil:806b3e58640f7b14 uncommented
 model/data/w-tree.gandr:<file> unshaped:HeadParagraphs
 model/data/w-tree.gandr:<file> unshaped:SentenceLength
 model/data/w-tree.gandr:Tree.Leaf:0a2b0729e5e82389 uncommented
@@ -2955,9 +2949,6 @@ pathological/data/vector-head.gandr:<file> unshaped:HeadParagraphs
 pathological/data/vector-head.gandr:<file> unshaped:SentenceLength
 pathological/data/vector-head.gandr:<file> unshaped:WhatLength
 pathological/data/vector-head.gandr:comment:a48e1b84d14c2e71 unshaped:ItemShape
-pathological/data/vectors.gandr:<file> unshaped:HeadParagraphs
-pathological/data/vectors.gandr:<file> unshaped:WhatLength
-pathological/data/vectors.gandr:Misindexed.Wrong:b5bd9fb815c4412e uncommented
 pathological/data/w-negative.gandr:<file> unshaped:HeadParagraphs
 pathological/data/w-negative.gandr:<file> unshaped:ReferenceOutsideReferences
 pathological/data/w-negative.gandr:<file> unshaped:Semicolon
