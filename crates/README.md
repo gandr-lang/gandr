@@ -72,7 +72,7 @@ crates/
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands lowered and copy-and-patched into native code under a content cache, or built for the portable executor, and each outcome moved into the caller's store
-├── runtime-net/                   the network a host holds for `Net`: streams to peers named by their keys, over QUIC through iroh
+├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
@@ -133,9 +133,9 @@ A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README
 
 _Projection_ is the compiler: it takes a _choreography_, one program over named _roles_, to an _endpoint_ per role, a closed program whose protocol and crossing data are fixed, and the endpoint is the artifact. A _recipe_ names a program's endpoints. A _deployment_ binds each role to a world key, an instance count and discovery, never entering an artifact's identity, so one artifact runs as two processes or a fleet. A _local artifact_ is a one-role choreography's endpoint: the degenerate case, and the only one built today. A runtime component no type demands is a recipe policy, off by default.
 
-- `surface-dispatcher`: the run stage, a checked source's `main` run as a local artifact.
-- `runtime-emitter`: an endpoint's code, patched into native code under a content cache, or the portable executor.
-- `runtime-net`: the network an endpoint holds for `Net`.
+- `surface-dispatcher`: the run stage, a checked source's `main` as a local artifact.
+- `runtime-emitter`: an endpoint's code, native under a content cache or on the portable executor.
+- `runtime-net`: the network an endpoint holds for `Net` and for migrations.
 - Projection and the recipe have no crate yet.
 
 ## Storage and distribution

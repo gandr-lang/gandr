@@ -7,7 +7,8 @@
 //! `Console.print` writes its line to the run's [`Console`], a `Net`
 //! operation goes to the run's network when it has one, and every other
 //! operation is declined, so the run is stuck at it and reported as any stuck
-//! run is.
+//! run is. A migration goes where the host's world bindings bind its world,
+//! or runs in this process when the host has none.
 
 use alloc::string::String;
 
@@ -35,6 +36,8 @@ use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
+use gandr_runtime_emitter::Migrated;
+use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_emitter::evaluate_with_host;
 use gandr_runtime_net::Net;
 use gandr_surface_lowering::Arguments;
@@ -52,8 +55,11 @@ use super::Program;
 use super::RUN_BUDGET;
 use super::Start;
 use super::Unfinished;
+use super::Unrunnable;
 use super::console;
 use super::net;
+use super::worlds;
+use super::worlds::Worlds;
 
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
@@ -150,7 +156,8 @@ pub enum Entered<'source>
 }
 
 /// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
-/// its console, a `Net` operation goes to its network when it has one, and
+/// its console, a `Net` operation goes to its network when it has one, a
+/// migration goes where its bindings bind the world when it has them, and
 /// nothing else is served.
 struct EntryHost<'host>
 {
@@ -158,6 +165,8 @@ struct EntryHost<'host>
     console: &'host mut dyn Console,
     /// The run's network, when it has one.
     net: Option<&'host mut Net>,
+    /// The run's world bindings and the program's names, when it has them.
+    worlds: Option<(Worlds<'host>, &'host [String])>,
 }
 
 impl HostHandler for EntryHost<'_>
@@ -195,6 +204,23 @@ impl HostHandler for EntryHost<'_>
             Some(_) | None => HostReply::Decline,
         }
     }
+
+    /// Run a migration here when the host has no world bindings; otherwise
+    /// where they bind its world.
+    ///
+    /// # Specification
+    /// trivial.
+    fn migrate(
+        &mut self,
+        request: MigrationRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> Migrated
+    {
+        match self.worlds {
+            Some(worlds) => worlds::shipped(worlds, self.net.as_deref_mut(), request, values),
+            None => Migrated::Here,
+        }
+    }
 }
 
 impl<'source> Program<'source>
@@ -211,20 +237,24 @@ impl<'source> Program<'source>
     }
 
     /// Run `entry` with `arguments`, under a host that serves `Proc.exit`,
-    /// writes each `Console.print` line to `console`, and serves each `Net`
-    /// operation on `net` when it is given.
+    /// writes each `Console.print` line to `console`, serves each `Net`
+    /// operation on `net` when it is given, and runs each migration where
+    /// `worlds`' bindings bind its world when it is given.
     ///
     /// # Specification
     /// - requires: nothing; an entry the program cannot run is an outcome.
     /// - ensures: [`Evaluation::Unrunnable`], as [`Self::evaluate`] decides it,
-    ///   before any command runs. Otherwise the entry is forced, and, when it
-    ///   reads them, applied to [`argument_list`] of `arguments`; each line it
-    ///   prints is handed to `console` in order as it runs, and each `Net`
-    ///   operation it performs is served on `net`, or declined without one; a
-    ///   run that performs `Proc.exit` with an integer, or returns an integer,
-    ///   is [`Entered::Exited`] with that integer's low byte, one returning the
-    ///   unit is [`Entered::Exited`] with zero, and any other end is
-    ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
+    ///   before any command runs, and [`Unrunnable::UnboundWorld`] naming the
+    ///   first world the entry holds a capability for that `worlds`' bindings
+    ///   bind to no host. Otherwise the entry is forced, and, when it reads
+    ///   them, applied to [`argument_list`] of `arguments`; each line it prints
+    ///   is handed to `console` in order as it runs, each `Net` operation it
+    ///   performs is served on `net`, or declined without one, and each
+    ///   migration runs where the bindings bind its world, or here without one;
+    ///   a run that performs `Proc.exit` with an integer, or returns an
+    ///   integer, is [`Entered::Exited`] with that integer's low byte, one
+    ///   returning the unit is [`Entered::Exited`] with zero, and any other end
+    ///   is [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
     ///   [`Evaluation::Holed`] for a hole reached.
     /// - fails: never; every failure is an outcome.
     /// - panics: none.
@@ -235,24 +265,37 @@ impl<'source> Program<'source>
     /// - hypothesis: L3 — an entry returning a code, one counting its
     ///   arguments, one exiting early through `Proc.exit`, one reaching a goal,
     ///   one reaching a hole after a call, one passing a hole a branch never
-    ///   reaches, one printing two lines and returning the unit, and one
-    ///   pinging an endpoint over the network and printing its answer.
+    ///   reaches, one printing two lines and returning the unit, one pinging an
+    ///   endpoint over the network and printing its answer, and one migrating
+    ///   to a world its bindings bind to another endpoint, to one they bind to
+    ///   this one, and to one they do not bind.
     /// - witness: `evaluate::entry::tests::an_entry_runs_to_its_exit_status_1881`
     /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
     /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
     /// - witness: `tests::run::a_script_pings_over_its_network_3186`
+    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+    /// - witness: `tests::run::a_world_bound_to_this_host_runs_here`
+    /// - witness: `tests::run::a_world_no_binding_names_is_refused_before_the_run`
     #[inline]
     pub fn enter(
         &mut self,
         entry: Entry,
         arguments: &[String],
         console: &mut dyn Console,
-        net: Option<&mut Net>,
+        (net, worlds): (Option<&mut Net>, Option<Worlds<'_>>),
     ) -> Entered<'source>
     {
         let constant = entry.constant;
         if let Maybe::Present(unrunnable) = self.unrunnable(constant, Start::Accepted) {
             return Entered::Ended(Evaluation::Unrunnable(unrunnable));
+        }
+        if let Some(Worlds { bindings, .. }) = worlds
+            && let Some(world) = self.unbound(bindings)
+            && let Some(declared) = self.declarations.get(&world)
+        {
+            return Entered::Ended(Evaluation::Unrunnable(Unrunnable::UnboundWorld(
+                declared.name,
+            )));
         }
         let mut core = CoreArena::new();
         let value = core.value_constant(constant);
@@ -277,7 +320,11 @@ impl<'source> Program<'source>
             &self.definitions,
             command,
             (Fuel::from(RUN_BUDGET), &mut store),
-            &mut EntryHost { console, net },
+            &mut EntryHost {
+                console,
+                net,
+                worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
+            },
         );
         match ran {
             Err(declined) => Entered::Ended(Evaluation::Unfinished(Unfinished::Declined(declined))),
@@ -395,6 +442,41 @@ pub(super) fn entry_of(
         }),
         Some(Maybe::Absent(_)) | None => undeclared,
     }
+}
+
+/// The worlds `entry`'s declaration holds a capability for, in its `entry`
+/// attribute's order: none for a module with no entry, or an entry no such
+/// attribute decorates.
+///
+/// # Specification
+/// - requires: `entry` is the entry of `module`.
+/// - ensures: the worlds after the first — the home — that the entry's
+///   attribute names, as [`LoweredModule::worlds`] answers them.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer is the module's attribute table read at the
+///   entry's keys.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an entry holding a capability for a world no binding
+///   names is refused before it runs, and one whose bindings bind it runs.
+/// - witness: `tests::run::a_world_no_binding_names_is_refused_before_the_run`
+pub(super) fn reaches(
+    module: &LoweredModule<'_>,
+    entry: Maybe<Entry, program_entry::Absent>,
+) -> Vec<ConstantIndex>
+{
+    let Maybe::Present(Entry { constant, .. }) = entry
+    else {
+        return Vec::new();
+    };
+    module
+        .declarations()
+        .iter()
+        .rfind(|lowered| lowered.constant() == constant)
+        .and_then(|lowered| module.worlds(lowered).get(1 ..))
+        .map(<[ConstantIndex]>::to_vec)
+        .unwrap_or_default()
 }
 
 quenchant_shape::reason_enum! {

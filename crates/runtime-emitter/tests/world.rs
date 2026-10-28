@@ -1,8 +1,11 @@
-//! A migration run in one process: its body at its world on a thread and
-//! over a store of its own, what it takes and answers crossing by content.
+//! A migration run: in one process, its body at its world on a thread and
+//! over a store of its own, what it takes and answers crossing by content; a
+//! host deciding where it runs; and one shipped here run as the migration it
+//! names.
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
+use gandr_core_sequent::CommandNode;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::FreeSet;
 use gandr_core_sequent::HeapValue;
@@ -23,6 +26,7 @@ use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CharacterLiteral;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
@@ -33,9 +37,19 @@ use gandr_kernel_term::Sign;
 use gandr_kernel_term::Summand;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::HostHandler;
+use gandr_runtime_emitter::HostOutcome;
+use gandr_runtime_emitter::HostReply;
+use gandr_runtime_emitter::HostRequest;
+use gandr_runtime_emitter::HostValues;
+use gandr_runtime_emitter::Migrated;
+use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
+use gandr_runtime_emitter::evaluate_on_with_host;
+use gandr_runtime_emitter::world::Unmigrated;
+use gandr_runtime_emitter::world::arrive;
 
 /// The jumps a run may take: no test program comes near.
 ///
@@ -190,6 +204,46 @@ fn comes_back(
     }
 }
 
+/// `bind (hold (1, 2)) (leta y. body)`, `body` answering `(y, y)` in place,
+/// or inside `migrate [world] { … }` when `migrated` names a world.
+///
+/// # Specification
+/// trivial.
+fn held_and_answered_twice(
+    core: &mut CoreArena,
+    migrated: Option<World>,
+) -> ComputationId
+{
+    let one = integer(core, Digits("1"));
+    let two = integer(core, Digits("2"));
+    let inner = core.value_tuple(&[one, two]);
+    let held = core.computation_world(WorldForm::Hold { value: inner });
+    let y = innermost(core);
+    let twice = core.value_tuple(&[y, y]);
+    let mut body = core.computation_return(twice);
+    if let Some(world) = migrated {
+        body = core.computation_world(WorldForm::Migrate { world, body });
+    }
+    let handle = innermost(core);
+    let opened = core.computation_world(WorldForm::Leta {
+        value: handle,
+        body,
+    });
+    core.computation_bind(held, opened)
+}
+
+/// The pair `(1, 2)` in `core`, and `((1, 2), (1, 2))`.
+///
+/// # Specification
+/// trivial.
+fn pair_and_twice(core: &mut CoreArena) -> (ValueId, ValueId)
+{
+    let one = integer(core, Digits("1"));
+    let two = integer(core, Digits("2"));
+    let inner = core.value_tuple(&[one, two]);
+    (inner, core.value_tuple(&[inner, inner]))
+}
+
 /// `hold (1, 2)` opened by `leta y` and answered as `(y, y)`, in place and
 /// inside `migrate [host] { … }`: both read back `((1, 2), (1, 2))` on each
 /// tier, but where the pair in place is one store value held twice, the pair
@@ -199,27 +253,9 @@ fn comes_back(
 fn a_migration_crosses_its_capture_in_and_its_answer_back()
 {
     let mut core = CoreArena::new();
-    let one = integer(&mut core, Digits("1"));
-    let two = integer(&mut core, Digits("2"));
-    let inner = core.value_tuple(&[one, two]);
-    let expected = core.value_tuple(&[inner, inner]);
-    let held = core.computation_world(WorldForm::Hold { value: inner });
-    let program = |core: &mut CoreArena, migrated: Option<World>| {
-        let y = innermost(core);
-        let twice = core.value_tuple(&[y, y]);
-        let mut body = core.computation_return(twice);
-        if let Some(world) = migrated {
-            body = core.computation_world(WorldForm::Migrate { world, body });
-        }
-        let handle = innermost(core);
-        let opened = core.computation_world(WorldForm::Leta {
-            value: handle,
-            body,
-        });
-        core.computation_bind(held, opened)
-    };
-    let in_place = program(&mut core, None);
-    let migrated = program(&mut core, Some(World::Host));
+    let (_, expected) = pair_and_twice(&mut core);
+    let in_place = held_and_answered_twice(&mut core, None);
+    let migrated = held_and_answered_twice(&mut core, Some(World::Host));
     for &tier in tiers() {
         let (read, [first, second]) = ran(tier, &mut core, in_place);
         assert_eq!(
@@ -242,6 +278,217 @@ fn a_migration_crosses_its_capture_in_and_its_answer_back()
             "a migration's answer crossed unfolded on {tier:?}"
         );
     }
+}
+
+/// How a scripted host decides a migration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Decision
+{
+    /// Keep the seam's default.
+    Default,
+    /// Answer with the first capture, as though the far run answered it.
+    Capture,
+    /// Refuse it as a world no binding names.
+    Unbound,
+}
+
+/// A host that declines every operation and decides each migration as its
+/// decision says, counting the captures it was offered.
+#[derive(Debug)]
+struct Deciding
+{
+    /// The decision.
+    decision: Decision,
+    /// The world and the number of captures of each migration offered.
+    offered: Vec<(World, usize)>,
+}
+
+impl HostHandler for Deciding
+{
+    type Abort = ();
+
+    /// Decline.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        _request: HostRequest<'_>,
+        _values: &mut HostValues<'_>,
+    ) -> HostReply<()>
+    {
+        HostReply::Decline
+    }
+
+    /// Count the migration, then decide it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn migrate(
+        &mut self,
+        request: MigrationRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> Migrated
+    {
+        self.offered.push((request.world, request.captures.len()));
+        match self.decision {
+            Decision::Default => Migrated::Here,
+            Decision::Capture => match request.captures.first() {
+                Some(&capture) if values.value(capture).is_some() => Migrated::Answered(capture),
+                Some(_) | None => Migrated::Refused(Unmigrated::Unanswered),
+            },
+            Decision::Unbound => Migrated::Refused(Unmigrated::UnboundWorld),
+        }
+    }
+}
+
+/// `hold (1, 2)` opened by `leta y` and migrated as `(y, y)` is offered to
+/// the host once, with its world and its one capture, on each tier. A host
+/// that keeps the default runs it here and reads back `((1, 2), (1, 2))`; one
+/// that answers with the capture reads back `(1, 2)`, the body never run; one
+/// that refuses it declines the run at the migration with its reason.
+#[test]
+fn a_host_decides_where_a_migration_runs()
+{
+    let mut core = CoreArena::new();
+    let (inner, twice) = pair_and_twice(&mut core);
+    let program = held_and_answered_twice(&mut core, Some(World::Host));
+    let (arena, root) = focused(&core, program);
+    for &tier in tiers() {
+        for (decision, expected) in [
+            (Decision::Default, Some(twice)),
+            (Decision::Capture, Some(inner)),
+            (Decision::Unbound, None),
+        ] {
+            let mut host = Deciding {
+                decision,
+                offered: Vec::new(),
+            };
+            let mut store = Store::new();
+            let outcome = evaluate_on_with_host(
+                tier,
+                (&arena, &Definitions::new(), root),
+                (budget(), &mut store),
+                &mut host,
+            );
+            assert_eq!(
+                host.offered,
+                [(World::Host, 1_usize)],
+                "{decision:?} on {tier:?}"
+            );
+            match (outcome, expected) {
+                (Ok(HostOutcome::Completed(Outcome::Halted(answer))), Some(expected)) => {
+                    let read = read_back_value(&arena, &store, answer, &mut core)
+                        .expect("the answer reads back");
+                    assert_eq!(
+                        CertificateEquality::Equal,
+                        equal_certificate_syntax(&core, read, expected),
+                        "{decision:?} on {tier:?}"
+                    );
+                },
+                (Err(Declined::Migration(_, Unmigrated::UnboundWorld)), None) => {},
+                (outcome, _) => panic!("{decision:?} on {tier:?}: {outcome:?}"),
+            }
+        }
+    }
+}
+
+/// The migration a focused arena holds: the first world command that migrates.
+///
+/// # Specification
+/// trivial.
+fn migration_in(arena: &CommandArena) -> CommandId
+{
+    (0_u32 ..)
+        .map(CommandId::from)
+        .map_while(|id| arena.command(id).map(|node| (id, node)))
+        .find(|&(_, node)| {
+            matches!(*node, CommandNode::World {
+                form: WorldForm::Migrate { .. },
+                ..
+            })
+        })
+        .map(|(id, _)| id)
+        .expect("the arena holds a migration")
+}
+
+/// A migration shipped here runs as the migration it names: closed over the
+/// pair `(1, 2)` it answers `((1, 2), (1, 2))`. Named at another world it is
+/// unserved; a command that is no migration, or too few captures, is unheld;
+/// none of them runs.
+#[test]
+fn a_shipped_migration_runs_here_only_as_the_migration_it_names()
+{
+    let mut core = CoreArena::new();
+    let (_, twice) = pair_and_twice(&mut core);
+    let program = held_and_answered_twice(&mut core, Some(World::Host));
+    let (arena, root) = focused(&core, program);
+    let at = migration_in(&arena);
+    let definitions = Definitions::new();
+    let mut store = Store::new();
+    let one = store
+        .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            Magnitude::from_decimal_text(String::from("1")).expect("digits"),
+        ))))
+        .expect("room");
+    let two = store
+        .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            Magnitude::from_decimal_text(String::from("2")).expect("digits"),
+        ))))
+        .expect("room");
+    let capture = store
+        .allocate(HeapValue::Constructed {
+            tag: gandr_core_sequent::ConstructorTag::Tuple(
+                gandr_core_sequent::ProducerArity::from(2_usize),
+            ),
+            fields: Box::new([one, two]),
+        })
+        .expect("room");
+    let elsewhere = World::Declared(ConstantIndex::from(3_usize));
+    let refusals = [
+        arrive(
+            (&arena, &definitions),
+            (at, elsewhere),
+            budget(),
+            (&mut store, &[capture]),
+        ),
+        arrive(
+            (&arena, &definitions),
+            (root, World::Host),
+            budget(),
+            (&mut store, &[capture]),
+        ),
+        arrive(
+            (&arena, &definitions),
+            (at, World::Host),
+            budget(),
+            (&mut store, &[]),
+        ),
+    ];
+    assert_eq!(
+        refusals,
+        [
+            Err(Unmigrated::Unserved),
+            Err(Unmigrated::Unheld),
+            Err(Unmigrated::Unheld)
+        ],
+        "another world, no migration and too few captures refuse"
+    );
+    let answer = arrive(
+        (&arena, &definitions),
+        (at, World::Host),
+        budget(),
+        (&mut store, &[capture]),
+    )
+    .expect("the migration runs here");
+    let read = read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+    assert_eq!(
+        CertificateEquality::Equal,
+        equal_certificate_syntax(&core, read, twice),
+        "the shipped migration answers its body's pair"
+    );
 }
 
 /// A capture that does not cross declines the run at its migration: a thunk
@@ -278,7 +525,7 @@ fn a_capture_that_does_not_cross_declines_at_its_migration()
             &mut store,
         );
         assert!(
-            matches!(outcome, Err(Declined::Migration(_))),
+            matches!(outcome, Err(Declined::Migration(_, Unmigrated::Unanswered))),
             "on {tier:?}: {outcome:?}"
         );
     }

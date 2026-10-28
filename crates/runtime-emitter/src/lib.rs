@@ -168,7 +168,7 @@ mod native;
 mod run;
 mod seam;
 mod transfer;
-mod world;
+pub mod world;
 
 pub use gandr_runtime_stencils::Fuel;
 pub use gandr_runtime_stencils::Status;
@@ -206,6 +206,8 @@ pub use crate::seam::HostOutcome;
 pub use crate::seam::HostReply;
 pub use crate::seam::HostRequest;
 pub use crate::seam::HostValues;
+pub use crate::seam::Migrated;
+pub use crate::seam::MigrationRequest;
 pub use crate::transfer::TransferRefusal;
 
 /// Whether this host has a patcher: native code runs here.

@@ -72,6 +72,7 @@ use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::primitive::PrimitiveError;
 use gandr_core_term::primitive::Scalar;
+use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
@@ -113,6 +114,8 @@ use crate::lower::lower_suspended;
 use crate::run::Tier;
 use crate::seam::HostRequest;
 use crate::seam::HostValues;
+use crate::seam::Migrated;
+use crate::seam::MigrationRequest;
 use crate::seam::Offer;
 use crate::seam::Offered;
 use crate::transfer::Moved;
@@ -122,6 +125,7 @@ use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
 use crate::transfer::owned;
 use crate::transfer::transfer;
+use crate::world::Unmigrated;
 use crate::world::migrate;
 
 /// A view's state: no eliminator has run.
@@ -332,9 +336,8 @@ pub enum Refused
     Reply(HeapValueId),
     /// A payload could not be moved into the store.
     Transfer(TransferRefusal),
-    /// This migration's body ran at its world to no value, or a value it took
-    /// or answered did not cross.
-    Migration(CommandId),
+    /// This migration answered nothing, for the reason named.
+    Migration(CommandId, Unmigrated),
 }
 
 /// The parts a run's host state holds: the function lowered from `arena`
@@ -621,7 +624,7 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Ended { unwind, .. } => self.ended(runtime, unwind, first, second),
             Callee::Reify(ref shape) => self.reify(runtime, shape),
             Callee::Decompose => self.decompose(runtime, first),
-            Callee::Migrate { body, .. } => self.migrated(runtime, body, first),
+            Callee::Migrate { at, world, body } => self.migrated(runtime, (at, world, body), first),
             Callee::Undefined(_) | Callee::Cyclic(_) => Err(Refusal::Operands),
         };
         if matches!(answered, Err(Refusal::Operands)) && self.refused.is_none() {
@@ -632,7 +635,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 Callee::Ended { at, .. } => Some(Refused::Unended(at)),
                 Callee::Undefined(constant) => Some(Refused::UndefinedConstant(constant)),
                 Callee::Cyclic(constant) => Some(Refused::CyclicConstant(constant)),
-                Callee::Migrate { at, .. } => Some(Refused::Migration(at)),
+                Callee::Migrate { at, .. } => Some(Refused::Migration(at, Unmigrated::Unanswered)),
                 Callee::Primitive(_)
                 | Callee::Abandon(_)
                 | Callee::Hold
@@ -1070,22 +1073,25 @@ impl<'run, 'host> Calls<'run, 'host>
         }
     }
 
-    /// Run the migration's body `body` at its world, lowered at the run's
-    /// first migration to it, closed over the captures the tuple `captures`
-    /// holds, on this run's tier and the fuel it has left, and lay its answer
-    /// out on the run's heap.
+    /// Run the migration `at` to `world`, whose body is `body`, closed over the
+    /// captures the tuple `captures` holds, and lay its answer out on the
+    /// run's heap: where the host's [`Offer::migrate`] decides, and here, on a
+    /// thread and over a store of its own, by default — its body lowered at
+    /// the run's first migration to it, run on this run's tier and the fuel
+    /// it has left.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
     /// [`Refusal::Operands`] when the tuple cannot be moved into the store —
-    /// recorded — the body does not lower, the migration answers nothing, or
-    /// its answer cannot be laid out; [`Refusal::Heap`] past the heap's limit.
+    /// recorded — the host refuses the migration — its reason recorded — the
+    /// body does not lower, the migration answers nothing, or its answer
+    /// cannot be laid out; [`Refusal::Heap`] past the heap's limit.
     fn migrated(
         &mut self,
         runtime: &mut Runtime,
-        body: CommandId,
+        (at, world, body): (CommandId, World, CommandId),
         captures: Word,
     ) -> Result<Word, Refusal>
     {
@@ -1103,20 +1109,41 @@ impl<'run, 'host> Calls<'run, 'host>
             return Err(Refusal::Operands);
         };
         let fields = fields.to_vec();
-        let lowered = match self.migrations.entry(body) {
-            Entry::Occupied(lowered) => lowered.into_mut(),
-            Entry::Vacant(vacant) => vacant.insert(
-                lower_suspended(self.arena, self.definitions, body)
-                    .map_err(|_form| Refusal::Operands)?,
-            ),
+        let decided = match self.offer.as_deref_mut() {
+            Some(offer) => {
+                let mut values = HostValues::new(self.arena, self.store);
+                let request = MigrationRequest {
+                    world,
+                    at,
+                    captures: &fields,
+                };
+                offer.migrate(request, &mut values)
+            },
+            None => Migrated::Here,
         };
-        let answer = migrate(
-            self.codes.tier(),
-            (self.arena, self.definitions, lowered),
-            runtime.fuel(),
-            (self.store, &fields),
-        )
-        .ok_or(Refusal::Operands)?;
+        let answer = match decided {
+            Migrated::Here => {
+                let lowered = match self.migrations.entry(body) {
+                    Entry::Occupied(lowered) => lowered.into_mut(),
+                    Entry::Vacant(vacant) => vacant.insert(
+                        lower_suspended(self.arena, self.definitions, body)
+                            .map_err(|_form| Refusal::Operands)?,
+                    ),
+                };
+                migrate(
+                    self.codes.tier(),
+                    (self.arena, self.definitions, lowered),
+                    runtime.fuel(),
+                    (self.store, &fields),
+                )
+                .ok_or(Refusal::Operands)?
+            },
+            Migrated::Answered(answer) => answer,
+            Migrated::Refused(why) => {
+                self.refused = Some(Refused::Migration(at, why));
+                return Err(Refusal::Operands);
+            },
+        };
         match self.laid_out(runtime, core::slice::from_ref(&answer)) {
             Ok(words) => words.first().copied().ok_or(Refusal::Operands),
             Err(Unlaid::Value(_)) => Err(Refusal::Operands),

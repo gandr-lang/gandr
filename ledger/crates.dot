@@ -339,4 +339,5 @@ digraph crates {
   "runtime-net" -> "storage-artifact" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "storage-artifact" -> "storage-chunker" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "storage-chunker" -> "storage-values" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
+  "storage-values" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
 }

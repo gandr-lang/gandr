@@ -2,6 +2,10 @@
 //! operation that needs one, so a program that never reaches the network
 //! binds no socket and starts no thread.
 
+use gandr_storage_values::ValueManifest;
+
+use crate::chunks::Chunks;
+use crate::chunks::Fetched;
 use crate::endpoint::Binding;
 use crate::endpoint::Endpoint;
 use crate::endpoint::Fault;
@@ -9,6 +13,10 @@ use crate::endpoint::Frame;
 use crate::endpoint::StreamId;
 use crate::peer::NodeId;
 use crate::peer::Peer;
+use crate::worlds::Answer;
+use crate::worlds::Arrival;
+use crate::worlds::ArrivalId;
+use crate::worlds::Configuration;
 
 /// A host's network: an endpoint bound on first use, then each operation
 /// passed to it.
@@ -46,6 +54,18 @@ impl Net
     pub fn node_id(&self) -> NodeId
     {
         self.binding.node_id()
+    }
+
+    /// The chunks this network serves and fetches into, shared with its
+    /// endpoint once bound.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn chunks(&self) -> &Chunks
+    {
+        self.binding.chunks()
     }
 
     /// The endpoint, bound now when it is not yet.
@@ -152,5 +172,70 @@ impl Net
     ) -> Result<(), Fault>
     {
         self.endpoint()?.close(stream)
+    }
+
+    /// [`Endpoint::migrate`], binding first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::endpoint`] and [`Endpoint::migrate`].
+    #[inline]
+    pub fn migrate(
+        &mut self,
+        peer: &Peer,
+        configuration: &Configuration,
+    ) -> Result<Answer, Fault>
+    {
+        self.endpoint()?.migrate(peer, configuration)
+    }
+
+    /// [`Endpoint::arrive`], binding first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::endpoint`] and [`Endpoint::arrive`].
+    #[inline]
+    pub fn arrive(&mut self) -> Result<Arrival, Fault>
+    {
+        self.endpoint()?.arrive()
+    }
+
+    /// [`Endpoint::fetch_arrived`], binding first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::endpoint`] and [`Endpoint::fetch_arrived`].
+    #[inline]
+    pub fn fetch_arrived(
+        &mut self,
+        arrival: ArrivalId,
+        wanted: &ValueManifest,
+        held: &[ValueManifest],
+    ) -> Result<Fetched, Fault>
+    {
+        self.endpoint()?.fetch_arrived(arrival, wanted, held)
+    }
+
+    /// [`Endpoint::answer`], binding first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::endpoint`] and [`Endpoint::answer`].
+    #[inline]
+    pub fn answer(
+        &mut self,
+        arrival: ArrivalId,
+        answer: &Answer,
+    ) -> Result<(), Fault>
+    {
+        self.endpoint()?.answer(arrival, answer)
     }
 }

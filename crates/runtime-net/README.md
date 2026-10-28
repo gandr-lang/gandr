@@ -1,6 +1,6 @@
 # gandr-runtime-net
 
-The network a host holds for its `Net` interface: streams to peers named by their keys, over QUIC through iroh, and the chunk wire that fetches a committed value by content.
+The network a host holds for its `Net` interface: streams to peers named by their keys, over QUIC through iroh, the chunk wire that fetches a committed value by content, and the world wire that ships a migration to the host that runs it.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -14,11 +14,11 @@ The network a host holds for its `Net` interface: streams to peers named by thei
 
 ## Synopsis
 
-**What.** A `Net` is the network one run reaches: it binds an `Endpoint` on its first operation, dials a `Peer`, accepts a dialer, and sends, receives and closes the streams it minted. A peer is its key, the identity, with the socket addresses a dialer may try for it; a stream is a `StreamId` the endpoint minted, held by this host alone; a frame is a byte sequence at most `MAX_FRAME` long. An endpoint also serves the `Chunks` its host committed values into, and `Endpoint::fetch` asks a peer for the chunks of a value it lacks, naming the values it already holds. Every refusal is a `Fault` that names what it refused.
+**What.** A `Net` is the network one run reaches: it binds an `Endpoint` on its first operation, dials a `Peer`, accepts a dialer, and sends, receives and closes the streams it minted. A peer is its key, the identity, with the socket addresses a dialer may try for it; a stream is a `StreamId` the endpoint minted, held by this host alone; a frame is a byte sequence at most `MAX_FRAME` long. An endpoint also serves the `Chunks` its host committed values into, and `Endpoint::fetch` asks a peer for the chunks of a value it lacks, naming the values it already holds. `Endpoint::migrate` ships a `Configuration` — the migration's code, its world's name and its captures' manifests — and waits for the `Answer`, a value's manifest or a `Refusal`; the far end takes it with `arrive`, fetches the captures it lacks from the asker with `fetch_arrived`, and replies with `answer`. Every refusal is a `Fault` that names what it refused.
 
 **Why.** The `Net` interface of the core's host signature needs a driver behind it, so that two gandr processes exchange frames: the first step from one process to coordination, migration and distributed execution between hosts. Keys rather than addresses name peers, so a stream is bound to the peer its dialer named wherever that peer is reached. A value moves between hosts by content, committed at one end and read back at the other, so the second end needs the chunks it lacks, and an edited value should cost only the chunks the edit changed.
 
-**How.** The endpoint is an iroh endpoint under the `gandr/net/0` ALPN, with the relay off and the minimal preset, on a thread of its own running a current-thread tokio runtime; the program's thread asks it one operation at a time over a channel and waits for the answer. A task beside the requests accepts every connection: a dialer's stream waits for the owner's `accept`, and a fetch under `gandr/chunks/0` is answered at once. Each stream is one QUIC connection carrying one bidirectional stream, each frame a little-endian 32-bit length and its bytes. A close finishes this end, drains the peer's end to its finish, waits until the peer acknowledged every byte, then closes the connection, so neither end loses data the other sent. A fetch is one request, the wanted value's manifest and those of the values held, answered by every chunk of the wanted closure outside the held closures; the asker verifies each chunk against its digest before it keeps any, then walks the closure. Lookup is explicit, the addresses a peer carries, or mDNS on the local network.
+**How.** The endpoint is an iroh endpoint under the `gandr/net/0` ALPN, with the relay off and the minimal preset, on a thread of its own running a current-thread tokio runtime; the program's thread asks it one operation at a time over a channel and waits for the answer. A task beside the requests accepts every connection: a dialer's stream waits for the owner's `accept`, a fetch under `gandr/chunks/0` is answered at once, and a migration under `gandr/worlds/0` waits for the owner's `arrive`. Each stream is one QUIC connection carrying one bidirectional stream, each frame a little-endian 32-bit length and its bytes. A close finishes this end, drains the peer's end to its finish, waits until the peer acknowledged every byte, then closes the connection, so neither end loses data the other sent. A fetch is one request, the wanted value's manifest and those of the values held, answered by every chunk of the wanted closure outside the held closures; the asker verifies each chunk against its digest before it keeps any, then walks the closure. A migration is one connection: its first stream carries the configuration and then the answer, and further streams carry fetches in both directions — the far end's for the captures while it runs, the asker's for the answer, naming the captures held — so the far end never dials back. Lookup is explicit, the addresses a peer carries, or mDNS on the local network.
 
 ## References
 
@@ -34,6 +34,7 @@ The network a host holds for its `Net` interface: streams to peers named by thei
 - `Peer`, `NodeId`, `Secret`, `PeerError`: a peer's key and addresses spelled `<key>@<ip:port>…`, the key alone, the secret an endpoint proves its key with, and why a spelling was refused.
 - `StreamId`, `MAX_FRAME`, `Fault`: a stream, the largest frame, and every refusal an operation makes.
 - `Chunks`, `CHUNKS_ALPN`, `Fetched`: the store an endpoint serves and fetches into, shared with its host; the fetch protocol's name; what one fetch carried.
+- `Configuration`, `Code`, `WorldName`, `Answer`, `Refusal`, `Arrival`, `ArrivalId`, `WORLDS_ALPN`: a migration as it is shipped, the name of its code, its world's name, what comes back, a migration taken at the far end and its name there, and the protocol's name.
 
 ## Expected features
 
@@ -42,7 +43,7 @@ The network a host holds for its `Net` interface: streams to peers named by thei
 
 ## Examples
 
-The tests bind two endpoints on loopback and exchange frames through them, refuse a held socket, an oversized frame and an unknown stream, and bind a network on its first operation. The chunk tests fetch a list and then an edit of it, counting the second fetch against the chunks the edit added and the locality bound, and refuse a forged holder's tampered chunk, an unframed answer and a value the holder lacks.
+The tests bind two endpoints on loopback and exchange frames through them, refuse a held socket, an oversized frame and an unknown stream, and bind a network on its first operation. The chunk tests fetch a list and then an edit of it, counting the second fetch against the chunks the edit added and the locality bound, and refuse a forged holder's tampered chunk, an unframed answer and a value the holder lacks. The world tests run a migration at the far end and bring its answer back, carry a refusal back with nothing fetched, and never offer a configuration that does not frame.
 
 ```sh
 cargo test -p gandr-runtime-net
@@ -50,7 +51,7 @@ cargo test -p gandr-runtime-net
 
 ## Where the detail lives
 
-`src/lib.rs` states the crate's place among the stores; `src/endpoint.rs` the operations, the frame and every fault; `src/endpoint/driver.rs` the endpoint's thread, the streams it holds, the accepting task and the close; `src/chunks.rs` the chunk wire, its framing and its boundaries; `src/peer.rs` keys and their spelling; `src/net.rs` the lazy binding.
+`src/lib.rs` states the crate's place among the stores; `src/endpoint.rs` the operations, the frame and every fault; `src/endpoint/driver.rs` the endpoint's thread, the streams it holds, the accepting task and the close; `src/chunks.rs` the chunk wire, its framing and its boundaries; `src/worlds.rs` the world wire and its boundaries; `src/peer.rs` keys and their spelling; `src/net.rs` the lazy binding.
 
 ## License
 

@@ -1,6 +1,8 @@
 //! The run verb: one source read as a program, and its entry run — the `main`
 //! it declares at its top level. A source declaring no `main` runs nothing: a
-//! source of declarations alone is checked or tested, not run.
+//! source of declarations alone is checked or tested, not run. The host verb
+//! reads a source the same way and hosts its worlds: each migration another
+//! host ships to a world its bindings bind here runs here.
 //!
 //! # A script never reaches the machine with a refusal in it
 //!
@@ -35,7 +37,12 @@ use crate::compose::lower_unit_source;
 use crate::evaluate::Console;
 use crate::evaluate::Entered;
 use crate::evaluate::Entry;
+use crate::evaluate::Hosted;
+use crate::evaluate::MigrationCount;
+use crate::evaluate::ProgramKey;
 use crate::evaluate::RunStatus;
+use crate::evaluate::WorldBindings;
+use crate::evaluate::Worlds;
 use crate::evaluate::declaration_name;
 use crate::reader::Reader;
 use crate::walk::SourceFault;
@@ -61,6 +68,8 @@ pub enum Ran<'source>
         /// What the run came to.
         entered: Entered<'source>,
     },
+    /// The source's worlds were hosted, and what hosting them came to.
+    Hosted(Hosted),
 }
 
 impl Ran<'_>
@@ -72,7 +81,9 @@ impl Ran<'_>
     /// - ensures: a refused source and a source with no program never reached
     ///   the machine, [`RunStatus::Unreached`]; an entry that exited is
     ///   [`RunStatus::Value`], and one that ended short of a status has its
-    ///   evaluation's.
+    ///   evaluation's; hosting that answered every migration asked for is
+    ///   [`RunStatus::Value`], and hosting the network ended first
+    ///   [`RunStatus::Failed`].
     /// - provides: the status the driver's exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -87,7 +98,8 @@ impl Ran<'_>
     #[must_use]
     #[spec(ensures: |ret| match *self {
         Self::Refused | Self::NoProgram => matches!(ret, RunStatus::Unreached),
-        Self::Entered { entered: Entered::Exited(_), .. } => matches!(ret, RunStatus::Value),
+        Self::Entered { entered: Entered::Exited(_), .. } | Self::Hosted(Hosted::Answered(_)) => matches!(ret, RunStatus::Value),
+        Self::Hosted(Hosted::Faulted { .. }) => matches!(ret, RunStatus::Failed),
         Self::Entered { entered: Entered::Ended(ref evaluation), .. } => matches!((evaluation.status(), ret),
             (RunStatus::Value, RunStatus::Value) | (RunStatus::Failed, RunStatus::Failed)
                 | (RunStatus::Unreached, RunStatus::Unreached)),
@@ -99,7 +111,9 @@ impl Ran<'_>
             Self::Entered {
                 entered: Entered::Exited(_),
                 ..
-            } => RunStatus::Value,
+            }
+            | Self::Hosted(Hosted::Answered(_)) => RunStatus::Value,
+            Self::Hosted(Hosted::Faulted { .. }) => RunStatus::Failed,
             Self::Entered {
                 entered: Entered::Ended(ref evaluation),
                 ..
@@ -111,18 +125,19 @@ impl Ran<'_>
 /// Run the program `composed` holds, its entry given `arguments`, unless a
 /// declaration of it was refused.
 ///
-/// Each line it prints is handed to `console`, and each `Net` operation is
-/// served on `net` when it is given.
+/// Each line it prints is handed to `console`, each `Net` operation is
+/// served on `net` when it is given, and each migration runs where `worlds`'
+/// bindings bind its world when it is given.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `worlds` holds the key of the text `composed` was composed from.
 /// - ensures: a source the lowering refused whole, or holding a declaration
 ///   whose produced verdict is a refusal, is [`Ran::Refused`] and runs nothing;
 ///   a source declaring no `main` at its top level is [`Ran::NoProgram`] and
 ///   runs nothing, its last declaration included; a program with an entry
 ///   enters it once with `arguments`, writing each line it prints to `console`,
-///   in order, serving its `Net` operations on `net`, and [`Ran::Entered`]
-///   carries it.
+///   in order, serving its `Net` operations on `net` and its migrations as
+///   `worlds` binds them, and [`Ran::Entered`] carries it.
 /// - provides: the run step `gandr run` and [`run_source`] share.
 /// - fails: never; every failure is a [`Ran`].
 /// - panics: none.
@@ -158,13 +173,14 @@ impl Ran<'_>
         Ran::Refused => was_refused,
         Ran::NoProgram => !was_refused && expected_entry.is_none(),
         Ran::Entered { target, .. } => !was_refused && expected_entry == Some(target),
+        Ran::Hosted(_) => false,
     },
 )]
 pub fn execute<'source>(
     composed: &mut Composed<'source>,
     arguments: &[String],
     console: &mut dyn Console,
-    net: Option<&mut Net>,
+    (net, worlds): (Option<&mut Net>, Option<Worlds<'_>>),
 ) -> Ran<'source>
 {
     let Composed::Settled {
@@ -191,10 +207,58 @@ pub fn execute<'source>(
     match program.name(entry.constant) {
         Maybe::Present(name) => Ran::Entered {
             target: name,
-            entered: program.enter(entry, arguments, console, net),
+            entered: program.enter(entry, arguments, console, (net, worlds)),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
+}
+
+/// Host the worlds of the program `composed` holds on `net`, unless a
+/// declaration of it was refused.
+///
+/// It answers `migrations` migrations shipped to it, each as `worlds`'
+/// bindings decide, and prints a line for each on `console`.
+///
+/// # Specification
+/// - requires: `worlds` holds the key of the text `composed` was composed from.
+/// - ensures: a refused source is [`Ran::Refused`] and hosts nothing; otherwise
+///   [`Ran::Hosted`] with what [`Program::host`] came to.
+/// - fails: never; every failure is a [`Ran`].
+/// - panics: none.
+/// - executable: none — the migrations are the askers', across the network.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two hosts in turn each host two migrations of one run and
+///   print a line for each.
+/// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+///
+/// [`Program::host`]: crate::Program::host
+#[inline]
+pub fn host<'source>(
+    composed: &Composed<'source>,
+    (net, worlds): (&mut Net, Worlds<'_>),
+    migrations: MigrationCount,
+    console: &mut dyn Console,
+) -> Ran<'source>
+{
+    let Composed::Settled {
+        ref report,
+        ref program,
+        ..
+    } = *composed
+    else {
+        return Ran::Refused;
+    };
+    let refused = report.declarations().iter().any(|declaration| {
+        !matches!(
+            declaration.produced().refusal(),
+            Maybe::Absent(produced_refusal::Absent::Unrefused)
+        )
+    });
+    if refused {
+        return Ran::Refused;
+    }
+    Ran::Hosted(program.host(worlds, net, migrations, console))
 }
 
 /// Compose `source` under the strict root, as a source at no path, and run
@@ -235,7 +299,7 @@ pub fn run_source<'source>(
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
 {
     let mut composed = compose(grammar, CorpusRoot::Strict, source, lowerings)?;
-    let ran = execute(&mut composed, &[], console, None);
+    let ran = execute(&mut composed, &[], console, (None, None));
     Ok((composed, ran))
 }
 
@@ -323,6 +387,12 @@ pub struct Script
     /// The network its entry's `Net` operations are served on, when it has
     /// one; boxed, since a network outweighs the rest of a script.
     net: Option<Box<Net>>,
+    /// The world bindings its migrations go where they bind them by, when it
+    /// has them.
+    bindings: Option<WorldBindings>,
+    /// How many migrations it hosts instead of running its entry, when it
+    /// hosts.
+    hosting: Option<MigrationCount>,
 }
 
 impl Script
@@ -344,6 +414,8 @@ impl Script
             lowerings: LoweringCount::default(),
             arguments: Vec::new(),
             net: None,
+            bindings: None,
+            hosting: None,
         }
     }
 
@@ -397,9 +469,66 @@ impl Script
         self.net = Some(Box::new(net));
     }
 
+    /// This script, its migrations run where `bindings` bind their worlds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a later [`Self::run`] runs each migration where `bindings`
+    ///   bind its world, and refuses an entry that may migrate to a world no
+    ///   binding names; without bindings every migration runs here.
+    /// - provides: the world bindings `gandr run` and `gandr host` read from
+    ///   their `--world` flags.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — what the bindings decide is observed by the later
+    ///   run; the store itself is a move.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a script whose bindings bind its world to a hosting
+    ///   endpoint answers there; one binding it to itself runs here; one
+    ///   binding another world is refused before it runs.
+    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+    /// - witness: `tests::run::a_world_bound_to_this_host_runs_here`
+    /// - witness: `tests::run::a_world_no_binding_names_is_refused_before_the_run`
+    #[inline]
+    pub fn bindings(
+        &mut self,
+        bindings: WorldBindings,
+    )
+    {
+        self.bindings = Some(bindings);
+    }
+
+    /// This script, hosting `migrations` migrations of its worlds instead of
+    /// running its entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a later [`Self::run`] hosts `migrations` migrations on the
+    ///   script's network, as its bindings decide each; without a network it
+    ///   hosts none.
+    /// - provides: `gandr host`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — what hosting answers is observed by the later run;
+    ///   the store itself is a move.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two hosts in turn each host two migrations.
+    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+    #[inline]
+    pub fn hosting(
+        &mut self,
+        migrations: MigrationCount,
+    )
+    {
+        self.hosting = Some(migrations);
+    }
+
     /// Read the source, compose it as `check` would, and run its program,
-    /// each line it prints handed to `console` and each `Net` operation served
-    /// on the script's network.
+    /// each line it prints handed to `console`, each `Net` operation served
+    /// on the script's network and each migration sent where its bindings
+    /// bind the world; or, for a script that hosts, host its worlds.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -410,7 +539,9 @@ impl Script
     ///   [`SourceFault::Compose`], each naming the path given. Otherwise the
     ///   source is laid after the prelude alone, composed under its root, its
     ///   step built as a walk builds it, and [`execute`] runs it, its entry
-    ///   given the script's arguments and its network.
+    ///   given the script's arguments, its network and its bindings keyed by
+    ///   the laid text; a script that hosts is [`host`]ed instead, and one with
+    ///   no network or bindings hosts nothing.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
@@ -475,12 +606,22 @@ impl Script
             });
         match composed {
             Ok(mut composed) => {
-                let ran = execute(
-                    &mut composed,
-                    &self.arguments,
-                    console,
-                    self.net.as_deref_mut(),
-                );
+                let worlds = self.bindings.as_ref().map(|bindings| Worlds {
+                    bindings,
+                    program: ProgramKey::of(source),
+                });
+                let net = self.net.as_deref_mut();
+                let ran = match (self.hosting, net, worlds) {
+                    (Some(migrations), Some(net), Some(worlds)) => {
+                        host(&composed, (net, worlds), migrations, console)
+                    },
+                    (Some(_), ..) => Ran::Hosted(Hosted::Faulted {
+                        answered: MigrationCount::default(),
+                    }),
+                    (None, net, worlds) => {
+                        execute(&mut composed, &self.arguments, console, (net, worlds))
+                    },
+                };
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {
                     step: Step::Source {

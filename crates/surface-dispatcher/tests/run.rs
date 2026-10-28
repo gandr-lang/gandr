@@ -11,6 +11,9 @@
 
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
+use core::str::FromStr as _;
+use core::time::Duration;
+use std::net::UdpSocket;
 use std::path::Path;
 use std::path::PathBuf;
 use std::thread;
@@ -22,24 +25,40 @@ use gandr_runtime_net::Frame;
 use gandr_runtime_net::Net;
 use gandr_runtime_net::Peer;
 use gandr_runtime_net::Secret;
+use gandr_runtime_net::WorldName;
+use gandr_storage_values::ChunkCount;
 use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::ExitStatus;
+use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::SourceFault;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Unrunnable;
+use gandr_surface_dispatcher::WorldBinding;
+use gandr_surface_dispatcher::WorldBindingError;
+use gandr_surface_dispatcher::WorldBindings;
 use gandr_surface_dispatcher::run_source;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 
 /// A program whose `main` returns forty-two.
 const ANSWER: &str = "def answer = 42 ;\ndef main() -> -F Integer { return answer }\n";
+
+/// The hosting endpoint's secret, fixed so a run can bind the seat to its
+/// key.
+const HOST_SECRET: &str = "0505050505050505050505050505050505050505050505050505050505050505";
+
+/// How many integers the descent case's list holds: enough for its image to
+/// span many chunks.
+const LISTED: u16 = 300;
 
 /// A scratch source file, removed when dropped.
 #[repr(transparent)]
@@ -125,6 +144,7 @@ impl Drop for Scratch
 #[spec(ensures: |ref ret| match *ret {
         Ran::Entered { target, .. } => text.as_ref().contains(target.as_ref()),
         Ran::Refused | Ran::NoProgram => true,
+        Ran::Hosted(_) => false,
     })]
 fn ran_text(text: SourceText<'_>) -> Ran<'_>
 {
@@ -438,5 +458,247 @@ fn a_script_pings_over_its_network_3186()
             ..
         }),
         "a stream no network minted is declined: {run:?}"
+    );
+}
+
+/// The migration model: two migrations to the seat, answering 42.
+///
+/// # Specification
+/// trivial.
+fn model() -> PathBuf
+{
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/worlds/two-processes.gandr")
+}
+
+/// The world bindings binding `world` to `peer`.
+///
+/// # Specification
+/// trivial.
+fn bindings(
+    world: &WorldName,
+    peer: &Peer,
+) -> WorldBindings
+{
+    WorldBindings::new(vec![
+        WorldBinding::from_str(&format!("{world}={peer}")).expect("the binding reads"),
+    ])
+}
+
+/// What `script` exited with, when its entry exited.
+///
+/// # Specification
+/// trivial.
+fn exited(script: &mut Script) -> Option<ExitStatus>
+{
+    match script.run(&mut Captured::default()) {
+        ScriptRun::Source {
+            ran:
+                Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+            ..
+        } => Some(status),
+        ScriptRun::Source { .. } | ScriptRun::Fault { .. } => None,
+    }
+}
+
+#[test]
+fn a_world_binding_reads_its_name_and_its_peer()
+{
+    let peer =
+        Peer::new(Secret::generate().node_id()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 4433)));
+    let bound = bindings(&WorldName::from("seat"), &peer);
+    assert_eq!(
+        bound
+            .peer(&WorldName::from("seat"))
+            .map(ToString::to_string),
+        Some(peer.to_string()),
+        "the world names the peer after its `=`"
+    );
+    assert!(
+        bound.peer(&WorldName::from("operator")).is_none(),
+        "a world no binding names has no host"
+    );
+    for (text, refusal) in [
+        ("seat", "Unbound"),
+        (&*format!("={peer}"), "Unnamed"),
+        ("seat=not-a-key", "Peer"),
+    ] {
+        let read = WorldBinding::from_str(text);
+        assert!(
+            matches!(
+                (&read, refusal),
+                (Err(WorldBindingError::Unbound(_)), "Unbound")
+                    | (Err(WorldBindingError::Unnamed(_)), "Unnamed")
+                    | (Err(WorldBindingError::Peer(_)), "Peer")
+            ),
+            "`{text}` is refused {refusal}: {read:?}"
+        );
+    }
+}
+
+#[test]
+fn a_world_bound_to_this_host_runs_here()
+{
+    let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+    let secret = Secret::from_str(HOST_SECRET).expect("the secret is hex");
+    let here = Peer::new(secret.node_id()).at(loopback);
+    let mut script = Script::new(model());
+    script.network(Net::new(Binding::new(secret).at(loopback)));
+    script.bindings(bindings(&WorldName::from("far"), &here));
+    assert_eq!(
+        exited(&mut script),
+        Some(ExitStatus::from(42_u8)),
+        "a world bound to this host's key runs here, and no host elsewhere is asked"
+    );
+}
+
+#[test]
+fn a_world_no_binding_names_is_refused_before_the_run()
+{
+    let elsewhere =
+        Peer::new(Secret::generate().node_id()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 4433)));
+    let mut script = Script::new(model());
+    script.bindings(bindings(&WorldName::from("near"), &elsewhere));
+    let run = script.run(&mut Captured::default());
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Ended(Evaluation::Unrunnable(Unrunnable::UnboundWorld(world))),
+                    ..
+                },
+                ..
+            } if world.as_ref() == "far"
+        ),
+        "an entry that may migrate to a world no binding names never runs: {run:?}"
+    );
+}
+
+/// The lines a host prints hosting two migrations of the source at `path`,
+/// at `socket` under [`HOST_SECRET`], the seat bound to `peer`.
+///
+/// # Specification
+/// trivial.
+fn hosted(
+    path: &Path,
+    (peer, socket): (&Peer, SocketAddr),
+) -> Vec<String>
+{
+    // The socket a host that just ended held may still be closing.
+    let mut net = Net::new(
+        Binding::new(Secret::from_str(HOST_SECRET).expect("the secret is hex")).at(socket),
+    );
+    let mut attempts = 0_u32;
+    while net.endpoint().is_err() {
+        attempts = attempts.saturating_add(1);
+        assert!(attempts < 100, "the host binds its socket");
+        thread::sleep(Duration::from_millis(50));
+    }
+    let mut script = Script::new(path.to_path_buf());
+    script.network(net);
+    script.bindings(bindings(&WorldName::from("seat"), peer));
+    script.hosting(MigrationCount::from(2_usize));
+    let mut console = Captured::default();
+    let run = script.run(&mut console);
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Hosted(Hosted::Answered(answered)),
+                ..
+            } if usize::from(answered) == 2
+        ),
+        "the host answers both migrations: {run:?}"
+    );
+    console.lines().to_vec()
+}
+
+/// The chunks each of a host's `lines` says its migration's captures
+/// fetched.
+///
+/// # Specification
+/// trivial.
+fn fetched(lines: &[String]) -> Vec<ChunkCount>
+{
+    lines
+        .iter()
+        .map(|line| {
+            line.strip_prefix("ran a migration at seat, fetching ")
+                .and_then(|rest| rest.strip_suffix(" chunks"))
+                .and_then(|count| count.parse::<usize>().ok())
+                .map(ChunkCount::from)
+                .expect("a line naming the chunks fetched")
+        })
+        .collect()
+}
+
+/// A host that held a list and its edit at the seat ends, and another under
+/// its key takes its place. The run's next migration reads the list there:
+/// the new host fetches all of it from the runner. The one after reads the
+/// edit: naming the list it holds, the host fetches only the chunks the edit
+/// changed. The run answers as it would in one process.
+#[test]
+fn a_second_migration_of_an_edited_list_fetches_what_changed()
+{
+    let listed = (1 ..= LISTED)
+        .map(|element| element.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let text = format!(
+        "pub world operator;\npub world seat;\n\ndef rec size(xs : List(Integer)) -> Integer {{\n  \
+         case xs {{\n    [] => 0,\n    [x, ..rest] => 1 + size[<](rest)\n  }}\n}}\n\n@[ \
+         entry((operator, seat, seat, seat, seat)) ]\ndef main() -> Integer {{\n  run listed : \
+         List(Integer) at seat <- migrate [seat] {{ (hold [{listed}]) }};\n  leta xs = \
+         listed;\n  run edited : List(Integer) at seat <- migrate [seat] {{ (hold cons(0, xs)) \
+         }};\n  leta ys = edited;\n  run before <- migrate [seat] {{ size(xs) }};\n  run after \
+         <- migrate [seat] {{ size(ys) }};\n  pure (after - before + 41)\n}}\n"
+    );
+    let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));
+    let alone = exited(&mut Script::new(file.0.clone()));
+    assert_eq!(
+        alone,
+        Some(ExitStatus::from(42_u8)),
+        "in one process the run answers 42"
+    );
+    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .and_then(|probe| probe.local_addr())
+        .expect("a free loopback port");
+    let peer = Peer::new(
+        Secret::from_str(HOST_SECRET)
+            .expect("the secret is hex")
+            .node_id(),
+    )
+    .at(socket);
+    let (first, second, status) = thread::scope(|scope| {
+        let first = scope.spawn(|| hosted(&file.0, (&peer, socket)));
+        let running = scope.spawn(|| {
+            let mut script = Script::new(file.0.clone());
+            script.network(Net::new(
+                Binding::new(Secret::generate()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+            ));
+            script.bindings(bindings(&WorldName::from("seat"), &peer));
+            exited(&mut script)
+        });
+        let first = first.join().expect("the first host ends");
+        let second = hosted(&file.0, (&peer, socket));
+        (first, second, running.join().expect("the run ends"))
+    });
+    assert_eq!(
+        status,
+        Some(ExitStatus::from(42_u8)),
+        "across hosts the run answers 42"
+    );
+    assert_eq!(
+        fetched(&first),
+        [ChunkCount::from(0_usize); 2],
+        "the first host made both values it read"
+    );
+    let second = fetched(&second);
+    assert!(
+        matches!(*second, [whole, edit] if ChunkCount::from(0_usize) < edit && edit < whole),
+        "the second host fetches the list whole, then fewer chunks for its edit: {second:?}"
     );
 }

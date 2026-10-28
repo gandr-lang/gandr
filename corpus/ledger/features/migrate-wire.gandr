@@ -1,0 +1,21 @@
+/// `migrate-wire` ships a migration to the process a host binds its world to.
+///
+/// Implemented: a host's world bindings bind each declared world to the key of a process; `gandr run --world` ships a migration to a world bound to another key, `gandr host` of the same source runs it, fetching only the captures it does not hold whole, and the answer crosses back by content; an entry that may migrate to a world no binding names is refused `UnboundWorld` before it runs.
+/// Not implemented: a far host that loads the code by content key and holds no source; #3293 owes it.
+///
+/// With no world bindings, the migration runs in this process and answers what the seat's host answers.
+///
+/// - see: corpus/model/worlds/two-processes.gandr
+/// - see: crates/surface-driver/tests/net.rs
+
+/// The world the migration starts from.
+pub world operator;
+
+/// The world the migration runs at.
+pub world seat;
+
+/// The seat computes forty-two, and the answer crosses back.
+@[ entry((operator, seat)), runs("42") ]
+def there() -> Integer {
+  migrate [seat] { pure (6 * 7) }
+}

@@ -307,7 +307,7 @@ impl Framed
     ///   whole at the other end.
     /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
     #[spec(captures: before = self.0.len(), ensures: |ret| ret.is_ok() || self.0.len() == before)]
-    fn push(
+    pub(super) fn push(
         &mut self,
         pieces: &[Part<'_>],
     ) -> Result<(), Oversized>
@@ -357,7 +357,7 @@ impl AsRef<[u8]> for Framed
 /// A part longer than [`MAX_FRAME`], by its length in bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
-struct Oversized(u64);
+pub struct Oversized(u64);
 
 impl From<Oversized> for Fault
 {
@@ -374,7 +374,7 @@ impl From<Oversized> for Fault
 
 /// Bytes this protocol does not frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Malformed;
+pub struct Malformed;
 
 /// Why a holder refused a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -430,7 +430,7 @@ impl From<Oversized> for Unanswered
 /// The bytes of one part.
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-struct Part<'bytes>(&'bytes [u8]);
+pub struct Part<'bytes>(pub &'bytes [u8]);
 
 impl<'bytes> Part<'bytes>
 {
@@ -438,7 +438,7 @@ impl<'bytes> Part<'bytes>
     ///
     /// # Specification
     /// trivial.
-    fn manifest(self) -> ManifestImage<'bytes>
+    pub(super) fn manifest(self) -> ManifestImage<'bytes>
     {
         ManifestImage::from(self.0)
     }
@@ -466,7 +466,7 @@ impl<'bytes> Part<'bytes>
 /// The parts of a request or an answer not yet read, in order.
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-struct Parts<'bytes>(&'bytes [u8]);
+pub struct Parts<'bytes>(pub &'bytes [u8]);
 
 impl<'bytes> Iterator for Parts<'bytes>
 {

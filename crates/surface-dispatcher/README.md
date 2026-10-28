@@ -14,7 +14,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Synopsis
 
-**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`, whose `StatusReport` states that toolchain management is not implemented. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given, the `Verb` it runs under and the `Width` it is visited at. `Walk::visit` reads every source under the paths and carries each import-connected component once through the composition — parse, lower once, `adapt`, judge, the kernel's re-derivation, the `Program` that runs an accepted declaration, and the settle comparison — and hands each source its share of the verdict, in walk order. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports. `Invocation::Run` routes to `Outcome::Script`: a `Script` of one path and its arguments, composed as `check` would, which runs the entry [`script`](src/script.rs) states, its `RunStatus` the exit code `gandr run` reports. `Invocation::Stage` routes to `Outcome::Stage`, a `Staging` checked as [`stage`](src/stage.rs) states.
+**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given, the `Verb` it runs under and the `Width` it is visited at. `Walk::visit` reads every source under the paths and carries each import-connected component once through the composition — parse, lower once, `adapt`, judge, the kernel's re-derivation, the `Program` that runs an accepted declaration, and the settle comparison — and hands each source its share of the verdict, in walk order. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports. `Invocation::Run` routes to `Outcome::Script`: a `Script` of one path and its arguments, composed as `check` would, which runs its entry or hosts its worlds as [`script`](src/script.rs) states. `Invocation::Stage` routes to `Outcome::Stage`, a `Staging` checked as [`stage`](src/stage.rs) states.
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
 
@@ -38,16 +38,16 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Walk`, `Walk::visit`, `Step`, `Standing`, `Standing::of` and `SourceFault`: the walk at any width, and the standing a step or a session submission carries.
 - `HostGrant`, `OperationName`, `WorldName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by, and the worlds every declaration is entered at, read against the worlds each module declares; `compose` and `test` judge under neither.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.
-- `Exercised` and `Row`: the fragment's exercised table, counted.
+- `Exercised` and `Row`: the fragment's exercised table.
 - `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `last_declared::Absent` and `declaration_name::Absent`: the run stage.
-- `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb.
+- `Script`, `ScriptRun`, `Ran`, `execute`, `run_source` and `host`: the run and host verbs; where migrations go is [`worlds`](src/evaluate/worlds.rs)'s.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
 - `Census`, `CensusStep`, `CensusFault` and `CellRow`: the cells verb ([`cells`](src/cells.rs)).
 - `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 
-Each nontrivial operation states an executable contract or a local exemption, plus a bounded adequacy claim pointing to its witnesses. The boundary evidence includes:
+Each nontrivial operation states a contract or an exemption, and an adequacy claim naming its witnesses. The boundary evidence includes:
 
 | Surface | Observed boundary |
 | ------- | ----------------- |
@@ -124,6 +124,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts.
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures try-first.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — only a cache a driver installs recalls; the rest recheck.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's worlds.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run is a local artifact.
 
 ## License
