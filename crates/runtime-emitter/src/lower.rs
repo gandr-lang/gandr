@@ -167,6 +167,7 @@ use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::Introduces;
 use gandr_core_sequent::NodeAddress;
 use gandr_core_sequent::NodeCount;
+use gandr_core_sequent::Opens;
 use gandr_core_sequent::Ownership;
 use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::ProducerId;
@@ -174,6 +175,9 @@ use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Route;
 use gandr_core_sequent::Selector;
 use gandr_core_sequent::Suspension;
+use gandr_core_sequent::command_children;
+use gandr_core_sequent::consumer_children;
+use gandr_core_sequent::producer_children;
 use gandr_core_sequent::reach;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::FieldLabel;
@@ -425,7 +429,21 @@ impl Scopes
         binding: Binding,
     ) -> (Scope, Slot)
     {
-        let slot = self.depth(scope);
+        self.bind_at(scope, binding, self.depth(scope))
+    }
+
+    /// `scope` extended by one binder of `binding` at `slot`, and the slot;
+    /// the binders inside it take the slots past `slot`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bind_at(
+        &mut self,
+        scope: Scope,
+        binding: Binding,
+        slot: Slot,
+    ) -> (Scope, Slot)
+    {
         self.binders.push(Binder {
             parent: scope,
             binding,
@@ -790,9 +808,11 @@ enum Task
     /// handler gives up what it kept for its clauses and its capability, and
     /// its return clause runs as a bound frame's block does.
     Returned(CommandId, Scope),
-    /// An operation clause, entered by the host with the captured stack in
-    /// hand and the payload in its slot.
-    Clause(CommandId, Scope),
+    /// An operation clause, entered by the host on the path its body was read
+    /// for: with the payload in its slot and the captured stack in hand, or
+    /// with the payload in hand and the frames left standing beneath the
+    /// marker.
+    Clause(CommandId, Scope, Path),
     /// An access's frame, popped with the body's answer in hand: the view's
     /// slot, the unwind's label, the access command and its scope.
     Ended(Slot, Label, CommandId, Scope),
@@ -808,6 +828,9 @@ enum Task
     Forked(CommandId, Scope),
     /// The joined frame's block, popped with an ended task's answer in hand.
     Joined,
+    /// The marker's block, popped with a clause's answer in hand: the frames
+    /// beneath the marker are given up and popped, and the answer passed on.
+    Marked,
     /// Run the suspended capture in hand against the consumer its cut
     /// delivers it to: the consumer loaded, the capture entered.
     Capture(ConsumerId, Scope),
@@ -964,6 +987,13 @@ pub enum Callee
     /// captured, innermost on top, each entering that access's unwind in the
     /// window its frame held; answers the unit.
     Abandon(CommandId),
+    /// Resume a clause's stack whose frames stand where its operation left
+    /// them: pop the marker above them; answers the argument.
+    Rejoin(CommandId),
+    /// Leave a clause whose frames stand beneath the marker the run just
+    /// popped: give up what they own and pop them with their handler's frame;
+    /// answers the argument.
+    Escape,
     /// Hold the argument in a fresh cell; answers the cell.
     Hold,
     /// Lend a held cell's value through a fresh view; answers the view.
@@ -1081,8 +1111,167 @@ pub struct Clause
     pub operation: OperationName,
     /// The clause's label, which the host continues at.
     pub label: Label,
-    /// The slot of the handler's window the payload is written to.
+    /// The slot of the handler's window a capturing clause's payload is
+    /// written to; a clause on the standing frames takes it in hand.
     pub payload: Slot,
+    /// How an operation reaches the clause.
+    pub path: Path,
+}
+
+/// How an operation reaches its clause: the column the hosting table holds
+/// per clause, read off the clause's body as it is lowered. The host reads
+/// it before the clause runs.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Path
+{
+    /// The clause resumes its stack only where it holds no frame of its own,
+    /// and its body can neither capture nor walk the frames. The operation
+    /// leaves its frames where they stand, under a marker; the resumption
+    /// pops the marker, and an answer the clause gives instead gives up what
+    /// the frames own and pops them.
+    Resume,
+    /// The clause never names its stack, and its body can neither capture nor
+    /// walk the frames. The operation leaves its frames under a marker, and
+    /// the clause's answer gives up what they own and pops them.
+    Return,
+    /// Any other clause: the operation captures its frames into a stack.
+    Capture,
+}
+
+/// The path an operation takes to the clause whose body is `body`, with the
+/// resumptions of the clause's stack that pop the marker when it is
+/// [`Path::Resume`].
+///
+/// The body is read from its root, where its stack is the innermost producer
+/// and its return covariable the innermost covariable. A node is in tail
+/// position when nothing the clause pushed waits beneath it: the root is,
+/// and so are the arms and the bound body of a consumer a value is cut
+/// against.
+///
+/// # Specification
+/// - ensures: [`Path::Return`] when the stack occurs nowhere and the body holds
+///   no command but cuts, no destructor and no fold; [`Path::Resume`] with
+///   every resumption of the stack when, besides, the stack occurs only as the
+///   stack of resumptions in tail position, each answering the clause's return
+///   covariable; [`Path::Capture`] with no resumption otherwise.
+/// - executable: none — the path is the walk's one computation; a predicate
+///   would restate it.
+///
+/// # Errors
+/// [`Form::Dangling`] for a node the arena does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a clause resuming from its root, one returning a value,
+///   one resuming beneath a frame of its own, one handing its stack on and one
+///   performing before it resumes take the paths stated; a tail position kept
+///   under a bind or the stack missed as a value changes one.
+/// - witness: `lower::tests::a_clause_takes_the_path_its_stack_allows_3166`
+fn clause_path(
+    arena: &CommandArena,
+    body: CommandId,
+) -> Result<(Path, Vec<CommandId>), Form>
+{
+    let mut rejoins = Vec::new();
+    // Each node, the depths of the clause's stack and covariable beneath it,
+    // and whether it is in tail position.
+    let mut pending = Vec::from([(NodeAddress::Command(body), (0_usize, 0_usize), true)]);
+    while let Some((node, (stack, covariable), tail)) = pending.pop() {
+        let is_stack = |producer: ProducerId| {
+            matches!(
+                arena.producer(producer),
+                Some(&ProducerNode::Variable { zone: Zone::Intuitionistic, index })
+                    if usize::try_from(u32::from(index)) == Ok(stack)
+            )
+        };
+        let mut under = |child: NodeAddress, opens: Opens, tail: bool| {
+            let producers = usize::from(opens.producers.depth(Zone::Intuitionistic));
+            let covariables = usize::from(opens.covariables.depth(Zone::Intuitionistic));
+            pending.push((
+                child,
+                (
+                    stack.saturating_add(producers),
+                    covariable.saturating_add(covariables),
+                ),
+                tail,
+            ));
+            Ok::<(), Form>(())
+        };
+        match node {
+            NodeAddress::Producer(id) => {
+                if is_stack(id) {
+                    return Ok((Path::Capture, Vec::new()));
+                }
+                let producer = arena.producer(id).ok_or(Form::Dangling)?;
+                producer_children(producer, |child, opens| under(child, opens, false))?;
+            },
+            NodeAddress::Consumer(id) => {
+                let consumer = arena.consumer(id).ok_or(Form::Dangling)?;
+                let keeps = match *consumer {
+                    ConsumerNode::Destructor { .. } | ConsumerNode::ListFold { .. } => {
+                        return Ok((Path::Capture, Vec::new()));
+                    },
+                    ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => tail,
+                    ConsumerNode::Covariable(_)
+                    | ConsumerNode::DataCase { .. }
+                    | ConsumerNode::Select { .. }
+                    | ConsumerNode::Top => false,
+                };
+                consumer_children(consumer, |child, opens| under(child, opens, keeps))?;
+            },
+            NodeAddress::Command(id) => match *arena.command(id).ok_or(Form::Dangling)? {
+                CommandNode::Cut {
+                    producer, consumer, ..
+                } => {
+                    let value = !matches!(arena.producer(producer), Some(&ProducerNode::Mu { .. }));
+                    under(NodeAddress::Producer(producer), Opens::default(), false)?;
+                    under(
+                        NodeAddress::Consumer(consumer),
+                        Opens::default(),
+                        tail && value,
+                    )?;
+                },
+                ref resume @ CommandNode::Resume {
+                    stack: resumed,
+                    continuation,
+                    ..
+                } if is_stack(resumed) => {
+                    let answers = matches!(
+                        arena.consumer(continuation),
+                        Some(&ConsumerNode::Covariable(index))
+                            if usize::try_from(u32::from(index)) == Ok(covariable)
+                    );
+                    if !(tail && answers) {
+                        return Ok((Path::Capture, Vec::new()));
+                    }
+                    rejoins.push(id);
+                    command_children(resume, |child, opens| {
+                        if child == NodeAddress::Producer(resumed) {
+                            return Ok(());
+                        }
+                        under(child, opens, false)
+                    })?;
+                },
+                CommandNode::Perform { .. }
+                | CommandNode::Handle { .. }
+                | CommandNode::Resume { .. }
+                | CommandNode::Abandon { .. }
+                | CommandNode::Reset { .. }
+                | CommandNode::Shift { .. }
+                | CommandNode::Memory { .. }
+                | CommandNode::World { .. }
+                | CommandNode::Session { .. } => return Ok((Path::Capture, Vec::new())),
+            },
+        }
+    }
+    Ok(if rejoins.is_empty() {
+        (Path::Return, rejoins)
+    }
+    else {
+        (Path::Resume, rejoins)
+    })
 }
 
 /// A handler the function installs: what an operation's capture finds by
@@ -1191,6 +1380,11 @@ pub struct Lowered
     /// task's frames stand on it, and its block hands an ended task's answer
     /// to the scheduler.
     pub joined: Option<Label>,
+    /// The marker's label, when a clause takes a path that leaves its frames
+    /// standing: the frame an operation pushes above them, whose second word
+    /// is the mark of their handler's frame, and whose block gives them up
+    /// when the clause answers.
+    pub marker: Option<Label>,
 }
 
 /// The most instructions one lowering emits: past it the command declines
@@ -1381,6 +1575,13 @@ struct Lowering<'run>
     tokens: Vec<(ProducerId, Scope, Slot)>,
     /// The joined frame's label, once a session action is lowered.
     joined: Option<Label>,
+    /// The marker's label, once a clause leaves its frames standing.
+    marker: Option<Label>,
+    /// The immortal object a clause leaving its frames standing binds in its
+    /// stack's place, once one does.
+    stand_in: Option<Constant>,
+    /// The resumptions that pop the marker instead of replaying a stack.
+    rejoins: BTreeSet<CommandId>,
 }
 
 impl Lowering<'_>
@@ -1435,7 +1636,23 @@ impl Lowering<'_>
         binding: Binding,
     ) -> (Scope, Slot)
     {
-        let (inner, slot) = self.scopes.bind(scope, binding);
+        let slot = self.scopes.depth(scope);
+        self.bind_at(scope, binding, slot)
+    }
+
+    /// Extend `scope` by one binder of `binding` at `slot`, counting it in the
+    /// window.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bind_at(
+        &mut self,
+        scope: Scope,
+        binding: Binding,
+        slot: Slot,
+    ) -> (Scope, Slot)
+    {
+        let (inner, slot) = self.scopes.bind_at(scope, binding, slot);
         self.window = self.window.max(slot.0.saturating_add(1));
         (inner, slot)
     }
@@ -2398,11 +2615,18 @@ impl Lowering<'_>
                 let mut entries = Vec::with_capacity(clauses.len());
                 for clause in clauses.iter() {
                     let label = self.function.label();
-                    self.blocks.push((label, Task::Clause(clause.body, scope)));
+                    let (path, rejoins) = clause_path(arena, clause.body)?;
+                    if path != Path::Capture {
+                        self.mark();
+                    }
+                    self.rejoins.extend(rejoins);
+                    self.blocks
+                        .push((label, Task::Clause(clause.body, scope, path)));
                     entries.push(Clause {
                         operation: clause.operation.clone(),
                         label,
                         payload,
+                        path,
                     });
                 }
                 let (held, capability) = match introduces {
@@ -2488,7 +2712,13 @@ impl Lowering<'_>
                 body,
                 continuation,
             } => {
-                let call = self.call(&Callee::Replay(id), Immediate::from(1_u32))?;
+                let callee = if self.rejoins.contains(&id) {
+                    Callee::Rejoin(id)
+                }
+                else {
+                    Callee::Replay(id)
+                };
+                let call = self.call(&callee, Immediate::from(1_u32))?;
                 let (inner, _) = self.bind(scope, Binding::FallThrough);
                 self.tasks.push(Task::Command(body, inner));
                 self.tasks.push(call);
@@ -2991,6 +3221,48 @@ impl Lowering<'_>
         }
     }
 
+    /// Record the marker's label and queue its block, once: an operation
+    /// whose clause leaves its frames standing pushes the marker above them.
+    /// Its second word is a mark, never a window, so the label names no
+    /// window.
+    ///
+    /// # Specification
+    /// trivial.
+    fn mark(&mut self)
+    {
+        if self.marker.is_none() {
+            let label = self.function.label();
+            self.blocks.push((label, Task::Marked));
+            self.marker = Some(label);
+        }
+    }
+
+    /// The immortal object a clause leaving its frames standing binds in its
+    /// stack's place, laid out once: the clause's duplicates and drops leave
+    /// it alone, and only a resumption that pops the marker reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] never in practice: a zero tag and arity fit.
+    fn stand_in(&mut self) -> Result<Constant, Form>
+    {
+        if let Some(constant) = self.stand_in {
+            return Ok(constant);
+        }
+        let width = |_overflow| Form::HeaderWidth;
+        let unit = Header::new(
+            Kind::Tuple,
+            Tag::try_from(0_usize).map_err(width)?,
+            Arity::try_from(0_usize).map_err(width)?,
+            Family::UNNAMED,
+        );
+        let constant = self.function.object(&[unit.word()]);
+        self.stand_in = Some(constant);
+        Ok(constant)
+    }
+
     /// Open a closure body: bind its label, emit its entry, and queue what it
     /// runs — a command, or a constant's definition evaluated into its word
     /// and returned to the frame its read pushed; a computed definition's `μ`
@@ -3228,6 +3500,14 @@ impl Lowering<'_>
                 self.tasks.push(PUSH);
                 Ok(())
             },
+            Task::Marked => {
+                let call = self.call(&Callee::Escape, Immediate::from(1_u32))?;
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                Ok(())
+            },
             Task::Returned(handle, scope) => {
                 let &CommandNode::Handle {
                     introduces,
@@ -3248,10 +3528,25 @@ impl Lowering<'_>
                 self.tasks.push(Task::Bound(on_return, scope));
                 Ok(())
             },
-            Task::Clause(body, scope) => {
-                // The host wrote the payload's slot before entering.
-                let (with_payload, _) = self.bind(scope, Binding::Producer);
-                let (with_stack, stack) = self.bind(with_payload, Binding::Producer);
+            Task::Clause(body, scope, path) => {
+                let (with_stack, stack) = if path == Path::Capture {
+                    // The host wrote the payload's slot before entering.
+                    let (with_payload, _) = self.bind(scope, Binding::Producer);
+                    self.bind(with_payload, Binding::Producer)
+                }
+                else {
+                    // The frames left standing may read any slot the subject
+                    // was laid out in, and every block of the subject is
+                    // lowered before its clauses: the clause's slots start
+                    // past the window so far. The payload is in hand, and the
+                    // stack's slot holds the stand-in.
+                    let past = Slot(self.window.max(self.scopes.depth(scope).0));
+                    let (with_payload, payload) = self.bind_at(scope, Binding::Producer, past);
+                    self.emit(StencilId::Bind, payload.operand(), Operand::Unused);
+                    let stand_in = self.stand_in()?;
+                    self.emit(StencilId::Const, Operand::Data(stand_in), Operand::Unused);
+                    self.bind(with_payload, Binding::Producer)
+                };
                 self.emit(StencilId::Bind, stack.operand(), Operand::Unused);
                 let (inner, _) = self.bind(with_stack, Binding::FallThrough);
                 // The handler keeps the clause's captures, since it runs
@@ -4528,6 +4823,9 @@ fn lowered(
         reuses,
         tokens: Vec::new(),
         joined: None,
+        marker: None,
+        stand_in: None,
+        rejoins: BTreeSet::new(),
     };
     let captures = match root {
         Root::Closed(command) => {
@@ -4628,6 +4926,7 @@ fn lowered(
             .map(|(constant, _)| constant)
             .collect(),
         joined: lowering.joined,
+        marker: lowering.marker,
     };
     Ok(lowered)
 }
@@ -5347,5 +5646,118 @@ mod tests
             instruction.stencil == StencilId::Drop && instruction.a == owned[0].operand()
         });
         assert!(dropped, "the handler's return gives the pair up");
+    }
+
+    /// Builds a clause's body over the operation's signature.
+    type BuildClause = fn(&mut CoreArena, &EffectSig) -> gandr_core_term::ComputationId;
+
+    /// The path the hosting table records for the one clause of a handler of
+    /// `op` whose body `clause` builds, its stack `x0` and payload `x1`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn path_of(clause: BuildClause) -> Path
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let payload = core.value_type_unit();
+        let signature = EffectSig::new(EffectName::from("E"), [EffectOp {
+            name: OperationName::from("op"),
+            payload,
+            reply: payload,
+        }])
+        .expect("one operation");
+        let subject = core.computation_perform(signature.clone(), OperationName::from("op"), unit);
+        let on_return = core.computation_return(unit);
+        let body = clause(&mut core, &signature);
+        let root = core.computation_handle(
+            signature,
+            subject,
+            on_return,
+            alloc::sync::Arc::from([EffectClause {
+                operation: OperationName::from("op"),
+                body,
+            }]),
+        );
+        let mut commands = CommandArena::new();
+        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        lower(&commands, &Definitions::new(), root)
+            .expect("the program lowers")
+            .handlers
+            .first()
+            .and_then(|handler| handler.clauses.first())
+            .expect("the program installs one clause")
+            .path
+    }
+
+    /// #3166: a clause resuming its stack from its root leaves the frames
+    /// standing, and one never naming it returns over them; one resuming
+    /// beneath a frame of its own, one answering its stack as a value and one
+    /// performing before it resumes capture.
+    #[test]
+    fn a_clause_takes_the_path_its_stack_allows_3166()
+    {
+        let cases: [(&str, BuildClause, Path); 5] = [
+            (
+                "resume(x0, return x1)",
+                |core, _| {
+                    let payload = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+                    let replied = core.computation_return(payload);
+                    let k = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+                    core.computation_resume(k, replied)
+                },
+                Path::Resume,
+            ),
+            (
+                "return ()",
+                |core, _| {
+                    let unit = core.value_unit();
+                    core.computation_return(unit)
+                },
+                Path::Return,
+            ),
+            (
+                "x <- resume(x0, return x1); return x",
+                |core, _| {
+                    let payload = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+                    let replied = core.computation_return(payload);
+                    let k = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+                    let resumed = core.computation_resume(k, replied);
+                    let answer = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+                    let returned = core.computation_return(answer);
+                    core.computation_bind(resumed, returned)
+                },
+                Path::Capture,
+            ),
+            (
+                "return x0",
+                |core, _| {
+                    let k = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+                    core.computation_return(k)
+                },
+                Path::Capture,
+            ),
+            (
+                "_ <- perform op(()); resume(x1, return x2)",
+                |core, signature| {
+                    let unit = core.value_unit();
+                    let performed = core.computation_perform(
+                        signature.clone(),
+                        OperationName::from("op"),
+                        unit,
+                    );
+                    let payload = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+                    let replied = core.computation_return(payload);
+                    let k = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+                    let resumed = core.computation_resume(k, replied);
+                    core.computation_bind(performed, resumed)
+                },
+                Path::Capture,
+            ),
+        ];
+        for (clause, build, path) in cases {
+            assert_eq!(path, path_of(build), "{clause}");
+        }
     }
 }

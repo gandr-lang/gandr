@@ -32,10 +32,12 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime's representation question (§ runtime-question-what-runtime-means).
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: verdict reuse (§ kernel-verdict-reuse) — a host's reply read from verified chunks is checked for integrity alone; its reply type stays the host's to keep.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run records its channels' plays only when its caller asks.
+- `vault:01a178aa-a1a9-7643-b2d9-98059c9273fb` — background: the effects page (§ One-shot linearity) — a clause's stack resumed or abandoned once; the frames left standing are the case a clause's body shows to resume at most once.
 
 ## Provided features
 
 - `lower`, `Lowered`, `Function`, `Form`: the lowering, its closure sites and reified frames, the function it builds and the form it refuses.
+- `Lowered::handlers` and `Lowered::marker`: each handler's clauses with the path an operation takes to each. A clause that resumes its stack only from its tail position, or never names it, runs on the frames left standing under the marker; any other has them captured into a stack.
 - `lower_unfused`, `Rule`, `Fused`, `replay`, `FusionRefusal`, `dispatches`: the lowering before its adjacent pairs run as superinstructions, the rules that fuse them, the trace a fused function carries, the replay that re-derives it and its cost in dispatches.
 - `evaluate`, `evaluate_on`, `evaluate_unfused_on`, `RunInputs`, `Tier`, `Declined`, `TransferRefusal`: a run under the policy or on one tier, fused or unfused, over the inputs the caller builds on its store, its outcome moved into that store, or why it gave none.
 - `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each, and may commit a payload to the value plane or deref a value from it as a reply. `HostHandler::migrate`, `MigrationRequest`, `Migrated`: the host decides where each migration runs — here, at another host whose answer it reads back, or nowhere, refused.

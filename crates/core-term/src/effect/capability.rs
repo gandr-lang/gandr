@@ -49,7 +49,14 @@
 //! [`CapabilityGrade::Consumable`] capability belongs in the linear zone, spent
 //! by its one exercise and neither dropped nor duplicated; no former binds into
 //! that zone, so the checker refuses the consumable grade by name rather than
-//! check it as durable.
+//! check it as durable. The grade stops at two points: ω forgets how many
+//! exercises past one.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-record
+//!   and § quant-counts — this grade and `HoldGrade` are the tree's two-point
+//!   grades, and the grade the page drafts keeps the count they forget.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;

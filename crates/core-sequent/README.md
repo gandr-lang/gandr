@@ -33,6 +33,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer. Folding preserves cell order and outer scope; each branch has its own return covariable, and the cell branch binds head then folded result. The command arena owns imported type annotations, includes them in rollback, and unfocusing closes their ambient variables rather than copying foreign ids.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures — no thunk, recursive thunk, copattern object, `μ` a negative cut binds by name, or fold cell branch names a covariable outside its own binders — and the free variables and covariables of a command read off the support minting stored at its root.
 - `NodeAddress`, `Suspension`, `Captures` and `CommandArena::captures`: the intuitionistic bindings a thunk, a fixpoint, a copattern object, a capture or a bind frame captures — exactly those its support selects, which a run moves into the store and readback pairs with an environment.
+- `producer_children`, `consumer_children`, `command_children` and `Opens`: a node's children in edge order, each with the binders the node opens over it.
 - `ProducerNode::Closure`, `convert_step`, `convert`, `convert_all`, `beta` and `enter_all` with `ClosureRefusal`: abstract closures over an environment of values, converted one captured variable at a time and entered against a frame.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices.
 - `Definitions`, `Definition`, `Outcome` and `Stuck`: the constants a run unfolds by position, transparent or opaque, and how a run ended — halted with a value, or stuck at the command or value it names.
@@ -104,8 +105,6 @@ cargo nextest run -p gandr-core-sequent
 ```
 
 Set `RUSTFLAGS="--cfg anodized_panic"` on that command to exercise the predicates throughout the dependency graph. Const arity and rendering contracts retain their compile-time calling context.
-
-The opaque binding iterator keeps its public signature; the [`Store::bound_values` contract](src/store.rs) records the postcondition-instrumentation limit and the independent sequence witnesses.
 
 ## Where the detail lives
 

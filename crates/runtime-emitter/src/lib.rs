@@ -125,6 +125,17 @@
 //! That measurement; the update frame is the machine's design, ready to
 //! port.
 //!
+//! An operation a handler of the run claims copies the frames from the
+//! handler's up into a stack only for a clause that needs one, and the
+//! lowering reads each clause's body for its path. A clause that resumes its
+//! stack only from its tail position, or never names it, and whose body
+//! neither captures nor walks the frames, runs on the frames left standing
+//! under a marker frame: a resumption pops the marker, and an answer the
+//! clause gives instead gives up what the frames own and pops them, as a
+//! stack's release would. Every other clause captures. No grade reaches a
+//! clause's stack binder, so the path is read from where the body names the
+//! stack.
+//!
 //! # Dependencies
 //!
 //! The build script reads the stencil object with `object` (read-only, ELF
@@ -143,6 +154,9 @@
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a run records
 //!   its channels' plays only when its caller asks, so a run that does not ask
 //!   records nothing.
+//! - `vault:01a178aa-a1a9-7643-b2d9-98059c9273fb` — background: § One-shot
+//!   linearity — a clause's stack resumed or abandoned once; the frames left
+//!   standing are the case a clause's body shows to resume at most once.
 
 // Module documentation that predates the shape lint: 6 headings outside the
 // vocabulary, 5 decision records, 1 issue reference and 3 budgets exceeded.

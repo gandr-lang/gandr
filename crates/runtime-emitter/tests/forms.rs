@@ -649,6 +649,38 @@ fn forms() -> Vec<Form>
             ends: Ends::Shows("⟨9 |+ ★⟩"),
         },
         Form {
+            what: "p <- return (1, 2); r <- handle { _ <- perform exit(()); return p } with { \
+                   pure(x) => x, oper exit(q, k) => k(q) }; return (r, (3, 4))",
+            build: |core| (standing(core, Answers::Resumes), Vec::new()),
+            ends: Ends::Shows("⟨pair(pair(1, 2), pair(3, 4)) |+ ★⟩"),
+        },
+        Form {
+            what: "p <- return (1, 2); r <- handle { _ <- perform exit(()); return p } with { \
+                   pure(x) => x, oper exit(q, k) => 9 }; return (r, (3, 4))",
+            build: |core| (standing(core, Answers::Nine), Vec::new()),
+            ends: Ends::Shows("⟨pair(9, pair(3, 4)) |+ ★⟩"),
+        },
+        Form {
+            what: "p <- return (1, 2); r <- handle { _ <- perform exit(()); return p } with { \
+                   pure(x) => x, oper exit(q, k) => p }; return (r, (3, 4))",
+            build: |core| (standing(core, Answers::Kept), Vec::new()),
+            ends: Ends::Shows("⟨pair(pair(1, 2), pair(3, 4)) |+ ★⟩"),
+        },
+        Form {
+            what: "p <- return (1, 2); r <- handle { _ <- perform exit(inl ()); return p } with \
+                   { pure(x) => x, oper exit(q, k) => case q { inl(u) => k(u), inr(u) => 7 } }; \
+                   return (r, (3, 4))",
+            build: |core| (standing(core, Answers::Chosen(0)), Vec::new()),
+            ends: Ends::Shows("⟨pair(pair(1, 2), pair(3, 4)) |+ ★⟩"),
+        },
+        Form {
+            what: "p <- return (1, 2); r <- handle { _ <- perform exit(inr ()); return p } with \
+                   { pure(x) => x, oper exit(q, k) => case q { inl(u) => k(u), inr(u) => 7 } }; \
+                   return (r, (3, 4))",
+            build: |core| (standing(core, Answers::Chosen(1)), Vec::new()),
+            ends: Ends::Shows("⟨pair(7, pair(3, 4)) |+ ★⟩"),
+        },
+        Form {
             what: "perform exit(()), no handler",
             build: |core| {
                 let signature = proc(core);
@@ -825,6 +857,98 @@ fn handled(
         Handler::Deep => core.computation_handle(signature, subject, on_return, clauses),
         Handler::Scope => core.computation_scope(signature, subject, on_return, clauses),
     }
+}
+
+/// What the clause of [`standing`] answers.
+#[derive(Clone, Copy)]
+enum Answers
+{
+    /// Resumes its continuation with the payload.
+    Resumes,
+    /// Nine, its continuation never resumed.
+    Nine,
+    /// The pair its handler keeps for it.
+    Kept,
+    /// By a case on the payload: resumes on the first summand, seven on the
+    /// second. The operation sends the unit injected at this summand.
+    Chosen(usize),
+}
+
+/// `p <- return (1, 2); r <- handle { _ <- perform exit(s); return p } with
+/// { pure(x) => x, oper exit(q, k) => … }; return (r, (3, 4))`, the clause
+/// answering as `answers` names: while it runs, the frame waiting on the
+/// operation owns the pair, so a pair its leaving gives up once too often is
+/// the block `(3, 4)` takes. The payload `s` is the unit, or for a chosen
+/// clause the unit injected at its summand.
+///
+/// # Specification
+/// trivial.
+fn standing(
+    core: &mut CoreArena,
+    answers: Answers,
+) -> ComputationId
+{
+    let signature = proc(core);
+    let [one, two, _] = one_two_three(core);
+    let pair = core.value_tuple(&[one, two]);
+    let bound = core.computation_return(pair);
+    let unit = core.value_unit();
+    let sent = match answers {
+        Answers::Chosen(summand) => {
+            core.value_injection(gandr_kernel_term::Summand::from(summand), unit)
+        },
+        Answers::Resumes | Answers::Nine | Answers::Kept => unit,
+    };
+    // Under the bind past the operation, `p` is `x1`.
+    let performed = core.computation_perform(signature.clone(), "exit".into(), sent);
+    let kept = variable(core, Index(1));
+    let rest = core.computation_return(kept);
+    let subject = core.computation_bind(performed, rest);
+    let answer = variable(core, Index(0));
+    let on_return = core.computation_return(answer);
+    // Under the clause: the continuation `x0`, the payload `x1`, `p` `x2`.
+    let body = match answers {
+        Answers::Resumes => {
+            let (continuation, payload) = (variable(core, Index(0)), variable(core, Index(1)));
+            let replied = core.computation_return(payload);
+            core.computation_resume(continuation, replied)
+        },
+        Answers::Nine => {
+            let nine = integer(core, Integer(9));
+            core.computation_return(nine)
+        },
+        Answers::Kept => {
+            let kept = variable(core, Index(2));
+            core.computation_return(kept)
+        },
+        Answers::Chosen(_) => {
+            // Under a branch: its value `x0`, the continuation `x1`.
+            let (continuation, injected) = (variable(core, Index(1)), variable(core, Index(0)));
+            let replied = core.computation_return(injected);
+            let resumed = core.computation_resume(continuation, replied);
+            let seven = integer(core, Integer(7));
+            let answered = core.computation_return(seven);
+            let payload = variable(core, Index(1));
+            core.computation_case(payload, &[resumed, answered])
+        },
+    };
+    let clauses = Arc::from([EffectClause {
+        operation: "exit".into(),
+        body,
+    }]);
+    let handled = core.computation_handle(signature, subject, on_return, clauses);
+    // Past `p`, `r` and `q`: `r` is `x1`, `q` `x0`.
+    let three = integer(core, Integer(3));
+    let four = integer(core, Integer(4));
+    let after = core.value_tuple(&[three, four]);
+    let allocated = core.computation_return(after);
+    let answered = variable(core, Index(1));
+    let fresh = variable(core, Index(0));
+    let both = core.value_tuple(&[answered, fresh]);
+    let answer = core.computation_return(both);
+    let tail = core.computation_bind(allocated, answer);
+    let rest = core.computation_bind(handled, tail);
+    core.computation_bind(bound, rest)
 }
 
 /// `hold x = [1, 2, 3]; access x[at] as w { resume(w, 20) } unwind { () };
