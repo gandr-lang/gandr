@@ -268,6 +268,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             "a member the handler cannot read as an operation"
         },
         LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
+        LoweringRefusal::UnlabelledRequirement { .. } => "a theory under no label",
         LoweringRefusal::ImplicitTelescope { .. } => "an implicit out of shape",
         LoweringRefusal::TelescopeCycle { .. } => "parameters mentioning each other",
         LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
@@ -760,6 +761,7 @@ mod tests
                 "a member the handler cannot read as an operation"
             },
             LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
+            LoweringRefusal::UnlabelledRequirement { .. } => "a theory under no label",
             LoweringRefusal::ImplicitTelescope { .. } => "an implicit out of shape",
             LoweringRefusal::TelescopeCycle { .. } => "parameters mentioning each other",
             LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
@@ -1055,6 +1057,7 @@ mod tests
                 fault: TelescopeFault::Index(OperandCount::from(1_usize)),
             },
             LoweringRefusal::LowercaseModuleName { span: at, name },
+            LoweringRefusal::UnlabelledRequirement { span: at, name },
             LoweringRefusal::ImplicitTelescope { span: at },
             LoweringRefusal::TelescopeCycle {
                 span: at,

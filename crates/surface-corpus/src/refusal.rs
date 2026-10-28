@@ -958,6 +958,8 @@ pub enum RefusalName
     FamilyTelescope,
     /// A top-level module named with a lowercase initial.
     LowercaseModuleName,
+    /// An effect theory a world's requirement row names under no label.
+    UnlabelledRequirement,
     /// A declaration binding parameters in an implicit telescope `@[…]`.
     ImplicitTelescope,
     /// A function's merged telescope with two parameters each mentioning the
@@ -1255,7 +1257,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 225_usize] = [
+    pub const VOCABULARY: [Self; 226_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1360,6 +1362,7 @@ impl RefusalName
         Self::UninterfacedMember,
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
+        Self::UnlabelledRequirement,
         Self::ImplicitTelescope,
         Self::TelescopeCycle,
         Self::ImplicitUnsupplied,
@@ -1577,6 +1580,7 @@ impl RefusalName
         (Self::UninterfacedMember, b"UninterfacedMember") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
+        (Self::UnlabelledRequirement, b"UnlabelledRequirement") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
         (Self::TelescopeCycle, b"TelescopeCycle") |
         (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
@@ -1932,6 +1936,7 @@ impl RefusalName
             Self::UninterfacedMember => "UninterfacedMember",
             Self::FamilyTelescope => "FamilyTelescope",
             Self::LowercaseModuleName => "LowercaseModuleName",
+            Self::UnlabelledRequirement => "UnlabelledRequirement",
             Self::ImplicitTelescope => "ImplicitTelescope",
             Self::TelescopeCycle => "TelescopeCycle",
             Self::ImplicitUnsupplied => "ImplicitUnsupplied",
@@ -2621,6 +2626,8 @@ impl Refusal<'_>
         RefusalName::UninterfacedMember) |
         (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
         RefusalName::LowercaseModuleName) |
+        (Self::Lowering(LoweringRefusal::UnlabelledRequirement { .. }),
+        RefusalName::UnlabelledRequirement) |
         (Self::Lowering(LoweringRefusal::ImplicitTelescope { .. }),
         RefusalName::ImplicitTelescope) |
         (Self::Lowering(LoweringRefusal::TelescopeCycle { .. }),
@@ -2913,7 +2920,8 @@ impl Refusal<'_>
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::UninterfacedMember { .. },
         RefusalName::UninterfacedMember) | (LoweringRefusal::LowercaseModuleName { .. },
-        RefusalName::LowercaseModuleName) | (LoweringRefusal::ImplicitTelescope { .. },
+        RefusalName::LowercaseModuleName) | (LoweringRefusal::UnlabelledRequirement { .. },
+        RefusalName::UnlabelledRequirement) | (LoweringRefusal::ImplicitTelescope { .. },
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
         RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
@@ -3026,6 +3034,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         LoweringRefusal::UninterfacedMember { .. } => RefusalName::UninterfacedMember,
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
+        LoweringRefusal::UnlabelledRequirement { .. } => RefusalName::UnlabelledRequirement,
         LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,
         LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,
         LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,

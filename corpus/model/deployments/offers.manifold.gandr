@@ -1,11 +1,13 @@
-// The manifold placing a role that requires `Store` at a site offering it.
+// The manifold placing a role at a site whose offer answers its row.
 //
-// It witnesses a deployment the check admits: the site's offer holds every
-// member the role requires.
+// It witnesses a deployment the check admits: the site answers each entry the
+// role requires.
 //
 // `gandr check` of this file reads the program `Manifold.artifact` names and
 // resolves `far` among its worlds. It finds the site's file among its imports
-// by the site's key. The site's `Offers`, packed at `Model(Store)`, checks.
+// by the site's key, then judges `far`'s row against the site's `offers`.
+// `Console` is granted from the site's `Authority`. `store` is answered by a
+// module that a functor over `Model(Store) with sort V = String` takes.
 //
 // - see: `offers.gandr` — the program it deploys
 // - see: `offers.site.gandr` — the site `far` runs at

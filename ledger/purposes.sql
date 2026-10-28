@@ -2571,6 +2571,8 @@ INSERT INTO purpose VALUES('surface-lowering','module::LoweredDeclaration','stru
 INSERT INTO purpose VALUES('surface-lowering','module::LoweredModule','struct','Holds a lowered module, so the module''s declarations are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::LoweredStructure','struct','Holds a lowered structure, so the structure''s components are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::ManifestComponent','struct','Holds a manifest''s component, so the component''s type is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::Offered','struct','Holds a site''s offer as its source writes it, so a deployment check reads the interfaces it grants and the module answering each label.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::Required','struct','Holds one entry of a world''s requirement row as its source writes it, so a deployment check reads its label, its interface and the sorts it fixes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::Role','enum','Names a declaration''s role, so the declaration''s role is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::SlotIndex','struct','Names the index of a slot, so the slot''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::StructureIndex','struct','Names the index of a structure, so the structure''s index is read.',NULL,'fits','sound',NULL);

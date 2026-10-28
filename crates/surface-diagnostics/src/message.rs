@@ -596,6 +596,10 @@ fn lowered(
             f,
             "the module `{name}` must start with an uppercase letter at the top level"
         ),
+        LoweringRefusal::UnlabelledRequirement { name, .. } => write!(
+            f,
+            "the world requires `{name}` under no label, so its code cannot perform it"
+        ),
         LoweringRefusal::ImplicitTelescope { .. } => f.write_str(
             "this implicit telescope `@[…]` has an entry out of shape: write `a : Type` for an \
              implicit, `i : Size` for a stage and `i < n` for its bound, before the function's \
@@ -1775,6 +1779,7 @@ pub mod tests
                 fault: InterfaceFault::Unfixed,
             },
             LoweringRefusal::LowercaseModuleName { span, name },
+            LoweringRefusal::UnlabelledRequirement { span, name },
             LoweringRefusal::ImplicitTelescope { span },
             LoweringRefusal::TelescopeCycle {
                 span,

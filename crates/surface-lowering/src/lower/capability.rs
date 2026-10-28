@@ -1372,7 +1372,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|at| written.span.start() <= at.span.start() && at.span.end() <= written.span.end()))]
-    fn label_of(
+    pub(super) fn label_of(
         &self,
         site: Site,
         written: Placed,
@@ -2359,7 +2359,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
     /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(ensures: |ret| ret.is_err() || manifest.is_empty() || matches!(ret, Ok(Interface::Theory(ref theory)) if theory.scope == at))]
-    fn handled(
+    pub(super) fn handled(
         &self,
         site: Site,
         written: Placed,

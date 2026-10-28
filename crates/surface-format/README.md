@@ -68,7 +68,7 @@ Only layout changes. Every token and comment is written once, in source order, w
 
 - **Separators.** A `,` or `;` touches what precedes it and is followed by one space: `f(a, b)`, `def a = 1;`.
 - **Brackets.** `(`, `[`, a record's `#{`, a sum's `+{`, a lazy record's `&{`, a shape face's `{` and an implicit telescope's `@[` hug: `(x)`, `#{a = 1}`, `left = {0, 2}`, `@[r : Row]`. A block's `{`, an attribute block's `@[` and a module signature's `#{` pad: `{ x }`, `@[ checks ]`, `#{ type T }`. An empty group hugs.
-- **Application.** A `(` or `[` touches the word or hugging bracket it applies to, `f(x)`, `x[0]`; one opening an operand, an effect row, a world or a binder list stands apart: `-F (A)`, `-F [Div] A`, `fn (x)`, `@[r : Row] (k : K)`.
+- **Application.** A `(` or `[` touches the word or hugging bracket it applies to, `f(x)`, `x[0]`; one opening an operand, a row, a world or a binder list stands apart: `-F (A)`, `-F [Div] A`, `requires [Console]`, `fn (x)`, `@[r : Row] (k : K)`.
 - **Dots and prefixes.** A path's `.` touches both sides, `r.a`; a binder's is followed by one space, `\x. x`. A prefix operator touches its operand: `-2`, `!A`.
 - **Everything else.** One space, a comment included: `x : T`, `a = b`, `a + b`.
 

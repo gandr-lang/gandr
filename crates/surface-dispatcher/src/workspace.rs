@@ -378,7 +378,7 @@ fn alone<Read>(
 /// - hypothesis: L3 — the witnesses of [`ran_alone`], and of the deployment
 ///   check judged over a program's text.
 /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
-/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
 #[inline]
 pub fn stepped_alone<Read, Reader>(
     source: &Path,
@@ -431,7 +431,8 @@ where
 ///   walk lays a source out, and lowered; `read` given the module and the
 ///   unit's text.
 /// - provides: what a source declares, read without judging it: the worlds a
-///   deployment's program declares and what each requires.
+///   deployment's program declares and what each requires, and the offer a
+///   site's file writes.
 /// - fails: [`Unran::Refused`] for a text that does not lower, or is refused as
 ///   a whole.
 /// - panics: none.
@@ -443,8 +444,8 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a deployment's program read for its worlds, each with the
-///   theory it requires or none.
-/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+///   row it requires or none, and a site's file read for its offer.
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
 #[inline]
 pub fn lowered_alone<Read, Reader>(
     source: &Path,
@@ -493,7 +494,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a manifold's sites are found among the files it imports.
-/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
 #[inline]
 pub fn sources_alone(source: &Path) -> Result<Vec<PathBuf>, Unran>
 {

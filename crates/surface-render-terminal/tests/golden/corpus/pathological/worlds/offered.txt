@@ -1,0 +1,39 @@
+error[UnresolvedTypeHead]: no type named `Missing` is written bare
+   ╭▸ corpus/pathological/worlds/offered.gandr:38:13
+   │
+38 │ pub offers [Missing];
+   │             ━━━━━━━ no type head of this name and arity
+   │
+   ╰ note: `offers` is refused with UnresolvedTypeHead, as its expectation states
+
+error[DuplicateDefinition]: `Console` is defined twice
+   ╭▸ corpus/pathological/worlds/offered.gandr:42:22
+   │
+42 │ pub offers [Console, Console];
+   │             ┬──────  ━━━━━━━ written again here
+   │             │
+   │             first written here
+   │
+   ├ note: `offers` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `Console` its own name, or delete one of them
+
+error[DuplicateDefinition]: `offers` is defined twice
+   ╭▸ corpus/pathological/worlds/offered.gandr:50:5
+   │
+46 │ pub offers [store = Absent];
+   │     ──────────────────────── first written here
+   ‡
+50 │ pub offers [store = Echo];
+   │     ━━━━━━━━━━━━━━━━━━━━━━ written again here
+   │
+   ├ note: `offers` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `offers` its own name, or delete one of them
+
+error[UnresolvedName]: `Absent` is not defined
+   ╭▸ corpus/pathological/worlds/offered.gandr:46:21
+   │
+46 │ pub offers [store = Absent];
+   │                     ━━━━━━ not found in this scope
+   │
+   ├ note: `offers` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Absent`, or import the module that exports it

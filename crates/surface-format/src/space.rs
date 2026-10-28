@@ -27,8 +27,9 @@ const OPERANDS: [&str; 6] = [
 
 /// The rules a `[` stands apart from the word before it in, as an operand's
 /// does: a computation's effect row, the world a migration or a package
-/// names, a theory's or a data type's bracketed parameters.
-const APART: [&str; 9] = [
+/// names, a world's requirement and a site's offer, a theory's or a data
+/// type's bracketed parameters.
+const APART: [&str; 11] = [
     "f_type.result",
     "f_type.result.labelled",
     "f_type.row",
@@ -38,6 +39,8 @@ const APART: [&str; 9] = [
     "package_type",
     "theory_declaration",
     "data_declaration",
+    "world_declaration",
+    "offers_declaration",
 ];
 
 /// The rules a `.` ends a binder or a session's message in, a body after it.
@@ -99,7 +102,8 @@ pub enum Context
     /// A `(` or `[` standing apart from the word before it: one opening an
     /// operand of its own (a parenthesised term or type, a tuple pattern, a
     /// list, an import's list of names), an effect row, a migration's or a
-    /// package's world, a theory's or a data type's bracketed parameters.
+    /// package's world, a world's requirement or a site's offer, a theory's or
+    /// a data type's bracketed parameters.
     Operand,
     /// An operator touching what follows it: a negation, a session's `!` or
     /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's

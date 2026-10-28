@@ -151,6 +151,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
                 "give the source's `{member}` a signature, or state only operations in `{signature}`"
             ),
         },
+        LoweringRefusal::UnlabelledRequirement { name, .. } => {
+            format!("write a label before it, `l : {name} with …`, and perform through `l`")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::UnresolvedTypeHead { .. }
@@ -580,7 +583,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 29] = [
+    const WORDED: [&str; 30] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -610,6 +613,7 @@ mod tests
         "NotATranslation",
         "SignatureMismatch.Sort",
         "BridgeAtSealedType",
+        "UnlabelledRequirement",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

@@ -1,0 +1,50 @@
+// A site's offer is a row, each entry refused where it answers nothing.
+//
+// A site's file answers the rows of the worlds placed at it with one
+// `offers [ … ] ;`. It grants a host interface by its name, and binds a label
+// to a model module the file declares, named bare as a handler is.
+//
+// An interface no host declares is refused by its name, and so is a module
+// the file does not declare. An entry written twice is refused, and so is a
+// second offer.
+//
+// - see: `corpus/model/deployments/offers.site.gandr` — a site whose offer
+//   answers its role's row
+
+/// What the site keeps: values by key.
+pub theory Kept {
+  /// The site keeps values of this sort.
+  sort V : Type+;
+  /// What a computation over them answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Keeps `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
+}
+
+/// Every key holds its own name.
+pub module Echo : Model(Kept) with sort V = String {
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def get(key : String, k : String => String) -> String { k(key) }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
+}
+
+/// An offer granting an interface no host declares.
+@[ refuses("UnresolvedTypeHead") ]
+pub offers [Missing];
+
+/// An offer granting the console twice.
+@[ refuses("DuplicateDefinition") ]
+pub offers [Console, Console];
+
+/// An offer answering a label by a module the file does not declare.
+@[ refuses("UnresolvedName") ]
+pub offers [store = Absent];
+
+/// A second offer in one file.
+@[ refuses("DuplicateDefinition") ]
+pub offers [store = Echo];

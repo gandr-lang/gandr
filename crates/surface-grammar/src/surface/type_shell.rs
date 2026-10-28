@@ -1384,7 +1384,7 @@ fn entry_shape(sort: Sort) -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))]
-fn row_entry(ty: Sort) -> Regex
+pub(super) fn row_entry(ty: Sort) -> Regex
 {
     Regex::seq([
         Regex::optional(Regex::seq([Regex::sort(ty), tile(TileLabel(":"))])),

@@ -130,7 +130,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 109 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=11 => Sort::Item, 12..=17 => Sort::ModuleMember, 18..=29 | 99..=100 => Sort::Pattern, 30..=35 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 110 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=18 => Sort::ModuleMember, 19..=30 | 100..=101 => Sort::Pattern, 31..=36 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -244,8 +244,8 @@ fn items(
 
 /// Append the declaration forms: `data` and `codata` datatypes and their
 /// members, `module` and the `flow` translations between theories, `import`,
-/// `world`, the reserved operator-fixity declaration, the reserved
-/// mutual-recursion `rec` block and the `pub` mark.
+/// `world`, a site's `offers`, the reserved operator-fixity declaration, the
+/// reserved mutual-recursion `rec` block and the `pub` mark.
 ///
 /// All land at `item.singleton` beside the def family. Every form is
 /// keyword-led (a fresh first-token discriminator with no lookahead against
@@ -256,8 +256,8 @@ fn items(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends the nine ordered declaration families at the item sort
-///   and supplied band.
+/// - ensures: appends the ten ordered declaration families at the item sort and
+///   supplied band.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -268,7 +268,7 @@ fn items(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 9 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "import_declaration", "world_declaration", "operator_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "import_declaration", "world_declaration", "offers_declaration", "operator_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -530,10 +530,12 @@ fn declarations(
     // entry the host grants is homed. A world has no body and no type; its
     // name is all it brings into scope, and only the world positions read it.
     //
-    // `world w requires R ;` names the theory `R` of what a role placed at `w`
-    // needs, a type path as `Model(Gandr.Package)` writes one; a deployment
-    // places `w` only at a site whose offer includes it. `requires` is
-    // contextual: only the slot after the world's name reads it.
+    // `world w requires [ … ] ;` names the row of what a role placed at `w`
+    // needs, its entries a labelled row's, as `-> [ … ] A` writes them, and
+    // closed: a host interface by name, an effect theory under the label its
+    // code performs through. A deployment places `w` only at a site whose offer
+    // answers the row. `requires` is contextual: only the slot after the
+    // world's name reads it.
     out.push(r(
         RuleName("world_declaration"),
         Provenance("world_declaration"),
@@ -544,12 +546,37 @@ fn declarations(
             t(TileLabel("identifier")),
             opt(seq([
                 t(TileLabel("requires")),
-                t(TileLabel("type_identifier")),
-                repeat(seq([
-                    t(TileLabel(".")),
-                    alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
-                ])),
+                t(TileLabel("[")),
+                comma1(super::type_shell::row_entry(Sort::Type)),
+                t(TileLabel("]")),
             ])),
+            t(TileLabel(";")),
+        ]),
+    ));
+
+    // --- offers declaration -----------------------------
+    // `offers [ … ] ;` is a site's answer to the requirement rows of the
+    // worlds placed at it, its entries mirroring a requirement's: a host
+    // interface by name, which the site grants from its ambient authority, and
+    // `label = Module`, a model module the same file declares, named bare as a
+    // handler is. Closed, as a requirement is, and one to a site's file.
+    out.push(r(
+        RuleName("offers_declaration"),
+        Provenance("offers_declaration"),
+        s,
+        p,
+        seq([
+            t(TileLabel("offers")),
+            t(TileLabel("[")),
+            comma1(alt([
+                t(TileLabel("type_identifier")),
+                seq([
+                    t(TileLabel("identifier")),
+                    t(TileLabel("=")),
+                    t(TileLabel("type_identifier")),
+                ]),
+            ])),
+            t(TileLabel("]")),
             t(TileLabel(";")),
         ]),
     ));
