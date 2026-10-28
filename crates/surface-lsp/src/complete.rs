@@ -127,20 +127,24 @@ impl Names
     /// - requires: nothing.
     /// - ensures: each of [`TypeTable::declared_names`] spelled from its
     ///   source's text, with its kind and its referent, ascending by name then
-    ///   kind, a name and kind declared twice kept once, at the referent
-    ///   [`TypeTable::declared_names`] orders first; a name its source's text
-    ///   does not hold is dropped.
+    ///   kind, a name and kind declared twice kept once, at the declaration the
+    ///   text reads: its own source's, else the source laid last's, as a
+    ///   written import's is laid after the prelude it shadows, and within one
+    ///   source the first written; a name its source's text does not hold is
+    ///   dropped.
     /// - provides: the index a completion request reads, built once per text.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one pass over the declared names and one sort.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sibling's names complete in an importer, and a
-    ///   prefix cuts exactly the names starting with it.
+    /// - hypothesis: L3 — a sibling's names complete in an importer, a prefix
+    ///   cuts exactly the names starting with it, and a constructor the text
+    ///   and the prelude both declare resolves to the text's.
     /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
     /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
     /// - witness: `complete::tests::a_name_is_offered_whole_and_once_per_kind`
+    /// - witness: `complete::tests::a_resolved_name_reads_its_head_and_documentation`
     #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if (&first.0, first.1) < (&second.0, second.1))))]
     #[must_use]
     pub fn of(table: &TypeTable) -> Self
@@ -155,7 +159,16 @@ impl Names
                 Some((String::from(name), kind, referent))
             })
             .collect();
-        names.sort_unstable();
+        // The declaration the text reads first among a name's: its own
+        // source's, then the latest source's, then the first written there.
+        let own = table.own_source();
+        names.sort_unstable_by(|first, second| {
+            (&first.0, first.1)
+                .cmp(&(&second.0, second.1))
+                .then_with(|| (first.2.source() != own).cmp(&(second.2.source() != own)))
+                .then_with(|| second.2.source().cmp(&first.2.source()))
+                .then_with(|| first.2.cmp(&second.2))
+        });
         names.dedup_by(|second, first| first.0 == second.0 && first.1 == second.1);
         Self(names)
     }
@@ -842,8 +855,12 @@ mod tests
                 ("m", Kind::VARIABLE),
                 ("plus", Kind::VARIABLE),
                 ("n", Kind::VARIABLE),
+                ("Bit0", Kind::CONSTRUCTOR),
+                ("Bit1", Kind::CONSTRUCTOR),
                 ("Eq", Kind::FUNCTION),
+                ("One", Kind::CONSTRUCTOR),
                 ("PartialEq", Kind::FUNCTION),
+                ("Positive", Kind::CONSTRUCTOR),
                 ("Succ", Kind::CONSTRUCTOR),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
@@ -870,8 +887,12 @@ mod tests
                 ("m", Kind::VARIABLE),
                 ("plus", Kind::VARIABLE),
                 ("n", Kind::VARIABLE),
+                ("Bit0", Kind::CONSTRUCTOR),
+                ("Bit1", Kind::CONSTRUCTOR),
                 ("Eq", Kind::FUNCTION),
+                ("One", Kind::CONSTRUCTOR),
                 ("PartialEq", Kind::FUNCTION),
+                ("Positive", Kind::CONSTRUCTOR),
                 ("Succ", Kind::CONSTRUCTOR),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
@@ -898,15 +919,24 @@ mod tests
                 ("Nat", Kind::ENUM),
                 ("Ord", Kind::ENUM),
                 ("PartialEq", Kind::ENUM),
+                ("Pos", Kind::ENUM),
             ]),
-            "a type: the families alone, the prelude's `Eq`, `Ord` and `PartialEq` among them"
+            "a type: the families alone, the prelude's `Eq`, `Ord`, `PartialEq` and `Pos` among \
+             them"
         );
         assert!(has(&ty, "Type") && !has(&ty, "return"), "{ty:?}");
 
         let pattern = at("Zero =>");
         assert_eq!(
             pattern.names,
-            named!([("Succ", Kind::CONSTRUCTOR), ("Zero", Kind::CONSTRUCTOR)]),
+            named!([
+                ("Bit0", Kind::CONSTRUCTOR),
+                ("Bit1", Kind::CONSTRUCTOR),
+                ("One", Kind::CONSTRUCTOR),
+                ("Positive", Kind::CONSTRUCTOR),
+                ("Succ", Kind::CONSTRUCTOR),
+                ("Zero", Kind::CONSTRUCTOR),
+            ]),
             "a pattern: the constructors alone"
         );
         assert!(!has(&pattern, "return"), "{pattern:?}");
@@ -1298,9 +1328,13 @@ mod tests
             ),
             [
                 name("Base"),
+                call("Bit0", "Bit0(${1:p})$0"),
+                call("Bit1", "Bit1(${1:p})$0"),
                 name("Eq"),
+                name("One"),
                 call("P", "P(${1:x})$0"),
                 name("PartialEq"),
+                call("Positive", "Positive(${1:p})$0"),
                 call("S", "S(${1:x})$0"),
                 call("Succ", "Succ(${1:n})$0"),
                 name("Z"),

@@ -1,0 +1,17 @@
+/// `grade-algebra`: Grade algebras.
+/// Implemented: the standard library declares `Grade`, an ordered semiring's operations, and its models `Usage` and `Count`. Conversion decides each order, and the kernel replays the conversion. A map between two algebras is a `Hom`, and the test `covers` reads a need through one.
+/// Not implemented: the core's grade positions reading a model, `Grade`'s laws, and the cost, distance and tropical algebras; #3392 owes the first and carries the rest.
+// Counted bytes ordered in the prelude's binary naturals, and a count of uses
+// covering a need once counting collapses to usage.
+
+import "../../../library/std/src/grade.gandr";
+
+/// Two gibibytes are under eight.
+def twoUnderEightGiB : Path(
+  Bool,
+  Count.le((2147483648 : Nat), (8589934592 : Nat)),
+  true
+) = here(true);
+
+/// Three uses, counted, cover a need of once.
+def threeCoversOnce : Path(Bool, covers(count, usage, collapse, Once, (3 : Nat)), true) = here(true);

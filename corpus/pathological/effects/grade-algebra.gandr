@@ -1,0 +1,49 @@
+// Grade orders that do not settle as `true`, each refused `EndpointMismatch`.
+//
+// An order that does not hold is refused by the conversion that settles one
+// that does. An algebra over the native integers decides nothing, since the
+// kernel reads a closed native as an opaque constant.
+//
+// The checker evaluates `Usage.le` and `Count.le` over closed constructor
+// data and reaches `false`. `Bytes.le(2, 4)` stays the integer primitive
+// applied, which no conversion takes to `true`.
+//
+// - see: `../../model/effects/grade-algebra.gandr` — the orders that hold
+// - see: `../../../library/std/src/grade.gandr` — `Grade`, `Usage` and `Count`
+// - see: #2378 — a closed native reads back as an opaque constant
+// - see: #3287 — grade algebras as models of one theory
+
+// `Grade`, `Use`, `Usage` and `Count`.
+import "../../../library/std/src/grade.gandr";
+
+/// Many is not under once: usage keeps them apart.
+@[ refuses("EndpointMismatch") ]
+def manyUnderOnce : Path(Bool, Usage.le(Many, Once), true) = here(true);
+
+/// Eight gibibytes are not under two.
+@[ refuses("EndpointMismatch") ]
+def eightUnderTwoGiB : Path(
+  Bool,
+  Count.le((8589934592 : Nat), (2147483648 : Nat)),
+  true
+) = here(true);
+
+/// Counted bytes in the native integers: the order is the integer primitive.
+module Bytes : Model(Grade) {
+  /// The grades: integers.
+  type G = Integer;
+  /// Zero.
+  def zero = 0;
+  /// One.
+  def one = 1;
+  /// The sum.
+  def plus(a : Integer, b : Integer) -> Integer { a + b }
+  /// The product.
+  def times(a : Integer, b : Integer) -> Integer { a * b }
+  /// The order.
+  def le(a : Integer, b : Integer) -> Bool { a <= b }
+}
+
+/// Two is under four, but over the native integers no conversion shows it.
+@[ refuses("EndpointMismatch") ]
+def twoUnderFourBytes : Path(Bool, Bytes.le(2, 4), true) = here(true);

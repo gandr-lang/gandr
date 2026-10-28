@@ -757,6 +757,8 @@ mod model;
 
 mod native;
 
+mod natural;
+
 mod phase;
 
 use crate::table::NodeTable;
@@ -2341,6 +2343,9 @@ enum Plan
     Boolean(gandr_kernel_term::Side),
     /// A literal, already parsed from the node's own text.
     Literal(Literal),
+    /// A numeral annotated `(n : Nat)`, the prelude's: the binary natural
+    /// its magnitude is, over the prelude's constructors.
+    Natural(natural::Naturals, Magnitude),
     /// A nullary type atom.
     Atom(TypeAtom),
     /// The atom the abstract type at this admission position declares.
@@ -8343,15 +8348,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   integer width when it is written with that width's suffix and its
     ///   digits fit the width; as a binary64 float when it is written with the
     ///   `f64` suffix or annotated `(n : f64)`, rounded to nearest from its
-    ///   decimal text; otherwise a lexeme of decimal digits is planned as its
-    ///   canonical integer.
+    ///   decimal text; as the binary natural it names when it is decimal digits
+    ///   annotated `(n : Nat)`, `Nat` resolving to the prelude's ([`natural`]);
+    ///   otherwise a lexeme of decimal digits is planned as its canonical
+    ///   integer.
     /// - provides: the literal reading of numbers.
     /// - fails: yields the wrong-sort refusal outside value position; the `f32`
     ///   suffix is a typed number the fragment does not admit; digits that do
     ///   not fit an integer width, or a fraction or an exponent before one, are
-    ///   a malformed literal; a fraction or an exponent with neither suffix nor
-    ///   annotation states no type, the unannotated refusal; any other text is
-    ///   a malformed literal.
+    ///   a malformed literal; so is anything but decimal digits annotated `(n :
+    ///   Nat)`; a fraction or an exponent with neither suffix nor annotation
+    ///   states no type, the unannotated refusal; any other text is a malformed
+    ///   literal; the annotation's name propagates its resolution's refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -8360,20 +8368,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — canonical integer magnitudes, each integer width at
     ///   its extremes and one past them, suffixed and annotated floats, the
-    ///   `f32` suffix, a bare fraction and malformed lexemes separate each plan
-    ///   from each refusal.
+    ///   `f32` suffix, a bare fraction, numerals at the prelude's `Nat` and at
+    ///   a source's own, and malformed lexemes separate each plan from each
+    ///   refusal.
     /// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
     /// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
     /// - witness: `lower::tests::a_typed_number_is_its_value_at_its_width`
+    /// - witness: `lower::natural::tests::a_numeral_at_nat_is_its_binary_constructor_term_3287`
+    /// - witness: `lower::natural::tests::a_numeral_at_a_source_s_own_nat_stays_an_integer_3287`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Literal(Literal::Integer(_) | Literal::Fixed(_) | Literal::Float64(_)))
+                    Some(&(Plan::Literal(Literal::Integer(_) | Literal::Fixed(_) | Literal::Float64(_)) | Plan::Natural(..)))
                 )
         },
     )]
@@ -8382,7 +8393,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::Value)?;
+        let frame = self.require(site, Produced::Value)?;
         let text = self.text_at(site.at);
         let spelled: &str = text.as_ref();
         match typed_number_literal(text) {
@@ -8400,6 +8411,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if spelled.ends_with("f32") {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::TypedNumber)));
+        }
+        if let Maybe::Present(naturals) = self.annotated_natural(site, frame)? {
+            let Maybe::Present(Literal::Integer(integer)) = parse_literal(Former::Number, text)
+            else {
+                return Err(LoweringRefusal::MalformedLiteral {
+                    span: site.at.span,
+                    form: site.name,
+                });
+            };
+            self.plan(site, Plan::Natural(naturals, integer.magnitude().clone()));
+            return Ok(());
         }
         let annotated = self
             .classifiers
@@ -14893,6 +14915,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Unit
                 | Plan::Boolean(_)
                 | Plan::Literal(_)
+                | Plan::Natural(..)
                 | Plan::StaticApplication(..)
                 | Plan::Tuple(_)
                 | Plan::List(_)
@@ -15104,6 +15127,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Literal(ref literal) => {
                 let id = sink.arena.value_literal(literal.clone());
                 Maybe::Present(sink.value(id, origin))
+            },
+            Plan::Natural(naturals, ref magnitude) => {
+                Maybe::Present(natural::mint_natural(naturals, magnitude, sink, origin))
             },
             Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
             Plan::Instantiated(instance, defined) => {
@@ -16364,6 +16390,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Unit
             | Plan::Boolean(_)
             | Plan::Literal(_)
+            | Plan::Natural(..)
             | Plan::Atom(_)
             | Plan::Sealed(_)
             | Plan::Instantiated(..)

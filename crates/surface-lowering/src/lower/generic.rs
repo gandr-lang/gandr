@@ -97,6 +97,7 @@ use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::module::DeclarationSlot;
 use crate::module::Half;
 use crate::module::Operand;
 use crate::module::Role;
@@ -666,19 +667,24 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The type each data declaration's name stands for in a code's leaves:
     /// the declaration itself at its parameter count, the first declared of a
-    /// name winning, as the levitated universe reads a family by its name.
+    /// name winning, as the levitated universe reads a family by its name. A
+    /// source's declaration wins over the prelude's, as the prelude answers
+    /// only a name no source declares.
     ///
     /// # Specification
     /// - requires: every source so far is collected.
     /// - ensures: one nominal binding per name some data declaration with a
-    ///   description or a native reading carries.
+    ///   description or a native reading carries: the first a source other than
+    ///   the prelude declares, else the prelude's.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a field naming another declaration decodes to that
-    ///   declaration.
+    ///   declaration, and to a source's own where the prelude declares the name
+    ///   too.
     /// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
+    /// - witness: `lower::generic::tests::a_leaf_reads_a_source_s_family_before_the_prelude_s_3287`
     #[spec(ensures: |ret| ret.values().all(|binding| matches!(binding, TypeBinding::Nominal { .. })))]
     fn code_names(&self) -> BTreeMap<Name, TypeBinding>
     {
@@ -689,7 +695,14 @@ impl<'source> Lowerer<'_, 'source>
             .map(|native| (native.named.node, native))
             .collect();
         let mut names = BTreeMap::new();
-        for slot in &self.collected.slots {
+        let prelude = self.collected.unit.prelude();
+        let preluded = |slot: &&DeclarationSlot<'source>| {
+            prelude.is_some_and(|prelude| {
+                self.collected.unit.source_at(slot.named.span.start()) == prelude
+            })
+        };
+        let (laid, written): (Vec<_>, Vec<_>) = self.collected.slots.iter().partition(preluded);
+        for slot in written.into_iter().chain(laid) {
             let Maybe::Present(Half {
                 operand: Operand::Data(_),
                 ..

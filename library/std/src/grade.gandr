@@ -1,0 +1,258 @@
+// `std.grade`: grade algebras. A grade says how much of something a program
+// uses: how often it reads a value, how many bytes a site offers. An algebra
+// of grades is a model of `Grade`, its order a function over closed data, so
+// `gandr check` decides by conversion whether one grade covers another: a
+// path `Path(Bool, Count.le(x, y), true)` checks exactly when the order holds,
+// and the kernel replays it. An algebra over the native `Integer` is no such
+// model, since the kernel reads a closed native as an opaque constant (#2378);
+// `Count` counts in the prelude's binary naturals instead, written as
+// numerals annotated `(n : Nat)`. A map between two algebras is a `Hom`, named
+// where a reader asks for it, and `covers` tests a grade of one algebra against
+// a need of another through it (#3287). `Grade` states no law: no reader of
+// this module needs one.
+
+/// An ordered semiring's operations: grades, their zero and one, their sum and
+/// product, and their order.
+pub theory Grade {
+  /// The grades.
+  sort G : Type;
+  /// The grade of what is not used.
+  oper zero : G;
+  /// The grade of what is used once.
+  oper one : G;
+  /// The grade of two uses, one beside the other.
+  oper plus : (a : G, b : G) --> G;
+  /// The grade of a use repeated as often as another grade says.
+  oper times : (a : G, b : G) --> G;
+  /// Whether `a` is at most `b`: whether `b` covers `a`.
+  oper le : (a : G, b : G) --> Bool;
+}
+
+/// How often a value is used: not at all, once, or any number of times.
+pub data Use : Type {
+  /// Not used.
+  Unused : Use;
+  /// Used exactly once.
+  Once : Use;
+  /// Used any number of times.
+  Many : Use;
+}
+
+/// Usage, the grades the tree writes: zero and one apart, each under many,
+/// as linear types order them.
+pub module Usage : Model(Grade) {
+  /// The grades: uses.
+  type G = Use;
+  /// Unused.
+  def zero = Unused;
+  /// Once.
+  def one = Once;
+  /// Unused beside anything is that thing; any two uses are many.
+  def plus(a : Use, b : Use) -> Use {
+    case a {
+      Unused => b,
+      Once => case b {
+        Unused => Once,
+        Once => Many,
+        Many => Many,
+      },
+      Many => Many,
+    }
+  }
+  /// Repeating unused, or no times, is unused; once repeats the other;
+  /// many repeats anything used to many.
+  def times(a : Use, b : Use) -> Use {
+    case a {
+      Unused => Unused,
+      Once => b,
+      Many => case b {
+        Unused => Unused,
+        Once => Many,
+        Many => Many,
+      },
+    }
+  }
+  /// Each use is under itself and under many; unused and once are apart.
+  def le(a : Use, b : Use) -> Bool {
+    case a {
+      Unused => case b {
+        Unused => true,
+        Once => false,
+        Many => true,
+      },
+      Once => case b {
+        Unused => false,
+        Once => true,
+        Many => true,
+      },
+      Many => case b {
+        Unused => false,
+        Once => false,
+        Many => true,
+      },
+    }
+  }
+}
+
+/// How two positives compare.
+data Comparison : Type {
+  /// The first is below the second.
+  Below : Comparison;
+  /// The two are equal.
+  Equal : Comparison;
+  /// The first is above the second.
+  Above : Comparison;
+}
+
+/// One past a positive.
+def rec succPos(p : Pos) -> Pos {
+  case p {
+    One => Bit0(One),
+    Bit0(q) => Bit1(q),
+    Bit1(q) => Bit0(succPos[<](q)),
+  }
+}
+
+/// The sum of two positives, digit by digit, a carry taken by `succPos`.
+def rec addPos(a : Pos, b : Pos) -> Pos {
+  case a {
+    One => succPos(b),
+    Bit0(p) => case b {
+      One => Bit1(p),
+      Bit0(q) => Bit0(addPos[<](p, q)),
+      Bit1(q) => Bit1(addPos[<](p, q)),
+    },
+    Bit1(p) => case b {
+      One => Bit0(succPos(p)),
+      Bit0(q) => Bit1(addPos[<](p, q)),
+      Bit1(q) => Bit0(succPos(addPos[<](p, q))),
+    },
+  }
+}
+
+/// The product of two positives: `b` added once for each digit of `a` that is
+/// one, shifted to that digit's place.
+def rec mulPos(a : Pos, b : Pos) -> Pos {
+  case a {
+    One => b,
+    Bit0(p) => Bit0(mulPos[<](p, b)),
+    Bit1(p) => addPos(b, Bit0(mulPos[<](p, b))),
+  }
+}
+
+/// How `a` compares with `b`, `r` the answer their lower digits gave: the
+/// higher digits decide where they differ.
+def rec comparePos(a : Pos, b : Pos, r : Comparison) -> Comparison {
+  case a {
+    One => case b {
+      One => r,
+      Bit0(_q) => Below,
+      Bit1(_q) => Below,
+    },
+    Bit0(p) => case b {
+      One => Above,
+      Bit0(q) => comparePos[<](p, q, r),
+      Bit1(q) => comparePos[<](p, q, Below),
+    },
+    Bit1(p) => case b {
+      One => Above,
+      Bit0(q) => comparePos[<](p, q, Above),
+      Bit1(q) => comparePos[<](p, q, r),
+    },
+  }
+}
+
+/// The sum of two naturals.
+def addNat(a : Nat, b : Nat) -> Nat {
+  case a {
+    Zero => b,
+    Positive(p) => case b {
+      Zero => a,
+      Positive(q) => Positive(addPos(p, q)),
+    },
+  }
+}
+
+/// The product of two naturals.
+def mulNat(a : Nat, b : Nat) -> Nat {
+  case a {
+    Zero => Zero,
+    Positive(p) => case b {
+      Zero => Zero,
+      Positive(q) => Positive(mulPos(p, q)),
+    },
+  }
+}
+
+/// Whether `a` is at most `b`.
+def leNat(a : Nat, b : Nat) -> Bool {
+  case a {
+    Zero => true,
+    Positive(p) => case b {
+      Zero => false,
+      Positive(q) => case comparePos(p, q, Equal) {
+        Below => true,
+        Equal => true,
+        Above => false,
+      },
+    },
+  }
+}
+
+/// Counting: the naturals under sum and product, in their order.
+pub module Count : Model(Grade) {
+  /// The grades: naturals.
+  type G = Nat;
+  /// Zero.
+  def zero = Zero;
+  /// One.
+  def one = Positive(One);
+  /// The sum.
+  def plus(a : Nat, b : Nat) -> Nat { addNat(a, b) }
+  /// The product.
+  def times(a : Nat, b : Nat) -> Nat { mulNat(a, b) }
+  /// The order.
+  def le(a : Nat, b : Nat) -> Bool { leNat(a, b) }
+}
+
+/// Usage, as an algebra a reader takes.
+pub def usage : Model(Grade) = pack Usage at Model(Grade);
+
+/// Counting, as an algebra a reader takes.
+pub def count : Model(Grade) = pack Count at Model(Grade);
+
+/// A map from one algebra's grades to another's, named, so a reader asks for
+/// it by the two algebras it joins.
+pub data Hom(a : Model(Grade), b : Model(Grade)) : Type {
+  /// The map.
+  Map : (map : a.G => b.G) --> Hom(a, b);
+}
+
+/// A count's usage: zero unused, one once, more many.
+def collapsed(n : Nat) -> Use {
+  case n {
+    Zero => Unused,
+    Positive(p) => case p {
+      One => Once,
+      Bit0(_q) => Many,
+      Bit1(_q) => Many,
+    },
+  }
+}
+
+/// Counting collapsed to usage.
+pub def collapse : Hom(count, usage) = Map(collapsed);
+
+/// Whether `have` covers `need` in the algebra `a`.
+pub def fits(a : Model(Grade), need : a.G, have : a.G) -> Bool {
+  run l <- a.le;
+  l(need, have)
+}
+
+/// Whether `have`, a grade of `a`, covers `need`, a grade of `b`, once `h`
+/// maps it into `b`.
+pub def covers(a : Model(Grade), b : Model(Grade), h : Hom(a, b), need : b.G, have : a.G) -> Bool {
+  case h {
+    Map(m) => fits(b, need, m(have)),
+  }
+}

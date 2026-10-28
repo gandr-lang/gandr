@@ -1,0 +1,7 @@
+/// `binary-naturals`: Binary natural numbers.
+// A numeral annotated `(n : Nat)` is the prelude's binary natural it names,
+// its lowest digit outermost: five is one, zero, one read from the outside
+// in, so the numeral converts with the term it names.
+
+/// Five, its binary constructor term.
+def five : Path(Nat, (5 : Nat), Positive(Bit1(Bit0(One)))) = here(Positive(Bit1(Bit0(One))));

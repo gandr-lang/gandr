@@ -1681,6 +1681,28 @@ fn the_prelude_offers_no_presentation_constructor_2302()
     );
 }
 
+/// #3287: the prelude's binary naturals declare the constructor `One`, which
+/// answers only a name nothing written binds: a source declaring a type `One`
+/// reads its own type where a value of `Type` is read, where the prelude's
+/// constructor once answered and the path was refused.
+#[test]
+fn a_source_s_type_shadows_the_prelude_s_constructor_3287()
+{
+    let pbg = grammar();
+    let source =
+        "data One : Type {\n  Single : One;\n}\ndef same : Path(Type, One, One) = here(One) ;\n";
+    let (text, unit) =
+        gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
+            .expect("a unit of one source lays after the prelude");
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    assert_eq!(
+        refused(&module),
+        Vec::<String>::new(),
+        "`One` is the source's own type, not the prelude's constructor"
+    );
+}
+
 #[test]
 fn a_method_of_a_source_not_imported_is_out_of_scope()
 {

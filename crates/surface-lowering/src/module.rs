@@ -2152,7 +2152,10 @@ impl<'source> Collected<'source>
     ///   exports its family; the prelude answers none of the presentation's,
     ///   which its `theory` block enters as any block does but which are no
     ///   part of what it offers, so a source names `Shape` or `Var` for its own
-    ///   type unless it, or a source it imports, writes a theory.
+    ///   type unless it, or a source it imports, writes a theory; and none of a
+    ///   name `source` declares or a written import binds, which shadows it as
+    ///   it shadows any of the prelude's names, so a source names `One` for its
+    ///   own type beside the prelude's binary naturals.
     /// - provides: the import fallback of constructor lookup.
     /// - fails: [`Ambiguity`] for two imports binding one constructor name.
     /// - panics: none.
@@ -2163,9 +2166,11 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — an imported family's constructor in a case arm and a
     ///   value, answered exactly; a type of a presentation constructor's name
-    ///   in a source laid after the prelude, read as itself.
+    ///   in a source laid after the prelude, read as itself; a type of a
+    ///   prelude constructor's name, read as itself.
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `tests::namespace::the_prelude_offers_no_presentation_constructor_2302`
+    /// - witness: `tests::namespace::a_source_s_type_shadows_the_prelude_s_constructor_3287`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((constructor, import))) => constructor.form != Generators::Presentation
             || import.start() != import.end(),
@@ -2179,11 +2184,25 @@ impl<'source> Collected<'source>
     ) -> Result<Maybe<(Constructor, ByteSpan), imported::Absent>, Ambiguity>
     {
         let prelude = self.unit.prelude();
+        // Whether `source` binds `name` itself or through a written import,
+        // read only where the prelude would answer.
+        let shadowed = || {
+            self.by_name
+                .contains_key(&(Container::TopLevel(source), name))
+                || match self.imported_slot(source, name) {
+                    Ok(Maybe::Present((_, import))) => import.start() != import.end(),
+                    Ok(Maybe::Absent(_)) => false,
+                    Err(_) => true,
+                }
+        };
         self.through_imports(source, name, |target| {
             self.constructors
                 .get(&(target, name))
                 .copied()
-                .filter(|found| found.form != Generators::Presentation || prelude != Some(target))
+                .filter(|found| {
+                    prelude != Some(target)
+                        || (found.form != Generators::Presentation && !shadowed())
+                })
                 .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
         })
     }

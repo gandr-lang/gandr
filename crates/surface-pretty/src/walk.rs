@@ -1035,15 +1035,16 @@ where
 ///   record update's base and then the fields it writes after their labels, and
 ///   an injection's body after its summand; type children admit types and term
 ///   children terms as the grammar places them, an update's every slot a value,
-///   an ascription's value and type but the type alone for a truth value
-///   ascribed `Bool`, written as its word, and a path type's carrier and each
-///   endpoint but one that is a truth value at a `Bool` carrier; a dependent
-///   arrow's codomain, a dependent pair's second factor, a static
-///   abstraction's, a lambda's and a fixpoint's body, a bind's rest, a case's
-///   branches, a transport's motive, a return clause and a stack capture's body
-///   stand under one binder, a split's body under one per component, a data
-///   case's branch under one per field of its constructor, a fold's cell branch
-///   and a handler's operation clauses under two, a scope's subject under the
+///   an ascription's value and type, none for a truth value ascribed `Bool`,
+///   written as its word, and the type alone for a binary natural ascribed
+///   `Nat`, written as its numeral, and a path type's carrier and each endpoint
+///   but one that is a truth value at a `Bool` carrier; a dependent arrow's
+///   codomain, a dependent pair's second factor, a static abstraction's, a
+///   lambda's and a fixpoint's body, a bind's rest, a case's branches, a
+///   transport's motive, a return clause and a stack capture's body stand under
+///   one binder, a split's body under one per component, a data case's branch
+///   under one per field of its constructor, a fold's cell branch and a
+///   handler's operation clauses under two, a scope's subject under the
 ///   capability's and a fork's child and parent each under one linear binder, a
 ///   hold's scope and an access's body each under one linear binder; the
 ///   computation a bind runs, the function an application applies, a
@@ -1127,7 +1128,11 @@ where
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
     | Former::Row { tail, .. } => ret.len() == usize::from(tail.is_some())
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::Annotated { value, ty } => ret.is_empty() == truth(source, value, ty).is_some(),
+    | Former::Annotated { value, ty } => ret.len() == match (truth(source, value, ty), natural(source, value, ty)) {
+        (Some(_), _) => 0_usize,
+        (None, Some(_)) => 1_usize,
+        (None, None) => 2_usize,
+    },
     | Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
@@ -1549,13 +1554,15 @@ where
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
         },
-        // A truth value is a word: no child is written.
+        // A truth value is a word, no child written; a binary natural is a
+        // numeral, its type the one child written.
         Former::Annotated {
             value: annotated,
             ty,
-        } => match truth(source, annotated, ty) {
-            Some(_) => Vec::new(),
-            None => Vec::from([value(annotated), value_type(ty)]),
+        } => match (truth(source, annotated, ty), natural(source, annotated, ty)) {
+            (Some(_), _) => Vec::new(),
+            (None, Some(_)) => Vec::from([value_type(ty)]),
+            (None, None) => Vec::from([value(annotated), value_type(ty)]),
         },
         // An offer's arm and a fork's child end in a computation the surface
         // reads only as one, `retire => pure unit`: no exit is elided there.
@@ -2094,6 +2101,101 @@ where
         1_usize => Some(Glyphs("false")),
         _ => None,
     }
+}
+
+/// The numeral the surface writes the binary natural `value` by where it is
+/// ascribed `ty`: the decimal its digits spell, read off the prelude's
+/// constructors by name — `Nat`'s `Zero` and `Positive` over `Pos`'s `One`,
+/// `Bit0` and `Bit1`, the lowest digit outermost — as the lowering mints a
+/// numeral annotated `(n : Nat)`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the decimal of the natural exactly when `ty` reads as `Nat` at
+///   arity zero and `value` as `Zero`, or as `Positive` over a chain of `Bit0`
+///   and `Bit1` ending in `One`, each at its arity; none otherwise.
+/// - provides: the spelling of an ascribed binary natural, which lowers back to
+///   the same constructor term under the same ascription however many digits it
+///   has.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, five and two to the thirty-first ascribed `Nat`
+///   spell as their numerals; a natural ascribed another family, and a chain
+///   ending in other than `One`, spell as their constructors.
+/// - witness: `tests::goldens::an_ascribed_binary_natural_spells_as_its_numeral_3287`
+#[spec(ensures: |ret| ret.is_none() || (matches!(source.read(ty), Former::Data { name: Some(name), arity }
+    if name.as_ref() == "Nat" && usize::from(arity) == 0_usize)
+    && ret.as_ref().is_some_and(|numeral| !numeral.is_empty() && numeral.bytes().all(|digit| digit.is_ascii_digit()))))]
+fn natural<S>(
+    source: &S,
+    value: S::Node,
+    ty: S::Node,
+) -> Option<String>
+where
+    S: Source + ?Sized,
+{
+    if !matches!(source.read(ty), Former::Data { name: Some(name), arity }
+        if name.as_ref() == "Nat" && usize::from(arity) == 0_usize)
+    {
+        return None;
+    }
+    let constructor = |node: S::Node| {
+        let Former::Constructor {
+            name: Some(name),
+            arity,
+            ..
+        } = source.read(node)
+        else {
+            return None;
+        };
+        Some((name, usize::from(arity)))
+    };
+    let (head, arity) = constructor(value)?;
+    match (head.as_ref(), arity) {
+        ("Zero", 0_usize) => return Some(String::from("0")),
+        ("Positive", 1_usize) => {},
+        _ => return None,
+    }
+    // The binary digits below the leading one, the lowest first.
+    let mut bits = Vec::new();
+    let mut at = source.component(value, Component::from(0_usize))?;
+    loop {
+        let (digit, arity) = constructor(at)?;
+        match (digit.as_ref(), arity) {
+            ("One", 0_usize) => break,
+            ("Bit0", 1_usize) => bits.push(false),
+            ("Bit1", 1_usize) => bits.push(true),
+            _ => return None,
+        }
+        at = source.component(at, Component::from(0_usize))?;
+    }
+    // The decimal digits, the lowest first: the leading one, then each
+    // binary digit from the highest doubled in with its carry.
+    let mut decimal = Vec::from([1_u8]);
+    for &bit in bits.iter().rev() {
+        let mut carry = u8::from(bit);
+        for digit in &mut decimal {
+            let doubled = digit.saturating_mul(2_u8).saturating_add(carry);
+            (*digit, carry) = if doubled >= 10_u8 {
+                (doubled.saturating_sub(10_u8), 1_u8)
+            }
+            else {
+                (doubled, 0_u8)
+            };
+        }
+        if carry != 0_u8 {
+            decimal.push(carry);
+        }
+    }
+    Some(
+        decimal
+            .iter()
+            .rev()
+            .map(|&digit| char::from(b'0'.saturating_add(digit)))
+            .collect(),
+    )
 }
 
 /// The notation a decode of `node` is written in where a type is read: a
@@ -9649,13 +9751,14 @@ impl Walk<'_, '_>
     ///   continuation's call, `k(v)`; a return ascribed its returner as the
     ///   annotated value `(v : T)`, under a `pure` unless a body ends there,
     ///   its two pieces the value and the type the visit shaped; a value
-    ///   ascription as `(v : T)`, a truth value ascribed `Bool` as its word,
-    ///   `(true : Bool)`, its one piece the type. The forms the grammar does
-    ///   not write — native transport, a fixpoint `rec f { c }`, a fold, any
-    ///   other resumption `resume(k, c)`, `reset { c }`, `shift k { c }`, a
-    ///   lazy product `&{c, …}` and its observation `c.0`, and a positional
-    ///   projection off anything but a name, `(v.1).0` — make the presentation
-    ///   approximate.
+    ///   ascription as `(v : T)`, its two pieces the value and the type, but a
+    ///   binary natural ascribed `Nat` as its numeral, `(5 : Nat)`, its one
+    ///   piece the type; a truth value ascribed `Bool` the visit writes as its
+    ///   word. The forms the grammar does not write — native transport, a
+    ///   fixpoint `rec f { c }`, a fold, any other resumption `resume(k, c)`,
+    ///   `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
+    ///   observation `c.0`, and a positional projection off anything but a
+    ///   name, `(v.1).0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -10531,15 +10634,15 @@ impl Walk<'_, '_>
                         }
                     })
             },
-            // `(v : T)`, the annotation the source wrote; an ascribed truth
-            // value is its word, written as an atom.
-            Former::Annotated { .. } => {
-                let _ = parts
-                    .text("(")
-                    .piece(Binding::Arrow)
-                    .text(" : ")
-                    .piece(Binding::Arrow)
-                    .text(")");
+            // `(v : T)`, the annotation the source wrote; a binary natural
+            // ascribed `Nat` is its numeral, `(5 : Nat)`, its one piece the
+            // type. An ascribed truth value is its word, written as an atom.
+            Former::Annotated { value, ty } => {
+                let _ = match natural(source, value, ty) {
+                    Some(numeral) => parts.text("(").text(numeral),
+                    None => parts.text("(").piece(Binding::Arrow),
+                };
+                let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 writes(Production("parenthesized_expression"), Binding::Atom)
             },
             #[cfg_attr(
