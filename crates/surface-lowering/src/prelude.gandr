@@ -17,7 +17,7 @@ pub theory Eq {
 pub module Eq {
   /// `def eq = Eq.generic(T)`; `def refl = Eq.generic.refl(T)` and `def sym
   /// = Eq.generic.sym(T)` prove its laws.
-  def generic : (T : Type) => (T, T) => Bool ;
+  def generic : (T : Type) => (T, T) => Bool;
 }
 
 /// Integer equality, the integer primitive, its laws the host's.
@@ -97,3 +97,23 @@ pub def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b)
 
 /// At least, through the operands' model of `Ord`: what `a >= b` calls.
 pub def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
+
+/// A positive number in binary, its least digit outermost, as Isabelle/HOL's
+/// `num`: one, or twice a positive, or twice a positive and one.
+pub data Pos : Type {
+  /// One.
+  One : Pos;
+  /// Twice `p`.
+  Bit0 : (p : Pos) --> Pos;
+  /// Twice `p`, and one.
+  Bit1 : (p : Pos) --> Pos;
+}
+
+/// A natural number in binary: zero, or a positive. A numeral annotated
+/// `(n : Nat)` is its constructor term.
+pub data Nat : Type {
+  /// Zero.
+  Zero : Nat;
+  /// A positive number.
+  Positive : (p : Pos) --> Nat;
+}

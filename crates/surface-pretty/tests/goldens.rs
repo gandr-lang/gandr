@@ -1428,6 +1428,61 @@ fn an_ascribed_truth_value_spells_as_its_word_2168()
     }
 }
 
+/// A binary natural ascribed `Nat` spells as the numeral it lowers from, as
+/// the lowering mints `(n : Nat)` the prelude's constructor term (#3287):
+/// zero, five, and two to the thirty-first, whose term runs past the printer's
+/// depth. The same term ascribed another family, and a chain ending other than
+/// in `One`, keep their constructors.
+#[test]
+fn an_ascribed_binary_natural_spells_as_its_numeral_3287()
+{
+    let names = [Name::from("Nat"), Name::from("Pos"), Name::from("Other")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let pos = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let other = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
+    let one = core.value_constructor(pos, ConstructorTag::from(0_usize), Vec::new());
+    let digit = |core: &mut CoreArena, tag: usize, above| {
+        core.value_constructor(pos, ConstructorTag::from(tag), vec![above])
+    };
+    let two = digit(&mut core, 1, one);
+    let five = digit(&mut core, 2, two);
+    let mut power = one;
+    for _ in 0_usize .. 31_usize {
+        power = digit(&mut core, 1, power);
+    }
+    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let unended = digit(&mut core, 1, zero);
+    let [five, power, unended] = [five, power, unended]
+        .map(|positive| core.value_constructor(nat, ConstructorTag::from(1_usize), vec![positive]));
+    let rows = [
+        (zero, nat, "(0 : Nat)"),
+        (five, nat, "(5 : Nat)"),
+        (power, nat, "(2147483648 : Nat)"),
+        (five, other, "(Positive(Bit1(Bit0(One))) : Other)"),
+        (unended, nat, "(Positive(Bit0(Zero)) : Nat)"),
+    ]
+    .map(|(value, ty, expected)| (core.value_ascribe(value, ty), expected));
+    let mut constructors = Constructors::default();
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Positive"), Arity::from(1_usize)),
+    ]);
+    constructors.family(FamilyKey::Named(Name::from("Pos")), [
+        (Name::from("One"), Arity::from(0_usize)),
+        (Name::from("Bit0"), Arity::from(1_usize)),
+        (Name::from("Bit1"), Arity::from(1_usize)),
+    ]);
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    for (ascribed, expected) in rows {
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(ascribed))),
+            faithful(Written(expected)),
+            "{expected} spells as written"
+        );
+    }
+}
+
 /// A path type's endpoint the source wrote as a word spells as the word,
 /// `Path(Bool, true, false)`: the checked type holds the word ascribed `Bool`,
 /// as the lowering mints it, so a hover and a law's statement read as written

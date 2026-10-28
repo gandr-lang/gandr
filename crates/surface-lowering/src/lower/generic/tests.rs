@@ -90,6 +90,24 @@ def eqNat = Eq.generic(Nat) ;
 }
 
 #[test]
+fn a_leaf_reads_a_source_s_family_before_the_prelude_s_3287()
+{
+    // The prelude declares binary naturals as `Nat`. A field naming `Nat` in
+    // a source that declares unary naturals as `Nat` reads the source's, as
+    // resolution does, so the derived equality compares unary naturals and
+    // checks rather than meeting the prelude's at the field.
+    let (text, unit) = laid(SourceText::from(
+        "\
+data Tagged : Type { Tagged : (shown : Bool, count : Nat) --> Tagged; }
+def eqTagged = Eq.generic(Tagged) ;
+",
+    ));
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
 fn a_derived_law_lowers_to_its_proof_2302()
 {
     // A point's laws, alone and as a model's members: each proof checks
@@ -125,9 +143,11 @@ fn a_generic_equality_names_the_declaration_each_case_eliminates_2363()
     let (text, unit) = laid(SourceText::from("def eqNat = Eq.generic(Nat) ;\n"));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    // The source's own naturals, declared after the prelude's binary `Nat`.
     let nat = module
         .declarations()
         .iter()
+        .rev()
         .find(|declaration| declaration.name() == SurfaceName::from("Nat"))
         .map(crate::module::LoweredDeclaration::constant)
         .expect("the naturals are declared");

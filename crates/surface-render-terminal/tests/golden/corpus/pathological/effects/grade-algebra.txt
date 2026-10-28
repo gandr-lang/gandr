@@ -1,0 +1,36 @@
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/effects/grade-algebra.gandr:21:62
+   │
+21 │ def manyUnderOnce : Path(Bool, Usage.le(Many, Once), true) = here(true);
+   │                                ┬───────────────────  ┬───    ━━━━━━━━━━ not both endpoints of the path
+   │                                │                     │
+   │                                │                     an endpoint the point does not convert to
+   │                                an endpoint the point does not convert to
+   │
+   ├ note: `manyUnderOnce` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/effects/grade-algebra.gandr:29:5
+   │
+27 │   Count.le((8589934592 : Nat), (2147483648 : Nat)),
+   │   ──────────────────────────────────────────────── an endpoint the point does not convert to
+28 │   true
+   │   ──── an endpoint the point does not convert to
+29 │ ) = here(true);
+   │     ━━━━━━━━━━ not both endpoints of the path
+   │
+   ├ note: `eightUnderTwoGiB` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
+
+error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/effects/grade-algebra.gandr:49:60
+   │
+49 │ def twoUnderFourBytes : Path(Bool, Bytes.le(2, 4), true) = here(true);
+   │                                    ┬─────────────  ┬───    ━━━━━━━━━━ not both endpoints of the path
+   │                                    │               │
+   │                                    │               an endpoint the point does not convert to
+   │                                    an endpoint the point does not convert to
+   │
+   ├ note: `twoUnderFourBytes` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints

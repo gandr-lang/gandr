@@ -1,0 +1,53 @@
+// Grade algebras as models of `std.grade`'s `Grade`, each order decided by
+// conversion.
+//
+// `Usage` orders the grades the tree writes, and `Count` counts in the
+// prelude's binary naturals. A path from an order to `true` checks exactly
+// when the order holds, so `gandr check` settles whether one grade covers
+// another.
+//
+// The checker evaluates each order over closed constructor data, and the
+// kernel replays the conversion. A numeral annotated `(n : Nat)` is its
+// constructor term, so a quantity in gibibytes compares in a few dozen steps.
+//
+// - see: `../../../library/std/src/grade.gandr` — `Grade`, `Usage`, `Count`,
+//   `Hom`, `fits` and `covers`
+// - see: `../../pathological/effects/grade-algebra.gandr` — an order that
+//   does not hold, and one the native integers leave undecided
+// - see: #3287 — grade algebras as models of one theory
+
+// `Grade`, `Use`, `Usage`, `Count`, `usage`, `count`, `collapse`, `fits` and
+// `covers`.
+import "../../../library/std/src/grade.gandr";
+
+/// Once is under many.
+def onceUnderMany : Path(Bool, Usage.le(Once, Many), true) = here(true);
+
+/// Once beside once is many.
+def twiceIsMany : Path(Use, Usage.plus(Once, Once), Many) = here(Many);
+
+/// Two is under four, counted.
+def twoUnderFour : Path(Bool, Count.le((2 : Nat), (4 : Nat)), true) = here(true);
+
+/// Two gibibytes are under eight.
+def twoUnderEightGiB : Path(
+  Bool,
+  Count.le((2147483648 : Nat), (8589934592 : Nat)),
+  true
+) = here(true);
+
+/// Two and three are five.
+def twoAndThree : Path(Nat, Count.plus((2 : Nat), (3 : Nat)), (5 : Nat)) = here((5 : Nat));
+
+/// Twice three is six.
+def twiceThree : Path(Nat, Count.times((2 : Nat), (3 : Nat)), (6 : Nat)) = here((6 : Nat));
+
+/// The test at a packed algebra: many covers once.
+def manyFitsOnce : Path(Bool, fits(usage, Once, Many), true) = here(true);
+
+/// Three uses, counted, cover a need of once once counting collapses to usage.
+def threeCoversOnce : Path(
+  Bool,
+  covers(count, usage, collapse, Once, (3 : Nat)),
+  true
+) = here(true);

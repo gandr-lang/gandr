@@ -10,7 +10,8 @@
 //! a declaration or a written import binding the name shadows it. It holds the
 //! `Eq` theory, its models at `Integer` and `String` — each operation the
 //! primitive at that type — and `eq`, the function over any model of `Eq` the
-//! operands' type resolves, which `a == b` calls.
+//! operands' type resolves, which `a == b` calls; and the binary naturals
+//! `Pos` and `Nat`, which a numeral annotated `(n : Nat)` names.
 //!
 //! - Choice: one embedded source, the implicit first import of every unit, as
 //!   every language's prelude is (Haskell's `Prelude`, OCaml's `Stdlib`, Lean's
@@ -37,6 +38,15 @@
 //! `==`'s row, and `==` calls the prelude's declaration of it whatever else a
 //! source declares under that name: neither a source's own `eq` nor a
 //! model's member `eq` is what its `==` means.
+//!
+//! # `(n : Nat)` is the prelude's binary natural
+//!
+//! A numeral annotated `(n : Nat)`, the name resolving to the prelude's `Nat`,
+//! lowers to the constructor term its binary digits spell, the lowest
+//! outermost (the lowering's `lower::natural`). The kernel keeps a closed
+//! native opaque, so a natural ordered by conversion is a constructor term,
+//! never an `Integer`. A source's own `Nat` shadows the prelude's there, and
+//! its numerals stay integers.
 
 use alloc::string::String;
 use alloc::vec::Vec;
