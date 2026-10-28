@@ -230,7 +230,7 @@ pub fn execute<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — two hosts in turn each host two migrations of one run and
 ///   print a line for each.
-/// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+/// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
 ///
 /// [`Program::host`]: crate::Program::host
 #[inline]
@@ -487,7 +487,7 @@ impl Script
     /// - hypothesis: L3 — a script whose bindings bind its world to a hosting
     ///   endpoint answers there; one binding it to itself runs here; one
     ///   binding another world is refused before it runs.
-    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     /// - witness: `tests::run::a_world_bound_to_this_host_runs_here`
     /// - witness: `tests::run::a_world_no_binding_names_is_refused_before_the_run`
     #[inline]
@@ -515,7 +515,7 @@ impl Script
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two hosts in turn each host two migrations.
-    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     #[inline]
     pub fn hosting(
         &mut self,
