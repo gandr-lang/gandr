@@ -41,9 +41,9 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CheckRefusal`, `Mismatch`, `CheckingForm`, `ExpectedShape`, `UnadmittedFormer`, `TermNode`, `TypeNode` and `CoreNode`: named refusals and responsible nodes.
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.
 - `CheckRefusal::classify` assigns producer-failure classes ([`refusal`](src/refusal.rs)).
-- `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
-- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
-- `bridge`: independent readmission of accepted declarations into a fresh kernel environment — `readmit`, `Readmission` and its canonical `export`; `readmit_resuming`, `Crossed` and `export_resuming`, a prefix resumed from a record; `Readmitted`, `Outcome`, `ArtifactAudit`, `Replayed` and `Refusal`: what became of each origin, what it rests on, what was replayed, why it did not cross.
+- `CheckRefusal::compared`, `Compared` and `compared::Absent`: the expected and the found types a refusal sets against each other, as nodes a face spells.
+- `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the machine held when it refused, per refused body by position ([`failure`](src/failure.rs)).
+- `bridge`: readmission into a fresh kernel environment — `readmit`, `Readmission` and its canonical `export`; `readmit_resuming`, `Crossed` and `export_resuming`, a prefix resumed from a record; `Readmitted`, `Outcome`, `ArtifactAudit`, `Replayed` and `Refusal`, each origin's account as [`bridge`](src/bridge.rs) states.
 - `Retirement`, `Demand`, `Polled`, `Unretired` and `bridge::readmit_retiring`: a run polled between its steps ([`retire`](src/retire.rs)).
 - The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
 - `Verdict::Suspended` and `ModuleReport::suspensions`: a judgement held on an owed code hole ([`elaboration`](src/elaboration.rs)).
@@ -142,6 +142,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `Cockx-2018-elaborating_dependent_copattern_matching` — exemplar: Cockx and Abel, _ICFP_, 2018 — the solution step.
 - `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: separation at a fork, its halves sharing an interface only to read it.
+- `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule reads its type at its weak head.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: one transport per solved equation.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a resumed readmission signs only its own checks.
 
