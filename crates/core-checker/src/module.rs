@@ -122,13 +122,20 @@
 //! `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::world::World;
+use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -177,6 +184,7 @@ use crate::retire::Unretired;
 use crate::seal::SealTable;
 use crate::support::Supported;
 use crate::worlds::Entry;
+use crate::worlds::Mobility;
 use crate::worlds::Spending;
 
 quenchant_shape::reason_enum! {
@@ -885,6 +893,198 @@ impl ModuleReport
     pub const fn suspensions(&self) -> &BTreeMap<ConstantIndex, Suspension>
     {
         &self.suspensions
+    }
+
+    /// The first sealed atom with no `mobile` mark that a value of `ty` may
+    /// hold, or that a function of it may take or answer: what keeps the
+    /// value's representation inside its seal, where no printed answer
+    /// reaches.
+    ///
+    /// # Specification
+    /// - requires: `ty` is formed in `arena`, the arena the run judged in.
+    /// - ensures: an atom met under `ty` that no signature marks `mobile`, an
+    ///   atom this run formed no abstract type at among them; the walk reads
+    ///   products, sums, records, lists, the carrier of a path or a flow, the
+    ///   value a handle or a region holds, both sides of a thunk's function
+    ///   types and of a stack, a returner's result, each field of a datatype
+    ///   and each observation of a codata type once per declaration, and a code
+    ///   through its quote or the body its constant is defined as;
+    ///   [`unmarked::Absent::Unheld`] when it meets none.
+    /// - fails: never; a dangling node holds nothing.
+    /// - panics: none.
+    /// - intension: an explicit worklist, each datatype, codata type and
+    ///   defined constant entered once.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop over an explicit worklist, not recursion.
+    /// - measure: each node is replaced by its children in the acyclic arena,
+    ///   and a declaration's fields, observations or definition are pushed
+    ///   once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unmarked atom standing alone, in a pair, in a list
+    ///   and in a function's answer is met, and so is an atom no abstract type
+    ///   formed at; a marked atom and a type naming no atom hold none. An atom
+    ///   in a datatype's field or a codata observation is not generated.
+    /// - witness: `module::tests::an_unmarked_atom_is_met_wherever_a_type_holds_it_3375`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(atom) => self.abstract_types.get(&atom).is_none_or(|declared| declared.mobility() == Mobility::Immobile),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn unmarked_atom(
+        &self,
+        arena: &CoreArena,
+        ty: ValueTypeId,
+    ) -> Maybe<ConstantIndex, unmarked::Absent>
+    {
+        /// A node still to read.
+        #[derive(Clone, Copy)]
+        enum Node
+        {
+            /// A value type.
+            Value(ValueTypeId),
+            /// A computation type.
+            Computation(CompTypeId),
+            /// A code a type decodes.
+            Code(ValueId),
+        }
+        let mut pending = Vec::from([Node::Value(ty)]);
+        let mut entered: BTreeSet<ConstantIndex> = BTreeSet::new();
+        while let Some(node) = pending.pop() {
+            match node {
+                Node::Value(id) => match arena.value_type(id) {
+                    Some(&ValueType::Abstract(atom)) => {
+                        if self
+                            .abstract_types
+                            .get(&atom)
+                            .is_none_or(|declared| declared.mobility() == Mobility::Immobile)
+                        {
+                            return Maybe::Present(atom);
+                        }
+                    },
+                    Some(&ValueType::Data {
+                        declaration,
+                        ref arguments,
+                    }) => {
+                        pending.extend(arguments.iter().copied().map(Node::Code));
+                        if entered.insert(declaration)
+                            && let Some(signature) = self.data_signatures.get(&declaration)
+                        {
+                            pending.extend(
+                                signature
+                                    .constructors()
+                                    .iter()
+                                    .flatten()
+                                    .copied()
+                                    .map(Node::Value),
+                            );
+                        }
+                    },
+                    Some(&ValueType::Record(ref fields)) => {
+                        pending.extend(fields.values().copied().map(Node::Value));
+                    },
+                    Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                        pending.extend(parts.iter().copied().map(Node::Value));
+                    },
+                    Some(
+                        &(ValueType::Path { carrier: inner, .. }
+                        | ValueType::Flow { carrier: inner, .. }
+                        | ValueType::List(inner)
+                        | ValueType::Lift { inner, .. }
+                        | ValueType::Staged { base: inner, .. }
+                        | ValueType::Kept { value: inner, .. }
+                        | ValueType::World(WorldType::At { inner, .. })),
+                    ) => pending.push(Node::Value(inner)),
+                    Some(&ValueType::Sigma { first, second }) => {
+                        pending.extend([Node::Value(first), Node::Value(second)]);
+                    },
+                    Some(&ValueType::Thunk(computation)) => {
+                        pending.push(Node::Computation(computation));
+                    },
+                    Some(&ValueType::Stack { input, output }) => {
+                        pending.extend([Node::Computation(input), Node::Computation(output)]);
+                    },
+                    Some(&ValueType::Element { code, .. }) => pending.push(Node::Code(code)),
+                    Some(
+                        &(ValueType::PathUniverse(..)
+                        | ValueType::Run(_)
+                        | ValueType::Prefix(_)
+                        | ValueType::Dialogue(_)
+                        | ValueType::Web
+                        | ValueType::Base(_)
+                        | ValueType::Universe { .. }
+                        | ValueType::Row
+                        | ValueType::RowTail(_)
+                        | ValueType::StaticPi { .. }
+                        | ValueType::Unknown
+                        | ValueType::Session(_)
+                        | ValueType::Capability { .. }
+                        | ValueType::Buffer
+                        | ValueType::World(WorldType::Capability(_))),
+                    )
+                    | None => {},
+                },
+                Node::Computation(id) => match arena.comp_type(id) {
+                    Some(&CompType::Returner { result, .. }) => pending.push(Node::Value(result)),
+                    Some(
+                        &(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain }),
+                    ) => {
+                        pending.extend([Node::Value(domain), Node::Computation(codomain)]);
+                    },
+                    Some(&CompType::Element { code, .. }) => pending.push(Node::Code(code)),
+                    Some(&CompType::With(ref components)) => {
+                        pending.extend(components.iter().copied().map(Node::Computation));
+                    },
+                    Some(&CompType::Codata {
+                        declaration,
+                        ref arguments,
+                    }) => {
+                        pending.extend(arguments.iter().copied().map(Node::Code));
+                        if entered.insert(declaration)
+                            && let Some(signature) = self.codata_signatures.get(&declaration)
+                        {
+                            pending.extend(
+                                signature
+                                    .observations()
+                                    .iter()
+                                    .copied()
+                                    .map(Node::Computation),
+                            );
+                        }
+                    },
+                    Some(&CompType::Unknown) | None => {},
+                },
+                Node::Code(id) => match arena.value(id) {
+                    Some(&Value::Quote(quoted)) => pending.push(Node::Value(quoted)),
+                    Some(&Value::QuoteComputation(quoted)) => {
+                        pending.push(Node::Computation(quoted));
+                    },
+                    Some(&Value::Constant(constant)) => {
+                        if entered.insert(constant)
+                            && let Some(&body) = self.definitions.get(&constant)
+                        {
+                            pending.push(Node::Code(body));
+                        }
+                    },
+                    Some(_) | None => {},
+                },
+            }
+        }
+        Maybe::Absent(unmarked::Absent::Unheld)
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a type holds no sealed atom without a mark.
+    pub mod unmarked {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Every atom the type reaches is marked `mobile`, or it reaches
+            /// none.
+            Unheld,
+        }
     }
 }
 

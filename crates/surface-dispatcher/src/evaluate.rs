@@ -391,9 +391,14 @@ pub struct Program<'source>
     /// The path of the module whose signature hides each hidden member, by
     /// the member's admission position.
     hidden: BTreeMap<ConstantIndex, String>,
+    /// The path of the module that sealed the atom with no mark each
+    /// declaration's declared type holds, by the declaration's admission
+    /// position: a run of it is opaque at that module, whatever it reads back
+    /// to.
+    kept: BTreeMap<ConstantIndex, String>,
     /// The declared type, spelled on one line in each spelling, of each
-    /// declaration whose run can reach a hidden member, by admission position
-    /// and spelling.
+    /// declaration whose run can reach a hidden member or is kept by a seal,
+    /// by admission position and spelling.
     sealed: BTreeMap<(ConstantIndex, Spelling), String>,
     /// The name each fork the focused definitions hold gives its channel,
     /// its child end's binder as written, by the fork's command: a traced run
@@ -1022,7 +1027,8 @@ impl<'source> Program<'source>
         // the module's would misname.
         let families = Families::declared(module);
         let hidden = hidden_members(module);
-        if !hidden.is_empty() {
+        let kept = kept_members(core, module, verdicts);
+        if !hidden.is_empty() || !kept.is_empty() {
             let reaching = reaching(&declarations, &hidden);
             let printed: Vec<Name<'_>> =
                 names.iter().map(|name| Name::from(name.as_str())).collect();
@@ -1037,7 +1043,8 @@ impl<'source> Program<'source>
                     .iter()
                     .filter(|judged| {
                         usize::from(judged.constant()) >= boundary
-                            && reaching.contains(&judged.constant())
+                            && (reaching.contains(&judged.constant())
+                                || kept.contains_key(&judged.constant()))
                     })
                     .filter_map(|judged| match judged.verdict() {
                         Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
@@ -1074,6 +1081,7 @@ impl<'source> Program<'source>
             declarations,
             names,
             hidden,
+            kept,
             sealed,
             channels,
             families,
@@ -1431,7 +1439,8 @@ impl<'source> Program<'source>
                 Evaluation::Unrunnable(Unrunnable::UnboundWorld(_)) => false,
                 Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
-                Evaluation::Sealed(ref sealed) => self.hidden.values().any(|module| *module == sealed.module)
+                Evaluation::Sealed(ref sealed) => (self.hidden.values().any(|module| *module == sealed.module)
+                        || self.kept.get(&constant) == Some(&sealed.module))
                     && self.sealed.get(&(constant, self.spelling)).is_some_and(|declared| *declared == sealed.declared),
                 Evaluation::Holed { hole, at } => self.holes.get(&hole).is_some_and(|site| *site == at)
                     || (matches!(at, Maybe::Absent(hole_site::Absent::Unwritten)) && !self.holes.contains_key(&hole)),
@@ -2044,7 +2053,8 @@ impl<'source> Program<'source>
     }
 
     /// Read the terminal `terminal` of `store` back and spell it, or name the
-    /// module whose signature it reaches past.
+    /// module whose seal keeps the declaration's type, or whose signature the
+    /// terminal reaches past.
     ///
     /// # Specification
     /// trivial.
@@ -2055,18 +2065,24 @@ impl<'source> Program<'source>
         terminal: HeapValueId,
     ) -> Evaluation<'source>
     {
+        let opaque = |module: &String| {
+            self.sealed.get(&(constant, self.spelling)).map_or(
+                Evaluation::Unfinished(Unfinished::Unspelled),
+                |declared| {
+                    Evaluation::Sealed(SealedRun {
+                        module: module.clone(),
+                        declared: declared.clone(),
+                    })
+                },
+            )
+        };
+        if let Some(module) = self.kept.get(&constant) {
+            return opaque(module);
+        }
         let mut core = CoreArena::new();
         match read_back_terminal(&self.arena, store, terminal, &mut core) {
             Ok(read) => match self.hidden_in(&mut core, read) {
-                Maybe::Present(module) => self.sealed.get(&(constant, self.spelling)).map_or(
-                    Evaluation::Unfinished(Unfinished::Unspelled),
-                    |declared| {
-                        Evaluation::Sealed(SealedRun {
-                            module: module.clone(),
-                            declared: declared.clone(),
-                        })
-                    },
-                ),
+                Maybe::Present(module) => opaque(module),
                 Maybe::Absent(carried::Absent::Carried) => self
                     .spell(&core, read)
                     .map_or_else(Evaluation::Unfinished, Evaluation::Value),
@@ -2600,6 +2616,91 @@ fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
         }
     }
     hidden
+}
+
+/// Each declaration outside a seal whose declared type holds the seal's atom
+/// with no mark, with the path of the module that sealed it: a run of it
+/// answers a value whose representation stays inside the seal.
+///
+/// # Specification
+/// - requires: `verdicts` judged `module` over `core`.
+/// - ensures: every judged declaration with a declared or synthesised type for
+///   which [`ModuleReport::unmarked_atom`] meets an atom `module` declares,
+///   unless the declaration stands in the module that declares the atom or one
+///   nested in it, keyed by its position and holding the path, joined by `.`,
+///   of the module the atom is declared in, or the atom's own name when it
+///   stands at the top level.
+/// - fails: never.
+/// - panics: none.
+/// - intension: a module with no coerced structure is skipped without a walk;
+///   otherwise one walk of each declared type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run answering a secret, one answering it in a list, one
+///   answering a marked report and a member run inside its own seal.
+/// - witness: `evaluate::tests::a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375`
+#[spec(ensures: |ref ret| ret.keys().all(|constant| verdicts.judged().iter().any(|judged| judged.constant() == *constant)))]
+fn kept_members(
+    core: &CoreArena,
+    module: &LoweredModule<'_>,
+    verdicts: &ModuleReport,
+) -> BTreeMap<ConstantIndex, String>
+{
+    let mut kept = BTreeMap::new();
+    if !module
+        .structures()
+        .iter()
+        .any(|structure| structure.coerced().0)
+    {
+        return kept;
+    }
+    let declarations: BTreeMap<ConstantIndex, _> = module
+        .declarations()
+        .iter()
+        .map(|declaration| (declaration.constant(), declaration))
+        .collect();
+    for judged in verdicts.judged() {
+        let declared = match judged.verdict() {
+            Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => declared.id(),
+            Verdict::Synthesised { synthesised, .. } => synthesised.produced().id(),
+            Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => continue,
+        };
+        let Maybe::Present(atom) = verdicts.unmarked_atom(core, declared)
+        else {
+            continue;
+        };
+        let Some(&sealing) = declarations.get(&atom)
+        else {
+            continue;
+        };
+        // A declaration's path is its container's, then its own name.
+        let mut seal = module.path_of(sealing);
+        let _name = seal.pop();
+        let within = !seal.is_empty()
+            && declarations.get(&judged.constant()).is_some_and(|run| {
+                let mut container = module.path_of(run);
+                let _name = container.pop();
+                container.starts_with(&seal)
+            });
+        if within {
+            continue;
+        }
+        let named = if seal.is_empty() {
+            Vec::from([sealing.name()])
+        }
+        else {
+            seal
+        };
+        let mut joined = String::new();
+        for (index, segment) in named.iter().enumerate() {
+            if index > 0 {
+                joined.push('.');
+            }
+            joined.push_str(AsRef::<str>::as_ref(segment));
+        }
+        let _first = kept.insert(judged.constant(), joined);
+    }
+    kept
 }
 
 /// Every declaration whose references reach a member of `hidden`, directly or
@@ -3316,6 +3417,40 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
                 run(&mut words, SurfaceName::from("once")).to_string(),
                 spelled,
                 "the word in {spelling:?}"
+            );
+        }
+    }
+
+    /// A run whose declared type holds a sealed atom no signature marks
+    /// `mobile` is opaque at the seal, alone or in a list; a marked atom's run
+    /// spells its value, and a member run inside its own seal spells its
+    /// representation (#3375).
+    #[test]
+    fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
+    {
+        let mut sealed = program(
+            "pub module Secret :> #{ type T, seal : String => T } {\n  type T = String;\n  def \
+             seal(text : String) -> String { text }\n}\npub module Counter :> #{ type T, zero : \
+             T } {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
+             Report, progress : Report } {\n  type Report = String;\n  def progress = \
+             \"progress\";\n}\ndef returned() -> Secret.T { Secret.seal(\"x\") }\ndef listed() \
+             -> List(Secret.T) {\n  run s <- Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() \
+             -> Seat.Report { pure Seat.progress }\n",
+        );
+        for (path, spelled) in [
+            ("returned", "⟨opaque at Secret⟩ : () => Secret.T"),
+            ("listed", "⟨opaque at Secret⟩ : () => List(Secret.T)"),
+            ("reported", "\"progress\""),
+            ("Counter.zero", "0"),
+        ] {
+            let Maybe::Present(constant) = sealed.named(SurfaceName::from(path))
+            else {
+                panic!("the program declares `{path}`");
+            };
+            assert_eq!(
+                sealed.evaluate(constant).to_string(),
+                spelled,
+                "`{path}` is spelled as pinned"
             );
         }
     }

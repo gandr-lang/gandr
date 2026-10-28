@@ -1580,7 +1580,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::StagesDisagree { at, binder } = matched_left_value && let Refusal::StagesDisagree { at: projected, binder: named } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && named == binder }
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::ImplicitUnsolved { at, reason } = matched_left_value && let Refusal::ImplicitUnsolved { at: projected, reason: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == reason }
- else if let CheckRefusal::ModelUnanswered { at } = matched_left_value && let Refusal::ModelUnanswered { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::ModelUnanswered { at, .. } = matched_left_value && let Refusal::ModelUnanswered { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::ModelAmbiguous { at, survivors } = matched_left_value && let Refusal::ModelAmbiguous { at: projected, survivors: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == survivors }
  else if let CheckRefusal::TacticRefused { at, tactic, fault } = matched_left_value && let Refusal::TacticRefused { at: projected, tactic: ran, fault: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && ran == tactic && kept == fault }
  else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
@@ -1912,7 +1912,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Value(at)),
                 reason,
             },
-            CheckRefusal::ModelUnanswered { at } => Refusal::ModelUnanswered {
+            CheckRefusal::ModelUnanswered { at, .. } => Refusal::ModelUnanswered {
                 at: self.site(ArenaNode::Value(at)),
             },
             CheckRefusal::ModelAmbiguous { at, survivors } => Refusal::ModelAmbiguous {

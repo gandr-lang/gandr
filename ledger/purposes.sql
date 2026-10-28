@@ -163,6 +163,7 @@ INSERT INTO purpose VALUES('core-checker','refusal::Compared','struct','The type
 INSERT INTO purpose VALUES('core-checker','refusal::CoreNode','enum','Any node of the core arena: a term or a type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::EndpointMiss','enum','Why reflexivity''s point is not shown to convert to an endpoint: the conversion''s step budget spent, or not shown otherwise.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::ExpectedShape','enum','The former a rule required of the type it met.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','refusal::Forced','enum','What the call of an unanswered model slot forces the slot to: the type its arguments force a component to code, or nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::LoopRespect','enum','Why a case over a looped sort is not shown to respect one of its loops.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::Mismatch','enum','A synthesised type that does not convert to the type it was checked against.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::RunFault','enum','Why a session refuses a recorded run.',NULL,'fits','sound',NULL);
@@ -2070,8 +2071,10 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Manifold','struct','The binding of a program''s worlds onto sites, as its file''s `Manifold` model and `placements` state it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secreted','enum','Where a secret was read, for a refusal naming it without its value.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secrets','enum','Where a host reads its site''s secret from: a `Secrets` model''s file, or the environment.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Site','struct','One place a world runs at, as its file''s `Site` model states it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','manifold::Stated','enum','A field a site''s or a manifold''s file states.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','manifold::Stated','enum','A field a site''s, a manifold''s or a secrets model''s file states.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Undeployed','enum','Why a site''s or a manifold''s file deploys nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Absence','enum','Whether reconciling a held file writes it where none stands, or leaves none because the model states nothing it would record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Body','struct','The body of a file the checker wrote, below its digest header.',NULL,'fits','sound',NULL);
