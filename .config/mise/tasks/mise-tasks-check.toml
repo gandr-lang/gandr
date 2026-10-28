@@ -1413,6 +1413,13 @@ fi
 echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk"
 '''
 
+# The host lock the gate slots, the mutation run and `ci:act` take (#3105):
+# `.config/mise/host-lock-cases.bash` holds a scratch lock's slots and reads
+# the refusal, a waiter, a killed holder and a killed holder's running child.
+["check:host-lock"]
+description = "A host lock's slots refuse or wait while held and free when their holder and its children are gone"
+run = ".config/mise/host-lock-cases.bash"
+
 # A build state's sources, recorded when it is archived and restamped when it
 # is unpacked (#3206): `.config/build-state/restamp.bash` runs each case in
 # `.config/build-state/restamp.json` in a scratch repository and compares the

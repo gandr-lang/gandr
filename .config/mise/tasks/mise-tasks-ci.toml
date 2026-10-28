@@ -29,8 +29,9 @@
 # act resets Git indexes even offline, so each invocation snapshots the shared
 # action cache. A green run atomically publishes only new entries; a bounded
 # directory lock serializes publication, never the gates themselves.
-# Two host-wide slots bound concurrent gates across repositories and worktrees.
-# Acquisition waits for a free slot and reclaims holders whose process is gone.
+# Two host-wide slots bound concurrent gates across repositories and worktrees:
+# the host lock `act` (`.config/mise/host-lock.bash`, #3105), which a dead
+# holder releases with its last process.
 # A local run is scoped to the jobs a change touches (#2541): the task
 # refuses, before anything starts, without a `-j <job>` among its arguments,
 # and when the committed branch changes nothing under `.github/` or
@@ -136,8 +137,7 @@ publish=
 locked=false
 act_pid=
 reaper_pid=
-slots="${XDG_CACHE_HOME:-$HOME/.cache}/act.slots"
-slot=
+slotted=false
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
@@ -153,55 +153,18 @@ cleanup() {
   if [[ "$locked" == true ]]; then rmdir "$lockdir" || status=1; fi
   if [[ -n "$publish" ]]; then rm -rf "$publish" || status=1; fi
   rm -rf "$scratch" || status=1
-  if [[ -n "$slot" ]]; then
-    rm -f "$slot/pid" || status=1
-    rmdir "$slot" || status=1
-    printf '%s Released act slot %s (pid %s)\n' "$(date -u +%FT%TZ)" "${slot##*/}" "$$"
+  if [[ "$slotted" == true ]]; then
+    printf '%s Released act slot %s (pid %s)\n' "$(date -u +%FT%TZ)" "$host_slot" "$$"
   fi
   exit "$status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-mkdir -p "$slots"
-announced=false
-while [[ -z "$slot" ]]; do
-  for candidate in "$slots/slot-1" "$slots/slot-2"; do
-    if mkdir "$candidate" 2>/dev/null; then
-      slot=$candidate
-      printf '%s\n' "$$" > "$slot/pid"
-      printf '%s Acquired act slot %s (pid %s)\n' "$(date -u +%FT%TZ)" "${slot##*/}" "$$"
-      break
-    fi
-    # Serialize reclaimers, then read the current holder again. Never remove
-    # a replacement holder based on a pid read before obtaining this lock.
-    if mkdir "${candidate}.reap" 2>/dev/null; then
-      if [[ -s "$candidate/pid" ]]; then
-        if pgrep -F "$candidate/pid" >/dev/null; then
-          status=0
-        else
-          status=$?
-        fi
-        if [[ "$status" == 1 ]]; then
-          printf '%s Reclaiming act slot %s (dead pid %s)\n' "$(date -u +%FT%TZ)" "${candidate##*/}" "$(<"$candidate/pid")"
-          rm -f "$candidate/pid"
-          rmdir "$candidate"
-        elif [[ "$status" != 0 ]]; then
-          rmdir "${candidate}.reap"
-          exit "$status"
-        fi
-      fi
-      rmdir "${candidate}.reap"
-    fi
-  done
-  if [[ -z "$slot" ]]; then
-    if [[ "$announced" == false ]]; then
-      printf '%s Waiting for an act slot\n' "$(date -u +%FT%TZ)"
-      announced=true
-    fi
-    sleep 1
-  fi
-done
+source "{{config_root}}/.config/mise/host-lock.bash"
+host_lock act 2 "mise run ci:act -- $*"
+slotted=true
+printf '%s Acquired act slot %s (pid %s)\n' "$(date -u +%FT%TZ)" "$host_slot" "$$"
 mkdir -p "$action_cache" "$scratch/actions"
 cp -R "$action_cache/." "$scratch/actions/"
 git clone --quiet --local --no-hardlinks -- "{{config_root}}" "$scratch/checkout"
