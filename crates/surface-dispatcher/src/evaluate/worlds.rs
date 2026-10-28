@@ -51,6 +51,7 @@ use anodized::spec;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
+use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
@@ -59,7 +60,6 @@ use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_emitter::crossing;
 use gandr_runtime_emitter::world;
-use gandr_runtime_emitter::world::Unmigrated;
 use gandr_runtime_net::Answer;
 use gandr_runtime_net::Arrival;
 use gandr_runtime_net::Code;
@@ -67,7 +67,6 @@ use gandr_runtime_net::Configuration;
 use gandr_runtime_net::Net;
 use gandr_runtime_net::Peer;
 use gandr_runtime_net::PeerError;
-use gandr_runtime_net::Refusal;
 use gandr_runtime_net::WorldName;
 use gandr_storage_values::ChunkCount;
 use gandr_storage_values::ValueManifest;
@@ -349,36 +348,8 @@ pub(super) fn shipped(
                 Migrated::Answered,
             )
         },
-        Ok(Answer::Refused(refusal)) => Migrated::Refused(unmigrated(refusal)),
+        Ok(Answer::Refused(why)) => Migrated::Refused(why),
         Err(_fault) => Migrated::Refused(Unmigrated::Unreached),
-    }
-}
-
-/// The reason a caller declines for a far host's refusal.
-///
-/// # Specification
-/// trivial.
-const fn unmigrated(refusal: Refusal) -> Unmigrated
-{
-    match refusal {
-        Refusal::Unheld => Unmigrated::Unheld,
-        Refusal::Unserved => Unmigrated::Unserved,
-        Refusal::Unfetched => Unmigrated::Unfetched,
-        Refusal::Unanswered => Unmigrated::Unanswered,
-    }
-}
-
-/// The far host's refusal for a reason a migration ran nothing here.
-///
-/// # Specification
-/// trivial.
-const fn refusal(why: Unmigrated) -> Refusal
-{
-    match why {
-        Unmigrated::Unheld | Unmigrated::UnboundWorld | Unmigrated::Unreached => Refusal::Unheld,
-        Unmigrated::Unserved => Refusal::Unserved,
-        Unmigrated::Unfetched => Refusal::Unfetched,
-        Unmigrated::Unanswered => Refusal::Unanswered,
     }
 }
 
@@ -512,7 +483,7 @@ impl Program<'_>
         let configuration = &arrival.configuration;
         let Some(at) = worlds.program.place(configuration.code())
         else {
-            return Answer::Refused(Refusal::Unheld);
+            return Answer::Refused(Unmigrated::Unheld);
         };
         let served = worlds
             .bindings
@@ -520,7 +491,7 @@ impl Program<'_>
             .is_some_and(|peer| peer.id() == net.node_id());
         let Some(world) = self.world_named(configuration.world()).filter(|_| served)
         else {
-            return Answer::Refused(Refusal::Unserved);
+            return Answer::Refused(Unmigrated::Unserved);
         };
         let params = world::chunking();
         for capture in configuration.captures() {
@@ -532,7 +503,7 @@ impl Program<'_>
                             usize::from(*fetched).saturating_add(usize::from(carried.chunks)),
                         );
                     },
-                    Err(_fault) => return Answer::Refused(Refusal::Unfetched),
+                    Err(_fault) => return Answer::Refused(Unmigrated::Unfetched),
                 }
             }
             held.push(*capture);
@@ -548,7 +519,7 @@ impl Program<'_>
         };
         let Ok(captures) = captures
         else {
-            return Answer::Refused(Refusal::Unfetched);
+            return Answer::Refused(Unmigrated::Unfetched);
         };
         let answer = match world::arrive(
             (&self.arena, &self.definitions),
@@ -557,7 +528,7 @@ impl Program<'_>
             (&mut store, &captures),
         ) {
             Ok(answer) => answer,
-            Err(why) => return Answer::Refused(refusal(why)),
+            Err(why) => return Answer::Refused(why),
         };
         let committed = crossing::commit(&store, answer, params, &mut *net.chunks().lock());
         match committed {
@@ -565,7 +536,7 @@ impl Program<'_>
                 held.push(manifest);
                 Answer::Answered(manifest)
             },
-            Err(_uncrossed) => Answer::Refused(Refusal::Unanswered),
+            Err(_uncrossed) => Answer::Refused(Unmigrated::Unanswered),
         }
     }
 

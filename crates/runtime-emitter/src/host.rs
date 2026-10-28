@@ -93,6 +93,7 @@ use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::primitive::PrimitiveError;
 use gandr_core_term::primitive::Scalar;
+use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
@@ -146,7 +147,6 @@ use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
 use crate::transfer::owned;
 use crate::transfer::transfer;
-use crate::world::Unmigrated;
 use crate::world::migrate;
 
 /// A view's state: no eliminator has run.

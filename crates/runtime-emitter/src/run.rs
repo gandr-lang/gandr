@@ -91,6 +91,7 @@ use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
+use gandr_core_term::world::Unmigrated;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_stencils::Fuel;
@@ -125,7 +126,6 @@ use crate::seam::HostOutcome;
 use crate::seam::Offer;
 use crate::transfer::Sites;
 use crate::transfer::TransferRefusal;
-use crate::world::Unmigrated;
 
 /// The environment variable the policy is read from.
 pub const POLICY_VARIABLE: &str = "GANDR_NATIVE";
@@ -1142,6 +1142,7 @@ mod tests
     use gandr_core_sequent::CommandId;
     use gandr_core_sequent::HeapValueId;
     use gandr_core_sequent::NodeAddress;
+    use gandr_core_term::world::Unmigrated;
     use gandr_kernel_term::ConstantIndex;
     use gandr_runtime_stencils::Status;
     use gandr_runtime_stencils::Word;
@@ -1152,7 +1153,6 @@ mod tests
     use crate::function::Function;
     use crate::lower::Form;
     use crate::transfer::TransferRefusal;
-    use crate::world::Unmigrated;
 
     /// A constant table fills its heap region up to the region's capacity,
     /// and one constant more is refused before a word is written.

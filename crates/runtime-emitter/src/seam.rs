@@ -54,6 +54,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_values::ChunkStore;
@@ -61,7 +62,6 @@ use gandr_storage_values::ValueManifest;
 
 use crate::crossing;
 use crate::crossing::CrossingRefusal;
-use crate::world::Unmigrated;
 
 /// An operation no handler of the run claims.
 ///
