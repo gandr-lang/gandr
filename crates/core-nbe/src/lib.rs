@@ -192,21 +192,23 @@
 //!   with `DuplicationFault` and leaving the overlay at its entry watermark,
 //!   the copying stance priced by the measure before it mints.
 //! - `TracedDuplication`: a duplication stance installed with the trace sink
-//!   its conversions record into, the only route to
-//!   `DuplicationStance::Spinal`. `TracedDuplication::install` refuses the
-//!   spinal stance over a sink that retains nothing with
-//!   `PolicyRefusal::Untraced`, and `DuplicationPolicy::new` still refuses it
-//!   with `PolicyRefusal::StanceGated`. The installation duplicates, evaluates
-//!   an overlay root — the erase-and-clone stance through the reference, the
+//!   its conversions record into, the route by which a run under
+//!   `DuplicationStance::Spinal` shares each leg's evaluation and records what
+//!   it decides. `TracedDuplication::install` refuses the spinal stance over a
+//!   sink that retains nothing with `PolicyRefusal::Untraced`;
+//!   `DuplicationPolicy::new` installs either stance, the spinal one under the
+//!   testing stance (`policy`). The installation duplicates, evaluates an
+//!   overlay root — the erase-and-clone stance through the reference, the
 //!   spinal stance through its own duplicate with each leg's evaluation shared
 //!   per configuration, refusing with `OverlayEvalFault::Duplication` — and
 //!   runs `decide` into its sink. The kernel replays every spinal catalogue and
 //!   ladder trace and agrees with each verdict; an unlucky spinal schedule
 //!   declines and the kernel declines with it; every deep case evaluates and
-//!   reads back under the spinal stance to the tree its erasure gives; and the
-//!   evaluator's step count shows a rib evaluated once across the applications
-//!   of its abstraction, a rib full laziness could not float out included, and
-//!   an open leg evaluated per occurrence.
+//!   reads back under the spinal stance to the tree its erasure gives, and so
+//!   does every root the overlay generator yields, or both refuse alike; and
+//!   the evaluator's step count shows a rib evaluated once across the
+//!   applications of its abstraction, a rib full laziness could not float out
+//!   included, and an open leg evaluated per occurrence.
 //! - `fill_and_resume`, `match_pattern`, `select_arm`, `Matched`, `Selection`,
 //!   `ArmIndex`, `LiveFault` and `MatchFault`, with `NeutralHead::Hole`,
 //!   `NeutralHead::Mark`, `Suspended` and the indeterminate deferral and

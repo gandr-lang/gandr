@@ -26,7 +26,7 @@ INSERT INTO descent VALUES('courant-leroy','built','comparison subproblems order
 INSERT INTO descent VALUES('hash-consing','banned','every subterm','syntactic identity','equality','a table','none: the degenerate coverage, asserted rather than computed');
 INSERT INTO descent VALUES('heap-reuse','built','a run''s heap cells','the references to one cell by its index, counted','one value per index, an index never recycled','one cell read through every reference; a cell whose count is one rebuilt in place by the constructor its match pairs with','none: the reference count, local to the run and never replayed');
 INSERT INTO descent VALUES('incremental-memo','built','the decomposition''s parts, across edits','per-part data','interface agreement','the assembly','the memo''s keys');
-INSERT INTO descent VALUES('spinal','gated','occurrences under a binder','the spine, each maximal rib a leg','the spinal calculus''s two permutation quotients','a leg evaluated once per configuration','the spinal catalogue and ladder trace');
+INSERT INTO descent VALUES('spinal','built','occurrences under a binder','the spine, each maximal rib a leg','the spinal calculus''s two permutation quotients','a leg evaluated once per configuration','the property against the copying stance, and the conversion trace a traced verdict records');
 INSERT INTO descent VALUES('superposition','built','members of a family indexed by guard points','the schema','agreement away from the guarded points, a member a guard vector','one schema check, rows by exact identity','the schema and its rows');
 CREATE TABLE site(
   concern   TEXT NOT NULL REFERENCES concern(id),
@@ -44,7 +44,7 @@ INSERT INTO site VALUES('oracle','kernel-core','verdict','defines',NULL,'The tru
 INSERT INTO site VALUES('oracle','kernel-strata','level','implements',NULL,'The universe-level algebra in its always-canonical form.');
 INSERT INTO site VALUES('oracle','kernel-strata','order','implements',NULL,'The order oracle, answering with evidence a validator recomputes.');
 INSERT INTO site VALUES('sharing','core-incremental','','implements','incremental-memo','Incremental checking: validated resume and content-addressed checkpoints.');
-INSERT INTO site VALUES('sharing','core-nbe','duplicate','implements','spinal','Spinal atomic duplication, refused by the policy until its differential lands.');
+INSERT INTO site VALUES('sharing','core-nbe','duplicate','implements','spinal','Spinal atomic duplication, admitted under the testing stance on its agreement with the copying stance.');
 INSERT INTO site VALUES('sharing','core-nbe','machine','implements','courant-leroy','The lazy concurrent convertibility search and its memo.');
 INSERT INTO site VALUES('sharing','core-nbe','overlay','implements','spinal','The overlay a spinal leg''s evaluation is shared through.');
 INSERT INTO site VALUES('sharing','core-nbe','resharing','implements','courant-leroy','The memo''s resharing of a comparison already decided.');

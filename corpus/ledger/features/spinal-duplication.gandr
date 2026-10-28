@@ -1,13 +1,14 @@
 /// `spinal-duplication` states the spinal stance on one abstraction applied twice.
 ///
 /// Implemented: the engine's spinal stance copies an abstraction's spine, shares each rib, and erases to the term the copying stance evaluates.
-/// Not implemented: a checker path, a property test and the kernel's replay of the stance's trace, which #2801 owes.
+/// Not implemented: a checker path and the kernel's replay of the stance's trace, which #2801 owes.
 ///
 /// Every check runs the copying stance, which evaluates `ten()` at each application of `tagged`.
 /// The engine's witness holds this term, and its spinal stance evaluates the rib once instead of twice.
-/// The spinal stance installs only bound to a sink that records the conversion trace.
+/// A property over generated roots admits the stance: each spinal run reads back as the copying run, or refuses as it does.
 ///
 /// - see: crates/core-nbe/tests/full_laziness.rs
+/// - see: crates/core-nbe/tests/duplication.rs
 
 /// The rib, a closed computation that reads no binder of `tagged`.
 def ten() -> Integer { 1 + 2 + 3 + 4 }

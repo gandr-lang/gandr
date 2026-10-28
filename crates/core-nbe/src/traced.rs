@@ -1,16 +1,18 @@
 //! The duplication stance installed on the certifying path.
 //!
-//! # The finer stance installs only bound to a recording sink
+//! # A traced stance installs bound to a recording sink
 //!
-//! [`TracedDuplication::install`] is the one place the spinal stance installs.
-//! It takes the trace sink the conversions decided under the stance record
-//! into, and refuses the spinal stance with [`PolicyRefusal::Untraced`] when
-//! that sink retains nothing, which [`TraceSink::ACTIVITY`] states at compile
-//! time. The installation then owns every duplication, evaluation and
-//! conversion run under the stance, and the policy it holds never leaves it,
-//! so a verdict over a domain value the spinal stance shaped carries the
-//! derivation the kernel replays by construction rather than by a caller's
-//! care.
+//! [`TracedDuplication::install`] binds a stance to the trace sink the
+//! conversions decided under it record into, and refuses the spinal stance
+//! with [`PolicyRefusal::Untraced`] when that sink retains nothing, which
+//! [`TraceSink::ACTIVITY`] states at compile time. The installation then owns
+//! every duplication, evaluation and conversion run under the stance, and the
+//! policy it holds never leaves it, so a verdict over a domain value the
+//! spinal stance shaped carries the derivation the kernel replays by
+//! construction rather than by a caller's care. The spinal stance itself is
+//! admitted under the testing stance (see `policy`); this is the route by
+//! which a run under it evaluates each shared leg once per configuration and
+//! records what it decides.
 //!
 //! The kernel replays a derivation over the original core terms, sequentially
 //! and sharing nothing. A shared evaluation that answered differently from the
@@ -48,11 +50,11 @@
 //!
 //! # Certifying path
 //!
-//! A spinal run exists only with a trace sink attached.
-//! `DuplicationPolicy::new(DuplicationStance::Spinal)` keeps refusing with
-//! `PolicyRefusal::StanceGated`; `TracedDuplication::install` takes the sink
-//! the conversions decided under the stance record into, and refuses the spinal
-//! stance with `PolicyRefusal::Untraced` when that sink retains nothing, which
+//! `DuplicationPolicy::new` installs either stance, and the property test
+//! checks the spinal one against the reference (see `policy`).
+//! `TracedDuplication::install` takes the sink the conversions decided under a
+//! stance record into, and refuses the spinal stance with
+//! `PolicyRefusal::Untraced` when that sink retains nothing, which
 //! `TraceSink::ACTIVITY` states at compile time. The installation owns every
 //! duplication, evaluation and `decide` run under the stance, and the policy it
 //! holds never leaves it, so a verdict over a domain value the spinal stance
@@ -71,13 +73,13 @@
 //! steps around, the run declines with no derivation and the kernel declines
 //! with it, never reading the decline as a refutation.
 //!
-//! Alternatives: caller discipline — `new` admits the stance and the crate
-//! documentation tells callers to replay — which leaves an uncertified verdict
-//! one call away; and replay inside this crate, a production edge from the
-//! untrusted machine onto the trusted base that every call pays. Reversal:
-//! `gandr-core-checker` composes the conversion machine with the kernel's
-//! replay at its conversion boundary, as the only such composition; the
-//! certifying constructor then moves behind it.
+//! Alternatives: caller discipline — a public shared evaluator, with the crate
+//! documentation telling callers to record and replay — which leaves an
+//! unrecorded verdict one call away; and replay inside this crate, a production
+//! edge from the untrusted machine onto the trusted base that every call pays.
+//! Reversal: `gandr-core-checker` composes the conversion machine with the
+//! kernel's replay at its conversion boundary, as the only such composition;
+//! the certifying constructor then moves behind it.
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
@@ -151,8 +153,7 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — the decision surface is the stance against the sink's
     ///   activity, separated by all four pairings, each asserted by variant,
-    ///   with the refusal asserted to name the stance and the sinkless
-    ///   installation still refusing the spinal stance. Removing the gate or
+    ///   with the refusal asserted to name the stance. Removing the refusal or
     ///   changing the reported stance changes one of these installations.
     /// - witness: `traced::tests::the_spinal_stance_installs_only_bound_to_a_recording_sink`
     #[inline]
@@ -175,7 +176,7 @@ where
             },
             (DuplicationStance::EraseAndClone, _)
             | (DuplicationStance::Spinal, SinkActivity::Active) => Ok(Self {
-                policy: DuplicationPolicy::bound_to_trace(stance),
+                policy: DuplicationPolicy::new(stance),
                 sink,
             }),
         }
