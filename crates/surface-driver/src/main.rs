@@ -1413,13 +1413,13 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
 }
 
 /// The spelling `flag` names, else the one the user's configuration file
-/// names, else [`Spelling::Unicode`].
+/// `configuration` names, else [`Spelling::Unicode`].
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a named flag wins without the file being read; otherwise the file
-///   is read as `config::read` states and its spelling, or Unicode when it
-///   names none, is the answer.
+///   is read as `config::Configuration::presentation` states and its spelling,
+///   or Unicode when it names none, is the answer.
 /// - provides: the one precedence every face's spelling follows.
 /// - fails: the file's fault, when the flag names nothing.
 /// - panics: none.
@@ -1434,12 +1434,13 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
 ///   malformed file stops the run, through the binary.
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
 fn spelling(
-    flag: Option<SpellingName>
+    flag: Option<SpellingName>,
+    configuration: &config::Configuration,
 ) -> Result<Spelling, gandr_surface_dispatcher::PresentationFault>
 {
     match flag {
         Some(name) => Ok(Spelling::from(name)),
-        None => Ok(config::read()?.spelling.unwrap_or_default()),
+        None => Ok(configuration.presentation()?.spelling.unwrap_or_default()),
     }
 }
 
@@ -1558,7 +1559,10 @@ fn main() -> ExitCode
         Ok(cli) => cli,
         Err(error) => return usage(&error),
     };
-    let spelling = match spelling(cli.spelling) {
+    // The one reading of the user's file, which the spelling and a check's
+    // kernel policy both ask, on the first question asked of it.
+    let configuration = config::Configuration::default();
+    let spelling = match spelling(cli.spelling, &configuration) {
         Ok(spelling) => spelling,
         Err(fault) => {
             return match writeln!(std::io::stderr(), "gandr: {fault}") {
@@ -1628,7 +1632,7 @@ fn main() -> ExitCode
                 Err(unpackaged) => return unpathed(&unpackaged),
             };
             if !recheck {
-                let kernel = match config::kernel() {
+                let kernel = match configuration.kernel() {
                     Ok(kernel) => kernel,
                     Err(fault) => {
                         return match writeln!(std::io::stderr(), "gandr: {fault}") {
