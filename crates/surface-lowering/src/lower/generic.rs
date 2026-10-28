@@ -710,16 +710,17 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let (name, arity) =
-                if let Some(entry) = self.collected.descriptions.get(&slot.introduced_by.node) {
-                    (&entry.description.id.name, entry.parameters.len())
-                }
-                else if let Some(native) = natives.get(&slot.named.node) {
-                    (&native.name, native.parameters.len())
-                }
-                else {
-                    continue;
-                };
+            let (name, arity) = if let Maybe::Present(entry) =
+                self.collected.descriptions.get(&slot.introduced_by.node)
+            {
+                (&entry.description.id.name, entry.parameters.len())
+            }
+            else if let Some(native) = natives.get(&slot.named.node) {
+                (&native.name, native.parameters.len())
+            }
+            else {
+                continue;
+            };
             let _held = names.entry(name.clone()).or_insert(TypeBinding::Nominal {
                 declaration: slot.constant,
                 arity: TypeArity(arity),
@@ -781,7 +782,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unknown);
         };
-        let Some(entry) = self.collected.descriptions.get(&slot.introduced_by.node)
+        let Maybe::Present(entry) = self.collected.descriptions.get(&slot.introduced_by.node)
         else {
             return Err(self
                 .collected

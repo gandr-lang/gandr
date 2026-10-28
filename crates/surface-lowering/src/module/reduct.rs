@@ -193,19 +193,19 @@ impl<'source> Collector<'_, 'source>
         // A reduct is minted between two bundled records, so a theory whose
         // models no record states, a circuit rule's among them, takes none.
         let bundles = |collected: &Collected<'_>, node: NodeIndex| {
-            collected
-                .descriptions
-                .get(&node)
-                .and_then(|entry| match entry.presentation {
-                    Maybe::Present(ref presentation) => derive(presentation).ok(),
-                    Maybe::Absent(_) => None,
-                })
-                .filter(|signature| {
-                    signature
-                        .components
-                        .iter()
-                        .all(|component| component.form.is_ok())
-                })
+            match collected.descriptions.get(&node) {
+                Maybe::Present(&crate::description::DescribedDeclaration {
+                    presentation: Maybe::Present(ref presentation),
+                    ..
+                }) => derive(presentation).ok(),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            }
+            .filter(|signature| {
+                signature
+                    .components
+                    .iter()
+                    .all(|component| component.form.is_ok())
+            })
         };
         if bundles(self.collected, block.node).is_none() {
             return;

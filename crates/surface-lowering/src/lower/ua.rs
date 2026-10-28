@@ -374,10 +374,11 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
         };
-        let Some(entry) = position
+        let described = position
             .and_then(|position| self.collected.slots.get(usize::from(position)))
-            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
-            .filter(|entry| matches!(entry.classifier, Maybe::Absent(_)))
+            .map(|slot| self.collected.descriptions.get(&slot.introduced_by.node));
+        let Some(Maybe::Present(entry)) = described
+            .filter(|entry| matches!(entry, Maybe::Present(held) if matches!(held.classifier, Maybe::Absent(_))))
         else {
             return Err(LoweringRefusal::UnresolvedName {
                 span: at.span,

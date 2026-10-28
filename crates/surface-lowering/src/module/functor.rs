@@ -528,8 +528,8 @@ impl<'source> Collector<'_, 'source>
         let container = Container::Module(parameter);
         let components = written.components.clone();
         let model = written.model.map(|derived| {
-            let index = ModelIndex(self.collected.models.len());
-            self.collected.models.push(derived);
+            let index = ModelIndex(self.collected.models.count().0);
+            self.collected.models.insert(index, derived);
             index
         });
         self.collected.structures.push(Structure {

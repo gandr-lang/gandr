@@ -48,6 +48,7 @@ use crate::description::Sight;
 use crate::description::elaborate_roots;
 use crate::error::LoweringRefusal;
 use crate::form::Piece;
+use crate::module::Layered;
 use crate::module::LoweredModule;
 use crate::module::begin_collection;
 use crate::module::pieces_under;
@@ -675,7 +676,8 @@ impl ClosureLowering
         let (first, prior) = match *prefix {
             Prefix::Suspended { ref state, .. } => (
                 NominalSerial::from(
-                    u64::try_from(state.lowerer.collected.descriptions.len()).unwrap_or(u64::MAX),
+                    u64::try_from(state.lowerer.collected.descriptions.count().0)
+                        .unwrap_or(u64::MAX),
                 ),
                 Some(&state.lowerer.collected.descriptions),
             ),
@@ -683,7 +685,7 @@ impl ClosureLowering
             // document's descriptions are numbered and whatever it includes.
             Prefix::Misshapen(_) | Prefix::Halted { .. } => (NominalSerial::from(0_u64), None),
         };
-        let none = BTreeMap::new();
+        let none = Layered::whole(BTreeMap::new());
         let mut described = DescriptionReport::default();
         elaborate_roots(pbg, tree, added, first, &mut described, Sight {
             unit,

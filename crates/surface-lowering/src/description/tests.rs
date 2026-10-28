@@ -198,7 +198,7 @@ fn native_data_keeps_telescope_and_nominal_heads()
         Recognition::default(),
     )
     .unwrap();
-    assert_eq!(module.descriptions().diagnostics, Vec::new());
+    assert_eq!(module.description_diagnostics(), []);
     let [ref family, ref xs] = *module.declarations()
     else {
         panic!("family and its consumer")
@@ -1287,7 +1287,7 @@ fn a_codata_declaration_lowers_to_its_signature()
         matches!(arena.comp_type(tail), Some(&CompType::Codata { declaration, .. }) if declaration == stream.constant()),
         "the tail is the family itself"
     );
-    assert!(module.descriptions().diagnostics.is_empty());
+    assert!(module.description_diagnostics().is_empty());
     let DeclarationOutcome::Uncompleted { declared_type } = ones.outcome()
     else {
         panic!("the stream is declared: {:?}", ones.outcome())

@@ -4014,14 +4014,16 @@ impl<'source> Lowerer<'_, 'source>
         constant: ConstantIndex,
     ) -> Maybe<OperandCount, family::Absent>
     {
-        self.collected
-            .slots
-            .get(usize::from(constant))
-            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
-            .filter(|entry| entry.description.polarity == DeclPolarity::Codata)
-            .map_or(Maybe::Absent(family::Absent::Undeclared), |entry| {
+        let Some(slot) = self.collected.slots.get(usize::from(constant))
+        else {
+            return Maybe::Absent(family::Absent::Undeclared);
+        };
+        match self.collected.descriptions.get(&slot.introduced_by.node) {
+            Maybe::Present(entry) if entry.description.polarity == DeclPolarity::Codata => {
                 Maybe::Present(OperandCount::from(entry.parameters.len()))
-            })
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(family::Absent::Undeclared),
+        }
     }
 
     /// Classify the codata family at `constant`, of `arity` parameters,
@@ -7828,15 +7830,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
     /// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
     #[spec(ensures: |ret| ret.0.rules().len() == ret.1.len()
-        && ret.1.len() <= self.collected.descriptions.get(&form.declaration.node)
-            .map_or(0, |described| described.description.rules.len()))]
+        && ret.1.len() <= match self.collected.descriptions.get(&form.declaration.node) {
+            Maybe::Present(described) => described.description.rules.len(),
+            Maybe::Absent(_) => 0,
+        })]
     fn presentation(
         &self,
         form: &crate::module::DataForm,
     ) -> (gandr_core_term::Presentation, Vec<ByteSpan>)
     {
         let none = || (gandr_core_term::Presentation::default(), Vec::new());
-        let Some(described) = self.collected.descriptions.get(&form.declaration.node)
+        let Maybe::Present(described) = self.collected.descriptions.get(&form.declaration.node)
         else {
             return none();
         };

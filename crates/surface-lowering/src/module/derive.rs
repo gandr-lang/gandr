@@ -244,7 +244,9 @@ impl<'source> Collector<'_, 'source>
             .ok()
             .and_then(|(presented, _)| self.collected.slots.get(presented.0))
             .map(|slot| slot.introduced_by.node);
-        if let Some(entry) = described.and_then(|node| self.collected.descriptions.get_mut(&node)) {
+        if let Some(node) = described
+            && let Maybe::Present(entry) = self.collected.descriptions.get_mut(&node)
+        {
             entry.written.derived.push(statement.sides);
         }
         self.collected.own(declaration.node, slot);

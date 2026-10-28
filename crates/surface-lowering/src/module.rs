@@ -363,7 +363,7 @@ mod sealing;
 
 mod layered;
 
-use self::layered::Layered;
+pub use self::layered::Layered;
 
 mod world;
 
@@ -1435,8 +1435,9 @@ pub struct SlotRefused(pub bool);
 pub struct Collected<'source>
 {
     /// Descriptions keyed by their written declaration, sharing the normal
-    /// slots.
-    pub descriptions: BTreeMap<NodeIndex, crate::description::DescribedDeclaration>,
+    /// slots: a suspended closure's shared with every lowering resumed after
+    /// it.
+    pub descriptions: Layered<NodeIndex, crate::description::DescribedDeclaration>,
     /// Member-local diagnostics retained independently of native admission.
     pub description_diagnostics: Vec<crate::description::DescriptionDiagnostic>,
     /// The data families the native reading owns whole, where their members
@@ -1532,7 +1533,7 @@ pub struct Collected<'source>
     pub parameter_lists: Vec<Vec<FamilyParameter>>,
     /// The model signatures ascriptions derive, in the order their modules
     /// open.
-    pub models: Vec<crate::model::ModelSignature>,
+    pub models: Layered<ModelIndex, crate::model::ModelSignature>,
     /// The theory each module's ascription `Model(S)` names, by the model
     /// signature it derives: the slot of `S`'s `theory` block.
     pub model_theories: BTreeMap<ModelIndex, SlotIndex>,
@@ -3018,11 +3019,13 @@ pub fn begin_collection<'source>(
     );
 
     Ok(Collected {
-        descriptions: described
-            .declarations
-            .into_iter()
-            .map(|entry| (entry.at.node, entry))
-            .collect(),
+        descriptions: Layered::whole(
+            described
+                .declarations
+                .into_iter()
+                .map(|entry| (entry.at.node, entry))
+                .collect(),
+        ),
         description_diagnostics: described.diagnostics,
         natives: described.natives,
         cells,
@@ -3054,7 +3057,7 @@ pub fn begin_collection<'source>(
         families: Vec::new(),
         top_types: Vec::new(),
         parameter_lists: Vec::new(),
-        models: Vec::new(),
+        models: Layered::whole(BTreeMap::new()),
         model_theories: BTreeMap::new(),
         family_checks: BTreeMap::new(),
         sort_checks: BTreeMap::new(),
@@ -3105,12 +3108,9 @@ impl Collected<'_>
     )
     {
         let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations, decisions);
-        self.descriptions.extend(
-            described
-                .declarations
-                .into_iter()
-                .map(|entry| (entry.at.node, entry)),
-        );
+        for entry in described.declarations {
+            self.descriptions.insert(entry.at.node, entry);
+        }
         self.description_diagnostics.extend(described.diagnostics);
         self.natives.extend(described.natives);
         self.cells.declarations.extend(cells.declarations);
@@ -3534,22 +3534,18 @@ pub fn collect_source<'source>(
             decorations.clear();
             continue;
         }
-        if collector
-            .collected
-            .descriptions
-            .get(&child.node)
-            .is_some_and(|entry| matches!(entry.presentation, Maybe::Present(_)))
-        {
+        if matches!(
+            collector.collected.descriptions.get(&child.node),
+            Maybe::Present(entry) if matches!(entry.presentation, Maybe::Present(_))
+        ) {
             collector.theory(child, &decorations);
             decorations.clear();
             continue;
         }
-        if collector
-            .collected
-            .descriptions
-            .get(&child.node)
-            .is_some_and(|entry| matches!(entry.classifier, Maybe::Present(_)))
-        {
+        if matches!(
+            collector.collected.descriptions.get(&child.node),
+            Maybe::Present(entry) if matches!(entry.classifier, Maybe::Present(_))
+        ) {
             collector.admit_described(child, &decorations);
             collector.hold_described_refusals(child);
             decorations.clear();
@@ -4367,7 +4363,10 @@ impl<'source> Collector<'_, 'source>
         child: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if self.collected.descriptions.contains_key(&child.node) {
+        if matches!(
+            self.collected.descriptions.get(&child.node),
+            Maybe::Present(_)
+        ) {
             self.admit_described(child, &[]);
             self.hold_described_refusals(child);
             return Ok(());
@@ -4798,7 +4797,7 @@ impl<'source> Collector<'_, 'source>
         decorations: &[Placed],
     )
     {
-        let Some(entry) = self.collected.descriptions.get(&child.node)
+        let Maybe::Present(entry) = self.collected.descriptions.get(&child.node)
         else {
             return;
         };
@@ -4942,7 +4941,7 @@ impl<'source> Collector<'_, 'source>
         members: &mut [DataMember],
     )
     {
-        let Some(entry) = self.collected.descriptions.get(&child.node)
+        let Maybe::Present(entry) = self.collected.descriptions.get(&child.node)
         else {
             return;
         };
@@ -5101,11 +5100,10 @@ impl<'source> Collector<'_, 'source>
     ) -> SignatureRefused
     {
         SignatureRefused(
-            self.collected
-                .descriptions
-                .get(&child.node)
-                .is_some_and(|entry| matches!(entry.classifier, Maybe::Absent(_)))
-                && !self.described_refusals(child).is_empty(),
+            matches!(
+                self.collected.descriptions.get(&child.node),
+                Maybe::Present(entry) if matches!(entry.classifier, Maybe::Absent(_))
+            ) && !self.described_refusals(child).is_empty(),
         )
     }
 
@@ -5141,8 +5139,10 @@ impl<'source> Collector<'_, 'source>
             Maybe::Present(
                 Former::Declaration | Former::Data | Former::Module | Former::WorldDeclaration
             )
-        ) || self.collected.descriptions.contains_key(&child.node)
-            || self.derives(child)?.0;
+        ) || matches!(
+            self.collected.descriptions.get(&child.node),
+            Maybe::Present(_)
+        ) || self.derives(child)?.0;
         Ok(if declares {
             Exported::Declares
         }
@@ -5181,7 +5181,7 @@ impl<'source> Collector<'_, 'source>
         decorations: &[Placed],
     )
     {
-        let Some(entry) = self.collected.descriptions.get(&child.node)
+        let Maybe::Present(entry) = self.collected.descriptions.get(&child.node)
         else {
             return;
         };
@@ -5272,7 +5272,7 @@ impl<'source> Collector<'_, 'source>
         decorations: &[Placed],
     )
     {
-        let Some(entry) = self.collected.descriptions.get(&child.node)
+        let Maybe::Present(entry) = self.collected.descriptions.get(&child.node)
         else {
             return;
         };
@@ -7544,8 +7544,8 @@ impl<'source> Collector<'_, 'source>
         let structure = StructureIndex(self.collected.structures.len());
         let sealed = Sealed(opened.sealed.0 || self.seals_nested(container, opened.name).0);
         let model = opened.model.map(|(derived, theory)| {
-            let index = ModelIndex(self.collected.models.len());
-            self.collected.models.push(derived);
+            let index = ModelIndex(self.collected.models.count().0);
+            self.collected.models.insert(index, derived);
             let _fresh = self.collected.model_theories.insert(index, theory);
             index
         });
@@ -7789,14 +7789,15 @@ impl<'source> Collector<'_, 'source>
         else {
             return Sealed(false);
         };
+        let nests = |signature: &crate::model::ModelSignature| {
+            signature.components.iter().any(|component| {
+                component.name.as_ref() == name.as_ref()
+                    && matches!(component.form, Ok(crate::model::ModelForm::Nested(_)))
+            })
+        };
         Sealed(
             entry.sealed.0
-                && self.collected.models.get(model.0).is_some_and(|signature| {
-                    signature.components.iter().any(|component| {
-                        component.name.as_ref() == name.as_ref()
-                            && matches!(component.form, Ok(crate::model::ModelForm::Nested(_)))
-                    })
-                }),
+                && matches!(self.collected.models.get(&model), Maybe::Present(signature) if nests(signature)),
         )
     }
 
@@ -10810,9 +10811,13 @@ pub struct KeyedTables<'source>
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredModule<'source>
 {
-    /// Description-level structure and member refusals before native
-    /// interpretation.
-    descriptions: crate::description::DescriptionReport,
+    /// Description-level structure before native interpretation, by written
+    /// declaration: a closure's shared with every module lowered after it.
+    descriptions: Layered<NodeIndex, crate::description::DescribedDeclaration>,
+    /// Member refusals of the description reading, in declaration order.
+    description_diagnostics: Vec<crate::description::DescriptionDiagnostic>,
+    /// The data families the native reading owns whole, in declaration order.
+    natives: Vec<crate::description::NativeFamily>,
     /// Checked cells and every cell-layer member refusal.
     cells: crate::desc_cells::CellReport,
     /// The declarations, in admission order.
@@ -10920,7 +10925,9 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         Self {
-            descriptions: crate::description::DescriptionReport::default(),
+            descriptions: Layered::whole(BTreeMap::new()),
+            description_diagnostics: Vec::new(),
+            natives: Vec::new(),
             cells: crate::desc_cells::CellReport::default(),
             declarations,
             data,
@@ -10956,19 +10963,24 @@ impl<'source> LoweredModule<'source>
         }
     }
 
-    /// This module, carrying the description route's report and cell stores.
+    /// This module, carrying the description route's declarations,
+    /// diagnostics and native families, and its cell stores.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn with_descriptions(
+    pub(crate) fn with_descriptions(
         mut self,
-        descriptions: crate::description::DescriptionReport,
+        descriptions: Layered<NodeIndex, crate::description::DescribedDeclaration>,
+        diagnostics: Vec<crate::description::DescriptionDiagnostic>,
+        natives: Vec<crate::description::NativeFamily>,
         cells: crate::desc_cells::CellReport,
     ) -> Self
     {
         self.descriptions = descriptions;
+        self.description_diagnostics = diagnostics;
+        self.natives = natives;
         self.cells = cells;
         self
     }
@@ -11764,15 +11776,37 @@ impl<'source> LoweredModule<'source>
         }
     }
 
-    /// The descriptions consumed by native type and higher-cell interpretation.
+    /// The described declarations consumed by native type and higher-cell
+    /// interpretation, in declaration order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn described(&self) -> impl Iterator<Item = &crate::description::DescribedDeclaration>
+    {
+        self.descriptions.values()
+    }
+
+    /// The member refusals of the description reading, in declaration order.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn descriptions(&self) -> &crate::description::DescriptionReport
+    pub fn description_diagnostics(&self) -> &[crate::description::DescriptionDiagnostic]
     {
-        &self.descriptions
+        &self.description_diagnostics
+    }
+
+    /// The data families the native reading owns whole, in declaration order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn natives(&self) -> &[crate::description::NativeFamily]
+    {
+        &self.natives
     }
 
     /// Every `theory` block the module declares, in declaration order: its
@@ -11792,8 +11826,7 @@ impl<'source> LoweredModule<'source>
     pub fn theories(&self) -> impl Iterator<Item = crate::model::LoweredTheory<'_>>
     {
         self.descriptions
-            .declarations
-            .iter()
+            .values()
             .filter_map(|declaration| match declaration.presentation {
                 Maybe::Present(ref presentation) => Some(crate::model::LoweredTheory {
                     named: declaration.named,
@@ -11858,8 +11891,7 @@ impl<'source> LoweredModule<'source>
         let holds = |at: ByteSpan| at.start() <= span.start() && span.end() <= at.end();
         let described = self
             .descriptions
-            .declarations
-            .iter()
+            .values()
             .find(|described| holds(described.at.span));
         let cells = self
             .cells

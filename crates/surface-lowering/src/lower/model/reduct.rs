@@ -478,11 +478,10 @@ impl<'source> Lowerer<'_, 'source>
             .slots
             .get(usize::from(theory))
             .ok_or(Missing::Unlowered)?;
-        let Some(&Maybe::Present(ref presentation)) = self
-            .collected
-            .descriptions
-            .get(&held.introduced_by.node)
-            .map(|entry| &entry.presentation)
+        let Maybe::Present(&crate::description::DescribedDeclaration {
+            presentation: Maybe::Present(ref presentation),
+            ..
+        }) = self.collected.descriptions.get(&held.introduced_by.node)
         else {
             return Err(Missing::Unlowered);
         };

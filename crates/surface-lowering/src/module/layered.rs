@@ -1,6 +1,6 @@
-//! A table a declaration's checking reads by its key, held in two parts: the
-//! entries of the closure a module was lowered after, shared with every other
-//! module lowered after it, and the module's own.
+//! A table by key held in two parts: the entries of the closure a module was
+//! lowered after, shared with every other module lowered after it and with the
+//! suspended lowering, and the module's own.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -32,6 +32,11 @@ quenchant_shape::reason_enum! {
         }
     }
 }
+
+/// How many entries a layered table holds, its two parts together.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EntryCount(pub usize);
 
 /// A table by key: the entries of the closure a module was lowered after,
 /// shared, and the entries the module's own lowering filed.
@@ -151,6 +156,143 @@ where
             )
     }
 
+    /// The entry at `key` to write: the module's own, else the closure's,
+    /// whose part is first copied apart when another table shares it, so no
+    /// table sharing it sees the write.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: what [`Self::get`] reads at `key`, writable; every other
+    ///   entry, and every other table's, unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `module::layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
+    #[spec(
+        captures: held = matches!(self.get(key), Maybe::Present(_)),
+        ensures: |ret| matches!(ret, Maybe::Present(_)) == held,
+    )]
+    #[inline]
+    pub(crate) fn get_mut(
+        &mut self,
+        key: &Key,
+    ) -> Maybe<&mut Value, layered_entry::Absent>
+    where
+        Key: Clone,
+        Value: Clone,
+    {
+        let held = if self.own.contains_key(key) {
+            self.own.get_mut(key)
+        }
+        else {
+            match self.closure {
+                Maybe::Present(ref mut closure) if closure.contains_key(key) => {
+                    Arc::make_mut(closure).get_mut(key)
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            }
+        };
+        held.map_or(
+            Maybe::Absent(layered_entry::Absent::Unfiled),
+            Maybe::Present,
+        )
+    }
+
+    /// File `value` at `key`: over the closure's entry when it holds one,
+    /// copied apart as [`Self::get_mut`] does, else among the module's own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::get`] reads `value` at `key`; every other entry
+    ///   unchanged, and the own part holds no key the closure's does.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — `key` and `value` move into the table, so a clause
+    ///   could read them back only through a clone the method does not need.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `module::layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
+    #[inline]
+    pub(crate) fn insert(
+        &mut self,
+        key: Key,
+        value: Value,
+    ) where
+        Key: Clone,
+        Value: Clone,
+    {
+        match self.get_mut(&key) {
+            Maybe::Present(held) => *held = value,
+            Maybe::Absent(_) => {
+                let _fresh = self.own.insert(key, value);
+            },
+        }
+    }
+
+    /// How many entries the two parts hold together.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the closure's entries and the module's own, which share no
+    ///   key.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — counting the entries again would walk both parts,
+    ///   which a clause may not; the sum of the two parts' lengths is the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `module::layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
+    #[inline]
+    pub(crate) fn count(&self) -> EntryCount
+    {
+        let closure = match self.closure {
+            Maybe::Present(ref closure) => closure.len(),
+            Maybe::Absent(_) => 0_usize,
+        };
+        EntryCount(closure.saturating_add(self.own.len()))
+    }
+
+    /// Every entry's value: the closure's in key order, then the module's own
+    /// in key order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Value>
+    {
+        self.entries().map(|(_, value)| value)
+    }
+
+    /// Share every entry, so a clone copies none of them: the module's own
+    /// moved into the closure's part.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every entry kept, and the own part empty.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Layered`].
+    /// - witness: `module::layered::tests::a_write_to_the_closure_s_entry_is_the_writer_s_own_3408`
+    #[spec(
+        captures: count = self.count(),
+        ensures: self.count() == count && self.own.is_empty(),
+    )]
+    #[inline]
+    pub(crate) fn share(&mut self)
+    where
+        Key: Clone,
+        Value: Clone,
+    {
+        let every = core::mem::replace(self, Self::whole(BTreeMap::new())).shared();
+        self.closure = Maybe::Present(every);
+    }
+
     /// Every entry, as one table: the closure's, shared with the modules
     /// lowered after it, for the closure itself to share.
     ///
@@ -224,7 +366,7 @@ where
         other: &Self,
     ) -> bool
     {
-        self.entries().count() == other.entries().count()
+        self.count() == other.count()
             && self.entries().all(
                 |(key, value)| matches!(other.get(key), Maybe::Present(theirs) if theirs == value),
             )
@@ -253,5 +395,80 @@ where
     ) -> fmt::Result
     {
         f.debug_map().entries(self.entries()).finish()
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+    use alloc::sync::Arc;
+
+    use quenchant_shape::shape::Maybe;
+
+    use super::EntryCount;
+    use super::Layered;
+
+    /// #3408: a lowering resumed after its closure shares the closure's
+    /// collected entries with the suspended lowering rather than copying
+    /// them, so an entry one of them files or writes is its own: the other
+    /// still reads the shared entry. Sharing keeps every entry, and the
+    /// table's own entries read after the closure's.
+    #[test]
+    fn a_write_to_the_closure_s_entry_is_the_writer_s_own_3408()
+    {
+        let values = |table: &Layered<u8, char>| table.values().copied().collect::<String>();
+        let mut suspended = Layered::whole(BTreeMap::from([(0_u8, 'a'), (2_u8, 'c')]));
+        suspended.insert(1_u8, 'b');
+        suspended.share();
+        assert_eq!(suspended.count(), EntryCount(3_usize));
+        assert!(suspended.own.is_empty(), "sharing leaves nothing own");
+        assert_eq!("abc", values(&suspended));
+
+        let mut resumed = suspended.clone();
+        let shared = |table: &Layered<u8, char>| match table.closure {
+            Maybe::Present(ref closure) => Arc::clone(closure),
+            Maybe::Absent(_) => panic!("the table shares a closure's part"),
+        };
+        assert!(Arc::ptr_eq(&shared(&resumed), &shared(&suspended)));
+        resumed.insert(4_u8, 'e');
+        resumed.insert(3_u8, 'd');
+        assert!(
+            Arc::ptr_eq(&shared(&resumed), &shared(&suspended)),
+            "filing past the closure leaves its part shared"
+        );
+        assert_eq!("abcde", values(&resumed));
+        assert_eq!(resumed.count(), EntryCount(5_usize));
+        assert!(matches!(resumed.get(&3_u8), Maybe::Present(&'d')));
+        assert!(matches!(suspended.get(&3_u8), Maybe::Absent(_)));
+
+        let Maybe::Present(written) = resumed.get_mut(&0_u8)
+        else {
+            panic!("the closure's entry is held");
+        };
+        *written = 'A';
+        resumed.insert(2_u8, 'C');
+        assert_eq!("AbCde", values(&resumed));
+        assert_eq!(
+            resumed.count(),
+            EntryCount(5_usize),
+            "a write over the closure's entry adds none"
+        );
+        assert_eq!(
+            "abc",
+            values(&suspended),
+            "and is unseen by the suspended table"
+        );
+        assert!(matches!(resumed.get(&5_u8), Maybe::Absent(_)));
+        assert!(matches!(resumed.get_mut(&5_u8), Maybe::Absent(_)));
+
+        resumed.share();
+        assert_eq!("AbCde", values(&resumed), "sharing keeps every entry");
+        assert_ne!(resumed, suspended);
+        assert_eq!(
+            suspended,
+            Layered::whole(BTreeMap::from([(0_u8, 'a'), (1_u8, 'b'), (2_u8, 'c')]))
+        );
     }
 }

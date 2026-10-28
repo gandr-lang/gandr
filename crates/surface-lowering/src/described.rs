@@ -2802,7 +2802,7 @@ impl LoweredModule<'_>
             }
         }
         let code = families.get(&Name::from("Theory")).map(|&(ty, _)| ty);
-        for described in &self.descriptions().declarations {
+        for described in self.described() {
             match described.presentation {
                 Maybe::Present(ref presentation) => {
                     typer.theory(presentation, &described.written, code);
@@ -2837,7 +2837,7 @@ impl LoweredModule<'_>
         }
         // A family the native reading owns whole answers as a parameterised
         // one does, at its signature, under however many parameters it has.
-        for native in &self.descriptions().natives {
+        for native in self.natives() {
             if let Some(&(constant, signature)) = signatures.get(&native.name) {
                 typer.parameterised(&native.parameters, &native.written, constant, signature);
             }

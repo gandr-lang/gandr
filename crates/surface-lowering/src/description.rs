@@ -802,7 +802,7 @@ pub fn elaborate_descriptions<'source>(
         &mut report,
         Sight {
             unit,
-            prior: &BTreeMap::new(),
+            prior: &crate::module::Layered::whole(BTreeMap::new()),
         },
     )?;
 
@@ -821,7 +821,7 @@ pub(crate) struct Sight<'held>
     pub unit: &'held Unit,
     /// The declarations read before the roots this reading reads, by their
     /// nodes: a resumed document's closure's.
-    pub prior: &'held BTreeMap<NodeIndex, DescribedDeclaration>,
+    pub prior: &'held crate::module::Layered<NodeIndex, DescribedDeclaration>,
 }
 
 /// The declarations an `include` written in one source may name.

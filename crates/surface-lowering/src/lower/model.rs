@@ -1011,7 +1011,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Result<ValueTypeId, Missing<'source>>
     {
-        let Some(model) = self.collected.models.get(part.model.0)
+        let Maybe::Present(model) = self.collected.models.get(&part.model)
         else {
             return Err(Missing::Unlowered);
         };
@@ -3976,14 +3976,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return None;
         };
-        self.collected
-            .models
-            .get(model.0)?
-            .components
-            .get(component.0)?
-            .form
-            .as_ref()
-            .ok()
+        let Maybe::Present(signature) = self.collected.models.get(&model)
+        else {
+            return None;
+        };
+        signature.components.get(component.0)?.form.as_ref().ok()
     }
 
     /// The check of the family whose type is at `defined`, over `arity`

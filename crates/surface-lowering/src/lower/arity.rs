@@ -2135,7 +2135,10 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Option<ConstantIndex>
     {
         let slot = self.collected.slots.get(usize::from(constant))?;
-        let entry = self.collected.descriptions.get(&slot.introduced_by.node)?;
+        let Maybe::Present(entry) = self.collected.descriptions.get(&slot.introduced_by.node)
+        else {
+            return None;
+        };
         // The family's own name inside its declaration names it, unresolved
         // there by the rule against an unmarked self-reference.
         let Maybe::Present(_) = entry.written.observations.get(index)?.itself
@@ -2163,15 +2166,15 @@ impl<'source> Lowerer<'_, 'source>
         constant: ConstantIndex,
     ) -> Maybe<Vec<Name>, stated_labels::Absent>
     {
-        self.collected
-            .slots
-            .get(usize::from(constant))
-            .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
-            .filter(|entry| {
-                entry.description.polarity == DeclPolarity::Codata
-                    && !entry.description.ctors.is_empty()
-            })
-            .map_or(Maybe::Absent(stated_labels::Absent::Otherwise), |entry| {
+        let Some(slot) = self.collected.slots.get(usize::from(constant))
+        else {
+            return Maybe::Absent(stated_labels::Absent::Otherwise);
+        };
+        match self.collected.descriptions.get(&slot.introduced_by.node) {
+            Maybe::Present(entry)
+                if entry.description.polarity == DeclPolarity::Codata
+                    && !entry.description.ctors.is_empty() =>
+            {
                 Maybe::Present(
                     entry
                         .description
@@ -2180,7 +2183,9 @@ impl<'source> Lowerer<'_, 'source>
                         .map(|observation| observation.name.clone())
                         .collect(),
                 )
-            })
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(stated_labels::Absent::Otherwise),
+        }
     }
 
     /// The components of the chain of `link` at `chain`, `A + B + …`, `A * B *

@@ -230,7 +230,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 break;
             };
-            let Some(entry) = self.collected.descriptions.get(&slot.introduced_by.node)
+            let Maybe::Present(entry) = self.collected.descriptions.get(&slot.introduced_by.node)
             else {
                 continue;
             };
@@ -433,7 +433,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             let block = slot.introduced_by;
-            let Some(entry) = self.collected.descriptions.get(&block.node)
+            let Maybe::Present(entry) = self.collected.descriptions.get(&block.node)
             else {
                 continue;
             };

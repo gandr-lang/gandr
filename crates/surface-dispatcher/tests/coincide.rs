@@ -241,9 +241,7 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
         operations.clear();
         operations.extend(
             module
-                .descriptions()
-                .declarations
-                .iter()
+                .described()
                 .filter(|described| matches!(described.presentation, Maybe::Absent(_)))
                 .flat_map(|described| described.description.opers.iter())
                 .map(|operation| String::from(operation.name.as_ref())),

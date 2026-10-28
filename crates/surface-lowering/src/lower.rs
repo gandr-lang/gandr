@@ -4822,11 +4822,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             recognition,
         )
         .with_descriptions(
-            crate::description::DescriptionReport {
-                declarations: collected.descriptions.into_values().collect(),
-                diagnostics: collected.description_diagnostics,
-                natives: collected.natives,
-            },
+            collected.descriptions,
+            collected.description_diagnostics,
+            collected.natives,
             collected.cells,
         )
         .with_documentation(documentation.forms, documentation.sources)
@@ -4909,17 +4907,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Share every per-node table's cells, so a lowering resumed from a clone
-    /// of this one copies none of them and widens by its own nodes alone.
+    /// Share every per-node table's cells, and the collection's descriptions
+    /// and model signatures, so a lowering resumed from a clone of this one
+    /// copies none of them and widens by its own alone.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every per-node table holds the cells it held, all of them
+    /// - ensures: every per-node table holds the cells it held, and each
+    ///   layered table of the collection the entries it held, all of them
     ///   shared.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — each table's [`NodeTable::share`] states its own
-    ///   clause.
+    /// - executable: none — each table's [`NodeTable::share`] or
+    ///   [`crate::module::Layered::share`] states its own clause.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a document resumed after its closure lowers as the
@@ -4937,6 +4937,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.leaves.share();
         self.source_of.share();
         self.collected.owner.share();
+        self.collected.descriptions.share();
+        self.collected.models.share();
     }
 }
 

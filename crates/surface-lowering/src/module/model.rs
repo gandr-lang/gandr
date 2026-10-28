@@ -591,13 +591,12 @@ impl<'source> Collected<'source>
         ) {
             return None;
         }
-        match self
-            .descriptions
-            .get(&slot.introduced_by.node)?
-            .presentation
-        {
-            Maybe::Present(ref presentation) => Some((position, presentation)),
-            Maybe::Absent(_) => None,
+        match self.descriptions.get(&slot.introduced_by.node) {
+            Maybe::Present(&crate::description::DescribedDeclaration {
+                presentation: Maybe::Present(ref presentation),
+                ..
+            }) => Some((position, presentation)),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
         }
     }
 
@@ -980,17 +979,20 @@ impl<'source> Collector<'_, 'source>
         else {
             return ModelsTheory(false);
         };
-        let ascribed =
-            self.collected
-                .structures
-                .get(nested.0)
-                .and_then(|entry| match entry.model {
-                    Maybe::Present(index) => self.collected.models.get(index.0),
-                    Maybe::Absent(_) => None,
-                });
-        ModelsTheory(ascribed.is_some_and(|signature| {
-            crate::model::derive(presentation).is_ok_and(|derived| derived == *signature)
-        }))
+        let ascribed = match self
+            .collected
+            .structures
+            .get(nested.0)
+            .map(|entry| entry.model)
+        {
+            Some(Maybe::Present(index)) => self.collected.models.get(&index),
+            Some(Maybe::Absent(_)) | None => return ModelsTheory(false),
+        };
+        ModelsTheory(matches!(
+            ascribed,
+            Maybe::Present(signature)
+                if crate::model::derive(presentation).is_ok_and(|derived| derived == *signature)
+        ))
     }
 
     /// Read a type member's parameters, `( a : A, … )`, the cursor standing
@@ -1312,20 +1314,20 @@ impl<'source> Collector<'_, 'source>
             return OperandCount::from(0_usize);
         };
         OperandCount::from(
-            self.collected
-                .models
-                .get(index.0)
-                .and_then(|signature| signature.components.get(place.0))
-                .map_or(0_usize, |component| match component.form {
-                    Ok(ModelForm::Sort { ref indices, .. }) => indices.len(),
-                    Ok(
-                        ModelForm::Operation { .. }
-                        | ModelForm::Constant(_)
-                        | ModelForm::Nested(_)
-                        | ModelForm::Law { .. },
-                    )
-                    | Err(_) => 0_usize,
-                }),
+            match self.collected.models.get(&index) {
+                Maybe::Present(signature) => signature.components.get(place.0),
+                Maybe::Absent(_) => None,
+            }
+            .map_or(0_usize, |component| match component.form {
+                Ok(ModelForm::Sort { ref indices, .. }) => indices.len(),
+                Ok(
+                    ModelForm::Operation { .. }
+                    | ModelForm::Constant(_)
+                    | ModelForm::Nested(_)
+                    | ModelForm::Law { .. },
+                )
+                | Err(_) => 0_usize,
+            }),
         )
     }
 
@@ -1386,11 +1388,10 @@ impl<'source> Collector<'_, 'source>
         else {
             return undeclared;
         };
-        let derived = self
-            .collected
-            .models
-            .get(model.0)
-            .and_then(|signature| signature.components.get(place.0));
+        let derived = match self.collected.models.get(&model) {
+            Maybe::Present(signature) => signature.components.get(place.0),
+            Maybe::Absent(_) => None,
+        };
         let fault = derived.and_then(|derived| derived.form.as_ref().err().copied());
         let law =
             matches!(derived, Some(derived) if matches!(derived.form, Ok(ModelForm::Law { .. })));
