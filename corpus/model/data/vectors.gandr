@@ -13,6 +13,8 @@
 // - see: #3579 — a family's argument written as a call converts with its value
 // - see: #3625 — a constructor's field written as a call meets a type that
 //   writes the call
+// - see: #3627 — a constructor at a length written as a call that computes
+//   the length it states
 
 // The naturals the lengths count in.
 import "./data-base.gandr";
@@ -47,6 +49,15 @@ def padded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Zero)) { v }
 def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
   a,
   Succ(plus(m, k))
+) {
+  VCons(plus(m, k), x, v)
+}
+
+/// An element before a vector `plus(m, k)` long, at `plus(m, Succ(k))`. The
+/// sum computes `Succ(plus(m, k))`, the length that `VCons` states.
+def consPlusSucc(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
+  a,
+  plus(m, Succ(k))
 ) {
   VCons(plus(m, k), x, v)
 }

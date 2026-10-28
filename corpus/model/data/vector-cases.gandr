@@ -1,9 +1,18 @@
-// A case on a vector: a case that writes every constructor of an indexed
-// family checks each arm at its own constructor's fields, as a case on a
-// family with no indices does (Dybjer, _Inductive families_,
-// doi:10.1007/BF01211308). An arm whose constructor cannot stand at the
-// scrutinee's index may still be written, as `oneLength` does; leaving it
-// out is `vector-head.gandr`.
+// A case on a vector checks each arm at the fields of its own constructor.
+//
+// A case on an indexed family works as a case on a family with no indices. A
+// case may still write an arm whose constructor cannot stand at the
+// scrutinee's index, as `oneLength` does. `vector-head.gandr` leaves that arm
+// out.
+//
+// An arm may return a constructor at a length that a call computes. The
+// `VCons` arm of `vappend` returns `VCons` at `plus(m, Succ(k))`, which
+// computes the length that `VCons` states.
+//
+// - see: Dybjer, _Inductive families_, FAC 1994, doi:10.1007/BF01211308 — a
+//   case that checks each arm at its own constructor's fields
+// - see: #3627 — a constructor at a length written as a call that computes
+//   the length it states
 
 // The naturals the lengths count in.
 import "./data-base.gandr";
@@ -44,3 +53,24 @@ def pairRead() -> Nat { vlength(Succ(Succ(Zero)), pair()) }
 /// The length of the vector two long, counted.
 @[ runs("Succ(Succ(Zero))") ]
 def pairCount() -> Nat { vcount(Succ(Succ(Zero)), pair()) }
+
+/// One vector after another, at the length `plus(m, n)`. Each `VCons` arm
+/// stands at `plus(m, Succ(k))`, the length its tail computes plus one.
+def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> Vec(
+  a,
+  plus(m, n)
+) {
+  case xs {
+    VNil => ys,
+    VCons(k, x, xt) => VCons(plus(m, k), x, vappend[<](a, k, m, xt, ys))
+  }
+}
+
+/// The length of the vector two long after itself, read off its index.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+def pairsRead() -> Nat {
+  vlength(
+    plus(Succ(Succ(Zero)), Succ(Succ(Zero))),
+    vappend(Integer, Succ(Succ(Zero)), Succ(Succ(Zero)), pair(), pair())
+  )
+}

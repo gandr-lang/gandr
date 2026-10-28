@@ -679,10 +679,6 @@ model/data/unfolded-arm.gandr:<file> unshaped:HeadParagraphs
 model/data/unfolded-arm.gandr:<file> unshaped:SentenceLength
 model/data/unfolded-arm.gandr:<file> unshaped:WhatLength
 model/data/unfolded-arm.gandr:comment:a56a1603c608c33c unshaped:ItemShape
-model/data/vector-cases.gandr:<file> unshaped:HeadParagraphs
-model/data/vector-cases.gandr:<file> unshaped:Semicolon
-model/data/vector-cases.gandr:<file> unshaped:SentenceLength
-model/data/vector-cases.gandr:<file> unshaped:WhatLength
 model/data/vector-head.gandr:<file> unshaped:HeadParagraphs
 model/data/vector-head.gandr:<file> unshaped:Semicolon
 model/data/vector-head.gandr:<file> unshaped:SentenceLength
