@@ -1,0 +1,8 @@
+error[IllFormedDescription]: a rule applies `concat`, which the signature does not declare
+   ╭▸ corpus/pathological/strings/joining.gandr:25:3
+   │
+25 │   rule unitLeft : concat(empty, s) <=> s;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ├ note: `JoinLaws` is refused with IllFormedDescription, as its expectation states
+   ╰ help: declare the operation in the signature, or write the rule over operations it declares
