@@ -7,12 +7,47 @@
 //! and the caller that composes the pipeline runs the declaration and spells
 //! what the run produced; the two compare byte for byte. The spelling is the
 //! one the toolchain prints a run's outcome in, so a stated outcome reads as
-//! what `gandr run` prints.
+//! what `gandr run` prints. A traced run adds each channel the run forked,
+//! by the name its fork gives it, with the web its play decomposes to,
+//! spelled as a `decomposes` payload is.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 use gandr_kernel_term::ConstantIndex;
+
+/// One channel of a run: its name and the web its play decomposes to.
+///
+/// The name is the binder the fork that opened it writes at its protocol, and
+/// the web is spelled as a `decomposes` payload is: what a `traces` entry
+/// states, and what a traced run produced.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Channel
+{
+    /// The channel's name.
+    pub name: String,
+    /// The web.
+    pub web: RunSpelling,
+}
+
+/// What a traced run produced: its outcome, spelled as [`Runner::run`]
+/// spells it, and each channel it forked whose fork the source names, in the
+/// order the run forked them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TracedRun
+{
+    /// The outcome.
+    pub run: RunSpelling,
+    /// The channels.
+    pub channels: Vec<Channel>,
+}
 
 /// A run outcome, spelled: what a `runs` payload states, and what a run
 /// produced.
@@ -181,6 +216,32 @@ pub trait Runner
         &mut self,
         constant: ConstantIndex,
     ) -> RunSpelling;
+
+    /// What running the declaration at `constant` produced, recording each
+    /// channel it forked.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::run`], and the declaration states the web a
+    ///   channel of its run plays.
+    /// - ensures: the spelling [`Self::run`] gives, and each channel the run
+    ///   forked whose fork the source names, by that name, with the web its
+    ///   play decomposes to spelled as [`Self::decompose`] spells a web, in the
+    ///   order the run forked them.
+    /// - provides: the produced side of a `traces` comparison.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled, its channels those it forked before it stopped.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run stating its channel's web, one stating another,
+    ///   and one naming a channel it never forks; settlement asks the runner
+    ///   for each, and compares every stated channel.
+    /// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun;
 }
 
 impl<Run> Runner for Run
@@ -225,6 +286,23 @@ where
     ) -> RunSpelling
     {
         self(constant)
+    }
+
+    /// Calls the closure: a closure spells a run by position and records no
+    /// channel.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun
+    {
+        TracedRun {
+            run: self(constant),
+            channels: Vec::new(),
+        }
     }
 }
 

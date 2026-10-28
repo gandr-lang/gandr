@@ -65,6 +65,7 @@
 //! schema rather than a change to this one.
 
 use alloc::format;
+use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::error::Error;
@@ -101,8 +102,13 @@ use crate::refusal::Refusal;
 use crate::report::SettleReport;
 use crate::root::CorpusRoot;
 use crate::root::Rooted;
+use crate::run::Channel;
 use crate::run::RunSpelling;
 use crate::run::Runner;
+use crate::run::TracedRun;
+
+/// How a stated channel the run never forked reads.
+const UNPLAYED: &str = "unplayed";
 
 quenchant_shape::reason_enum! {
     /// Why a declaration produced no refusal.
@@ -453,6 +459,10 @@ pub struct DeclarationReport<'source>
     /// The outcome its run produced, or the line its block's normal form
     /// produced, when it states one and was accepted.
     ran: Maybe<RunSpelling, ran::Absent>,
+    /// Each channel its `traces` entries state, as its traced run played it
+    /// ([`played`]); empty unless it states its run's channels and was
+    /// accepted.
+    traced: Vec<Channel>,
     /// The structured name of the law, when the declaration is one its module
     /// admits at a primitive carrier and it crossed as the axiom it is: the
     /// audit row the report lists in place of an obligation.
@@ -581,13 +591,13 @@ impl<'source> DeclarationReport<'source>
     /// The produced verdict, read in the stated verdict's shape.
     ///
     /// # Specification
-    /// - requires: nothing.
     /// - ensures: the produced refusal's name when one was produced, beside the
     ///   run's spelling when a run beside the refusal is stated and was run;
     ///   else the outcome its run or its normal form produced, in the stated
     ///   schema, when it states one and was accepted, a web read as its prime
-    ///   count when the stated one is a count; else checks owing the
-    ///   declaration's own obligations.
+    ///   count when the stated one is a count, and each stated channel as the
+    ///   run played it ([`played`]); else checks owing the declaration's own
+    ///   obligations.
     /// - provides: the side the settle comparison holds the stated verdict
     ///   against.
     /// - fails: never.
@@ -604,6 +614,7 @@ impl<'source> DeclarationReport<'source>
     /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
     /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
     /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
+    /// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
     #[spec(
         ensures: |ret| match self.produced.refusal() {
     Maybe::Present(refusal) => match (&self.stated, &self.ran) {
@@ -611,7 +622,7 @@ impl<'source> DeclarationReport<'source>
             matches!(ret, Outcome::RefusesRunning(name, ref actual) if name == refusal.name() && actual == spelled)
         }
         (&Stated::Verdict(Outcome::RefusesRunning(..)), &Maybe::Absent(_))
-        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_)) | Stated::Malformed(_)), _) => {
+        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..)) | Stated::Malformed(_)), _) => {
             ret == Outcome::Refuses(refusal.name())
         }
     },
@@ -623,6 +634,9 @@ impl<'source> DeclarationReport<'source>
                 }
                 Stated::Verdict(Outcome::Decomposes(ref stated)) => {
                     matches!(ret, Outcome::Decomposes(ref actual) if *actual == web_as_stated(stated, spelled))
+                }
+                Stated::Verdict(Outcome::RunsTracing(..)) => {
+                    matches!(ret, Outcome::RunsTracing(ref actual, ref channels) if actual == spelled && channels_settle(channels, &self.traced) == Settlement::Settled)
                 }
                 Stated::Verdict(_) | Stated::Malformed(_) => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
             },
@@ -647,6 +661,9 @@ impl<'source> DeclarationReport<'source>
                     Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
                     Stated::Verdict(Outcome::Decomposes(ref stated)) => {
                         Outcome::Decomposes(web_as_stated(stated, spelled))
+                    },
+                    Stated::Verdict(Outcome::RunsTracing(..)) => {
+                        Outcome::RunsTracing(spelled.clone(), self.traced.clone())
                     },
                     Stated::Verdict(
                         Outcome::Checks(_)
@@ -685,6 +702,7 @@ impl<'source> DeclarationReport<'source>
     /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
     /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
     /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
+    /// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
     #[spec(
         ensures: |ret| {
     (ret == Settlement::Settled)
@@ -716,6 +734,11 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             }
+            Stated::Verdict(Outcome::RunsTracing(ref expected, ref stated)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
+                    && channels_settle(&self.traced, stated) == Settlement::Settled
+            }
         }
 },
     )]
@@ -746,6 +769,11 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             },
+            Stated::Verdict(Outcome::RunsTracing(ref expected, ref stated)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
+                    && channels_settle(&self.traced, stated) == Settlement::Settled
+            },
         };
         if agrees {
             Settlement::Settled
@@ -760,10 +788,11 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with `declared` the count a stated `checks` verdict names,
-    ///   and zero for a stated refusal, a stated run outcome, normal form or
-    ///   decomposition, a run beside a refusal, or a malformed expectation, the
-    ///   owed obligations past `declared` are undeclared and the declared ones
-    ///   past the owed are unproduced; at most one of the two is nonzero.
+    ///   and zero for a stated refusal, a stated run outcome, normal form,
+    ///   decomposition or run with its channels, a run beside a refusal, or a
+    ///   malformed expectation, the owed obligations past `declared` are
+    ///   undeclared and the declared ones past the owed are unproduced; at most
+    ///   one of the two is nonzero.
     /// - provides: the surviving count a report sums.
     /// - fails: never.
     /// - panics: none.
@@ -799,7 +828,8 @@ impl<'source> DeclarationReport<'source>
                 | Outcome::Runs(_)
                 | Outcome::Normalizes(_)
                 | Outcome::Decomposes(_)
-                | Outcome::RefusesRunning(..),
+                | Outcome::RefusesRunning(..)
+                | Outcome::RunsTracing(..),
             )
             | Stated::Malformed(_) => 0_usize,
         };
@@ -1012,13 +1042,14 @@ impl Error for SettleFault
 ///   position. Root guards override produced verdicts without dropping their
 ///   owed obligations. An accepted declaration carrying `boundary` calls
 ///   `runner`'s run, and a clause the run names stands in place of its verdict.
-///   Only accepted declarations stating a run outcome or a web call `runner`'s
-///   run or its decomposition, and only checker-refused declarations stating a
-///   run beside their refusal call its refused run, once each in order; only
-///   accepted declarations stating a normal form read one, through
-///   [`LoweredModule::normal_form`], under the rules of the block that holds
-///   them; an admitted law the checker owes is owed nothing; the report
-///   preserves the checker ledger count.
+///   Only accepted declarations stating a run outcome, a web or a run with its
+///   channels call `runner`'s run, its decomposition or its traced run, and
+///   only checker-refused declarations stating a run beside their refusal call
+///   its refused run, once each in order; a report holds played channels only
+///   for a traced run; only accepted declarations stating a normal form read
+///   one, through [`LoweredModule::normal_form`], under the rules of the block
+///   that holds them; an admitted law the checker owes is owed nothing; the
+///   report preserves the checker ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
 ///   Calls made to the runner before a later fault are not rolled back.
@@ -1047,6 +1078,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
 /// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
 /// - witness: `settle::tests::a_boundary_check_stands_as_its_run_answers_2901`
+/// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -1087,7 +1119,7 @@ impl Error for SettleFault
                         && match declaration.ran {
                             Maybe::Present(_) => {
                                 (matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..))
                                 )
                                     && matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
@@ -1107,7 +1139,7 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unaccepted) => {
                                 (matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..))
                                 )
                                     && !matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
@@ -1129,10 +1161,15 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unstated) => {
                                 !matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..) | Outcome::RunsTracing(..))
                                 )
                             }
                         }
+                        && (declaration.traced.is_empty()
+                            || matches!(
+                                (&declaration.stated, &declaration.ran),
+                                (&Stated::Verdict(Outcome::RunsTracing(..)), &Maybe::Present(_))
+                            ))
                 })
             && module
                 .declarations()
@@ -1337,7 +1374,16 @@ where
             },
             (Some(_) | None, _) => produced,
         };
+        let mut traced = Vec::new();
         let ran = match (&expectations.stated, produced) {
+            (
+                &Stated::Verdict(Outcome::RunsTracing(_, ref stated)),
+                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+            ) => {
+                let TracedRun { run, channels } = runner.run_traced(lowered.constant());
+                traced = played(stated, &channels);
+                Maybe::Present(run)
+            },
             (
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
@@ -1369,7 +1415,9 @@ where
                 ),
             ) => Maybe::Present(normalized(module, lowered, line)),
             (
-                &Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_)),
+                &Stated::Verdict(
+                    Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..),
+                ),
                 Produced::Judged(
                     Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_),
                 )
@@ -1427,6 +1475,7 @@ where
             owed,
             waits,
             ran,
+            traced,
             admitted,
         });
     }
@@ -1824,18 +1873,19 @@ pub fn refused_expected(
 /// - requires: `entry` is filed in `table` under one of `lowered`'s keys.
 /// - ensures: the spelling filed under the first of `lowered`'s signature,
 ///   definition, refused form and introduced keys that holds one for the
-///   entry's attribute; absent when none does.
+///   entry's span; absent when none does.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `decomposes` written before a dialogue's signature is
-///   read from the signature's key.
+///   read from the signature's key, and each of two `traces` reads its own.
 /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
+/// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|web| {
     [lowered.signature(), lowered.definition(), lowered.refused_form(), Maybe::Present(lowered.introduced())]
         .into_iter()
-        .any(|key| matches!(key, Maybe::Present(key) if table.spelled(key, entry.name()).is_some_and(|filed| filed.as_str() == web.as_ref())))
+        .any(|key| matches!(key, Maybe::Present(key) if table.spelled(key, entry.span()).is_some_and(|filed| filed.as_str() == web.as_ref())))
 }))]
 fn spelled(
     table: &AttributeTable,
@@ -1855,8 +1905,78 @@ fn spelled(
     ]
     .into_iter()
     .flatten()
-    .find_map(|key| table.spelled(key, entry.name()))
+    .find_map(|key| table.spelled(key, entry.span()))
     .map(|web| RunSpelling::from(web.clone()))
+}
+
+/// Each channel of `stated` as the run played it: the web of every play of
+/// that name among `plays`, read as the stated web reads it
+/// ([`web_as_stated`]), in the order played and joined by ` then `;
+/// `unplayed` for a channel the run never forked.
+///
+/// # Specification
+/// - ensures: one channel per stated one, named alike, in order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a channel played as stated, played otherwise, stated by
+///   its prime count and never forked, alone and beside another.
+/// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
+#[spec(ensures: |ref ret| ret.len() == stated.len()
+    && ret.iter().zip(stated).all(|(played, written)| played.name == written.name))]
+fn played(
+    stated: &[Channel],
+    plays: &[Channel],
+) -> Vec<Channel>
+{
+    stated
+        .iter()
+        .map(|written| {
+            let mut web = String::new();
+            for play in plays.iter().filter(|play| play.name == written.name) {
+                if !web.is_empty() {
+                    web.push_str(" then ");
+                }
+                web.push_str(web_as_stated(&written.web, &play.web).as_ref());
+            }
+            if web.is_empty() {
+                web.push_str(UNPLAYED);
+            }
+            Channel {
+                name: written.name.clone(),
+                web: RunSpelling::from(web),
+            }
+        })
+        .collect()
+}
+
+/// Whether the channels `played` holds are the ones `stated` states, in
+/// order.
+///
+/// # Specification
+/// - ensures: settled exactly when both hold the same channels in the same
+///   order.
+/// - panics: none.
+///
+/// # Clause cost
+/// - bound: one name and one web comparison per stated channel, one entry per
+///   channel a declaration's run forks.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`played`].
+/// - witness: `settle::tests::a_channel_settles_against_the_web_its_play_decomposes_to_3338`
+#[spec(ensures: |ret| (ret == Settlement::Settled) == (played == stated))]
+fn channels_settle(
+    played: &[Channel],
+    stated: &[Channel],
+) -> Settlement
+{
+    if played == stated {
+        Settlement::Settled
+    }
+    else {
+        Settlement::Unsettled
+    }
 }
 
 #[cfg(test)]
@@ -1902,8 +2022,10 @@ mod tests
     use crate::refusal::RefusalName;
     use crate::report::SettleReport;
     use crate::root::CorpusRoot;
+    use crate::run::Channel;
     use crate::run::RunSpelling;
     use crate::run::Runner;
+    use crate::run::TracedRun;
 
     /// The one declaration `report` holds.
     ///
@@ -2616,6 +2738,26 @@ mod tests
             self.0.push(("decompose", usize::from(constant)));
             RunSpelling::from(format!("event(left, {})", usize::from(constant)))
         }
+
+        /// Records a traced run, spells it by position, and plays one
+        /// channel, `c`, as a one-event web at the position.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_traced(
+            &mut self,
+            constant: ConstantIndex,
+        ) -> TracedRun
+        {
+            self.0.push(("traced", usize::from(constant)));
+            TracedRun {
+                run: ran_at(constant),
+                channels: Vec::from([Channel {
+                    name: String::from("c"),
+                    web: RunSpelling::from(format!("event(left, {})", usize::from(constant))),
+                }]),
+            }
+        }
     }
 
     /// #2077: a `decomposes` payload is the web's tree, unquoted; an accepted
@@ -2682,6 +2824,87 @@ mod tests
                 ),
                 (outcome, settlement, runs),
                 "`{source}` under the {root} root decomposes and settles as pinned"
+            );
+        }
+    }
+
+    /// #3338: a `traces` entry beside `runs` states one channel's web; the
+    /// declaration settles when the run is the stated one and each stated
+    /// channel's play decomposes to its web, or to its stated count of prime
+    /// nodes. A channel the run never forked reads `unplayed`.
+    #[test]
+    fn a_channel_settles_against_the_web_its_play_decomposes_to_3338()
+    {
+        let tracing = |ran: &str, channels: &[(&str, &str)]| {
+            Outcome::RunsTracing(
+                RunSpelling::from(String::from(ran)),
+                channels
+                    .iter()
+                    .map(|&(name, web)| Channel {
+                        name: String::from(name),
+                        web: RunSpelling::from(String::from(web)),
+                    })
+                    .collect(),
+            )
+        };
+        let rows = [
+            (
+                CorpusRoot::Strict,
+                "@[ runs(\"ran at 0\"), traces(decomposes(c, event(left, 0))) ] def a = 3 ;",
+                tracing("ran at 0", &[("c", "event(left, 0)")]),
+                Settlement::Settled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ runs(\"ran at 0\"), traces(primes(c, 0)) ] def a = 3 ;",
+                tracing("ran at 0", &[("c", "primes = 0")]),
+                Settlement::Settled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ runs(\"ran at 0\"), traces(decomposes(c, event(left, 1))) ] def a = 3 ;",
+                tracing("ran at 0", &[("c", "event(left, 0)")]),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ runs(\"ran at 0\"), traces(decomposes(d, event(left, 0))) ] def a = 3 ;",
+                tracing("ran at 0", &[("d", "unplayed")]),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ runs(\"ran at 1\"), traces(decomposes(c, event(left, 0))) ] def a = 3 ;",
+                tracing("ran at 0", &[("c", "event(left, 0)")]),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ runs(\"ran at 0\"), traces(decomposes(c, event(left, 0))), traces(primes(d, 0)) \
+                 ] def a = 3 ;",
+                tracing("ran at 0", &[("c", "event(left, 0)"), ("d", "unplayed")]),
+                Settlement::Unsettled,
+            ),
+        ];
+        for (root, source, outcome, settlement) in rows {
+            let module = checked(SourceText::from(source));
+            let mut asked = Asked::default();
+            let report = settle(
+                root,
+                &module.arena,
+                &module.module,
+                &module.verdicts,
+                &mut asked,
+            )
+            .expect("the verdicts are the module's own");
+            assert_eq!(
+                (
+                    only(&report).outcome(),
+                    only(&report).settlement(),
+                    asked.0.as_slice()
+                ),
+                (outcome, settlement, &[("traced", 0_usize)][..]),
+                "`{source}` under the {root} root traces and settles as pinned"
             );
         }
     }

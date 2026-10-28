@@ -545,6 +545,38 @@ pub enum ComponentName
     Labelled(FieldLabel),
 }
 
+/// The name a fork's child end binds, as written: the channel a traced run
+/// reports its play by.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ChannelName(String);
+
+impl From<String> for ChannelName
+{
+    /// The channel named `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(text: String) -> Self
+    {
+        Self(text)
+    }
+}
+
+impl AsRef<str> for ChannelName
+{
+    /// The name's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        self.0.as_str()
+    }
+}
+
 /// What a hole the elaborator nominated stands for.
 ///
 /// The implicit a call omits, as written; a component of a model slot it
@@ -658,6 +690,12 @@ pub struct OriginTable
     /// binder over its subject and its clauses' binders over their bodies, so
     /// the scope alone does not name one.
     clause_binders: Vec<((ComputationId, ClauseBinder), Origin)>,
+    /// The name each fork's child end binds, as written, by the fork,
+    /// ascending by id: the channel's name, the binder at the fork's
+    /// protocol. A fork opens the child's end over its child and the
+    /// parent's over the rest of its block, so the opener alone names
+    /// neither in [`Self::binders`].
+    forks: Vec<(ComputationId, ChannelName)>,
     /// The name each dependent arrow binds, by the arrow, ascending by id:
     /// the syntax its binder's name was written at, a parameter's or a
     /// telescope entry's. The core carries no name; the printer reads it
@@ -1866,6 +1904,68 @@ impl OriginTable
     ) -> Maybe<Origin, origin::Absent>
     {
         find(&self.binders, opener)
+    }
+
+    /// Record `name`, the name the fork `fork`'s child end binds as written.
+    ///
+    /// # Specification
+    /// - requires: `fork` follows every fork already recorded.
+    /// - ensures: the pair is appended, so the list stays ascending and
+    ///   [`Self::fork`] finds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat exchange's fork answers the child's end's
+    ///   name, not the parent's.
+    /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
+    #[spec(
+        requires: self.forks.last().is_none_or(|&(held, _)| held < fork),
+        captures: [before = self.forks.len(), written = name.clone()],
+        ensures: self.forks.len() == before.saturating_add(1)
+            && self.forks.last().is_some_and(|&(held, ref kept)| held == fork && *kept == written),
+    )]
+    #[inline]
+    pub fn record_fork(
+        &mut self,
+        fork: ComputationId,
+        name: ChannelName,
+    )
+    {
+        self.forks.push((fork, name));
+    }
+
+    /// The name the fork `fork`'s child end binds, as written: the channel's
+    /// name, which a traced run reports its play by.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unrecorded id is admissible input.
+    /// - ensures: the name recorded for `fork`, or the unrecorded absence for a
+    ///   computation that is no fork the source wrote.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::record_fork`].
+    /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
+    #[spec(ensures: |ret| ret == self.forks
+        .get(self.forks.partition_point(|&(held, _)| held < fork))
+        .filter(|&&(held, _)| held == fork)
+        .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, ref name)| Maybe::Present(name)))]
+    #[inline]
+    pub fn fork(
+        &self,
+        fork: ComputationId,
+    ) -> Maybe<&ChannelName, origin::Absent>
+    {
+        self.forks
+            .binary_search_by_key(&fork, |&(held, _)| held)
+            .ok()
+            .and_then(|position| self.forks.get(position))
+            .map_or(
+                Maybe::Absent(origin::Absent::Unrecorded),
+                |&(_, ref name)| Maybe::Present(name),
+            )
     }
 
     /// Record where the `ua` statement `statement` names its two

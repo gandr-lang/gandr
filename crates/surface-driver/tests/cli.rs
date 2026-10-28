@@ -451,6 +451,38 @@ fn a_run_spells_its_value_by_its_own_type_past_a_namesake_3125()
     }
 }
 
+/// A run whose channel plays another web than the one its source states is
+/// unsettled as another run outcome, the stated and the played web both
+/// printed: a task that speaks before it is asked against the web of one
+/// asked first (#3338).
+#[test]
+fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
+{
+    let asked_first = "series(event(right, 0), event(left, 0), event(left, 1), \
+                       parallel(event(left, 2), series(event(right, 1), event(right, 2))))";
+    let spoke_first = "series(event(left, 0), event(right, 0), event(right, 1), \
+                       parallel(series(event(left, 1), event(left, 2)), event(right, 2)))";
+    let text = format!(
+        "@[ runs(\"unit\"), traces(decomposes(task, {asked_first})) ]\ndef swapped() -> Unit \
+         {{\n  fork (task : !String. ?String. end) {{\n    send(task, \"notes\");\n    \
+         recv(task) as answer;\n    close(task)\n  }} as asked;\n  recv(asked) as told;\n  \
+         send(asked, told);\n  close(asked)\n}}\n"
+    );
+    let scratch = Scratch::new(Path::new("traced"));
+    let source = scratch.file(Path::new("swapped.gandr"), Text::from(text.as_str()));
+    let output = ran(gandr(&[Path::new("check"), &source]));
+    assert_eq!(code(&output), Code(1_i32), "{}", stdout(&output));
+    let diagnostic = printed(&output);
+    assert!(
+        diagnostic.contains(&format!(
+            "states runs to unit tracing task to {asked_first}; produced runs to unit tracing \
+             task to {spoke_first}"
+        )),
+        "{diagnostic}"
+    );
+    assert!(diagnostic.contains("another run outcome"), "{diagnostic}");
+}
+
 #[test]
 fn verbosity_chooses_how_much_of_a_report_prints()
 {

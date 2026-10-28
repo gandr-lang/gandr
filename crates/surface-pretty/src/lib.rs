@@ -350,6 +350,7 @@ use crate::walk::Bodies;
 use crate::walk::Tail;
 use crate::walk::Walked;
 use crate::walk::walk;
+pub use crate::walk::web_spelled;
 
 /// How many value formers enclose a node of a presentation.
 ///

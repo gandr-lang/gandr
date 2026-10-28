@@ -864,7 +864,8 @@ impl<'step> Entries<'step>
                                     &Stated::Verdict(
                                         Outcome::Runs(_)
                                         | Outcome::Normalizes(_)
-                                        | Outcome::Decomposes(_),
+                                        | Outcome::Decomposes(_)
+                                        | Outcome::RunsTracing(..),
                                     ),
                                     Outcome::Checks(_),
                                 ) => Unsettlement::Obligations,
@@ -875,12 +876,17 @@ impl<'step> Entries<'step>
                                     _,
                                 ) => Unsettlement::Unproduced,
                                 (
-                                    &Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_)),
+                                    &Stated::Verdict(
+                                        Outcome::Runs(_)
+                                        | Outcome::Decomposes(_)
+                                        | Outcome::RunsTracing(..),
+                                    ),
                                     Outcome::Runs(_)
                                     | Outcome::Refuses(_)
                                     | Outcome::Normalizes(_)
                                     | Outcome::Decomposes(_)
-                                    | Outcome::RefusesRunning(..),
+                                    | Outcome::RefusesRunning(..)
+                                    | Outcome::RunsTracing(..),
                                 ) => Unsettlement::RunOutcome,
                                 (
                                     &Stated::Verdict(Outcome::Normalizes(_)),
@@ -888,7 +894,8 @@ impl<'step> Entries<'step>
                                     | Outcome::Refuses(_)
                                     | Outcome::Runs(_)
                                     | Outcome::Decomposes(_)
-                                    | Outcome::RefusesRunning(..),
+                                    | Outcome::RefusesRunning(..)
+                                    | Outcome::RunsTracing(..),
                                 ) => Unsettlement::NormalForm,
                                 (&Stated::Malformed(_), _) => Unsettlement::Malformed,
                             };

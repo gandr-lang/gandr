@@ -537,6 +537,17 @@ fn the_seat_exchange_lowers_both_ends()
         ],
         "the seat's end is the child's, the operator's the parent's, and each names its endpoint by linear index past the parameter and every receipt's linear binder"
     );
+    assert!(
+        matches!(
+            arena.computation(tail),
+            Some(&Computation::Session(SessionAction::Fork { .. }))
+        ),
+        "the body's tail is its fork"
+    );
+    assert!(
+        matches!(module.origins().fork(tail), Maybe::Present(name) if name.as_ref() == "c"),
+        "the fork names its channel by its child's end, not the parent's"
+    );
     assert_accepted(&judged(&module, &mut arena));
 }
 

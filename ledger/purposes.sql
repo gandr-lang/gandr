@@ -1559,6 +1559,7 @@ INSERT INTO purpose VALUES('runtime-emitter','run::evaluate','function','Runs th
 INSERT INTO purpose VALUES('runtime-emitter','run::evaluate_closed_on','function','Runs a command binding one covariable on the named tier over the values a store environment binds, laid out on the run''s heap as a host''s reply is, and moves its outcome into the store: a cut''s writer run apart from its reader''s heap.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::evaluate_on','function','Runs the command on the named tier with the given fuel and moves its outcome into the caller''s store; an operation no handler of the run claims stops it stuck.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::evaluate_on_with_host','function','Runs the command on the named tier, an operation no handler of the run claims offered to the host once, its payload moved into the store.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','run::evaluate_traced_with_host','function','Runs the command as the hosted run does, each channel''s play appended to a trace: every move its ends made, by task and side, in the order made.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::evaluate_unfused_on','function','Runs the command''s unfused lowering on the named tier: every instruction its own dispatch, the reference a fused function answers to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::evaluate_with_host','function','Runs the command on the tier the policy picks, an operation no handler of the run claims offered to the host.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','seam::HostHandler','trait','Decides the operations a run offers, without access to its frames: a reply continues the operation''s continuation, an abort stops the run, and a decline leaves the operation unhandled.',NULL,'fits','sound',NULL);
@@ -1568,6 +1569,12 @@ INSERT INTO purpose VALUES('runtime-emitter','seam::HostRequest','struct','Names
 INSERT INTO purpose VALUES('runtime-emitter','seam::HostValues','struct','Gives the host its value capability over the caller''s store: inspect, allocate and read back, never alter frames.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','seam::Migrated','enum','Names a host''s decision about one migration: run it in this process, take the answer crossed back from where it ran, or refuse it for a reason.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','seam::MigrationRequest','struct','Names a migration a run is about to make: the world it names, its command, and the captures its body binds, values of the caller''s store.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','trace::Carried','enum','Names what a traced send carried and its receipt took: a value of the caller''s store, or a delegated channel end.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','trace::ChannelNumber','struct','Numbers a traced run''s channels in the order their forks ran, so a delegated end names its channel.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','trace::Play','struct','Holds one channel''s play, its fork and its moves in the order made, so its causal web is read as a dialogue''s is.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','trace::Played','struct','Holds one move of a play: the task that made it, the end it made it at, and the move.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','trace::TaskNumber','struct','Numbers a traced run''s tasks, the root zero and each child in the order its fork ran, so a move names its maker.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','trace::Trace','struct','Holds a traced run''s plays, one per channel in the order its fork ran.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','transfer::TransferRefusal','enum','Names why an answer could not be moved into the store: the store refused an allocation, a header names no kind, a code word names no site, a site''s producer is wrong, the graph holds a cycle, a table entry is missing, or a host object reached the answer.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','world::arrive','function','Runs here a migration another host shipped, by its command in the program both hosts hold, over captures read into the store, refusing a command that is no migration to this world before anything runs.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','world::chunking','function','Gives the chunker constants every crossing between worlds commits and reads under, in this process and between hosts.','sharing','fits','sound',NULL);
@@ -1890,8 +1897,10 @@ INSERT INTO purpose VALUES('surface-corpus','report::SettleReport','struct','One
 INSERT INTO purpose VALUES('surface-corpus','report::Tally','struct','The counts of a settle run: what a driver gates on and prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','root::CorpusRoot','enum','Which corpus root a source sits under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','root::Rooted','trait','The corpus root each declaration of a module settles under, by where its bytes start.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','run::Channel','struct','One channel of a run, spelled: its name and its web, what a `traces` entry states and what a traced run produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','run::RunSpelling','struct','A run outcome, spelled: what a `runs` payload states, and what a run produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','run::Runner','trait','What settling a `runs` expectation asks of the caller: run one declaration and spell its outcome.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','run::TracedRun','struct','What settling a `traces` expectation asks a run to produce: its outcome and each named channel it forked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::DeclarationReport','struct','One declared name, settled: what it states beside what it produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Produced','enum','What a declaration produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::SettleFault','enum','Why verdicts cannot be settled against a module.',NULL,'fits','sound',NULL);
@@ -2011,6 +2020,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Terminal','enum','Whe
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Unfinished','enum','Why a run could not be finished.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Unrunnable','enum','Why a declaration never reached the machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::ValueSpelling','struct','A value, spelled: the text `gandr run` prints for a run that returned one, laid out by the printer every face shares.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','evaluate::channel::Absent','enum','Why a play is reported by no channel name: no source wrote its fork.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Captured','struct','A console keeping every line it is handed, in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Console','trait','Where a run''s printed lines go.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::console::Line','struct','A line a run prints, without its newline.',NULL,'fits','sound',NULL);
@@ -2583,6 +2593,7 @@ INSERT INTO purpose VALUES('surface-lowering','namespace::trie::Emptiness','stru
 INSERT INTO purpose VALUES('surface-lowering','namespace::trie::Trie','struct','Holds a trie, so the trie''s bindings are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::ArmOrigin','struct','Holds an arm''s origin, so the arm''s span is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::CaseOrigin','struct','Holds a case''s origin, so the case''s arms are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','origin::ChannelName','struct','Holds the binder a fork''s child end is written with, so a traced run reports the fork''s play by it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::ClauseBinder','enum','Names a clause''s binder, so the binder''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::ClausePlace','struct','Names a clause''s place, so the place''s span is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','origin::ComponentName','enum','Names a component''s name, so the name''s kind is read.',NULL,'fits','sound',NULL);
@@ -2935,6 +2946,7 @@ INSERT INTO purpose VALUES('surface-pretty','scope::Binder','struct','Holds one 
 INSERT INTO purpose VALUES('surface-pretty','scope::BinderIndex','struct','Names the position of one binder among a scope''s binders, so the binder''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','scope::ChildSlot','struct','Names the position of one child slot among its node''s children, so the slot''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','scope::Scopes','struct','Holds the binders each node of a term stands under, so a type''s binders are named from the context.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','walk::web_spelled','function','Spells a causal web''s pieces on one line, so a run''s web is written as a `decomposes` payload writes one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','diagnostic::DIAGNOSTIC_CODES','constant','Declares the complete code registry: the enum, the allocation-ordered list, and the two per-code tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','diagnostic::DiagnosticCode','enum','Declares the complete code registry: the enum, the allocation-ordered list, and the two per-code tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','diagnostic::DiagnosticMessage','enum','A diagnostic''s template identity and its named arguments.',NULL,'fits','sound',NULL);

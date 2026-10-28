@@ -180,14 +180,20 @@ use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
+use gandr_runtime_emitter::Play;
 use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::Trace;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
+use gandr_runtime_emitter::evaluate_traced_with_host;
 use gandr_runtime_emitter::evaluate_with_host;
+use gandr_surface_corpus::Channel;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
+use gandr_surface_corpus::TracedRun;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_lowering::ChannelName;
 use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
@@ -203,6 +209,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
+use gandr_surface_pretty::web_spelled;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -249,6 +256,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The program declares fewer names.
             Undeclared,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a play is reported by no channel name.
+    pub mod channel {
+        /// The play's fork names no channel.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No source wrote the fork that opened it.
+            Unnamed,
         }
     }
 }
@@ -318,6 +337,23 @@ enum Choice
     Tier(Tier),
 }
 
+/// What hosts the operations a run offers, and whether it records its
+/// channels.
+///
+/// # Specification
+/// trivial.
+enum Hosting<'run>
+{
+    /// Nothing: an offered operation stops the run.
+    Bare,
+    /// A console each `Console.print` writes its line to before the run
+    /// resumes.
+    Printing(&'run mut dyn Console),
+    /// As [`Self::Printing`], on the tier the policy picks, each channel's
+    /// play appended to the trace.
+    Traced(&'run mut dyn Console, &'run mut Trace),
+}
+
 /// A checked module, focused and ready to run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Program<'source>
@@ -338,6 +374,10 @@ pub struct Program<'source>
     /// declaration whose run can reach a hidden member, by admission position
     /// and spelling.
     sealed: BTreeMap<(ConstantIndex, Spelling), String>,
+    /// The name each fork the focused definitions hold gives its channel,
+    /// its child end's binder as written, by the fork's command: a traced run
+    /// reports each play by it.
+    channels: BTreeMap<CommandId, ChannelName>,
     /// The constructors of the module's data declarations, by family.
     families: Families,
     /// The spelling its values and sealed types are written in.
@@ -357,8 +397,9 @@ pub struct Program<'source>
 }
 
 /// The part of a program a module's leading declarations make: each of them
-/// focused, with the sealed type of each whose run reaches a hidden member.
-/// A program over a module they lead continues it ([`Program::after`]).
+/// focused, with the sealed type of each whose run reaches a hidden member and
+/// the channel name of each fork they write. A program over a module they lead
+/// continues it ([`Program::after`]).
 ///
 /// # Specification
 /// - executable: none — a data type; [`Program::after`] states what continuing
@@ -378,6 +419,8 @@ pub struct Focused<'source>
     declarations: BTreeMap<ConstantIndex, Declared<'source>>,
     /// The sealed declared types, by admission position and spelling.
     sealed: BTreeMap<(ConstantIndex, Spelling), String>,
+    /// The name each fork gives its channel, by the fork's command.
+    channels: BTreeMap<CommandId, ChannelName>,
 }
 
 impl Focused<'_>
@@ -876,9 +919,12 @@ impl<'source> Program<'source>
             mut definitions,
             mut declarations,
             mut sealed,
+            mut channels,
         } = focused;
-        // Focusing only records each command's origin, which no program
-        // keeps, so a continued focusing starts an empty table.
+        // A program keeps of focusing's table only each fork's source, as
+        // the name it gives its channel, so a continued focusing starts an
+        // empty table; the leading program's names are already in
+        // `channels`.
         let mut provenance = Provenance::new();
         let boundary = usize::from(definitions.len());
         let mut judged = verdicts.judged().iter().peekable();
@@ -943,6 +989,13 @@ impl<'source> Program<'source>
                 slot,
             });
         }
+        let origins = module.origins();
+        channels.extend(provenance.sessions().filter_map(|(command, source)| {
+            match origins.fork(source) {
+                Maybe::Present(name) => Some((command, name.clone())),
+                Maybe::Absent(_) => None,
+            }
+        }));
         let names = constant_names(module);
         // A run's value is read back into an arena of its own, whose cases
         // the module's would misname.
@@ -1001,6 +1054,7 @@ impl<'source> Program<'source>
             names,
             hidden,
             sealed,
+            channels,
             families,
             spelling: Spelling::Unicode,
             reaches: entry::reaches(module, entry),
@@ -1011,7 +1065,8 @@ impl<'source> Program<'source>
     }
 
     /// The part of this program a module laid after its module continues
-    /// ([`Self::after`]): its focused declarations and sealed types.
+    /// ([`Self::after`]): its focused declarations, sealed types and channel
+    /// names.
     ///
     /// # Specification
     /// trivial.
@@ -1023,6 +1078,7 @@ impl<'source> Program<'source>
             definitions,
             declarations,
             sealed,
+            channels,
             ..
         } = self;
         Focused {
@@ -1030,6 +1086,7 @@ impl<'source> Program<'source>
             definitions,
             declarations,
             sealed,
+            channels,
         }
     }
 
@@ -1371,7 +1428,7 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy, None)
+        self.tiered(constant, returned, forced, Choice::Policy, Hosting::Bare)
             .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
@@ -1406,8 +1463,79 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy, Some(console))
-            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Policy,
+            Hosting::Printing(console),
+        )
+        .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` as [`Self::evaluate_printing`] does,
+    /// each channel the run forks recorded into `trace`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate_printing`] gives; `trace` gains one
+    ///   play per fork the run took, in the order taken.
+    /// - provides: a `traces` expectation's run, which [`Self::channel`] names
+    ///   the plays of.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the run's clauses are [`Self::evaluate`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat exchange's channel plays the series its text
+    ///   orders, and the sessions corpus settles every stated channel.
+    /// - witness: `evaluate::tests::a_traced_run_names_each_channel_by_its_fork_3338`
+    #[inline]
+    pub fn evaluate_traced(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut dyn Console,
+        trace: &mut Trace,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Policy,
+            Hosting::Traced(console, trace),
+        )
+        .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// The name `play`'s fork gives its channel, as the source writes it.
+    ///
+    /// # Specification
+    /// - ensures: the binder the fork whose command opened the play writes at
+    ///   its protocol; unnamed for a fork no source wrote.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::evaluate_traced`].
+    /// - witness: `evaluate::tests::a_traced_run_names_each_channel_by_its_fork_3338`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(name) => self.channels.get(&play.fork).is_some_and(|held| held == name),
+        Maybe::Absent(_) => !self.channels.contains_key(&play.fork),
+    })]
+    #[inline]
+    pub fn channel(
+        &self,
+        play: &Play,
+    ) -> Maybe<&ChannelName, channel::Absent>
+    {
+        self.channels
+            .get(&play.fork)
+            .map_or(Maybe::Absent(channel::Absent::Unnamed), Maybe::Present)
     }
 
     /// Run the declaration at `constant` though the checker refused it, read
@@ -1443,7 +1571,7 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy, None)
+        self.tiered(constant, returned, forced, Choice::Policy, Hosting::Bare)
             .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
@@ -1477,7 +1605,7 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy, None)
+        self.tiered(constant, returned, forced, Choice::Policy, Hosting::Bare)
             .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
@@ -1519,7 +1647,7 @@ impl<'source> Program<'source>
             returned,
             forced,
             Choice::Tier(engine.tier()),
-            None,
+            Hosting::Bare,
         )
     }
 
@@ -1559,7 +1687,7 @@ impl<'source> Program<'source>
             returned,
             forced,
             Choice::Tier(engine.tier()),
-            Some(console),
+            Hosting::Printing(console),
         )
     }
 
@@ -1605,7 +1733,7 @@ impl<'source> Program<'source>
             match self.terminal(
                 (returned, forced),
                 Choice::Tier(engine.tier()),
-                (&mut store, None),
+                (&mut store, Hosting::Bare),
             )? {
                 Ok(terminal) => self.read_back(&store, terminal, into),
                 Err(evaluation) => Terminal::Ended(evaluation),
@@ -1795,12 +1923,12 @@ impl<'source> Program<'source>
         returned: CommandId,
         forced: CommandId,
         choice: Choice,
-        console: Option<&mut dyn Console>,
+        hosting: Hosting<'_>,
     ) -> Result<Evaluation<'source>, Declined>
     {
         let mut store = Store::new();
         Ok(
-            match self.terminal((returned, forced), choice, (&mut store, console))? {
+            match self.terminal((returned, forced), choice, (&mut store, hosting))? {
                 Ok(terminal) => self.finish(constant, &store, terminal),
                 Err(evaluation) => evaluation,
             },
@@ -1810,8 +1938,10 @@ impl<'source> Program<'source>
     /// Run the commands on a tier the choice names into `store`, forcing a
     /// suspended answer: the terminal value, or the evaluation that ends the
     /// run first, blaming the opaque constant it observed or answers outside
-    /// any suspension. With a console, each `Console.print` the run offers its
-    /// host writes its line there and resumes; without one it stops the run.
+    /// any suspension. Hosted by a console, each `Console.print` the run
+    /// offers writes its line there and resumes; bare, it stops the run. A
+    /// traced run takes the policy's tier whatever the choice, and records
+    /// both commands' channels.
     ///
     /// # Specification
     /// trivial.
@@ -1828,36 +1958,47 @@ impl<'source> Program<'source>
         &self,
         (returned, forced): (CommandId, CommandId),
         choice: Choice,
-        (store, mut console): (&mut Store, Option<&mut dyn Console>),
+        (store, mut hosting): (&mut Store, Hosting<'_>),
     ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
     {
         let fuel = Fuel::from(RUN_BUDGET);
         let mut run = |root, store: &mut Store| {
-            let Some(ref mut console) = console
-            else {
-                return match choice {
-                    Choice::Policy => gandr_runtime_emitter::evaluate(
-                        &self.arena,
-                        &self.definitions,
-                        root,
-                        fuel,
-                        store,
-                    ),
-                    Choice::Tier(tier) => {
-                        evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
-                    },
-                };
+            let (console, trace) = match hosting {
+                Hosting::Bare => {
+                    return match choice {
+                        Choice::Policy => gandr_runtime_emitter::evaluate(
+                            &self.arena,
+                            &self.definitions,
+                            root,
+                            fuel,
+                            store,
+                        ),
+                        Choice::Tier(tier) => {
+                            evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
+                        },
+                    };
+                },
+                Hosting::Printing(ref mut console) => (&mut **console, None),
+                Hosting::Traced(ref mut console, ref mut trace) => {
+                    (&mut **console, Some(&mut **trace))
+                },
             };
-            let mut host = console::PrintingHost::new(&mut **console);
-            let hosted = match choice {
-                Choice::Policy => evaluate_with_host(
+            let mut host = console::PrintingHost::new(console);
+            let hosted = match (trace, choice) {
+                (Some(trace), Choice::Policy | Choice::Tier(_)) => evaluate_traced_with_host(
+                    (&self.arena, &self.definitions, root),
+                    (fuel, store),
+                    &mut host,
+                    trace,
+                ),
+                (None, Choice::Policy) => evaluate_with_host(
                     &self.arena,
                     &self.definitions,
                     root,
                     (fuel, store),
                     &mut host,
                 ),
-                Choice::Tier(tier) => evaluate_on_with_host(
+                (None, Choice::Tier(tier)) => evaluate_on_with_host(
                     tier,
                     (&self.arena, &self.definitions, root),
                     (fuel, store),
@@ -2510,13 +2651,44 @@ impl Runner for Program<'_>
     {
         let mut captured = Captured::default();
         let evaluation = self.evaluate_printing(constant, &mut captured);
-        let mut spelled = String::new();
-        for line in captured.lines() {
-            spelled.push_str(line);
-            spelled.push('\n');
+        printed(&captured, &evaluation)
+    }
+
+    /// Spells the outcome as [`Self::run`] does, and each channel the run
+    /// forked whose fork the source names, with the web its play decomposes
+    /// to, as `gandr run` spells a web.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun
+    {
+        let mut captured = Captured::default();
+        let mut trace = Trace::default();
+        let evaluation = self.evaluate_traced(constant, &mut captured, &mut trace);
+        let channels = trace
+            .plays
+            .iter()
+            .filter_map(|play| match self.channel(play) {
+                Maybe::Present(name) => Some(Channel {
+                    name: String::from(name.as_ref()),
+                    web: RunSpelling::from(play.web().decompose().map_or_else(
+                        // A play's moves are one linearization of its web,
+                        // which is therefore never cyclic.
+                        |refusal| format!("no web: {refusal:?}"),
+                        |pieces| web_spelled(&pieces),
+                    )),
+                }),
+                Maybe::Absent(channel::Absent::Unnamed) => None,
+            })
+            .collect();
+        TracedRun {
+            run: printed(&captured, &evaluation),
+            channels,
         }
-        spelled.push_str(&evaluation.to_string());
-        RunSpelling::from(spelled)
     }
 
     /// Spells the outcome of running the declaration at `constant` though
@@ -2546,6 +2718,25 @@ impl Runner for Program<'_>
     {
         RunSpelling::from(self.evaluate_decomposed(constant).to_string())
     }
+}
+
+/// A run's outcome as `gandr run` writes it: each line it printed, each
+/// followed by a newline, then the evaluation.
+///
+/// # Specification
+/// trivial.
+fn printed(
+    captured: &Captured,
+    evaluation: &Evaluation<'_>,
+) -> RunSpelling
+{
+    let mut spelled = String::new();
+    for line in captured.lines() {
+        spelled.push_str(line);
+        spelled.push('\n');
+    }
+    spelled.push_str(&evaluation.to_string());
+    RunSpelling::from(spelled)
 }
 
 /// The constants `body` refers to, outside its types.
@@ -2874,8 +3065,11 @@ mod tests
     use gandr_runtime_emitter::PATCHER;
     use gandr_runtime_emitter::Status;
     use gandr_runtime_emitter::Tier;
+    use gandr_surface_corpus::Channel;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::Outcome;
+    use gandr_surface_corpus::RunSpelling;
+    use gandr_surface_corpus::Runner as _;
     use gandr_surface_corpus::Stated;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::SurfaceName;
@@ -2886,6 +3080,7 @@ mod tests
     use super::Choice;
     use super::Engine;
     use super::Evaluation;
+    use super::Hosting;
     use super::Program;
     use super::Reach;
     use super::RunStatus;
@@ -3043,6 +3238,53 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         assert!(
             matches!(printing.evaluate(greet), Evaluation::Stuck(_)),
             "with no console the perform is stuck"
+        );
+    }
+
+    /// #3338: a traced run names each channel by the binder its fork writes
+    /// at the protocol, not the parent's, and spells the web each play
+    /// decomposes to: `a`'s echo before the root's receipt, its close beside
+    /// the root's tail, and `b`'s one send before the root's tail. Tracing
+    /// leaves the run's spelling as it was.
+    #[test]
+    fn a_traced_run_names_each_channel_by_its_fork_3338()
+    {
+        let mut forking = program(
+            "def ping() -> Unit {\n  fork (a : ?Integer. !Integer. end) { recv(a) as n; \
+             send(a, n); close(a) } as p;\n  fork (b : !Integer. end) { send(b, 2); close(b) } \
+             as q;\n  send(p, 1);\n  recv(p) as m;\n  recv(q) as k;\n  close(p);\n  close(q)\n}\n",
+        );
+        let ping = forking
+            .declarations
+            .iter()
+            .find(|&(_, declared)| declared.name == SurfaceName::from("ping"))
+            .map(|(&constant, _)| constant)
+            .expect("the program declares `ping`");
+        let traced = forking.run_traced(ping);
+        assert_eq!(
+            traced.run,
+            forking.run(ping),
+            "tracing leaves the run as it was"
+        );
+        let channel = |name: &str, web: &str| Channel {
+            name: String::from(name),
+            web: RunSpelling::from(String::from(web)),
+        };
+        assert_eq!(
+            traced.channels,
+            [
+                channel(
+                    "a",
+                    "series(event(right, 0), event(left, 0), event(left, 1), \
+                     parallel(event(left, 2), series(event(right, 1), event(right, 2))))"
+                ),
+                channel(
+                    "b",
+                    "series(event(left, 0), parallel(event(left, 1), series(event(right, 0), \
+                     event(right, 1))))"
+                ),
+            ],
+            "each channel by its fork's protocol binder, in the order forked"
         );
     }
 
@@ -4283,7 +4525,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     ) -> Converted<'source>
     {
         let executor = Choice::Tier(Tier::Executor);
-        let written = program.tiered(constant, returned, forced, executor, None);
+        let written = program.tiered(constant, returned, forced, executor, Hosting::Bare);
         let converted_returned = command_of(
             convert_all(&mut program.arena, NodeAddress::Command(returned))
                 .expect("a returning command converts"),
@@ -4307,7 +4549,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             converted_returned,
             converted_forced,
             executor,
-            None,
+            Hosting::Bare,
         );
         program.definitions = written_definitions;
         Converted {

@@ -668,6 +668,7 @@ use crate::namespace::RecognitionSite;
 use crate::namespace::Recognized;
 use crate::namespace::Segment;
 use crate::namespace::Trie;
+use crate::origin::ChannelName;
 use crate::origin::ComponentName;
 use crate::origin::Insertion;
 use crate::origin::Label;
@@ -1830,14 +1831,16 @@ enum StatementBinding
         annotation: NodeIndex,
     },
     /// `fork (c : S) t as d ;` runs `t`, under `c`'s linear binder, beside
-    /// the rest of the block, under `d`'s: the fork's protocol `S` and its
-    /// child `t`.
+    /// the rest of the block, under `d`'s: the fork's protocol `S`, its
+    /// child `t`, and `c`, the channel's name.
     Forked
     {
         /// The protocol type `S` written for the child's end.
         protocol: NodeIndex,
         /// The child computation.
         child: NodeIndex,
+        /// The name `c` the child's end binds.
+        end: NodeIndex,
     },
     /// `recv(c) as x ;` receives on `c` into `x`'s linear binder, over the
     /// rest of the block.
@@ -16605,7 +16608,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 chain = id;
                 continue;
             }
-            if let StatementBinding::Forked { protocol, child } = statement.binding {
+            if let StatementBinding::Forked {
+                protocol,
+                child,
+                end,
+            } = statement.binding
+            {
                 let (Maybe::Present(protocol), Maybe::Present(child)) =
                     (self.value_type_at(protocol), self.computation_at(child))
                 else {
@@ -16617,6 +16625,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     parent: chain,
                 });
                 sink.origins.record_computation(id, origin);
+                if let Some(name) = self.tree.fragment(end) {
+                    sink.origins
+                        .record_fork(id, ChannelName::from(String::from(name.as_ref())));
+                }
                 chain = id;
                 continue;
             }
@@ -16794,7 +16806,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     #[spec(ensures: |ret| match statement.binding {
-        | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
+        | StatementBinding::Forked { protocol, child, .. } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
         | StatementBinding::Received { .. } => ret == Maybe::Present(()),
         | StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
         | StatementBinding::Typed { annotation, .. } | StatementBinding::TypedSplit { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
@@ -16806,7 +16818,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<(), lowered::Absent>
     {
         match statement.binding {
-            StatementBinding::Forked { protocol, child } => self
+            StatementBinding::Forked {
+                protocol, child, ..
+            } => self
                 .value_type_at(protocol)
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
@@ -17846,10 +17860,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         );
                         let key = self.key_at(module.module.node);
                         let attribute = entry.name();
+                        let at = entry.span();
                         table.file(key, entry);
                         table.file_named(key, attribute, named);
                         if let Some(spelled) = spelled {
-                            table.file_spelled(key, attribute, spelled);
+                            table.file_spelled(key, at, spelled);
                         }
                     },
                     Ok(Filing::Unlowered) => {},
@@ -17938,10 +17953,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         self.ask_runs(&entry, [SlotIndex::from(index)]);
                         let key = self.key_at(written.decorates);
                         let attribute = entry.name();
+                        let at = entry.span();
                         table.file(key, entry);
                         table.file_named(key, attribute, named);
                         if let Some(spelled) = spelled {
-                            table.file_spelled(key, attribute, spelled);
+                            table.file_spelled(key, at, spelled);
                         }
                         if !members.is_empty() {
                             table.file_interface(key, members);
@@ -18318,9 +18334,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   as another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
-    ///   suggestion, the duplicate refusal naming the first spelling, the
-    ///   non-value-payload refusal, the missing-payload refusal, or the
-    ///   ill-typed-payload refusal.
+    ///   suggestion, the duplicate refusal naming the first spelling for a name
+    ///   other than `traces` written again, the non-value-payload refusal, the
+    ///   missing-payload refusal, or the ill-typed-payload refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -18337,6 +18353,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
     /// - witness: `lower::tests::a_named_payload_is_spelled_with_its_name_2077`
+    /// - witness: `lower::tests::traces_is_written_once_per_channel_3338`
     /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
     /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
@@ -18388,7 +18405,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 suggestion: AttributeRegistry::suggestion(written.name),
             });
         };
-        if let Some(&(_held, first)) = seen.iter().find(|&&(held, _first)| held == name) {
+        // `traces` states one channel an entry, so it alone is written again.
+        if let Some(&(_held, first)) = seen
+            .iter()
+            .find(|&&(held, _first)| held == name && name != RegisteredAttribute::TRACES)
+        {
             return Err(LoweringRefusal::DuplicateAttribute {
                 span: written.span,
                 name: written.name,
@@ -26185,13 +26206,13 @@ mod tests
         assert_eq!(
             module
                 .attributes()
-                .spelled(key, decomposes)
+                .spelled(key, entry.span())
                 .map(String::as_str),
             Some("series(event(right, 0), parallel(event(left, 1), event(right, 1)))"),
             "the spelling is filed beside the entry, its layout one space"
         );
         assert_eq!(
-            module.attributes().spelled(unspelled, decomposes),
+            module.attributes().spelled(unspelled, entry.span()),
             None,
             "another declaration has no spelling"
         );
@@ -26243,12 +26264,19 @@ mod tests
             "the payload's name is not looked up in scope: {:?}",
             declaration.outcome()
         );
+        let [ref entry] = *module.attributes().entries(key)
+        else {
+            panic!("one attribute is filed under the signature");
+        };
         assert_eq!(
-            module
-                .attributes()
-                .spelled(key, decomposes)
-                .map(String::as_str),
-            Some("primes = 2"),
+            (
+                entry.name(),
+                module
+                    .attributes()
+                    .spelled(key, entry.span())
+                    .map(String::as_str)
+            ),
+            (decomposes, Some("primes = 2")),
             "the name is spelled before the value"
         );
         assert_eq!(
@@ -26260,6 +26288,61 @@ mod tests
                 written: PayloadForm::Named,
             },
             "an integer payload takes no name"
+        );
+    }
+
+    /// #3338: `traces` is written once per channel, and each entry's spelling
+    /// is read back by its own span; any other attribute written twice is
+    /// refused.
+    #[test]
+    fn traces_is_written_once_per_channel_3338()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "@[ traces(decomposes(a, event(left, 0))), traces(primes(b,\n 1)) ]\ndef a : Integer ;",
+            ),
+            &mut arena,
+        );
+        let [ref declaration] = *module.declarations()
+        else {
+            panic!("one name is declared");
+        };
+        let Maybe::Present(key) = declaration.signature()
+        else {
+            panic!("the name has a signature");
+        };
+        let traces = crate::attribute::RegisteredAttribute::TRACES;
+        let spelled: Vec<(_, Option<&str>)> = module
+            .attributes()
+            .entries(key)
+            .iter()
+            .map(|entry| {
+                (
+                    entry.name(),
+                    module
+                        .attributes()
+                        .spelled(key, entry.span())
+                        .map(String::as_str),
+                )
+            })
+            .collect();
+        assert_eq!(
+            spelled,
+            [
+                (traces, Some("decomposes(a, event(left, 0))")),
+                (traces, Some("primes(b, 1)")),
+            ],
+            "each channel's entry is filed with its own spelling, in written order"
+        );
+        assert!(
+            matches!(
+                refusal(SourceText::from(
+                    "@[ decomposes(event(left, 0)), decomposes(event(left, 1)) ] def a = 3 ;"
+                )),
+                LoweringRefusal::DuplicateAttribute { name, .. } if name == SurfaceName::from("decomposes")
+            ),
+            "another spelled attribute is still written once"
         );
     }
 

@@ -1218,6 +1218,7 @@ impl<'source> Lowerer<'_, 'source>
             binding: StatementBinding::Forked {
                 protocol: protocol.node,
                 child: child.node,
+                end: child_end.node,
             },
             rest: exits::Rest::Bound,
         });

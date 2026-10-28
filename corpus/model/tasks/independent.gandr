@@ -1,0 +1,31 @@
+// Two tasks forked side by side never order each other's plays.
+//
+// Each task hands its notes back over its own end, and neither waits on the
+// other. Each channel's web is series-parallel, with no prime node, whichever
+// task the parent joins first.
+//
+// The parent forks two tasks and joins them in the reverse of the order it
+// forked them. The trace states each channel's prime count.
+//
+// - see: `forced.gandr` — a task whose reply waits on its request
+// - see: #3338 — the run's trace and the web a source states for a channel
+
+// The task's protocols.
+import "./task-base.gandr";
+
+/// A parent joining two tasks in the reverse of the order it forked them.
+@[ runs("unit"), traces(primes(scout, 0)), traces(primes(scribe, 0)) ]
+def independent() -> Unit {
+  fork (scout : Task.Join) {
+    send(scout, Task.notes);
+    close(scout)
+  } as scouted;
+  fork (scribe : Task.Join) {
+    send(scribe, Task.notes);
+    close(scribe)
+  } as scribed;
+  recv(scribed) as written;
+  close(scribed);
+  recv(scouted) as found;
+  close(scouted)
+}

@@ -93,6 +93,8 @@ use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::primitive::PrimitiveError;
 use gandr_core_term::primitive::Scalar;
+use gandr_core_term::session::Endpoint;
+use gandr_core_term::session::RecordedMove;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
@@ -140,6 +142,12 @@ use crate::seam::Migrated;
 use crate::seam::MigrationRequest;
 use crate::seam::Offer;
 use crate::seam::Offered;
+use crate::trace::Carried;
+use crate::trace::ChannelNumber;
+use crate::trace::Play;
+use crate::trace::Played;
+use crate::trace::TaskNumber;
+use crate::trace::Trace;
 use crate::transfer::Moved;
 use crate::transfer::Owners;
 use crate::transfer::Sites;
@@ -297,6 +305,11 @@ pub struct Calls<'run, 'host>
     refused: Option<Refused>,
     /// The run's tasks and channels.
     scheduler: Scheduler<'run>,
+    /// Where the run records its channels' plays, when its caller asks.
+    recording: Recording<'run>,
+    /// How many plays the trace held before this run: its first channel's
+    /// play is the next.
+    played_before: usize,
 }
 
 impl core::fmt::Debug for Calls<'_, '_>
@@ -390,6 +403,37 @@ pub struct Parts<'run, 'host>
     pub store: &'run mut Store,
     /// The host unclaimed operations are offered to, if any.
     pub offer: Option<&'run mut (dyn Offer + 'host)>,
+    /// Where the run records its channels' plays, when its caller asks.
+    pub recording: Recording<'run>,
+}
+
+/// Whether a run records its channels' plays, and into which trace.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+pub enum Recording<'run>
+{
+    /// The run records nothing.
+    Off,
+    /// The run appends a play per channel to the trace.
+    Into(&'run mut Trace),
+}
+
+impl Recording<'_>
+{
+    /// The same recording, for one run of several a caller makes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn again(&mut self) -> Recording<'_>
+    {
+        match *self {
+            Self::Off => Recording::Off,
+            Self::Into(ref mut trace) => Recording::Into(trace),
+        }
+    }
 }
 
 /// A task of a run: the root, numbered zero, or a fork's child, numbered in
@@ -470,6 +514,19 @@ impl Party
             _ => Err(Refusal::Operands),
         }
     }
+
+    /// The dialogue's endpoint the end plays: the child's, at the fork's
+    /// protocol, the left; the parent's, at its dual, the right.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn side(self) -> Endpoint
+    {
+        match self {
+            Self::Child => Endpoint::Left,
+            Self::Parent => Endpoint::Right,
+        }
+    }
 }
 
 /// What a send or a select puts on a channel.
@@ -547,7 +604,8 @@ enum Ready
 }
 
 /// One end of a channel: the messages sent to it and not yet taken, oldest
-/// first, and the task waiting at it.
+/// first, the receipt or offer a traced run records as each is taken, and
+/// the task waiting at it.
 ///
 /// # Specification
 /// trivial.
@@ -556,6 +614,8 @@ struct End<'run>
 {
     /// The messages.
     queued: VecDeque<Message<'run>>,
+    /// The moves taking them makes, kept only by a traced run.
+    noted: VecDeque<RecordedMove<Carried>>,
     /// The task waiting, if any.
     waiting: Option<Parked<'run>>,
 }
@@ -751,7 +811,12 @@ impl<'run, 'host> Calls<'run, 'host>
             definitions,
             store,
             offer,
+            recording,
         } = parts;
+        let played_before = match recording {
+            Recording::Off => 0,
+            Recording::Into(ref trace) => trace.plays.len(),
+        };
         Self {
             callees: &lowered.callees,
             handlers: &lowered.handlers,
@@ -778,6 +843,8 @@ impl<'run, 'host> Calls<'run, 'host>
                     .joined
                     .map_or(Word::ZERO, |label| codes.label(label)),
             ),
+            recording,
+            played_before,
         }
     }
 
@@ -920,9 +987,10 @@ impl<'run, 'host> Calls<'run, 'host>
     /// # Errors
     /// [`Refusal::Operands`] for an operand the callee does not take, an
     /// evaluation the prelude refuses, a control operation the run cannot
-    /// answer, a migration that answers nothing or a session action no task
-    /// is ready to follow; [`Refusal::Heap`] or [`Refusal::Frames`] past a
-    /// region's limit.
+    /// answer, a migration that answers nothing, a session action no task is
+    /// ready to follow or a payload a traced run sends that does not move into
+    /// the store; [`Refusal::Heap`] or [`Refusal::Frames`] past a region's
+    /// limit.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the named programs halt alike on both tiers with the
@@ -1000,7 +1068,7 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Reify(ref shape) => self.reify(runtime, shape),
             Callee::Decompose => self.decompose(runtime, first),
             Callee::Migrate { at, world, body } => self.migrated(runtime, (at, world, body), first),
-            Callee::Fork(_) => self.forked(runtime, first),
+            Callee::Fork(at) => self.forked(runtime, at, first),
             Callee::Send(_) => self.sent(runtime, first, Message::Payload(second)),
             Callee::Select { ref label, .. } => self.sent(runtime, first, Message::Label(label)),
             Callee::Receive(at) => self.awaited(runtime, first, at, Waits::Payload),
@@ -1008,7 +1076,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 self.awaited(runtime, first, at, Waits::Label(labels))
             },
             Callee::Branch(ref arms) => self.branched(runtime, arms, first),
-            Callee::Close(_) => end_of(first).and_then(|_end| unit(runtime)),
+            Callee::Close(_) => self.closed(runtime, first),
             Callee::Joined => self.finished(runtime, first),
             Callee::Undefined(_) | Callee::Cyclic(_) => Err(Refusal::Operands),
         };
@@ -1963,8 +2031,9 @@ impl<'run, 'host> Calls<'run, 'host>
         }
     }
 
-    /// Fork: make a channel, queue the child's closure `closure` with the
-    /// child's end, and answer the parent's end.
+    /// Fork at `at`: make a channel, a play of it in a traced run, queue the
+    /// child's closure `closure` with the child's end, and answer the
+    /// parent's end.
     ///
     /// # Specification
     /// trivial.
@@ -1974,6 +2043,7 @@ impl<'run, 'host> Calls<'run, 'host>
     fn forked(
         &mut self,
         runtime: &mut Runtime,
+        at: CommandId,
         closure: Word,
     ) -> Result<Word, Refusal>
     {
@@ -1981,6 +2051,12 @@ impl<'run, 'host> Calls<'run, 'host>
         let theirs = endpoint(runtime, channel, Party::Child)?;
         let ours = endpoint(runtime, channel, Party::Parent)?;
         self.scheduler.channels.push(Channel::default());
+        if let Recording::Into(ref mut trace) = self.recording {
+            trace.plays.push(Play {
+                fork: at,
+                moves: Vec::new(),
+            });
+        }
         let task = Task(self.scheduler.forked.0.saturating_add(1));
         self.scheduler.forked = task;
         self.scheduler.ready.push_back(Ready::Start {
@@ -1989,6 +2065,114 @@ impl<'run, 'host> Calls<'run, 'host>
             end: theirs,
         });
         Ok(ours)
+    }
+
+    /// Record, in a traced run, the move `movement` the task `task` made at
+    /// the end `party` of the channel `channel`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn note(
+        &mut self,
+        (channel, party): (ChannelIndex, Party),
+        task: Task,
+        movement: RecordedMove<Carried>,
+    )
+    {
+        if let Recording::Into(ref mut trace) = self.recording
+            && let Some(play) = trace
+                .plays
+                .get_mut(self.played_before.saturating_add(channel.0))
+        {
+            play.moves.push(Played {
+                task: TaskNumber(task.0),
+                side: party.side(),
+                movement,
+            });
+        }
+    }
+
+    /// The moves `message` makes out of its sender's end and into its
+    /// receiver's, as a traced run records them: a payload sent and received,
+    /// or a label selected and offered.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::carried`].
+    fn moves(
+        &mut self,
+        message: Message<'run>,
+    ) -> Result<[RecordedMove<Carried>; 2], Refusal>
+    {
+        Ok(match message {
+            Message::Payload(word) => {
+                let carried = self.carried(word)?;
+                [RecordedMove::Sent(carried), RecordedMove::Received(carried)]
+            },
+            Message::Label(label) => [
+                RecordedMove::Selected(label.clone()),
+                RecordedMove::Offered(label.clone()),
+            ],
+        })
+    }
+
+    /// What a traced run records the payload `word` as: the channel and the
+    /// side an end names, or the value it moves into the caller's store,
+    /// apart from what the run's other moves moved.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a payload that does not move into the store,
+    /// recorded as [`Refused::Transfer`].
+    fn carried(
+        &mut self,
+        word: Word,
+    ) -> Result<Carried, Refusal>
+    {
+        if let Ok((channel, party)) = end_of(word) {
+            return Ok(Carried::End {
+                channel: ChannelNumber(channel.0),
+                side: party.side(),
+            });
+        }
+        let tables = Tables {
+            heads: &self.heads,
+            literals: &self.literals,
+            codes: self.code_table,
+        };
+        let mut moved = Moved::new();
+        // SAFETY: the payload is a value of this run, whose heap and
+        // constants are live while its host call runs.
+        let carried =
+            unsafe { transfer(word, self.sites, tables, self.arena, self.store, &mut moved) };
+        carried.map(Carried::Value).map_err(|refusal| {
+            self.refused = Some(Refused::Transfer(refusal));
+            Refusal::Operands
+        })
+    }
+
+    /// Close the end the cell `held` holds, the close recorded by a traced
+    /// run. Answers the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`end_of`] and [`unit()`].
+    fn closed(
+        &mut self,
+        runtime: &mut Runtime,
+        held: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let end = end_of(held)?;
+        let task = self.scheduler.running;
+        self.note(end, task, RecordedMove::Closed);
+        unit(runtime)
     }
 
     /// Put `message` on the end the cell `held` holds: handed to the task
@@ -2008,18 +2192,31 @@ impl<'run, 'host> Calls<'run, 'host>
     ) -> Result<Word, Refusal>
     {
         let (channel, party) = end_of(held)?;
-        let peer = self.scheduler.end(channel, party.peer())?;
-        match peer.waiting.take() {
-            Some(parked) => {
-                let answer = delivered(runtime, message, parked.waits)?;
-                self.scheduler.parked = self.scheduler.parked.saturating_sub(1);
-                self.scheduler.ready.push_back(Ready::Resume {
-                    task: parked.task,
-                    stack: parked.stack,
-                    answer,
-                });
+        let received = match self.recording {
+            Recording::Into(_) => {
+                let [sent, received] = self.moves(message)?;
+                let task = self.scheduler.running;
+                self.note((channel, party), task, sent);
+                Some(received)
             },
-            None => peer.queued.push_back(message),
+            Recording::Off => None,
+        };
+        let peer = self.scheduler.end(channel, party.peer())?;
+        if let Some(parked) = peer.waiting.take() {
+            let answer = delivered(runtime, message, parked.waits)?;
+            self.scheduler.parked = self.scheduler.parked.saturating_sub(1);
+            self.scheduler.ready.push_back(Ready::Resume {
+                task: parked.task,
+                stack: parked.stack,
+                answer,
+            });
+            if let Some(received) = received {
+                self.note((channel, party.peer()), parked.task, received);
+            }
+        }
+        else {
+            peer.queued.push_back(message);
+            peer.noted.extend(received);
         }
         unit(runtime)
     }
@@ -2042,7 +2239,12 @@ impl<'run, 'host> Calls<'run, 'host>
     ) -> Result<Word, Refusal>
     {
         let (channel, party) = end_of(held)?;
-        if let Some(message) = self.scheduler.end(channel, party)?.queued.pop_front() {
+        let end = self.scheduler.end(channel, party)?;
+        if let Some(message) = end.queued.pop_front() {
+            if let Some(received) = end.noted.pop_front() {
+                let task = self.scheduler.running;
+                self.note((channel, party), task, received);
+            }
             return delivered(runtime, message, waits);
         }
         let base = runtime.frame_base();

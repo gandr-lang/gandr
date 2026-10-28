@@ -1,0 +1,18 @@
+/// `traces`: states the web one channel of the run decomposes to, once per
+/// channel beside `runs`. The task's close waits on its send alone, so it
+/// sits beside the parent's receipt and close.
+@[
+  runs("unit"),
+  traces(decomposes(
+    task,
+    series(event(left, 0), parallel(event(left, 1), series(event(right, 0), event(right, 1))))
+  ))
+]
+def asked() -> Unit {
+  fork (task : !String. end) {
+    send(task, "yes");
+    close(task)
+  } as heard;
+  recv(heard) as said;
+  close(heard)
+}
