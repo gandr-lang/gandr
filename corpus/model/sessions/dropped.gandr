@@ -3,15 +3,23 @@
 // has ended (#1054).
 
 /// The seat selects `done` and drops its end; the desk offers `done` and
-/// drops its own.
-@[ runs("unit") ]
+/// drops its own. The selection comes first, and the seat's drop sits beside
+/// the desk's offer and drop.
+@[
+  runs("unit"),
+  traces(decomposes(seat, series(
+    event(left, 0),
+    parallel(event(left, 1), series(event(right, 0), event(right, 1)))
+  )))
+]
 def finished() -> Unit {
   fork (seat : +{done : end}) { select(seat, done); drop(seat) } as desk;
   offer(desk) { done => drop(desk) }
 }
 
-/// A drop at one end of a fork and a close at the other.
-@[ runs("unit") ]
+/// A drop at one end of a fork and a close at the other, each ending its end
+/// beside the other.
+@[ runs("unit"), traces(decomposes(seat, parallel(event(left, 0), event(right, 0)))) ]
 def mixed() -> Unit {
   fork (seat : end) { close(seat) } as desk;
   drop(desk)

@@ -10,8 +10,16 @@
 import "./file-base.gandr";
 
 /// A handle moved into a closer, which closes it: the send spends the mover's
-/// end, so the mover has nothing left to close.
-@[ runs("unit") ]
+/// end, so the mover has nothing left to close. The handle's two closes sit
+/// side by side, and the closer receives it only after the mover's send.
+@[
+  runs("unit"),
+  traces(decomposes(owner, parallel(event(left, 0), event(right, 0)))),
+  traces(decomposes(closer, series(
+    event(right, 0),
+    parallel(series(event(left, 0), event(left, 1)), event(right, 1))
+  )))
+]
 def movedToCloser() -> Unit {
   fork (owner : File.Handle) { close(owner) } as file;
   fork (closer : File.Closer) {
