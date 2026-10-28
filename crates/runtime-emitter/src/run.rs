@@ -464,7 +464,160 @@ impl Ran
     }
 }
 
-/// Run `root` under the process's policy and move its outcome into `store`.
+/// What a run reads besides its program and its fuel.
+///
+/// The store its outcome moves into, the store's values it is closed over,
+/// the host its unclaimed operations are offered to, and whether it records
+/// its channels. A caller builds one over its store with [`RunInputs::new`],
+/// recording with [`RunInputs::traced`]. [`evaluate_closed_on`] closes it
+/// over its environment's values, and [`evaluate_with_host`] and
+/// [`evaluate_on_with_host`] hand it their host.
+///
+/// # Specification
+/// trivial.
+pub struct RunInputs<'run, 'host>
+{
+    /// The store the run's outcome moves into.
+    store: &'run mut Store,
+    /// The store's values the run is closed over, one per capture slot.
+    captured: &'run [HeapValueId],
+    /// The host unclaimed operations are offered to, if any.
+    offer: Option<&'run mut (dyn Offer + 'host)>,
+    /// Where the run records its channels' plays, when its caller asks.
+    recording: Recording<'run>,
+}
+
+impl core::fmt::Debug for RunInputs<'_, '_>
+{
+    /// The captures, whether a host is offered to, and the recording; the
+    /// store and the host stay opaque.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.debug_struct("RunInputs")
+            .field("captured", &self.captured)
+            .field("hosted", &self.offer.is_some())
+            .field("recording", &self.recording)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'run, 'host> RunInputs<'run, 'host>
+{
+    /// A run's inputs over `store`: closed over nothing, offered to no host,
+    /// recording nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(store: &'run mut Store) -> Self
+    {
+        Self {
+            store,
+            captured: &[],
+            offer: None,
+            recording: Recording::Off,
+        }
+    }
+
+    /// The same inputs, the run appending each channel's play to `trace`.
+    ///
+    /// # Specification
+    /// - ensures: a run over the inputs appends to `trace` one play per fork it
+    ///   took, in the order taken, each holding its channel's moves in the
+    ///   order the run made them; a run over inputs not traced records nothing.
+    /// - executable: none — the plays are the run's to make; a postcondition
+    ///   would run every command twice.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run whose two children each send once and receive
+    ///   once decomposes each channel to the web its order forces, and a
+    ///   delegated end is recorded as the channel and side it names; a send,
+    ///   receipt or close left unrecorded changes a web.
+    /// - witness: `tests::sessions::a_traced_run_plays_each_channel_as_its_dialogue`
+    #[inline]
+    #[must_use]
+    pub fn traced(
+        self,
+        trace: &'run mut Trace,
+    ) -> Self
+    {
+        Self {
+            recording: Recording::Into(trace),
+            ..self
+        }
+    }
+
+    /// The same inputs, closed over `captured`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn closed_over(
+        self,
+        captured: &'run [HeapValueId],
+    ) -> Self
+    {
+        Self { captured, ..self }
+    }
+
+    /// The same inputs, offered to `offer`. A caller's inputs offer to no
+    /// host: only the hosted entries set one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn offered<'with>(
+        self,
+        offer: &'run mut (dyn Offer + 'with),
+    ) -> RunInputs<'run, 'with>
+    {
+        RunInputs {
+            store: self.store,
+            captured: self.captured,
+            offer: Some(offer),
+            recording: self.recording,
+        }
+    }
+
+    /// The same inputs, reborrowed for one run of several a caller makes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn again(&mut self) -> RunInputs<'_, 'host>
+    {
+        RunInputs {
+            store: self.store,
+            captured: self.captured,
+            offer: self.offer.as_deref_mut(),
+            recording: self.recording.again(),
+        }
+    }
+
+    /// What the run's host state holds of the inputs: the store, the host
+    /// and the recording. The captures are laid out before the run starts.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn into_held(
+        self
+    ) -> (
+        &'run mut Store,
+        Option<&'run mut (dyn Offer + 'host)>,
+        Recording<'run>,
+    )
+    {
+        (self.store, self.offer, self.recording)
+    }
+}
+
+/// Run `root` under the process's policy and move its outcome into `inputs`'
+/// store.
 ///
 /// # Specification
 /// - ensures: as [`evaluate_on`], on the tier the policy picks: native under
@@ -492,23 +645,15 @@ pub fn evaluate(
     definitions: &Definitions,
     root: CommandId,
     fuel: Fuel,
-    store: &mut Store,
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    by_policy(
-        &lowered,
-        (arena, definitions),
-        fuel,
-        store,
-        &[],
-        (None, Recording::Off),
-    )?
-    .hostless()
+    by_policy(&lowered, (arena, definitions), fuel, inputs)?.hostless()
 }
 
 /// Run `root` on `tier` with `fuel` code-word jumps and move its outcome into
-/// `store`; an operation no handler of the run claims stops it stuck.
+/// `inputs`' store; an operation no handler of the run claims stops it stuck.
 ///
 /// # Specification
 /// - requires: every constant `root` reaches is defined in `definitions`.
@@ -520,8 +665,9 @@ pub fn evaluate(
 ///
 /// # Errors
 /// [`Declined`] naming why the run gave no outcome: a form the lowering
-/// refuses, a spent budget, a region past its bound, or a migration whose body
-/// answers nothing at its world or whose crossing fails.
+/// refuses, a spent budget, a region past its bound, a payload a traced run's
+/// channel carries that does not move into the store, or a migration whose
+/// body answers nothing at its world or whose crossing fails.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the named programs run on both tiers and their outcomes
@@ -534,20 +680,11 @@ pub fn evaluate_on(
     definitions: &Definitions,
     root: CommandId,
     fuel: Fuel,
-    store: &mut Store,
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    on_tier(
-        tier,
-        &lowered,
-        (arena, definitions),
-        fuel,
-        store,
-        &[],
-        (None, Recording::Off),
-    )?
-    .hostless()
+    on_tier(tier, &lowered, (arena, definitions), fuel, inputs)?.hostless()
 }
 
 /// As [`evaluate_on`], the command's unfused lowering run: every instruction
@@ -572,24 +709,16 @@ pub fn evaluate_unfused_on(
     definitions: &Definitions,
     root: CommandId,
     fuel: Fuel,
-    store: &mut Store,
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower_unfused(arena, definitions, root)?;
-    on_tier(
-        tier,
-        &lowered,
-        (arena, definitions),
-        fuel,
-        store,
-        &[],
-        (None, Recording::Off),
-    )?
-    .hostless()
+    on_tier(tier, &lowered, (arena, definitions), fuel, inputs)?.hostless()
 }
 
 /// Run `body`, a command binding one covariable, on `tier` over the values
-/// `environment` binds in `store`, and move its outcome into `store`.
+/// `environment` binds in `inputs`' store, and move its outcome into that
+/// store.
 ///
 /// A cut's writer runs so, closed over a store's values apart from its
 /// reader's heap.
@@ -622,11 +751,11 @@ pub fn evaluate_closed_on(
     tier: Tier,
     (arena, definitions): (&CommandArena, &Definitions),
     (body, environment): (CommandId, Environment),
-    (fuel, store): (Fuel, &mut Store),
+    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower_suspended(arena, definitions, body)?;
-    let captured: Vec<HeapValueId> = store.bound_values(environment).collect();
+    let captured: Vec<HeapValueId> = inputs.store.bound_values(environment).collect();
     if captured.len() != lowered.captures.len() {
         return Err(Declined::Environment);
     }
@@ -635,9 +764,7 @@ pub fn evaluate_closed_on(
         &lowered,
         (arena, definitions),
         fuel,
-        store,
-        &captured,
-        (None, Recording::Off),
+        inputs.closed_over(&captured),
     )?
     .hostless()
 }
@@ -663,66 +790,8 @@ pub fn evaluate_with_host<Host>(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    (fuel, store): (Fuel, &mut Store),
+    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
     host: &mut Host,
-) -> Result<HostOutcome<Host::Abort>, Declined>
-where
-    Host: HostHandler,
-{
-    hosted_by_policy(
-        (arena, definitions, root),
-        (fuel, store),
-        (host, Recording::Off),
-    )
-}
-
-/// As [`evaluate_with_host`], each channel's play appended to `trace`.
-///
-/// # Specification
-/// - ensures: as [`evaluate_with_host`]; `trace` gains one play per fork the
-///   run took, in the order taken, each holding its channel's moves in the
-///   order the run made them.
-/// - executable: none — as [`evaluate`].
-///
-/// # Errors
-/// As [`evaluate_with_host`], and [`Declined::Transfer`] for a payload a
-/// channel carries that does not move into `store`.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a run whose two children each send once and receive once
-///   decomposes each channel to the web its order forces, and a delegated end
-///   is recorded as the channel and side it names; a send, receipt or close
-///   left unrecorded changes a web.
-/// - witness: `tests::sessions::a_traced_run_plays_each_channel_as_its_dialogue`
-#[inline]
-pub fn evaluate_traced_with_host<Host>(
-    (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
-    (fuel, store): (Fuel, &mut Store),
-    host: &mut Host,
-    trace: &mut Trace,
-) -> Result<HostOutcome<Host::Abort>, Declined>
-where
-    Host: HostHandler,
-{
-    hosted_by_policy(
-        (arena, definitions, root),
-        (fuel, store),
-        (host, Recording::Into(trace)),
-    )
-}
-
-/// Run `root` hosted by `host` on the tier the policy picks, its channels'
-/// plays recorded as `recording` asks.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// As [`evaluate_with_host`].
-fn hosted_by_policy<Host>(
-    (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
-    (fuel, store): (Fuel, &mut Store),
-    (host, recording): (&mut Host, Recording<'_>),
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
     Host: HostHandler,
@@ -736,9 +805,7 @@ where
         &lowered,
         (arena, definitions),
         fuel,
-        store,
-        &[],
-        (Some(&mut adapter), recording),
+        inputs.offered(&mut adapter),
     )?;
     hosted(ran, adapter)
 }
@@ -767,7 +834,7 @@ where
 pub fn evaluate_on_with_host<Host>(
     tier: Tier,
     (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
-    (fuel, store): (Fuel, &mut Store),
+    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
@@ -783,9 +850,7 @@ where
         &lowered,
         (arena, definitions),
         fuel,
-        store,
-        &[],
-        (Some(&mut adapter), Recording::Off),
+        inputs.offered(&mut adapter),
     )?;
     hosted(ran, adapter)
 }
@@ -814,9 +879,8 @@ where
     }
 }
 
-/// Run `lowered`, closed over `captured`, on the tier the policy picks, the
-/// executor wherever native code is not to be had, its channels' plays
-/// recorded as `recording` asks.
+/// Run `lowered` over `inputs` on the tier the policy picks, the executor
+/// wherever native code is not to be had.
 ///
 /// # Specification
 /// trivial.
@@ -834,38 +898,30 @@ pub fn by_policy(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
-    store: &mut Store,
-    captured: &[HeapValueId],
-    (mut offer, mut recording): (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    mut inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
-    let hosting = (offer.as_deref_mut(), recording.again());
     match *POLICY {
-        Policy::Always => match run_native(lowered, source, fuel, store, captured, hosting) {
-            Err(Declined::NoPatcher) => {
-                run_executor(lowered, source, fuel, store, captured, (offer, recording))
-            },
+        Policy::Always => match run_native(lowered, source, fuel, inputs.again()) {
+            Err(Declined::NoPatcher) => run_executor(lowered, source, fuel, inputs),
             #[cfg(gandr_patcher)]
-            Err(Declined::Emission(_)) => {
-                run_executor(lowered, source, fuel, store, captured, (offer, recording))
-            },
+            Err(Declined::Emission(_)) => run_executor(lowered, source, fuel, inputs),
             ran => ran,
         },
-        Policy::Never => run_executor(lowered, source, fuel, store, captured, hosting),
-        Policy::Cached => run_cached(lowered, source, fuel, store, captured, hosting),
+        Policy::Never => run_executor(lowered, source, fuel, inputs),
+        Policy::Cached => run_cached(lowered, source, fuel, inputs),
     }
 }
 
 /// Run `lowered`, lowered from `source`'s arena over its definitions, on
-/// `tier`, its channels' plays recorded as `recording` asks.
+/// `tier` over `inputs`.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on_with_host`]; [`Declined::Transfer`] as
-/// [`evaluate_traced_with_host`] names it when `hosting` records; and
-/// [`Declined::Capture`] naming a value of `captured` the run cannot hold.
+/// As [`evaluate_on_with_host`], and [`Declined::Capture`] naming a value of
+/// `inputs`' captures the run cannot hold.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every named program answers alike on both tiers, and a
@@ -877,14 +933,12 @@ pub fn on_tier(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
-    store: &mut Store,
-    captured: &[HeapValueId],
-    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     match tier {
-        Tier::Native => run_native(lowered, source, fuel, store, captured, hosting),
-        Tier::Executor => run_executor(lowered, source, fuel, store, captured, hosting),
+        Tier::Native => run_native(lowered, source, fuel, inputs),
+        Tier::Executor => run_executor(lowered, source, fuel, inputs),
     }
 }
 
@@ -904,9 +958,7 @@ fn run_executor(
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
     fuel: Fuel,
-    store: &mut Store,
-    captured: &[HeapValueId],
-    (offer, recording): (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     let program = Program::build(&lowered.function)?;
@@ -920,12 +972,9 @@ fn run_executor(
             sites: &sites,
             arena,
             definitions,
-            store,
-            offer,
-            recording,
+            inputs,
         },
         fuel,
-        captured,
     )
 }
 
@@ -947,9 +996,7 @@ fn run_native(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
-    store: &mut Store,
-    captured: &[HeapValueId],
-    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     let emitted = {
@@ -972,7 +1019,7 @@ fn run_native(
             emitted
         }
     };
-    run_emitted(&emitted, lowered, source, fuel, (store, captured, hosting))
+    run_emitted(&emitted, lowered, source, fuel, inputs)
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -987,12 +1034,10 @@ fn run_native(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
-    store: &mut Store,
-    captured: &[HeapValueId],
-    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
-    let _unrun = (lowered, source, fuel, store, captured, hosting);
+    let _unrun = (lowered, source, fuel, inputs);
     Err(Declined::NoPatcher)
 }
 
@@ -1012,9 +1057,7 @@ fn run_cached(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
-    store: &mut Store,
-    captured: &[HeapValueId],
-    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     #[cfg(gandr_patcher)]
@@ -1026,10 +1069,10 @@ fn run_cached(
             .get(&lowered.function)
             .map(Arc::clone);
         if let Some(emitted) = held {
-            return run_emitted(&emitted, lowered, source, fuel, (store, captured, hosting));
+            return run_emitted(&emitted, lowered, source, fuel, inputs);
         }
     }
-    run_executor(lowered, source, fuel, store, captured, hosting)
+    run_executor(lowered, source, fuel, inputs)
 }
 
 /// Run code the cache served.
@@ -1051,11 +1094,7 @@ fn run_emitted(
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
     fuel: Fuel,
-    (store, captured, (offer, recording)): (
-        &mut Store,
-        &[HeapValueId],
-        (Option<&mut (dyn Offer + '_)>, Recording<'_>),
-    ),
+    inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     let codes = Codes::Native {
@@ -1071,18 +1110,15 @@ fn run_emitted(
             sites: &sites,
             arena,
             definitions,
-            store,
-            offer,
-            recording,
+            inputs,
         },
         fuel,
-        captured,
     )
 }
 
 /// Run `code` once over the calling thread's regions, the store's values
-/// `captured` laid out in the entry window's capture slots, and move how it
-/// ended into `parts`' store.
+/// `parts`' inputs are closed over laid out in the entry window's capture
+/// slots, and move how it ended into their store.
 ///
 /// # Specification
 /// trivial.
@@ -1103,10 +1139,10 @@ fn run(
     code: Code<'_>,
     parts: Parts<'_, '_>,
     fuel: Fuel,
-    captured: &[HeapValueId],
 ) -> Result<Ran, Declined>
 {
     let lowered = parts.lowered;
+    let captured = parts.inputs.captured;
     BUFFERS.with_borrow_mut(|buffers| {
         buffers.window.clear();
         buffers

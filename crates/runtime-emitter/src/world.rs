@@ -59,10 +59,10 @@ use gandr_storage_values::InMemoryChunkStore;
 use crate::crossing::CrossingRefusal;
 use crate::crossing::commit;
 use crate::crossing::deref;
-use crate::host::Recording;
 use crate::lower::Lowered;
 use crate::lower::lower_suspended;
 use crate::run::Ran;
+use crate::run::RunInputs;
 use crate::run::Tier;
 use crate::run::by_policy;
 use crate::run::on_tier;
@@ -137,9 +137,7 @@ pub(crate) fn migrate(
                     body,
                     (arena, definitions),
                     fuel,
-                    &mut there,
-                    &captured,
-                    (None, Recording::Off),
+                    RunInputs::new(&mut there).closed_over(&captured),
                 )
             })
             .join()
@@ -204,9 +202,7 @@ pub fn arrive(
         &lowered,
         (arena, definitions),
         fuel,
-        store,
-        captures,
-        (None, Recording::Off),
+        RunInputs::new(store).closed_over(captures),
     ) {
         Ok(Ran::Ended(Outcome::Halted(answer))) => Ok(answer),
         Ok(Ran::Ended(Outcome::Stuck(_)) | Ran::Aborted) | Err(_) => Err(Unmigrated::Unanswered),

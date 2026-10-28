@@ -27,10 +27,11 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Play;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::TaskNumber;
 use gandr_runtime_emitter::Trace;
 use gandr_runtime_emitter::evaluate_on;
-use gandr_runtime_emitter::evaluate_traced_with_host;
+use gandr_runtime_emitter::evaluate_with_host;
 
 use crate::world::Digits;
 use crate::world::budget;
@@ -219,7 +220,7 @@ fn forked_tasks_exchange_alike_on_both_tiers()
             &Definitions::new(),
             root,
             budget(),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         let Ok(Outcome::Halted(answer)) = outcome
         else {
@@ -279,11 +280,12 @@ fn a_traced_run_plays_each_channel_as_its_dialogue()
     let (arena, root) = focused(&core, program);
     let mut store = Store::new();
     let mut trace = Trace::default();
-    let outcome = evaluate_traced_with_host(
-        (&arena, &Definitions::new(), root),
-        (budget(), &mut store),
+    let outcome = evaluate_with_host(
+        &arena,
+        &Definitions::new(),
+        root,
+        (budget(), RunInputs::new(&mut store).traced(&mut trace)),
         &mut Declining,
-        &mut trace,
     );
     let Ok(HostOutcome::Completed(Outcome::Halted(answer))) = outcome
     else {
@@ -458,7 +460,7 @@ fn a_run_whose_tasks_all_wait_is_stuck_at_their_actions()
             &Definitions::new(),
             root,
             budget(),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         assert_eq!(
             Ok(Outcome::Stuck(Stuck::Deadlock(vec![parent, child]))),

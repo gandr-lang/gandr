@@ -122,6 +122,7 @@ use crate::lower::Slot;
 use crate::lower::Window;
 use crate::lower::integer_word;
 use crate::lower::lower_suspended;
+use crate::run::RunInputs;
 use crate::run::Tier;
 use crate::seam::HostRequest;
 use crate::seam::HostValues;
@@ -362,8 +363,7 @@ pub enum Refused
 }
 
 /// The parts a run's host state holds: the function lowered from `arena`
-/// over `definitions`, its code, its closure sites, the caller's store and
-/// the host.
+/// over `definitions`, its code, its closure sites, and the run's inputs.
 ///
 /// # Specification
 /// trivial.
@@ -379,12 +379,8 @@ pub struct Parts<'run, 'host>
     pub arena: &'run CommandArena,
     /// The constants' definitions it was lowered over.
     pub definitions: &'run Definitions,
-    /// The caller's store.
-    pub store: &'run mut Store,
-    /// The host unclaimed operations are offered to, if any.
-    pub offer: Option<&'run mut (dyn Offer + 'host)>,
-    /// Where the run records its channels' plays, when its caller asks.
-    pub recording: Recording<'run>,
+    /// The run's store, captures, host and recording.
+    pub inputs: RunInputs<'run, 'host>,
 }
 
 /// Whether a run records its channels' plays, and into which trace.
@@ -432,10 +428,9 @@ impl<'run, 'host> Calls<'run, 'host>
             sites,
             arena,
             definitions,
-            store,
-            offer,
-            recording,
+            inputs,
         } = parts;
+        let (store, offer, recording) = inputs.into_held();
         let played_before = match recording {
             Recording::Off => 0,
             Recording::Into(ref trace) => trace.plays.len(),

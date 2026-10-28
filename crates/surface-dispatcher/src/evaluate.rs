@@ -181,11 +181,11 @@ use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::Play;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::Trace;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
-use gandr_runtime_emitter::evaluate_traced_with_host;
 use gandr_runtime_emitter::evaluate_with_host;
 use gandr_surface_corpus::Channel;
 use gandr_surface_corpus::RunSpelling;
@@ -349,9 +349,30 @@ enum Hosting<'run>
     /// A console each `Console.print` writes its line to before the run
     /// resumes.
     Printing(&'run mut dyn Console),
-    /// As [`Self::Printing`], on the tier the policy picks, each channel's
-    /// play appended to the trace.
+    /// As [`Self::Printing`], each channel's play appended to the trace.
     Traced(&'run mut dyn Console, &'run mut Trace),
+}
+
+impl Hosting<'_>
+{
+    /// The inputs of a run over `store` as this hosting asks, and the
+    /// console a hosted run's host writes to: none for a bare run.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inputs<'run>(
+        &'run mut self,
+        store: &'run mut Store,
+    ) -> (RunInputs<'run, 'run>, Option<&'run mut dyn Console>)
+    {
+        match *self {
+            Self::Bare => (RunInputs::new(store), None),
+            Self::Printing(ref mut console) => (RunInputs::new(store), Some(&mut **console)),
+            Self::Traced(ref mut console, ref mut trace) => {
+                (RunInputs::new(store).traced(trace), Some(&mut **console))
+            },
+        }
+    }
 }
 
 /// A checked module, focused and ready to run.
@@ -1824,7 +1845,7 @@ impl<'source> Program<'source>
             &self.arena,
             &self.definitions,
             command,
-            (Fuel::from(RUN_BUDGET), &mut store),
+            (Fuel::from(RUN_BUDGET), RunInputs::new(&mut store)),
             host,
         ) {
             Ok(HostOutcome::Completed(outcome)) => outcome,
@@ -1940,8 +1961,7 @@ impl<'source> Program<'source>
     /// run first, blaming the opaque constant it observed or answers outside
     /// any suspension. Hosted by a console, each `Console.print` the run
     /// offers writes its line there and resumes; bare, it stops the run. A
-    /// traced run takes the policy's tier whatever the choice, and records
-    /// both commands' channels.
+    /// traced run records both commands' channels.
     ///
     /// # Specification
     /// trivial.
@@ -1963,45 +1983,35 @@ impl<'source> Program<'source>
     {
         let fuel = Fuel::from(RUN_BUDGET);
         let mut run = |root, store: &mut Store| {
-            let (console, trace) = match hosting {
-                Hosting::Bare => {
-                    return match choice {
-                        Choice::Policy => gandr_runtime_emitter::evaluate(
-                            &self.arena,
-                            &self.definitions,
-                            root,
-                            fuel,
-                            store,
-                        ),
-                        Choice::Tier(tier) => {
-                            evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
-                        },
-                    };
-                },
-                Hosting::Printing(ref mut console) => (&mut **console, None),
-                Hosting::Traced(ref mut console, ref mut trace) => {
-                    (&mut **console, Some(&mut **trace))
-                },
+            let (inputs, console) = hosting.inputs(store);
+            let Some(console) = console
+            else {
+                return match choice {
+                    Choice::Policy => gandr_runtime_emitter::evaluate(
+                        &self.arena,
+                        &self.definitions,
+                        root,
+                        fuel,
+                        inputs,
+                    ),
+                    Choice::Tier(tier) => {
+                        evaluate_on(tier, &self.arena, &self.definitions, root, fuel, inputs)
+                    },
+                };
             };
             let mut host = console::PrintingHost::new(console);
-            let hosted = match (trace, choice) {
-                (Some(trace), Choice::Policy | Choice::Tier(_)) => evaluate_traced_with_host(
-                    (&self.arena, &self.definitions, root),
-                    (fuel, store),
-                    &mut host,
-                    trace,
-                ),
-                (None, Choice::Policy) => evaluate_with_host(
+            let hosted = match choice {
+                Choice::Policy => evaluate_with_host(
                     &self.arena,
                     &self.definitions,
                     root,
-                    (fuel, store),
+                    (fuel, inputs),
                     &mut host,
                 ),
-                (None, Choice::Tier(tier)) => evaluate_on_with_host(
+                Choice::Tier(tier) => evaluate_on_with_host(
                     tier,
                     (&self.arena, &self.definitions, root),
-                    (fuel, store),
+                    (fuel, inputs),
                     &mut host,
                 ),
             }?;
@@ -3840,7 +3850,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             &goals.definitions,
             command,
             Fuel::from(100_usize),
-            &mut store,
+            gandr_runtime_emitter::RunInputs::new(&mut store),
         )
         .expect("the constructed terminal runs");
         assert_eq!(
@@ -3955,7 +3965,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 &program.definitions,
                 root,
                 Fuel::from(fuel),
-                &mut Store::new(),
+                gandr_runtime_emitter::RunInputs::new(&mut Store::new()),
             )
         };
         assert!(
@@ -4319,7 +4329,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     &program.definitions,
                     root,
                     Fuel::from(super::RUN_BUDGET),
-                    &mut store,
+                    gandr_runtime_emitter::RunInputs::new(&mut store),
                 );
                 summed(&store, &outcome)
             };
@@ -4367,7 +4377,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 &program.definitions,
                 left,
                 fuel,
-                &mut here,
+                gandr_runtime_emitter::RunInputs::new(&mut here),
             );
             let in_place = summed(&here, &outcome);
             assert_eq!(
@@ -4384,7 +4394,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     &program.definitions,
                     writer,
                     fuel,
-                    store,
+                    gandr_runtime_emitter::RunInputs::new(store),
                 );
                 let Ok(super::Outcome::Halted(thunk)) = outcome
                 else {
@@ -4403,7 +4413,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     tier,
                     (&program.arena, &program.definitions),
                     (body, environment),
-                    (fuel, store),
+                    (fuel, gandr_runtime_emitter::RunInputs::new(store)),
                 )
             };
             let mut store = Store::new();

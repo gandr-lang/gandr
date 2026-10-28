@@ -23,6 +23,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::POLICY_VARIABLE;
 use gandr_runtime_emitter::Policy;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate;
 use gandr_runtime_emitter::evaluate_on;
@@ -61,7 +62,13 @@ fn the_named_programs_agree_on_both_executors()
             "{name} across the tiers"
         );
         let policy = agree_with(Label(name), &commands, &definitions, root, |store| {
-            evaluate(&commands, &definitions, root, Fuel::from(BUDGET), store)
+            evaluate(
+                &commands,
+                &definitions,
+                root,
+                Fuel::from(BUDGET),
+                RunInputs::new(store),
+            )
         });
         assert_eq!(shows, policy, "{name} under the policy");
     }
@@ -115,8 +122,15 @@ fn the_cached_policy_child()
         let shows = Verdict::Halted(Some(String::from(named.shows)));
         let (commands, root) = focus(&named.program);
         let definitions = Definitions::new();
-        let policy =
-            |store: &mut Store| evaluate(&commands, &definitions, root, Fuel::from(BUDGET), store);
+        let policy = |store: &mut Store| {
+            evaluate(
+                &commands,
+                &definitions,
+                root,
+                Fuel::from(BUDGET),
+                RunInputs::new(store),
+            )
+        };
         assert_eq!(
             shows,
             agree_with(Label(name), &commands, &definitions, root, policy),
@@ -166,7 +180,7 @@ fn a_fused_program_answers_what_its_unfused_lowering_answers()
                 &definitions,
                 root,
                 Fuel::from(BUDGET),
-                store,
+                RunInputs::new(store),
             )
         });
         assert_eq!(shows, unfused, "{name} unfused");
@@ -206,7 +220,13 @@ fn an_observed_opaque_constant_is_named_on_both_executors()
         let (commands, root) = focus(&program);
         let verdict = agree(Label(name), &commands, &definitions, root);
         let policy = agree_with(Label(name), &commands, &definitions, root, |store| {
-            evaluate(&commands, &definitions, root, Fuel::from(BUDGET), store)
+            evaluate(
+                &commands,
+                &definitions,
+                root,
+                Fuel::from(BUDGET),
+                RunInputs::new(store),
+            )
         });
         assert_eq!(verdict, policy, "{name} under the policy");
         let mut store = Store::new();
@@ -216,7 +236,7 @@ fn an_observed_opaque_constant_is_named_on_both_executors()
             &definitions,
             root,
             Fuel::from(BUDGET),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         let held = match outcome {
             Ok(Outcome::Stuck(
@@ -281,7 +301,7 @@ fn a_computed_constant_unfolds_once_to_its_answer()
             &definitions,
             twice,
             Fuel::from(BUDGET),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         let Ok(Outcome::Halted(pair)) = outcome
         else {

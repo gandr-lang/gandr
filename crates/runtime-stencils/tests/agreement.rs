@@ -37,6 +37,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Side;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::dispatches;
 use gandr_runtime_emitter::evaluate_on;
@@ -229,7 +230,7 @@ fn a_fused_program_answers_what_its_unfused_lowering_answers()
                 &definitions,
                 root,
                 Fuel::from(BUDGET),
-                store,
+                RunInputs::new(store),
             )
         });
     }
@@ -596,7 +597,7 @@ fn constants_unfold_once_and_a_cycle_is_stuck()
             &definitions,
             twice,
             Fuel::from(BUDGET),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         let Ok(Outcome::Halted(pair)) = outcome
         else {

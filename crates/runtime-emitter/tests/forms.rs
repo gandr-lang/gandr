@@ -46,6 +46,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Status;
 use gandr_runtime_emitter::evaluate;
 
@@ -903,7 +904,13 @@ fn each_form_ends_alike_on_both_executors_as_its_program_states()
         }
         let verdict = agree(Label(what), &commands, &definitions, root);
         let policy = agree_with(Label(what), &commands, &definitions, root, |store| {
-            evaluate(&commands, &definitions, root, Fuel::from(BUDGET), store)
+            evaluate(
+                &commands,
+                &definitions,
+                root,
+                Fuel::from(BUDGET),
+                RunInputs::new(store),
+            )
         });
         assert_eq!(verdict, policy, "{what} under the policy");
         match ends {

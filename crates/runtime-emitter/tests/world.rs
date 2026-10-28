@@ -46,6 +46,7 @@ use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
@@ -156,7 +157,7 @@ fn ran(
         &Definitions::new(),
         root,
         budget(),
-        &mut store,
+        RunInputs::new(&mut store),
     );
     let Ok(Outcome::Halted(answer)) = outcome
     else {
@@ -189,7 +190,7 @@ fn comes_back(
             &Definitions::new(),
             root,
             budget(),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         let Ok(Outcome::Halted(answer)) = outcome
         else {
@@ -368,7 +369,7 @@ fn a_host_decides_where_a_migration_runs()
             let outcome = evaluate_on_with_host(
                 tier,
                 (&arena, &Definitions::new(), root),
-                (budget(), &mut store),
+                (budget(), RunInputs::new(&mut store)),
                 &mut host,
             );
             assert_eq!(
@@ -522,7 +523,7 @@ fn a_capture_that_does_not_cross_declines_at_its_migration()
             &Definitions::new(),
             root,
             budget(),
-            &mut store,
+            RunInputs::new(&mut store),
         );
         assert!(
             matches!(outcome, Err(Declined::Migration(_, Unmigrated::Unanswered))),
