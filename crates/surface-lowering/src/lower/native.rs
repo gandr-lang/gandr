@@ -11705,23 +11705,24 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is an instantiation in term position.
     /// - ensures: an instantiation whose one resident is `<` and whose head is
     ///   a name the frame of a recursive function's fixpoint binds stands as
-    ///   the variable the frame binds, the fixpoint's own thunk, makes the
-    ///   function's fixpoint claim descent and checks the position
-    ///   [`Self::claim`] reads; heading a call, the call passes each of the
-    ///   function's parameters before the staged one as itself, labelled with
-    ///   its parameter's written type, and one argument for the staged one and
-    ///   each after it. Inside a joint fixpoint ([`Joint`]) a head naming a
-    ///   sibling member stands as the function's own fixpoint binder, and
-    ///   either head's call injects its argument at the called member's
-    ///   summand. The head's name, its marker aside, keeps what it names: the
-    ///   fixpoint binder, or the sibling member's declaration. A call whose one
-    ///   resident is `>` and which is the whole arm of a copattern block stands
-    ///   as the same variable, passes its arguments as a descent call does, and
-    ///   claims nothing: the fixpoint stays partial. An instantiation whose
-    ///   residents supply a function's implicits by name is planned as
-    ///   [`Self::supplied_value`] plans it; one whose head names a held slot
-    ///   and whose bracket holds one number is the element there, as
-    ///   [`Self::element`] plans it.
+    ///   the variable the frame binds, the fixpoint's own thunk, read inside a
+    ///   type at its index in the type's telescope as [`Self::resolved_term`]
+    ///   reads any binder there, makes the function's fixpoint claim descent
+    ///   and checks the position [`Self::claim`] reads; heading a call, the
+    ///   call passes each of the function's parameters before the staged one as
+    ///   itself, labelled with its parameter's written type, and one argument
+    ///   for the staged one and each after it. Inside a joint fixpoint
+    ///   ([`Joint`]) a head naming a sibling member stands as the function's
+    ///   own fixpoint binder, and either head's call injects its argument at
+    ///   the called member's summand. The head's name, its marker aside, keeps
+    ///   what it names: the fixpoint binder, or the sibling member's
+    ///   declaration. A call whose one resident is `>` and which is the whole
+    ///   arm of a copattern block stands as the same variable, passes its
+    ///   arguments as a descent call does, and claims nothing: the fixpoint
+    ///   stays partial. An instantiation whose residents supply a function's
+    ///   implicits by name is planned as [`Self::supplied_value`] plans it; one
+    ///   whose head names a held slot and whose bracket holds one number is the
+    ///   element there, as [`Self::element`] plans it.
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
@@ -11748,16 +11749,18 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a descent call over one parameter, over a uniform
     ///   leading one and over a varying later one, a claim standing unapplied
-    ///   and a productive call as a copattern arm lower to their variable; a
-    ///   productive call elsewhere, combined claims, a claim on a function that
-    ///   is not recursive, a wrong argument count and a varied leading
-    ///   parameter each refuse by their own boundary.
+    ///   and a productive call as a copattern arm lower to their variable, and
+    ///   a descent call under a lambda a body's quoted family holds to it at
+    ///   its index in the body; a productive call elsewhere, combined claims, a
+    ///   claim on a function that is not recursive, a wrong argument count and
+    ///   a varied leading parameter each refuse by their own boundary.
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::Application(..) | Plan::Access(_)))))]
+    /// - witness: `lower::tests::a_self_call_a_body_quotes_reads_its_fixpoint_at_its_index_3562`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..) | Plan::Access(_)))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
@@ -11883,7 +11886,8 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
             }
             self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
-            self.plan(site, Plan::Variable(bound.index, bound.binder));
+            let head = self.resolved_term(site, frame, Resolved::Binder(bound))?;
+            self.plan(site, head);
             return Ok(());
         }
         // The position first: a claim under a match on another parameter
@@ -11918,7 +11922,8 @@ impl<'source> Lowerer<'_, 'source>
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
-        self.plan(site, Plan::Variable(bound.index, bound.binder));
+        let head = self.resolved_term(site, frame, Resolved::Binder(bound))?;
+        self.plan(site, head);
 
         Ok(())
     }
