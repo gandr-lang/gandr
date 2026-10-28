@@ -6666,8 +6666,10 @@ impl Walk<'_, '_>
     /// the sugared form, as a chain an expression reads as arithmetic; a
     /// labelled record type `#{a : A}` or a telescope type `#{a : A, b : B}`,
     /// whose entries an expression does not read; a model type, `Model(T)` or
-    /// `Model(T) with sort C = A`, which no expression reads; or a product
-    /// written as such a chain, `A * B`.
+    /// `Model(T) with sort C = A`, which no expression reads; a product
+    /// written as such a chain, `A * B`; or a path type whose carrier is no
+    /// bare name, `Path(Maybe(Nat), a, b)`, whose carrier an expression reads
+    /// as a call where a value type is expected (#3279).
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
@@ -6675,8 +6677,10 @@ impl Walk<'_, '_>
     ///   state's own node is a receive, a selection or an offer; as a sum of
     ///   one or more components that is not `Bool`; as a lazy product or a
     ///   labelled record type of one or more components; as a telescope type;
-    ///   as a model type; or, in the sugared form, as a product of two or more
-    ///   components.
+    ///   as a model type; in the sugared form, as a product of two or more
+    ///   components; or as a path type whose carrier reads as none of a base
+    ///   type, a sealed abstract type, a family or a product at arity zero,
+    ///   `Bool`, or a decoded variable or constant.
     /// - provides: the heads [`Self::unread_as_expression`] looks for.
     /// - fails: never.
     /// - panics: none.
@@ -6686,12 +6690,15 @@ impl Walk<'_, '_>
     ///   values, in both forms, distinguish the braced spellings from the bare
     ///   ones; a product, a sum and a lazy product chain quoted alone and as an
     ///   argument distinguish the sugared chains from the explicit braces an
-    ///   expression reads.
+    ///   expression reads; a path type quoted over a family application, over a
+    ///   nullary family and over a base type distinguish a carrier an
+    ///   expression reads as a call from a bare name.
     /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
     /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
     /// - witness: `tests::goldens::a_quoted_record_type_is_quoted_1459`
     /// - witness: `tests::goldens::a_quoted_telescope_type_is_quoted_1514`
     /// - witness: `tests::goldens::a_model_type_spells_as_written_2246`
+    /// - witness: `tests::goldens::a_path_type_over_a_family_application_is_quoted_3279`
     #[spec(ensures: |ret| (ret == Bare::Unread) == match source.read(node) {
         | Former::Session { protocol, state, .. } => matches!(
             protocol.node(state),
@@ -6701,6 +6708,13 @@ impl Walk<'_, '_>
         | Former::With(arity) | Former::RecordType(arity) => usize::from(arity) >= 1_usize,
         | Former::Sigma { .. } | Former::Model { .. } => true,
         | Former::Product(arity) => self.form == Form::Sugared && usize::from(arity) >= 2_usize,
+        | Former::Path { carrier, .. } => match source.read(carrier) {
+            | Former::BaseType(_) | Former::Abstract(_) => false,
+            | Former::Data { arity, .. } | Former::Product(arity) => usize::from(arity) != 0_usize,
+            | Former::Sum(_) => named_sum(source, carrier).is_none(),
+            | Former::Element(value) => !matches!(source.read(value), Former::Variable { .. } | Former::Constant(_)),
+            | _ => true,
+        },
         | _ => false,
     })]
     fn unread_head<S>(
@@ -6745,6 +6759,18 @@ impl Walk<'_, '_>
         // codes.
         else if let Former::Product(arity) = former {
             self.form == Form::Sugared && usize::from(arity) >= 2_usize
+        }
+        // An expression reads a path type's carrier as an expression too: a
+        // name stands for the type it names, but anything else, such as a
+        // family applied to its arguments, is a call where a value type is
+        // expected (#3279).
+        else if let Former::Path { carrier, .. } = former {
+            let carried = source.read(carrier);
+            let named = matches!(carried, Former::BaseType(_) | Former::Abstract(_))
+                || matches!(carried, Former::Data { arity, .. } | Former::Product(arity) if usize::from(arity) == 0_usize)
+                || (matches!(carried, Former::Sum(_)) && named_sum(source, carrier).is_some())
+                || matches!(carried, Former::Element(value) if matches!(source.read(value), Former::Variable { .. } | Former::Constant(_)));
+            !named
         }
         else {
             false
