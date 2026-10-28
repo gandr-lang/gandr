@@ -28170,4 +28170,70 @@ mod tests
             assert!(written.iter().skip(1_usize).eq(appended.iter()));
         }
     }
+
+    /// #3553: a data or codata family a body quotes reads each argument
+    /// naming a parameter at that parameter's index in the body, as a path
+    /// type's endpoints do, not past every parameter.
+    #[test]
+    fn a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data L(a : Type) : Type { N : L(a); } codata S(a : Type) : Type[-] { head : a; } \
+                 def listOf(p : Type) -> -F Type { return (L(p)) } def firstOf(a : Type, b : \
+                 Type) -> -F Type { return (L(a)) } def secondOf(a : Type, b : Type) -> -F Type { \
+                 return (L(b)) } def streamOf(p : Type) -> -F Type[-] { return (S(p)) }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        // The value the body returns under its parameters' lambdas.
+        let returned = |arena: &CoreArena, at: usize| {
+            let Some(&Value::Thunk(mut under)) = arena.value(body_of(lowered[at]))
+            else {
+                panic!("the body is a thunk");
+            };
+            while let Some(&Computation::Lambda(body)) = arena.computation(under) {
+                under = body;
+            }
+            let Some(&Computation::Return(value)) = arena.computation(under)
+            else {
+                panic!("the body returns under its parameters");
+            };
+            value
+        };
+        // The one argument of the family the returned quote applies.
+        let argument = |arena: &CoreArena, at: usize| {
+            let arguments = match arena.value(returned(arena, at)) {
+                Some(&Value::Quote(quoted)) => match arena.value_type(quoted) {
+                    Some(&ValueType::Data { ref arguments, .. }) => arguments.clone(),
+                    _ => panic!("a quoted data family"),
+                },
+                Some(&Value::QuoteComputation(quoted)) => match arena.comp_type(quoted) {
+                    Some(&CompType::Codata { ref arguments, .. }) => arguments.clone(),
+                    _ => panic!("a quoted codata family"),
+                },
+                _ => panic!("a quoted family"),
+            };
+            let [argument] = *arguments
+            else {
+                panic!("one argument");
+            };
+            arena.value(argument).cloned()
+        };
+        let at = |index: u32| {
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(index),
+            })
+        };
+
+        assert_eq!(
+            [2_usize, 3, 4, 5].map(|declaration| argument(&arena, declaration)),
+            [at(0), at(1), at(0), at(0)],
+            "`L(p)` over one parameter, `L(a)` and `L(b)` over two, and the codata `S(p)`, each \
+             argument at its parameter's index in the body"
+        );
+    }
 }
