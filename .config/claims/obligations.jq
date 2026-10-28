@@ -71,13 +71,15 @@ def table($heading; $intro; cell):
 
 [.prs[] | fact] as $facts
 | [
-    "Obligation answers on the pull requests merged from \(.since) to \(.until), by lane (the unit's `area:`) and ISO week of the merge (#2886): \($facts | length) pull requests, \($facts | count((.concerns | length) > 0)) with a sectioned unit issue. Written each night by `mise run report:obligations`; no figure here is a gate.",
-    if ($facts | length) == 0 then "No pull request merged in the period."
+    "This report counts how the merged pull requests answer their obligations (#2886).",
+    "The table gives the period and its pull requests.\n\n| Merged from | Merged to | Pull requests | With a sectioned unit issue |\n| --- | --- | --- | --- |\n| \(.since) | \(.until) | \($facts | length) | \($facts | count((.concerns | length) > 0)) |",
+    "`mise run report:obligations` writes the report each night. No figure here is a gate. Each table row is a lane, the unit's `area:`. Each column is the ISO week of the merge.",
+    if ($facts | length) == 0 then "No pull request merges in the period."
     else
-      ($facts | table("Concerns answered `no`"; "The unit issue's `## Concerns` rows marked `no`, of all its rows."; concerns_cell)),
-      ($facts | table("Sources read, by disposition"; "The pull request's `## Sources read` items by disposition; a `taken:` at a site names it in backquotes."; sources_cell)),
-      ($facts | table("Readings selected"; "The axes the unit issue selects `yes`, and those the pull request's `## Readings` answers naming a site."; readings_cell)),
-      ($facts | table("Refactoring verdicts"; "The pull request's `## Refactoring` verdict; `absent` where it has none."; refactoring_cell)),
-      ($facts | table("Ledger rows moved"; "The rows the pull request's `## Ledger` names."; ledger_cell))
+      ($facts | table("Concerns answered `no`"; "The table counts the unit issue's `## Concerns` rows marked `no`, of all its rows."; concerns_cell)),
+      ($facts | table("Sources read, by disposition"; "The table counts the pull request's `## Sources read` items by disposition. A `taken:` at a site names the site in backquotes."; sources_cell)),
+      ($facts | table("Readings selected"; "The table counts the axes the unit issue selects `yes` and those the pull request's `## Readings` answers at a site."; readings_cell)),
+      ($facts | table("Refactoring verdicts"; "The table counts the pull request's `## Refactoring` verdicts. A pull request without one counts as `absent`."; refactoring_cell)),
+      ($facts | table("Ledger rows moved"; "The table counts the rows the pull request's `## Ledger` names."; ledger_cell))
     end
   ] | join("\n\n") + "\n"

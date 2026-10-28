@@ -12,6 +12,8 @@ Each workspace crate with a library, measured for the first rewrite in gandr: th
 The ranking puts the crates off the hotpath first, then leaves before the rest, then the fewest boundary types per public item, then the most specs per item. A crate with no public item is last.
 
 <!-- census:begin -->
+The table gives each crate's census.
+
 | Crate | Public items | Boundary types | Specs per item | Hotpath | Depth | Lines |
 | ----- | ------------ | -------------- | -------------- | ------- | ----- | ----- |
 | `core-checker` | 211 | 283 | 7.45 | yes | 7 | 82731 |
@@ -74,6 +76,8 @@ The ranking puts the crates off the hotpath first, then leaves before the rest, 
 | `workflow-spec-cost` | 35 | 40 | 4.86 | no | 1 | 3693 |
 | `workflow-sweep` | 27 | 26 | 4.96 | no | 12 | 2681 |
 | `workflow-test-timing` | 31 | 29 | 5.71 | no | 0 | 2554 |
+
+The table ranks the crates for the first rewrite.
 
 | Rank | Crate | Why |
 | ---- | ----- | --- |
@@ -138,11 +142,13 @@ The ranking puts the crates off the hotpath first, then leaves before the rest, 
 | 59 | `core-checker` | hotpath; depth 7; 1.34 boundary types per item; 7.45 specs per item |
 | 60 | `surface-dispatcher` | hotpath; depth 12; 1.36 boundary types per item; 7.73 specs per item |
 
-The top three's boundary types from other crates, each by the path rustdoc records for its definition:
+The table gives the top three's boundary types from other crates, each by the path rustdoc records for its definition.
 
-- `theory-spec-combinators`: 2 boundary types, none from another crate
-- `runtime-stencils`: 18 boundary types, 2 from other crates: `core::option::Option`, `core::result::Result`
-- `kernel-conversion-trace`: 5 boundary types, none from another crate
+| Crate | Boundary types | From other crates | Types from other crates |
+| ----- | -------------- | ----------------- | ----------------------- |
+| `theory-spec-combinators` | 2 | 0 | none |
+| `runtime-stencils` | 18 | 2 | `core::option::Option`, `core::result::Result` |
+| `kernel-conversion-trace` | 5 | 0 | none |
 <!-- census:end -->
 
 ## Candidates

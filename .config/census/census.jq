@@ -28,10 +28,6 @@ def fixed:
   (. * 100 | round) as $hundredths
   | "\($hundredths / 100 | floor).\($hundredths % 100 | tostring | if length < 2 then "0" + . else . end)";
 
-# A count with its noun, singular at one.
-def counted($one; $many):
-  "\(.) \(if . == 1 then $one else $many end)";
-
 # Each crate's depth: iterated once per crate, enough for any acyclic graph.
 def depths:
   (map({key: .crate, value: .deps}) | from_entries) as $deps
@@ -76,19 +72,23 @@ def block:
   measured as $rows
   | ($rows | ranked) as $ranked
   | [
+      "The table gives each crate's census.",
+      "",
       table(["Crate", "Public items", "Boundary types", "Specs per item", "Hotpath", "Depth", "Lines"]),
       ($rows
        | sort_by(.crate)[]
        | "| `\(.crate)` | \(.items) | \(.types) | \(.specs_per_item | if . == null then "none" else fixed end) | \(if .hotpath then "yes" else "no" end) | \(.depth) | \(.lines) |"),
       "",
+      "The table ranks the crates for the first rewrite.",
+      "",
       table(["Rank", "Crate", "Why"]),
       ($ranked | to_entries[] | "| \(.key + 1) | `\(.value.crate)` | \(.value | why) |"),
       "",
-      "The top three's boundary types from other crates, each by the path rustdoc records for its definition:",
+      "The table gives the top three's boundary types from other crates, each by the path rustdoc records for its definition.",
       "",
+      table(["Crate", "Boundary types", "From other crates", "Types from other crates"]),
       ($ranked[:3][]
-       | (.foreign | length) as $foreign
-       | "- `\(.crate)`: \(.types | counted("boundary type"; "boundary types")), \(if $foreign == 0 then "none from another crate" else "\($foreign | counted("from another crate"; "from other crates")): \(.foreign | map("`\(.)`") | join(", "))" end)")
+       | "| `\(.crate)` | \(.types) | \(.foreign | length) | \(if (.foreign | length) == 0 then "none" else .foreign | map("`\(.)`") | join(", ") end) |")
     ]
   | join("\n");
 

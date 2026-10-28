@@ -489,7 +489,7 @@ struct Grown<'row>
 
 impl fmt::Display for Grown<'_>
 {
-    /// Writes one list item: the workflow, the run, its summed time and the
+    /// Writes one table row: the workflow, the run, its summed time and the
     /// ceiling, then the job that grew with its time and its median.
     ///
     /// # Specification
@@ -507,7 +507,7 @@ impl fmt::Display for Grown<'_>
     {
         write!(
             f,
-            "- {} run {}: {} summed, over its {} ceiling; `{}` took {} against its median {}.",
+            "| {} | {} | {} | {} | `{}` | {} | {} |",
             self.workflow,
             self.run,
             self.summed,
@@ -699,8 +699,8 @@ impl Workflows
 impl fmt::Display for Workflows
 {
     /// Writes a sentence naming the window, then the table collapsed under a
-    /// one-line summary, with the lines of the runs past a ceiling and the
-    /// cache line inside it.
+    /// one-line summary, with the table of the runs past a ceiling and the
+    /// cache sentence inside it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -710,7 +710,7 @@ impl fmt::Display for Workflows
     ///   median, the runs past the budget and past the ceiling, `—` for an
     ///   unbudgeted row's two and for a row without runs' times, and its
     ///   standing, `unbudgeted` for a row held to nothing; then each row's
-    ///   lines of runs past its ceiling, then the cache line.
+    ///   table of runs past a ceiling under its lead, then the cache sentence.
     /// - provides: the workflow part of the job summary and the issue body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
@@ -742,8 +742,8 @@ impl fmt::Display for Workflows
         };
         writeln!(
             f,
-            "\nSummed job time and wall time over each workflow's last {} completed runs, \
-             against the summed budgets in `nightly.yml`.\n",
+            "\nThe table holds each workflow's summed job time and wall time over its last {} \
+             completed runs against the summed budgets in `nightly.yml`.\n",
             usize::from(self.asked)
         )?;
         writeln!(
@@ -794,12 +794,17 @@ impl fmt::Display for Workflows
         }
         let grown: Vec<Grown<'_>> = self.rows.iter().flat_map(Row::grown).collect();
         if !grown.is_empty() {
-            writeln!(f)?;
+            writeln!(
+                f,
+                "\nThe table gives each run past its ceiling and the job that grew the most in \
+                 it.\n\n| workflow | run | summed | ceiling | job | time | median |\n| --- | ---: \
+                 | ---: | ---: | --- | ---: | ---: |"
+            )?;
         }
         for line in grown {
             writeln!(f, "{line}")?;
         }
-        writeln!(f, "\nActions cache: {}.\n\n</details>", self.cache)
+        writeln!(f, "\nThe Actions cache holds {}.\n\n</details>", self.cache)
     }
 }
 
@@ -913,8 +918,8 @@ mod tests
         assert_eq!(within.standing(), Standing::Within);
         assert_eq!(
             within.to_string(),
-            "\nSummed job time and wall time over each workflow's last 3 completed runs, against \
-             the summed budgets in `nightly.yml`.\n\n\
+            "\nThe table holds each workflow's summed job time and wall time over its last 3 \
+             completed runs against the summed budgets in `nightly.yml`.\n\n\
              <details><summary>3 workflows — within: 0 over, 1 unmeasured</summary>\n\n\
              | workflow | runs | wall median | wall max | summed median | past budget | past \
              ceiling | standing |\n\
@@ -922,7 +927,7 @@ mod tests
              | CI | 1 | 33m 20s | 33m 20s | 50m 0s | — | — | unbudgeted |\n\
              | Nightly | 3 | 5m 0s | 6m 40s | 8m 20s | 1 past 8m 20s | 0 past 11m 40s | within |\n\
              | Coverage | 0 | — | — | — | 0 past 1m 0s | 0 past 2m 0s | unmeasured |\n\
-             \nActions cache: 10.0 GiB in 144 caches.\n\n</details>\n"
+             \nThe Actions cache holds 10.0 GiB in 144 caches.\n\n</details>\n"
         );
         // Summed 700, 500 and 600 after the third run grows: the median, 600,
         // passes the budget.
@@ -966,9 +971,11 @@ mod tests
             text.contains(
                 "| Nightly | 3 | 10m 0s | 11m 40s | 13m 40s | 1 past 15m 0s | 1 past 16m 40s | \
                  **over** |\n\
-                 \n- Nightly run 6: 18m 30s summed, over its 16m 40s ceiling; `test` took 8m 20s \
-                 against its median 3m 30s.\n\
-                 \nActions cache:"
+                 \nThe table gives each run past its ceiling and the job that grew the most in \
+                 it.\n\n| workflow | run | summed | ceiling | job | time | median |\n\
+                 | --- | ---: | ---: | ---: | --- | ---: | ---: |\n\
+                 | Nightly | 6 | 18m 30s | 16m 40s | `test` | 8m 20s | 3m 30s |\n\
+                 \nThe Actions cache holds"
             ),
             "{text}"
         );

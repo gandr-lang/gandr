@@ -100,19 +100,19 @@ def nights_cell: "\(.nights)\(if .nights >= 3 then " — a refusal candidate" el
 | ($deps + $labels + $ledger) as $all
 | {count: ($all | length),
    body: (if ($all | length) == 0 then
-      "The nightly tracker report (`mise run report:deps`, #2902) found every open issue's stated dependencies set on GitHub, its label set full, and every ledger row owing on an open issue.\n"
+      "This report finds nothing for the tracker to repair (`mise run report:deps`, #2902). GitHub records every dependency an open issue states. Every open issue carries its full label set. Every ledger row owes on an open issue.\n"
     else
-      "The nightly tracker report (`mise run report:deps`, #2902): what an open issue says it waits on that GitHub does not record, each open issue short of its label set, and each ledger row owing on a closed or closing issue. A finding three nights running is a candidate for a refusal (#2902).\n"
+      "This report lists what the tracker must repair (`mise run report:deps`, #2902). It names each dependency an open issue states and GitHub lacks. It names each open issue short of its label set. It names each ledger row that owes on a closed or closing issue. A finding three nights running is a candidate for a refusal.\n"
       + (if ($deps | length) > 0 then
-          "\n## Dependencies\n\nRepair a `## After` or a line of prose by listing the issue in `## After` and running `mise run unit:check --fix <n>`, an epic's by `mise run epic:deps <n>`.\n\n| Issue | Waits on | Found | Nights |\n| --- | --- | --- | --- |\n"
+          "\n## Dependencies\n\nThe table lists each dependency an issue states and GitHub does not record. To repair a `## After` or a line of prose, list the issue in `## After` and run `mise run unit:check --fix <n>`. To repair an epic, run `mise run epic:deps <n>`.\n\n| Issue | Waits on | Found | Nights |\n| --- | --- | --- | --- |\n"
           + ($deps | map("| #\(.issue) | #\(.blocker) | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
         else "" end)
       + (if ($labels | length) > 0 then
-          "\n## Labels\n\nAn issue carries one `kind:`, `priority:` and `effort:` and one or more `area:`, an epic `kind:epic` alone. Repair a default or an epic's extra kind by `mise run issue:labels --sweep`, the rest by hand.\n\n| Issue | Found | Nights |\n| --- | --- | --- |\n"
+          "\n## Labels\n\nThe table lists each open issue short of its label set. An issue carries one `kind:`, one `priority:`, one `effort:` and one or more `area:`. An epic carries `kind:epic` alone. `mise run issue:labels --sweep` repairs a default and an epic's extra kind. Repair the rest by hand.\n\n| Issue | Found | Nights |\n| --- | --- | --- |\n"
           + ($labels | map("| #\(.issue) | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
         else "" end)
       + (if ($ledger | length) > 0 then
-          "\n## Ledger\n\nA features row without a witness owes on an open issue (`check:ledger`, #2526, #2635). Repair it by naming the issue that owes the rest in the row's `issue` or its exemplar's `/// Not implemented:` line, before the issue closes (#2973).\n\n| Row | Found | Nights |\n| --- | --- | --- |\n"
+          "\n## Ledger\n\nThe table lists each features row that owes on a closed or closing issue. A row without a witness owes on an open issue (`check:ledger`, #2526, #2635). To repair a row, name the issue that owes the rest in the row's `issue` field. Or name it in the exemplar's `/// Not implemented:` line. Repair the row before the issue closes (#2973).\n\n| Row | Found | Nights |\n| --- | --- | --- |\n"
           + ($ledger | map("| `\(.row)` | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
         else "" end)
       + "\n<!-- deps-report: \($all | map({(.key): .nights}) | add | tojson) -->\n"
