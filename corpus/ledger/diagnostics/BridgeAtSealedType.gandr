@@ -1,0 +1,12 @@
+/// `BridgeAtSealedType`: a bridge at a sealed type stating no identity system, whose representation the seal hides.
+@[ checks ]
+module Hidden :> #{ type T, one : T } {
+  @[ checks ]
+  type T = Unit;
+
+  @[ checks ]
+  def one = unit;
+}
+
+@[ refuses("BridgeAtSealedType") ]
+def hiddenOne : Bridge(Hidden.T, Hidden.one, Hidden.one) = unit;

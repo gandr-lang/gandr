@@ -1,0 +1,13 @@
+/// `bridge-types`: Bridge types by the identity recursion.
+/// Implemented: `Bridge(A, a, b)` relates two points of `A` at the fibre the bridge fold reads. The core checks it and the kernel replays it.
+/// Not implemented: the model laws of the fold; #3519 owes them.
+
+/// The total relation between the unit type and the string type.
+@[ checks ]
+def unitString : Bridge(Type, Unit, String) = thunk {
+  fn (x : Unit) { fn (y : String) { return Unit } }
+};
+
+/// Two equal lists of integers, related cell by cell.
+@[ checks ]
+def sameDigits : Bridge(List(Integer), [1, 2], [1, 2]) = (unit, (unit, unit));

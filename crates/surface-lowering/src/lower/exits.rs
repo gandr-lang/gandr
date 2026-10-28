@@ -681,6 +681,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::StaticAbstraction
             | Former::ParenthesizedType
             | Former::PathType
+            | Former::BridgeType
             | Former::RelationType
             | Former::ManifestType
             | Former::CapabilityType

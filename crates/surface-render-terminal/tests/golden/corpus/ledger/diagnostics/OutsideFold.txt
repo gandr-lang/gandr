@@ -1,0 +1,8 @@
+error[OutsideFold]: a bridge is read at units, integers, strings, the universe, pairs, binary sums, lists, pure functions, abstract types with a relation and closed data types
+  ╭▸ corpus/ledger/diagnostics/OutsideFold.gandr:3:73
+  │
+3 │ def threeWay : Bridge(Unit + Unit + Unit, +{.0 = unit}, +{.0 = unit}) = unit;
+  │                                                                         ━━━━ a code the bridge fold has no clause for: found `Unit + Unit + Unit`
+  │
+  ├ note: `threeWay` is refused with OutsideFold, as its expectation states
+  ╰ note: tracked by #642 <https://github.com/gandr-lang/gandr/issues/642>

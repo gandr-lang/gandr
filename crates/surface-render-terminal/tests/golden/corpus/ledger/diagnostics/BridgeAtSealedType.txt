@@ -1,0 +1,8 @@
+error[BridgeAtSealedType]: this bridge reaches an abstract type with no identity attribute, so it has no relation to read
+   ╭▸ corpus/ledger/diagnostics/BridgeAtSealedType.gandr:12:17
+   │
+12 │ def hiddenOne : Bridge(Hidden.T, Hidden.one, Hidden.one) = unit;
+   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a bridge reaching an atom stating no interface: found `Bridge(Hidden.T, Hidden.one, Hidden.one)`
+   │
+   ├ note: `hiddenOne` is refused with BridgeAtSealedType, as its expectation states
+   ╰ help: give the abstract type an `identity` attribute that names its relation, or relate points of a type that is not sealed

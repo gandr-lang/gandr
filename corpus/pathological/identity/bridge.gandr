@@ -1,0 +1,40 @@
+// A bridge whose introduction the bridge fold refuses, one refusal an item.
+//
+// A bridge relates its endpoints and never identifies them. So it has no
+// reflexivity, and a fibre the fold reads empty has no inhabitant. A sealed
+// type hides its representation, and a code outside the fold has no clause.
+//
+// Each item writes an introduction at a bridge. The fold reads the carrier
+// and the endpoints, and the checker refuses the introduction by name where
+// the fold gives no fibre it inhabits.
+//
+// - see: `model/identity/bridge.gandr` — the bridges admitted
+// - see: #3519 — the model laws of the fold
+
+/// Reflexivity at a bridge is refused, because a bridge has no reflexivity.
+@[ refuses("ShapeMismatch") ]
+def fourHere : Bridge(Integer, 4, 4) = here(4);
+
+/// Two lists of different digits are refused, because their fibre is empty.
+@[ refuses("TypeMismatch") ]
+def otherDigits : Bridge(List(Integer), [1], [2]) = (unit, unit);
+
+/// `Hidden` seals the unit type and states no identity system.
+module Hidden :> #{ type T, one : T } {
+  /// The sealed points.
+  @[ checks ]
+  type T = Unit;
+
+  /// The one point.
+  @[ checks ]
+  def one = unit;
+}
+
+/// A bridge at the sealed type is refused, because the seal hides its
+/// representation.
+@[ refuses("BridgeAtSealedType") ]
+def hiddenOne : Bridge(Hidden.T, Hidden.one, Hidden.one) = unit;
+
+/// A bridge at a sum of three summands is refused, because the fold reads two.
+@[ refuses("OutsideFold") ]
+def threeWay : Bridge(Unit + Unit + Unit, +{.0 = unit}, +{.0 = unit}) = unit;

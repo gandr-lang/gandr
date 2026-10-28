@@ -435,6 +435,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "bind_expression",
     "break_expression",
     "break_value_expression",
+    "bridge_type",
     "capability_type",
     "codata_declaration",
     "cons_pattern",

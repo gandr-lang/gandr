@@ -885,6 +885,7 @@ fn operand_of(
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::BridgeType
         | Former::RelationType
         | Former::ManifestType
         | Former::Declaration

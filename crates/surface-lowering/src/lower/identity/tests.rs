@@ -635,6 +635,56 @@ fn a_path_at_a_universe_reads_its_endpoints_as_types_402()
 }
 
 #[test]
+fn a_bridge_type_lowers_to_the_core_bridge_3427()
+{
+    // A bridge's endpoints are terms, as a path's are: a list stands as its
+    // cells and, at a universe, a type as its quoted code. The lifting at a
+    // list and a relation at the universe check at the fibres the core fold
+    // reads; reflexivity is no bridge's introduction.
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def lifted : Bridge(List(Integer), [1, 2], [1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fn (x : Unit) { fn (y : String) { return Unit } } };\n",
+        ),
+        &mut arena,
+    );
+    for (name, endpoint) in [("lifted", "a list cell"), ("related", "a quoted code")] {
+        let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, name.into())
+        else {
+            panic!("{name} lowers");
+        };
+        let Some(&ValueType::Bridge { left, right, .. }) = arena.value_type(declared_type)
+        else {
+            panic!("{name}'s signature is a bridge type");
+        };
+        for end in [left, right] {
+            assert!(
+                matches!(
+                    (name, arena.value(end)),
+                    ("lifted", Some(&Value::ListCons(..))) | ("related", Some(&Value::Quote(_)))
+                ),
+                "{name}'s endpoint is {endpoint}"
+            );
+        }
+    }
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from("def four : Bridge(Integer, 4, 4);\ndef four = here(4);\n"),
+        &mut arena,
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        report.judged().iter().any(|judged| matches!(
+            judged.verdict(),
+            Verdict::Refused(CheckRefusal::ShapeMismatch { .. })
+        )),
+        "`here` is refused at a bridge, which has no reflexivity: {report:?}"
+    );
+}
+
+#[test]
 fn a_bound_name_shadows_an_identity_operation()
 {
     let mut arena = CoreArena::new();

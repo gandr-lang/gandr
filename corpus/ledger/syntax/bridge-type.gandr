@@ -1,0 +1,4 @@
+/// `bridge_type`: a bridge type.
+@[ checks ]
+def lifted : Bridge(List(Integer), [1, 2], [1, 2]) ;
+def lifted = (unit, (unit, unit)) ;

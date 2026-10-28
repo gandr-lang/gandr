@@ -1,0 +1,72 @@
+// A bridge `Bridge(A, a, b)` relates two points of `A` parametrically, as
+// the bridge fold reads `A`.
+//
+// A path identifies its endpoints, and a bridge only relates them. A bridge
+// at the universe is a relation between two types, and one at a type former
+// lifts the relations of its parts. A bridge has no reflexivity, transport
+// or eliminator of its own.
+//
+// An introduction checked at a bridge checks at the fibre the fold reads from
+// the carrier and the endpoints. The fold reads a list cell by cell, a base
+// type or a sum as its identity, and a function code by extensionality. An
+// atom stating an identity system bears its relation.
+//
+// - see: `pathological/identity/bridge.gandr` — the bridges refused
+// - see: #3519 — the model laws of the fold
+// - see: Cavallo and Harper, _Internal parametricity for cubical type
+//   theory_, LMCS 2021, § 3
+
+// The sealed points whose relation is their identity.
+import "./atom-identity.gandr";
+
+/// The total relation between the unit type and the string type, at the
+/// relation type `Unit => String => Type`.
+def unitString : Bridge(Type, Unit, String) = thunk {
+  fn (x : Unit) { fn (y : String) { return Unit } }
+};
+
+/// The equal lists of integers related cell by cell, each cell by the unit
+/// identity of its equal integers.
+def sameDigits : Bridge(List(Integer), [1, 2], [1, 2]) = (unit, (unit, unit));
+
+/// Two equal integers related by their identity, which is the unit.
+def sameFour : Bridge(Integer, 4, 4) = unit;
+
+/// A light's two states.
+data Signal : Type {
+  /// The light stops traffic.
+  Halt : Signal;
+  /// The light lets traffic pass.
+  Pass : Signal;
+}
+
+/// `toggle` turns a signal into the other one.
+def toggle(signal : Signal) -> Signal {
+  case signal {
+    Halt => Pass,
+    Pass => Halt
+  }
+}
+
+/// `toggleTwice` turns a signal into the other one twice.
+def toggleTwice(signal : Signal) -> Signal {
+  toggle(toggle(signal))
+}
+
+/// `steady` returns the signal it receives.
+def steady(signal : Signal) -> Signal {
+  signal
+}
+
+/// Two functions related at their function code by extensionality: they
+/// agree at both signals.
+def toggledTwice : Bridge(Signal => Signal, toggleTwice, steady) = funext(
+  toggleTwice,
+  steady
+);
+
+/// Two sealed points related by the relation their atom states.
+def originOtherBridge : Bridge(Point.T, Point.origin, Point.other) = unit;
+
+/// A sealed point related to itself by the reflexivity its atom states.
+def originHere : Bridge(Point.T, Point.origin, Point.origin) = here(Point.origin);

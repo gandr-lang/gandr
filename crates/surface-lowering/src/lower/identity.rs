@@ -274,6 +274,7 @@ use super::Lowerer;
 use super::Plan;
 use super::Produced;
 use super::Reading;
+use super::Relating;
 use super::Sink;
 use super::Site;
 use super::Stretch;
@@ -1100,18 +1101,19 @@ pub(super) struct Transported
 impl<'source> Lowerer<'_, 'source>
 {
     /// Classify a path type, `Path(A, a, b)`, or `Path(Type, A, B)` at a
-    /// universe its own tiles spell.
+    /// universe its own tiles spell; or a bridge type, `Bridge(A, a, b)`,
+    /// read alike under its own head.
     ///
     /// # Specification
-    /// - requires: `site` is a path type in type position, or in value position
-    ///   where a type is quoted.
+    /// - requires: `site` is a path or bridge type, as `relating` names, in
+    ///   type position, or in value position where a type is quoted.
     /// - ensures: the form stands as a value type and is planned over its
-    ///   carrier and its two endpoints, each endpoint read as a value standing
-    ///   inside a type, all under the form's own frame. A written carrier is
-    ///   read as a value type. A universe carrier is the universe its tiles
-    ///   spell, and its endpoints, written at the type sort, are read as the
-    ///   codes of the types they spell.
-    /// - provides: element identity's type former.
+    ///   former, its carrier and its two endpoints, each endpoint read as a
+    ///   value standing inside a type, all under the form's own frame. A
+    ///   written carrier is read as a value type. A universe carrier is the
+    ///   universe its tiles spell, and its endpoints, written at the type sort,
+    ///   are read as the codes of the types they spell.
+    /// - provides: element identity's and relatedness's type formers.
     /// - fails: yields the wrong-sort refusal where no value type is read, and
     ///   a misplaced-tile or extra-operand fault for a form out of shape.
     /// - panics: none.
@@ -1126,13 +1128,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
+    /// - witness: `lower::identity::tests::a_bridge_type_lowers_to_the_core_bridge_3427`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Path(carrier, left, right))
-                        if match carrier {
+                    Some(&Plan::Path(planned, carrier, left, right))
+                        if planned == relating && match carrier {
                             Carrier::Written(carrier) => self.reading(carrier) == Reading::ValueType(site.reading.frame()),
                             Carrier::Universe(_) => true,
                         }
@@ -1149,10 +1152,11 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
+        relating: Relating,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
-        closed(site, &mut cursor, TileName::PATH)?;
+        closed(site, &mut cursor, relating.head())?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let carrier = if let Maybe::Present(_) = cursor.at(TileName::UNIVERSE) {
             Carrier::Universe(self.universe_tiles(site, &mut cursor)?)
@@ -1172,17 +1176,19 @@ impl<'source> Lowerer<'_, 'source>
         self.read(right.node, Reading::Value(frame));
         self.in_type.extend([left.node, right.node]);
         self.at_endpoint.extend([left.node, right.node]);
-        self.plan(site, Plan::Path(carrier, left.node, right.node));
+        self.plan(site, Plan::Path(relating, carrier, left.node, right.node));
 
         Ok(())
     }
 
-    /// Classify a path type written as a call, `Path(A, a, b)` where a value
-    /// is read, its three operands already read off the call.
+    /// Classify a path or bridge type written as a call, `Path(A, a, b)` or
+    /// `Bridge(A, a, b)` where a value is read, its three operands already
+    /// read off the call.
     ///
     /// # Specification
-    /// - requires: `site` is a call headed `Path`, which nothing the scope
-    ///   binds answers, written over `carrier`, `left` and `right`.
+    /// - requires: `site` is a call headed `Path` or `Bridge`, as `relating`
+    ///   names, which nothing the scope binds answers, written over `carrier`,
+    ///   `left` and `right`.
     /// - ensures: the form stands as a value type, reads its carrier as a value
     ///   type and its two endpoints as endpoints standing inside a type, all
     ///   under its own frame, and is planned over the three, the carrier as
@@ -1204,8 +1210,8 @@ impl<'source> Lowerer<'_, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Path(Carrier::Written(carrier), left, right))
-                        if [carrier, left, right] == written
+                    Some(&Plan::Path(planned, Carrier::Written(carrier), left, right))
+                        if planned == relating && [carrier, left, right] == written
                             && self.reading(carrier) == Reading::ValueType(site.reading.frame())
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
@@ -1220,6 +1226,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         written: [NodeIndex; 3],
+        relating: Relating,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
@@ -1229,7 +1236,10 @@ impl<'source> Lowerer<'_, 'source>
         self.read(right, Reading::Value(frame));
         self.in_type.extend([left, right]);
         self.at_endpoint.extend([left, right]);
-        self.plan(site, Plan::Path(Carrier::Written(carrier), left, right));
+        self.plan(
+            site,
+            Plan::Path(relating, Carrier::Written(carrier), left, right),
+        );
 
         Ok(())
     }
@@ -3309,6 +3319,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LazyRecordType
                 | Former::ValueFunctionType
                 | Former::StaticAbstraction
+                | Former::BridgeType
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType

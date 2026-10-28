@@ -19,7 +19,7 @@ def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path(
 ) { (unit, unit) }
 
 /// The unit type sealed, relating its points by `related`.
-module Point :> #{ type T, origin : T, other : T } {
+pub module Point :> #{ type T, origin : T, other : T } {
   /// The sealed points, whose identity is the relation `related`.
   @[ identity((related, reflexivity, contraction)) ]
   @[ checks ]
