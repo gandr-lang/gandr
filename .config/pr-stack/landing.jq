@@ -15,7 +15,8 @@
 # A seat is told by a comment carrying the mark `<event>:<head>`, once per
 # head: a mark already posted for the head posts nothing. A dirty or red pull
 # request is always its seat's. The rest depends on `token`, whether the
-# watcher holds the landing App's token: the workflow's own token may neither
+# watcher holds a token that may queue (`LANDING_TOKEN`, or else the landing
+# App's, #3355): the workflow's own token may neither
 # queue (the queue refuses its enqueue as not authorized to merge) nor push a
 # restack whose checks start (GitHub starts no run for its push).
 #   With the token, a green pull request is landed through `land_prefix`,
@@ -25,9 +26,10 @@
 #   pull request is rebased onto its base by GitHub (`update-branch`), as
 #   `pr:watch` heals a stack (#1264), when no member of its stack is red or
 #   queued (a push never moves a queued branch or one below it, #2531) and
-#   fewer than three restacks of it are marked. GitHub signs the rebased
-#   commits, which the trunk's rules require and a rebase in the runner could
-#   not. A member above another is rebased the same way once its base moved;
+#   fewer than three restacks of it are marked. The trunk's rules require
+#   signed commits, which a rebase in the runner could not make; the App's
+#   rebased commits came out unsigned (#3355). A member above another
+#   is rebased the same way once its base moved;
 #   one the API refuses is told instead, once per head (`told` carries
 #   whether it was), and one past the cap is told.
 #   Without the token, a green stack's lowest green member is told
@@ -35,7 +37,7 @@
 #   `pr-dequeued`.
 #
 # Input: an object with
-#   token  whether the watcher holds the landing App's token;
+#   token  whether the watcher holds a token that may queue;
 #   prs    the open pull requests, drafts left out, each
 #          `{number, oid, queued, held, bot, stack, merge, reading, removed,
 #          marks}`: `oid` its head, `stack` its server stack's number or
