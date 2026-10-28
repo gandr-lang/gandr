@@ -3,7 +3,9 @@
 
 use alloc::format;
 use alloc::string::String;
+use alloc::vec;
 
+use gandr_core_fork::Dependences;
 use gandr_core_fork::Serial;
 use gandr_kernel_term::stage::Extent;
 use gandr_kernel_term::stage::Index;
@@ -30,6 +32,67 @@ impl Clock for Stopped
     {
         Duration::ZERO
     }
+}
+
+/// One job a test fork runs: the item's slice position and the item.
+struct Ready<'items, Item>
+{
+    /// The item's position in the slice.
+    position: usize,
+    /// The item.
+    item: &'items mut Item,
+}
+
+/// The jobs a test fork runs a schedule's items in: at each step the latest
+/// item whose jobs it waits on have all run, so the order keeps every edge
+/// and, with no edge, runs last to first.
+///
+/// # Specification
+/// trivial.
+fn latest_ready_first<'items, Item>(
+    items: &'items mut [Item],
+    after: &Dependences,
+) -> Vec<Ready<'items, Item>>
+{
+    let count = items.len();
+    let edges: Vec<(usize, usize)> = after
+        .edges()
+        .iter()
+        .map(|edge| (edge.before, edge.after))
+        .filter(|&(_, later)| later < count)
+        .collect();
+    let mut waiting = vec![0_usize; count];
+    for &(_, later) in &edges {
+        let count = waiting
+            .get_mut(later)
+            .expect("an edge ends inside the slice");
+        *count = count.checked_add(1).unwrap();
+    }
+    let mut ready: Vec<usize> = (0 .. count)
+        .filter(|&item| waiting.get(item) == Some(&0))
+        .collect();
+    let mut slots: Vec<Option<&mut Item>> = items.iter_mut().map(Some).collect();
+    let mut order = Vec::with_capacity(count);
+    while let Some(next) = ready.pop() {
+        order.push(Ready {
+            position: next,
+            item: slots
+                .get_mut(next)
+                .and_then(Option::take)
+                .expect("each position is ready once"),
+        });
+        for &(_, later) in edges.iter().filter(|&&(earlier, _)| earlier == next) {
+            let count = waiting
+                .get_mut(later)
+                .expect("an edge ends inside the slice");
+            *count = count.checked_sub(1).unwrap();
+            if *count == 0 {
+                ready.push(later);
+                ready.sort_unstable();
+            }
+        }
+    }
+    order
 }
 
 /// A fork that runs items last to first, each from a fresh state, and the
@@ -74,6 +137,30 @@ impl Fork for Scrambled
     {
         let right = right();
         (left(), right)
+    }
+
+    /// Every job from a fresh state, latest ready first, then every fold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        after: &Dependences,
+        start: Start,
+        job: Job,
+        mut fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        for Ready { item, .. } in latest_ready_first(items, after) {
+            job(&mut start(), item);
+        }
+        items.iter_mut().for_each(&mut fold);
     }
 }
 
@@ -125,6 +212,39 @@ impl Fork for Halves
     {
         (left(), right())
     }
+
+    /// Every job latest ready first, the second half's from one state and the
+    /// first half's from another, then every fold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        after: &Dependences,
+        start: Start,
+        job: Job,
+        mut fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        let middle = items.len().checked_div(2).unwrap();
+        let (mut first, mut second) = (None, None);
+        for Ready { position, item } in latest_ready_first(items, after) {
+            let state = if position < middle {
+                &mut first
+            }
+            else {
+                &mut second
+            };
+            job(state.get_or_insert_with(&start), item);
+        }
+        items.iter_mut().for_each(&mut fold);
+    }
 }
 
 /// A fork of one worker that meets the items last to first, so every item
@@ -169,6 +289,31 @@ impl Fork for Backwards
         RightOutput: Send,
     {
         (left(), right())
+    }
+
+    /// Every job from one state, latest ready first, then every fold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        after: &Dependences,
+        start: Start,
+        job: Job,
+        mut fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        let mut state = None;
+        for Ready { item, .. } in latest_ready_first(items, after) {
+            job(state.get_or_insert_with(&start), item);
+        }
+        items.iter_mut().for_each(&mut fold);
     }
 }
 

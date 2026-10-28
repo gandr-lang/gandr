@@ -8,6 +8,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use anodized::spec;
+use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
 use gandr_kernel_term::stage::Arena;
 use gandr_kernel_term::stage::Budget;
@@ -182,14 +183,18 @@ struct Normalizing
 }
 
 /// Normalize every source, forked per source on per-worker snapshots of
-/// `arena`, each from a fresh `allowance`.
+/// `arena`, each from a fresh `allowance`, and hand each source's segment to
+/// `fold` on the calling thread, in source order, as soon as it is ready.
 ///
 /// # Specification
-/// - ensures: one segment or error per source, in order. A worker keeps its
+/// - ensures: `fold` meets every source once, in order, with its segment or its
+///   error, while later sources may still be normalizing. A worker keeps its
 ///   snapshot from one source to the next while its sources arrive in
 ///   increasing order, so a source's segment holds only what the worker's
 ///   earlier sources did not already append, and starts afresh otherwise.
-/// - panics: none of its own; the fork's.
+/// - panics: none of its own; the fork's and `fold`'s.
+/// - executable: none — the order `fold` meets the sources in is the fork's
+///   schedule, which a postcondition over the result cannot observe.
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the power and double programs are normalized at every
@@ -197,14 +202,13 @@ struct Normalizing
 ///   an exhausted allowance fails the first source at every width.
 /// - witness: `staging::tests::the_merged_arena_is_one_arena_normalization`
 /// - witness: `staging::tests::exhausted_allowances_refuse_alike_at_every_width`
-#[spec(ensures: |output| output.len() == sources.len())]
 pub(super) fn normalized<F>(
     arena: &Arena,
     sources: &[TermId],
     allowance: Budget,
     fork: &F,
-) -> Vec<Result<Segment, StageError>>
-where
+    mut fold: impl FnMut(SourceIndex, Result<Segment, StageError>),
+) where
     F: Fork,
 {
     let floor = arena.extent();
@@ -218,8 +222,9 @@ where
             segment: Err(StageError::Unbalanced),
         })
         .collect();
-    fork.each(
+    fork.schedule(
         &mut jobs,
+        &Dependences::default(),
         || Worker {
             id: WorkerIndex(workers.fetch_add(1, Ordering::Relaxed)),
             snapshot: arena.clone(),
@@ -228,6 +233,11 @@ where
         |worker, job| {
             job.segment = worker.normalize(floor, job.index, job.source, allowance);
         },
+        |job| {
+            fold(
+                job.index,
+                core::mem::replace(&mut job.segment, Err(StageError::Unbalanced)),
+            );
+        },
     );
-    jobs.into_iter().map(|job| job.segment).collect()
 }

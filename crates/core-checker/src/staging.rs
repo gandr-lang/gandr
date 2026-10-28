@@ -2,21 +2,23 @@
 //!
 //! A [`Program`] is an arena holding every source and the context's
 //! classifiers, the context its certificates replay under, and its sources in
-//! order. [`check`] stages it in four steps and forks wherever the jobs are
-//! independent:
+//! order. [`check`] stages it in four steps and forks wherever the jobs allow:
 //!
-//! 1. **Normalize**, forked per source. Each worker clones the program's arena
-//!    once and keeps the clone while its sources arrive in increasing order,
-//!    starting afresh from the program's extent when a lower one arrives. Per
-//!    source it normalizes, groups the certificate's equations, and takes the
-//!    classifiers and terms the normalization appended.
-//! 2. **Merge**, in source order. Each segment's classifiers and terms, placed
-//!    in the program's coordinates, intern into the program's arena, which
+//! 1. **Normalize**, forked per source on [`Fork::schedule`]. Each worker
+//!    clones the program's arena once and keeps the clone while its sources
+//!    arrive in increasing order, starting afresh from the program's extent
+//!    when a lower one arrives. Per source it normalizes, groups the
+//!    certificate's equations, and takes the classifiers and terms the
+//!    normalization appended.
+//! 2. **Merge**, on the calling thread in source order, each segment as soon as
+//!    its source has normalized, while later sources are still normalizing.
+//!    Each segment's classifiers and terms, placed in the program's
+//!    coordinates, intern into the merge's copy of the program's arena, which
 //!    finds and compares a term it holds and appends only a miss. The merged
 //!    arena is the one normalizing every source in order in a single arena
 //!    makes, term for term, and so are the certificates.
-//! 3. **Harvest**, in source order: the groupings join over the merged
-//!    certificates' equations into the program's families.
+//! 3. **Harvest**, beside the merge: each source's grouping joins over its
+//!    merged certificate's equations into the program's families.
 //! 4. **Readmit and admit**, two halves side by side: the kernel replays every
 //!    certificate, forked per certificate on per-worker clones of the merged
 //!    arena, and the memo admits every family, forked per family.
@@ -185,11 +187,15 @@ pub enum Readmission
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Stages
 {
-    /// Normalizing every source, segments and groupings included.
+    /// Normalizing every source, with each segment merged and its grouping
+    /// joined behind it on the calling thread: from the first job to the last
+    /// fold.
     pub normalizing: Duration,
-    /// Joining every segment to the program's arena.
+    /// Of `normalizing`, the calling thread's time joining segments to the
+    /// program's arena.
     pub merging: Duration,
-    /// Joining every grouping into the program's families.
+    /// Of `normalizing`, the calling thread's time joining groupings into the
+    /// program's families.
     pub harvesting: Duration,
     /// Readmitting every certificate beside admitting every family.
     pub checking: Duration,
@@ -333,42 +339,57 @@ where
 {
     let mut timer = clock.clone();
     let Program {
-        arena,
+        arena: base,
         context,
         sources,
         id,
     } = program;
     let begun = timer.now();
-    let segments = segment::normalized(&arena, &sources, allowance.normalizing, fork);
-    let normalized = timer.now();
-    let mut merge = merge::Merge::new(arena);
-    let mut certificates = Vec::with_capacity(segments.len());
-    let mut groupings = Vec::with_capacity(segments.len());
+    // The workers clone their snapshots from `base` while the merge grows its
+    // own copy.
+    let mut merge = merge::Merge::new(base.clone());
+    let mut harvest = Harvest::new(id);
+    let mut certificates = Vec::with_capacity(sources.len());
     // The spent segments' buffers were allocated on the workers; they are
-    // freed beside the readmissions, off the serial merge.
-    let mut spent = Vec::with_capacity(segments.len());
-    for (index, segment) in segments.into_iter().enumerate() {
-        let source = SourceIndex(index);
+    // freed beside the readmissions, off the calling thread's fold.
+    let mut spent = Vec::with_capacity(sources.len());
+    let (mut merging, mut harvesting) = (Duration::ZERO, Duration::ZERO);
+    let mut fold = |source: SourceIndex,
+                    segment: Result<segment::Segment, StageError>|
+     -> Result<(), ProgramError> {
         let mut segment = segment.map_err(|error| ProgramError::Normalized { source, error })?;
+        let joining = timer.now();
         let certificate = merge
             .join(&mut segment)
             .map_err(|error| ProgramError::Merged { source, error })?;
-        certificates.push(certificate);
-        groupings.push(core::mem::take(&mut segment.grouping));
-        spent.push(segment);
-    }
-    let merged = timer.now();
-    let mut harvest = Harvest::new(id);
-    for (index, (certificate, grouping)) in certificates.iter().zip(&groupings).enumerate() {
+        let joined = timer.now();
         harvest
-            .join(grouping, &certificate.steps)
-            .map_err(|error| ProgramError::Harvested {
-                source: SourceIndex(index),
-                error,
-            })?;
+            .join(&segment.grouping, &certificate.steps)
+            .map_err(|error| ProgramError::Harvested { source, error })?;
+        let harvested = timer.now();
+        merging = merging.saturating_add(joined.saturating_sub(joining));
+        harvesting = harvesting.saturating_add(harvested.saturating_sub(joined));
+        certificates.push(certificate);
+        spent.push(segment);
+        Ok(())
+    };
+    let mut failed = None;
+    segment::normalized(
+        &base,
+        &sources,
+        allowance.normalizing,
+        fork,
+        |source, segment| {
+            if failed.is_none() {
+                failed = fold(source, segment).err();
+            }
+        },
+    );
+    if let Some(error) = failed {
+        return Err(error);
     }
     let families = harvest.finish();
-    let harvested = timer.now();
+    let folded = timer.now();
     let arena = merge.finish();
     let (merged_arena, merged_certificates) = (&arena, &certificates);
     let (readmissions, admissions) = fork.join(
@@ -381,6 +402,7 @@ where
                 fork,
             );
             drop(spent);
+            drop(base);
             readmissions
         },
         || memo.admit_families(&arena, &families, gate, allowance.admitting, fork, clock),
@@ -393,10 +415,10 @@ where
         families,
         admissions,
         spent: Stages {
-            normalizing: normalized.saturating_sub(begun),
-            merging: merged.saturating_sub(normalized),
-            harvesting: harvested.saturating_sub(merged),
-            checking: checked.saturating_sub(harvested),
+            normalizing: folded.saturating_sub(begun),
+            merging,
+            harvesting,
+            checking: checked.saturating_sub(folded),
         },
     })
 }

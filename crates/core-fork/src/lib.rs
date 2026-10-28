@@ -16,6 +16,10 @@
 //! idle. Each job is a [`Scoped`] computation, generic over the spawner, so a
 //! job spawns its own jobs through whichever spawner its worker holds.
 //!
+//! [`Fork::schedule`] runs each job once the jobs [`Dependences`] names have
+//! returned. The caller folds each item in slice order, so a check folds behind
+//! its jobs.
+//!
 //! The `pool_only_threads` lint of the policy wall holds the rule. A call that
 //! starts a thread or a pool outside the driver's pool is refused. A site that
 //! owns its thread states why in an expectation at the site.
@@ -29,15 +33,18 @@
 
 #![no_std]
 
-#[cfg(test)]
 extern crate alloc;
 
-/// Runs independent jobs on the workers the driver provides.
+use alloc::vec::Vec;
+use core::fmt;
+
+/// Runs a program check's jobs on the workers the driver provides.
 ///
 /// # Specification
-/// - provides: the three shapes a program forks by: one job per item, each
+/// - provides: the four shapes a program forks by: one job per item, each
 ///   worker carrying state of its own; two independent halves run beside each
-///   other; and a scope whose jobs start apart from their waits.
+///   other; a scope whose jobs start apart from their waits; and jobs in
+///   dependence order, each item folded on the calling thread in slice order.
 /// - panics: none of its own; a job's panic is the job's.
 /// - executable: none — the trait states obligations its implementations carry;
 ///   [`Serial`] carries them on the calling thread.
@@ -128,6 +135,169 @@ pub trait Fork: Sync
     {
         body.run(&Serial)
     }
+    /// Run `job` once on every item, each once the jobs of the items it
+    /// depends on have returned, and `fold` on every item on the calling
+    /// thread, in slice order.
+    ///
+    /// # Specification
+    /// - requires: nothing; an edge of `after` naming an item past the slice is
+    ///   ignored.
+    /// - ensures: on return `job` has run exactly once on every item, after the
+    ///   job of every item `after` names before it has returned, from a state
+    ///   handed as [`Fork::each`] hands it; `fold` has run exactly once on
+    ///   every item, on the calling thread, in slice order, each after the
+    ///   item's own job has returned.
+    /// - panics: a panic of `start`, `job` or `fold`, wherever it ran.
+    /// - executable: none — when each job and each fold ran is a property of
+    ///   the implementation's schedule, which a postcondition over the items
+    ///   cannot observe.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each implementation's witness stamps every job's
+    ///   start and end and every fold, over graphs with no edge, a chain and a
+    ///   scattered fan.
+    /// - declaration-only: the obligation is each implementation's schedule;
+    ///   the trait has no body to witness.
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        after: &Dependences,
+        start: Start,
+        job: Job,
+        fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item);
+}
+
+/// The jobs each job of a [`Fork::schedule`] waits on, by slice position.
+///
+/// # Specification
+/// - provides: [`Edge`]s, each from an earlier item to a later one, sorted and
+///   without repeats; the job of the item at an edge's `after` waits on the job
+///   of the item at its `before`. The default has no edge.
+/// - panics: none.
+/// - executable: none — [`Dependences::new`] states the order it keeps.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an edge to an earlier item, or to the item itself, is
+///   refused, and repeated edges are kept once in order.
+/// - witness: `tests::dependences_keep_forward_edges_once_in_order`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Dependences
+{
+    /// Every edge, sorted and without repeats.
+    edges: Vec<Edge>,
+}
+
+/// One job's wait on another, by slice position.
+///
+/// # Specification
+/// - provides: the position waited on and the position waiting, ordered by the
+///   first and then the second.
+/// - panics: none.
+/// - executable: none — a plain record; [`Dependences::new`] refuses one that
+///   points backward.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Edge
+{
+    /// The item waited on.
+    pub before: usize,
+    /// The item waiting, after `before`.
+    pub after: usize,
+}
+
+impl Dependences
+{
+    /// The dependences `edges` names, each `(before, after)`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the edges, sorted by their earlier item and then their later
+    ///   one, each kept once.
+    /// - fails: [`Backward`] for the first edge whose waiting item does not
+    ///   come after the item it waits on.
+    /// - panics: none.
+    /// - executable: none — the crate depends on nothing, so the order it keeps
+    ///   is the witness's to check.
+    ///
+    /// # Errors
+    /// Returns the first [`Backward`] edge.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Dependences`].
+    /// - witness: `tests::dependences_keep_forward_edges_once_in_order`
+    #[inline]
+    pub fn new<Edges>(edges: Edges) -> Result<Self, Backward>
+    where
+        Edges: IntoIterator<Item = (usize, usize)>,
+    {
+        let mut kept = Vec::new();
+        for (before, after) in edges {
+            if before >= after {
+                return Err(Backward { before, after });
+            }
+            kept.push(Edge { before, after });
+        }
+        kept.sort_unstable();
+        kept.dedup();
+        Ok(Self { edges: kept })
+    }
+
+    /// Every edge, sorted by its earlier item and then its later one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn edges(&self) -> &[Edge]
+    {
+        &self.edges
+    }
+}
+
+/// An edge whose waiting item does not come after the item it waits on, so
+/// slice order would not be a schedule.
+///
+/// # Specification
+/// - provides: the edge as given.
+/// - panics: none.
+/// - executable: none — a plain record of [`Dependences::new`]'s refusal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Backward
+{
+    /// The item waited on.
+    pub before: usize,
+    /// The item waiting, at or before `before`.
+    pub after: usize,
+}
+
+impl fmt::Display for Backward
+{
+    /// Names the edge.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "item {} cannot wait on item {}, which does not come before it",
+            self.after, self.before
+        )
+    }
+}
+
+impl core::error::Error for Backward
+{
 }
 
 /// Every job on the calling thread, in order: the serial reference.
@@ -205,6 +375,47 @@ impl Fork for Serial
         let left = left();
         let right = right();
         (left, right)
+    }
+
+    /// Run every item's job and then its fold, in slice order, from one
+    /// state.
+    ///
+    /// # Specification
+    /// - ensures: `start` runs once when there is an item and never otherwise;
+    ///   each item's job runs, then its fold, before the next item's job. Every
+    ///   edge runs from an earlier item to a later one, so slice order waits on
+    ///   every edge.
+    /// - panics: a panic of `start`, `job` or `fold`.
+    /// - executable: none — call order is the observation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no item, one item and several items under a chain,
+    ///   each stamping its job and its fold, distinguish a state made for
+    ///   nothing, a fold before its job and a reordered item.
+    /// - witness: `tests::serial_runs_each_job_then_its_fold_in_order`
+    #[inline]
+    fn schedule<Item, State, Start, Job, Fold>(
+        &self,
+        items: &mut [Item],
+        _after: &Dependences,
+        start: Start,
+        job: Job,
+        mut fold: Fold,
+    ) where
+        Item: Send,
+        State: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+        Fold: FnMut(&mut Item),
+    {
+        if items.is_empty() {
+            return;
+        }
+        let mut state = start();
+        for item in items {
+            job(&mut state, item);
+            fold(item);
+        }
     }
 }
 
