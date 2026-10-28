@@ -1254,10 +1254,11 @@ fn stub<'found>(
 ///   then the lowering's refusal. In a source the table holds nothing for,
 ///   [`kept`]'s answer and that the engine holds nothing for it. On a
 ///   declaration's own tile, about the tile, the declaration's hover as
-///   [`declared`] writes it, or a member's as [`member`] does. On a tile of a
-///   form that writes declarations, about the tile, each declaration as
-///   written, one to a line, then the form's rule named. At a form the engine
-///   typed nothing at, [`kept`]'s answer, then [`UNTYPED`].
+///   [`declared`] writes it, or a member's as [`member`] does; so on any tile
+///   of a member the engine typed nothing inside. On a tile of a form that
+///   writes declarations, about the tile, each declaration as written, one to a
+///   line, then the form's rule named. At a form the engine typed nothing at,
+///   [`kept`]'s answer, then [`UNTYPED`].
 /// - provides: the half of [`hover`] where the engine typed nothing.
 /// - fails: never.
 /// - panics: none.
