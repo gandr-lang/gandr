@@ -62,6 +62,15 @@
 //! dropping it changes no observation. The engine knows which variables
 //! return from their types; the kernel, whose fragment is pure and total,
 //! knows it of every variable.
+//!
+//! # Evaluation
+//!
+//! `Evaluate` closes a goal by the consumer's own evaluation instead of
+//! recorded steps: a pair of closed terms runs to its normal forms, which
+//! the consumer compares. It names no node, since nothing in the pair is
+//! chosen: a closed term's evaluation has one result. A consumer reads it
+//! only where it can check that both sides are closed, and refuses it
+//! anywhere else.
 
 /// Which of the two compared terms a one-sided decision acted on.
 ///
@@ -288,6 +297,9 @@ pub enum ConversionDecision<Id>
         /// Which subgoal, in the order [`SubgoalPosition`] states.
         position: SubgoalPosition,
     },
+    /// The goal was closed by the consumer's own evaluation of two closed
+    /// sides, compared at their normal forms.
+    Evaluate,
 }
 
 impl<Id> ConversionDecision<Id>
@@ -360,6 +372,7 @@ impl<Id> ConversionDecision<Id>
             },
             Self::Decompose => ConversionDecision::Decompose,
             Self::NegativeSubgoal { position } => ConversionDecision::NegativeSubgoal { position },
+            Self::Evaluate => ConversionDecision::Evaluate,
         }
     }
 }
@@ -405,6 +418,7 @@ mod tests
             ConversionDecision::NegativeSubgoal {
                 position: SubgoalPosition::from(11),
             },
+            ConversionDecision::Evaluate,
         ];
         let mut seen = Vec::new();
         let shifted: Vec<_> = trace
@@ -453,6 +467,7 @@ mod tests
             ConversionDecision::NegativeSubgoal {
                 position: SubgoalPosition::from(11),
             },
+            ConversionDecision::Evaluate,
         ];
         assert_eq!(
             shifted.as_slice(),

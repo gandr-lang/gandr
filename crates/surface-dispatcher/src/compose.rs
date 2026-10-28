@@ -1858,6 +1858,7 @@ fn judge_closure<'held>(
     let mut run = ModuleRun::new();
     let checkpoint = {
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.decide_closed_on(crate::tier::Emitted::boxed());
         context.grant(grants);
         context.enter_at(entry.clone());
         context.keep_pattern_holes(&holes);
@@ -2692,6 +2693,7 @@ where
             context.enter_at(entry);
             (context, ModuleRun::new(), declarations.as_slice())
         };
+        context.decide_closed_on(crate::tier::Emitted::boxed());
         context.keep_pattern_holes(&holes);
         context.keep_reducts(module.reducts());
         context.keep_reducts(module.forgets());
@@ -3837,6 +3839,7 @@ impl gandr_surface_format::Elaborate for Elaborating
         let entry = grant.entry(&declared_worlds(module));
         let grants = grant.grants(arena);
         let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        context.decide_closed_on(crate::tier::Emitted::boxed());
         context.grant(grants);
         context.enter_at(entry);
         context.keep_pattern_holes(&pattern_holes(module));
@@ -4106,7 +4109,9 @@ pub fn item_program(
         .zip(adapt(module))
         .map(|(key, declaration)| gandr_core_incremental::Item::new(key, declaration))
         .collect();
-    gandr_core_incremental::Program::new(arena, items)
+    let mut program = gandr_core_incremental::Program::new(arena, items)?;
+    program.decide_closed_on(crate::tier::Emitted::boxed);
+    Ok(program)
 }
 
 /// The checker's abstract type for the sealing the lowering recorded: its

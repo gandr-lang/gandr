@@ -1446,6 +1446,7 @@ impl TypeTable
                     declarations.as_slice(),
                 ),
             };
+            context.decide_closed_on(crate::tier::Emitted::boxed());
             context.keep_formations(Formations::Firsts(wanted));
             // A model stands at a model of a theory its own includes by the
             // maps the module mints, as the judgement reads it.

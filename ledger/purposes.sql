@@ -239,6 +239,9 @@ INSERT INTO purpose VALUES('core-checker','template::memo::Spent','struct','Time
 INSERT INTO purpose VALUES('core-checker','template::memo::Unheld','enum','Why the memo holds no template for a family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::produce','function','Prepares a family and emits it only under the selected price and inheritance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::readmit','function','Replays a complete certificate, exercising paying equation templates first.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','tier::ClosedTier','trait','Meets a closed endpoint pair by running both sides before the machine, the kernel converting a met pair by its own evaluation.','oracle','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','tier::MakeTier','type_alias','Makes the tier one context decides closed pairs on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','tier::Meeting','enum','Whether a tier ran a pair''s two sides to one normal form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::StratumDefect','enum','Why the stratum a ua statement names is not certified.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::Translators','struct','The two translators an equivalence gives at one corolla.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::UaDefect','enum','Why a ua statement''s translators are no equivalence of its species at its stratum.',NULL,'fits','sound',NULL);

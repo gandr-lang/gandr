@@ -339,7 +339,9 @@ digraph crates {
   "workflow-test-timing" -> "workflow-github";
   "core-checker" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
   "surface-dispatcher" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
+  "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
+  "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
   "core-checker" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];
   "core-nbe" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];

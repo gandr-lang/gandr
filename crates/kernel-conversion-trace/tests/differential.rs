@@ -367,7 +367,8 @@ fn replay(
             | ConversionDecision::Discard { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::Decompose
-            | ConversionDecision::NegativeSubgoal { .. } => {
+            | ConversionDecision::NegativeSubgoal { .. }
+            | ConversionDecision::Evaluate => {
                 return Err(ReplayError::UnexpectedDecision);
             },
         }
@@ -579,7 +580,8 @@ fn a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with()
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
-            | ConversionDecision::NegativeSubgoal { .. }) => other,
+            | ConversionDecision::NegativeSubgoal { .. }
+            | ConversionDecision::Evaluate) => other,
         })
         .collect();
     assert_eq!(

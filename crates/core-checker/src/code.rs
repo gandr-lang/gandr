@@ -879,6 +879,21 @@ impl CodeDefinitions
             .map(|(&constant, &body)| (constant, body))
     }
 
+    /// Every recorded definition at `first` or after, ascending by position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn definitions_from(
+        &self,
+        first: ConstantIndex,
+    ) -> impl Iterator<Item = (ConstantIndex, ValueId)>
+    {
+        self.bodies
+            .range(first ..)
+            .map(|(&constant, &body)| (constant, body))
+    }
+
     /// The definitions the normaliser unfolds: each body recorded, and each
     /// data declaration presented, as every conversion this table answers
     /// reads them.
