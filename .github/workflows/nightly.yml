@@ -180,7 +180,12 @@ jobs:
   # enforcing state as the sweeps, in a job of its own beside them: the two
   # together outrun one job's fifteen minutes. Its causes and counts are the
   # job summary, the whole backlog visible whether or not it is filed; the
-  # report goes to `reports`, which holds the write token.
+  # report goes to `reports`, which holds the write token. The job's share of
+  # the nightly's 900 s is 184 s, its 243 s in the dispatched run 40602657172
+  # scaled by 900/1185 (#3013): 48 s of setup and a 190 s step that built a
+  # second driver before sweeping. The sweep runs the driver the restored test
+  # build links, resolved as that state was, so the step is the sweep: 7175
+  # mutants on one thread took 20 s locally (#3289).
   recovery:
     name: sweep the exemplars for recovery, specifications enforced
     needs: [ci-image-ref, freshness]
@@ -205,6 +210,8 @@ jobs:
         env:
           RUSTFLAGS: --cfg anodized_panic
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/enforcing
+          CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
+          CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
         shell: bash
         run: |
           mkdir -p recovery.out
