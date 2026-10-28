@@ -3768,13 +3768,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The constructor `inner`, written inside the parentheses at `site`,
-    /// applies: a bare constructor, or a call whose head is one.
+    /// applies: a bare constructor, or a call whose head is one, in the
+    /// spelling of either grammar.
     ///
     /// # Specification
     /// - requires: `inner` is the operand of the parenthesised form at `site`.
     /// - ensures: the constructor a constructor name or a call's head names, as
-    ///   [`Self::constructor_head`] answers it; the unnamed absence for any
-    ///   other form.
+    ///   [`Self::constructor_head`] answers it; the constructor a type name or
+    ///   a type application's head names, as [`Self::constructor_named`]
+    ///   answers it, where the type grammar molds the parentheses; the unnamed
+    ///   absence for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
@@ -3784,6 +3787,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotated`].
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+    /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     fn applied_constructor(
         &mut self,
@@ -3799,23 +3803,28 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(bare);
         };
-        let Shape::Form {
-            former: Former::Call,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Ok(bare);
-        };
+        match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::TypeHead,
+                ..
+            } => return Ok(self.constructor_named(site, self.name_at(inner))),
+            Shape::Form {
+                former: Former::Call | Former::TypeApplication,
+                ..
+            } => {},
+            Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => return Ok(bare),
+        }
         let mut scratch = core::mem::take(&mut self.scratch);
-        let head =
-            read_pieces(self.pbg, self.tree, inner.node, &mut scratch).map(|()| {
-                match scratch.pieces.first() {
-                    Some(&Piece::Operand(head)) => Some(head),
-                    Some(&Piece::Tile { .. }) | None => None,
-                }
-            });
+        let first = read_pieces(self.pbg, self.tree, inner.node, &mut scratch)
+            .map(|()| scratch.pieces.first().copied());
         self.scratch = scratch;
-        head?.map_or(Ok(bare), |head| self.constructor_head(site, head))
+        match first? {
+            Some(Piece::Operand(head)) => self.constructor_head(site, head),
+            Some(Piece::Tile { label, at }) if label == TileName::TYPE_IDENTIFIER => {
+                Ok(self.constructor_named(site, self.name_at(at)))
+            },
+            Some(Piece::Tile { .. }) | None => Ok(bare),
+        }
     }
 
     /// The number of parameters of the data family declared at `constant`.

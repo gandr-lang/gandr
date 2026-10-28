@@ -14146,16 +14146,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a parenthesised type, `(T)`.
+    /// Classify a parenthesised type, `(T)`, or, where a value is read, the
+    /// annotation `(v : T)` the type grammar molds as one.
     ///
     /// # Specification
-    /// - requires: `site` is a parenthesised type in type position.
+    /// - requires: `site` is a parenthesised type.
     /// - ensures: the one operand is read at the form's own reading and
-    ///   adopted.
-    /// - provides: grouping in type position.
+    ///   adopted; where a value is read, a `:` after the operand makes the form
+    ///   the annotation of that operand, read as [`Self::annotated`] reads the
+    ///   expression grammar's, so a type-valued call's argument takes the
+    ///   spelling a path's endpoint takes.
+    /// - provides: grouping in type position, and the annotated argument of a
+    ///   type-valued call.
     /// - fails: yields the empty-list refusal for `()`, which is never the unit
-    ///   type, the hole's own refusal, and a misplaced-tile fault at the first
-    ///   comma of a list, which only a value function space's domain reads.
+    ///   type, the hole's own refusal, a misplaced-tile fault at the first
+    ///   comma of a list, which only a value function space's domain reads, and
+    ///   at a `:` where no value is read, and the annotation's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -14168,10 +14174,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
+    /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
+                || (matches!(site.reading, Reading::Value(_))
+                    && matches!(self.plans.get(site.at.node), Some(&(Plan::Transparent(_) | Plan::Ascribed(..)))))
         },
     )]
     fn parenthesized_type(
@@ -14188,6 +14197,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 ..site
             };
             return Err(unit.out(FragmentBoundary::EmptyList));
+        }
+        if matches!(site.reading, Reading::Value(_))
+            && let Maybe::Present(_) = cursor.at(TileName::COLON)
+        {
+            return self.annotated(site, run, cursor);
         }
         let inner = site.one(run)?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
