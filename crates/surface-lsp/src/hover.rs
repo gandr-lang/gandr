@@ -1102,7 +1102,7 @@ enum Standing<'found>
     /// In a source the table holds nothing for, refused by no lowering.
     Empty,
     /// One of this declaration's or member's own tiles, the innermost holding
-    /// it.
+    /// it; or any tile of a member the engine typed nothing inside.
     Own(&'found Declaration),
     /// One of a form's own tiles that is no declaration's but holds these,
     /// the declarations the form writes: a `rec` group's.
@@ -1127,9 +1127,9 @@ struct Stub<'found>
 /// refused declaration — a root form's that declares nothing among them — in
 /// a source refused as a whole, in a source the table holds nothing for, a
 /// tile the innermost declaration or member holding it writes itself, a tile
-/// of a form that writes declarations and is none itself, else at a form the
-/// engine typed nothing at, an engine gap. An import answers before any
-/// stub, by [`imported`].
+/// of a form that writes declarations and is none itself, any tile of a member
+/// the engine typed nothing inside, else at a form the engine typed nothing
+/// at, an engine gap. An import answers before any stub, by [`imported`].
 ///
 /// # Specification
 /// - requires: `found` and `quoted` are of the text `reading` read, and `table`
@@ -1163,6 +1163,14 @@ fn stub<'found>(
         )) <= offset
             && offset
                 < ByteOffset::from(usize::from(declaration.symbol.range.end.byte(quoted.index)))
+    };
+    let bytes = |declaration: &&Declaration| {
+        (
+            ByteOffset::from(usize::from(
+                declaration.symbol.range.start.byte(quoted.index),
+            )),
+            ByteOffset::from(usize::from(declaration.symbol.range.end.byte(quoted.index))),
+        )
     };
     let within = |declaration: &Declaration| {
         tile.form.start()
@@ -1211,6 +1219,21 @@ fn stub<'found>(
                         .get(first .. first.saturating_add(count))
                         .unwrap_or_default(),
                 )
+            }
+            // A member the engine typed nothing inside — an operation of a
+            // theory a module block holds, which the lowering does not read
+            // as a member — answers as written at each of its tiles, as at
+            // its name (#3303).
+            else if let Some(member) = found.iter().rfind(|declaration| {
+                let (start, end) = bytes(declaration);
+                declaration.written == Written::Member
+                    && holds(declaration)
+                    && !table.entries(page, printed).any(|entry| {
+                        matches!(entry, Maybe::Present(ref typed)
+                            if start <= typed.span().start() && typed.span().end() <= end)
+                    })
+            }) {
+                Standing::Own(member)
             }
             else {
                 Standing::Untyped
@@ -3179,6 +3202,31 @@ mod tests
             }),
             Err(hovered::Absent::Untyped),
             "an ordinary comment answers nothing"
+        );
+    }
+
+    /// #3303: a member the engine typed nothing inside — an operation of a
+    /// theory a module block holds, which the lowering does not read as a
+    /// member — answers as written at each of its tiles, as at its name; a
+    /// member it typed keeps its entries.
+    #[test]
+    fn a_member_typed_nothing_inside_hovers_as_written_3303()
+    {
+        let held =
+            "def x = 1 ;\nmodule Holder {\n  theory In.T {\n    oper size : $0Integer;\n  }\n}\n";
+        let (text, position) = marker(SourceText::from(held));
+        assert_eq!(
+            shown_at(SourceText::from(text.as_str()), position),
+            Ok(String::from("```gandr\noper size : Integer\n```")),
+            "the type of an operation the lowering did not read"
+        );
+        let (text, position) = marker(SourceText::from(
+            "theory T {\n  oper size : $0Integer;\n}\n",
+        ));
+        assert_eq!(
+            shown_at(SourceText::from(text.as_str()), position),
+            Ok(String::from("```gandr\nInteger : Type\n```")),
+            "the type of an operation the engine typed"
         );
     }
 
