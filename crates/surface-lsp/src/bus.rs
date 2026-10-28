@@ -119,6 +119,13 @@ fn send(
 ///   report after the editor's edit, a resync's answer and the detach; a
 ///   connection with another preface is detached at once.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the change forwarder and the view's line reader each block on their channel or socket for the attachment's life"
+    )
+)]
 #[inline]
 pub fn serve(
     reading: &mut BufReader<UnixStream>,

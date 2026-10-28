@@ -102,6 +102,13 @@ fn send(
 ///   notifies a subscribed model connection in both subscription styles and
 ///   leaves an unsubscribed resource silent, and a tool call reads the edit.
 /// - witness: `face::tests::an_edit_through_the_hub_notifies_its_subscribers`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the change forwarder and the model's line reader each block on their channel or socket for the connection's life"
+    )
+)]
 #[inline]
 pub fn serve(
     reading: &mut BufReader<UnixStream>,
@@ -180,6 +187,13 @@ pub fn serve(
 /// - hypothesis: L3 — a session of discovery and a tool call is carried whole
 ///   through a running hub.
 /// - witness: `face::tests::a_relay_carries_a_model_session`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the relay's input thread copies the model's frames to the hub until the input ends"
+    )
+)]
 #[inline]
 pub fn relay<Input, Output>(
     input: Input,

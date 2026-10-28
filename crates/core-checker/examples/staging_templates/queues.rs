@@ -659,6 +659,13 @@ fn worker(
 /// - hypothesis: L2 — every transport's receipts equal their independent serial
 ///   oracle, refusals included.
 /// - witness: `admission::handoff::tests::pooled_receipts_equal_the_serial_oracle`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: the example measures standing threads behind each queue, so it starts the threads it compares"
+    )
+)]
 #[spec(requires: threads.0 > 0)]
 pub(super) fn standing<'schema, F>(
     wire: Wire,

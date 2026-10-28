@@ -461,6 +461,13 @@ impl Endpoint
     ///   the sockets each reports, and a socket another holds is refused.
     /// - witness: `tests::endpoint::two_endpoints_exchange_frames_on_loopback`
     /// - witness: `tests::endpoint::a_socket_another_holds_is_refused`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "io: the endpoint's thread drives its network runtime for the endpoint's life; a pool thread would block on the sockets"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |bound| bound.node == binding.node_id()))]
     #[inline]
     pub fn bind(binding: &Binding) -> Result<Self, Fault>

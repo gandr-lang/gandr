@@ -305,6 +305,13 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: each connection is served on its own thread, which blocks on the client's socket for the connection's life"
+    )
+)]
 #[inline]
 pub fn run_hub<Log>(
     listener: &UnixListener,
@@ -394,6 +401,13 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`run_hub`]'s witnesses.
 /// - witness: `hub::tests::two_clients_hold_their_own_copies_230`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the writer thread blocks on the connection's outbox and socket for the connection's life"
+    )
+)]
 fn connection<Log>(
     stream: UnixStream,
     peer: Peer,
@@ -633,6 +647,13 @@ fn sent(
 ///   whole and ends clean; one closed before shutdown ends abrupt; a truncated
 ///   frame is a fault.
 /// - witness: `hub::tests::a_relay_carries_a_session_and_its_ending`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the relay's input thread blocks on the editor's frames for the session's life"
+    )
+)]
 #[inline]
 pub fn relay<Input, Output>(
     input: Input,

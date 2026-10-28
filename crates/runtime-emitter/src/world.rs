@@ -116,6 +116,13 @@ pub fn chunking() -> TypedChunkerParams
 ///   capture that does not cross declines the run at its migration.
 /// - witness: `tests::world::a_migration_crosses_its_capture_in_and_its_answer_back`
 /// - witness: `tests::world::a_capture_that_does_not_cross_declines_at_its_migration`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "world: a migration runs on a thread of its own, so its store shares no thread with the caller's; it forks nothing"
+    )
+)]
 #[inline]
 pub(crate) fn migrate(
     tier: Tier,

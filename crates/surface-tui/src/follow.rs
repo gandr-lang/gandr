@@ -368,6 +368,13 @@ fn frames<Reading>(
 ///   were.
 /// - witness: `follow::tests::the_view_paints_what_the_bus_sends`
 /// - witness: `tests::terminal::the_side_view_claims_and_restores_a_terminal`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "io: the frame reader and the keyboard reader each block on their input for the view's life"
+    )
+)]
 #[inline]
 pub fn follow<Reading, Writing>(
     reading: Reading,
