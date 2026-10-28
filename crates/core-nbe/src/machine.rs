@@ -169,7 +169,8 @@
 //! unfoldings that side has made since the goal's last decomposition: a
 //! choice's alternatives inherit it, and a decomposition's premises start
 //! empty. An unfolding records its definition and the spine it unfolds under,
-//! compared by the ids the spine's eliminations name; a goal about to make an
+//! and a held endpoint's the spines it re-applies over the call it waits on,
+//! compared by the ids the spines' eliminations name; a goal about to make an
 //! unfolding its side's chain already holds declines with
 //! `DeclineReason::Cycle`, because unfolding again can only return to where it
 //! stands. The channel tables make the key meaningful: one body is evaluated
@@ -975,6 +976,12 @@ struct Unfolded
     constant: ConstantIndex,
     /// The spine it was unfolded under, by the ids its eliminations name.
     spine: Vec<Elimination>,
+    /// For a held endpoint, the spines its unfolding re-applies over the
+    /// call it waits on ([`Scheduler::enclosing_spines`]); empty for a
+    /// neutral its definition heads. A continuation that meets one held call
+    /// twice waits on it under two of these, so the second unfolding is no
+    /// repeat.
+    enclosing: Vec<Vec<Elimination>>,
 }
 
 /// What each side of a goal has unfolded since the goal's last
@@ -1009,9 +1016,10 @@ impl Chain
     ///   an equal unfolding; [`Repeat::Fresh`] with `unfolded` appended
     ///   otherwise.
     /// - provides: the cycle key: a definition over a spine compared by the ids
-    ///   its eliminations name, so one function unfolded twice at different
-    ///   arguments is no cycle, while a definition that unfolds back to itself
-    ///   over the same arguments is.
+    ///   its eliminations name, a held endpoint's with the spines it
+    ///   re-applies, so one function unfolded twice at different arguments, or
+    ///   one held call met under two continuations, is no cycle, while a
+    ///   definition that unfolds back to itself over the same arguments is.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3555,7 +3563,7 @@ where
     ///   reduction, the goal's support holds the definition, the side waits on
     ///   the neutral's unfolding, and the answer is [`Advance::Unfolding`]. For
     ///   a held endpoint, the definition and spine are those of the computation
-    ///   it holds.
+    ///   it holds, and the key also holds the spines the unfolding re-applies.
     /// - provides: the red-l and red-r rules, and the cycle check every
     ///   unfolding passes through.
     /// - fails: every fault the channel raises, and
@@ -3606,6 +3614,11 @@ where
         let unfolded = Unfolded {
             constant,
             spine: Vec::from(held.spine()),
+            enclosing: self
+                .enclosing_spines(neutral, defined)?
+                .into_iter()
+                .map(Vec::from)
+                .collect(),
         };
         if goal.chain.enter(side, unfolded) == Repeat::Repeated {
             return Ok(Advance::Cycle);
@@ -4740,12 +4753,6 @@ where
     /// # Errors
     /// As [`Scheduler::unfolded_neutral`].
     ///
-    /// # Termination
-    /// - reason: the `while` loop collecting the endpoints' spines, which walks
-    ///   the chain [`crate::rules::held_call`] walks and stops where it
-    ///   stopped, not recursion.
-    /// - measure: as [`crate::rules::held_call`]'s.
-    ///
     /// # Adequacy
     /// - hypothesis: L3 — a held endpoint under a force runs its definition,
     ///   delivers the returned value and forces it, and one under an
@@ -4771,8 +4778,66 @@ where
         if defined == neutral {
             return Ok(Evaluation::eliminate(self.definitions, head, held.spine()));
         }
-        let mut enclosing = Vec::from([held.spine()]);
-        let mut focus = held;
+        let enclosing = self.enclosing_spines(neutral, defined)?;
+        let inner = self
+            .domain
+            .neutral(defined)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        Ok(Evaluation::endpoint(
+            self.definitions,
+            head,
+            inner.spine(),
+            &enclosing,
+        ))
+    }
+
+    /// The spines an unfolding of `neutral` re-applies over `defined`, the
+    /// call it waits on: none when `neutral` is that call, else `neutral`'s
+    /// own spine, then the spine of each held endpoint between it and the
+    /// call.
+    ///
+    /// # Specification
+    /// - requires: `defined` is [`Scheduler::unfolded_neutral`] of `neutral`.
+    /// - ensures: empty exactly when `defined` is `neutral`; otherwise
+    ///   `neutral`'s spine first, then each inner endpoint's, outermost first.
+    /// - provides: what [`Scheduler::reapplication`] re-applies and what
+    ///   [`Scheduler::unfold`]'s cycle key holds beside the call's spine, read
+    ///   by one walk.
+    /// - fails: [`ConversionFault::Domain`] for a dangling node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ConversionFault::Domain`] for a dangling node.
+    ///
+    /// # Termination
+    /// - reason: the `while` loop collecting the endpoints' spines, which walks
+    ///   the chain [`crate::rules::held_call`] walks and stops where it
+    ///   stopped, not recursion.
+    /// - measure: as [`crate::rules::held_call`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held endpoint under an elimination of another held
+    ///   endpoint re-applies both spines, and a held call met under two
+    ///   continuations is two keys; re-applying only the endpoint's own spine
+    ///   refuses in evaluation, and keying by the call's spine alone declines
+    ///   the second meeting as a cycle.
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
+    /// - witness: `machine::tests::a_held_call_forced_twice_unfolds_twice_3314`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |spines| spines.is_empty() == (defined == neutral)))]
+    fn enclosing_spines(
+        &self,
+        neutral: NeutralId,
+        defined: NeutralId,
+    ) -> Result<Vec<&[Elimination]>, ConversionFault>
+    {
+        if defined == neutral {
+            return Ok(Vec::new());
+        }
+        let mut focus = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let mut enclosing = Vec::from([focus.spine()]);
         while let NeutralHead::Returned(computation) = focus.head()
             && let Some(&DomainComp::Neutral { neutral: inner, .. }) =
                 self.domain.computation(computation)
@@ -4784,16 +4849,7 @@ where
                 .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
             enclosing.push(focus.spine());
         }
-        let inner = self
-            .domain
-            .neutral(defined)
-            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
-        Ok(Evaluation::endpoint(
-            self.definitions,
-            head,
-            inner.spine(),
-            &enclosing,
-        ))
+        Ok(enclosing)
     }
 
     /// The channel opening a closure at `level` under `arity` fresh variables,
