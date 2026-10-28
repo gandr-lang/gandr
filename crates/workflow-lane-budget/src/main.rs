@@ -164,11 +164,11 @@ fn main() -> ExitCode
 ///   filing did; then, when a `--summed` workflow's newest completed run passed
 ///   its ceiling, the command refuses.
 /// - provides: the whole command.
-/// - fails: every refusal of [`github::recent_runs`], [`github::samples`],
-///   [`github::timed`], [`github::cache_usage`] and [`github::file`];
-///   [`BudgetError::Output`] when standard output cannot be written;
-///   [`BudgetError::Ceiling`], after the report and the filing, naming each
-///   newest run past its ceiling.
+/// - fails: every refusal of [`github::recent_runs`], [`cone::classify`],
+///   [`github::samples`], [`github::read_all`], [`github::timed`],
+///   [`github::cache_usage`] and [`github::file`]; [`BudgetError::Output`] when
+///   standard output cannot be written; [`BudgetError::Ceiling`], after the
+///   report and the filing, naming each newest run past its ceiling.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes on standard output and the
 ///   repository's issue.
@@ -187,11 +187,14 @@ fn run(cli: Cli) -> Result<(), BudgetError>
 {
     let runs = github::recent_runs(cli.runs, Window::Landing)?;
     let mut samples = Vec::new();
-    for &run_id in &runs {
-        let cone = cone::classify(run_id)?;
-        for sample in github::samples(run_id, Jobs::Successful)? {
-            samples.push((cone, sample));
-        }
+    let classified = github::read_all(&runs, |&run_id| {
+        Ok((
+            cone::classify(run_id)?,
+            github::samples(run_id, Jobs::Successful)?,
+        ))
+    })?;
+    for (cone, sampled) in classified {
+        samples.extend(sampled.into_iter().map(|sample| (cone, sample)));
     }
     let mut report = Report::new(&cli.budgets, runs, samples);
     for (window, budgets) in [
@@ -206,10 +209,10 @@ fn run(cli: Cli) -> Result<(), BudgetError>
             .map(|Unclassified(budget)| budget)
             .collect();
         let runs = github::recent_runs(cli.runs, window)?;
-        let mut samples = Vec::new();
-        for &run_id in &runs {
-            samples.extend(github::samples(run_id, Jobs::Successful)?);
-        }
+        let samples = github::read_all(&runs, |&run_id| github::samples(run_id, Jobs::Successful))?
+            .into_iter()
+            .flatten()
+            .collect();
         report = report.with_scheduled(window, &budgets, runs, samples);
     }
     let mut past = Vec::new();

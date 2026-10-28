@@ -2,6 +2,9 @@
 //! `gh`, which resolves the repository from `GH_REPO` or the checkout.
 
 use core::fmt;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::io::Write as _;
 use std::process::Command;
 use std::process::Stdio;
@@ -266,6 +269,93 @@ pub(crate) fn run(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// How many `gh` reads run at once. Each read is a process waiting on the
+/// network, and a night's report makes over a hundred of them: one at a time,
+/// the nightly's lane-budget step took 120 s, past its job's 133 s share with
+/// the job's other steps; eight at a time the same reads took a fifth as long
+/// locally. GitHub's secondary rate limit refuses far more concurrent
+/// requests than this.
+const READS: usize = 8;
+
+/// `read` applied to each of `items`, at most [`READS`] at once, the results
+/// in `items`' order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: when every read succeeds, one result per item, the `i`-th being
+///   `read` of the `i`-th item, so what is built from them is what reading them
+///   one at a time builds; otherwise the refusal of the first item, in `items`'
+///   order, whose read failed. Once a read fails no item not yet taken is read;
+///   every item before it was taken first, so its refusal is still the first in
+///   order.
+/// - provides: the concurrent reads of a report's runs and workflows.
+/// - fails: the first failing read's refusal; [`BudgetError::Reader`] when a
+///   reading thread cannot start or stops without its results.
+/// - panics: none.
+/// - executable: none — the reads are the caller's, external processes here.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reads that finish in the reverse of the asked order come
+///   back in the asked order; of two failing reads the earlier is reported; a
+///   result placed by finishing order, or the later refusal reported, changes
+///   the asserted value.
+/// - witness: `github::tests::reads_come_back_in_the_asked_order`
+/// - witness: `github::tests::the_first_refusal_in_order_is_reported`
+#[inline]
+pub fn read_all<Item, Read, Reader>(
+    items: &[Item],
+    read: Reader,
+) -> Result<Vec<Read>, BudgetError>
+where
+    Item: Sync,
+    Read: Send,
+    Reader: Fn(&Item) -> Result<Read, BudgetError> + Sync,
+{
+    let next = AtomicUsize::new(0);
+    let failed = AtomicBool::new(false);
+    let worker = || {
+        let mut done = Vec::new();
+        while !failed.load(Ordering::Acquire) {
+            let index = next.fetch_add(1, Ordering::AcqRel);
+            let Some(item) = items.get(index)
+            else {
+                break;
+            };
+            let result = read(item);
+            if result.is_err() {
+                failed.store(true, Ordering::Release);
+            }
+            done.push((index, result));
+        }
+        done
+    };
+    let mut done = std::thread::scope(|scope| {
+        let mut workers = Vec::new();
+        for _ in 0 .. READS.min(items.len()) {
+            workers.push(
+                std::thread::Builder::new()
+                    .spawn_scoped(scope, worker)
+                    .map_err(|error| BudgetError::Reader {
+                        message: error.to_string(),
+                    }),
+            );
+        }
+        let mut done = Vec::new();
+        for spawned in workers {
+            let reads = spawned?.join().map_err(|_panic| BudgetError::Reader {
+                message: String::from("the thread stopped without its reads"),
+            })?;
+            done.extend(reads);
+        }
+        Ok(done)
+    })?;
+    done.sort_unstable_by_key(|&(index, _)| index);
+    done.into_iter().map(|(_, result)| result).collect()
+}
+
 /// The newest runs in `window`.
 ///
 /// # Specification
@@ -426,17 +516,16 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
         message: format!("`{line}` is not {what}"),
     };
     let per_page = format!("per_page={}", usize::from(count));
-    let mut route = String::new();
     let mut workflows = Vec::new();
     for line in listing.lines() {
         let (id, name) = line
             .split_once('\t')
             .filter(|&(id, name)| !name.is_empty() && id.parse::<u64>().is_ok())
             .ok_or_else(|| unread(&list, line, "a workflow's identifier and name"))?;
-        route.clear();
-        route.push_str("repos/{owner}/{repo}/actions/workflows/");
-        route.push_str(id);
-        route.push_str("/runs");
+        workflows.push((id, WorkflowName::from(name)));
+    }
+    let listed = read_all(&workflows, |&(id, _)| {
+        let route = format!("repos/{{owner}}/{{repo}}/actions/workflows/{id}/runs");
         let mut runs = Command::new("gh");
         runs.args([
             "api",
@@ -451,23 +540,28 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
             TIMED_QUERY,
         ]);
         let text = run(&mut runs, Feed::Nothing)?;
-        let mut timed = Vec::new();
-        for line in text.lines().take(usize::from(count)) {
-            let (run_id, wall) = line
-                .split_once('\t')
-                .and_then(|(run_id, wall)| {
-                    Some((run_id.parse::<RunId>().ok()?, wall.parse().ok()?))
-                })
-                .ok_or_else(|| unread(&runs, line, "a run's identifier and wall seconds"))?;
-            timed.push(Timed {
-                run: run_id,
-                wall,
-                jobs: samples(run_id, Jobs::Completed)?,
-            });
-        }
-        workflows.push((WorkflowName::from(name), timed));
-    }
-    Ok(workflows)
+        text.lines()
+            .take(usize::from(count))
+            .map(|line| {
+                line.split_once('\t')
+                    .and_then(|(run_id, wall)| {
+                        Some((run_id.parse::<RunId>().ok()?, wall.parse().ok()?))
+                    })
+                    .ok_or_else(|| unread(&runs, line, "a run's identifier and wall seconds"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    let walls: Vec<_> = listed.iter().flatten().copied().collect();
+    let jobs = read_all(&walls, |&(run_id, _)| samples(run_id, Jobs::Completed))?;
+    let mut runs = walls
+        .into_iter()
+        .zip(jobs)
+        .map(|((run, wall), jobs)| Timed { run, wall, jobs });
+    Ok(workflows
+        .into_iter()
+        .zip(listed)
+        .map(|((_, name), listed)| (name, runs.by_ref().take(listed.len()).collect()))
+        .collect())
 }
 
 /// The repository's Actions cache usage.
@@ -606,5 +700,51 @@ pub fn file(
             Ok(Filed::Closed(IssueNumber(issue.number)))
         },
         (Standing::Within | Standing::Unmeasured, _) => Ok(Filed::Untouched),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use core::time::Duration;
+
+    use super::read_all;
+    use crate::error::BudgetError;
+
+    #[test]
+    fn reads_come_back_in_the_asked_order()
+    {
+        let items: Vec<u64> = (0 .. 24).collect();
+        // Each read waits the longer the earlier it was asked, so they finish
+        // in the reverse of the asked order.
+        let read = read_all(&items, |&item| {
+            std::thread::sleep(Duration::from_millis(24_u64.saturating_sub(item)));
+            Ok(item.saturating_mul(2))
+        });
+        assert_eq!(
+            read,
+            Ok(items.iter().map(|item| item.saturating_mul(2)).collect())
+        );
+    }
+
+    #[test]
+    fn the_first_refusal_in_order_is_reported()
+    {
+        let items: Vec<u64> = (0 .. 24).collect();
+        let refused = |item: u64| BudgetError::Gh {
+            command: format!("gh api runs/{item}/jobs"),
+            message: String::from("HTTP 502"),
+        };
+        // The earlier refusal is the slower: the later one is met first.
+        let read = read_all(&items, |&item| {
+            std::thread::sleep(Duration::from_millis(if item == 3 { 60 } else { 1 }));
+            if item == 3 || item == 17 {
+                Err(refused(item))
+            }
+            else {
+                Ok(item)
+            }
+        });
+        assert_eq!(read, Err(refused(3)));
     }
 }
