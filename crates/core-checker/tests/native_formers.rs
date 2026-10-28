@@ -2391,6 +2391,87 @@ fn a_constructor_annotated_at_a_call_stands_apart_from_its_stated_index_3624()
 }
 
 #[test]
+fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
+{
+    let (zeroth, first) = (ConstructorTag::from(0_usize), ConstructorTag::from(1_usize));
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (natural, count) = (ConstantIndex::from(0_usize), ConstantIndex::from(2_usize));
+    let nat = arena.value_type_data(natural, vec![]);
+    let naturals = Declaration::data(
+        natural,
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
+        OriginToken::from(0_usize),
+    );
+    // `ident = fn (x) { return x }`, a pure definition to call.
+    let returns_nat = arena.comp_type_returner(nat);
+    let ident_type = arena.comp_type_arrow(nat, returns_nat);
+    let ident_type = arena.value_type_thunk(ident_type);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let ident = arena.computation_return(bound);
+    let ident = arena.computation_lambda(ident);
+    let ident = arena.value_thunk(ident);
+    let called = |arena: &mut CoreArena, at: u32| {
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at));
+        let head = arena.value_constant(ConstantIndex::from(1_usize));
+        let head = arena.computation_force(head);
+        arena.computation_application(head, argument)
+    };
+    // `Count : Nat -> Type { None : Count(Z); More : (n : Nat, c : Count(n))
+    // --> Count(S(n)); }`: `More`'s count is read by its tail's type and by
+    // its stated index.
+    let zero = arena.value_constructor(nat, zeroth, vec![]);
+    let under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let counted = arena.value_type_data(count, vec![under_one]);
+    let under_both = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let stated = arena.value_constructor(nat, first, vec![under_both]);
+    let counts = Declaration::data(
+        count,
+        DataSignature::new(vec![], vec![vec![], vec![nat, counted]], kind)
+            .indexed(vec![nat], vec![vec![zero], vec![stated]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    // `more(m : Nat, c : Count(ident(m))) -> Count(S(ident(m))) { More(ident(m),
+    // c) }`: the count is written as the call the types write.
+    let in_tail = called(&mut arena, 0);
+    let in_tail = arena.value_returned(in_tail);
+    let tail_type = arena.value_type_data(count, vec![in_tail]);
+    let in_result = called(&mut arena, 1);
+    let in_result = arena.value_returned(in_result);
+    let successor = arena.value_constructor(nat, first, vec![in_result]);
+    let result_type = arena.value_type_data(count, vec![successor]);
+    let returns = arena.comp_type_returner(result_type);
+    let inner = arena.comp_type_pi(tail_type, returns);
+    let outer = arena.comp_type_pi(nat, inner);
+    let declared = arena.value_type_thunk(outer);
+    let field = called(&mut arena, 1);
+    let field = arena.value_nested(field);
+    let tail = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let more = arena.value_constructor(result_type, first, vec![field, tail]);
+    let body = arena.computation_return(more);
+    let body = arena.computation_lambda(body);
+    let body = arena.computation_lambda(body);
+    let body = arena.value_thunk(body);
+    let (report, crossed) = run(&mut arena, &[
+        naturals,
+        definition(ConstantIndex::from(1_usize), ident_type, ident),
+        counts,
+        definition(ConstantIndex::from(3_usize), declared, body),
+    ]);
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "a field written as the call the types write meets them: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the field held in place: {:?}",
+        crossed.readmitted()[3].outcome()
+    );
+}
+
+#[test]
 fn empty_data_elimination_preserves_the_ambient_scope()
 {
     let mut arena = CoreArena::new();
