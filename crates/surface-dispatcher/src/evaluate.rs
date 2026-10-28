@@ -1430,17 +1430,13 @@ impl<'source> Program<'source>
     )]
     #[spec(
         captures: [declarations = self.declarations.len(), definitions = self.definitions.len(),
-            watermark = self.arena.watermark(), blocked = match self.declarations.get(&constant) {
-                None => Some(Unrunnable::Undeclared(constant)),
-                Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => Some(Unrunnable::Data(name)),
-                Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_) }) => Some(Unrunnable::Refused(name)),
-                Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
-                    Some(Unrunnable::Unfocused { declaration: name, refusal }),
-                Some(&Declared { slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed), .. }) => None,
-            }],
+            watermark = self.arena.watermark(), blocked = self.root_unrunnable(constant)],
         ensures: |ref ret| self.declarations.len() == declarations && self.definitions.len() == definitions
-            && blocked.is_none_or(|reason| matches!(*ret, Evaluation::Unrunnable(actual) if actual == reason)
-                && self.arena.watermark() == watermark)
+            && match blocked {
+                Maybe::Present(reason) => matches!(*ret, Evaluation::Unrunnable(actual) if actual == reason)
+                    && self.arena.watermark() == watermark,
+                Maybe::Absent(carried::Absent::Carried) => true,
+            }
             && match *ret {
                 Evaluation::Unrunnable(Unrunnable::Data(name)) => self.declarations.values().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
                 Evaluation::Blamed(name) => self.declarations.values().any(|declared|
@@ -1824,16 +1820,12 @@ impl<'source> Program<'source>
     /// - witness: `tests::boundary::an_extern_operation_is_answered_by_the_rust_caller`
     /// - witness: `tests::boundary::an_extern_operation_no_host_answers_sticks_the_run`
     #[spec(
-        captures: [watermark = self.arena.watermark(), blocked = match self.declarations.get(&constant) {
-            None => Some(Unrunnable::Undeclared(constant)),
-            Some(&Declared { name, slot: Slot::Opaque(Opacity::Data) }) => Some(Unrunnable::Data(name)),
-            Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_) }) => Some(Unrunnable::Refused(name)),
-            Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
-                Some(Unrunnable::Unfocused { declaration: name, refusal }),
-            Some(&Declared { slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed), .. }) => None,
-        }],
-        ensures: |ref ret| blocked.is_none_or(|reason| self.arena.watermark() == watermark
-            && matches!(*ret, Ok(Terminal::Ended(Evaluation::Unrunnable(actual))) if actual == reason)),
+        captures: [watermark = self.arena.watermark(), blocked = self.root_unrunnable(constant)],
+        ensures: |ref ret| match blocked {
+            Maybe::Present(reason) => self.arena.watermark() == watermark
+                && matches!(*ret, Ok(Terminal::Ended(Evaluation::Unrunnable(actual))) if actual == reason),
+            Maybe::Absent(carried::Absent::Carried) => true,
+        },
     )]
     #[inline]
     pub fn call<Host>(
@@ -1849,40 +1841,75 @@ impl<'source> Program<'source>
         if let Maybe::Present(unrunnable) = self.unrunnable(constant, Start::Accepted) {
             return Ok(Terminal::Ended(Evaluation::Unrunnable(unrunnable)));
         }
+        let command = match self.rooted(constant, arguments, into) {
+            Ok(command) => command,
+            Err(evaluation) => return Ok(Terminal::Ended(evaluation)),
+        };
+        let mut store = Store::new();
+        Ok(match self.hosted(command, &mut store, host)? {
+            Ok(terminal) => self.read_back(&store, terminal, into),
+            Err(evaluation) => Terminal::Ended(evaluation),
+        })
+    }
+
+    /// The root a run of the definition at `constant` starts from, for
+    /// [`Self::call`] and [`Self::enter`] alike: the definition forced and
+    /// applied to `arguments`, values of `into`, the first applied first, and
+    /// focused into the program's command arena.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The [`Evaluation::Unrunnable`] naming `constant` when the root did not
+    /// focus.
+    fn rooted(
+        &mut self,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+    ) -> Result<CommandId, Evaluation<'source>>
+    {
         let value = into.value_constant(constant);
         let forced = into.computation_force(value);
         let root = arguments.iter().fold(forced, |applied, &argument| {
             into.computation_application(applied, argument)
         });
         let mut provenance = Provenance::new();
-        let command = match focus_computation(into, root, &mut self.arena, &mut provenance) {
-            Ok(command) => command,
-            Err(refusal) => {
-                return Ok(Terminal::Ended(Evaluation::Unrunnable(
-                    self.unfocused(constant, refusal),
-                )));
-            },
-        };
-        let mut store = Store::new();
-        let outcome = match evaluate_with_host(
+        focus_computation(into, root, &mut self.arena, &mut provenance)
+            .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
+    }
+
+    /// Run `command` into `store` under the process's policy, each operation
+    /// no handler of the run claims offered to `host`: the terminal value, or
+    /// the evaluation the run ends with when the machine declines it, or when
+    /// it halts on an opaque constant or sticks.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The abort `host` ends the run with.
+    fn hosted<Host>(
+        &self,
+        command: CommandId,
+        store: &mut Store,
+        host: &mut Host,
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Host::Abort>
+    where
+        Host: HostHandler,
+    {
+        match evaluate_with_host(
             &self.arena,
             &self.definitions,
             command,
-            (Fuel::from(RUN_BUDGET), RunInputs::new(&mut store)),
+            (Fuel::from(RUN_BUDGET), RunInputs::new(store)),
             host,
         ) {
-            Ok(HostOutcome::Completed(outcome)) => outcome,
-            Ok(HostOutcome::Aborted(abort)) => return Err(abort),
-            Err(declined) => {
-                return Ok(Terminal::Ended(Evaluation::Unfinished(
-                    Unfinished::Declined(declined),
-                )));
-            },
-        };
-        Ok(match self.halted(&store, outcome) {
-            Ok(terminal) => self.read_back(&store, terminal, into),
-            Err(evaluation) => Terminal::Ended(evaluation),
-        })
+            Ok(HostOutcome::Completed(outcome)) => Ok(self.halted(store, outcome)),
+            Ok(HostOutcome::Aborted(abort)) => Err(abort),
+            Err(declined) => Ok(Err(Evaluation::Unfinished(Unfinished::Declined(declined)))),
+        }
     }
 
     /// The two commands that run the declaration at `constant` to `reach`,
@@ -2139,6 +2166,41 @@ impl<'source> Program<'source>
             .into_iter()
             .find_map(|constant| self.hidden.get(&constant))
             .map_or(Maybe::Absent(carried::Absent::Carried), Maybe::Present)
+    }
+
+    /// The reason the declaration at `constant` never runs as the root of an
+    /// accepted run, read off its own slot before any reference is followed:
+    /// [`Self::unrunnable`]'s answer whenever the root alone decides it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn root_unrunnable(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<Unrunnable<'source>, carried::Absent>
+    {
+        match self.declarations.get(&constant) {
+            None => Maybe::Present(Unrunnable::Undeclared(constant)),
+            Some(&Declared {
+                name,
+                slot: Slot::Opaque(Opacity::Data),
+            }) => Maybe::Present(Unrunnable::Data(name)),
+            Some(&Declared {
+                name,
+                slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_),
+            }) => Maybe::Present(Unrunnable::Refused(name)),
+            Some(&Declared {
+                name,
+                slot: Slot::Opaque(Opacity::Unfocused(refusal)),
+            }) => Maybe::Present(Unrunnable::Unfocused {
+                declaration: name,
+                refusal,
+            }),
+            Some(&Declared {
+                slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed),
+                ..
+            }) => Maybe::Absent(carried::Absent::Carried),
+        }
     }
 
     /// The first declaration reachable from `constant` through references

@@ -18,9 +18,7 @@ use gandr_core_checker::Verdict;
 use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::ProducerArity;
-use gandr_core_sequent::Provenance;
 use gandr_core_sequent::Store;
-use gandr_core_sequent::focus_computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -30,16 +28,12 @@ use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
-use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
-use gandr_runtime_emitter::RunInputs;
-use gandr_runtime_emitter::evaluate_with_host;
 use gandr_runtime_net::Net;
 use gandr_surface_lowering::Arguments;
 use gandr_surface_lowering::Container;
@@ -53,9 +47,7 @@ use quenchant_shape::shape::Maybe;
 use super::Console;
 use super::Evaluation;
 use super::Program;
-use super::RUN_BUDGET;
 use super::Start;
-use super::Unfinished;
 use super::Unrunnable;
 use super::console;
 use super::net;
@@ -302,56 +294,36 @@ impl<'source> Program<'source>
             )));
         }
         let mut core = CoreArena::new();
-        let value = core.value_constant(constant);
-        let forced = core.computation_force(value);
-        let root = match entry.arguments {
-            Arguments::Unread => forced,
-            Arguments::Read => {
-                let list = argument_list(&mut core, arguments);
-                core.computation_application(forced, list)
-            },
-            Arguments::Authority => {
-                // The authority is a fresh object no handler of the run
-                // introduced, so each operation exercised through it, or
-                // through a capability attenuated from it, is the host's.
-                let authority = core.value_unit();
-                core.computation_application(forced, authority)
-            },
+        let argument = match entry.arguments {
+            Arguments::Unread => None,
+            Arguments::Read => Some(argument_list(&mut core, arguments)),
+            // The authority is a fresh object no handler of the run
+            // introduced, so each operation exercised through it, or
+            // through a capability attenuated from it, is the host's.
+            Arguments::Authority => Some(core.value_unit()),
         };
-        let mut provenance = Provenance::new();
-        let command = match focus_computation(&core, root, &mut self.arena, &mut provenance) {
+        let command = match self.rooted(constant, argument.as_slice(), &mut core) {
             Ok(command) => command,
-            Err(refusal) => {
-                return Entered::Ended(Evaluation::Unrunnable(self.unfocused(constant, refusal)));
-            },
+            Err(evaluation) => return Entered::Ended(evaluation),
         };
         let mut store = Store::new();
-        let ran = evaluate_with_host(
-            &self.arena,
-            &self.definitions,
-            command,
-            (Fuel::from(RUN_BUDGET), RunInputs::new(&mut store)),
-            &mut EntryHost {
-                console,
-                net,
-                worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
-            },
-        );
-        match ran {
-            Err(declined) => Entered::Ended(Evaluation::Unfinished(Unfinished::Declined(declined))),
-            Ok(HostOutcome::Aborted(status)) => Entered::Exited(status),
-            Ok(HostOutcome::Completed(outcome)) => match self.halted(&store, outcome) {
-                Err(evaluation) => Entered::Ended(evaluation),
-                Ok(terminal) => match store.value(terminal) {
-                    Some(&HeapValue::Literal(Literal::Integer(ref code))) => {
-                        Entered::Exited(ExitStatus::from(code))
-                    },
-                    Some(&HeapValue::Constructed {
-                        tag: ConstructorTag::Tuple(arity),
-                        ..
-                    }) if arity == ProducerArity::ZERO => Entered::Exited(ExitStatus::from(0_u8)),
-                    Some(_) | None => Entered::Ended(self.finish(constant, &store, terminal)),
+        let mut host = EntryHost {
+            console,
+            net,
+            worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
+        };
+        match self.hosted(command, &mut store, &mut host) {
+            Err(status) => Entered::Exited(status),
+            Ok(Err(evaluation)) => Entered::Ended(evaluation),
+            Ok(Ok(terminal)) => match store.value(terminal) {
+                Some(&HeapValue::Literal(Literal::Integer(ref code))) => {
+                    Entered::Exited(ExitStatus::from(code))
                 },
+                Some(&HeapValue::Constructed {
+                    tag: ConstructorTag::Tuple(arity),
+                    ..
+                }) if arity == ProducerArity::ZERO => Entered::Exited(ExitStatus::from(0_u8)),
+                Some(_) | None => Entered::Ended(self.finish(constant, &store, terminal)),
             },
         }
     }
