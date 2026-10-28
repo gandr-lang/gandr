@@ -345,6 +345,54 @@ fn a_thunk_a_migration_returns_runs_at_the_caller_3265()
     }
 }
 
+/// A field of a record a migration answers reads as the same field of the
+/// record built in place: `bind (migrate [host] { return #{x = 1, y = 2} })
+/// (bind r.y (bind r.x (return (y, x))))` reads back `(2, 1)` on each tier,
+/// as the same program without the migration does, though only the world's
+/// body builds the record (#3275).
+#[test]
+fn a_field_of_a_record_a_migration_answers_projects_3275()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Digits("1"));
+    let two = integer(&mut core, Digits("2"));
+    let expected = core.value_tuple(&[two, one]);
+    let label = |label: &str| FieldLabel::from(String::from(label));
+    let program = |core: &mut CoreArena, migrated: Option<World>| {
+        let record = core.value_record(
+            [("x", one), ("y", two)]
+                .map(|(at, field)| (label(at), field))
+                .into(),
+        );
+        let mut body = core.computation_return(record);
+        if let Some(world) = migrated {
+            body = core.computation_world(WorldForm::Migrate { world, body });
+        }
+        let r = innermost(core);
+        let second = core.computation_record_projection(r, label("y"));
+        let r = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let first = core.computation_record_projection(r, label("x"));
+        let y = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let x = innermost(core);
+        let pair = core.value_tuple(&[y, x]);
+        let paired = core.computation_return(pair);
+        let read = core.computation_bind(first, paired);
+        let read = core.computation_bind(second, read);
+        core.computation_bind(body, read)
+    };
+    for migrated in [None, Some(World::Host)] {
+        let program = program(&mut core, migrated);
+        for &tier in tiers() {
+            let (read, _) = ran(tier, &mut core, program);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, read, expected),
+                "{migrated:?} on {tier:?}"
+            );
+        }
+    }
+}
+
 /// The other heads a value the checker lets cross can hold come back from the
 /// world as they went: the unit, a character, a float, a fixed width, an
 /// injection, a list and a lift, in one tuple built only at the world.

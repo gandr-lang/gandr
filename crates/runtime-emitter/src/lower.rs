@@ -27,7 +27,9 @@
 //!   a recorded run are compared only by their head: each distinct head is an
 //!   entry of the function's head table, which a header names by its family.
 //!   Selecting a field by label reads a table laid out per selection, by head
-//!   entry, so the labels never reach the stencils.
+//!   entry, so the labels never reach the stencils. Each record head the
+//!   program builds has an entry, a migration's body included, so a record a
+//!   migration answers finds its field.
 //! - **A fold is a loop.** Folding a native list tests each cell in turn and,
 //!   for each, pushes a frame holding a closure over the window with the head
 //!   bound; nil runs the empty branch with its covariable at the top, and each
@@ -4099,13 +4101,22 @@ enum Root
 }
 
 /// Lower `root` unfused: [`lower_unfused`] for a closed command, the
-/// unfused function of [`lower_suspended`] for a suspended one.
+/// unfused function of [`lower_suspended`] for a suspended one. A label
+/// selection's table covers every record head the survey reaches, so a record
+/// only a migration's body builds, laid out from its answer, keeps its fields.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`lower_unfused`].
+/// As [`lower_unfused`]; [`Form::Dangling`] for a reached node the arena does
+/// not hold.
+///
+/// # Adequacy
+/// - hypothesis: L2 — fields projected from a record only a migration's body
+///   builds answer as they do in place on both tiers: a table without the
+///   record's head sends each selection to its unmatched exit.
+/// - witness: `tests::world::a_field_of_a_record_a_migration_answers_projects_3275`
 fn lowered(
     arena: &CommandArena,
     definitions: &Definitions,
@@ -4189,6 +4200,20 @@ fn lowered(
             break;
         };
         entry = Some(lowering.open(body));
+    }
+    // reason: with no label selection no table reads the heads, and the
+    // laying joins a head the table lacks.
+    if !lowering.selections.is_empty() {
+        for &node in &survey.reached {
+            if let NodeAddress::Producer(id) = node
+                && let ProducerNode::Constructor {
+                    tag: ref tag @ ConstructorTag::Record(_),
+                    ..
+                } = *arena.producer(id).ok_or(Form::Dangling)?
+            {
+                intern(&mut lowering.heads, tag);
+            }
+        }
     }
     let mut table = Vec::with_capacity(lowering.heads.len().saturating_add(1));
     for (at, label) in core::mem::take(&mut lowering.selections) {
