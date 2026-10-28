@@ -2,6 +2,7 @@
 //! memo keys, and the rebuild each former makes only where a child changed.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo as _;
@@ -32,10 +33,15 @@ use super::shift_computation;
 use super::shift_value;
 use super::shift_value_type;
 use super::substitute_comp_type;
+use super::substitute_computation_at;
 use super::substitute_value;
 use super::substitute_value_type;
+use super::unload_computation;
+use super::unload_value;
 use crate::encoding::RewriteGoal;
 use crate::encoding::content_digest;
+use crate::generated::generated;
+use crate::generated::program;
 
 /// A fixture's chain length, as its own quantity rather than a bare count.
 #[repr(transparent)]
@@ -2140,5 +2146,78 @@ fn every_former_rebuilds_exactly_where_a_child_changed()
                 "{former:?}'s {slot:?} alone reads the variable, and its rise is carried"
             );
         }
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
+
+    /// An unload against the substitutions it batches: a generated subject
+    /// under up to two kept binders, its next one to three binders replaced
+    /// by generated components, unloads to the content that substituting the
+    /// components one binder at a time reaches, the innermost first, each
+    /// carried past the replaced binders still outside it; and so does the
+    /// subject held as a value.
+    #[test]
+    fn an_unload_agrees_with_substituting_one_binder_at_a_time(
+        subject in program(),
+        components in proptest::collection::vec(program(), 1 .. 4),
+        kept in 0_u32 .. 3,
+    ) {
+        let mut arena = TermArena::new();
+        let mut table = ContentTable::new();
+        let subject = generated(&mut arena, &subject);
+        let mut built = Vec::new();
+        for component in &components {
+            let computation = generated(&mut arena, component);
+            built.push(arena.value_thunk(computation));
+        }
+        let environment = arena.value_tuple(&built);
+        let width = u32::try_from(built.len()).unwrap_or(u32::MAX);
+        let mut carried = Vec::new();
+        for (&component, outside) in built.iter().zip((0 .. width).rev()) {
+            carried.push(shift_value(
+                &mut arena,
+                &mut table,
+                &mut NullMemo,
+                component,
+                BinderDepth::NONE,
+                BinderDepth::from(outside),
+            ));
+        }
+        let (width, depth) = (BinderDepth::from(width), BinderDepth::from(kept));
+        let unloaded = unload_computation(
+            &mut arena,
+            &mut table,
+            &mut NullMemo,
+            (subject, environment),
+            (width, depth),
+        );
+        let mut substituted = subject;
+        for &component in &carried {
+            substituted = substitute_computation_at(
+                &mut arena,
+                &mut table,
+                &mut NullMemo,
+                (substituted, component),
+                depth,
+            );
+        }
+        proptest::prop_assert_eq!(
+            content_digest(&arena, AnyNode::Computation(unloaded)),
+            content_digest(&arena, AnyNode::Computation(substituted))
+        );
+        let held = arena.value_thunk(subject);
+        let unloaded =
+            unload_value(&mut arena, &mut table, &mut NullMemo, (held, environment), width);
+        let mut substituted = held;
+        for &component in &carried {
+            substituted =
+                substitute_value(&mut arena, &mut table, &mut NullMemo, substituted, component);
+        }
+        proptest::prop_assert_eq!(
+            content_digest(&arena, AnyNode::Value(unloaded)),
+            content_digest(&arena, AnyNode::Value(substituted))
+        );
     }
 }

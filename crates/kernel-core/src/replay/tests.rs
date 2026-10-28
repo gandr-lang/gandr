@@ -3,12 +3,15 @@
 
 use alloc::vec::Vec;
 
+use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_conversion_trace::SubgoalPosition;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Component;
+use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
@@ -21,6 +24,7 @@ use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::ValueId;
 
 use super::EngineClaim;
 use super::KernelVerdict;
@@ -36,7 +40,10 @@ use super::Unfoldings;
 use super::convert;
 use super::convert_unfolding;
 use super::replay;
+use crate::encoding::content_digest;
 use crate::env::Environment;
+use crate::generated::generated;
+use crate::generated::program;
 use crate::presented::Presentations;
 
 /// Replay `trace` for `sides` under the default budget.
@@ -3851,5 +3858,115 @@ fn a_forced_applied_endpoint_converts_with_a_bind_over_its_call_2326()
         ),
         KernelVerdict::Convertible,
         "the forced, applied endpoint is the bind over its call"
+    );
+}
+
+/// What reducing a term came to: the weak head's content or the stop, and the
+/// charges spent.
+#[derive(Debug, PartialEq)]
+struct Reduced
+{
+    /// The weak head's content, or why the reduction stopped.
+    reached: Result<ContentDigest, super::Stop>,
+    /// The charges spent.
+    spent: u64,
+}
+
+/// What reducing `term` as `reduction` says, its environment unloaded as
+/// `unloading` says, came to.
+///
+/// # Specification
+/// trivial.
+fn reduced(
+    arena: &mut TermArena,
+    term: ComputationId,
+    reduction: super::Reduction,
+    unloading: super::Unloading,
+) -> Reduced
+{
+    let unfoldings = Unfoldings::default();
+    let mut run = super::Replay {
+        arena,
+        unfoldings: &unfoldings,
+        evaluator: &unfoldings,
+        trace: core::iter::empty().peekable(),
+        reading: super::Reading::Recorded,
+        position: 0,
+        spent: 0,
+        budget: 384,
+        table: crate::ContentTable::new(),
+        memo: gandr_kernel_check_memo::NullMemo,
+        owed: Vec::new(),
+    };
+    let reached = run
+        .reduce(super::Term::Computation(term), reduction, unloading)
+        .and_then(|reached| match reached {
+            super::Term::Computation(head) => {
+                Ok(content_digest(run.arena, AnyNode::Computation(head)))
+            },
+            super::Term::Value(_) => Err(super::Stop::Refused(ReplayRefusal::Unreadable)),
+        });
+    Reduced {
+        reached,
+        spent: run.spent,
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(1024))]
+
+    /// The environment reduction against the substituting one, which
+    /// unloads after every step: over generated terms, each read plain and
+    /// as an endpoint, the two reach weak heads of one content or stop alike,
+    /// after the same charges.
+    #[test]
+    fn the_environment_reduction_agrees_with_the_substituting_one(program in program()) {
+        for reduction in [super::Reduction::Plain, super::Reduction::Endpoint] {
+            let mut arena = TermArena::new();
+            let term = generated(&mut arena, &program);
+            let at_the_head = reduced(&mut arena, term, reduction, super::Unloading::AtTheHead);
+            let every_step = reduced(&mut arena, term, reduction, super::Unloading::EveryStep);
+            proptest::prop_assert_eq!(at_the_head, every_step);
+        }
+    }
+}
+
+#[test]
+fn a_chain_of_beta_steps_walks_its_reduct_once()
+{
+    /// `λ…λ. return (x₀, …, xₖ₋₁)` under `links` binders, applied to as many
+    /// units, reduced as `unloading` says: the head's content, and a
+    /// computation minted after it, whose position counts the computations
+    /// the reduction minted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn chain(unloading: super::Unloading) -> (Result<ContentDigest, super::Stop>, ComputationId)
+    {
+        let links = 24_u32;
+        let mut arena = TermArena::new();
+        let read: Vec<ValueId> = (0 .. links)
+            .map(|index| arena.value_variable(DeBruijnIndex::from(index)))
+            .collect();
+        let tuple = arena.value_tuple(&read);
+        let mut term = arena.computation_return(tuple);
+        for _binder in 0 .. links {
+            term = arena.computation_lambda(term);
+        }
+        for _argument in 0 .. links {
+            let unit = arena.value_unit();
+            term = arena.computation_application(term, unit);
+        }
+        let Reduced { reached: head, .. } =
+            reduced(&mut arena, term, super::Reduction::Plain, unloading);
+        let unit = arena.value_unit();
+        (head, arena.computation_return(unit))
+    }
+    let (once, minted_once) = chain(super::Unloading::AtTheHead);
+    let (every, minted_every) = chain(super::Unloading::EveryStep);
+    assert_eq!(once, every, "both reach one weak head");
+    assert!(
+        minted_once < minted_every,
+        "the head is walked once, where every step walks the reduct left"
     );
 }

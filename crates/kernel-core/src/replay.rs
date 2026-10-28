@@ -228,6 +228,33 @@
 //! so the kernel admits what the engine's normalizer admits by the same laws
 //! without asking an engine for a trace.
 //!
+//! # Weak heads under an environment
+//!
+//! The replay reduces to a weak head as Courant and Leroy's weak-head machine
+//! does (§ 4.2, Krivine's machine with environments): its focus is a
+//! computation together with an environment, the values its innermost binders
+//! stand for, each held with the environment the reduction read it in. A step
+//! that enters a binder — a β-step at an application or a bind, a case's
+//! payload, a split's components, a fold's head and tail, a fixpoint's
+//! self-reference, an endpoint's read-through — pushes a cell and walks
+//! nothing, and a δ-step enters a definition's closed body with the empty
+//! environment. Where the reduction stops, one unload substitutes the
+//! environment into the weak head and closes each cell the head reaches once,
+//! however often the head reads it. A goal, a decision and [`convert`] see the
+//! weak head the substituting reduction reaches, after the same charges, and a
+//! chain of β-steps walks its reduct once where substitution walks it at each.
+//!
+//! The simulation argument: each environment state unloads to the
+//! substituting reduction's state at the same step. An unload of a band of
+//! cells is the substitutions of its cells one binder at a time, the innermost
+//! first, so a push followed by the unload is the substituting step's
+//! substitution; a step that reads a cell reads the value the substituting
+//! state holds at that place, so both machines fire one rule. The
+//! substituting reduction is this one unloading after every step, and the
+//! replay's witnesses run the two side by side over generated terms.
+//! Machinery that reads closed terms — an endpoint's elimination, a transport
+//! — unloads the state first.
+//!
 //! # Three verdicts
 //!
 //! [`KernelVerdict::Convertible`] and [`KernelVerdict::NotConvertible`] are
@@ -317,6 +344,16 @@
 //! hand-written enumeration would lose shrinking of generated term recipes.
 //! Reconsider on an unmaintained release, a high-risk advisory or a need the
 //! existing strategy API cannot express.
+//!
+//! # References
+//!
+//! - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's
+//!   weak-head machine, Krivine's with environments, is the reduction the
+//!   replay runs, and § 9's sequential recheck is [`replay()`].
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel
+//!   re-assessment's design (§ kernel-reassessment-design item 6) — a step
+//!   enters the trusted base on a property test against its reference and a
+//!   simulation argument.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -341,6 +378,9 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
+use self::environment::Closure;
+use self::environment::Environment;
+use self::environment::Environments;
 use crate::conv::Codomains;
 use crate::conv::ConversionGoal;
 use crate::conv::Convertibility;
@@ -358,6 +398,8 @@ use crate::rewrite::shift_value;
 use crate::rewrite::substitute_computation;
 use crate::rewrite::substitute_value;
 use crate::support::innermost;
+
+mod environment;
 
 /// What the replay reads of a trace identifier: the constant it names, if
 /// any. A caller maps its own identifiers into this before replaying.
@@ -1907,6 +1949,18 @@ enum Reduction
     /// call stuck at a variable or an opaque head also reads as what its
     /// continuation returns with the call as its value ([`Replay::whnf`]).
     Endpoint,
+}
+
+/// When [`Replay::reduce`] reads its environment back into its state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Unloading
+{
+    /// Once, at the weak head it stops at: the reduction the kernel runs.
+    AtTheHead,
+    /// After every step, so no environment outlives a step: the substituting
+    /// reduction the first is tested against.
+    #[cfg(test)]
+    EveryStep,
 }
 
 /// A bind an endpoint reading tries in [`Replay::whnf`], kept while its
@@ -5914,20 +5968,6 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Errors
     /// [`Stop::Budget`], [`Stop::PartialFixpoint`] or [`Stop::Refused`].
     ///
-    /// # Termination
-    /// - reason: the inner `loop` below, which takes one step per iteration;
-    ///   the `'reading` loop, which re-enters it to run a bind's continuation
-    ///   and after each reading; the `loop` choosing the next bind, which pops
-    ///   one attempt per failed turn, passes one bind frame per bind passed
-    ///   over, and ends at a push or at the last pop; the `'endpoints` loop,
-    ///   which resumes a plain reading once its met endpoint is read, and an
-    ///   endpoint reading suspends none; and the `while let` loops rebuilding
-    ///   the head path.
-    /// - measure: the budget left, which every inner iteration charges and
-    ///   every `'reading` iteration enters; then the attempts held, finite
-    ///   because each was pushed by a charged iteration; then the frames left;
-    ///   then the one suspended reading.
-    ///
     /// # Adequacy
     /// - hypothesis: L3: beta, force, bind, and injection reductions settle
     ///   before decisions; a reduced head retains application and bind frames,
@@ -5968,12 +6008,73 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         reduction: Reduction,
     ) -> Result<Term, Stop>
     {
+        self.reduce(term, reduction, Unloading::AtTheHead)
+    }
+
+    /// [`Self::whnf`]'s reduction, its environment read back into its state as
+    /// `unloading` says: once, at the weak head, which the kernel runs, or
+    /// after every step, which is the substituting reduction the first is
+    /// tested against.
+    ///
+    /// The focus and each frame's argument or continuation are closures over
+    /// the cells this reduction pushes ([`environment`]). Every rule that
+    /// would substitute pushes a cell instead; a rule inspecting a value reads
+    /// it through the cells; the transport rules and a returned endpoint's
+    /// machinery read closed terms, so the state is unloaded before them.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::whnf`].
+    /// - ensures: as [`Self::whnf`]; the two unloadings reach α-equal weak
+    ///   heads, or stop alike, after the same charges.
+    /// - provides: the weak-head machine under an environment.
+    /// - fails: as [`Self::whnf`].
+    /// - panics: none.
+    /// - executable: none — [`Self::whnf`]'s attribute checks every reduction
+    ///   the kernel runs, and the two unloadings' agreement relates two runs,
+    ///   which the property witness observes.
+    ///
+    /// # Errors
+    /// [`Stop::Budget`], [`Stop::PartialFixpoint`] or [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the inner `loop` below, which takes one step per iteration;
+    ///   the `'reading` loop, which re-enters it to run a bind's continuation
+    ///   and after each reading; the `loop` choosing the next bind, which pops
+    ///   one attempt per failed turn, passes one bind frame per bind passed
+    ///   over, and ends at a push or at the last pop; the `'endpoints` loop,
+    ///   which resumes a plain reading once its met endpoint is read, and an
+    ///   endpoint reading suspends none; the `for` loops over a data case's
+    ///   fields and equations; and the `while let` loop rebuilding the head
+    ///   path.
+    /// - measure: the budget left, which every inner iteration charges and
+    ///   every `'reading` iteration enters; then the attempts held, finite
+    ///   because each was pushed by a charged iteration; then the frames left;
+    ///   then the one suspended reading.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over generated terms reaching every instantiation
+    ///   site, with arguments read in environments of their own, the two
+    ///   unloadings reach α-equal weak heads or stop alike after the same
+    ///   charges, and the unload at the head mints fewer nodes than one at
+    ///   every step.
+    /// - witness: `replay::tests::the_environment_reduction_agrees_with_the_substituting_one`
+    /// - witness: `replay::tests::a_chain_of_beta_steps_walks_its_reduct_once`
+    fn reduce(
+        &mut self,
+        term: Term,
+        reduction: Reduction,
+        unloading: Unloading,
+    ) -> Result<Term, Stop>
+    {
         let Term::Computation(start) = term
         else {
             return Ok(term);
         };
-        let mut frames: Vec<Frame> = Vec::new();
-        let mut focus = start;
+        // The cells this reduction pushes where the substituting one walked
+        // its reduct: every environment below is a list of them.
+        let mut cells = Environments::default();
+        let mut frames: Vec<Closure<Frame>> = Vec::new();
+        let mut focus = Closure::closed(start);
         let mut progress = Progress::Unchanged;
         // The binds an endpoint reading is trying, outermost first, while the
         // innermost one's continuation reduces in `focus` and `frames`. A
@@ -5987,132 +6088,166 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // suspends, so one is held at most.
         let mut reduction = reduction;
         let mut suspended: Option<Suspended> = None;
+        // The arguments a data case's branch applies to, refilled at each case.
+        let mut arguments: Vec<ValueId> = Vec::new();
         'endpoints: loop {
             'reading: loop {
                 loop {
                     self.charge()?;
+                    match unloading {
+                        Unloading::AtTheHead => {},
+                        #[cfg(test)]
+                        Unloading::EveryStep => {
+                            focus = Closure::closed(self.unload(&mut cells, focus));
+                            for frame in &mut frames {
+                                *frame = Closure::closed(self.unload_frame(&mut cells, *frame));
+                            }
+                        },
+                    }
                     // An elimination meeting a returned endpoint runs the endpoint's
                     // computation and eliminates what it returns: `E[c] ⇝ c to x. E[x]`.
-                    if let Some(
-                        &(Computation::DataCase {
-                            scrutinee: inspected,
-                            ..
-                        }
-                        | Computation::Case {
-                            scrutinee: inspected,
-                            ..
-                        }
-                        | Computation::SigmaSplit {
-                            scrutinee: inspected,
-                            ..
-                        }
-                        | Computation::ListFold {
-                            list: inspected, ..
-                        }
-                        | Computation::ListCase {
-                            list: inspected, ..
-                        }
-                        | Computation::RecordProjection(inspected, _)
-                        | Computation::TupleProjection(inspected, _)
-                        | Computation::Force(inspected)),
-                    ) = self.arena.computation(focus)
-                        && let Some(&Value::Returned(returned)) = self.arena.value(inspected)
+                    // That machinery reads closed terms, so the state is unloaded
+                    // first.
+                    if let Some(inspected) = self.inspected(focus.node)
+                        && let Some(&Value::Returned(_)) = self
+                            .arena
+                            .value(cells.resolve(self.arena, focus.with(inspected)).node)
                     {
+                        let elimination = self.unload(&mut cells, focus);
+                        let mut outer = self.unload_frames(&mut cells, &mut frames);
+                        let endpoint = self.inspected(elimination).ok_or_else(unreadable)?;
+                        let Some(&Value::Returned(returned)) = self.arena.value(endpoint)
+                        else {
+                            return Err(unreadable());
+                        };
                         if reduction == Reduction::Plain {
                             suspended = Some(Suspended {
-                                elimination: focus,
-                                endpoint: inspected,
+                                elimination,
+                                endpoint,
                                 returned,
-                                frames: core::mem::take(&mut frames),
+                                frames: outer,
                             });
                             reduction = Reduction::Endpoint;
-                            focus = returned;
+                            focus = Closure::closed(returned);
                             progress = Progress::Unchanged;
                             continue;
                         }
-                        let bind = self.bind_returned(focus, returned)?;
-                        focus = self.absorbed(bind, &mut frames)?;
+                        let bind = self.bind_returned(elimination, returned)?;
+                        focus = Closure::closed(self.absorbed(bind, &mut outer)?);
+                        frames = outer.into_iter().map(Closure::closed).collect();
                         progress = Progress::Reduced;
                         continue;
                     }
-                    match self.arena.computation(focus) {
+                    // The transport rules read their operands closed.
+                    if focus.environment != Environment::EMPTY
+                        && matches!(
+                            self.arena.computation(focus.node),
+                            Some(
+                                Computation::Transport(..)
+                                    | Computation::PathTransport { .. }
+                                    | Computation::TelescopeTransport { .. }
+                                    | Computation::Ride { .. }
+                                    | Computation::TelescopeRide { .. }
+                                    | Computation::RelatedApplication { .. }
+                            )
+                        )
+                    {
+                        focus = Closure::closed(self.unload(&mut cells, focus));
+                    }
+                    match self.arena.computation(focus.node) {
                         Some(&Computation::DataCase {
                             scrutinee,
                             ref branches,
                             equations,
                             ..
-                        }) => match self.arena.value(scrutinee) {
-                            Some(&Value::Constructor {
-                                datatype,
-                                tag,
-                                ref fields,
-                            }) => {
-                                let branch =
-                                    *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
-                                let field_count = fields.len();
-                                focus = branch;
-                                for position in 0 .. field_count {
-                                    self.charge()?;
-                                    let Some(matched_native_node) = self.arena.value(scrutinee)
+                        }) => {
+                            let matched = cells.resolve(self.arena, focus.with(scrutinee));
+                            match self.arena.value(matched.node) {
+                                Some(&Value::Constructor {
+                                    datatype,
+                                    tag,
+                                    ref fields,
+                                }) => {
+                                    let branch =
+                                        *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
+                                    let field_count = fields.len();
+                                    // The branch applies to each field, then to each
+                                    // index equation's reflexivity, all read where
+                                    // the constructor is.
+                                    arguments.clear();
+                                    for position in 0 .. field_count {
+                                        self.charge()?;
+                                        let Some(&Value::Constructor { ref fields, .. }) =
+                                            self.arena.value(matched.node)
+                                        else {
+                                            return Err(unreadable());
+                                        };
+                                        arguments
+                                            .push(*fields.get(position).ok_or_else(unreadable)?);
+                                    }
+                                    // Each index equation is reflexivity at the
+                                    // constructor's own index, which its datatype
+                                    // states after the parameters.
+                                    let Some(&ValueType::Data {
+                                        arguments: ref indices,
+                                        ..
+                                    }) = self.arena.value_type(datatype)
                                     else {
                                         return Err(unreadable());
                                     };
-                                    let Value::Constructor { ref fields, .. } =
-                                        *matched_native_node
-                                    else {
-                                        return Err(unreadable());
-                                    };
-                                    let field = *fields.get(position).ok_or_else(unreadable)?;
-                                    focus = self.arena.computation_application(focus, field);
-                                }
-                                // Each index equation is reflexivity at the
-                                // constructor's own index, which its datatype
-                                // states after the parameters.
-                                let Some(&ValueType::Data { ref arguments, .. }) =
-                                    self.arena.value_type(datatype)
-                                else {
-                                    return Err(unreadable());
-                                };
-                                let first = arguments
-                                    .len()
-                                    .checked_sub(usize::from(equations))
-                                    .ok_or_else(unreadable)?;
-                                let points =
-                                    arguments.get(first ..).ok_or_else(unreadable)?.to_vec();
-                                for point in points {
-                                    self.charge()?;
-                                    let reflexive = self.arena.value_here(point);
-                                    focus = self.arena.computation_application(focus, reflexive);
-                                }
-                                progress = Progress::Reduced;
-                            },
-                            Some(_) => break,
-                            None => return Err(unreadable()),
+                                    let first = indices
+                                        .len()
+                                        .checked_sub(usize::from(equations))
+                                        .ok_or_else(unreadable)?;
+                                    let points =
+                                        indices.get(first ..).ok_or_else(unreadable)?.to_vec();
+                                    for point in points {
+                                        self.charge()?;
+                                        arguments.push(self.arena.value_here(point));
+                                    }
+                                    // Each argument stands as the application frame
+                                    // the substituting reduction's next steps
+                                    // decompose its application into, charged as
+                                    // each of those steps is.
+                                    for &argument in arguments.iter().rev() {
+                                        self.charge()?;
+                                        frames.push(matched.with(Frame::Apply(argument)));
+                                    }
+                                    focus = focus.with(branch);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
                         },
                         // A dependent split of a pair enters its body with the two
                         // components for its two binders, the outer binder first.
                         Some(&Computation::SigmaSplit {
                             scrutinee, body, ..
-                        }) => match self.arena.value(scrutinee).map(Value::components) {
-                            Some(Some(&[first, second])) => {
-                                let opened = crate::rewrite::substitute_fold_head(
-                                    self.arena,
-                                    &mut self.table,
-                                    &mut self.memo,
-                                    body,
-                                    first,
-                                );
-                                focus = self.instantiate(opened, second);
-                                progress = Progress::Reduced;
-                            },
-                            Some(None) => break,
-                            Some(Some(_)) | None => return Err(unreadable()),
+                        }) => {
+                            let pair = cells.resolve(self.arena, focus.with(scrutinee));
+                            match self.arena.value(pair.node).map(Value::components) {
+                                Some(Some(&[first, second])) => {
+                                    let outer =
+                                        cells.push(self.arena, focus.environment, pair.with(first));
+                                    let environment =
+                                        cells.push(self.arena, outer, pair.with(second));
+                                    focus = Closure {
+                                        node: body,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                Some(None) => break,
+                                Some(Some(_)) | None => return Err(unreadable()),
+                            }
                         },
                         Some(&Computation::RecordProjection(record, ref label)) => {
-                            match self.arena.value(record) {
+                            let read = cells.resolve(self.arena, focus.with(record));
+                            match self.arena.value(read.node) {
                                 Some(&Value::Record(ref fields)) => {
                                     let value = *fields.get(label).ok_or_else(unreadable)?;
-                                    focus = self.arena.computation_return(value);
+                                    focus = read.with(self.arena.computation_return(value));
                                     progress = Progress::Reduced;
                                 },
                                 Some(_) => break,
@@ -6120,45 +6255,53 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             }
                         },
                         Some(&Computation::TupleProjection(tuple, component)) => {
-                            match self.arena.value(tuple).map(Value::components) {
+                            let read = cells.resolve(self.arena, focus.with(tuple));
+                            match self.arena.value(read.node).map(Value::components) {
                                 Some(Some(components)) => {
                                     let value = *components
                                         .get(usize::from(component))
                                         .ok_or_else(unreadable)?;
-                                    focus = self.arena.computation_return(value);
+                                    focus = read.with(self.arena.computation_return(value));
                                     progress = Progress::Reduced;
                                 },
                                 Some(None) => break,
                                 None => return Err(unreadable()),
                             }
                         },
+                        // A fold on a cell runs its cell branch on the head and the
+                        // tail's fold, the branch binding the head outside the
+                        // folded result the bind delivers.
                         Some(&Computation::ListFold {
-                            element,
-                            result,
                             list,
                             on_nil,
                             on_cons,
-                        }) => match self.arena.value(list) {
-                            Some(&Value::ListNil) => {
-                                focus = on_nil;
-                                progress = Progress::Reduced;
-                            },
-                            Some(&Value::ListCons(head, tail)) => {
-                                let branch = crate::rewrite::substitute_fold_head(
-                                    self.arena,
-                                    &mut self.table,
-                                    &mut self.memo,
-                                    on_cons,
-                                    head,
-                                );
-                                frames.push(Frame::Bind(branch));
-                                focus = self
-                                    .arena
-                                    .computation_list_fold(element, result, tail, on_nil, on_cons);
-                                progress = Progress::Reduced;
-                            },
-                            Some(_) => break,
-                            None => return Err(unreadable()),
+                            ..
+                        }) => {
+                            let read = cells.resolve(self.arena, focus.with(list));
+                            match self.arena.value(read.node) {
+                                Some(&Value::ListNil) => {
+                                    focus = focus.with(on_nil);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(&Value::ListCons(head, tail)) => {
+                                    let headed =
+                                        cells.push(self.arena, focus.environment, read.with(head));
+                                    frames.push(Closure {
+                                        node: Frame::Bind(on_cons),
+                                        environment: headed,
+                                    });
+                                    focus = cells
+                                        .fold_over(
+                                            (&mut *self.arena, &mut self.table, &mut self.memo),
+                                            focus,
+                                            read.with(tail),
+                                        )
+                                        .ok_or_else(unreadable)?;
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
                         },
                         // A list case on a cell enters its cell branch with the head
                         // and the tail for its two binders, the head outermost.
@@ -6167,24 +6310,27 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             on_nil,
                             on_cons,
                             ..
-                        }) => match self.arena.value(list) {
-                            Some(&Value::ListNil) => {
-                                focus = on_nil;
-                                progress = Progress::Reduced;
-                            },
-                            Some(&Value::ListCons(head, tail)) => {
-                                let opened = crate::rewrite::substitute_fold_head(
-                                    self.arena,
-                                    &mut self.table,
-                                    &mut self.memo,
-                                    on_cons,
-                                    head,
-                                );
-                                focus = self.instantiate(opened, tail);
-                                progress = Progress::Reduced;
-                            },
-                            Some(_) => break,
-                            None => return Err(unreadable()),
+                        }) => {
+                            let read = cells.resolve(self.arena, focus.with(list));
+                            match self.arena.value(read.node) {
+                                Some(&Value::ListNil) => {
+                                    focus = focus.with(on_nil);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(&Value::ListCons(head, tail)) => {
+                                    let headed =
+                                        cells.push(self.arena, focus.environment, read.with(head));
+                                    let environment =
+                                        cells.push(self.arena, headed, read.with(tail));
+                                    focus = Closure {
+                                        node: on_cons,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
                         },
                         Some(&Computation::Transport(path, value)) => {
                             match crate::path_universe::beta(
@@ -6194,7 +6340,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map_err(|_unreadable_term| unreadable())?
                             {
                                 crate::path_universe::Reduction::Reduced(reduct) => {
-                                    focus = reduct;
+                                    focus = Closure::closed(reduct);
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => break,
@@ -6219,13 +6365,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map_err(|_unreadable_term| unreadable())?
                             {
                                 crate::path_universe::Reduction::Reduced(reduct) => {
-                                    focus = reduct;
+                                    focus = Closure::closed(reduct);
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => {
                                     match self.transport_along_word(term)? {
                                         crate::path_universe::Reduction::Reduced(reduct) => {
-                                            focus = reduct;
+                                            focus = Closure::closed(reduct);
                                             progress = Progress::Reduced;
                                         },
                                         crate::path_universe::Reduction::Stuck => break,
@@ -6256,7 +6402,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map_err(|_unreadable_term| unreadable())?
                             {
                                 crate::path_universe::Reduction::Reduced(reduct) => {
-                                    focus = reduct;
+                                    focus = Closure::closed(reduct);
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => {
@@ -6268,7 +6414,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     .map_err(|_unreadable_term| unreadable())?
                                     {
                                         crate::path_universe::Reduction::Reduced(reduct) => {
-                                            focus = reduct;
+                                            focus = Closure::closed(reduct);
                                             progress = Progress::Reduced;
                                         },
                                         crate::path_universe::Reduction::Stuck => break,
@@ -6295,7 +6441,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map_err(|_unreadable_term| unreadable())?
                             {
                                 crate::path_universe::Reduction::Reduced(reduct) => {
-                                    focus = reduct;
+                                    focus = Closure::closed(reduct);
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => break,
@@ -6323,7 +6469,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map_err(|_unreadable_term| unreadable())?
                             {
                                 crate::path_universe::Reduction::Reduced(reduct) => {
-                                    focus = reduct;
+                                    focus = Closure::closed(reduct);
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => break,
@@ -6351,71 +6497,102 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map_err(|_unreadable_term| unreadable())?
                             {
                                 crate::path_universe::Reduction::Reduced(reduct) => {
-                                    focus = reduct;
+                                    focus = Closure::closed(reduct);
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => break,
                             }
                         },
                         Some(&Computation::Application(head, argument)) => {
-                            frames.push(Frame::Apply(argument));
-                            focus = head;
+                            frames.push(focus.with(Frame::Apply(argument)));
+                            focus = focus.with(head);
                         },
                         Some(&Computation::Bind(bound, body)) => {
-                            frames.push(Frame::Bind(body));
-                            focus = bound;
+                            frames.push(focus.with(Frame::Bind(body)));
+                            focus = focus.with(bound);
                         },
                         Some(&Computation::Project(component, pair)) => {
-                            frames.push(Frame::Project(component));
-                            focus = pair;
+                            frames.push(focus.with(Frame::Project(component)));
+                            focus = focus.with(pair);
                         },
                         // A projection of a lazy pairing runs the component it
                         // names; a pairing under no projection is in weak head
                         // form.
-                        Some(&Computation::With(ref components)) => match frames.last() {
-                            Some(&Frame::Project(component)) => {
-                                let Some(&selected) = components.get(usize::from(component))
-                                else {
-                                    return Err(unreadable());
-                                };
-                                frames.pop();
-                                focus = selected;
-                                progress = Progress::Reduced;
-                            },
-                            Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
+                        Some(&Computation::With(ref components)) => {
+                            match frames.last().map(|frame| frame.node) {
+                                Some(Frame::Project(component)) => {
+                                    let Some(&selected) = components.get(usize::from(component))
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    frames.pop();
+                                    focus = focus.with(selected);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(Frame::Apply(_) | Frame::Bind(_)) | None => break,
+                            }
                         },
-                        Some(&Computation::Force(value)) => match self.arena.value(value) {
-                            Some(&Value::Thunk(body)) => {
-                                focus = body;
-                                progress = Progress::Reduced;
-                            },
-                            Some(_) => break,
-                            None => return Err(unreadable()),
+                        Some(&Computation::Force(value)) => {
+                            let read = cells.resolve(self.arena, focus.with(value));
+                            match self.arena.value(read.node) {
+                                Some(&Value::Thunk(body)) => {
+                                    focus = read.with(body);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
                         },
                         // A case over an injection selects the branch its summand
                         // names; the empty sum's elimination has none and stays stuck.
                         Some(&Computation::Case {
                             scrutinee,
                             ref branches,
-                        }) => match self.arena.value(scrutinee) {
-                            Some(&Value::Injection(summand, payload)) => {
-                                let Some(&branch) = branches.get(usize::from(summand))
-                                else {
-                                    break;
-                                };
-                                focus = self.instantiate(branch, payload);
-                                progress = Progress::Reduced;
-                            },
-                            Some(_) => break,
-                            None => return Err(unreadable()),
+                        }) => {
+                            let read = cells.resolve(self.arena, focus.with(scrutinee));
+                            match self.arena.value(read.node) {
+                                Some(&Value::Injection(summand, payload)) => {
+                                    let Some(&branch) = branches.get(usize::from(summand))
+                                    else {
+                                        break;
+                                    };
+                                    let environment = cells.push(
+                                        self.arena,
+                                        focus.environment,
+                                        read.with(payload),
+                                    );
+                                    focus = Closure {
+                                        node: branch,
+                                        environment,
+                                    };
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
                         },
-                        Some(&Computation::Lambda(body)) => match frames.last() {
-                            Some(&Frame::Apply(argument)) => {
+                        Some(&Computation::Lambda(body)) => match frames.last().copied() {
+                            Some(Closure {
+                                node: Frame::Apply(argument),
+                                environment,
+                            }) => {
                                 frames.pop();
-                                focus = self.instantiate(body, argument);
+                                let environment =
+                                    cells.push(self.arena, focus.environment, Closure {
+                                        node: argument,
+                                        environment,
+                                    });
+                                focus = Closure {
+                                    node: body,
+                                    environment,
+                                };
                                 progress = Progress::Reduced;
                             },
-                            Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
+                            Some(Closure {
+                                node: Frame::Bind(_) | Frame::Project(_),
+                                ..
+                            })
+                            | None => break,
                         },
                         // A fixpoint unfolds at its gate: applied to a canonical
                         // argument at its staged position, the `<` direction, or
@@ -6433,16 +6610,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     0
                                 },
                             };
-                            // The argument at the staged position: that many
-                            // applications down the stack, every frame above it an
-                            // application too.
+                            // The argument at the staged position, read through
+                            // the cells: that many applications down the stack,
+                            // every frame above it an application too.
                             let mut reached = None;
                             let mut observed = false;
                             for (offset, frame) in frames.iter().rev().enumerate() {
-                                match *frame {
+                                match frame.node {
                                     Frame::Apply(argument) => {
                                         if offset == position {
-                                            reached = Some((offset, argument));
+                                            let read =
+                                                cells.resolve(self.arena, frame.with(argument));
+                                            reached = Some((offset, read));
                                             break;
                                         }
                                     },
@@ -6454,36 +6633,50 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             }
                             // A fixpoint's gate inspects its argument, so a returned
                             // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
+                            // That machinery reads closed terms, so the state is
+                            // unloaded first.
                             if let Some((offset, argument)) = reached
-                                && let Some(&Value::Returned(returned)) = self.arena.value(argument)
+                                && let Some(&Value::Returned(_)) = self.arena.value(argument.node)
                             {
-                                let mut applied = focus;
+                                let mut applied = self.unload(&mut cells, focus);
+                                let mut outer = self.unload_frames(&mut cells, &mut frames);
+                                let mut endpoint = None;
                                 for _argument in 0 ..= offset {
-                                    let Some(Frame::Apply(argument)) = frames.pop()
+                                    let Some(Frame::Apply(argument)) = outer.pop()
                                     else {
                                         return Err(unreadable());
                                     };
                                     applied = self.arena.computation_application(applied, argument);
+                                    endpoint = Some(argument);
                                 }
+                                let Some(endpoint) = endpoint
+                                else {
+                                    return Err(unreadable());
+                                };
+                                let Some(&Value::Returned(returned)) = self.arena.value(endpoint)
+                                else {
+                                    return Err(unreadable());
+                                };
                                 if reduction == Reduction::Plain {
                                     suspended = Some(Suspended {
                                         elimination: applied,
-                                        endpoint: argument,
+                                        endpoint,
                                         returned,
-                                        frames: core::mem::take(&mut frames),
+                                        frames: outer,
                                     });
                                     reduction = Reduction::Endpoint;
-                                    focus = returned;
+                                    focus = Closure::closed(returned);
                                     progress = Progress::Unchanged;
                                     continue;
                                 }
                                 let bind = self.bind_returned(applied, returned)?;
-                                focus = self.absorbed(bind, &mut frames)?;
+                                focus = Closure::closed(self.absorbed(bind, &mut outer)?);
+                                frames = outer.into_iter().map(Closure::closed).collect();
                                 progress = Progress::Reduced;
                                 continue;
                             }
                             let gate = match reached {
-                                Some((_, argument)) => match self.arena.value(argument) {
+                                Some((_, argument)) => match self.arena.value(argument.node) {
                                     Some(&Value::Constructor { .. }) => Gate::Constructor,
                                     Some(
                                         &(Value::Variable(_)
@@ -6502,8 +6695,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     | FixpointEvidence::Staged { .. },
                                     Gate::Constructor,
                                 ) => {
-                                    let recursive = self.arena.value_thunk(focus);
-                                    focus = self.instantiate(body, recursive);
+                                    let recursive = focus.with(self.arena.value_thunk(focus.node));
+                                    let environment =
+                                        cells.push(self.arena, focus.environment, recursive);
+                                    focus = Closure {
+                                        node: body,
+                                        environment,
+                                    };
                                     progress = Progress::Reduced;
                                 },
                                 (
@@ -6515,8 +6713,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     {
                                         return Err(Stop::PartialFixpoint);
                                     }
-                                    let recursive = self.arena.value_thunk(focus);
-                                    focus = self.instantiate(body, recursive);
+                                    let recursive = focus.with(self.arena.value_thunk(focus.node));
+                                    let environment =
+                                        cells.push(self.arena, focus.environment, recursive);
+                                    focus = Closure {
+                                        node: body,
+                                        environment,
+                                    };
                                     progress = Progress::Reduced;
                                 },
                                 (
@@ -6527,13 +6730,25 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 | (FixpointEvidence::Partial, Gate::Shut) => break,
                             }
                         },
-                        Some(&Computation::Return(value)) => match frames.last() {
-                            Some(&Frame::Bind(body)) => {
+                        Some(&Computation::Return(value)) => match frames.last().copied() {
+                            Some(Closure {
+                                node: Frame::Bind(body),
+                                environment,
+                            }) => {
                                 frames.pop();
-                                focus = self.instantiate(body, value);
+                                let environment =
+                                    cells.push(self.arena, environment, focus.with(value));
+                                focus = Closure {
+                                    node: body,
+                                    environment,
+                                };
                                 progress = Progress::Reduced;
                             },
-                            Some(&(Frame::Apply(_) | Frame::Project(_))) | None => break,
+                            Some(Closure {
+                                node: Frame::Apply(_) | Frame::Project(_),
+                                ..
+                            })
+                            | None => break,
                         },
                         None => return Err(unreadable()),
                     }
@@ -6542,19 +6757,25 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Some(_)
                         if frames.is_empty()
                             && matches!(
-                                self.arena.computation(focus),
+                                self.arena.computation(focus.node),
                                 Some(&Computation::Return(_))
                             ) =>
                     {
                         // The continuation returned: its bind is spent.
                         if let Some(tried) = attempts.pop() {
-                            frames = tried.outer;
+                            frames = tried.outer.into_iter().map(Closure::closed).collect();
                         }
                         progress = Progress::Reduced;
                         continue;
                     },
                     Some(_) | None if reduction == Reduction::Endpoint => {
-                        (focus, core::mem::take(&mut frames), progress, true)
+                        let call = self.unload(&mut cells, focus);
+                        (
+                            call,
+                            self.unload_frames(&mut cells, &mut frames),
+                            progress,
+                            true,
+                        )
                     },
                     Some(_) | None => break,
                 };
@@ -6601,8 +6822,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 next = (call, outer, before, false);
                                 continue;
                             }
+                            // The continuation runs with the call as a returned
+                            // endpoint for its value, which its binder holds.
                             let leaf = self.arena.value_returned(call);
-                            focus = self.instantiate(body, leaf);
+                            let environment =
+                                cells.push(self.arena, Environment::EMPTY, Closure::closed(leaf));
+                            focus = Closure {
+                                node: body,
+                                environment,
+                            };
                             attempts.push(Attempt {
                                 outer,
                                 call,
@@ -6619,8 +6847,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             }
                             let Some(tried) = attempts.pop()
                             else {
-                                frames = outer;
-                                focus = call;
+                                frames = outer.into_iter().map(Closure::closed).collect();
+                                focus = Closure::closed(call);
                                 progress = before;
                                 break 'reading;
                             };
@@ -6643,9 +6871,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             ) || matches!(stop, Ok(Shape::Neutral(Head::Variable(_), ref spine))
                                     if !spine.iter().any(|elimination| matches!(*elimination, Elimination::Bind(_))))
                             {
-                                frames = tried.outer;
-                                frames.append(&mut outer);
-                                focus = call;
+                                frames = tried
+                                    .outer
+                                    .into_iter()
+                                    .chain(outer)
+                                    .map(Closure::closed)
+                                    .collect();
+                                focus = Closure::closed(call);
                                 progress = Progress::Reduced;
                                 continue 'reading;
                             }
@@ -6673,10 +6905,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 held.returned
             }
             else {
-                while let Some(frame) = frames.pop() {
-                    focus = self.wrap(focus, frame);
-                }
-                focus
+                self.rebuild(&mut cells, focus, &mut frames)
             };
             if matches!(
                 self.shape(
@@ -6698,13 +6927,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     whole,
                     held.endpoint,
                 );
-                focus = self.arena.computation_bind(read, shared);
+                focus = Closure::closed(self.arena.computation_bind(read, shared));
                 frames = Vec::new();
             }
             else {
                 let bind = self.bind_returned(held.elimination, read)?;
-                frames = held.frames;
-                focus = self.absorbed(bind, &mut frames)?;
+                let mut outer = held.frames;
+                focus = Closure::closed(self.absorbed(bind, &mut outer)?);
+                frames = outer.into_iter().map(Closure::closed).collect();
             }
             reduction = Reduction::Plain;
             progress = Progress::Reduced;
@@ -6712,10 +6942,119 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         if progress == Progress::Unchanged {
             return Ok(term);
         }
-        while let Some(frame) = frames.pop() {
-            focus = self.wrap(focus, frame);
+        Ok(Term::Computation(self.rebuild(
+            &mut cells,
+            focus,
+            &mut frames,
+        )))
+    }
+
+    /// The value `computation` inspects, when it is an elimination that runs a
+    /// returned endpoint there first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inspected(
+        &self,
+        computation: ComputationId,
+    ) -> Option<ValueId>
+    {
+        if let Some(
+            &(Computation::DataCase {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::Case {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::SigmaSplit {
+                scrutinee: inspected,
+                ..
+            }
+            | Computation::ListFold {
+                list: inspected, ..
+            }
+            | Computation::ListCase {
+                list: inspected, ..
+            }
+            | Computation::RecordProjection(inspected, _)
+            | Computation::TupleProjection(inspected, _)
+            | Computation::Force(inspected)),
+        ) = self.arena.computation(computation)
+        {
+            Some(inspected)
         }
-        Ok(Term::Computation(focus))
+        else {
+            None
+        }
+    }
+
+    /// `focus` read back outside every binder of its environment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unload(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+    ) -> ComputationId
+    {
+        cells.unload_computation(
+            (&mut *self.arena, &mut self.table, &mut self.memo),
+            focus,
+            BinderDepth::NONE,
+        )
+    }
+
+    /// `frame` read back outside every binder of its environment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unload_frame(
+        &mut self,
+        cells: &mut Environments,
+        frame: Closure<Frame>,
+    ) -> Frame
+    {
+        cells.unload_frame((&mut *self.arena, &mut self.table, &mut self.memo), frame)
+    }
+
+    /// Every frame of `frames` read back, innermost last, leaving `frames`
+    /// empty.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unload_frames(
+        &mut self,
+        cells: &mut Environments,
+        frames: &mut Vec<Closure<Frame>>,
+    ) -> Vec<Frame>
+    {
+        core::mem::take(frames)
+            .into_iter()
+            .map(|frame| self.unload_frame(cells, frame))
+            .collect()
+    }
+
+    /// `focus` under `frames`, every one read back: the weak head a reduction
+    /// stops at, unloaded once.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rebuild(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+        frames: &mut Vec<Closure<Frame>>,
+    ) -> ComputationId
+    {
+        let mut whole = self.unload(cells, focus);
+        while let Some(frame) = frames.pop() {
+            let frame = self.unload_frame(cells, frame);
+            whole = self.wrap(whole, frame);
+        }
+        whole
     }
 
     /// The innermost bind among `outer`, popped, with `call` under the frames
