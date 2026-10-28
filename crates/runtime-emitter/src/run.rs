@@ -125,6 +125,7 @@ use crate::seam::HostOutcome;
 use crate::seam::Offer;
 use crate::transfer::Sites;
 use crate::transfer::TransferRefusal;
+use crate::world::Unmigrated;
 
 /// The environment variable the policy is read from.
 pub const POLICY_VARIABLE: &str = "GANDR_NATIVE";
@@ -235,9 +236,8 @@ pub enum Declined
     Capture(HeapValueId),
     /// The environment binds other than the command's captures.
     Environment,
-    /// This migration's body ran at its world to no value, or a value it took
-    /// or answered did not cross.
-    Migration(CommandId),
+    /// This migration answered nothing, for the reason named.
+    Migration(CommandId, Unmigrated),
 }
 
 impl From<Form> for Declined
@@ -325,10 +325,9 @@ impl core::fmt::Display for Declined
             Self::Environment => {
                 f.write_str("the environment binds other than the command's captures")
             },
-            Self::Migration(at) => write!(
+            Self::Migration(at, why) => write!(
                 f,
-                "the migration at {} ran to no value at its world, or a value it took or \
-                 answered did not cross",
+                "the migration at {} answered nothing: {why}",
                 gandr_core_sequent::NodeAddress::Command(at)
             ),
         }
@@ -488,7 +487,7 @@ pub fn evaluate(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    by_policy(&lowered, (arena, definitions), fuel, store, None)?.hostless()
+    by_policy(&lowered, (arena, definitions), fuel, store, &[], None)?.hostless()
 }
 
 /// Run `root` on `tier` with `fuel` code-word jumps and move its outcome into
@@ -645,6 +644,7 @@ where
         (arena, definitions),
         fuel,
         store,
+        &[],
         Some(&mut adapter),
     )?;
     hosted(ran, adapter)
@@ -721,35 +721,38 @@ where
     }
 }
 
-/// Run `lowered` on the tier the policy picks, the executor wherever native
-/// code is not to be had.
+/// Run `lowered`, closed over `captured`, on the tier the policy picks, the
+/// executor wherever native code is not to be had.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate`].
-fn by_policy(
+/// As [`evaluate`], and [`Declined::Capture`] as [`on_tier`] names it.
+pub fn by_policy(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
+    captured: &[HeapValueId],
     mut offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
     match *POLICY {
         Policy::Always => {
-            match run_native(lowered, source, fuel, store, &[], offer.as_deref_mut()) {
-                Err(Declined::NoPatcher) => run_executor(lowered, source, fuel, store, &[], offer),
+            match run_native(lowered, source, fuel, store, captured, offer.as_deref_mut()) {
+                Err(Declined::NoPatcher) => {
+                    run_executor(lowered, source, fuel, store, captured, offer)
+                },
                 #[cfg(gandr_patcher)]
                 Err(Declined::Emission(_)) => {
-                    run_executor(lowered, source, fuel, store, &[], offer)
+                    run_executor(lowered, source, fuel, store, captured, offer)
                 },
                 ran => ran,
             }
         },
-        Policy::Never => run_executor(lowered, source, fuel, store, &[], offer),
-        Policy::Cached => run_cached(lowered, source, fuel, store, &[], offer),
+        Policy::Never => run_executor(lowered, source, fuel, store, captured, offer),
+        Policy::Cached => run_cached(lowered, source, fuel, store, captured, offer),
     }
 }
 
@@ -1091,7 +1094,7 @@ fn run(
                 Some(Refused::Operands) => return Err(Declined::Stuck),
                 Some(Refused::Reply(value)) => return Err(Declined::Reply(value)),
                 Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
-                Some(Refused::Migration(at)) => return Err(Declined::Migration(at)),
+                Some(Refused::Migration(at, why)) => return Err(Declined::Migration(at, why)),
                 None => {
                     let head = match Observed::try_from(runtime.observed()) {
                         Ok(Observed::Apply) => DestructorTag::Apply,
@@ -1134,6 +1137,7 @@ mod tests
     use crate::function::Function;
     use crate::lower::Form;
     use crate::transfer::TransferRefusal;
+    use crate::world::Unmigrated;
 
     /// A constant table fills its heap region up to the region's capacity,
     /// and one constant more is refused before a word is written.
@@ -1206,7 +1210,8 @@ mod tests
             Declined::Reply(reply),
             Declined::Capture(reply),
             Declined::Environment,
-            Declined::Migration(migration),
+            Declined::Migration(migration, Unmigrated::Unanswered),
+            Declined::Migration(migration, Unmigrated::UnboundWorld),
         ];
         assert_eq!(
             Declined::Unbound,

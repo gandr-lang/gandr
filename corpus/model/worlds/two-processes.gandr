@@ -1,0 +1,30 @@
+// Two processes run one program, each migration to `far` in the process it is bound to.
+//
+// It witnesses the world bindings: a world names a process only through the
+// host's binding, never in the source.
+//
+// One process hosts `far` with `gandr host`, and another runs `main` with
+// `gandr run`, each given the binding `--world far=<key>@<ip:port>`. The first
+// migration holds 42 at `far`. The second reads it there again, a capture the
+// hosting process already holds, so nothing is fetched. With no `--world`,
+// both migrations run in this process and answer the same.
+//
+// - see: `crates/surface-driver/tests/net.rs` — the two processes
+// - see: `twice.gandr` — the same migrations, in one process
+// - see: `corpus/pathological/worlds/open.gandr` — a thunk that cannot
+//   cross
+
+/// The world the entry runs at.
+pub world near;
+
+/// The world the work runs at, in the process its binding names.
+pub world far;
+
+/// `far` computes forty-two and holds it, and a second migration reads it
+/// there again.
+@[ entry((near, far, far)), runs("42") ]
+def main() -> Integer {
+  run held : Integer at far <- migrate [far] { (hold (6 * 7)) };
+  leta answer = held;
+  migrate [far] { pure answer }
+}

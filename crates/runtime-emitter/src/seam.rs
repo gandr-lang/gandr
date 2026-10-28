@@ -19,6 +19,11 @@
 //! at the operation. The host owns external effects, reply typing and
 //! policy; a run performs no host I/O itself.
 //!
+//! A migration is offered to the host too, before it runs: the host runs it
+//! in this process, answers it from where its world is bound, or refuses it,
+//! by the [`Migrated`] it returns. A host that binds no world to a process
+//! runs every migration here.
+//!
 //! A run's regions are allocated at their bounds before it starts, so a run
 //! never repeats from its start and the host sees each operation once.
 //!
@@ -37,6 +42,7 @@
 //!   reply type stays the host's obligation, as for any reply.
 
 use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
@@ -48,12 +54,14 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::world::World;
 use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_values::ChunkStore;
 use gandr_storage_values::ValueManifest;
 
 use crate::crossing;
 use crate::crossing::CrossingRefusal;
+use crate::world::Unmigrated;
 
 /// An operation no handler of the run claims.
 ///
@@ -85,6 +93,39 @@ pub enum HostReply<Abort>
     Abort(Abort),
     /// Leave the operation unhandled, the run stuck at it.
     Decline,
+}
+
+/// A migration a run is about to make: the world it names, the migration's
+/// command, and the values its body captures, each one of the caller's
+/// store, in the order the body binds them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub struct MigrationRequest<'request>
+{
+    /// The world the migration names.
+    pub world: World,
+    /// The migration.
+    pub at: CommandId,
+    /// The captures, values of the caller's store.
+    pub captures: &'request [HeapValueId],
+}
+
+/// A host's decision about one migration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Migrated
+{
+    /// Run it in this process, on a thread and over a store of its own.
+    Here,
+    /// Its answer, a value of the caller's store, crossed back from where it
+    /// ran.
+    Answered(HeapValueId),
+    /// It answers nothing, for the reason named.
+    Refused(Unmigrated),
 }
 
 /// How a run with a host ended.
@@ -132,6 +173,36 @@ pub trait HostHandler
         request: HostRequest<'_>,
         values: &mut HostValues<'_>,
     ) -> HostReply<Self::Abort>;
+
+    /// Decide where a migration runs, before it runs.
+    ///
+    /// # Specification
+    /// - requires: an answered value is one of `values`' store, crossed from
+    ///   the run of the migration's body at its world.
+    /// - ensures: [`Migrated::Here`] runs the migration in this process,
+    ///   [`Migrated::Answered`] continues the run with the answer as the
+    ///   migration's value, and [`Migrated::Refused`] declines the run at the
+    ///   migration with the reason. A host that binds no world elsewhere keeps
+    ///   this default and runs every migration here.
+    /// - executable: none — the trait states the host's obligation; each body
+    ///   is an implementor's, and the run lays out the answer it receives as
+    ///   any reply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a host that answers from a run of its own, one that
+    ///   refuses, and the default each end as their decision says, on both
+    ///   tiers.
+    /// - witness: `tests::world::a_host_decides_where_a_migration_runs`
+    #[inline]
+    fn migrate(
+        &mut self,
+        request: MigrationRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> Migrated
+    {
+        let _ = (request, values);
+        Migrated::Here
+    }
 }
 
 /// The host's value capability over the caller's store: inspect, allocate,
@@ -294,6 +365,16 @@ pub trait Offer
         request: HostRequest<'_>,
         values: &mut HostValues<'_>,
     ) -> Offered;
+
+    /// Offer one migration.
+    ///
+    /// # Specification
+    /// trivial.
+    fn migrate(
+        &mut self,
+        request: MigrationRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> Migrated;
 }
 
 /// A host and the abort result it stopped the run with, if it did.
@@ -330,5 +411,18 @@ where
             },
             HostReply::Decline => Offered::Decline,
         }
+    }
+
+    /// Offer to the host.
+    ///
+    /// # Specification
+    /// trivial.
+    fn migrate(
+        &mut self,
+        request: MigrationRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> Migrated
+    {
+        self.host.migrate(request, values)
     }
 }

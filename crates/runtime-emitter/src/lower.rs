@@ -186,6 +186,7 @@ use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::support::Indices;
+use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -980,6 +981,8 @@ pub enum Callee
         /// lower or runs to no value, or a value it takes or answers does not
         /// cross.
         at: CommandId,
+        /// The world it names, which the host may bind to another process.
+        world: World,
         /// The body, a command binding one covariable, which the host lowers
         /// to run closed over its captures when the migration first runs.
         body: CommandId,
@@ -2642,7 +2645,7 @@ impl Lowering<'_>
                 self.tasks.push(Task::Producer(value, scope));
                 self.tasks.push(Task::Load(continuation, scope));
             },
-            WorldForm::Migrate { body, .. } => {
+            WorldForm::Migrate { world, body } => {
                 let arena = self.arena;
                 let mut reached = Vec::new();
                 reach(
@@ -2661,7 +2664,14 @@ impl Lowering<'_>
                     }
                 }
                 let captures = self.captured(Suspension::Thunk(body), scope)?;
-                let call = self.call(&Callee::Migrate { at: id, body }, Immediate::from(1_u32))?;
+                let call = self.call(
+                    &Callee::Migrate {
+                        at: id,
+                        world,
+                        body,
+                    },
+                    Immediate::from(1_u32),
+                )?;
                 let header =
                     self.header(&ConstructorTag::Tuple(ProducerArity::from(captures.len())))?;
                 let (low, family) = header_operands(header);

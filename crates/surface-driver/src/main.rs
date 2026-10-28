@@ -30,6 +30,8 @@
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
+//! | `gandr run --world <world>=<key>@<ip:port> <file>` | as `run`, each migration to a world bound to another key shipped to it and its answer read back; repeatable, one per world | as `run`, and an entry that may migrate to a world no `--world` binds |
+//! | `gandr host --world <world>=<key>@<ip:port> --migrations <n> <file>` | a line per migration a `run` of the same source ships here, `ran a migration at <world>, fetching <n> chunks` or `refused a migration at <world>: <reason>` | a network that fails before `n` are answered, or a source that never reached the machine |
 //! | `gandr stage <programs>` | a line per program — the certificates the kernel readmitted and its families by how they were admitted — then the run's digest and verdict | a certificate the kernel refused, a program that could not be checked, or a family admission that faulted |
 //! | `gandr stage --jobs <threads> <programs>` | as `stage`, each program's stages forked onto that many threads | as `stage` |
 //! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
@@ -184,6 +186,10 @@
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
 //!   and § quant-try-first — a hole's occurrence count under a cell's step is
 //!   reported per cell by `gandr cells`, never refused.
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: §
+//!   storage-programme-worlds-sessions — `gandr host` is the process a
+//!   migration is committed to and dereferenced at, and `--world` binds the
+//!   world it runs at to that process.
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
 //!   ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local
 //!   artifact, the endpoint of a one-role choreography.
@@ -322,6 +328,7 @@ use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
+use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
@@ -335,6 +342,7 @@ use gandr_surface_dispatcher::Lock;
 use gandr_surface_dispatcher::LockFault;
 use gandr_surface_dispatcher::Manifest;
 use gandr_surface_dispatcher::ManifestFault;
+use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Package;
@@ -365,6 +373,8 @@ use gandr_surface_dispatcher::Unshadowed;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::WorldBinding;
+use gandr_surface_dispatcher::WorldBindings;
 use gandr_surface_dispatcher::WorldName;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::packaged;
@@ -630,9 +640,12 @@ enum Command
     /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`, and
     /// `Console.print(s)` writes `s` as a line of standard output. A `Net`
     /// operation binds the program's network on first use, as the `--net-*`
-    /// flags say. Exits with that code, its low byte; otherwise 1 when the
-    /// run is blamed on a goal or stops short of one, and 2 when the source
-    /// never reaches the machine or declares no `main`.
+    /// flags say. A migration runs in this process, or, when `--world` binds
+    /// any world, where those bindings bind its world; an entry that may
+    /// migrate to a world no `--world` binds never runs. Exits with that
+    /// code, its low byte; otherwise 1 when the run is blamed on a goal or
+    /// stops short of one, and 2 when the source never reaches the machine or
+    /// declares no `main`.
     Run
     {
         /// The source file to run.
@@ -640,7 +653,36 @@ enum Command
         /// The arguments the program's `main` reads, in order.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         arguments: Vec<String>,
+        /// A world bound to the host it runs at, as `<world>=<key>@<ip:port>`;
+        /// repeated, one per world.
+        #[arg(long = "world", value_name = "WORLD=KEY@IP:PORT")]
+        worlds: Vec<WorldBinding>,
         /// Where the program's network binds and what key it proves.
+        // Boxed: a key outweighs every other verb's flags.
+        #[command(flatten)]
+        net: Box<NetFlags>,
+    },
+    /// Host the worlds of a source: check it as `run` does, then run each
+    /// migration another `gandr run` of the same source ships to a world its
+    /// bindings bind to this process's key.
+    ///
+    /// Prints `ran a migration at <world>, fetching <n> chunks` for each it
+    /// runs, and `refused a migration at <world>: <reason>` for each it
+    /// refuses. Exits 0 when it has answered `--migrations`, 1 when the
+    /// network fails first, and 2 when the source never reaches the machine.
+    Host
+    {
+        /// The source file whose worlds are hosted.
+        path: PathBuf,
+        /// A world bound to the host it runs at, as `<world>=<key>@<ip:port>`;
+        /// repeated, one per world. Each bound to this process's key is
+        /// hosted here.
+        #[arg(long = "world", value_name = "WORLD=KEY@IP:PORT", required = true)]
+        worlds: Vec<WorldBinding>,
+        /// How many migrations to answer before exiting.
+        #[arg(long, value_name = "COUNT", default_value = "1")]
+        migrations: NonZeroUsize,
+        /// Where the network binds and what key it proves.
         // Boxed: a key outweighs every other verb's flags.
         #[command(flatten)]
         net: Box<NetFlags>,
@@ -811,8 +853,8 @@ impl From<Jobs> for Width
     }
 }
 
-/// Where `gandr run` binds a program's network, the key it proves, and how
-/// it finds peers.
+/// Where `gandr run` and `gandr host` bind a program's network, the key it
+/// proves, and how it finds peers.
 #[derive(Debug, clap::Args)]
 struct NetFlags
 {
@@ -856,6 +898,19 @@ impl From<NetFlags> for Binding
             None => binding,
         }
     }
+}
+
+/// What `gandr run` and `gandr host` give the script they run: its network,
+/// its world bindings, and how many migrations it hosts instead of running.
+#[derive(Debug, Default)]
+struct Hosting
+{
+    /// The network, bound on first use.
+    network: Option<Binding>,
+    /// The world bindings, when `--world` binds a world.
+    bindings: Option<WorldBindings>,
+    /// How many migrations `host` answers.
+    migrations: Option<MigrationCount>,
 }
 
 /// How much of each report `check` and `test` print.
@@ -1295,7 +1350,9 @@ enum Screen
 ///   line on standard error when the cache cannot be installed; `lock` rewrites
 ///   each package's lock as [`lock`] states; `run` runs its script as
 ///   [`script`] states, its `Net` operations served on the network its
-///   `--net-bind`, `--net-secret` and `--net-lookup` flags bind, and `fmt` lays
+///   `--net-bind`, `--net-secret` and `--net-lookup` flags bind and its
+///   migrations sent where its `--world` flags bind them, `host` hosts the
+///   worlds of its script on that network as [`script`] states, and `fmt` lays
 ///   out its paths as [`fmt`] states. `lsp` serves and `lsp --capabilities`
 ///   prints as [`lsp`] and [`capabilities`] state, `repl` runs as [`repl`]
 ///   states, and `tui` as [`tui`] states. Every face writes its types and
@@ -1368,8 +1425,8 @@ fn main() -> ExitCode
     // The packages a `check` reached, whose manifests it reconciles, and the
     // store their locks and exports commit to.
     let mut packages: Vec<Packaged> = Vec::new();
-    // The network a `run` gives its program, bound on first use.
-    let mut network = None;
+    // The network, bindings and migrations a `run` or `host` gives its program.
+    let mut hosting = Hosting::default();
     let mut store: Option<Store> = None;
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
@@ -1455,10 +1512,29 @@ fn main() -> ExitCode
         Some(Command::Run {
             path,
             arguments,
+            worlds,
             net,
         }) => {
-            network = Some(Binding::from(*net));
+            hosting.network = Some(Binding::from(*net));
+            hosting.bindings = (!worlds.is_empty()).then(|| WorldBindings::new(worlds));
             (Invocation::Run { path, arguments }, Verbosity::User)
+        },
+        Some(Command::Host {
+            path,
+            worlds,
+            migrations,
+            net,
+        }) => {
+            hosting.network = Some(Binding::from(*net));
+            hosting.bindings = Some(WorldBindings::new(worlds));
+            hosting.migrations = Some(MigrationCount::from(migrations.get()));
+            (
+                Invocation::Run {
+                    path,
+                    arguments: Vec::new(),
+                },
+                Verbosity::User,
+            )
         },
         Some(Command::Stage { jobs, programs }) => (
             Invocation::Stage {
@@ -1604,7 +1680,7 @@ fn main() -> ExitCode
             spelling,
         },
         &packages,
-        network,
+        hosting,
         store.as_mut(),
         &mut stdout,
         &mut stderr,
@@ -2258,10 +2334,12 @@ fn unpathed(unpathed: &Unpathed) -> ExitCode
 ///   does. The run's report and its verdict close standard output, and the exit
 ///   code is the verdict's, or a lock's, a manifest's, an export's or a
 ///   dependency's export's when that is worse. A script follows [`script`], its
-///   entry's `Net` operations served on a network bound as `network` says: what
-///   it prints goes to standard output, its diagnostics to standard error and
-///   its run status chooses the exit. A staging follows [`stage`], a formatting
-///   [`fmt`], a ledger task [`ledger`], and a census [`cells`].
+///   entry's `Net` operations served on a network bound as `hosting` says, its
+///   migrations sent where `hosting`'s bindings bind them, or its worlds served
+///   when `hosting` serves: what it prints goes to standard output, its
+///   diagnostics to standard error and its run status chooses the exit. A
+///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
+///   and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -2293,7 +2371,7 @@ fn render(
     outcome: Outcome,
     printing: Printing,
     packages: &[Packaged],
-    network: Option<Binding>,
+    hosting: Hosting,
     store: Option<&mut Store>,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
@@ -2325,8 +2403,14 @@ fn render(
             stderr,
         ),
         Outcome::Script(mut runnable) => {
-            if let Some(binding) = network {
+            if let Some(binding) = hosting.network {
                 runnable.network(Net::new(binding));
+            }
+            if let Some(bindings) = hosting.bindings {
+                runnable.bindings(bindings);
+            }
+            if let Some(migrations) = hosting.migrations {
+                runnable.hosting(migrations);
             }
             script(&mut runnable, printing.spelling, stdout, stderr)
         },
@@ -3313,10 +3397,13 @@ const fn worse(
 ///   carrying a refusal is `gandr: <path>: refused; nothing ran`, and one
 ///   declaring no `main` at its top level runs nothing — not its last
 ///   declaration — and is one line on standard error naming `def main` and
-///   pointing at `gandr check` and `gandr test`. The exit code is an entry's
-///   exit status when it returned or exited with one; otherwise `1` for a run
-///   that stopped short of one, and `2` for a script that never reached the
-///   machine.
+///   pointing at `gandr check` and `gandr test`. A script that serves writes a
+///   line to standard output for each migration it answers, and, when the
+///   network fails first, one line on standard error counting those answered.
+///   The exit code is an entry's exit status when it returned or exited with
+///   one, or `0` for serving that answered every migration asked for; otherwise
+///   `1` for a run that stopped short of one, and `2` for a script that never
+///   reached the machine.
 /// - provides: `gandr run`, with what it prints on the one stream a caller
 ///   reads.
 /// - fails: the first write error on either stream.
@@ -3335,7 +3422,8 @@ const fn worse(
 ///   observations. Arbitrary machine programs and interruption timing are
 ///   outside them. An entry returning a code, one exiting through `Proc.exit`,
 ///   one counting its arguments and one reaching a goal observe the entry's
-///   statuses.
+///   statuses. Two processes, one serving the seat of the migration model and
+///   one running it, observe the served lines and the run's status.
 /// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
@@ -3345,6 +3433,7 @@ const fn worse(
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
 /// - witness: `tests::cli::a_program_prints_hello_world_2279`
+/// - witness: `tests::net::two_processes_run_the_far_world_s_migrations_there`
 fn script(
     runnable: &mut Script,
     spelling: Spelling,
@@ -3422,6 +3511,12 @@ fn script(
                     "gandr: {path}: declares no `main` to run; a program runs its `def main() -> \
                      Unit {{ … }}`, and a source of declarations alone is checked by `gandr \
                      check` or tested by `gandr test`"
+                )?,
+                Ran::Hosted(Hosted::Answered(_)) => {},
+                Ran::Hosted(Hosted::Faulted { answered }) => writeln!(
+                    stderr,
+                    "gandr: {path}: the network failed after {} migrations",
+                    usize::from(answered)
                 )?,
             }
         },

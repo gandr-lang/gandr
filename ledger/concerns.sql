@@ -58,4 +58,5 @@ INSERT INTO site VALUES('sharing','runtime-net','chunks','consumes','content-chu
 INSERT INTO site VALUES('sharing','storage-artifact','record::value','implements','content-chunks','A kernel artifact on the value plane: each declaration segment''s constructor holds the one before it, so an edit to a declaration shares every chunk before it, across edits and across the packages one store holds.');
 INSERT INTO site VALUES('sharing','storage-chunker','typed','implements','content-chunks','The typed scanner: a value''s chunk cut where a residue divides kappa or the cap fires, at a boundary constructor''s exit.');
 INSERT INTO site VALUES('sharing','storage-values','commit','defines','content-chunks','`cam_commit`: a value cut at its boundary constructors into chunks named by digest, the boundary and alias classification deciding where a cut falls.');
+INSERT INTO site VALUES('sharing','surface-dispatcher','evaluate::worlds','consumes','content-chunks','A migration''s captures fetched by the host that runs it, skipping each it holds whole and naming every value it holds, so a value it made itself crosses back to it as nothing.');
 COMMIT;

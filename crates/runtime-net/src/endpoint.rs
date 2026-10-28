@@ -20,8 +20,12 @@
 //! - The endpoint serves its [`Chunks`] under [`CHUNKS_ALPN`] whatever its
 //!   owner is doing, and [`Endpoint::fetch`] asks a peer for a value's chunks
 //!   on a connection of its own; neither touches a stream the owner holds.
+//! - A migration that arrives under [`WORLDS_ALPN`] waits for the owner's
+//!   [`Endpoint::arrive`], and the chunks its asker fetches after the answer
+//!   are served whatever the owner is doing, even once it drops the endpoint.
 //!
 //! [`CHUNKS_ALPN`]: crate::CHUNKS_ALPN
+//! [`WORLDS_ALPN`]: crate::WORLDS_ALPN
 
 mod driver;
 
@@ -42,6 +46,10 @@ use crate::chunks::Framed;
 use crate::peer::NodeId;
 use crate::peer::Peer;
 use crate::peer::Secret;
+use crate::worlds::Answer;
+use crate::worlds::Arrival;
+use crate::worlds::ArrivalId;
+use crate::worlds::Configuration;
 
 /// The protocol name an endpoint offers and dials: a peer that speaks
 /// another refuses the handshake.
@@ -286,6 +294,17 @@ impl Binding
     {
         self.secret.node_id()
     }
+
+    /// The chunks the endpoint will serve and fetch into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn chunks(&self) -> &Chunks
+    {
+        &self.chunks
+    }
 }
 
 /// Why an operation on an endpoint did not complete.
@@ -351,6 +370,16 @@ pub enum Fault
         /// The value plane's refusal, naming the chunk.
         refusal: ValueError,
     },
+    /// A migration's connection failed, or the far host closed it unanswered.
+    Migrate
+    {
+        /// The far host.
+        peer: NodeId,
+        /// What failed.
+        reason: String,
+    },
+    /// The endpoint holds no arrival by this name.
+    Unarrived(ArrivalId),
     /// The endpoint's thread is gone.
     Driver,
 }
@@ -387,6 +416,10 @@ impl fmt::Display for Fault
             Self::Refused { peer, refusal } => {
                 write!(f, "the value fetched from {peer} was refused: {refusal}")
             },
+            Self::Migrate { peer, ref reason } => {
+                write!(f, "the migration to {peer} failed: {reason}")
+            },
+            Self::Unarrived(arrival) => write!(f, "no {arrival} is held"),
             Self::Driver => write!(f, "the endpoint's thread is gone"),
         }
     }
@@ -670,6 +703,137 @@ impl Endpoint
         self.ask(|reply| driver::Request::Fetch(id, dialed, (wanted, request), reply))
     }
 
+    /// Ship `configuration` to `peer`, serve the chunks of its captures `peer`
+    /// fetches, and fetch the chunks of the answer this endpoint's store
+    /// lacks, naming the captures held.
+    ///
+    /// # Specification
+    /// - requires: the store holds each capture's whole closure.
+    /// - ensures: the far host's answer; for an answered value the store holds
+    ///   its whole closure. One connection under [`WORLDS_ALPN`] carries the
+    ///   configuration, each fetch the far host makes and the answer's fetch,
+    ///   and is closed before this returns.
+    /// - fails: [`Fault::Migrate`] when the dial or the connection fails, or
+    ///   the far host closes it unanswered; [`Fault::Malformed`] for an answer
+    ///   that does not frame; [`Fault::Fetch`] and [`Fault::Refused`] as the
+    ///   answer's fetch fails; [`Fault::Oversized`] for a configuration or a
+    ///   manifest longer than a part; [`Fault::Driver`].
+    /// - panics: none.
+    /// - executable: none — the answer is the far host's, across the network.
+    ///
+    /// # Errors
+    /// As the failures above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a far endpoint fetches two captures, answers their
+    ///   sum, and the asker reads it back from its own store; a refusal crosses
+    ///   back with nothing fetched; a configuration that does not frame never
+    ///   reaches the far owner.
+    /// - witness: `tests::worlds::a_migration_runs_at_the_far_host_and_its_answer_comes_back`
+    /// - witness: `tests::worlds::a_refusal_crosses_back_and_nothing_is_fetched`
+    ///
+    /// [`WORLDS_ALPN`]: crate::WORLDS_ALPN
+    #[inline]
+    pub fn migrate(
+        &mut self,
+        peer: &Peer,
+        configuration: &Configuration,
+    ) -> Result<Answer, Fault>
+    {
+        let framed = configuration.framed()?;
+        let captures = configuration.captures().to_vec();
+        let (id, dialed) = (peer.id(), peer.endpoint_addr());
+        self.ask(|reply| driver::Request::Migrate(id, dialed, (framed, captures), reply))
+    }
+
+    /// Wait for a migration to reach this endpoint.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the next migration whose configuration read whole, held by
+    ///   the name it carries until [`Self::answer`] answers it; a connection
+    ///   whose configuration does not read is closed unanswered and skipped.
+    /// - fails: [`Fault::Accept`] when the endpoint closes; [`Fault::Driver`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the asker's, across the network.
+    ///
+    /// # Errors
+    /// [`Fault::Accept`] or [`Fault::Driver`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the far owner reads the asker's key and the
+    ///   configuration it sent; one that does not frame is skipped.
+    /// - witness: `tests::worlds::a_migration_runs_at_the_far_host_and_its_answer_comes_back`
+    /// - witness: `tests::worlds::a_configuration_that_does_not_frame_is_never_offered`
+    #[inline]
+    pub fn arrive(&mut self) -> Result<Arrival, Fault>
+    {
+        self.ask(driver::Request::Arrive)
+    }
+
+    /// Fetch the chunks of `wanted` that this endpoint's store lacks from the
+    /// asker of `arrival`, over its connection, naming each of `held`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::fetch`], the request and answer on a stream of the
+    ///   arrival's connection, which stays open.
+    /// - fails: [`Fault::Unarrived`] for an arrival this endpoint does not
+    ///   hold; otherwise as [`Self::fetch`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failures above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the far owner fetches both captures of a migration
+    ///   from its asker and reads them back equal.
+    /// - witness: `tests::worlds::a_migration_runs_at_the_far_host_and_its_answer_comes_back`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fetched| fetched.bytes >= u64::try_from(usize::from(fetched.chunks)).unwrap_or(u64::MAX)))]
+    #[inline]
+    pub fn fetch_arrived(
+        &mut self,
+        arrival: ArrivalId,
+        wanted: &ValueManifest,
+        held: &[ValueManifest],
+    ) -> Result<Fetched, Fault>
+    {
+        let request = Framed::request(wanted, held)?;
+        let wanted = *wanted;
+        self.ask(|reply| driver::Request::FetchArrived(arrival, (wanted, request), reply))
+    }
+
+    /// Answer `arrival` with `answer`, then serve the chunks its asker fetches
+    /// over its connection until the asker closes it.
+    ///
+    /// # Specification
+    /// - requires: an answered value's whole closure is in the store.
+    /// - ensures: the endpoint holds the arrival no more; the answer is sent,
+    ///   and the connection is served whatever the owner does next.
+    /// - fails: [`Fault::Unarrived`] for an arrival this endpoint does not
+    ///   hold; [`Fault::Migrate`] when the answer is not sent;
+    ///   [`Fault::Oversized`]; [`Fault::Driver`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the asker's, across the network.
+    ///
+    /// # Errors
+    /// As the failures above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an answered value is fetched by the asker after the
+    ///   answer, and an arrival answered once is unknown after.
+    /// - witness: `tests::worlds::a_migration_runs_at_the_far_host_and_its_answer_comes_back`
+    #[inline]
+    pub fn answer(
+        &mut self,
+        arrival: ArrivalId,
+        answer: &Answer,
+    ) -> Result<(), Fault>
+    {
+        let framed = answer.framed()?;
+        self.ask(|reply| driver::Request::Answer(arrival, framed, reply))
+    }
+
     /// Hand the thread the request `make` builds around a reply channel, and
     /// wait for the answer on it.
     ///
@@ -699,15 +863,18 @@ impl Drop for Endpoint
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the thread has closed every connection, within its grace, and
-    ///   ended.
+    /// - ensures: each asker of an answered migration has closed its
+    ///   connection, then the thread has closed every connection, each wait
+    ///   within its grace, and ended.
     /// - panics: none.
     /// - executable: none — the thread's end is observed only by joining it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — endpoints dropped at the end of each witness leave no
-    ///   thread behind for the next.
+    ///   thread behind for the next, and an owner dropped as soon as it answers
+    ///   still serves the answer.
     /// - witness: `tests::endpoint::two_endpoints_exchange_frames_on_loopback`
+    /// - witness: `tests::worlds::an_owner_dropped_once_it_answers_still_serves_the_answer`
     #[inline]
     fn drop(&mut self)
     {

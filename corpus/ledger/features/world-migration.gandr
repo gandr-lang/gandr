@@ -1,7 +1,6 @@
 /// `world-migration` runs a migration's body at its world and brings its answer back.
 ///
 /// Implemented: `migrate [w] { t }` runs `t` on a thread and over a store of its own, closed over its captures; each capture crosses in by content and the answer crosses back, on both tiers; a thunk it answers runs at the caller, forced or applied there, and a field the caller projects from a record it answers reads as in place; `hold v` runs to `v`, and `leta` binds the content of the handle it opens.
-/// Not implemented: a world that names a process, and a migration between two; #3190 owes them.
 ///
 /// The first migration holds the work done at the seat and brings its handle back; `leta` opens it, and the second migration reads it at the seat, so it crosses in as that body's capture.
 /// The second body answers a record built only at the seat, which crosses back to the operator.

@@ -11,3 +11,5 @@ mod endpoint;
 mod net;
 #[cfg(test)]
 mod peer;
+#[cfg(test)]
+mod worlds;

@@ -210,6 +210,7 @@ mod console;
 mod entry;
 mod hole;
 mod net;
+mod worlds;
 
 pub use console::Captured;
 pub use console::Console;
@@ -220,6 +221,13 @@ pub use entry::Entry;
 pub use entry::ExitStatus;
 pub use entry::program_entry;
 pub use hole::hole_site;
+pub use worlds::Hosted;
+pub use worlds::MigrationCount;
+pub use worlds::ProgramKey;
+pub use worlds::WorldBinding;
+pub use worlds::WorldBindingError;
+pub use worlds::WorldBindings;
+pub use worlds::Worlds;
 
 quenchant_shape::reason_enum! {
     /// Why a program has no declaration of its own source's.
@@ -337,6 +345,9 @@ pub struct Program<'source>
     /// The `main` the source run declares at its top level, when it declares
     /// one at an entry's type.
     entry: Maybe<Entry, program_entry::Absent>,
+    /// The worlds the entry holds a capability for, in its `entry`
+    /// attribute's order: the worlds a run of it may migrate to.
+    reaches: Vec<ConstantIndex>,
     /// Where the program's sources write each hole an entry run can reach.
     holes: BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>,
     /// The admission positions of the declarations the source run writes,
@@ -625,6 +636,9 @@ pub enum Unrunnable<'source>
         /// Why.
         refusal: FocusRefusal,
     },
+    /// No world binding of the host names this world, which the entry holds
+    /// a capability for: nothing ran, and nothing was sent.
+    UnboundWorld(SurfaceName<'source>),
 }
 
 /// How a run went, as `gandr run`'s exit reports it.
@@ -744,6 +758,11 @@ impl fmt::Display for Evaluation<'_>
                 declaration,
                 refusal,
             }) => write!(f, "unrunnable: `{declaration}` did not focus: {refusal}"),
+            Self::Unrunnable(Unrunnable::UnboundWorld(world)) => write!(
+                f,
+                "unrunnable: UnboundWorld: no world binding names a host for `{world}`, which \
+                 the entry may migrate to; nothing was sent"
+            ),
         }
     }
 }
@@ -974,6 +993,7 @@ impl<'source> Program<'source>
                     }),
             );
         }
+        let entry = entry::entry_of(core, module, verdicts);
         Self {
             arena,
             definitions,
@@ -983,7 +1003,8 @@ impl<'source> Program<'source>
             sealed,
             families,
             spelling: Spelling::Unicode,
-            entry: entry::entry_of(core, module, verdicts),
+            reaches: entry::reaches(module, entry),
+            entry,
             holes: hole::hole_sites(core, module),
             own: ConstantIndex::from(0_usize) .. ConstantIndex::from(usize::MAX),
         }
@@ -1329,6 +1350,7 @@ impl<'source> Program<'source>
                     declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused) | Slot::Refused(_))),
                 Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, .. }) =>
                     self.declarations.values().any(|declared| declared.name == declaration),
+                Evaluation::Unrunnable(Unrunnable::UnboundWorld(_)) => false,
                 Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
                 Evaluation::Sealed(ref sealed) => self.hidden.values().any(|module| *module == sealed.module)
@@ -1991,6 +2013,7 @@ impl<'source> Program<'source>
                 declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused) | Slot::Refused(_))),
             Maybe::Present(Unrunnable::Unfocused { declaration, refusal }) => self.declarations.values().any(|declared|
                 declared.name == declaration && matches!(declared.slot, Slot::Opaque(Opacity::Unfocused(actual)) if actual == refusal)),
+            Maybe::Present(Unrunnable::UnboundWorld(_)) => false,
             Maybe::Absent(carried::Absent::Carried) => true,
         }
     })]
