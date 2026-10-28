@@ -259,8 +259,15 @@ echo "read $((read)) at $site, against $path as blob ${blob:0:12}"
 # and its count are printed. A mutant marked elsewhere is the report's content,
 # not a failure: the task fails only when the sweep cannot run. The nightly
 # workflow runs it and `ci:recovery-file` files each cause.
+# The driver is the one `gandr-lang`'s test build links for its integration
+# tests, so a restored test state already holds it. `cargo run` would build a
+# second driver: a plain build resolves the features without the
+# dev-dependencies the test build turns on, and so compiles the top of the
+# tower again: 17 units against the enforcing state, where the test build
+# compiles none (#3289).
 ["ledger:recovery"]
 description = "Sweep the syntax exemplars for recovery: each tile missed and deleted, the first error read"
+tools.jq = "1.8.1"
 usage = '''
 arg "[report]" help="the file the whole report is written to" default="target/recovery.txt"
 '''
@@ -269,8 +276,10 @@ run = '''
 set -euo pipefail
 report={{ usage.report }}
 mkdir -p "$(dirname "$report")"
+driver=$(.config/mise/scope cargo test --locked --quiet --no-run --package gandr-lang --message-format json \
+  | jq -r 'select(.reason == "compiler-artifact" and .target.name == "gandr" and (.target.kind | index("bin")) and (.profile.test | not)) | .executable')
 status=0
-.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger recovery corpus/ledger > "$report" || status=$?
+"$driver" ledger recovery corpus/ledger > "$report" || status=$?
 if (( status > 1 )); then
   cat "$report"
   exit "$status"
