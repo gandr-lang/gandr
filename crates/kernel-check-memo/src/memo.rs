@@ -1,4 +1,17 @@
 //! The seam: one interface, a null implementation and a hashed one.
+//!
+//! # References
+//!
+//! - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: a hit hands back
+//!   the support its entry was recorded under, the judgement's own output, for
+//!   the consumer to hold against the context that asks (§
+//!   bicontextual-judgement).
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: a consumer asks by
+//!   a goal's question and decides among the entries filed under it (§
+//!   kernel-reassessment-design item 3).
+//! - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: an entry recorded
+//!   by the context its judgement synthesized is found by its question and
+//!   matched against the context that asks (§ successor-synthesized-context).
 
 use alloc::vec::Vec;
 use core::cell::Cell;
@@ -124,9 +137,8 @@ impl<'memo, Support, Outcome> MemoHit<'memo, Support, Outcome>
 /// that is not.
 ///
 /// Nothing here persists and nothing here is a wire format. The lifetime of a
-/// memo is the consumer's, and the two-wall rule — a hit claims only its own
-/// history, and no kernel-checked support discipline exists — is what keeps it
-/// inside one process.
+/// memo is the consumer's, and a hit claims only this process's own history,
+/// which is what keeps it inside one process.
 ///
 /// # Specification
 /// - requires: `Support` is the complete input to the computation the outcome
@@ -159,7 +171,47 @@ where
     /// Whether this implementation ever answers, known at compile time.
     const ACTIVITY: MemoActivity;
 
-    /// The entry already recorded for a support this one agrees with, if any.
+    /// Every entry filed under `digest`, in the order a probe for it meets
+    /// them.
+    ///
+    /// A consumer whose agreement is not one support compared against another
+    /// — a recorded support read against the state that asks — decides among
+    /// these itself. More than one may agree with one asking state, and any of
+    /// them serves, since each was recorded for a support that state agrees
+    /// with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every held entry whose support carries `digest`, each once,
+    ///   and no other entry; the null memo yields none.
+    /// - provides: the candidates a consumer decides agreement over, each
+    ///   carrying the support it was recorded under beside its outcome.
+    /// - panics: none.
+    /// - executable: none — retained entries are implementation-owned; a trait
+    ///   declaration attribute changes the required implementor methods.
+    ///
+    /// # Clause cost
+    /// - bound: walks the implementation's index from the digest's home slot to
+    ///   the first vacant one, never past its capacity, comparing one digest
+    ///   per filed position; the null memo reads nothing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two entries under one digest beside one under another
+    ///   digest distinguish a walk that stops at the first entry and one that
+    ///   leaks a neighbour. The null implementation must still yield nothing
+    ///   after a recording attempt.
+    /// - witness: `memo::tests::every_entry_under_a_digest_is_filed_and_no_other`
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
+    fn filed<'memo>(
+        &'memo self,
+        digest: ContentDigest,
+    ) -> impl Iterator<Item = MemoHit<'memo, Support, Outcome>>
+    where
+        Support: 'memo,
+        Outcome: 'memo;
+
+    /// The entry already recorded for a support this one agrees with, if any:
+    /// the first entry filed under its digest whose support agrees with it.
     ///
     /// # Specification
     /// - requires: `support` is the complete input to the computation whose
@@ -174,6 +226,10 @@ where
     /// - executable: none — retained entries are implementation-owned; a trait
     ///   declaration attribute changes the required implementor methods.
     ///
+    /// # Clause cost
+    /// - bound: as [`CheckMemo::filed`], with one `MemoKey::agreement` per
+    ///   entry filed under `support`'s digest.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — recorded, absent and digest-colliding demands
     ///   distinguish false hits and missed entries by exact outcomes or
@@ -181,11 +237,17 @@ where
     ///   attempt.
     /// - witness: `memo::tests::a_hashed_memo_serves_what_it_was_told`
     /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+    /// - witness: `memo::tests::a_disagreeing_digest_costs_collapse_and_not_correctness`
     /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
+    #[inline]
     fn recall<'memo>(
         &'memo self,
         support: &Support,
-    ) -> Option<MemoHit<'memo, Support, Outcome>>;
+    ) -> Option<MemoHit<'memo, Support, Outcome>>
+    {
+        self.filed(support.digest())
+            .find(|hit| matches!(hit.support().agreement(support), ContentAgreement::Agree))
+    }
 
     /// Record `outcome` as the answer for `support`.
     ///
@@ -307,28 +369,33 @@ where
 {
     const ACTIVITY: MemoActivity = MemoActivity::Inactive;
 
-    /// Answers nothing, whatever the support.
+    /// Files nothing, whatever the digest.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: answers `None` unconditionally, so a consumer instantiated
-    ///   here runs the path it would have run with no memo at all.
+    /// - ensures: yields nothing, so every recall misses and a consumer
+    ///   instantiated here runs the path it would have run with no memo at all.
     /// - provides: the fresh side of the differential — the same consumer, not
     ///   a second one.
     /// - panics: none.
+    /// - executable: none — the result is a lazy iterator, which a predicate
+    ///   could only check by consuming it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — before and after a recording attempt, a demand for
-    ///   that same support must miss, distinguishing a retaining null path.
+    ///   that same support must miss and its digest file nothing,
+    ///   distinguishing a retaining null path.
     /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
     #[inline]
-    #[spec(ensures: |ret| ret.is_none())]
-    fn recall<'memo>(
+    fn filed<'memo>(
         &'memo self,
-        _support: &Support,
-    ) -> Option<MemoHit<'memo, Support, Outcome>>
+        _digest: ContentDigest,
+    ) -> impl Iterator<Item = MemoHit<'memo, Support, Outcome>>
+    where
+        Support: 'memo,
+        Outcome: 'memo,
     {
-        None
+        core::iter::empty()
     }
 
     /// Stores nothing, and reports that it stored nothing.
@@ -485,7 +552,7 @@ where
     ///   [`DigestShare::Shared`] when some entry met on the way carries
     ///   `digest`, which every entry carrying it is, since its hash is filed on
     ///   the same probe run.
-    /// - provides: the one probe both recall and record decide over.
+    /// - provides: the probe a record decides over.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -577,50 +644,51 @@ where
 {
     const ACTIVITY: MemoActivity = MemoActivity::Active;
 
-    /// The entry recorded for a support this one agrees with, if any.
+    /// The entries filed under `digest`, in probe order.
     ///
     /// # Specification
-    /// - requires: `support` is the complete input to the computation whose
-    ///   outcome is being recalled.
-    /// - ensures: a served hit's own support answers `ContentAgreement::Agree`
-    ///   against `support`. The digest picks the positions and the deciding
-    ///   comparison scans them, so a collision costs one comparison and
-    ///   degrades to a miss rather than answering for the wrong support, and a
-    ///   support whose digest disagrees costs collapse rather than correctness.
-    /// - provides: the hit, carrying the support it was recorded under beside
-    ///   its outcome.
-    /// - fails: never; a miss is `None`.
+    /// - requires: nothing.
+    /// - ensures: every entry whose support carries `digest`, each once. The
+    ///   hash picks the positions and the digest is compared at each, so a hash
+    ///   collision costs one comparison and never files a neighbour, and the
+    ///   deciding comparison is the consumer's.
+    /// - provides: each candidate carrying the support it was recorded under
+    ///   beside its outcome.
+    /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the result is a lazy iterator borrowing the memo,
+    ///   which a predicate could only check by consuming it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the digest's probe and the
-    ///   deciding scan along it, separated by three cases that a digest-only
-    ///   implementation and a content-only implementation answer differently:
-    ///   equal content with equal digests (a hit), distinct content with equal
-    ///   digests (a miss), and equal content with distinct digests (a miss),
-    ///   each asserted as an exact outcome or `None`.
+    /// - hypothesis: L3 — two entries under one digest beside one under
+    ///   another, and the recall cases served through it: equal content with
+    ///   equal digests (a hit), distinct content with equal digests (a miss),
+    ///   and equal content with distinct digests (a miss), each asserted as an
+    ///   exact outcome or `None`.
+    /// - witness: `memo::tests::every_entry_under_a_digest_is_filed_and_no_other`
     /// - witness: `memo::tests::a_hashed_memo_serves_what_it_was_told`
     /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     /// - witness: `memo::tests::a_disagreeing_digest_costs_collapse_and_not_correctness`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|hit| {
-        matches!(hit.support().agreement(support), ContentAgreement::Agree)
-    }))]
     #[inline]
-    fn recall<'memo>(
+    fn filed<'memo>(
         &'memo self,
-        support: &Support,
-    ) -> Option<MemoHit<'memo, Support, Outcome>>
+        digest: ContentDigest,
+    ) -> impl Iterator<Item = MemoHit<'memo, Support, Outcome>>
+    where
+        Support: 'memo,
+        Outcome: 'memo,
     {
-        let digest = support.digest();
-        let Probe::Found(position) = self.find(support, (digest, TableHash::of(&digest))).0
-        else {
-            return None;
-        };
-        let entry = self.entries.get(usize::from(position))?;
-        Some(MemoHit {
-            support: &entry.support,
-            outcome: &entry.outcome,
-        })
+        self.index
+            .filed(TableHash::of(&digest))
+            .filter_map(move |position| {
+                self.entries
+                    .get(usize::from(position))
+                    .filter(|entry| entry.support.digest() == digest)
+            })
+            .map(|entry| MemoHit {
+                support: &entry.support,
+                outcome: &entry.outcome,
+            })
     }
 
     /// Records `outcome` as the answer for `support`.
@@ -745,6 +813,8 @@ where
 #[cfg(test)]
 mod tests
 {
+    use alloc::vec::Vec;
+
     use anodized::spec;
 
     use super::CheckMemo;
@@ -887,6 +957,11 @@ mod tests
             "the null memo forgets what it was told, which is what makes it the fresh side"
         );
         assert_eq!(
+            CheckMemo::<TestSupport, TestOutcome>::filed(&memo, support.digest()).count(),
+            0,
+            "and files nothing under its digest"
+        );
+        assert_eq!(
             MemoEntryCount::zero(),
             CheckMemo::<TestSupport, TestOutcome>::entry_count(&memo),
             "and it accounts nothing, so a differential can assert the fresh side served nothing"
@@ -895,6 +970,47 @@ mod tests
             MemoEntryCount::zero(),
             CheckMemo::<TestSupport, TestOutcome>::plane_entry_count(&memo, TestPlane::Term),
             "per plane too"
+        );
+    }
+
+    #[test]
+    fn every_entry_under_a_digest_is_filed_and_no_other()
+    {
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
+        let shared = DigestWord::from(5);
+        let first = TestSupport {
+            plane: TestPlane::Term,
+            content: TestContent(1),
+            digest: shared,
+        };
+        let second = TestSupport {
+            plane: TestPlane::Term,
+            content: TestContent(2),
+            digest: shared,
+        };
+        let other = TestSupport::honest(TestPlane::Term, TestContent(3));
+        for (support, outcome) in [(first, 9), (other, 7), (second, 8)] {
+            assert_eq!(
+                Ok(MemoRecord::Recorded),
+                memo.remember(support, TestOutcome(outcome))
+            );
+        }
+        let mut filed: Vec<(TestSupport, TestOutcome)> = memo
+            .filed(first.digest())
+            .map(|hit| (*hit.support(), *hit.outcome()))
+            .collect();
+        filed.sort_unstable_by_key(|&(support, _)| support.content.0);
+        assert_eq!(
+            filed,
+            [(first, TestOutcome(9)), (second, TestOutcome(8))],
+            "both entries under the shared digest, each with its own outcome, and not the one under \
+             another digest"
+        );
+        assert_eq!(
+            memo.filed(ContentDigest::new(DigestWord::from(0), DigestWord::from(4)))
+                .count(),
+            0,
+            "a digest nothing was recorded under files nothing"
         );
     }
 

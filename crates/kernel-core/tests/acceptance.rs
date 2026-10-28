@@ -40,6 +40,7 @@ use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelParamCount;
 use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::Reads;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -1209,11 +1210,12 @@ fn a_poisoned_term_entry_turns_a_refusal_into_an_acceptance()
     };
     let mut poisoned: DefaultMemo = DefaultMemo::new();
     let mut session = SupportContext::new();
-    let support = NodeSupport::build(
+    let support = NodeSupport::recorded(
         &arena,
         &mut session,
         SupportGoal::CheckValue(body, declared),
         &[],
+        &Reads::closed(),
     );
     poisoned
         .remember(support, NodeOutcome::Checked)
@@ -1273,15 +1275,17 @@ fn an_entry_differing_only_in_its_binder_component_is_not_served()
     let unit_type = arena.value_type_unit();
 
     // Poisoned under the *wrong* telescope: the entry claims the variable
-    // synthesizes `Integer` when the binder is an `Integer`, which is true and
-    // useless here, because the real check runs under a `Unit` binder.
+    // synthesizes `Integer` when the binder it read is an `Integer`, which is
+    // true and useless here, because the real check runs under a `Unit`
+    // binder.
     let mut wrong: DefaultMemo = DefaultMemo::new();
     let mut wrong_session = SupportContext::new();
-    let wrong_support = NodeSupport::build(
+    let wrong_support = NodeSupport::recorded(
         &arena,
         &mut wrong_session,
         SupportGoal::SynthValue(variable),
         &[integer],
+        arena.value_support(variable),
     );
     wrong
         .remember(wrong_support, NodeOutcome::ValueType(integer))
@@ -1304,11 +1308,12 @@ fn an_entry_differing_only_in_its_binder_component_is_not_served()
     // measuring the binder component and not an inert poison.
     let mut right: DefaultMemo = DefaultMemo::new();
     let mut right_session = SupportContext::new();
-    let right_support = NodeSupport::build(
+    let right_support = NodeSupport::recorded(
         &arena,
         &mut right_session,
         SupportGoal::SynthValue(variable),
         &[unit_type],
+        arena.value_support(variable),
     );
     right
         .remember(right_support, NodeOutcome::ValueType(integer))
@@ -1353,8 +1358,13 @@ fn a_poisoned_type_entry_turns_admission_into_a_universe_refusal()
 
     let mut poisoned: DefaultMemo = DefaultMemo::new();
     let mut session = SupportContext::new();
-    let support = NodeSupport::build(&arena, &mut session, SupportGoal::ValueTypeLevel(inner), &[
-    ]);
+    let support = NodeSupport::recorded(
+        &arena,
+        &mut session,
+        SupportGoal::ValueTypeLevel(inner),
+        &[],
+        &Reads::closed(),
+    );
     poisoned
         .remember(support, NodeOutcome::Formed(level(LevelConstant::from(5))))
         .expect("the poisoned entry records");
@@ -1398,8 +1408,13 @@ fn a_term_shaped_answer_in_a_type_support_is_declined_and_recomputed()
     // have produced.
     let mut confused: DefaultMemo = DefaultMemo::new();
     let mut session = SupportContext::new();
-    let support = NodeSupport::build(&arena, &mut session, SupportGoal::ValueTypeLevel(inner), &[
-    ]);
+    let support = NodeSupport::recorded(
+        &arena,
+        &mut session,
+        SupportGoal::ValueTypeLevel(inner),
+        &[],
+        &Reads::closed(),
+    );
     confused
         .remember(support, NodeOutcome::Checked)
         .expect("the entry records");
@@ -1442,11 +1457,12 @@ fn a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed()
 
     let mut confused: DefaultMemo = DefaultMemo::new();
     let mut session = SupportContext::new();
-    let support = NodeSupport::build(
+    let support = NodeSupport::recorded(
         &arena,
         &mut session,
         SupportGoal::CheckValue(body, declared),
         &[],
+        &Reads::closed(),
     );
     confused
         .remember(support, NodeOutcome::Formed(level(LevelConstant::from(9))))
@@ -1462,6 +1478,193 @@ fn a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed()
         honest_census.plane_expansions(SupportPlane::Term),
         census.plane_expansions(SupportPlane::Term),
         "and the goal was recomputed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Derived supports: what a formation owes and what a hit carries
+// ---------------------------------------------------------------------------
+
+/// The decode `El x` of the innermost binder, a code of level zero.
+///
+/// # Specification
+/// trivial.
+fn decode(arena: &mut TermArena) -> ValueTypeId
+{
+    let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+    arena.value_type_element(code, level(LevelConstant::from(0)))
+}
+
+/// `Σ (x : Universe 0). El x`: a decode formed under a code binder.
+///
+/// # Specification
+/// trivial.
+fn decoded_code(arena: &mut TermArena) -> ValueTypeId
+{
+    let universe = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+    let decoded = decode(arena);
+    arena.value_type_sigma(universe, decoded)
+}
+
+/// Check `axiom _ : declared` memoless and memoized, `build` forming
+/// `declared` in a fresh arena for each run.
+///
+/// # Specification
+/// - requires: `build` mints a value type into the arena it is handed.
+/// - ensures: the memoless verdict, the memoized verdict, and the memoized
+///   run's census, each run against its own memo and session.
+/// - provides: the production contract — one memo per declaration — for a case
+///   whose goals recur inside one declared type.
+/// - fails: never — both verdicts retain any typed refusal.
+/// - panics: none.
+/// - executable: none — the verdicts are the kernel's, which a predicate could
+///   restate only by checking the declaration again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a formation entry served under a context its judgement's
+///   reads disagree with changes a refusal into an acceptance.
+/// - witness: `tests::acceptance::an_owed_code_keeps_its_binder_in_the_formation_key`
+/// - witness: `tests::acceptance::a_recalled_subgoal_s_binders_join_its_goal_s_key`
+fn axiom_verdicts(
+    build: fn(&mut TermArena) -> ValueTypeId
+) -> (
+    Result<(), KernelError>,
+    Result<(), KernelError>,
+    ExpansionCensus,
+)
+{
+    let stage_axiom = |arena: &mut TermArena| {
+        let mut builder = DeclarationBuilder::new(arena);
+        let declared = build(builder.arena());
+        builder.axiom(LevelSignature::monomorphic(), declared)
+    };
+    let mut arena = TermArena::new();
+    let declaration = stage_axiom(&mut arena);
+    let (honest, _census) = check_with(&mut arena, &declaration, &mut NullMemo);
+    let mut arena = TermArena::new();
+    let declaration = stage_axiom(&mut arena);
+    let mut memo: DefaultMemo = DefaultMemo::new();
+    let (memoized, census) = check_with(&mut arena, &declaration, &mut memo);
+    (honest, memoized, census)
+}
+
+#[test]
+fn an_owed_code_keeps_its_binder_in_the_formation_key()
+{
+    // `axiom _ : Σ (_ : Σ (x : Universe 0). El x). Σ (x : Integer). El x`
+    // refuses: the second `El x` decodes an `Integer`. A decode's formation
+    // reads no binder itself; the code it owes does, and that read keeps the
+    // first decode, formed under a code binder, from answering the second.
+    let (honest, memoized, census) = axiom_verdicts(|arena| {
+        let coded = decoded_code(arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let decoded = decode(arena);
+        let miscoded = arena.value_type_sigma(integer, decoded);
+        arena.value_type_sigma(coded, miscoded)
+    });
+    assert!(
+        honest.is_err(),
+        "the honest verdict is a refusal: {honest:?}"
+    );
+    assert_eq!(
+        honest, memoized,
+        "the memoized check owes the second code and refuses as the memoless check does"
+    );
+    assert_eq!(
+        ExpansionCount::from(0),
+        census.plane_recalls(SupportPlane::Type),
+        "and no formation was served: the second decode was formed and owed afresh"
+    );
+}
+
+#[test]
+fn a_recalled_subgoal_s_binders_join_its_goal_s_key()
+{
+    // `axiom _ : Σ (_ : Σ (x : Universe 0). El x).
+    //            Σ (_ : Σ (x : Universe 0). Σ (y : El x). Unit).
+    //            Σ (x : Integer). Σ (y : El x). Unit`
+    // refuses at the last `El x`. The middle `Σ (y : El x). Unit` is formed
+    // with its decode served from the first, so it learns the decode's binder
+    // only from that hit, and that binder keeps it from answering the last.
+    let (honest, memoized, census) = axiom_verdicts(|arena| {
+        let coded = decoded_code(arena);
+        let universe = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+        let decoded = decode(arena);
+        let unit_type = arena.value_type_unit();
+        let pair = arena.value_type_sigma(decoded, unit_type);
+        let served = arena.value_type_sigma(universe, pair);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let refused = arena.value_type_sigma(integer, pair);
+        let rest = arena.value_type_sigma(served, refused);
+        arena.value_type_sigma(coded, rest)
+    });
+    assert!(
+        honest.is_err(),
+        "the honest verdict is a refusal: {honest:?}"
+    );
+    assert_eq!(
+        honest, memoized,
+        "the pair formed under an `Integer` binder is formed afresh, owes its code, and refuses \
+         as the memoless check does"
+    );
+    assert_eq!(
+        ExpansionCount::from(3),
+        census.plane_recalls(SupportPlane::Type),
+        "served: the second `Universe 0`, the middle decode, and the last `Unit` — the hit the \
+         middle pair learned its binder from is on the exercised path"
+    );
+}
+
+/// `def _ : U (Integer → F (Integer × (Integer × Unit))) × U (Unit → F (Integer
+/// × Unit)) = (thunk λx. return (x, (x, ())), thunk λx. return (x, ()))`, which
+/// refuses: the second `x` is a `Unit` where an `Integer` is due. The pair
+/// `(x, ())` is checked under `[Integer]`, its `x` served from the check just
+/// before it, and then under `[Unit]`.
+///
+/// # Specification
+/// trivial.
+fn a_pair_served_its_read_then_misread(arena: &mut TermArena) -> (ValueTypeId, ValueId)
+{
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let pair_type = arena.value_type_product(&[integer, unit_type]);
+    let nested_type = arena.value_type_product(&[integer, pair_type]);
+    let returns_nested = arena.comp_type_returner(nested_type);
+    let returns_pair = arena.comp_type_returner(pair_type);
+    let from_integer = arena.comp_type_arrow(integer, returns_nested);
+    let from_unit = arena.comp_type_arrow(unit_type, returns_pair);
+    let first_type = arena.value_type_thunk(from_integer);
+    let second_type = arena.value_type_thunk(from_unit);
+    let declared = arena.value_type_product(&[first_type, second_type]);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let unit = arena.value_unit();
+    let pair = arena.value_tuple(&[bound, unit]);
+    let nested = arena.value_tuple(&[bound, pair]);
+    let first_body = arena.computation_return(nested);
+    let second_body = arena.computation_return(pair);
+    let first_lambda = arena.computation_lambda(first_body);
+    let second_lambda = arena.computation_lambda(second_body);
+    let first = arena.value_thunk(first_lambda);
+    let second = arena.value_thunk(second_lambda);
+    (declared, arena.value_tuple(&[first, second]))
+}
+
+#[test]
+fn a_recalled_term_subgoal_s_binders_join_its_goal_s_key()
+{
+    let (memoless, _memoized) = verdicts_agree(a_pair_served_its_read_then_misread);
+    assert!(
+        memoless.is_err(),
+        "the honest verdict is a refusal, which the memoized check reaches: {memoless:?}"
+    );
+    let (mut arena, declaration) = stage(a_pair_served_its_read_then_misread);
+    let mut memo: DefaultMemo = DefaultMemo::new();
+    let (_verdict, census) = check_with(&mut arena, &declaration, &mut memo);
+    assert_eq!(
+        ExpansionCount::from(1),
+        census.plane_recalls(SupportPlane::Term),
+        "served: the pair's `x` under `[Integer]`, the hit the pair learns its binder from; the \
+         pair under `[Unit]` is checked afresh"
     );
 }
 

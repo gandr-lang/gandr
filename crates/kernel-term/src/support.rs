@@ -21,6 +21,10 @@
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel derives
 //!   every support from its own nodes rather than taking one across the bridge
 //!   (§ kernel-reassessment-design items 1 and 3).
+//! - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: a synthesized
+//!   context joins its children's, each lowered past the binders the child
+//!   stands under, which [`Reads::join`] and [`Reads::under`] compute (§
+//!   successor-synthesized-context).
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -101,7 +105,8 @@ enum ReadSet
     Widest,
 }
 
-/// The support of a node the arena cannot resolve: every binder.
+/// Every binder: the support of a node the arena cannot resolve, and of a
+/// reader that scanned its whole context.
 pub static WIDEST: Reads = Reads(ReadSet::Widest);
 
 quenchant_shape::reason_enum! {
@@ -152,7 +157,8 @@ impl Reads
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn closed() -> Self
+    #[must_use]
+    pub const fn closed() -> Self
     {
         Self(ReadSet::Word(0))
     }
@@ -163,7 +169,8 @@ impl Reads
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn variable(index: DeBruijnIndex) -> Self
+    #[must_use]
+    pub fn variable(index: DeBruijnIndex) -> Self
     {
         let position = u32::from(index);
         if position < WORD_INDICES {
@@ -230,7 +237,7 @@ impl Reads
     /// - witness: `support::tests::reads_are_exactly_the_free_indices`
     #[inline]
     #[must_use]
-    pub(crate) fn join(
+    pub fn join(
         self,
         other: &Self,
     ) -> Self
@@ -301,7 +308,7 @@ impl Reads
     /// - witness: `support::tests::every_binding_former_closes_what_it_binds`
     #[inline]
     #[must_use]
-    pub(crate) fn under(
+    pub fn under(
         &self,
         binders: Binders,
     ) -> Self
@@ -338,6 +345,19 @@ impl Binders
     const TWO: Self = Self(2);
     /// A child under three binders.
     const THREE: Self = Self(3);
+}
+
+impl From<u32> for Binders
+{
+    /// `binders` binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(binders: u32) -> Self
+    {
+        Self(binders)
+    }
 }
 
 /// The indices a [`Reads`] holds, ascending.
