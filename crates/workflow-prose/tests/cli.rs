@@ -72,6 +72,62 @@ fn a_new_finding_is_refused_with_its_fix()
 }
 
 #[test]
+fn a_body_is_refused_on_its_findings()
+{
+    let root = scratch!("body", "The kernel reduced the term.", "", PAST);
+    let body = root.join("body.md");
+    std::fs::write(
+        &body,
+        "## Observed\n\nThe kernel reduced the term.\n\n| a | b |\n",
+    )
+    .unwrap();
+    let clean = root.join("clean.md");
+    std::fs::write(&clean, "The kernel reduces the term.\n").unwrap();
+    let passage = |parse: &str| {
+        parse
+            .get(1 .. parse.len().saturating_sub(1))
+            .unwrap()
+            .to_owned()
+    };
+    std::fs::write(
+        root.join("parse.json"),
+        format!("[{},{}]", passage(PAST), passage(PRESENT)),
+    )
+    .unwrap();
+    let flag = std::ffi::OsStr::new("--body");
+    let output = run!(root, [flag, body.as_os_str(), clean.as_os_str()], "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(output.status.code(), Some(1_i32));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "{}:3: Tense: \"The kernel reduced the term.\" — state it in the present tense\n",
+            body.display()
+        )
+    );
+    std::fs::write(root.join("parse.json"), PRESENT).unwrap();
+    let args = [flag, clean.as_os_str()];
+    let output = run!(root, args, "");
+    assert_eq!(
+        output.status.code(),
+        Some(0_i32),
+        "the corpus ledger is not read: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "prose: 1 file(s), no body rule broken\n"
+    );
+    let output = run!(
+        root,
+        [std::ffi::OsStr::new("--write"), args[0], args[1]],
+        ""
+    );
+    assert_eq!(output.status.code(), Some(2_i32), "a body keeps no ledger");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn a_stale_line_is_refused_and_written_away()
 {
     let root = scratch!(

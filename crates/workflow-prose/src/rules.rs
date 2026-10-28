@@ -20,6 +20,7 @@ use crate::passage::Golden;
 use crate::passage::Line;
 use crate::passage::Passage;
 use crate::passage::Placed;
+use crate::passage::Source;
 use crate::passage::Text;
 
 /// The lemmas whose passive the corpus states: `is refused`, `is admitted`,
@@ -35,6 +36,15 @@ const PASSIVES: [&str; 6] = [
 
 /// The longest run of nouns a sentence may stack.
 const STACK: usize = 3;
+
+/// The most words a sentence of a body may hold, a code span counted as one.
+const WORDS: usize = 25;
+
+/// The coarse tags of a token that is not a word.
+const UNWORDED: [&str; 3] = ["PUNCT", "SPACE", "SYM"];
+
+/// The dashes that may join two clauses.
+const DASHES: [&str; 2] = ["—", "–"];
 
 /// A rule a sentence or a diagnostic is held to.
 ///
@@ -53,17 +63,26 @@ pub enum Rule
     IngMain,
     /// A glossary word in a part of speech the glossary refuses.
     Glossary,
+    /// A sentence of a body longer than the word limit.
+    Length,
+    /// A semicolon joining two sentences of a body.
+    Semicolon,
+    /// A dash joining two clauses of a body.
+    Dash,
     /// A diagnostic without its what, its where or its what-to-do.
     Procedure,
 }
 
 /// Every rule, in the order they are stated.
-const RULES: [Rule; 6] = [
+const RULES: [Rule; 9] = [
     Rule::Passive,
     Rule::Tense,
     Rule::NounStack,
     Rule::IngMain,
     Rule::Glossary,
+    Rule::Length,
+    Rule::Semicolon,
+    Rule::Dash,
     Rule::Procedure,
 ];
 
@@ -90,6 +109,9 @@ impl fmt::Display for Rule
             Self::NounStack => "NounStack",
             Self::IngMain => "IngMain",
             Self::Glossary => "Glossary",
+            Self::Length => "Length",
+            Self::Semicolon => "Semicolon",
+            Self::Dash => "Dash",
             Self::Procedure => "Procedure",
         })
     }
@@ -160,6 +182,12 @@ impl fmt::Display for Fix
             Rule::IngMain => "make the main verb a finite verb, not an `-ing` form",
             Rule::Glossary => {
                 "use the glossary word only as its part of speech, or choose another word"
+            },
+            Rule::Length => "split it into sentences of at most 25 words, one clause each",
+            Rule::Semicolon => "end the first sentence with a full stop and start the next",
+            Rule::Dash => {
+                "end the first clause with a full stop, or make the text after the dash a phrase \
+                 with no verb"
             },
             Rule::Procedure => {
                 "state what is wrong in the headline, label the span, and end with an \
@@ -280,6 +308,67 @@ fn spoken(
         .collect()
 }
 
+/// The body rules `sentence` breaks, each at most once.
+///
+/// # Specification
+/// - requires: `sentence` is a sentence of the passage `readings` was taken
+///   from.
+/// - ensures: in the order of [`RULES`], [`Rule::Length`] when the sentence
+///   holds more than 25 words, a word being a token in prose or quotation that
+///   is not punctuation, a space or a symbol, and each code span counting as
+///   one; [`Rule::Semicolon`] when a `;` in prose has a word after it;
+///   [`Rule::Dash`] when an em or en dash in prose has a verb or an auxiliary
+///   in prose after it.
+/// - provides: the verdict a body adds to a sentence.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the walk is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each rule's sentence and a twin it must pass: 26 words
+///   and 25 words with a code span, a joining and a closing semicolon, a dash
+///   before a clause and one before a phrase; an off-by-one limit, a code span
+///   counted per token, or a dropped look-ahead changes the verdicts.
+/// - witness: `rules::tests::a_body_holds_its_length_semicolons_and_dashes`
+fn clauses(
+    readings: &[Reading],
+    sentence: &Sentence,
+) -> Vec<Rule>
+{
+    let prose = |token: &Token| read(readings, token) == Reading::Prose;
+    let worded = |token: &Token| !UNWORDED.contains(&token.pos.as_str());
+    let mut rules = Vec::new();
+    let mut words = 0_usize;
+    let mut coded = false;
+    for token in &sentence.tokens {
+        let code = read(readings, token) == Reading::Code;
+        if (code && !coded) || (!code && worded(token)) {
+            words = words.saturating_add(1);
+        }
+        coded = code;
+    }
+    if words > WORDS {
+        rules.push(Rule::Length);
+    }
+    let after = |mark: &dyn Fn(&Token) -> bool, follows: &dyn Fn(&Token) -> bool| {
+        sentence
+            .tokens
+            .iter()
+            .skip_while(|token| !(prose(token) && mark(token)))
+            .skip(1)
+            .any(|token| prose(token) && follows(token))
+    };
+    if after(&|token| token.text == ";", &worded) {
+        rules.push(Rule::Semicolon);
+    }
+    if after(&|token| DASHES.contains(&token.text.as_str()), &|token| {
+        token.pos == "VERB" || token.pos == "AUX"
+    }) {
+        rules.push(Rule::Dash);
+    }
+    rules
+}
+
 /// The rules `sentence` breaks, each at most once.
 ///
 /// # Specification
@@ -288,11 +377,12 @@ fn spoken(
 /// - ensures: in the order of [`RULES`], [`Rule::Passive`] when a token in
 ///   prose is `auxpass` and its head's lemma is not on the passive list;
 ///   [`Rule::Tense`] when the root, in prose, is tagged `VBD`, or `VBN` with no
-///   present-tense `auxpass` child; [`Rule::NounStack`] when more than three
-///   consecutive tokens in prose are `NOUN` or `PROPN`; [`Rule::IngMain`] when
-///   the root, in prose, is tagged `VBG`; [`Rule::Glossary`] when a token in
-///   prose has a lemma the glossary holds and a coarse tag its part of speech
-///   does not admit.
+///   present-tense `auxpass` child. A `source` of [`Source::Body`] adds the
+///   rules [`clauses`] states. Every other source adds [`Rule::NounStack`] when
+///   more than three consecutive tokens in prose are `NOUN` or `PROPN`;
+///   [`Rule::IngMain`] when the root, in prose, is tagged `VBG`;
+///   [`Rule::Glossary`] when a token in prose has a lemma the glossary holds
+///   and a coarse tag its part of speech does not admit.
 /// - provides: the verdict of one sentence.
 /// - fails: never.
 /// - panics: none.
@@ -303,10 +393,12 @@ fn spoken(
 ///   condition, a widened list or a rule fired twice changes the verdicts.
 /// - witness: `rules::tests::each_rule_fires_on_its_sentence_and_not_on_its_twin`
 /// - witness: `rules::tests::code_and_quotations_are_not_read`
+/// - witness: `rules::tests::a_body_holds_its_length_semicolons_and_dashes`
 fn broken(
     readings: &[Reading],
     sentence: &Sentence,
     glossary: &Glossary,
+    source: Source,
 ) -> Vec<Rule>
 {
     let prose = |token: &Token| read(readings, token) == Reading::Prose;
@@ -333,6 +425,10 @@ fn broken(
     };
     if root.is_some_and(|root| root.tag == "VBD" || (root.tag == "VBN" && !present_passive(root))) {
         rules.push(Rule::Tense);
+    }
+    if source == Source::Body {
+        rules.extend(clauses(readings, sentence));
+        return rules;
     }
     let mut run = 0_usize;
     let mut stacked = false;
@@ -367,8 +463,9 @@ fn broken(
 ///
 /// # Specification
 /// - requires: `sentences` are the passage's parse.
-/// - ensures: one finding per rule each sentence breaks, in sentence order,
-///   each naming the passage's path and line and the sentence's text.
+/// - ensures: one finding per rule each sentence breaks, under the rules of the
+///   passage's source, in sentence order, each naming the passage's path and
+///   line and the sentence's text.
 /// - provides: the sentence rules over one passage.
 /// - fails: never.
 /// - panics: none.
@@ -388,7 +485,7 @@ pub fn sentences(
     let readings = readings(Text(&passage.text));
     let mut findings = Vec::new();
     for sentence in sentences {
-        let rules = broken(&readings, sentence, glossary);
+        let rules = broken(&readings, sentence, glossary, passage.source);
         if rules.is_empty() {
             continue;
         }
@@ -658,6 +755,121 @@ mod tests
             (".", ".", "PUNCT", ".", "punct", 2),
         ]);
         assert_eq!(rules!(verb, &glossary), []);
+    }
+
+    /// The rules `$parsed` breaks when its passage is a body's.
+    macro_rules! bodied {
+        ($parsed:expr) => {{
+            let (passage, sentence) = $parsed;
+            let passage = passage::Passage {
+                source: Source::Body,
+                ..passage
+            };
+            rules!((passage, sentence), &Glossary::default())
+        }};
+    }
+
+    #[test]
+    fn a_body_holds_its_length_semicolons_and_dashes()
+    {
+        let worded = |text: &str| {
+            let mut offset = 0_usize;
+            let tokens = text
+                .split(' ')
+                .enumerate()
+                .map(|(at, word)| {
+                    let root = at == 0;
+                    let token = Token {
+                        text: word.to_owned(),
+                        lemma: word.to_owned(),
+                        pos: if root { "VERB" } else { "NOUN" }.to_owned(),
+                        tag: if root { "VBZ" } else { "NN" }.to_owned(),
+                        dep: if root { "ROOT" } else { "dobj" }.to_owned(),
+                        head: 0,
+                        offset,
+                    };
+                    offset = offset
+                        .saturating_add(word.chars().count())
+                        .saturating_add(1);
+                    token
+                })
+                .collect();
+            let passage = passage::body(Text("pr.md"), Text(text))
+                .into_iter()
+                .next()
+                .unwrap();
+            (passage, Sentence { tokens })
+        };
+        let terms = |count: usize| vec!["term"; count].join(" ");
+        assert_eq!(bodied!(worded(&format!("reads {}", terms(25)))), [
+            Rule::Length
+        ]);
+        assert_eq!(bodied!(worded(&format!("reads {}", terms(24)))), []);
+        assert_eq!(
+            bodied!(worded(&format!("reads `x y z` {}", terms(23)))),
+            [],
+            "a code span is one word"
+        );
+        let joined = parsed!("It reads it; the cache holds it.", [
+            ("It", "it", "PRON", "PRP", "nsubj", 1),
+            ("reads", "read", "VERB", "VBZ", "ROOT", 1),
+            ("it", "it", "PRON", "PRP", "dobj", 1),
+            (";", ";", "PUNCT", ":", "punct", 1),
+            ("the", "the", "DET", "DT", "det", 6),
+            ("cache", "cache", "NOUN", "NN", "nsubj", 7),
+            ("holds", "hold", "VERB", "VBZ", "conj", 1),
+            ("it", "it", "PRON", "PRP", "dobj", 7),
+            (".", ".", "PUNCT", ".", "punct", 1),
+        ]);
+        assert_eq!(bodied!(joined.clone()), [Rule::Semicolon]);
+        assert_eq!(
+            rules!(joined, &Glossary::default()),
+            [],
+            "a corpus comment keeps its own rules"
+        );
+        let closing = parsed!("It reads a term;", [
+            ("It", "it", "PRON", "PRP", "nsubj", 1),
+            ("reads", "read", "VERB", "VBZ", "ROOT", 1),
+            ("a", "a", "DET", "DT", "det", 3),
+            ("term", "term", "NOUN", "NN", "dobj", 1),
+            (";", ";", "PUNCT", ":", "punct", 1),
+        ]);
+        assert_eq!(bodied!(closing), []);
+        let clause = parsed!("The kernel stops — the cache holds it.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 2),
+            ("stops", "stop", "VERB", "VBZ", "ROOT", 2),
+            ("—", "—", "PUNCT", ":", "punct", 2),
+            ("the", "the", "DET", "DT", "det", 5),
+            ("cache", "cache", "NOUN", "NN", "nsubj", 6),
+            ("holds", "hold", "VERB", "VBZ", "parataxis", 2),
+            ("it", "it", "PRON", "PRP", "dobj", 6),
+            (".", ".", "PUNCT", ".", "punct", 2),
+        ]);
+        assert_eq!(bodied!(clause), [Rule::Dash]);
+        let phrase = parsed!("The kernel reads one value — the term.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 2),
+            ("reads", "read", "VERB", "VBZ", "ROOT", 2),
+            ("one", "one", "NUM", "CD", "nummod", 4),
+            ("value", "value", "NOUN", "NN", "dobj", 2),
+            ("—", "—", "PUNCT", ":", "punct", 4),
+            ("the", "the", "DET", "DT", "det", 7),
+            ("term", "term", "NOUN", "NN", "appos", 4),
+            (".", ".", "PUNCT", ".", "punct", 2),
+        ]);
+        assert_eq!(bodied!(phrase), []);
+        let stack = parsed!("It reads the kernel term cache entry.", [
+            ("It", "it", "PRON", "PRP", "nsubj", 1),
+            ("reads", "read", "VERB", "VBZ", "ROOT", 1),
+            ("the", "the", "DET", "DT", "det", 6),
+            ("kernel", "kernel", "NOUN", "NN", "compound", 6),
+            ("term", "term", "NOUN", "NN", "compound", 6),
+            ("cache", "cache", "NOUN", "NN", "compound", 6),
+            ("entry", "entry", "NOUN", "NN", "dobj", 1),
+            (".", ".", "PUNCT", ".", "punct", 1),
+        ]);
+        assert_eq!(bodied!(stack), [], "a body keeps no noun-stack rule");
     }
 
     #[test]

@@ -4211,6 +4211,7 @@ INSERT INTO purpose VALUES('workflow-prose','passage::Passage','struct','One par
 INSERT INTO purpose VALUES('workflow-prose','passage::Placed','enum','Whether a rendered diagnostic labels its span.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Source','enum','Which kind of text a passage comes from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Text','struct','Borrowed text: a file''s contents, a path or a word.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::body','function','The prose passages of a pull request''s or an issue''s body: its paragraphs and list items.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::comments','function','The `///` paragraphs of a corpus source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::gather','function','The passages and rendered diagnostics under a repository root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::golden','function','The diagnostics of one rendered golden.',NULL,'fits','sound',NULL);

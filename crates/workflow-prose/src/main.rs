@@ -1,17 +1,21 @@
 //! `prose`: the sentence rules over the corpus comments, the rendered
-//! diagnostics and the crate READMEs, against the committed debt.
+//! diagnostics and the crate READMEs, against the committed debt, and over a
+//! pull request's or an issue's body.
 //!
 //! `prose --python PATH [--root DIR] [--write]` gathers the text under the
 //! root, parses it by running `crates/workflow-prose/parse.py` under the given
 //! interpreter, judges every sentence and diagnostic, and compares the
 //! findings with `corpus/prose.ledger`. With `--write` it writes the ledger
-//! instead.
+//! instead. `prose --python PATH --body FILE` judges the one body in `FILE`
+//! under the body rules, with no ledger.
 //!
 //! # Exit codes
 //!
 //! - `0`: every finding is in the ledger and every ledger line is a finding; or
-//!   the ledger was written; also `--help` and `--version`.
-//! - `1`: a finding the ledger lacks, or a ledger line no finding matches.
+//!   the ledger was written; or the body breaks no rule; also `--help` and
+//!   `--version`.
+//! - `1`: a finding the ledger lacks, a ledger line no finding matches, or a
+//!   finding in the body.
 //! - `2`: a refusal — an unreadable file, a malformed glossary or ledger, a
 //!   failed parse, or standard output closed; also a malformed invocation.
 
@@ -52,8 +56,12 @@ struct Cli
     #[arg(long, default_value = ".")]
     root: PathBuf,
     /// Write the ledger from the findings instead of comparing.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "body")]
     write: bool,
+    /// Judge the pull request or issue bodies in these files instead, with no
+    /// ledger.
+    #[arg(long, num_args = 1..)]
+    body: Vec<PathBuf>,
 }
 
 /// What a run concluded.
@@ -73,9 +81,10 @@ enum Outcome
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: exits `0` when the findings and the ledger agree or the ledger
-///   was written, `1` when they disagree, `2` after printing a refusal or a
-///   usage message to standard error.
+/// - ensures: exits `0` when the findings and the ledger agree, the ledger was
+///   written or the body breaks no rule, `1` when they disagree or the body
+///   breaks a rule, `2` after printing a refusal or a usage message to standard
+///   error.
 /// - provides: the process boundary.
 /// - fails: never; every refusal is an exit code.
 /// - panics: none.
@@ -86,6 +95,7 @@ enum Outcome
 ///   stale line and one whose parse fails; a swapped exit code changes the
 ///   observed process result.
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
+/// - witness: `tests::cli::a_body_is_refused_on_its_findings`
 /// - witness: `tests::cli::a_stale_line_is_refused_and_written_away`
 /// - witness: `tests::cli::a_failing_parse_is_reported_with_its_message`
 fn main() -> ExitCode
@@ -102,7 +112,13 @@ fn main() -> ExitCode
             };
         },
     };
-    match run(&cli) {
+    let outcome = if cli.body.is_empty() {
+        run(&cli)
+    }
+    else {
+        judge(&cli, &cli.body)
+    };
+    match outcome {
         Ok(Outcome::Agreed) => ExitCode::SUCCESS,
         Ok(Outcome::Disagreed) => ExitCode::from(FOUND),
         Err(error) => {
@@ -110,6 +126,107 @@ fn main() -> ExitCode
             ExitCode::from(REFUSED)
         },
     }
+}
+
+/// Writes `finding` with its fix to `out`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the check and the body mode print each finding's file,
+///   line, rule, sentence and fix; a lost part changes the printed line.
+/// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
+/// - witness: `tests::cli::a_body_is_refused_on_its_findings`
+fn print(
+    out: &mut impl std::io::Write,
+    finding: &Finding,
+) -> Result<(), ProseError>
+{
+    writeln!(
+        out,
+        "{}:{}: {}: \"{}\" — {}",
+        finding.path,
+        finding.line,
+        finding.rule,
+        finding.sentence,
+        Fix(finding.rule)
+    )
+    .map_err(|error| ProseError::Io {
+        path: PathBuf::from("<stdout>"),
+        message: error.to_string(),
+    })
+}
+
+/// Parses and judges the bodies in `paths` under the body rules, in one
+/// parse.
+///
+/// # Specification
+/// - requires: `cli.python` can import spaCy and `en_core_web_sm`.
+/// - ensures: each finding of [`passage::body`]'s passages of each file is
+///   printed with its file, line, rule, sentence and fix, and the outcome is
+///   agreed exactly when none was printed.
+/// - provides: the body mode `pr:open`, `issue:file` and the nightly sweep run.
+/// - fails: [`ProseError::Io`] when a body cannot be read or standard output
+///   cannot be written; every refusal of [`parse::parse`].
+/// - panics: none.
+/// - executable: none — the outcome is the bytes printed.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body with a finding beside one with none, and a clean
+///   body alone; a finding unprinted, misattributed to the other file, or a
+///   clean body refused changes the observed output and exit code.
+/// - witness: `tests::cli::a_body_is_refused_on_its_findings`
+fn judge(
+    cli: &Cli,
+    paths: &[PathBuf],
+) -> Result<Outcome, ProseError>
+{
+    let mut passages = Vec::new();
+    let mut name = String::new();
+    let mut text = String::new();
+    for path in paths {
+        let unread = |error: std::io::Error| ProseError::Io {
+            path: path.clone(),
+            message: error.to_string(),
+        };
+        text.clear();
+        std::io::Read::read_to_string(&mut std::fs::File::open(path).map_err(unread)?, &mut text)
+            .map_err(unread)?;
+        name.clear();
+        core::fmt::Write::write_fmt(&mut name, format_args!("{}", path.display())).map_err(
+            |error| ProseError::Io {
+                path: path.clone(),
+                message: error.to_string(),
+            },
+        )?;
+        passages.extend(passage::body(Text(&name), Text(&text)));
+    }
+    let inputs: Vec<&passage::Passage> = passages.iter().collect();
+    let script = cli.root.join("crates/workflow-prose/parse.py");
+    let parsed = parse::parse(&cli.python, &script, &inputs)?;
+    let glossary = Glossary::default();
+    let mut out = std::io::stdout().lock();
+    let mut found = false;
+    for (passage, sentences) in passages.iter().zip(&parsed) {
+        for finding in rules::sentences(passage, sentences, &glossary) {
+            print(&mut out, &finding)?;
+            found = true;
+        }
+    }
+    if found {
+        return Ok(Outcome::Disagreed);
+    }
+    writeln!(out, "prose: {} file(s), no body rule broken", paths.len()).map_err(|error| {
+        ProseError::Io {
+            path: PathBuf::from("<stdout>"),
+            message: error.to_string(),
+        }
+    })?;
+    Ok(Outcome::Agreed)
 }
 
 /// Gathers, parses, judges and compares with the ledger, or writes it.
@@ -188,16 +305,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
     .map_err(|LedgerError::Unread { line }| ProseError::Ledger { line })?;
     let verdict = committed.check(&findings, Key::of);
     for finding in &verdict.new {
-        writeln!(
-            out,
-            "{}:{}: {}: \"{}\" — {}",
-            finding.path,
-            finding.line,
-            finding.rule,
-            finding.sentence,
-            Fix(finding.rule)
-        )
-        .map_err(output)?;
+        print(&mut out, finding)?;
     }
     for stale in &verdict.stale {
         writeln!(

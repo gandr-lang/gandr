@@ -1,9 +1,9 @@
 ## The shape
 
-# {{pr}} stands as a `{{kind}}` stall in the `{{lane}}` lane, and no seat holds that lane, so `stall:watch` paged the coordinator and filed this report
+# {{pr}} stands as a `{{kind}}` stall in the `{{lane}}` lane. No seat holds that lane. `stall:watch` pages the coordinator and files this report
 
-- The coordinator routes it: a seat takes the lane, the pull request is relabelled to a held lane, drafted with its reason (`pr:hold`) or closed.
-- `stall:watch` closes this report itself once no reading finds the stall. Its comment names what cleared it: #{{pr}} merged, closed unmerged, or no longer stalled.
+- The coordinator routes it. A seat takes the lane, or the coordinator acts on the pull request. It moves it to a held lane, drafts it with its reason (`pr:hold`) or closes it.
+- `stall:watch` closes this report itself once no reading finds the stall. Its comment names what clears it: #{{pr}} merges, closes unmerged, or stops its stall.
 
 ## Try first
 
