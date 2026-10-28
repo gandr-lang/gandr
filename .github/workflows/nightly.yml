@@ -289,7 +289,9 @@ jobs:
   # #2886): how the month's merged pull requests answered their obligations,
   # by lane and week, on one `report: obligations, <month>` issue. Only the
   # scheduled run writes; a dispatch prints the reports. They read the
-  # tracker alone, so they build nothing.
+  # tracker alone, so they build nothing. The obligations report's search
+  # leaves out every pull request the token cannot read, and writes zeros
+  # rather than failing, so the job grants `pull-requests: read` (#3576).
   #
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
@@ -346,6 +348,7 @@ jobs:
       packages: read
       actions: read
       issues: write
+      pull-requests: read
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 20
     env:

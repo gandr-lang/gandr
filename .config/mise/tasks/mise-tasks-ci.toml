@@ -2369,11 +2369,14 @@ trap 'rm -rf "$scratch"' EXIT
 # The report for merges from `$1` to `$2` (YYYY-MM-DD),
 # written to `$scratch/body.md`. GitHub's search answers at most 1000
 # results a query, fewer than a month's merges, so the period is read a day
-# at a time.
+# at a time, its days from `period.jq` (#3576). The search leaves out every
+# pull request a token cannot read, so the nightly's job grants
+# `pull-requests: read`.
 render() {
-  local day=$1
+  local days day
+  days=$(period "$1" "$2" | jq -r '.days[]')
   : > "$scratch/nodes.jsonl"
-  while [[ ! $day > $2 ]]; do
+  for day in $days; do
     gh api graphql --paginate -F q="repo:$repo is:pr is:merged merged:$day" -f query='
       query($q: String!, $endCursor: String) {
         search(query: $q, type: ISSUE, first: 50, after: $endCursor) {
@@ -2382,7 +2385,6 @@ render() {
             closingIssuesReferences(first: 5) { nodes { number body labels(first: 20) { nodes { name } } } } } }
         }
       }' --jq '.data.search.nodes[]' >> "$scratch/nodes.jsonl"
-    day=$(date -u -d "$day +1 day" +%Y-%m-%d)
   done
   jq -s -c --arg lane "${usage_lane:-}" '[.[]
       | (.closingIssuesReferences.nodes | map(select(any(.labels.nodes[]; .name | startswith("area:")))) | first) as $unit
@@ -2393,6 +2395,11 @@ render() {
     '{since: $since, until: $until, prs: $prs[0]}' \
     | jq -r -L "$claims" -f "$claims/obligations.jq" > "$scratch/body.md"
 }
+# The period `period.jq` reads from `$1` to `$2`: its days and the month
+# before.
+period() {
+  jq -n -c --arg since "$1" --arg until "$2" '{since: $since, until: $until}' | jq -c -f "$claims/period.jq"
+}
 # The open issue titled `$1`, or nothing.
 filed() {
   gh issue list --repo "$repo" --state open --label collector --search "\"$1\" in:title" --json number,title \
@@ -2400,17 +2407,18 @@ filed() {
 }
 since=${usage_since:-$(date -u +%Y-%m-01)}
 until=${usage_until:-$(date -u +%Y-%m-%d)}
+span=$(period "$since" "$until")
 title="report: obligations, ${since::7}"
 if [[ -z $write ]]; then
   render "$since" "$until"
   cat "$scratch/body.md"
   exit 0
 fi
-previous_since=$(date -u -d "${since::7}-01 -1 month" +%Y-%m-01)
+previous_since=$(jq -r .previous.since <<< "$span")
 previous_title="report: obligations, ${previous_since::7}"
 previous=$(filed "$previous_title")
 if [[ -n $previous ]]; then
-  render "$previous_since" "$(date -u -d "${since::7}-01 -1 day" +%Y-%m-%d)"
+  render "$previous_since" "$(jq -r .previous.until <<< "$span")"
   gh issue edit "$previous" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
   gh issue close "$previous" --repo "$repo" --reason completed > /dev/null
   echo "closed #$previous: ${previous_since::7} in full"
