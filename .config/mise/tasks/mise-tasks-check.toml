@@ -1965,6 +1965,26 @@ run = [
   "aube run package",
 ]
 
+# The extension activated in an extension host that hung on its own start
+# (#290), and the client's HTML capability decides whether a hover is
+# coloured (#347): neither is seen without a real VS Code. The smoke starts
+# VS Code at the manifest's floor without a display, downloaded once into
+# the user's cache, on a scratch copy of a corpus source: the extension
+# activates, a definition is typed, and its hover is answered once, in the
+# server's HTML. It reads the bundle and the compiled scene `check:extension`
+# leaves, and serves them with the driver `check:corpus-format` builds. Hosted
+# CI does not run it: the CI image carries no Electron runtime libraries. A
+# host that hangs is ended at three minutes.
+["check:vscode-smoke"]
+description = "A real VS Code opens a corpus source with the extension, types and hovers"
+depends = ["check:extension"]
+dir = "contrib/gandr-vscode"
+env.PATH = "{{ config_root }}/target/debug:{{ env.PATH }}"
+run = [
+  "{{ config_root }}/.config/mise/scope cargo build --locked --quiet --profile test --package gandr-lang --bin gandr",
+  "timeout --kill-after=10 180 node dist/src/smoke/run.js",
+]
+
 # The input method's command table is generated from three pinned sources the
 # generator reads by digest (`contrib/gandr-vscode/scripts/input-table.mts`):
 # regenerated into a temporary file and compared with the committed
