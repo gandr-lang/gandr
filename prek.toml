@@ -67,6 +67,15 @@ always_run = true
 stages = ["pre-commit"]
 
 [[repos.hooks]]
+id = "readme-pin"
+name = "the root README matches the owner's pin"
+language = "system"
+entry = "mise run check:readme-pin"
+pass_filenames = false
+files = '^(README\.md|\.config/readme\.sha256)$'
+stages = ["pre-commit"]
+
+[[repos.hooks]]
 id = "commitlint"
 name = "commitlint"
 entry = "mise x -- commitlint --edit"
