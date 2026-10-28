@@ -1,13 +1,53 @@
-// A world's requirement names a theory, refused where it names none.
+// A world's requirement is a row, each entry refused as a row refuses it.
 //
-// A role's requirement must name a signature that a site's offer can model.
+// A role's requirement must name what a site can answer. That is a host
+// interface the site grants, or an effect theory at fixed sorts under the
+// label the role performs through.
 //
-// `world w requires R ;` states as a theory what a role at `w` needs of its
-// site. A requirement naming no theory is refused at the world, by the name
-// it gives.
+// `world w requires [ … ] ;` is read entry by entry. An entry naming nothing
+// is refused by its name. So is a theory under no label, a model theory, a
+// sort left unfixed and a label written twice.
 //
-// - see: `corpus/model/deployments/offers.gandr` — a world requiring `Store`
+// - see: `corpus/model/deployments/offers.gandr` — a world requiring
+//   `Console` and a store under `store`
 
-/// A world requiring a theory nothing declares.
+/// A store holds values by key, and each operation hands what it reads on.
+pub theory Store {
+  /// The store holds values of this sort.
+  sort V : Type+;
+  /// What a computation over the store answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Holds `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
+}
+
+/// A carrier and a binary operation on it: a theory of models, not of
+/// effects.
+pub theory Magma {
+  /// The carrier.
+  sort M : Type;
+  /// The operation.
+  oper mul : (x : M, y : M) --> M;
+}
+
+/// A world requiring an interface nothing declares.
 @[ refuses("UnresolvedTypeHead") ]
-pub world lost requires Missing;
+pub world lost requires [Missing];
+
+/// A world requiring a theory under no label: nothing performs it.
+@[ refuses("UnlabelledRequirement") ]
+pub world bare requires [Console, Store with sort V = String];
+
+/// A world requiring a theory whose operations are no effects.
+@[ refuses("UninterfacedMember") ]
+pub world modelled requires [m : Magma];
+
+/// A world requiring a store whose values no sort fixes.
+@[ refuses("UninterfacedMember") ]
+pub world unfixed requires [store : Store];
+
+/// A world requiring one label twice.
+@[ refuses("DuplicateDefinition") ]
+pub world twice requires [store : Store with sort V = String, store : Store with sort V = Integer];

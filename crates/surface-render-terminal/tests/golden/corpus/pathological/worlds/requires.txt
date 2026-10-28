@@ -1,7 +1,41 @@
 error[UnresolvedTypeHead]: no type named `Missing` is written bare
-   ╭▸ corpus/pathological/worlds/requires.gandr:13:25
+   ╭▸ corpus/pathological/worlds/requires.gandr:37:26
    │
-13 │ pub world lost requires Missing;
-   │                         ━━━━━━━ no type head of this name and arity
+37 │ pub world lost requires [Missing];
+   │                          ━━━━━━━ no type head of this name and arity
    │
    ╰ note: `lost` is refused with UnresolvedTypeHead, as its expectation states
+
+error[UnlabelledRequirement]: the world requires `Store` under no label, so its code cannot perform it
+   ╭▸ corpus/pathological/worlds/requires.gandr:41:35
+   │
+41 │ pub world bare requires [Console, Store with sort V = String];
+   │                                   ━━━━━ a theory under no label
+   │
+   ├ note: `bare` is refused with UnlabelledRequirement, as its expectation states
+   ╰ help: write a label before it, `l : Store with …`, and perform through `l`
+
+error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `mul`, which takes an input before its continuation at no sort the manifest fixes
+   ╭▸ corpus/pathological/worlds/requires.gandr:45:34
+   │
+45 │ pub world modelled requires [m : Magma];
+   │                                  ━━━━━ a member the handler cannot read as an operation
+   │
+   ╰ note: `modelled` is refused with UninterfacedMember, as its expectation states
+
+error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `V`, which is a sort the operations do not return, which the manifest leaves unfixed
+   ╭▸ corpus/pathological/worlds/requires.gandr:49:37
+   │
+49 │ pub world unfixed requires [store : Store];
+   │                                     ━━━━━ a member the handler cannot read as an operation
+   │
+   ╰ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+
+error[DuplicateDefinition]: `store` is defined twice
+   ╭▸ corpus/pathological/worlds/requires.gandr:53:63
+   │
+53 │ pub world twice requires [store : Store with sort V = String, store : Store with sort V = Integer];
+   │                           ───── first written here            ━━━━━ written again here
+   │
+   ├ note: `twice` is refused with DuplicateDefinition, as its expectation states
+   ╰ help: give each definition of `store` its own name, or delete one of them

@@ -14,14 +14,19 @@
 //!
 //! # Judging a deployment
 //!
-//! A world written `world far requires Store ;` states what a role placed at
-//! it needs of its site; the site's file offers `pub module Offers :
-//! Model(T)`. [`Manifold::judged`] reads the program a manifold deploys before
+//! A world written `world far requires [Console, store : Store with sort V =
+//! String] ;` states, as a row, what a role placed at it needs of its site;
+//! the site's file answers with a row of its own, `offers [Console, store =
+//! Echo] ;`. [`Manifold::judged`] reads the program a manifold deploys before
 //! any process starts: each placement names a world the program declares, and
 //! each requiring world's site, found among the manifold's imports by its key,
-//! offers its requirement. The offer is judged as the checker judges any
-//! pack: the program's own text, with the site imported and its `Offers`
-//! packed at `Model(Store)`, settles or names the member the offer lacks.
+//! answers its row entry by entry. A label is answered by the module the
+//! offer binds to it, judged as the checker judges a functor's argument: the
+//! program's own text, with the module imported and a functor over
+//! `Model(Store) with sort V = String` applied to it, settles or names the type
+//! the module holds instead. A host interface is answered when the offer lists
+//! it and the site's `Authority` attenuates to its operations, judged in the
+//! site's own text.
 //!
 //! # Boundaries
 //!
@@ -37,13 +42,13 @@
 //!   the variable [`Site::variable`] names. A run never holds it: the model
 //!   answers a sealed `Secret.T`, which never crosses to a world and prints
 //!   opaque.
-//! - **The offer by its bare name.** The judgement imports the site's `Offers`
-//!   by name, because a pack of a qualified module is outside the fragment
-//!   (#1108); a program declaring its own `Offers` is refused there as a clash,
-//!   not as an offer the site lacks.
+//! - **The module by its bare name.** The judgement imports each module the
+//!   offer names by its name, because a functor applies a module by its name
+//!   alone; a program declaring a module of one of those names is refused there
+//!   as a clash, not as an offer the site lacks.
 //! - **The check alone judges.** `gandr check` of a manifold judges its
 //!   deployment; `gandr run --manifold` reads the bindings without it, and the
-//!   offer is not yet the far world's authority (#3523).
+//!   offer is not yet the far world's authority (#3546).
 //!
 //! # References
 //!
@@ -53,15 +58,22 @@
 //!   identity.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
+use core::fmt::Write as _;
 use core::net::SocketAddr;
 use core::str::FromStr as _;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_term::CoreArena;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::host::HostSignatures;
+use gandr_core_term::effect::host::declared;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::StringLiteral;
 use gandr_runtime_net::Lookup;
@@ -76,7 +88,10 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::decode_escapes;
+use gandr_surface_lowering::labelled;
 use gandr_surface_lowering::requirement;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -511,7 +526,7 @@ impl Manifold
     /// # Adequacy
     /// - hypothesis: L3 — a manifold checked states its artifact, and a site
     ///   beside it, importing `std.manifold`, does not.
-    /// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+    /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(constant) => report.declarations().iter().any(|declaration| declaration.constant() == constant),
         Maybe::Absent(declaration_name::Absent::Undeclared) => true,
@@ -533,8 +548,8 @@ impl Manifold
 
     /// The deployment judged before any process starts: each placement's
     /// world resolved among the worlds of the program this manifold deploys,
-    /// and each world written `world w requires R ;` placed only at a site
-    /// offering `R`.
+    /// and each world written `world w requires [ … ] ;` placed only at a site
+    /// whose `offers` answers each entry of the row.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -545,10 +560,10 @@ impl Manifold
     ///   [`Undeployed::Misworlded`]. A placement of a world written with a
     ///   requirement finds its site's file among the files this manifold lays
     ///   out over, the one whose `Site.key` runs to the placement's key, and is
-    ///   [`Undeployed::Unsited`] when none does; the program's text is then
-    ///   judged with the file's `Offers` imported by that name and packed at
-    ///   `Model(R)`, and is [`Undeployed::Unoffered`], carrying the refusal,
-    ///   when the pack does not check. Empty when every placement holds.
+    ///   [`Undeployed::Unsited`] when none does; the row is then judged entry
+    ///   by entry against the file's offer, each entry unanswered an
+    ///   [`Undeployed::Unoffered`] in written order. Empty when every placement
+    ///   holds.
     /// - provides: the deployment check `gandr check` of a manifold makes.
     /// - fails: never; each refusal is an entry, and a program that cannot be
     ///   read or lowered is the one entry.
@@ -557,12 +572,14 @@ impl Manifold
     ///   predicate could only observe by checking it again.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the corpus deployment of a world requiring `Store` at
-    ///   a site offering it holds, and so does the migration model's, whose
-    ///   worlds require nothing; a site offering part of `Store` is refused
-    ///   naming the member, a site offering nothing is refused, and a world the
+    /// - hypothesis: L3 — the corpus deployment of a world requiring `Console`
+    ///   and a labelled `Store` at a site answering both holds, and so does the
+    ///   migration model's, whose worlds require nothing; a site binding no
+    ///   module to a label, one binding a module at other sorts, one not
+    ///   listing a host interface, and one whose authority does not hold an
+    ///   interface it lists are each refused naming the entry, and a world the
     ///   program lacks is refused by name.
-    /// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+    /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     #[inline]
     #[must_use]
     pub fn judged(&self) -> Vec<Undeployed>
@@ -594,7 +611,7 @@ impl Manifold
         for &(ref world, key) in &self.placed {
             let refusal = match worlds.get(world) {
                 Some(&Declared::World(Maybe::Absent(_))) => continue,
-                Some(&Declared::World(Maybe::Present(ref requirement))) => {
+                Some(&Declared::World(Maybe::Present(ref entries))) => {
                     let Some(site) = sites.get(&key)
                     else {
                         refused.push(Undeployed::Unsited {
@@ -608,13 +625,11 @@ impl Manifold
                         artifact: &self.artifact,
                         program,
                         world,
-                        requirement: SourceText::from(requirement.as_str()),
+                        entries,
                         site,
                     };
-                    match offering.judged() {
-                        Ok(()) => continue,
-                        Err(unoffered) => unoffered,
-                    }
+                    refused.extend(offering.judged());
+                    continue;
                 },
                 Some(&Declared::Refused(ref why)) => Undeployed::Misworlded {
                     artifact: self.artifact.clone(),
@@ -649,7 +664,7 @@ impl Manifold
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::judged`].
-    /// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+    /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     fn sites(&self) -> BTreeMap<NodeId, PathBuf>
     {
         let here = std::env::current_dir().and_then(|here| here.canonicalize());
@@ -959,16 +974,17 @@ pub enum Undeployed
         /// The key the placement's site proves.
         key: NodeId,
     },
-    /// A site does not offer what the world placed at it requires.
+    /// A site does not answer an entry of the row the world placed at it
+    /// requires.
     Unoffered
     {
         /// The site's file.
         site: PathBuf,
         /// The world placed.
         world: WorldName,
-        /// The theory the world requires, as the program writes it.
-        requirement: String,
-        /// Why its `Offers` does not pack at the requirement, spelled.
+        /// The entry refused: a theory's label, or a host interface's name.
+        entry: String,
+        /// Why the site's offer does not answer it, spelled.
         why: String,
     },
 }
@@ -1128,11 +1144,11 @@ impl fmt::Display for Undeployed
             Self::Unoffered {
                 ref site,
                 ref world,
-                ref requirement,
+                ref entry,
                 ref why,
             } => write!(
                 f,
-                "`{world}` requires `{requirement}`, and the site `{}` does not offer it: {why}",
+                "`{world}` requires `{entry}`, and the site `{}` does not answer it: {why}",
                 site.display()
             ),
         }
@@ -1220,15 +1236,44 @@ fn discovered(sockets: &[SocketAddr]) -> Lookup
 struct Written<'text>(&'text str);
 
 /// What a program declares under a name a placement may give: a world, with
-/// the theory it requires as the program writes it, or a declaration the
+/// the row it requires as the program writes it, or a declaration the
 /// lowering refused.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Declared
 {
-    /// A world, and its requirement's path.
-    World(Maybe<String, requirement::Absent>),
+    /// A world, and its requirement row's entries.
+    World(Maybe<Vec<Entry>, requirement::Absent>),
     /// A refused declaration, its refusal spelled.
     Refused(String),
+}
+
+/// One entry of a world's requirement row, as the program writes it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Entry
+{
+    /// The label code at the world performs through; none for an interface
+    /// named whole.
+    label: Maybe<String, labelled::Absent>,
+    /// The interface's name.
+    interface: String,
+    /// The sorts the entry fixes, as written after the interface's name, `
+    /// with sort V = String`; empty for a host interface.
+    manifest: String,
+}
+
+/// The bytes `span` covers in `text`, owned; none when `text` does not hold
+/// them.
+///
+/// # Specification
+/// trivial.
+fn spelled(
+    text: SourceText<'_>,
+    span: ByteSpan,
+) -> Option<String>
+{
+    text.as_ref()
+        .get(usize::from(span.start()) .. usize::from(span.end()))
+        .map(String::from)
 }
 
 /// Each world and each refused declaration of `module`, by its name, the
@@ -1237,9 +1282,9 @@ enum Declared
 /// # Specification
 /// - requires: `text` is the text `module`'s spans index.
 /// - ensures: one entry per declaration of `module` that lowers to a world,
-///   with the bytes of its requirement's path, or that the lowering refused,
-///   with its refusal; a later declaration of one name keeps its entry. A
-///   requirement whose bytes `text` does not hold is refused.
+///   with its requirement row's entries in written order, or that the lowering
+///   refused, with its refusal; a later declaration of one name keeps its
+///   entry. A requirement whose bytes `text` does not hold is refused.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the entries are a reading of the module, which a clause
@@ -1247,7 +1292,7 @@ enum Declared
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Manifold::judged`].
-/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
 fn declared(
     module: &LoweredModule<'_>,
     text: SourceText<'_>,
@@ -1259,16 +1304,30 @@ fn declared(
         .filter_map(|declaration| {
             let declared = match declaration.outcome() {
                 DeclarationOutcome::World => match module.requirement(declaration) {
-                    Maybe::Present(span) => text
-                        .as_ref()
-                        .get(usize::from(span.start()) .. usize::from(span.end()))
+                    Maybe::Present(required) => required
+                        .iter()
+                        .map(|entry| {
+                            Some(Entry {
+                                label: match entry.label {
+                                    Maybe::Present(span) => Maybe::Present(spelled(text, span)?),
+                                    Maybe::Absent(absent) => Maybe::Absent(absent),
+                                },
+                                interface: spelled(text, entry.interface)?,
+                                manifest: spelled(
+                                    text,
+                                    ByteSpan::new(entry.interface.end(), entry.written.end())
+                                        .ok()?,
+                                )?,
+                            })
+                        })
+                        .collect::<Option<Vec<Entry>>>()
                         .map_or_else(
                             || {
                                 Declared::Refused(String::from(
                                     "its requirement's bytes stand outside the program's text",
                                 ))
                             },
-                            |path| Declared::World(Maybe::Present(String::from(path))),
+                            |entries| Declared::World(Maybe::Present(entries)),
                         ),
                     Maybe::Absent(absent) => Declared::World(Maybe::Absent(absent)),
                 },
@@ -1285,18 +1344,131 @@ fn declared(
         .collect()
 }
 
+/// A site's offer, as its file writes it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Offer
+{
+    /// Each host interface the site grants, by its name.
+    granted: BTreeSet<String>,
+    /// Each label the site answers, with the name of the module answering it.
+    answered: BTreeMap<String, String>,
+}
+
+/// The offer the site's module `module` writes, read off the unit's text
+/// `text`.
+///
+/// # Specification
+/// - requires: `text` is the text `module`'s spans index.
+/// - ensures: the host interfaces and the labels with their modules the
+///   module's `offers` writes; the empty offer when it writes none, or when
+///   `text` does not hold its bytes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Manifold::judged`].
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+#[spec(ensures: |ret| ret.granted.len() <= match module.offer() { Maybe::Present(offer) => offer.granted.len(), Maybe::Absent(_) => 0 })]
+fn offered(
+    module: &LoweredModule<'_>,
+    text: SourceText<'_>,
+) -> Offer
+{
+    let Maybe::Present(offered) = module.offer()
+    else {
+        return Offer::default();
+    };
+    let granted = offered
+        .granted
+        .iter()
+        .map(|&interface| spelled(text, interface))
+        .collect::<Option<BTreeSet<String>>>();
+    let answered = offered
+        .answered
+        .iter()
+        .map(|&(label, answering)| Some((spelled(text, label)?, spelled(text, answering)?)))
+        .collect::<Option<BTreeMap<String, String>>>();
+    match (granted, answered) {
+        (Some(granted), Some(answered)) => Offer { granted, answered },
+        (None, _) | (_, None) => Offer::default(),
+    }
+}
+
 /// The alias the deployment check imports a site's file under.
 const SITE_ALIAS: &str = "deployedSite";
 
-/// The module a site's file declares as its offer.
-const OFFERS: &str = "Offers";
+/// The functor the deployment check writes for each label: its parameter is a
+/// model of the label's theory at the sorts the requirement fixes, followed by
+/// the label's position in the row.
+const REQUIRED: &str = "DeployedRequirement";
 
-/// The declaration the deployment check judges: the offer packed at the
-/// requirement.
-const OFFERED: &str = "deployedOffer";
+/// The application the deployment check judges for each label: the functor
+/// applied to the module the site answers the label with, followed by the
+/// label's position in the row.
+const OFFERED: &str = "DeployedOffer";
 
-/// A world's requirement judged against the offer of the site it is placed
-/// at.
+/// The definition the deployment check writes into a site's file for each
+/// host interface: the site's authority attenuated to the interface's
+/// operations, followed by the entry's position in the row.
+const GRANTED: &str = "deployedGrant";
+
+/// An entry's position in the row it stands in, counted from zero in written
+/// order.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Position(usize);
+
+/// A label the site binds a module to: the entry, its position, and the
+/// module's name.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Bound<'judged>
+{
+    /// The entry's position in its row.
+    position: Position,
+    /// The entry.
+    entry: &'judged Entry,
+    /// The name of the module the site binds the entry's label to.
+    module: &'judged str,
+}
+
+/// A host interface the site lists: the entry's position, and the host's
+/// signature of the interface.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Listed<'judged>
+{
+    /// The entry's position in its row.
+    position: Position,
+    /// The interface's signature, its operations the grant must hold.
+    signature: &'judged EffectSig,
+}
+
+/// The bytes the deployment check wrote for one entry, in the text it
+/// judges.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Wrote
+{
+    /// The entry's position in its row.
+    position: Position,
+    /// Where the written lines start.
+    start: ByteOffset,
+    /// Where they end.
+    end: ByteOffset,
+}
+
+/// A world's requirement row judged against the offer of the site it is
+/// placed at.
 #[derive(Clone, Copy, Debug)]
 struct Offering<'judged>
 {
@@ -1306,147 +1478,316 @@ struct Offering<'judged>
     program: SourceText<'judged>,
     /// The world placed.
     world: &'judged WorldName,
-    /// The theory the world requires, its path as the program writes it.
-    requirement: SourceText<'judged>,
+    /// The row the world requires, its entries as the program writes them.
+    entries: &'judged [Entry],
     /// The file of the site it is placed at.
     site: &'judged Path,
 }
 
 impl Offering<'_>
 {
-    /// Whether the site offers what the world requires.
+    /// Each entry of the row the site does not answer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the site's file lowered alone for its offer, and each entry
+    ///   judged against it in written order. A host interface, an entry whose
+    ///   interface the host declares, is answered when the offer lists it and
+    ///   the site's own text, with [`GRANTED`] attenuating its `Authority` to
+    ///   the interface's operations, holds them ([`Self::granted`]). A theory's
+    ///   label is answered when the offer binds a module to it that the
+    ///   program's text, with the module imported and [`OFFERED`] applying
+    ///   [`REQUIRED`] to it, takes at `Model(T)` and the sorts the entry fixes
+    ///   ([`Self::modelled`]). Empty when every entry is answered.
+    /// - provides: the member-by-member judgement of [`Manifold::judged`].
+    /// - fails: never; each entry unanswered is an [`Undeployed::Unoffered`]
+    ///   naming it, by the label for a theory and by its name for a host
+    ///   interface, and a site's file that does not read or lower refuses every
+    ///   entry.
+    /// - panics: none.
+    /// - executable: none — the judgement checks the program and the site
+    ///   again, which a predicate could only observe by checking them once
+    ///   more.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Manifold::judged`].
+    /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    fn judged(self) -> Vec<Undeployed>
+    {
+        let mut arena = CoreArena::new();
+        let table = HostSignatures::new(&mut arena);
+        let signature = |entry: &Entry| {
+            table
+                .as_ref()
+                .map_or(Maybe::Absent(declared::Absent::Undeclared), |table| {
+                    table.named(&EffectName::from(entry.interface.as_str()))
+                })
+        };
+        let unoffered = |entry: &Entry, why: String| Undeployed::Unoffered {
+            site: self.site.to_path_buf(),
+            world: self.world.clone(),
+            entry: match (signature(entry), &entry.label) {
+                (Maybe::Absent(_), &Maybe::Present(ref label)) => label.clone(),
+                (Maybe::Present(_), _) | (_, &Maybe::Absent(_)) => entry.interface.clone(),
+            },
+            why,
+        };
+        let every = |why: &str| {
+            self.entries
+                .iter()
+                .map(|entry| unoffered(entry, String::from(why)))
+                .collect()
+        };
+        if let Err(ref conflict) = table {
+            return every(&conflict.to_string());
+        }
+        let site = match std::fs::read_to_string(self.site) {
+            Ok(site) => site,
+            Err(error) => return every(&error.to_string()),
+        };
+        let offer = match lowered_alone(self.site, SourceText::from(site.as_str()), offered) {
+            Ok(offer) => offer,
+            Err(Unran::Unread { message: why } | Unran::Refused { why }) => return every(&why),
+        };
+        let mut why: BTreeMap<Position, String> = BTreeMap::new();
+        let mut bound = Vec::new();
+        let mut listed = Vec::new();
+        for (at, entry) in self.entries.iter().enumerate() {
+            let position = Position(at);
+            match (signature(entry), &entry.label) {
+                (Maybe::Present(signature), _) => {
+                    if offer.granted.contains(&entry.interface) {
+                        listed.push(Listed {
+                            position,
+                            signature,
+                        });
+                    }
+                    else {
+                        let _first =
+                            why.insert(position, String::from("the site's offer does not list it"));
+                    }
+                },
+                (Maybe::Absent(_), &Maybe::Present(ref label)) => match offer.answered.get(label) {
+                    Some(module) => bound.push(Bound {
+                        position,
+                        entry,
+                        module,
+                    }),
+                    None => {
+                        let _first = why.insert(
+                            position,
+                            String::from("the site's offer binds no module to it"),
+                        );
+                    },
+                },
+                (Maybe::Absent(_), &Maybe::Absent(_)) => {},
+            }
+        }
+        why.extend(self.modelled(&bound));
+        why.extend(self.granted(SourceText::from(site.as_str()), &listed));
+        why.into_iter()
+            .filter_map(|(Position(at), why)| Some(unoffered(self.entries.get(at)?, why)))
+            .collect()
+    }
+
+    /// Why each label the site binds a module to is not answered by it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the program's text, followed by an import of the site's file
     ///   by its path from the program's directory, under [`SITE_ALIAS`] and
-    ///   listing [`OFFERS`], and the declaration [`OFFERED`] packing `Offers`
-    ///   at `Model(R)`, judged at the program's path as [`stepped_alone`]
-    ///   judges a text; nothing when [`OFFERED`] is not refused. `Offers` is
-    ///   imported by its bare name because `pack` reads a module by its name
-    ///   alone (#1108), so a program declaring its own `Offers` is refused
-    ///   here.
-    /// - fails: [`Undeployed::Unoffered`], carrying the refusal as
-    ///   [`Self::why`] spells it, or the refusal of the text as a whole.
+    ///   listing each module of `bound`, and per label the functor [`REQUIRED`]
+    ///   over a model of the label's theory at the entry's sorts and
+    ///   [`OFFERED`] applying it to the module, judged at the program's path as
+    ///   [`stepped_alone`] judges a text; each label whose lines a diagnostic
+    ///   marks, with that diagnostic spelled. The modules are imported by their
+    ///   bare names because a functor applies a module by its name, so a
+    ///   program declaring a module of one of their names is refused here.
+    /// - fails: never; a text refused as a whole refuses every label.
     /// - panics: none.
-    /// - executable: none — the judgement checks the program again, which a
-    ///   predicate could only observe by checking it once more.
-    ///
-    /// # Errors
-    /// [`Undeployed::Unoffered`].
+    /// - executable: none — as [`Self::judged`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Manifold::judged`].
-    /// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
-    fn judged(self) -> Result<(), Undeployed>
+    /// - hypothesis: L3 — a module at the sorts the requirement fixes is taken,
+    ///   and one at other sorts is refused naming both types.
+    /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    fn modelled(
+        self,
+        bound: &[Bound<'_>],
+    ) -> BTreeMap<Position, String>
     {
-        let unoffered = |why: String| Undeployed::Unoffered {
-            site: self.site.to_path_buf(),
-            world: self.world.clone(),
-            requirement: String::from(self.requirement.as_ref()),
-            why,
-        };
+        if bound.is_empty() {
+            return BTreeMap::new();
+        }
         let Some(address) = addressed(self.artifact, self.site)
         else {
-            return Err(unoffered(String::from(
-                "no path from the program's directory spells its file",
-            )));
+            return bound
+                .iter()
+                .map(|label| {
+                    (
+                        label.position,
+                        String::from("no path from the program's directory spells its file"),
+                    )
+                })
+                .collect();
         };
-        let written = format!(
-            "{program}\nimport \"{address}\" as {SITE_ALIAS} ({OFFERS});\ndef {OFFERED} : \
-             Model({requirement}) = pack {OFFERS} at Model({requirement});\n",
+        let modules: BTreeSet<&str> = bound.iter().map(|label| label.module).collect();
+        let mut written = format!(
+            "{program}\nimport \"{address}\" as {SITE_ALIAS} ({modules});\n",
             program = self.program,
-            requirement = self.requirement,
+            modules = modules.into_iter().collect::<Vec<_>>().join(", "),
         );
-        match stepped_alone(self.artifact, SourceText::from(written.as_str()), |step| {
-            self.why(&step)
-        }) {
-            Ok(Maybe::Absent(_)) => Ok(()),
-            Ok(Maybe::Present(why))
-            | Err(Unran::Unread { message: why } | Unran::Refused { why }) => Err(unoffered(why)),
+        let mut wrote = Vec::with_capacity(bound.len());
+        for label in bound {
+            let start = ByteOffset::from(written.len());
+            let _written = write!(
+                written,
+                "module {REQUIRED}{at}(M : Model({interface}){manifest}) {{}}\nmodule \
+                 {OFFERED}{at} = {REQUIRED}{at}({module});\n",
+                at = label.position.0,
+                interface = label.entry.interface,
+                manifest = label.entry.manifest,
+                module = label.module,
+            );
+            wrote.push(Wrote {
+                position: label.position,
+                start,
+                end: ByteOffset::from(written.len()),
+            });
         }
+        judge(self.artifact, SourceText::from(written.as_str()), &wrote)
     }
 
-    /// Why the program `step` judged does not take the site's offer: the
-    /// refusal of [`OFFERED`], spelled as `check` reports it.
+    /// Why each host interface the site lists is not held by its authority.
     ///
     /// # Specification
-    /// - requires: `step` is the program's text followed by what
-    ///   [`Self::judged`] writes after it.
-    /// - ensures: absent when [`OFFERED`] is reported and not refused;
-    ///   otherwise its refusal's name, the message of the first diagnostic
-    ///   `check` gives at a span past the program's own text, and that
-    ///   diagnostic's primary mark, or the name alone when no such diagnostic
-    ///   is given; a step refused or faulted as a whole is its refusal, and one
-    ///   reporting no [`OFFERED`] says so.
-    /// - fails: never.
+    /// - requires: `site` is the text of the site's file.
+    /// - ensures: `site`, followed per interface of `listed` holding an
+    ///   operation by [`GRANTED`], a function from `Authority` to the
+    ///   capability holding the interface's operations, judged at the site's
+    ///   path as [`stepped_alone`] judges a text; each interface whose line a
+    ///   diagnostic marks, with that diagnostic spelled. An interface holding
+    ///   no operation is held by any authority.
+    /// - fails: never; a text refused as a whole refuses every interface.
     /// - panics: none.
-    /// - executable: none — the diagnostics are the walk's own reading of the
-    ///   step, which a clause would restate whole.
+    /// - executable: none — as [`Self::judged`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lacking member is spelled naming it, and one at
-    ///   another type naming both types.
-    /// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
-    fn why(
+    /// - hypothesis: L3 — `Console`, which `std.authority`'s `Authority` holds,
+    ///   is granted, and `Net`, which it does not, is refused naming both
+    ///   capabilities.
+    /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    fn granted(
         self,
-        step: &Step<'_>,
-    ) -> Maybe<String, offered::Absent>
+        site: SourceText<'_>,
+        listed: &[Listed<'_>],
+    ) -> BTreeMap<Position, String>
     {
-        let report = match *step {
-            Step::Source {
-                composed: Composed::Settled { ref report, .. },
-                ..
-            } => report,
-            Step::Source {
-                composed: Composed::Refused(refusal),
-                ..
-            } => return Maybe::Present(refusal.to_string()),
-            Step::Fault { ref fault, .. } => return Maybe::Present(fault.to_string()),
-        };
-        let Some(offered) = report
-            .declarations()
-            .iter()
-            .find(|declaration| declaration.name() == SurfaceName::from(OFFERED))
-        else {
-            return Maybe::Present(String::from(
-                "the judgement reports no verdict on the offer",
-            ));
-        };
-        let Maybe::Present(refusal) = offered.produced().refusal()
-        else {
-            return Maybe::Absent(offered::Absent::Offered);
-        };
-        // A diagnostic is measured in its source's own text, so one past the
-        // program's bytes marks what the check wrote after them.
-        let past = self.program.as_ref().len();
-        let diagnosed = entries(step, Verb::Check(Goals::Gated)).find(|diagnostic| {
-            matches!(diagnostic.span, Maybe::Present(span) if usize::from(span.start()) >= past)
-        });
-        Maybe::Present(match diagnosed {
-            Some(diagnostic) => match diagnostic.annotations.first() {
-                Some(primary) => format!(
-                    "{}: {}; {}",
-                    refusal.name(),
-                    diagnostic.message.text,
-                    primary.label
-                ),
-                None => format!("{}: {}", refusal.name(), diagnostic.message.text),
-            },
-            None => refusal.name().to_string(),
-        })
+        let mut written = format!("{site}\n");
+        let mut wrote = Vec::with_capacity(listed.len());
+        for interface in listed {
+            let mut operations = interface.signature.operations();
+            let Some(first) = operations.next()
+            else {
+                continue;
+            };
+            let start = ByteOffset::from(written.len());
+            let _written = write!(
+                written,
+                "def {GRANTED}{at}(authority : Authority) -> Cap {{ ",
+                at = interface.position.0,
+            );
+            written.push_str(first.name.as_ref());
+            for operation in operations {
+                written.push_str(", ");
+                written.push_str(operation.name.as_ref());
+            }
+            written.push_str(" } { authority }\n");
+            wrote.push(Wrote {
+                position: interface.position,
+                start,
+                end: ByteOffset::from(written.len()),
+            });
+        }
+        if wrote.is_empty() {
+            return BTreeMap::new();
+        }
+        judge(self.site, SourceText::from(written.as_str()), &wrote)
     }
 }
 
-quenchant_shape::reason_enum! {
-    /// Why a placement's world takes its site's offer with nothing to say.
-    mod offered {
-        /// The reason nothing is said.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The offer packs at the requirement.
-            Offered,
+/// Why each entry of `wrote` does not check, `written` judged at `source`.
+///
+/// # Specification
+/// - requires: each of `wrote` holds bytes of `written`, none overlapping.
+/// - ensures: `written` judged at `source` as [`stepped_alone`] judges a text;
+///   for each entry whose bytes the primary span of a diagnostic `check` gives
+///   begins in, the first such diagnostic: its refusal's name, its message and
+///   its primary mark. A text refused or faulted as a whole is every entry's
+///   refusal.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the diagnostics are the walk's own reading of the text,
+///   which a clause would restate whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Offering::judged`].
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+fn judge(
+    source: &Path,
+    written: SourceText<'_>,
+    wrote: &[Wrote],
+) -> BTreeMap<Position, String>
+{
+    let every = |why: &str| {
+        wrote
+            .iter()
+            .map(|entry| (entry.position, String::from(why)))
+            .collect()
+    };
+    let read = stepped_alone(source, written, |step| {
+        match step {
+            Step::Source {
+                composed: Composed::Settled { .. },
+                ..
+            } => {},
+            Step::Source {
+                composed: Composed::Refused(refusal),
+                ..
+            } => return every(&refusal.to_string()),
+            Step::Fault { ref fault, .. } => return every(&fault.to_string()),
         }
+        let starts: BTreeMap<ByteOffset, Wrote> =
+            wrote.iter().map(|&entry| (entry.start, entry)).collect();
+        let mut refused: BTreeMap<Position, String> = BTreeMap::new();
+        for diagnostic in entries(&step, Verb::Check(Goals::Gated)) {
+            let Maybe::Present(span) = diagnostic.span
+            else {
+                continue;
+            };
+            let Some((_, &entry)) = starts.range(..= span.start()).next_back()
+            else {
+                continue;
+            };
+            if span.start() < entry.end {
+                let _first = refused.entry(entry.position).or_insert_with(|| {
+                    let mut why = String::new();
+                    if let Maybe::Present(ref identifier) = diagnostic.identifier {
+                        let _written = write!(why, "{identifier}: ");
+                    }
+                    let _written = write!(why, "{}", diagnostic.message.text);
+                    if let Some(primary) = diagnostic.annotations.first() {
+                        let _written = write!(why, "; {}", primary.label);
+                    }
+                    why
+                });
+            }
+        }
+        refused
+    });
+    match read {
+        Ok(refused) => refused,
+        Err(Unran::Unread { message: why } | Unran::Refused { why }) => every(&why),
     }
 }
 
@@ -1467,7 +1808,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a site beside the program, and one in a directory the
 ///   program's directory does not hold.
-/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+/// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
 fn addressed(
     artifact: &Path,
     site: &Path,

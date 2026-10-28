@@ -51,6 +51,7 @@
 //! - Reversal: an attribute on signature components, or entries inferred from
 //!   the migrations a body makes.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -58,6 +59,7 @@ use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -72,6 +74,7 @@ use super::Sink;
 use super::Site;
 use super::Statement;
 use super::StatementBinding;
+use super::capability::Interface;
 use super::closed;
 use super::exhausted;
 use super::exits;
@@ -84,8 +87,10 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
+use crate::module::RequiredEntry;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::resolve::SurfaceName;
 
 #[cfg(test)]
 mod tests;
@@ -386,23 +391,28 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(sink.computation(id, origin))
     }
 
-    /// Refuse each world of the current source whose requirement, `R` of
-    /// `world w requires R ;`, names no theory.
+    /// Refuse each world of the current source whose requirement row, `world
+    /// w requires [ … ] ;`, holds an entry no row admits.
     ///
     /// # Specification
     /// - requires: the current source's collection has run.
     /// - ensures: each world of the current source written with a requirement
-    ///   whose path names no `theory` block holds, as a fault, the refusal the
-    ///   lookup gives at the path: an unresolved head, an unknown member or an
-    ///   unexported name. A slot already refused, or already faulted, keeps its
-    ///   own.
+    ///   holds, as a fault, the first refusal among its entries in written
+    ///   order: an entry's interface resolved as a row resolves it
+    ///   ([`Self::handled`]), a label read as a row reads it, an effect theory
+    ///   under no label [`LoweringRefusal::UnlabelledRequirement`], and a label
+    ///   or an interface named whole written again
+    ///   [`LoweringRefusal::DuplicateDefinition`] at the second. A slot already
+    ///   refused, or already faulted, keeps its own.
     /// - fails: never; a refusal is carried by the world.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a world requiring a theory settles; one requiring a
-    ///   name no theory bears is refused at it.
-    /// - witness: `lower::world::tests::a_world_s_requirement_names_its_theory_3376`
+    /// - hypothesis: L3 — a world requiring a host interface and a labelled
+    ///   theory at its sorts settles; an unlabelled theory, a model theory, a
+    ///   sort left unfixed, a name nothing declares and a label written twice
+    ///   are each refused at the entry.
+    /// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before,
@@ -411,8 +421,12 @@ impl<'source> Lowerer<'_, 'source>
     {
         let source = self.current.source;
         let mut refusals = Vec::new();
-        for (&slot, requirement) in &self.collected.requirements {
+        for (&slot, entries) in &self.collected.requirements {
             let Some(entry) = self.collected.slots.get(usize::from(slot))
+            else {
+                continue;
+            };
+            let Maybe::Present(half) = entry.definition
             else {
                 continue;
             };
@@ -421,17 +435,75 @@ impl<'source> Lowerer<'_, 'source>
             {
                 continue;
             }
-            if let Err(refusal) = self.collected.presented_theory_in(
-                requirement.span.start(),
-                &requirement.prefix,
-                requirement.span,
-                requirement.name,
-            ) {
+            let site = Site {
+                at: half.declaration,
+                name: FormName::WORLD_DECLARATION,
+                reading: Reading::Unread,
+            };
+            if let Err(refusal) = self.required(site, entries) {
                 refusals.push((slot, refusal));
             }
         }
         for (slot, refusal) in refusals {
             let _first = self.faults.entry(slot).or_insert(refusal);
         }
+    }
+
+    /// Read the entries of a requirement row written at `site` as a labelled
+    /// row reads its own.
+    ///
+    /// # Specification
+    /// - requires: `entries` are the row's, read off the world declaration
+    ///   `site` stands at.
+    /// - ensures: nothing, when every entry resolves to an interface, every
+    ///   theory stands under a label, and no label and no interface named whole
+    ///   is written twice.
+    /// - fails: the first refusal in written order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusals of [`Self::handled`] and [`Self::label_of`];
+    /// [`LoweringRefusal::UnlabelledRequirement`] at a theory under no label;
+    /// [`LoweringRefusal::DuplicateDefinition`] at a name written again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::check_requirements`].
+    /// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
+    #[spec(ensures: |ret| ret.is_ok() || !entries.is_empty())]
+    fn required(
+        &self,
+        site: Site,
+        entries: &[RequiredEntry],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut labelled: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
+        let mut whole: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
+        for entry in entries {
+            let interface =
+                self.handled(site, entry.interface, entry.interface.node, &entry.manifest)?;
+            let (named, seen) = match entry.label {
+                Maybe::Present(written) => (self.label_of(site, written)?, &mut labelled),
+                Maybe::Absent(_) => {
+                    if let Interface::Theory(_) = interface {
+                        return Err(LoweringRefusal::UnlabelledRequirement {
+                            span: entry.interface.span,
+                            name: self.name_at(entry.interface),
+                        });
+                    }
+                    (entry.interface, &mut whole)
+                },
+            };
+            let name = self.name_at(named);
+            if let Some(&first) = seen.get(&name) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: named.span,
+                    name,
+                    first,
+                });
+            }
+            let _first = seen.insert(name, named.span);
+        }
+
+        Ok(())
     }
 }

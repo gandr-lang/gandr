@@ -1,31 +1,38 @@
-// A role states what it needs of the site that hosts it.
+// A role states what it needs of the site that hosts it, as a row.
 //
 // The requirement travels with the program, and the offer stays with the
 // site. A deployment that pairs them wrongly is refused before any process
 // starts.
 //
-// `far` requires `Store`, so a site that hosts `far` must offer a model of
-// `Store`, member for member. `gandr check` of the manifold packs the site's
-// `Offers` at `Model(Store)` and judges the pack.
+// `far` requires the console, and a store of strings under the label
+// `store`. A site hosting `far` must grant the console and bind a model of
+// `Store` at `V = String` to `store`. `gandr check` of the manifold judges
+// each entry of the row against the site's `offers`.
 //
-// - see: `offers.site.gandr` — the site offering `Store`
+// - see: `offers.site.gandr` — the site answering the row
 // - see: `offers.manifold.gandr` — the manifold placing `far` there
-// - see: `corpus/pathological/worlds/offers.gandr` — a site lacking `get`,
-//   and a world the program lacks
+// - see: `corpus/pathological/worlds/offers.gandr` — sites leaving an entry
+//   unanswered, and a world the program lacks
 
-/// What a role at `far` reads and writes: strings held by key.
+/// What a role at `far` reads and writes: values held by key. Each operation
+/// hands what it reads to what runs after, so a model answers it.
 pub theory Store {
-  /// The value held at `key`.
-  oper get : (key : String) --> String;
-  /// Hold `value` at `key`.
-  oper put : (key : String, value : String) --> Unit;
+  /// The store holds values of this sort.
+  sort V : Type+;
+  /// What a computation over the store answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Holds `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
 }
 
 /// The world the entry runs at.
 pub world near;
 
-/// The world the work runs at, placed only at a site offering `Store`.
-pub world far requires Store;
+/// The world the work runs at: the console, and a store of strings under
+/// `store`.
+pub world far requires [Console, store : Store with sort V = String];
 
 /// `far` computes forty-two and hands it back.
 @[ entry((near, far)), runs("42") ]

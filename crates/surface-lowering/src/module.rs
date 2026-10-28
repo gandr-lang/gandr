@@ -425,6 +425,7 @@ pub use self::sealing::Sealed;
 pub use self::sealing::SealedComponent;
 pub use self::sealing::Sealing;
 pub use self::sealing::TypeMeaning;
+pub use self::world::RequiredEntry;
 
 quenchant_shape::reason_enum! {
     /// Why a declared name has no half of one kind.
@@ -1601,9 +1602,12 @@ pub struct Collected<'source>
     pub foreign: BTreeMap<(SourceIndex, EffectName), Arc<ForeignInterface>>,
     /// Each extern block carrying `boundary`, by the slot its check takes.
     pub boundaries: BTreeMap<SlotIndex, BoundarySlot>,
-    /// Each world written with a requirement, `world w requires R ;`, by its
-    /// slot: the theory a site placing it must offer.
-    pub requirements: BTreeMap<SlotIndex, world::WorldRequirement<'source>>,
+    /// Each world written with a requirement, `world w requires [ … ] ;`, by
+    /// its slot: the row's entries a site placing it must answer.
+    pub requirements: BTreeMap<SlotIndex, Vec<world::RequiredEntry>>,
+    /// Each source's offer, `offers [ … ] ;`, by the source: what a site
+    /// answers the rows of the worlds placed at it with.
+    pub offers: BTreeMap<SourceIndex, world::SiteOffer>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1628,6 +1632,58 @@ quenchant_shape::reason_enum! {
             Unrequired,
         }
     }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a requirement row's entry carries no label.
+    pub mod labelled {
+        /// The reason none is written.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The entry names its interface whole, `Console`.
+            Whole,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module holds no site's offer.
+    pub mod offer {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The module's source writes no `offers`, or the one it writes is
+            /// refused.
+            Unoffered,
+        }
+    }
+}
+
+/// One entry of a world's requirement row, by the bytes its source writes
+/// it at: what a deployment reads it by.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Required
+{
+    /// The label's bytes, `store` of `store : Store with sort V = String`;
+    /// none for an interface named whole.
+    pub label: Maybe<ByteSpan, labelled::Absent>,
+    /// The interface's name.
+    pub interface: ByteSpan,
+    /// The entry from the interface's name to its end, `Store with sort V =
+    /// String`.
+    pub written: ByteSpan,
+}
+
+/// A site's offer, by the bytes its source writes it at: what a deployment
+/// judges a requirement row against.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Offered
+{
+    /// Each host interface the site grants, by its name's bytes.
+    pub granted: Vec<ByteSpan>,
+    /// Each label the site answers, its bytes beside the bytes of the module
+    /// answering it.
+    pub answered: Vec<(ByteSpan, ByteSpan)>,
 }
 
 /// Two unqualified imports of one source binding one name to two
@@ -3216,6 +3272,7 @@ pub fn begin_collection<'source>(
         foreign: BTreeMap::new(),
         boundaries: BTreeMap::new(),
         requirements: BTreeMap::new(),
+        offers: BTreeMap::new(),
     })
 }
 
@@ -3613,7 +3670,12 @@ pub fn collect_source<'source>(
             continue;
         }
         if former == Maybe::Present(Former::WorldDeclaration) {
-            collector.world(child, &decorations)?;
+            // A world files its own refusal in its slot; an offer takes none,
+            // so its refusal is a stray's.
+            if let Err(refusal) = collector.world(child, &decorations)? {
+                strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
+                after_stray = true;
+            }
             decorations.clear();
             continue;
         }
@@ -3772,6 +3834,12 @@ pub fn collect_source<'source>(
         && let Some(refusal) = strayed(collector.module_child(block))?
     {
         strays.push(Stray::of(block, refusal, Vec::new()));
+    }
+    // An offer names the modules answering its labels, which the source may
+    // declare after it, so they are read once it has declared all it will.
+    if let Some(first) = placed.first() {
+        let source = collector.collected.unit.source_at(first.span.start());
+        collector.answered(source, &mut strays)?;
     }
     if let Some(mark) = marked {
         strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));
@@ -11195,9 +11263,11 @@ pub struct LoweredModule<'source>
     /// The theory each derived rule's statement is read under, `T` in `T.r`,
     /// by the statement's position.
     qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
-    /// The bytes of the theory path each world is written to require, `R` of
-    /// `world w requires R ;`, by the world's position.
-    requirements: BTreeMap<ConstantIndex, ByteSpan>,
+    /// The entries of the row each world is written to require, `world w
+    /// requires [ … ] ;`, by the world's position.
+    requirements: BTreeMap<ConstantIndex, Vec<Required>>,
+    /// The offer the module's source writes, `offers [ … ] ;`.
+    offer: Maybe<Offered, offer::Absent>,
     /// The reducts the module mints, ascending by position.
     reducts: Vec<ConstantIndex>,
     /// The forgetting maps the module mints, ascending by position.
@@ -11260,6 +11330,7 @@ impl<'source> LoweredModule<'source>
             models: Layered::whole(BTreeMap::new()),
             qualified: BTreeMap::new(),
             requirements: BTreeMap::new(),
+            offer: Maybe::Absent(offer::Absent::Unoffered),
             reducts: Vec::new(),
             forgets: Vec::new(),
             forgettings: Vec::new(),
@@ -11338,8 +11409,8 @@ impl<'source> LoweredModule<'source>
         self
     }
 
-    /// This module, carrying `requirements`, the bytes of the theory path each
-    /// world is written to require, by the world's position.
+    /// This module, carrying `requirements`, the entries of the row each world
+    /// is written to require, by the world's position.
     ///
     /// # Specification
     /// trivial.
@@ -11347,10 +11418,25 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub fn with_requirements(
         mut self,
-        requirements: BTreeMap<ConstantIndex, ByteSpan>,
+        requirements: BTreeMap<ConstantIndex, Vec<Required>>,
     ) -> Self
     {
         self.requirements = requirements;
+        self
+    }
+
+    /// This module, carrying `offer`, the offer its source writes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_offer(
+        mut self,
+        offer: Maybe<Offered, offer::Absent>,
+    ) -> Self
+    {
+        self.offer = offer;
         self
     }
 
@@ -12279,9 +12365,9 @@ impl<'source> LoweredModule<'source>
         self.qualified.get(&declaration.constant()).copied()
     }
 
-    /// The bytes of the theory path the world `declaration` is written to
-    /// require, `R` of `world w requires R ;`: what a site placing it must
-    /// offer.
+    /// The entries of the row the world `declaration` is written to require,
+    /// `world w requires [ … ] ;`, in written order: what a site placing it
+    /// must answer.
     ///
     /// # Specification
     /// trivial.
@@ -12289,15 +12375,27 @@ impl<'source> LoweredModule<'source>
     pub fn requirement(
         &self,
         declaration: &LoweredDeclaration<'source>,
-    ) -> Maybe<ByteSpan, requirement::Absent>
+    ) -> Maybe<&[Required], requirement::Absent>
     {
         self.requirements
             .get(&declaration.constant())
-            .copied()
-            .map_or(
-                Maybe::Absent(requirement::Absent::Unrequired),
-                Maybe::Present,
-            )
+            .map_or(Maybe::Absent(requirement::Absent::Unrequired), |entries| {
+                Maybe::Present(entries.as_slice())
+            })
+    }
+
+    /// The offer this module's source writes, `offers [ … ] ;`: what a site
+    /// answers the rows of the worlds placed at it with.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn offer(&self) -> Maybe<&Offered, offer::Absent>
+    {
+        match self.offer {
+            Maybe::Present(ref offered) => Maybe::Present(offered),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        }
     }
 
     /// The reducts this module mints, ascending by position: each restricts

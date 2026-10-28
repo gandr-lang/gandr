@@ -2138,8 +2138,9 @@ mod tests
         let form = |name| row(&ledger, RuleName(name)).form.as_str();
         assert_eq!(
             form("world_declaration"),
-            "world ‹identifier› ⦅ requires ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ \
-             ‹identifier› ⦆ ⦆* ⦆? ;"
+            "world ‹identifier› ⦅ requires [ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort \
+             ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort \
+             ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ] ⦆? ;"
         );
         assert_eq!(
             form("import_declaration"),

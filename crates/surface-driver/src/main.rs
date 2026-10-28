@@ -76,9 +76,9 @@
 //! by hand is left as it stands and is `gandr: <path>: drifted: …` on standard
 //! error. Each manifold the walk settles, a source declaring
 //! `Manifold.artifact` itself, is then judged as a deployment before any
-//! process starts: a placement of a world the program does not declare, and a
-//! world written `requires R` whose site's `Offers` does not check packed at
-//! `Model(R)`, is `gandr: <refusal>` on standard error
+//! process starts: a placement of a world the program does not declare, and
+//! each entry of a world's `requires [ … ]` row its site's `offers` does not
+//! answer, is `gandr: <refusal>` on standard error
 //! (`gandr-surface-dispatcher`'s `manifold` module). A refusal, an unsettled
 //! declaration and a goal each print as a located source snippet — the class
 //! and message, the path with line and column, the lines the report covers with
@@ -3052,7 +3052,7 @@ fn stage(
 /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
 /// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
-/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3376`
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -3456,7 +3456,7 @@ fn read_manifest(
 /// # Adequacy
 /// - hypothesis: L3 — a manifold checked is judged as a deployment, and a site
 ///   beside it is not.
-/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3376`
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
 fn read_manifold(
     step: &Step<'_>,
     manifolds: &mut Vec<PathBuf>,
@@ -3498,10 +3498,11 @@ fn read_manifold(
 /// The [`std::io::Error`] of the first write that failed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a deployment whose site offers what its world requires
-///   settles; one whose site lacks a member, and one placing a world the
-///   program lacks, are each refused by name.
-/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3376`
+/// - hypothesis: L3 — a deployment whose site answers each entry its world
+///   requires settles; one whose site leaves an interface out or binds a label
+///   at other sorts, and one placing a world the program lacks, are each
+///   refused by name.
+/// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
 fn deployed(
     file: &Path,
     stderr: &mut dyn std::io::Write,

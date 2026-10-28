@@ -99,8 +99,8 @@ struct Text<'text>(&'text str);
 
 impl Scratch
 {
-    /// A fresh tree named for `case`, `std.manifold` and `std.secret` laid in
-    /// it.
+    /// A fresh tree named for `case`, `std.manifold`, `std.secret` and
+    /// `std.authority` laid in it.
     ///
     /// # Specification
     /// trivial.
@@ -118,7 +118,7 @@ impl Scratch
         std::fs::create_dir_all(&std).expect("the library directory is created");
         std::fs::create_dir_all(root.join("corpus/model/worlds"))
             .expect("the worlds directory is created");
-        for module in ["manifold.gandr", "secret.gandr"] {
+        for module in ["manifold.gandr", "secret.gandr", "authority.gandr"] {
             std::fs::copy(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("../../library/std/src")
@@ -245,8 +245,19 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     );
 }
 
+/// The theory a site's own model answers a labelled `Store` with, and two
+/// models of it: one at strings, one at integers.
+const KEPT: &str = "pub theory Kept {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key \
+                    : V, k : pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) \
+                    --> C;\n}\npub module Echo : Model(Kept) with sort V = String {\n  type C = \
+                    String;\n  def get(key : String, k : String => String) -> String { k(key) \
+                    }\n  def put(key : String, value : String, k : String) -> String { k }\n}\npub \
+                    module Counted : Model(Kept) with sort V = Integer {\n  type C = Integer;\n  \
+                    def get(key : Integer, k : Integer => Integer) -> Integer { k(key) }\n  def \
+                    put(key : Integer, value : Integer, k : Integer) -> Integer { k }\n}\n";
+
 #[test]
-fn a_world_s_requirement_is_judged_against_its_site_s_offer_3376()
+fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
 {
     let judged = |path: &Path| Manifold::read(path).expect("the manifold reads").judged();
     let worlds = worlds();
@@ -254,7 +265,7 @@ fn a_world_s_requirement_is_judged_against_its_site_s_offer_3376()
     assert_eq!(
         judged(&deployments.join("offers.manifold.gandr")),
         Vec::new(),
-        "a site offering `Store` and more takes `far`, which requires `Store`"
+        "a site granting `Console` and answering `store` with a model of its own takes `far`"
     );
     assert_eq!(
         judged(&worlds.join("two-processes.manifold.gandr")),
@@ -291,55 +302,68 @@ fn a_world_s_requirement_is_judged_against_its_site_s_offer_3376()
         matches!(
             refused.as_slice(),
             [
-                Undeployed::Unoffered { world: far, why, .. },
+                Undeployed::Unoffered { entry: console, why: unlisted, .. },
+                Undeployed::Unoffered { entry: store, why: typed, .. },
                 Undeployed::Unworlded { world: nowhere, .. },
-            ] if far.as_ref() == "far"
-                && why.contains("no member `get`")
+            ] if console == "Console"
+                && unlisted.contains("does not list it")
+                && store == "store"
+                && typed.contains("expected `String`, found `Integer`")
                 && nowhere.as_ref() == "nowhere"
         ),
-        "a site lacking `get` is refused naming it, and a world the program lacks by its \
-         name: {refused:?}"
+        "an interface the offer leaves out, a label bound at other sorts, and a world the \
+         program lacks are each refused by name: {refused:?}"
     );
 
     let scratch = Scratch::new(Path::new("offered"));
     let _program = scratch.file(
         Path::new("p.gandr"),
         Text(
-            "pub theory Store {\n  oper get : (key : String) --> String;\n}\npub world far \
-             requires Store;\npub world lost requires Missing;\n",
+            "pub theory Store {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
+             pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) --> C;\n}\npub \
+             world far requires [Console, store : Store with sort V = String];\npub world netted \
+             requires [Net];\npub world lost requires [Missing];\n",
         ),
     );
+    let key = |byte: &str| {
+        byte.repeat(32)
+            .parse::<Secret>()
+            .expect("the secret is hex")
+            .node_id()
+    };
     let site = |name: &str, key: &str, offers: &str| {
         scratch.file(
             Path::new(name),
             Text(&format!(
-                "{offers}pub module Site : Model(Site) {{\n  def key = \"{key}\";\n  def \
-                 sockets = \"\";\n  def secret = \"far\";\n}}\npub def site : Model(Site) = \
-                 pack Site at Model(Site);\n"
+                "import \"../../../library/std/src/authority.gandr\";\n{KEPT}{offers}pub module \
+                 Site : Model(Site) {{\n  def key = \"{key}\";\n  def sockets = \"\";\n  def \
+                 secret = \"far\";\n}}\npub def site : Model(Site) = pack Site at \
+                 Model(Site);\n"
             )),
         )
     };
+    let _answered = site(
+        "answered.gandr",
+        SITE_KEY,
+        "pub offers [Console, Net, store = Echo];\n",
+    );
     let _typed = site(
         "typed.gandr",
-        SITE_KEY,
-        "pub theory Typed {\n  oper get : (key : Integer) --> String;\n}\npub module Offers : \
-         Model(Typed) {\n  def get(key : Integer) -> String { \"x\" }\n}\n",
+        OTHER_KEY,
+        "pub offers [Console, store = Counted];\n",
     );
-    let _bare = site("bare.gandr", OTHER_KEY, "");
-    let local = "11"
-        .repeat(32)
-        .parse::<Secret>()
-        .expect("the secret is hex")
-        .node_id();
+    let _bare = site("bare.gandr", &key("22").to_string(), "");
+    let local = key("11");
     let manifold = scratch.file(
         Path::new("m.gandr"),
         Text(&format!(
-            "import \"./typed.gandr\" as typed;\nimport \"./bare.gandr\" as bare;\npub module \
-             Manifold : Model(Manifold) {{\n  def artifact = \"p.gandr\";\n}}\npub module Local \
-             : Model(Site) {{\n  def key = \"{local}\";\n  def sockets = \"\";\n  def secret = \
-             \"local\";\n}}\npub def placements : List(Placement) = [\n  At(\"far\", \
-             typed.site),\n  At(\"far\", bare.site),\n  At(\"far\", pack Local at \
-             Model(Site)),\n  At(\"lost\", typed.site),\n];\n"
+            "import \"./answered.gandr\" as answered;\nimport \"./typed.gandr\" as typed;\nimport \
+             \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) {{\n  def artifact \
+             = \"p.gandr\";\n}}\npub module Local : Model(Site) {{\n  def key = \"{local}\";\n  \
+             def sockets = \"\";\n  def secret = \"local\";\n}}\npub def placements : \
+             List(Placement) = [\n  At(\"far\", answered.site),\n  At(\"far\", typed.site),\n  \
+             At(\"far\", bare.site),\n  At(\"netted\", answered.site),\n  At(\"far\", pack Local \
+             at Model(Site)),\n  At(\"lost\", typed.site),\n];\n"
         )),
     );
     let refused = judged(&manifold);
@@ -347,17 +371,26 @@ fn a_world_s_requirement_is_judged_against_its_site_s_offer_3376()
         matches!(
             refused.as_slice(),
             [
-                Undeployed::Unoffered { why: typed, .. },
-                Undeployed::Unoffered { why: bare, .. },
+                Undeployed::Unoffered { entry: typed, why: sorts, .. },
+                Undeployed::Unoffered { entry: console, why: unlisted, .. },
+                Undeployed::Unoffered { entry: store, why: unbound, .. },
+                Undeployed::Unoffered { entry: net, why: unheld, .. },
                 Undeployed::Unsited { .. },
                 Undeployed::Misworlded { world: lost, .. },
-            ] if typed.contains("expected `String => String`, found `Integer => String`")
-                && bare.contains("`Offers`")
+            ] if typed == "store"
+                && sorts.contains("expected `String`, found `Integer`")
+                && console == "Console"
+                && unlisted.contains("does not list it")
+                && store == "store"
+                && unbound.contains("binds no module to it")
+                && net == "Net"
+                && unheld.contains("CapabilityAmplified")
                 && lost.as_ref() == "lost"
         ),
-        "an offer at another type is refused naming both types, a site offering nothing is \
-         refused at its `Offers`, a site no imported file states is unsited, and a refused \
-         world is refused as it is: {refused:?}"
+        "a row answered whole holds; a label bound at other sorts is refused naming both \
+         types, an offer leaving an entry out is refused at each, an interface the site's \
+         authority does not hold is refused naming the capability, a site no imported file \
+         states is unsited, and a refused world is refused as it is: {refused:?}"
     );
 }
 

@@ -8,11 +8,12 @@
 // by its name (#3375). Neither enters the program's identity: a deployment
 // binds a program to places and never addresses it.
 //
-// A site's file may declare beside its site `pub module Offers : Model(T)`,
-// what the site offers a world placed there. A program's world written
-// `world w requires R ;` is placed only at a site whose `Offers` packs at
-// `Model(R)`, which `gandr check` of the manifold judges before any process
-// starts; a site declaring no `Offers` offers nothing (#3376).
+// A site's file may write beside its site one `offers [ … ] ;`, what the
+// site answers a world placed there with: a host interface by its name, and a
+// label bound to a model module the file declares. A program's world written
+// `world w requires [ … ] ;` is placed only at a site whose offer answers
+// each entry of the row, which `gandr check` of the manifold judges before
+// any process starts; a site writing no `offers` answers nothing (#3523).
 
 /// One place a world runs at: the key it proves, where it is reached, and the
 /// name of the key's secret. The hosting process reads the secret by that

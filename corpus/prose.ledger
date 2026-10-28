@@ -248,7 +248,7 @@ corpus/ledger/syntax/value-function-type.gandr Passive 9d653ac1b5fe87f6
 corpus/ledger/syntax/variable-name.gandr Passive d5ff941dfad249fd
 corpus/ledger/syntax/view-expression.gandr Tense 2789927eebe1e1b9
 corpus/ledger/syntax/wildcard.expression.gandr Passive f70c06826d3faba1
-corpus/ledger/syntax/world-declaration.gandr Passive 8725cf834a465dd9
+corpus/ledger/syntax/world-declaration.gandr Passive 77c83cae10a2128f
 corpus/model/attributes/written-forms.gandr Passive 1b0c308debe26ea8
 corpus/model/basics/annotations.gandr Passive 080295098dcdf1dc
 corpus/model/basics/annotations.gandr Passive 2e9a997d1cc2a54d
@@ -1541,7 +1541,10 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-r
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d203717a6c072f2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure c7bd7e2325683c3a
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure ef85c85b9b0f6951
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/offered.txt Procedure 3bdc0addbf0ffa85
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/requires.txt Procedure 3bdc0addbf0ffa85
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/requires.txt Procedure 53630eed69d54220
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/requires.txt Procedure e1c0963e6eee92ac
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/secret-crosses.txt Procedure c4b41bb602de3f53
 crates/surface-render-terminal/tests/golden/nested-application.txt Procedure dcd8e6b6a2087870
 crates/surface-render-terminal/tests/golden/nested-force.txt Procedure 9aee6bb840c488e8

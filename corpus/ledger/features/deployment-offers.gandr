@@ -1,23 +1,32 @@
-/// `deployment-offers` places a world only at a site offering what the world requires.
+/// `deployment-offers` places a world only at a site whose offer answers the row the world requires.
 ///
-/// Implemented: `world w requires R ;` names the theory of what a role placed at `w` needs; a site's file offers `pub module Offers : Model(T)`; `gandr check` of a manifold refuses a placement of a world the program does not declare, by its name, and judges each requiring world's site's `Offers` packed at `Model(R)`, refusing a member the offer lacks by its name and one at another type by both types.
-/// Not implemented: a requirement over host interfaces, and the offer as the world's authority; #3523 owes both.
+/// Implemented: `world w requires [ … ] ;` states as a row what a role placed at `w` needs: a host interface by its name, and an effect theory at fixed sorts under a label, each entry refused as a row refuses it and a theory under no label refused `UnlabelledRequirement`; a site's file answers with one `offers [ … ] ;`, granting host interfaces by name and binding each label to a model module it declares; `gandr check` of a manifold refuses a placement of a world the program does not declare, by its name, and judges each requiring world's row entry by entry: a label by its module taken as a functor's argument at `Model(T)` and the row's sorts, refused naming both types at other sorts, and a host interface by the site's `Authority` attenuated to its operations.
+/// Not implemented: code at a world typed against its row, and the offer as the world's authority at run; #3545 owes the first and #3546 the second.
 ///
 /// The requirement travels with the program and the offer stays with the site, so the check is the deployment's: nothing of it enters the program's identity or a run.
 ///
 /// - see: corpus/model/deployments/offers.site.gandr
 /// - see: corpus/model/deployments/offers.manifold.gandr
 /// - see: corpus/pathological/worlds/offers.gandr
+/// - see: corpus/pathological/worlds/offered.gandr
+/// - see: corpus/pathological/worlds/requires.gandr
 /// - see: crates/surface-driver/tests/cli.rs
 
-/// What a role at `far` reads: strings held by key.
+/// What a role at `far` reads and writes: values held by key.
 pub theory Store {
-  /// The value held at `key`.
-  oper get : (key : String) --> String;
+  /// The store holds values of this sort.
+  sort V : Type+;
+  /// What a computation over the store answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Holds `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
 }
 
 /// The world the entry runs at.
 pub world near;
 
-/// The world the work runs at, placed only at a site offering `Store`.
-pub world far requires Store;
+/// The world the work runs at: the console, and a store of strings under
+/// `store`.
+pub world far requires [Console, store : Store with sort V = String];

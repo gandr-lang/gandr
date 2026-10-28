@@ -78,47 +78,200 @@ fn a_world_declared_twice_is_refused()
     );
 }
 
-/// `world w requires R ;` files the bytes of `R` beside the world, a dotted
-/// path whole; a world written with none requires nothing; a requirement
-/// naming no theory refuses its world at the name (#3376).
+/// The effect theory a requirement row names under a label: values by key,
+/// each operation handing what it reads on.
+const STORE: &str = concat!(
+    "theory Store { sort V : Type+; sort C : Type;\n",
+    "  oper get : (key : V, k : pi+ (v : V). C) --> C;\n",
+    "  oper put : (key : V, value : V, k : C) --> C; }\n",
+);
+
+/// `world w requires [ … ] ;` files each entry of its row as a labelled row
+/// writes it, and refuses its world at the first entry a row refuses: an
+/// interface nothing declares, a theory under no label, a model theory, a
+/// sort left unfixed and a label or an interface written twice (#3523).
 #[test]
-fn a_world_s_requirement_names_its_theory_3376()
+fn a_world_s_requirement_is_a_row_3523()
 {
     let mut arena = CoreArena::new();
-    let text = concat!(
-        "theory Needs { sort Key : Type; }\n",
-        "theory Far.Store { sort Cell : Type; }\n",
-        "world near;\n",
-        "world far requires Needs;\n",
-        "world deep requires Far.Store;\n",
-        "world lost requires Missing;\n",
+    let text = alloc::format!(
+        "{STORE}{}",
+        concat!(
+            "theory Magma { sort M : Type; oper mul : (x : M, y : M) --> M; }\n",
+            "world near;\n",
+            "world far requires [Console, store : Store with sort V = String];\n",
+            "world lost requires [Missing];\n",
+            "world bare requires [Console, Store with sort V = String];\n",
+            "world modelled requires [m : Magma];\n",
+            "world unfixed requires [store : Store];\n",
+            "world twice requires [s : Store with sort V = String, s : Store with sort V = Integer];\n",
+            "world doubled requires [Console, Console];\n",
+        )
     );
-    let module = lowered(SourceText::from(text), &mut arena);
+    let module = lowered(SourceText::from(text.as_str()), &mut arena);
     let required = |name: &str| {
+        let spelled = |span: gandr_surface_syntax::ByteSpan| {
+            text.get(usize::from(span.start()) .. usize::from(span.end()))
+        };
         let declaration = module
             .declarations()
             .iter()
             .find(|declaration| declaration.name() == SurfaceName::from(name))?;
-        let Maybe::Present(span) = module.requirement(declaration)
+        let Maybe::Present(entries) = module.requirement(declaration)
         else {
             return None;
         };
-        text.get(usize::from(span.start()) .. usize::from(span.end()))
+        entries
+            .iter()
+            .map(|entry| {
+                let label = match entry.label {
+                    Maybe::Present(span) => Some(spelled(span)?),
+                    Maybe::Absent(_) => None,
+                };
+                Some((label, spelled(entry.interface)?, spelled(entry.written)?))
+            })
+            .collect::<Option<alloc::vec::Vec<_>>>()
     };
     assert_eq!(required("near"), None, "a bare world requires nothing");
-    assert_eq!(required("far"), Some("Needs"), "the theory's name is filed");
     assert_eq!(
-        required("deep"),
-        Some("Far.Store"),
-        "a dotted path is filed whole"
+        required("far"),
+        Some(alloc::vec![
+            (None, "Console", "Console"),
+            (Some("store"), "Store", "Store with sort V = String"),
+        ]),
+        "each entry is filed in written order, its label apart from its interface"
+    );
+    assert!(
+        module.declarations().iter().any(|declaration| {
+            declaration.name() == SurfaceName::from("far")
+                && declaration.outcome() == DeclarationOutcome::World
+        }),
+        "a row of a host interface and a labelled theory at its sorts settles"
+    );
+    let refused = |name: &str| refusal_of(&module, SurfaceName::from(name));
+    assert!(
+        matches!(refused("lost"), LoweringRefusal::UnresolvedTypeHead { name, .. } if name == SurfaceName::from("Missing")),
+        "an interface nothing declares: {:?}",
+        refused("lost")
+    );
+    assert!(
+        matches!(refused("bare"), LoweringRefusal::UnlabelledRequirement { name, .. } if name == SurfaceName::from("Store")),
+        "a theory under no label: {:?}",
+        refused("bare")
     );
     assert!(
         matches!(
-            refusal_of(&module, SurfaceName::from("lost")),
-            LoweringRefusal::UnresolvedTypeHead { name, .. } if name == SurfaceName::from("Missing")
+            refused("modelled"),
+            LoweringRefusal::UninterfacedMember { .. }
         ),
-        "a requirement naming no theory refuses its world at the name: {:?}",
-        refusal_of(&module, SurfaceName::from("lost"))
+        "a model theory: {:?}",
+        refused("modelled")
+    );
+    assert!(
+        matches!(refused("unfixed"), LoweringRefusal::UninterfacedMember { name, .. } if name == SurfaceName::from("V")),
+        "a value sort left unfixed: {:?}",
+        refused("unfixed")
+    );
+    assert!(
+        matches!(refused("twice"), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("s")),
+        "a label written twice: {:?}",
+        refused("twice")
+    );
+    assert!(
+        matches!(refused("doubled"), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("Console")),
+        "an interface named whole twice: {:?}",
+        refused("doubled")
+    );
+}
+
+/// `offers [ … ] ;` files a site's offer by its source, its host interfaces
+/// and its labels with the modules answering them, a module declared after it
+/// among them; an interface no host declares, a module the source does not
+/// declare, an entry written twice and a second offer are each refused as
+/// the offer's own, named `offers` (#3523).
+#[test]
+fn a_site_s_offer_answers_by_label_and_by_name_3523()
+{
+    let echo = concat!(
+        "theory Kept { sort V : Type+; sort C : Type;\n",
+        "  oper get : (key : V, k : pi+ (v : V). C) --> C;\n",
+        "  oper put : (key : V, value : V, k : C) --> C; }\n",
+        "module Echo : Model(Kept) with sort V = String {\n",
+        "  type C = String;\n",
+        "  def get(key : String, k : String => String) -> String { k(key) }\n",
+        "  def put(key : String, value : String, k : String) -> String { k }\n",
+        "}\n",
+    );
+    let offered = |offers: &str| {
+        let text = alloc::format!("{offers}\n{echo}");
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(text.as_str()), &mut arena);
+        let spelled = |span: gandr_surface_syntax::ByteSpan| {
+            alloc::string::String::from(
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default(),
+            )
+        };
+        match module.offer() {
+            Maybe::Present(offer) => Ok((
+                offer
+                    .granted
+                    .iter()
+                    .map(|&span| spelled(span))
+                    .collect::<alloc::vec::Vec<_>>(),
+                offer
+                    .answered
+                    .iter()
+                    .map(|&(label, module)| (spelled(label), spelled(module)))
+                    .collect::<alloc::vec::Vec<_>>(),
+            )),
+            Maybe::Absent(_) => Err(alloc::format!(
+                "{:?}",
+                module
+                    .declarations()
+                    .iter()
+                    .filter(|declaration| declaration.name() == SurfaceName::from("offers"))
+                    .map(crate::module::LoweredDeclaration::outcome)
+                    .collect::<alloc::vec::Vec<_>>()
+            )),
+        }
+    };
+    assert_eq!(
+        offered("offers [Console, store = Echo];"),
+        Ok((
+            alloc::vec![alloc::string::String::from("Console")],
+            alloc::vec![(
+                alloc::string::String::from("store"),
+                alloc::string::String::from("Echo")
+            )],
+        )),
+        "a host interface and a label answered by a module declared after the offer"
+    );
+    for (offers, refused) in [
+        ("offers [Missing];", "UnresolvedTypeHead"),
+        ("offers [store = Absent];", "UnresolvedName"),
+        ("offers [Console, Console];", "DuplicateDefinition"),
+        (
+            "offers [store = Echo, store = Echo];",
+            "DuplicateDefinition",
+        ),
+    ] {
+        let Err(outcomes) = offered(offers)
+        else {
+            panic!("`{offers}` is refused");
+        };
+        assert!(
+            outcomes.contains(refused),
+            "`{offers}` is refused {refused} as the offer's own: {outcomes}"
+        );
+    }
+    let twice = offered("offers [Console];\noffers [store = Echo];");
+    assert!(
+        matches!(
+            twice,
+            Ok((ref granted, ref answered)) if granted.len() == 1 && answered.is_empty()
+        ),
+        "the first offer stands and a second is refused: {twice:?}"
     );
 }
 

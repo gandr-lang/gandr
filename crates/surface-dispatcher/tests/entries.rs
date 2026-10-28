@@ -353,8 +353,9 @@ fn kind(
 /// supplies, as the sort of a region binder, as the theory a model type
 /// names, as the module and the model type a pack names, as a variable a
 /// binding port binds or an abstracting operation in a theory's rule, as
-/// the head or the type of an `Eq.generic(T)` or of one of its laws, or as a
-/// node of the tactic a splice runs.
+/// the head or the type of an `Eq.generic(T)` or of one of its laws, as a
+/// node of the tactic a splice runs, or as a node of a world's requirement
+/// row.
 ///
 /// # Specification
 /// trivial.
@@ -463,6 +464,12 @@ enum Placed
     /// so no core node of the walked source holds it, and the import
     /// answers.
     Template,
+    /// A node of a world's requirement row, `store` and `String` in `world
+    /// far requires [store : Store with sort V = String] ;`: the lowering
+    /// reads the row's entries and the deployment check judges them in the
+    /// text of the site the world is placed at, so no core node of the walked
+    /// source holds them, and the world's declaration answers.
+    Required,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
@@ -820,6 +827,8 @@ fn gated(
         // The theory a model type names: every child of `Model(…)` in a type
         // but its head.
         let modelled = melded && def.sort == Sort::Type && spelled(opener) == "Model";
+        // A world's requirement row: every child of a world declaration.
+        let required = melded && def.label == "world" && def.sort == Sort::Item;
         // The head and the type of a derived equality or law: every child of
         // an `Eq.generic(T)`, `Eq.generic.refl(T)` or `Eq.generic.sym(T)` call.
         let deriving = applied
@@ -864,6 +873,9 @@ fn gated(
                         }
                         else if modelled && opener != Some(child) {
                             placed.or(Some(Placed::Theory))
+                        }
+                        else if required {
+                            placed.or(Some(Placed::Required))
                         }
                         else if packing || (stating && Some(child) == last) {
                             placed.or(Some(Placed::Packed))

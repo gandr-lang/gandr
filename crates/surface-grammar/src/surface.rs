@@ -462,6 +462,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "manifest_sort",
     "manifest_type",
     "moded_type",
+    "offers_declaration",
     "operator_declaration",
     "pack_expression",
     "pack_model_expression",

@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 75_usize] = [
+    pub const ALL: [Self; 76_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -220,6 +220,7 @@ impl FormName
         Self::FLOW,
         Self::DATA,
         Self::WORLD_DECLARATION,
+        Self::OFFERS_DECLARATION,
         Self::DATA_GENERATOR,
         Self::CONSTRUCTOR_BLOCK_MEMBER,
         Self::CELL_MEMBER,
@@ -348,6 +349,8 @@ impl FormName
     pub const DATA: Self = Self("data_declaration");
     /// The world declaration `world w ;`.
     pub const WORLD_DECLARATION: Self = Self("world_declaration");
+    /// A site's offer `offers [ … ] ;`.
+    pub const OFFERS_DECLARATION: Self = Self("offers_declaration");
     /// The flow `flow f : V1 ~~> V2 { … }`, a translation from the models of
     /// one theory to the models of another, read as a module form.
     pub const FLOW: Self = Self("flow_declaration");
@@ -619,9 +622,11 @@ impl TileName
     pub const MOBILE: Self = Self("mobile");
     /// The keyword `world`, opening a world declaration `world w ;`.
     pub const WORLD: Self = Self("world");
-    /// The contextual keyword `requires`, before the theory a world declaration
-    /// `world w requires R ;` names.
+    /// The contextual keyword `requires`, before the row a world declaration
+    /// `world w requires [ … ] ;` names.
     pub const REQUIRES: Self = Self("requires");
+    /// The keyword `offers`, opening a site's offer `offers [ … ] ;`.
+    pub const OFFERS: Self = Self("offers");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own
@@ -1015,8 +1020,9 @@ pub enum Former
     /// running `t` at the world `w` names; the third, `leta x = v ;`, is a
     /// statement its block reads.
     World,
-    /// The world declaration `world w ;`: a top-level item naming a world,
-    /// with no body and no type.
+    /// A deployment's top-level item with no body and no type: the world
+    /// declaration `world w ;`, naming a world, and a site's offer
+    /// `offers [ … ] ;`, answering the requirements of the worlds placed at it.
     WorldDeclaration,
     /// A form parsed so it is declined by name until the engine has it, at
     /// the feature it stops at: `dup`, which waits on shared sessions.
@@ -1152,7 +1158,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 134_usize] = [
+pub const FORMERS: [(&str, Former); 135_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1245,6 +1251,7 @@ pub const FORMERS: [(&str, Former); 134_usize] = [
     ("hold_expression", Former::World),
     ("migrate_expression", Former::World),
     ("world_declaration", Former::WorldDeclaration),
+    ("offers_declaration", Former::WorldDeclaration),
     ("pub_declaration", Former::Visibility),
     ("dup_expression", Former::Reserved(Unbuilt::Dup)),
     // Realised by the grammar, declined by the lowering.

@@ -4625,16 +4625,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Some((entry.constant, theory.name))
             }))
             .collect();
-        // The theory each world requires, as its declaration writes the path.
-        let requirements: BTreeMap<ConstantIndex, ByteSpan> = self
+        // The row each world requires, as its declaration writes the entries.
+        let requirements: BTreeMap<ConstantIndex, Vec<crate::module::Required>> = self
             .collected
             .requirements
             .iter()
-            .filter_map(|(&slot, requirement)| {
+            .filter_map(|(&slot, entries)| {
                 let entry = self.collected.slots.get(usize::from(slot))?;
-                Some((entry.constant, requirement.written))
+                let required = entries
+                    .iter()
+                    .map(|written| crate::module::Required {
+                        label: written.label.map(|label| label.span),
+                        interface: written.interface.span,
+                        written: written.written,
+                    })
+                    .collect();
+                Some((entry.constant, required))
             })
             .collect();
+        // The offer the current source writes, as it writes its entries.
+        let offer = self.collected.offers.get(&self.current.source).map_or(
+            Maybe::Absent(crate::module::offer::Absent::Unoffered),
+            |offer| {
+                Maybe::Present(crate::module::Offered {
+                    granted: offer
+                        .granted
+                        .iter()
+                        .map(|interface| interface.span)
+                        .collect(),
+                    answered: offer
+                        .answered
+                        .iter()
+                        .map(|&(label, module)| (label.span, module.span))
+                        .collect(),
+                })
+            },
+        );
         // The reducts the checker may insert where a model of a theory stands
         // at a model of one it includes.
         let reducts: Vec<ConstantIndex> = self
@@ -4911,6 +4937,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_models(models)
         .with_qualified(qualified)
         .with_requirements(requirements)
+        .with_offer(offer)
         .with_reducts(reducts)
         .with_forgets(forgets)
         .with_forgettings(forgettings);

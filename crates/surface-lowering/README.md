@@ -48,7 +48,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from a theory, checked and packed, and type members with parameters.
 - Binary sessions: session types, actions and the statements binding them, lowered to core session actions ([`lower::session`](src/lower/session.rs)).
-- Worlds: `world w ;` as `DeclarationOutcome::World`, `requires R` as `LoweredModule::requirement`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
+- Worlds: `world w ;` as `DeclarationOutcome::World`, `requires [ … ]` as `LoweredModule::requirement`, a site's `offers [ … ]` as `LoweredModule::offer`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
 
 ## Expected features
 

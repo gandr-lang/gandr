@@ -1,37 +1,45 @@
-// A site offering a store of strings, the `Store` its role requires.
+// A site answering its role's row: the console from its authority, and
+// `store` by a module of its own.
 //
 // A site's offer lives in its own file, so the program never names the place
 // that serves it.
 //
-// The offer is `Offers`, a model of the site's own theory `Hosted`. It need
-// not be the program's `Store`. It must hold each member of `Store` at its
-// type. This one also offers a clock.
+// Each label is bound to a model module the file declares. The module need
+// not model the program's `Store`. It must hold each of its members at the
+// sorts the row fixes, and this one models the site's own `Kept`.
 //
-// - see: `offers.gandr` — the program whose `far` requires `Store`
+// - see: `offers.gandr` — the program whose `far` requires the row
 // - see: `offers.manifold.gandr` — the manifold placing `far` here
 
 // The deployment theories, from `std.manifold` by its path.
 import "../../../library/std/src/manifold.gandr";
+// `Authority`, which the site grants the console from.
+import "../../../library/std/src/authority.gandr";
 
-/// What the site holds: a store and a clock.
-pub theory Hosted {
-  /// The value held at `key`.
-  oper get : (key : String) --> String;
-  /// Hold `value` at `key`.
-  oper put : (key : String, value : String) --> Unit;
-  /// The site's time, in seconds.
-  oper now : Integer;
+/// What the site keeps: values by key.
+pub theory Kept {
+  /// The site keeps values of this sort.
+  sort V : Type+;
+  /// What a computation over them answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Keeps `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
 }
 
-/// The site's offer: every member a role placed here may need.
-pub module Offers : Model(Hosted) {
-  /// Every key holds its own name.
-  def get(key : String) -> String { key }
-  /// A write the store keeps nothing of.
-  def put(key : String, value : String) -> Unit { unit }
-  /// The epoch.
-  def now = 0;
+/// Every key holds its own name, and a write keeps nothing.
+pub module Echo : Model(Kept) with sort V = String {
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def get(key : String, k : String => String) -> String { k(key) }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
 }
+
+/// The site grants the console, and answers `store` with `Echo`.
+pub offers [Console, store = Echo];
 
 /// The far site, on a loopback socket.
 pub module Site : Model(Site) {
