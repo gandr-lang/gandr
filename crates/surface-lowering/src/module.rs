@@ -1348,16 +1348,63 @@ pub struct DeclarationSlot<'source>
     pub refusal: Maybe<(NodeIndex, LoweringRefusal<'source>), slot_refusal::Absent>,
 }
 
+/// Whether `held` refuses a repetition and `offered` is written before it: a
+/// fault of the declaration the repetition repeats, which a duplicate must
+/// not hide.
+///
+/// The arena orders a declaration's own form above every node under the form
+/// it repeats, so the lowest-position rule alone keeps the repetition over the
+/// fault that caused it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: affirmative exactly when `held` is a duplicate definition or a
+///   duplicate signature, and `offered`'s bytes start before `held`'s.
+/// - provides: the one exception to the lowest-position rule of
+///   [`DeclarationSlot::refuse`].
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause is the body's one comparison.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a deeper fault written before a held repetition replaces
+///   it, and one written after it does not.
+/// - witness: `module::tests::the_lowest_positioned_refusal_is_the_one_kept`
+fn yields(
+    held: &LoweringRefusal<'_>,
+    offered: &LoweringRefusal<'_>,
+) -> Yields
+{
+    let repeated = matches!(
+        *held,
+        LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateSignature { .. }
+    );
+    let (Maybe::Present(repetition), Maybe::Present(fault)) = (held.span(), offered.span())
+    else {
+        return Yields(false);
+    };
+    Yields(repeated && fault.start() < repetition.start())
+}
+
+/// Whether a held refusal yields to one offered after it, as [`yields`]
+/// answers.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Yields(bool);
+
 impl<'source> DeclarationSlot<'source>
 {
-    /// Keep `refusal` when it sits below every refusal already found.
+    /// Keep `refusal` when it sits below every refusal already found, or when
+    /// the refusal held refuses a repetition and `refusal` is written before
+    /// it.
     ///
     /// # Specification
     /// - requires: `at` is the arena position of the node that refused.
     /// - ensures: the slot keeps the first refusal offered at the lowest
     ///   position. Higher or equal positions leave it unchanged; ordering is
     ///   independent across distinct positions, while a tie keeps the first
-    ///   offer at that node.
+    ///   offer at that node. A held repetition yields to any offer that
+    ///   [`yields`] puts before it, whatever its position.
     /// - provides: the one-refusal-per-declaration rule, decided in one place
     ///   rather than at each refusing site.
     /// - fails: never.
@@ -1367,13 +1414,15 @@ impl<'source> DeclarationSlot<'source>
     /// - hypothesis: L3 — one comparison, separated by an offer into an empty
     ///   slot, a strictly lower offer that must replace, a strictly higher
     ///   offer that must not, and an offer at the incumbent's own position,
-    ///   each asserted as the exact retained refusal.
+    ///   each asserted as the exact retained refusal; a held repetition, then a
+    ///   deeper fault written before it that must replace it, and a deeper
+    ///   fault written after it that must not.
     /// - witness: `module::tests::the_lowest_positioned_refusal_is_the_one_kept`
     #[spec(
         captures: before = self.refusal,
         ensures: self.refusal
             == match before {
-                | Maybe::Present((position, _)) if position <= at => before,
+                | Maybe::Present((position, held)) if position <= at && !yields(&held, &refusal).0 => before,
                 | Maybe::Present(_) | Maybe::Absent(_) => Maybe::Present((at, refusal)),
             },
     )]
@@ -1385,7 +1434,7 @@ impl<'source> DeclarationSlot<'source>
     )
     {
         let replaces = match self.refusal {
-            Maybe::Present((incumbent, _held)) => at < incumbent,
+            Maybe::Present((incumbent, held)) => at < incumbent || yields(&held, &refusal).0,
             Maybe::Absent(_) => true,
         };
         if replaces {
@@ -2884,8 +2933,9 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: `position` is the node that refused.
     /// - ensures: the owning slot keeps the lower-positioned of the refusal it
-    ///   held and this one; a position no slot owns drops the refusal, which
-    ///   only a node outside every declaration can be.
+    ///   held and this one, or this one when the held refusal [`yields`] to it;
+    ///   a position no slot owns drops the refusal, which only a node outside
+    ///   every declaration can be.
     /// - provides: the routing of every refusal found inside a declaration.
     /// - fails: never.
     /// - panics: none.
@@ -2918,7 +2968,7 @@ impl<'source> Collected<'source>
                 | Maybe::Present(slot) => self.slots.get(slot.0).is_none_or(|entry| {
                     entry.refusal
                         == match before.3 {
-                            | Maybe::Present((at, _)) if at <= position => before.3,
+                            | Maybe::Present((at, held)) if at <= position && !yields(&held, &refusal).0 => before.3,
                             | Maybe::Present(_) | Maybe::Absent(_) => {
                                 Maybe::Present((position, refusal))
                             },
@@ -14559,6 +14609,46 @@ mod tests
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(shallow),
             "an offer at the incumbent's own position does not displace it"
+        );
+        // #3494: the second of two definitions sits shallower than every node
+        // under the first, so its repetition yields to a fault written before
+        // it, however deep.
+        let twice = LoweringRefusal::DuplicateDefinition {
+            span: at(20_usize, 30_usize),
+            name: SurfaceName::from("x"),
+            first: at(0_usize, 10_usize),
+        };
+        let after = LoweringRefusal::UnresolvedName {
+            span: at(31_usize, 32_usize),
+            name: SurfaceName::from("after"),
+        };
+        let before = LoweringRefusal::UnresolvedName {
+            span: at(4_usize, 5_usize),
+            name: SurfaceName::from("before"),
+        };
+        let beneath = LoweringRefusal::UnresolvedName {
+            span: at(6_usize, 7_usize),
+            name: SurfaceName::from("beneath"),
+        };
+        slot.refusal = Maybe::Absent(slot_refusal::Absent::Unrefused);
+        slot.refuse(NodeIndex::from(2_usize), twice);
+        slot.refuse(NodeIndex::from(9_usize), after);
+        assert_eq!(
+            slot.refusal.map(|(_at, held)| held),
+            Maybe::Present(twice),
+            "a deeper fault written after the repetition leaves it alone"
+        );
+        slot.refuse(NodeIndex::from(8_usize), before);
+        assert_eq!(
+            slot.refusal,
+            Maybe::Present((NodeIndex::from(8_usize), before)),
+            "a deeper fault written before the repetition replaces it"
+        );
+        slot.refuse(NodeIndex::from(12_usize), beneath);
+        assert_eq!(
+            slot.refusal.map(|(_at, held)| held),
+            Maybe::Present(before),
+            "once the repetition yields, the lowest position decides again"
         );
     }
 }
