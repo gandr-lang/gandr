@@ -1165,6 +1165,10 @@ pub enum Unreadable
     /// A constant, an abstract type, a data family or a constructor whose
     /// name the source does not hold: a malformed naming table.
     Unnamed,
+    /// A constructor whose classifier names no data family: the lowering
+    /// keeps the type its position states, such as one a definition
+    /// computes, and the checker refuses the constructor there.
+    Unclassified,
     /// The unknown value or computation type, what a hole or a mark
     /// synthesises: the checker knows no more.
     UnknownType,

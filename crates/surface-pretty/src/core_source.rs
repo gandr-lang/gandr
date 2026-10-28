@@ -1175,7 +1175,8 @@ impl<'arena> CoreSource<'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each value former read as its [`Former`];
-    ///   [`Former::Unreadable`] for an id the arena does not hold.
+    ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
+    ///   constructor whose classifier names no data family.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1190,6 +1191,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::only_a_parameterised_constructor_carries_its_classifier`
+    /// - witness: `core_source::tests::a_constructor_whose_classifier_names_no_family_reads_unclassified_3644`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
@@ -1228,6 +1230,8 @@ impl<'arena> CoreSource<'arena>
                 .map(|(held, _)| held)
                 && placement == self.family(datatype).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity))
                 && classifier.is_some() == matches!(self.arena.value_type(datatype), Some(ValueType::Data { arguments, .. }) if !arguments.is_empty()),
+        | (Some(&Value::Constructor { datatype, .. }), Former::Unreadable(Unreadable::Unclassified)) =>
+            !matches!(self.arena.value_type(self.unstaged(datatype)), Some(&ValueType::Data { .. })),
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
         | (Some(&Value::Dialogue(ref moves)), Former::Dialogue { payloads, .. }) =>
@@ -1284,6 +1288,22 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *value {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a constructor kept at a type its position states, one a \
+                              definition computes, names no family to read it by"
+                )
+            )]
+            Value::Constructor { datatype, .. }
+                if !matches!(
+                    self.arena.value_type(self.unstaged(datatype)),
+                    Some(&ValueType::Data { .. })
+                ) =>
+            {
+                Former::Unreadable(Unreadable::Unclassified)
+            },
             Value::Constructor {
                 datatype,
                 tag,
@@ -3516,6 +3536,36 @@ mod tests
                 ..
             }),
             "a constructor of a family without parameters carries nothing"
+        );
+    }
+
+    /// #3644: a constructor kept at a type a definition computes names no
+    /// family. It reads as that reason, not as a malformed naming table, and
+    /// the same constructor at its data family reads as itself.
+    #[test]
+    fn a_constructor_whose_classifier_names_no_family_reads_unclassified_3644()
+    {
+        let mut arena = CoreArena::new();
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let computed = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+        let family = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let at_computed = arena.value_constructor(computed, tag, Vec::new());
+        let at_family = arena.value_constructor(family, tag, Vec::new());
+        let source = CoreSource::new(&arena, &[]);
+        assert_eq!(
+            (
+                matches!(
+                    source.read(CoreNode::Value(at_computed)),
+                    Former::Unreadable(Unreadable::Unclassified)
+                ),
+                matches!(
+                    source.read(CoreNode::Value(at_family)),
+                    Former::Constructor { .. }
+                )
+            ),
+            (true, true),
+            "a constructor at a computed type reads unclassified, and at its family as itself"
         );
     }
 }

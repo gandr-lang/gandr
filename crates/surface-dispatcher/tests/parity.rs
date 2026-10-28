@@ -64,6 +64,7 @@ use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
+use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
@@ -623,6 +624,9 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
+    /// A printing of a constructor at a type a definition computes, which
+    /// names no family the printer reads it by (#3570).
+    Computed,
 }
 
 impl fmt::Display for Held
@@ -639,6 +643,7 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
+            Self::Computed => "#3570, a constructor at a type a definition computes",
         })
     }
 }
@@ -797,6 +802,13 @@ fn unfaithful(
     let text = <&str>::from(text);
     if unspelled.is_empty() {
         Spelt::Unfaithful(format!("approximate, naming no reason (#820): {text}"))
+    }
+    // A constructor at a type a definition computes names no family.
+    else if unspelled
+        .iter()
+        .all(|&reason| reason == Unspelled::Unreadable(Unreadable::Unclassified))
+    {
+        Spelt::Held(Held::Computed)
     }
     // A handler written as `reset` and `shift` leaves the scope of each
     // capability it delimits unnamed, so its region is elided with it.
