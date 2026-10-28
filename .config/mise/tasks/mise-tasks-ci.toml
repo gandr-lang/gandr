@@ -2762,6 +2762,12 @@ fi
 # started inside it holds and queues the top. A top changed or restacked by
 # then is refused, to be opened again.
 #
+# A top can lack a change of the trunk that the new pull request builds on
+# (#3654): it forked before the change merged. The rebase onto it then
+# conflicts, though the own commits apply to the trunk. A queued top carries
+# the change once it merges, so the task waits for it and reads the top again
+# (`stack_on_top`). A top not queued is refused, naming the changes it lacks.
+#
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
 # main (`stacking_current`): a branch forked before a fix runs the rule the
@@ -2960,6 +2966,8 @@ else
   top=$(await_top "$own")
 fi
 git fetch --quiet origin "$trunk"
+stack_on_top "$own" "$top" || exit 1
+top=$stacked_top
 if [[ "$top" == null ]]; then
   base=$trunk
   measured=$(mise run --quiet evidence:base)
@@ -2967,12 +2975,6 @@ if [[ "$top" == null ]]; then
 else
   base=$(jq -r .head <<< "$top")
   top_number=$(jq -r .number <<< "$top")
-  git fetch --quiet origin "$base"
-  if ! git merge-base --is-ancestor "origin/$base" HEAD; then
-    fork=$(own_fork "$own" "$base")
-    git rebase --quiet --update-refs --onto "origin/$base" "$fork" \
-      || { git rebase --abort; echo "the rebase of $own onto $base (#$top_number, the top) conflicts; resolve it on $own, run the hooks, and run \`pr:open\` again" >&2; exit 1; }
-  fi
   measured=origin/$base
 fi
 # The branch's own commits, from the top's head (or the trunk's fork) to

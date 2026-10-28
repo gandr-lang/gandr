@@ -1425,8 +1425,13 @@ FROM reference;"); keys read $resolved"
 # scratch repository, once per case in `.config/pr-stack/fetched.json`: a
 # lower merged on the origin since the last fetch measures the upper from the
 # lower's head, not the stale trunk (#3148, `measured_from`).
+# `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
+# repository, once per case in `.config/pr-stack/behind.json`: a queued lower
+# that lacks the trunk change the upper builds on is waited out, one not
+# queued is refused naming the change, and a conflict with the lower's own
+# change is refused at once (#3654, `stack_on_top`).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, and a change is measured from a fetched trunk"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a change is measured from a fetched trunk, and a top behind the trunk is waited out or refused"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1441,8 +1446,9 @@ if [[ -n "$triggers" ]]; then
 fi
 .config/pr-stack/own-commits.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
+.config/pr-stack/behind-top.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk; a top behind the trunk is waited out or refused"
 '''
 
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):
