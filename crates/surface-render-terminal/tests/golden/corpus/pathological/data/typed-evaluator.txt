@@ -1,0 +1,47 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/data/typed-evaluator.gandr:49:15
+   │
+35 │      Lit : (i : Integer) --> Expr(TInt);
+   │                 ─────── the type it synthesises
+   ‡
+47 │    def rec eval(t : Ty, e : Expr(t)) -> meaning(t) {
+   │    │            ┬       ─ checked against `Expr(t) -> -F meaning(t)`; while checking the body of this function; binds e : Expr(t)
+   │    │            │
+   │ ┌──┘            checked against `(a : Ty) -> Expr(a) -> -F meaning(a)`; while checking the body of this function; binds t : Ty
+   │ │
+48 │ │┌   case e {
+49 │ ││     Lit(i) => i,
+   │ ││               ━ its type does not convert: expected `meaning(t)`, found `Integer`
+50 │ ││     BoolLit(b) => b,
+51 │ ││     Add(l, r) => eval[<](TInt, l) + eval[<](TInt, r),
+52 │ ││     If(u, c, y, n) => if eval[<](TBool, c) { eval[<](u, y) } else { eval[<](u, n) }
+53 │ ││   }
+   │ │└───┘ checked against `-F meaning(t)`; while checking the body of this function; binds i : Integer, _ : Path(Ty, TInt, t)
+54 │ │  }
+   │ └──┘ checked against `(t : Ty, Expr(t)) => meaning(t)`; while checking the body of this function; binds eval : (a : Ty, Expr(a)) => meaning(a)
+   │
+   ├ note: `eval` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/data/typed-evaluator.gandr:63:34
+   │
+59 │    def rec evalInt(e : Expr(TInt)) -> Integer {
+   │    │               ─ checked against `Expr(TInt) -> -F Integer`; while checking the body of this function; binds e : Expr(TInt)
+   │ ┌──┘
+   │ │
+60 │ │┌   case e {
+61 │ ││     Lit(i) => i,
+62 │ ││     Add(l, r) => evalInt[<](l) + evalInt[<](r),
+63 │ ││     If(u, _, y, _) => evalInt[<](y)
+   │ ││                       ┬──────────┯─
+   │ ││                       │          │
+   │ ││                       │          its type does not convert: expected `Expr(TInt)`, found `Expr(u)`
+   │ ││                       checked against `-F Integer`; while checking the argument of this application
+64 │ ││   }
+   │ │└───┘ checked against `-F Integer`; while checking the body of this function; binds u : Ty, _ : Expr(TBool), y : Expr(u), _ : Expr(u), _ : Path(Ty, u, TInt)
+65 │ │  }
+   │ └──┘ checked against `Expr(TInt) => Integer`; while checking the body of this function; binds evalInt : Expr(TInt) => Integer
+   │
+   ├ note: `evalInt` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

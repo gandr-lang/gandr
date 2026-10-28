@@ -1385,6 +1385,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-in
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt Procedure ec151e0249661fd9
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/absurd-not-apart.txt Procedure 8d19cbccfa867da0
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/answered-definition.txt Procedure 66f046af38530338
+crates/surface-render-terminal/tests/golden/corpus/pathological/data/dependent-bounds.txt Procedure 8d19cbccfa867da0
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/descent.txt Procedure 82cfda2e0c36480c
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/family-named-as-builtin.txt Procedure d0178ac867679784
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/generic-eq-refused.txt Procedure 779823a8cfb670c3

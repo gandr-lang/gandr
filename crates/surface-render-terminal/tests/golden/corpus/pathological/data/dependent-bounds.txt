@@ -1,0 +1,29 @@
+error[NonExhaustiveMatch]: this match does not cover every value it can be given
+   ╭▸ corpus/pathological/data/dependent-bounds.gandr:35:3
+   │
+35 │   case i {}
+   │   ━━━━━━━━━ some value matches no arm
+   │
+   ╰ note: `absurdFin` is refused with NonExhaustiveMatch, as its expectation states
+
+error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
+   ╭▸ corpus/pathological/data/dependent-bounds.gandr:51:17
+   │
+49 │    def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a {
+   │    │              ┬         ┬        ┬              ─ checked against `Fin(n) -> -F a`; while checking the body of this function; binds i : Fin(n)
+   │    │              │         │        │
+   │    │              │         │        checked against `Vec(a, n) -> Fin(n) -> -F a`; while checking the body of this function; binds v : Vec(a, n)
+   │    │              │         checked against `(b : Nat) -> Vec(a, b) -> Fin(b) -> -F a`; while checking the body of this function; binds n : Nat
+   │ ┌──┘              checked against `(a : Type) -> (n : Nat) -> Vec(a, n) -> Fin(n) -> -F a`; while checking the body of this function; binds a : Type
+   │ │
+50 │ │┌   case i {
+51 │ ││     FZero(m) => case v { VCons(_, h, _) => h },
+   │ ││                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a path whose endpoints are not apart
+52 │ ││     FSucc(m, j) => case v { VCons(_, _, t) => lookup[<](a, m, t, j) }
+53 │ ││   }
+   │ │└───┘ checked against `-F a`; while checking the body of this function; binds m : Nat, _ : Path(Nat, Succ(m), n)
+54 │ │  }
+   │ └──┘ checked against `(a : Type, n : Nat, Vec(a, n), Fin(n)) => a`; while checking the body of this function; binds lookup : (b : Nat, Vec(a, b), Fin(b)) => a
+   │
+   ├ note: `lookup` is refused with NotApart, as its expectation states
+   ╰ help: write an arm for the path, because its endpoints can be equal

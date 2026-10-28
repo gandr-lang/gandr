@@ -1,0 +1,57 @@
+// Bounded naturals as they should read, and what refuses each program.
+//
+// `Fin(n)` holds the naturals below `n`. A case on one binds each arm's index
+// equation and prunes an arm only where its ends are apart. It neither refines
+// by the equation nor prunes a match of no arms.
+//
+// The checker refuses each declaration below by the name its attribute
+// states. Each turns to `checks` as its rung lands, and the source then moves
+// to the model root.
+//
+// - see: #3484 — not implemented: the empty match at an indexed family, for
+//   `absurdFin`
+// - see: #3483 — not implemented: refinement by solution, for `lookup`
+// - see: #3515 — not implemented: injectivity, for `lookup`
+// - see: #3481 — the spike that wrote these programs
+
+// The naturals the bounds count in.
+import "../../model/data/data-base.gandr";
+
+// The vectors a bound looks into.
+import "../../model/data/vectors.gandr";
+
+/// The naturals below `n`.
+data Fin : Nat -> Type {
+  /// Zero, below every successor.
+  FZero : (n : Nat) --> Fin(Succ(n));
+  /// One past a bound, below the successor of that bound.
+  FSucc : (n : Nat, i : Fin(n)) --> Fin(Succ(n));
+}
+
+/// No natural lies below zero. Each constructor stands at a successor, apart
+/// from zero, so the match needs no arm.
+@[ refuses("NonExhaustiveMatch") ]
+def absurdFin(i : Fin(Zero)) -> Integer {
+  case i {}
+}
+
+/// A bound read back as the natural it is.
+def rec toNat(n : Nat, i : Fin(n)) -> Nat {
+  case i {
+    FZero(_) => Zero,
+    FSucc(m, j) => Succ(toNat[<](m, j))
+  }
+}
+
+/// The element at a bound below the vector's length. The `FZero` arm leaves
+/// `v` at `n`, which `VNil`'s zero is not apart from.
+@[ refuses("NotApart") ]
+def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a {
+  case i {
+    FZero(m) => case v { VCons(_, h, _) => h },
+    FSucc(m, j) => case v { VCons(_, _, t) => lookup[<](a, m, t, j) }
+  }
+}
+
+/// The bound one below two.
+def one() -> Fin(Succ(Succ(Zero))) { FSucc(Succ(Zero), FZero(Zero)) }
