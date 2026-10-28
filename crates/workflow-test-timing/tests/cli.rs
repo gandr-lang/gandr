@@ -301,9 +301,9 @@ fn a_failing_gh_is_reported_with_its_message()
     assert_eq!(
         String::from_utf8_lossy(&failed.stderr),
         "test-timing: `gh run list --repo o/r --workflow ci.yml --event merge_group --status \
-             success --limit 5 --json databaseId --jq .[].databaseId` failed: HTTP 401: Bad \
-             credentials\n",
-        "the invocation and what gh wrote to standard error"
+             success --limit 5 --json databaseId --jq .[].databaseId` failed: exit status: 1: \
+             HTTP 401: Bad credentials\n",
+        "the invocation, its exit and what gh wrote to standard error"
     );
     let garbage = fake
         .command()
@@ -317,9 +317,10 @@ fn a_failing_gh_is_reported_with_its_message()
     );
     assert_eq!(
         String::from_utf8_lossy(&garbage.stderr),
-        "test-timing: `gh run list` failed: `abc` is not a run identifier: invalid digit found \
-             in string\n",
-        "the line that is not a run identifier"
+        "test-timing: `gh run list --repo o/r --workflow ci.yml --event merge_group --status \
+             success --limit 5 --json databaseId --jq .[].databaseId` failed: `abc` is not a \
+             run identifier: invalid digit found in string\n",
+        "the invocation and the line that is not a run identifier"
     );
     assert!(!fake.root.join("store").exists(), "nothing stored");
     std::fs::remove_dir_all(&fake.root).unwrap();

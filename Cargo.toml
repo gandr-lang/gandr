@@ -59,6 +59,7 @@ members = [
   "crates/theory-virtual-doctrines",
   "crates/workflow-build-state",
   "crates/workflow-coverage-guard",
+  "crates/workflow-github",
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
   "crates/workflow-prose",
@@ -934,6 +935,16 @@ path = "crates/theory-sites"
 # - theory-levitation
 [workspace.dependencies.gandr-theory-spec-combinators]
 path = "crates/theory-spec-combinators"
+
+# The workflow crates' one `gh` runner and the error family its failures
+# share.
+# consumers:
+# - workflow-coverage-guard
+# - workflow-hotpath-guard
+# - workflow-lane-budget
+# - workflow-test-timing
+[workspace.dependencies.gandr-workflow-github]
+path = "crates/workflow-github"
 
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.

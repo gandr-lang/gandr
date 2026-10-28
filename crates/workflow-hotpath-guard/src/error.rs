@@ -3,6 +3,8 @@
 
 use core::fmt;
 
+use gandr_workflow_github::GitHubError;
+
 /// Why the checks could not be read or filed.
 ///
 /// # Specification
@@ -25,13 +27,7 @@ pub enum GuardError
     },
     /// A `gh` invocation could not run, exited unsuccessfully, or printed
     /// what this crate does not read.
-    Gh
-    {
-        /// The invocation, as typed.
-        command: String,
-        /// Why it did not start, how it exited, or what it printed.
-        message: String,
-    },
+    Gh(GitHubError),
     /// Standard output could not be written.
     Output
     {
@@ -78,10 +74,7 @@ impl fmt::Display for GuardError
                 f,
                 "`{text}` is not a commit: seven to forty lowercase hexadecimal digits"
             ),
-            Self::Gh {
-                ref command,
-                ref message,
-            } => write!(f, "`{command}` failed: {message}"),
+            Self::Gh(ref error) => error.fmt(f),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
             Self::Input {
                 ref path,
@@ -94,6 +87,19 @@ impl fmt::Display for GuardError
 /// A refusal is an error value, so clap can report a malformed argument.
 impl core::error::Error for GuardError
 {
+}
+
+impl From<GitHubError> for GuardError
+{
+    /// The refusal of a failed `gh` invocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: GitHubError) -> Self
+    {
+        Self::Gh(error)
+    }
 }
 
 #[cfg(test)]
@@ -116,13 +122,6 @@ mod tests
                     text: "main".into(),
                 },
                 "`main` is not a commit: seven to forty lowercase hexadecimal digits",
-            ),
-            (
-                GuardError::Gh {
-                    command: "gh issue list".into(),
-                    message: "HTTP 401: Bad credentials".into(),
-                },
-                "`gh issue list` failed: HTTP 401: Bad credentials",
             ),
             (
                 GuardError::Output {

@@ -23,10 +23,12 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
-# crate the `Maybe` a summary of no samples returns.
+# crate the `Maybe` a summary of no samples returns. The GitHub boundary runs
+# `gh`.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-workflow-github.workspace = true
 quenchant-shape.workspace = true
 roxmltree.workspace = true
 toml.workspace = true

@@ -7,11 +7,13 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use core::fmt;
 use std::io;
-use std::io::Write as _;
 use std::path::Path;
 use std::process::Command;
-use std::process::Stdio;
 
+use gandr_workflow_github::Body;
+use gandr_workflow_github::Feed;
+use gandr_workflow_github::GitHubError;
+use gandr_workflow_github::run;
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
 
@@ -134,80 +136,6 @@ struct ListedIssue
     body: IssueBody,
 }
 
-/// What a `gh` invocation reads on standard input.
-#[derive(Clone, Copy, Debug)]
-enum Feed<'text>
-{
-    /// Nothing: standard input stays the parent's.
-    Nothing,
-    /// A comment's report, its subject's marker on the first line, as
-    /// `--body-file -` and `-F body=@-` read it.
-    Report(&'text Report),
-    /// An issue's index, as `--body-file -` reads it.
-    Index(&'text Index),
-}
-
-/// Runs `command`, feeding it `feed` on standard input, and returns what it
-/// wrote to standard output.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the command's standard output, read as UTF-8 with any invalid
-///   sequence replaced.
-/// - provides: the one place a `gh` invocation's failure becomes a refusal.
-/// - fails: [`GuardError::Gh`], naming the invocation, when the command cannot
-///   start, its input cannot be written, or it exits unsuccessfully; the
-///   message is its standard error.
-/// - panics: none.
-/// - executable: none — the outcome is the external process's.
-///
-/// # Errors
-/// As `fails` lists.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a fake `gh` that succeeds, one that fails with a message,
-///   and one that records the body it was fed; a swallowed exit status, a lost
-///   message or an unfed body changes the observed result.
-/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
-fn run(
-    command: &mut Command,
-    feed: Feed<'_>,
-) -> Result<String, GuardError>
-{
-    let label = format!("{command:?}");
-    let refuse = |message: String| GuardError::Gh {
-        command: label.clone(),
-        message,
-    };
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let text = match feed {
-        Feed::Nothing => None,
-        Feed::Report(report) => Some(format!("{}\n{report}", report.marker())),
-        Feed::Index(index) => Some(index.to_string()),
-    };
-    if text.is_some() {
-        command.stdin(Stdio::piped());
-    }
-    let mut child = command.spawn().map_err(|error| refuse(error.to_string()))?;
-    if let (Some(text), Some(mut stdin)) = (text, child.stdin.take()) {
-        stdin
-            .write_all(text.as_bytes())
-            .map_err(|error| refuse(error.to_string()))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| refuse(error.to_string()))?;
-    if !output.status.success() {
-        return Err(refuse(format!(
-            "{}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
 /// The concluded `hotpath / <benchmark>` checks of `sha`.
 ///
 /// # Specification
@@ -247,10 +175,8 @@ pub fn checks(
     let listing = run(&mut query, Feed::Nothing)?;
     let mut concluded = Vec::new();
     for line in listing.lines().filter(|line| !line.trim().is_empty()) {
-        let listed: Listed = serde_json::from_str(line).map_err(|error| GuardError::Gh {
-            command: format!("{query:?}"),
-            message: error.to_string(),
-        })?;
+        let listed: Listed = serde_json::from_str(line)
+            .map_err(|error| GitHubError::unread(&query, error.to_string()))?;
         if let Maybe::Present(check) = listed.concluded() {
             concluded.push(check);
         }
@@ -298,19 +224,15 @@ pub fn pull(
             query.args(["api", &number.api_path(repository)]);
             let answer = run(&mut query, Feed::Nothing)?;
             vec![
-                serde_json::from_str(&answer).map_err(|error| GuardError::Gh {
-                    command: format!("{query:?}"),
-                    message: error.to_string(),
-                })?,
+                serde_json::from_str(&answer)
+                    .map_err(|error| GitHubError::unread(&query, error.to_string()))?,
             ]
         },
         Maybe::Absent(_) => {
             query.args(["api", &format!("repos/{repository}/commits/{sha}/pulls")]);
             let answer = run(&mut query, Feed::Nothing)?;
-            serde_json::from_str(&answer).map_err(|error| GuardError::Gh {
-                command: format!("{query:?}"),
-                message: error.to_string(),
-            })?
+            serde_json::from_str(&answer)
+                .map_err(|error| GitHubError::unread(&query, error.to_string()))?
         },
     };
     Ok(pull_of(sha, listed))
@@ -633,11 +555,8 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
         "number,title,state,body",
     ]);
     let listing = run(&mut list, Feed::Nothing)?;
-    let issues: Vec<ListedIssue> =
-        serde_json::from_str(&listing).map_err(|error| GuardError::Gh {
-            command: format!("{list:?}"),
-            message: error.to_string(),
-        })?;
+    let issues: Vec<ListedIssue> = serde_json::from_str(&listing)
+        .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
     let subject = report.subject();
     let at = Run {
         repository: report.repository(),
@@ -777,16 +696,15 @@ fn file_function(
             for label in labels(&entry.krate) {
                 create.args(["--label", &label]);
             }
-            let url = run(&mut create, Feed::Index(&entry.index))?
+            let url = run(&mut create, Feed::Body(Body::from(entry.index.to_string())))?
                 .trim()
                 .to_owned();
             let number = url
                 .rsplit('/')
                 .next()
                 .and_then(|tail| tail.parse::<u64>().ok())
-                .ok_or_else(|| GuardError::Gh {
-                    command: format!("{create:?}"),
-                    message: format!("printed `{url}`, not an issue's address"),
+                .ok_or_else(|| {
+                    GitHubError::unread(&create, format!("printed `{url}`, not an issue's address"))
                 })?;
             (IssueNumber(number), Standing::Open, Some((title, url)))
         },
@@ -808,7 +726,7 @@ fn file_function(
                     "body=@-",
                     "--silent",
                 ]),
-                Feed::Report(report),
+                Feed::Body(Body::from(format!("{}\n{report}", report.marker()))),
             )?;
             Maybe::Present(comment.html_url)
         },
@@ -816,10 +734,13 @@ fn file_function(
             let mut post = Command::new("gh");
             post.args(["issue", "comment", &number_text, "--body-file", "-"]);
             Maybe::Present(
-                run(&mut post, Feed::Report(report))?
-                    .trim()
-                    .parse::<CommentUrl>()
-                    .unwrap_or_else(|never| match never {}),
+                run(
+                    &mut post,
+                    Feed::Body(Body::from(format!("{}\n{report}", report.marker()))),
+                )?
+                .trim()
+                .parse::<CommentUrl>()
+                .unwrap_or_else(|never| match never {}),
             )
         },
         (None, Comment::Unowed) => Maybe::Absent(Unposted),
@@ -835,7 +756,7 @@ fn file_function(
         for label in labels(&entry.krate) {
             edit.args(["--add-label", &label]);
         }
-        run(&mut edit, Feed::Index(&entry.index))?;
+        run(&mut edit, Feed::Body(Body::from(entry.index.to_string())))?;
     }
     let standing = entry.index.standing();
     let verb = match (was, standing) {
@@ -908,11 +829,8 @@ fn marked_comment(
     ]);
     let listing = run(&mut list, Feed::Nothing)?;
     for line in listing.lines().filter(|line| !line.trim().is_empty()) {
-        let comment: ListedComment =
-            serde_json::from_str(line).map_err(|error| GuardError::Gh {
-                command: format!("{list:?}"),
-                message: error.to_string(),
-            })?;
+        let comment: ListedComment = serde_json::from_str(line)
+            .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
         if Marker::of_comment(&comment.body) == *marker {
             return Ok(Some(comment));
         }

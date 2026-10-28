@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use gandr_workflow_github::GitHubError;
+
 /// Why the comparison could not be made or filed.
 ///
 /// # Specification
@@ -63,13 +65,7 @@ pub enum GuardError
     },
     /// A `gh` invocation could not run, exited unsuccessfully, or printed
     /// what this crate does not read.
-    Gh
-    {
-        /// The invocation, as typed.
-        command: String,
-        /// Why it did not start, how it exited, or what it printed.
-        message: String,
-    },
+    Gh(GitHubError),
     /// Standard output could not be written.
     Output
     {
@@ -125,10 +121,7 @@ impl fmt::Display for GuardError
             Self::NoBaseline { ref sha } => {
                 write!(f, "no processed upload of main precedes {sha}")
             },
-            Self::Gh {
-                ref command,
-                ref message,
-            } => write!(f, "`{command}` failed: {message}"),
+            Self::Gh(ref error) => error.fmt(f),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
         }
     }
@@ -137,6 +130,19 @@ impl fmt::Display for GuardError
 /// A refusal is an error value, so clap can report a malformed argument.
 impl core::error::Error for GuardError
 {
+}
+
+impl From<GitHubError> for GuardError
+{
+    /// The refusal of a failed `gh` invocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: GitHubError) -> Self
+    {
+        Self::Gh(error)
+    }
 }
 
 #[cfg(test)]
@@ -190,13 +196,6 @@ mod tests
             (
                 GuardError::NoBaseline { sha: sha() },
                 "no processed upload of main precedes f6b04aebd5fff9512341d81310be4a4446db3ba4",
-            ),
-            (
-                GuardError::Gh {
-                    command: "gh issue list".into(),
-                    message: "HTTP 401: Bad credentials".into(),
-                },
-                "`gh issue list` failed: HTTP 401: Bad credentials",
             ),
             (
                 GuardError::Output {

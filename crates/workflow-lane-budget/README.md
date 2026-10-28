@@ -37,7 +37,7 @@ cargo nextest run -p gandr-workflow-lane-budget
 
 ## Dependencies
 
-`serde` and `serde_json` read `gh`'s issue listing, with the features the root `Cargo.toml` records.
+`gandr-workflow-github` runs every `gh` invocation and names the one that failed. `serde` and `serde_json` read `gh`'s issue listing, with the features the root `Cargo.toml` records.
 
 ## License
 

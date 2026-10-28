@@ -3,6 +3,8 @@
 use core::fmt;
 use std::path::PathBuf;
 
+use gandr_workflow_github::GitHubError;
+
 /// Why a timing report could not be produced.
 ///
 /// # Specification
@@ -44,14 +46,9 @@ pub enum TimingError
         /// What the file holds that the report cannot read.
         defect: ConfigDefect,
     },
-    /// A `gh` invocation could not run, or exited unsuccessfully.
-    Gh
-    {
-        /// The invocation, as typed.
-        command: String,
-        /// What `gh` wrote to its standard error, or why it did not start.
-        message: String,
-    },
+    /// A `gh` invocation could not run, exited unsuccessfully, or printed
+    /// what this crate does not read.
+    Gh(GitHubError),
     /// The report directory holds no stored run.
     NoRuns
     {
@@ -144,10 +141,7 @@ impl fmt::Display for TimingError
                 ref path,
                 ref defect,
             } => write!(f, "{}: {defect}", path.display()),
-            Self::Gh {
-                ref command,
-                ref message,
-            } => write!(f, "`{command}` failed: {message}"),
+            Self::Gh(ref error) => error.fmt(f),
             Self::NoRuns { ref dir } => {
                 write!(f, "{}: no stored run to report on", dir.display())
             },
@@ -227,6 +221,19 @@ impl fmt::Display for ConfigDefect
 
 impl core::error::Error for TimingError
 {
+}
+
+impl From<GitHubError> for TimingError
+{
+    /// The refusal of a failed `gh` invocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: GitHubError) -> Self
+    {
+        Self::Gh(error)
+    }
 }
 
 #[cfg(test)]
@@ -321,13 +328,6 @@ mod tests
                     defect: ConfigDefect::Priority("`101`".into()),
                 },
                 ".config/nextest.toml: priority `101` is not an integer from -100 to 100",
-            ),
-            (
-                TimingError::Gh {
-                    command: "gh run list".into(),
-                    message: "not logged in".into(),
-                },
-                "`gh run list` failed: not logged in",
             ),
             (
                 TimingError::NoRuns {

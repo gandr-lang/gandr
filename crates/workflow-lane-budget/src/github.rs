@@ -5,10 +5,12 @@ use core::fmt;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
-use std::io::Write as _;
 use std::process::Command;
-use std::process::Stdio;
 
+use gandr_workflow_github::Body;
+use gandr_workflow_github::Feed;
+use gandr_workflow_github::GitHubError;
+use gandr_workflow_github::run;
 use serde::Deserialize;
 
 use crate::budget::RunCount;
@@ -203,72 +205,6 @@ struct Listed
     title: String,
 }
 
-/// What a `gh` invocation reads on standard input.
-#[derive(Clone, Copy, Debug)]
-pub enum Feed<'report>
-{
-    /// Nothing: standard input stays the parent's.
-    Nothing,
-    /// The report, as the issue body `--body-file -` reads.
-    Body(&'report Report),
-}
-
-/// Runs `command`, feeding it `feed` on standard input, and returns what it
-/// wrote to standard output.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the command's standard output, read as UTF-8 with any invalid
-///   sequence replaced.
-/// - provides: the one place a `gh` invocation's failure becomes a refusal.
-/// - fails: [`BudgetError::Gh`], naming the invocation, when the command cannot
-///   start, its input cannot be written, or it exits unsuccessfully; the
-///   message is its standard error.
-/// - panics: none.
-/// - executable: none — the outcome is the external process's.
-///
-/// # Errors
-/// As `fails` lists.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a fake `gh` that succeeds, one that fails with a message,
-///   and one that records the body it was fed; a swallowed exit status, a lost
-///   message or an unfed body changes the observed result.
-/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
-/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
-pub(crate) fn run(
-    command: &mut Command,
-    feed: Feed<'_>,
-) -> Result<String, BudgetError>
-{
-    let label = format!("{command:?}");
-    let refuse = |message: String| BudgetError::Gh {
-        command: label.clone(),
-        message,
-    };
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    if let Feed::Body(_) = feed {
-        command.stdin(Stdio::piped());
-    }
-    let mut child = command.spawn().map_err(|error| refuse(error.to_string()))?;
-    if let (Feed::Body(report), Some(mut stdin)) = (feed, child.stdin.take()) {
-        stdin
-            .write_all(report.to_string().as_bytes())
-            .map_err(|error| refuse(error.to_string()))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| refuse(error.to_string()))?;
-    if !output.status.success() {
-        return Err(refuse(format!(
-            "{}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
 /// How many `gh` reads run at once. Each read is a process waiting on the
 /// network, and a night's report makes over a hundred of them: one at a time,
 /// the nightly's lane-budget step took 120 s, past its job's 133 s share with
@@ -350,7 +286,7 @@ where
             })?;
             done.extend(reads);
         }
-        Ok(done)
+        Ok::<_, BudgetError>(done)
     })?;
     done.sort_unstable_by_key(|&(index, _)| index);
     done.into_iter().map(|(_, result)| result).collect()
@@ -414,9 +350,11 @@ pub fn recent_runs(
     text.lines()
         .take(usize::from(count))
         .map(|line| {
-            line.parse::<RunId>().map_err(|error| BudgetError::Gh {
-                command: format!("{command:?}"),
-                message: format!("`{line}` is not a run identifier: {error}"),
+            line.parse::<RunId>().map_err(|error| {
+                BudgetError::from(GitHubError::unread(
+                    &command,
+                    format!("`{line}` is not a run identifier: {error}"),
+                ))
             })
         })
         .collect()
@@ -467,9 +405,11 @@ pub fn samples(
     let text = run(&mut command, Feed::Nothing)?;
     text.lines()
         .map(|line| {
-            line.parse::<Sample>().ok().ok_or_else(|| BudgetError::Gh {
-                command: format!("{command:?}"),
-                message: format!("`{line}` is not a job's seconds and name"),
+            line.parse::<Sample>().ok().ok_or_else(|| {
+                BudgetError::from(GitHubError::unread(
+                    &command,
+                    format!("`{line}` is not a job's seconds and name"),
+                ))
             })
         })
         .collect()
@@ -511,9 +451,11 @@ pub fn timed(count: RunCount) -> Result<Vec<(WorkflowName, Vec<Timed>)>, BudgetE
         WORKFLOW_QUERY,
     ]);
     let listing = run(&mut list, Feed::Nothing)?;
-    let unread = |command: &Command, line: &str, what: &str| BudgetError::Gh {
-        command: format!("{command:?}"),
-        message: format!("`{line}` is not {what}"),
+    let unread = |command: &Command, line: &str, what: &str| {
+        BudgetError::from(GitHubError::unread(
+            command,
+            format!("`{line}` is not {what}"),
+        ))
     };
     let per_page = format!("per_page={}", usize::from(count));
     let mut workflows = Vec::new();
@@ -587,12 +529,12 @@ pub fn cache_usage() -> Result<CacheUsage, BudgetError>
     let mut command = Command::new("gh");
     command.args(["api", "--method", "GET", CACHE, "--jq", CACHE_QUERY]);
     let text = run(&mut command, Feed::Nothing)?;
-    text.parse::<CacheUsage>()
-        .ok()
-        .ok_or_else(|| BudgetError::Gh {
-            command: format!("{command:?}"),
-            message: format!("`{}` is not the caches' bytes and count", text.trim()),
-        })
+    text.parse::<CacheUsage>().ok().ok_or_else(|| {
+        BudgetError::from(GitHubError::unread(
+            &command,
+            format!("`{}` is not the caches' bytes and count", text.trim()),
+        ))
+    })
 }
 
 /// Files `report` on the one issue titled `title`: opened or updated while a
@@ -642,10 +584,8 @@ pub fn file(
         "number,state,title",
     ]);
     let listing = run(&mut list, Feed::Nothing)?;
-    let issues: Vec<Listed> = serde_json::from_str(&listing).map_err(|error| BudgetError::Gh {
-        command: format!("{list:?}"),
-        message: error.to_string(),
-    })?;
+    let issues: Vec<Listed> = serde_json::from_str(&listing)
+        .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
     let found = issues.into_iter().find(|issue| issue.title == title.0);
     let edit = |number: u64| {
         run(
@@ -658,7 +598,7 @@ pub fn file(
                 "--add-label",
                 COLLECTOR,
             ]),
-            Feed::Body(report),
+            Feed::Body(Body::from(report.to_string())),
         )
     };
     let act = |verb: &str, number: u64| {
@@ -680,7 +620,7 @@ pub fn file(
                     "--label",
                     COLLECTOR,
                 ]),
-                Feed::Body(report),
+                Feed::Body(Body::from(report.to_string())),
             )?;
             Ok(Filed::Opened(url.trim().to_owned()))
         },
@@ -731,9 +671,8 @@ mod tests
     fn the_first_refusal_in_order_is_reported()
     {
         let items: Vec<u64> = (0 .. 24).collect();
-        let refused = |item: u64| BudgetError::Gh {
-            command: format!("gh api runs/{item}/jobs"),
-            message: String::from("HTTP 502"),
+        let refused = |item: u64| BudgetError::Reader {
+            message: format!("read {item} met HTTP 502"),
         };
         // The earlier refusal is the slower: the later one is met first.
         let read = read_all(&items, |&item| {
