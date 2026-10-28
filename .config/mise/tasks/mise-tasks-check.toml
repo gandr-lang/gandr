@@ -1184,13 +1184,17 @@ echo "census check OK: $(jq length .config/census/cases.json) cases give their r
 
 # The purposes ledger (`ledger/purposes.sql`): the dump builds with every
 # constraint holding and is its own re-dump, and every concern tag is a key of
-# `ledger/concerns.sql`, once in its row. A crate with a row is held to its
-# entries as `purposes:items` reads them: every public item has a row, every
-# row names an entry, a crate row lands with a row for every module, and a
-# module row with the crate row. A crate with no row is not read: it waits
+# `ledger/concerns.sql`, once in its row, that a site of the concern there
+# covers: a site covers its module, the modules below it and their items, and
+# a site at the empty module its whole crate. A crate with a row is held to
+# its entries as `purposes:items` reads them: every public item has a row,
+# every row names an entry, a crate row lands with a row for every module, and
+# a module row with the crate row. A crate with no row is not read: it waits
 # for its first pass. Each case in `.config/purposes/cases.json` holds the
 # entry program's arguments, an input, and the output it must give or that it
-# fails. Every finding is printed before the gate fails.
+# fails; each in `.config/purposes/coverage.json` the tags and sites the
+# coverage program reads and the findings it gives. Every finding is printed
+# before the gate fails.
 ["check:purposes"]
 description = "Every public item of a crate the purposes ledger rows has its row, and every row names an item"
 tools.jq = "1.8.1"
@@ -1201,6 +1205,7 @@ fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
 failed=0
 .config/cases/run.bash 'purposes entry' .config/purposes/cases.json --program .config/purposes/items.jq || failed=1
+.config/cases/run.bash 'purposes coverage' .config/purposes/coverage.json --program .config/purposes/coverage.jq || failed=1
 db="$fresh/purposes.db"
 sqlite3 -bail "$db" < ledger/purposes.sql
 sqlite3 "$db" .dump > "$fresh/purposes.sql"
@@ -1263,11 +1268,24 @@ if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
 fi
+tags=$(sqlite3 -bail -json "$db" <<'SQL'
+SELECT p.crate, p.path, p.kind, t.value AS tag
+FROM purpose p, json_each('["' || replace(p.concerns, ' ', '","') || '"]') t
+WHERE p.concerns IS NOT NULL AND t.value IN (SELECT id FROM concern)
+ORDER BY p.crate, p.path, p.kind, t.key;
+SQL
+)
+sites=$(sqlite3 -bail -json "$db" 'SELECT concern, crate, module FROM site ORDER BY concern, crate, module;')
+uncovered=$(jq -n --argjson tags "${tags:-[]}" --argjson sites "${sites:-[]}" '{tags: $tags, sites: $sites}' | jq -r -f .config/purposes/coverage.jq)
+if [[ -n $uncovered ]]; then
+  printf '%s\n' "$uncovered" >&2
+  failed=1
+fi
 if (( failed )); then
   echo 'purposes check FAILED' >&2
   exit 1
 fi
-echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}; every public item of a rowed crate has its row, every row names an entry, every concern tag is a key"
+echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}; every public item of a rowed crate has its row, every row names an entry, every concern tag is a key a site of its concern covers"
 {% endraw %}'''
 
 # The references ledger (`ledger/references.sql`) is what `ledger:references`
