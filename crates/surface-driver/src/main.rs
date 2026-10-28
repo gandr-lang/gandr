@@ -187,6 +187,10 @@
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
 //!   ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local
 //!   artifact, the endpoint of a one-role choreography.
+//! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a dependent
+//!   fetches each path dependency's export from the store by its address, the
+//!   coordinate only naming where to check it first (`depended`; §
+//!   package-design-typed-hydration).
 //!
 //! # Output the driver cannot write is a fault
 //!
@@ -307,8 +311,10 @@ use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Coordinate;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Exporting;
 use gandr_surface_dispatcher::FeatureId;
 use gandr_surface_dispatcher::FeatureLedger;
@@ -316,6 +322,7 @@ use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
+use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
 use gandr_surface_dispatcher::LIBRARY;
@@ -1279,22 +1286,23 @@ enum Screen
 ///   for a workspace naming no packages (`gandr-surface-dispatcher`'s
 ///   `packaged`). `check` and `test` walk their paths, print what [`render`]
 ///   prints, and exit `0`, `1` or `2` as the run settled, was unsettled or
-///   faulted, `check` reconciling each package's lock and manifest and
-///   committing its export into the store as [`run`] states; `check` reaching a
-///   package, and `lock`, first open the store as [`opened`] states, exiting
-///   `2` when no directory names it; `check` without `--recheck` keeps the
-///   kernel's verdicts as [`verdicts::install`] states, and runs without them
-///   after one `gandr:` line on standard error when the cache cannot be
-///   installed; `lock` rewrites each package's lock as [`lock`] states; `run`
-///   runs its script as [`script`] states, its `Net` operations served on the
-///   network its `--net-bind`, `--net-secret` and `--net-lookup` flags bind,
-///   and `fmt` lays out its paths as [`fmt`] states. `lsp` serves and `lsp
-///   --capabilities` prints as [`lsp`] and [`capabilities`] state, `repl` runs
-///   as [`repl`] states, and `tui` as [`tui`] states. Every face writes its
-///   types and values in the spelling [`spelling`] resolves; a configuration
-///   file that cannot be read is `gandr: <path>: <fault>` on standard error and
-///   exits `2` before any verb runs. Output the driver cannot write is noted on
-///   standard error, when that is writable, and exits `2`.
+///   faulted, `check` reconciling each package's lock and manifest, committing
+///   its export into the store and re-admitting each path dependency's export
+///   from it as [`run`] states; `check` reaching a package, and `lock`, first
+///   open the store as [`opened`] states, exiting `2` when no directory names
+///   it; `check` without `--recheck` keeps the kernel's verdicts as
+///   [`verdicts::install`] states, and runs without them after one `gandr:`
+///   line on standard error when the cache cannot be installed; `lock` rewrites
+///   each package's lock as [`lock`] states; `run` runs its script as
+///   [`script`] states, its `Net` operations served on the network its
+///   `--net-bind`, `--net-secret` and `--net-lookup` flags bind, and `fmt` lays
+///   out its paths as [`fmt`] states. `lsp` serves and `lsp --capabilities`
+///   prints as [`lsp`] and [`capabilities`] state, `repl` runs as [`repl`]
+///   states, and `tui` as [`tui`] states. Every face writes its types and
+///   values in the spelling [`spelling`] resolves; a configuration file that
+///   cannot be read is `gandr: <path>: <fault>` on standard error and exits `2`
+///   before any verb runs. Output the driver cannot write is noted on standard
+///   error, when that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -2245,14 +2253,15 @@ fn unpathed(unpathed: &Unpathed) -> ExitCode
 ///   pending source's refusal under `test`, a pending source the lowering read
 ///   — prefixed with its path. Each path the walk cannot carry through the
 ///   pipeline is a line on standard error. A walk under `check` then reconciles
-///   the lock and the manifest of each of `packages`, and commits its export
-///   into `store`, as [`run`] does. The run's report and its verdict close
-///   standard output, and the exit code is the verdict's, or a lock's, a
-///   manifest's or an export's when that is worse. A script follows [`script`],
-///   its entry's `Net` operations served on a network bound as `network` says:
-///   what it prints goes to standard output, its diagnostics to standard error
-///   and its run status chooses the exit. A staging follows [`stage`], a
-///   formatting [`fmt`], a ledger task [`ledger`], and a census [`cells`].
+///   the lock and the manifest of each of `packages`, commits its export into
+///   `store`, and re-admits each path dependency's export from it, as [`run`]
+///   does. The run's report and its verdict close standard output, and the exit
+///   code is the verdict's, or a lock's, a manifest's, an export's or a
+///   dependency's export's when that is worse. A script follows [`script`], its
+///   entry's `Net` operations served on a network bound as `network` says: what
+///   it prints goes to standard output, its diagnostics to standard error and
+///   its run status chooses the exit. A staging follows [`stage`], a formatting
+///   [`fmt`], a ledger task [`ledger`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -2658,14 +2667,17 @@ fn stage(
 ///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) states,
 ///   printing nothing; a store that refuses the commit is `gandr: <root>:
 ///   <why>` on standard error and faults the run, and so is an artifact that
-///   does not cut, while a source path that does not spell unsettles it. Then
-///   the final report, at the detailed and debug levels the line `kernel: <n>
-///   recalled, <n> recorded, <n> unwritten; signed by <key>` when a verdict
-///   cache is installed, and the verdict, at the JSON level as one object whose
-///   `level` is `summary`. The exit is zero for settled, one for unsettled and
-///   two for faulted, as the walk's final report decides under the offered
-///   verb, or a lock, a manifest or an export when that is worse, at every
-///   verbosity. Every byte written and the exit are the same at every width.
+///   does not cut, while a source path that does not spell unsettles it. Once
+///   every export of the run is committed, each package whose lock is held
+///   reads each path dependency's export by its address's root and re-admits it
+///   through the kernel, as [`depended`] states. Then the final report, at the
+///   detailed and debug levels the line `kernel: <n> recalled, <n> recorded,
+///   <n> unwritten; signed by <key>` when a verdict cache is installed, and the
+///   verdict, at the JSON level as one object whose `level` is `summary`. The
+///   exit is zero for settled, one for unsettled and two for faulted, as the
+///   walk's final report decides under the offered verb, or a lock, a manifest,
+///   an export or a dependency's export when that is worse, at every verbosity.
+///   Every byte written and the exit are the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -2690,6 +2702,7 @@ fn stage(
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+/// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -2782,6 +2795,16 @@ fn run(
         if let (Some(&Ok(ref address)), Some(held)) = (address, store.as_deref_mut()) {
             let reached = exported(&packaged.package, exporting, address, held, stderr)?;
             verdict = worse(verdict, reached);
+        }
+    }
+    // Every export of the run is committed before any is read, so a dependent
+    // reads a dependency the same run checked, whatever their order.
+    if checking && let Some(held) = store.as_deref() {
+        for packaged in packages {
+            if let Locking::Held(_, ref lock, _) = packaged.locking {
+                let reached = depended(&packaged.package, lock, held, verbosity, stdout, stderr)?;
+                verdict = worse(verdict, reached);
+            }
         }
     }
     if verbosity == Verbosity::Json {
@@ -3160,6 +3183,96 @@ fn exported(
             Ok(RunVerdict::Faulted)
         },
     }
+}
+
+/// Re-admit the export of each path dependency `lock` names, read from `store`
+/// by its address's root, and the verdict that leaves the run at.
+///
+/// # Specification
+/// - requires: `lock` is the lock `package` holds.
+/// - ensures: for each alias of `lock`, in order, the identity its pointer
+///   names is read from `store` and the root of its address, [`Export::root`],
+///   looked up. An export that the root names and that re-admits
+///   ([`Export::readmit`]) settles, and at the detailed and debug levels prints
+///   `export: <root>: <alias>: <n> declarations re-admitted from <export root>`
+///   on standard output. A root that names nothing is `gandr: <root>: <alias>:
+///   no export at <export root>; check <dependency> first` on standard error
+///   and leaves the verdict, the dependency being judged from its sources in
+///   the dependent's unit. An identity or an export the store cannot read back,
+///   and an export the kernel refuses, are `gandr: <root>: <alias>: <why>` on
+///   standard error and fault the run.
+/// - provides: the read of each dependency's export `run` takes for each
+///   package whose lock is held, after every export of the run committed.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the outcome is the kernel's replay of what the store
+///   holds.
+///
+/// # Errors
+/// The [`std::io::Error`] of the write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dependent checked with its dependency re-admits the
+///   dependency's export, and one checked alone against a fresh store notes the
+///   missing export and settles.
+/// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
+fn depended(
+    package: &Package,
+    lock: &Lock,
+    store: &Store,
+    verbosity: Verbosity,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let root = package.root().display();
+    let mut verdict = RunVerdict::Settled;
+    for (alias, locked) in lock
+        .aliases()
+        .filter_map(|alias| lock.locked(alias).map(|locked| (alias, locked)))
+    {
+        let identity: Identity = match store.deref(locked.pointer) {
+            Ok(identity) => identity,
+            Err(fault) => {
+                writeln!(stderr, "gandr: {root}: {alias}: {fault}")?;
+                verdict = RunVerdict::Faulted;
+                continue;
+            },
+        };
+        let name = Export::root(&identity.address);
+        let Maybe::Present(pointer) = store.roots().root(&name)
+        else {
+            let Coordinate::Path(ref path) = locked.coordinate;
+            let dependency = package.root().join(path);
+            let dependency = dependency.canonicalize().unwrap_or(dependency);
+            writeln!(
+                stderr,
+                "gandr: {root}: {alias}: no export at {name}; check {} first",
+                dependency.display()
+            )?;
+            continue;
+        };
+        let readmitted = store
+            .deref::<Export>(pointer)
+            .map_err(|fault| fault.to_string())
+            .and_then(|export| export.readmit().map_err(|refused| refused.to_string()));
+        match readmitted {
+            Ok(declarations) => {
+                if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug) {
+                    writeln!(
+                        stdout,
+                        "export: {root}: {alias}: {} declarations re-admitted from {name}",
+                        usize::from(declarations)
+                    )?;
+                }
+            },
+            Err(why) => {
+                writeln!(stderr, "gandr: {root}: {alias}: {name}: {why}")?;
+                verdict = RunVerdict::Faulted;
+            },
+        }
+    }
+    Ok(verdict)
 }
 
 /// The worse of two verdicts: a fault outranks an unsettled run, which

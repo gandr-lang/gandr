@@ -28,6 +28,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1 and 3) — the kernel derives every support from its own nodes rather than taking one across the bridge.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a presentation may declare a sort classified `Type[-]`.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a verdict key reads each declaration's canonical segment.
+- `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: § module-sealing-landed-sealing-rung — an atom is fresh within its artifact alone, so a decoded artifact goes whole to one replay.
 
 ## Provided features
 
