@@ -3,7 +3,8 @@
 // over a neutral code, compared by its code; the decode of a code that runs
 // to a quote is the quoted type. The arrow code decodes to the function type
 // between its two decoded sides, so a function at a decoded arrow applies. A
-// type a body quotes reads each binder where the body binds it. A
+// type a body quotes reads each binder where the body binds it, and a decode
+// at its path type's carrier reads as it does in a binder's type. A
 // constructor field may read the one before it, so a value packs with its
 // code (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
@@ -37,6 +38,11 @@ def endo(a : Type, n : Nat, v : a) -> -F Type { return (+U (a -> -F a)) }
 /// Type` and reads back to itself (#547).
 @[ checks ]
 def endoBare(a : Type, n : Nat) -> -F Type { return (+U (a -> -F a)) }
+
+/// The loops at a value of a decoded type, quoted in a body. The carrier
+/// `el(u)` reads as the type its call returns, where `x` stands.
+@[ checks ]
+def loopAt(u : U, x : el(u)) -> -F Type { return (Path(el(u), x, x)) }
 
 /// The functions from a code to its decode, quoted in a body: the codomain
 /// `el(c)` names the arrow's own binder, which no signature type names, so
