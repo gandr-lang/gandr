@@ -455,7 +455,7 @@ fn a_standing_supply_opens_a_lambda_per_explicit_before_it_1498()
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
         let report = judged(&module, &mut arena);
-        report.judged().len() == module.declarations().len()
+        report.judged().len() == module.declarations().iter().len()
             && report
                 .judged()
                 .iter()
@@ -482,7 +482,7 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
     let report = judged(&module, &mut arena);
     assert_eq!(
         report.judged().len(),
-        module.declarations().len(),
+        module.declarations().iter().len(),
         "nothing is refused: {:?}",
         module.declarations()
     );

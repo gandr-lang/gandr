@@ -1115,7 +1115,7 @@ static PRELUDE: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
     else {
         panic!("the prelude is not refused whole");
     };
-    module.declarations().len()
+    module.declarations().iter().len()
 });
 
 /// How many declarations an admission offered the kernel, of how many were

@@ -366,6 +366,10 @@ mod sealing;
 mod layered;
 
 pub use self::layered::Layered;
+use self::layered::LayeredList;
+pub use self::layered::Listed;
+pub use self::layered::ListedIter;
+pub use self::layered::listed_entry;
 
 mod world;
 
@@ -11097,8 +11101,9 @@ pub struct LoweredModule<'source>
     natives: Vec<crate::description::NativeFamily>,
     /// Checked cells and every cell-layer member refusal.
     cells: crate::desc_cells::CellReport,
-    /// The declarations, in admission order.
-    declarations: Vec<LoweredDeclaration<'source>>,
+    /// The declarations, in admission order: a closure's shared with every
+    /// module lowered after it.
+    declarations: LayeredList<LoweredDeclaration<'source>>,
     /// The data declarations' signatures, by [`DataIndex`].
     data: Vec<Arc<DataSignature>>,
     /// The names of each data declaration's constructors in tag order, by
@@ -11206,7 +11211,7 @@ impl<'source> LoweredModule<'source>
             description_diagnostics: Vec::new(),
             natives: Vec::new(),
             cells: crate::desc_cells::CellReport::default(),
-            declarations,
+            declarations: LayeredList::whole(declarations),
             data,
             constructors: Vec::new(),
             shadowed: BTreeMap::new(),
@@ -11724,27 +11729,54 @@ impl<'source> LoweredModule<'source>
         }
     }
 
+    /// The module's declarations, taken out of it to be shared with every
+    /// module lowered after it: the module is left holding none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the answer holds this module's declarations, in order; the
+    ///   module is left holding none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is read through a module resumed after
+    ///   this one, which the witness compares with the whole lowering's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document resumed after its closure reads its
+    ///   declarations as the whole lowering's module does.
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    pub(crate) fn take_declarations(&mut self) -> Arc<[LoweredDeclaration<'source>]>
+    {
+        core::mem::replace(&mut self.declarations, LayeredList::whole(Vec::new())).shared()
+    }
+
     /// This module, lowered after a closure whose module's tables by
-    /// declaration are `closure`: each of its own such tables read after the
-    /// closure's.
+    /// declaration are `closure` and whose declarations are `declarations`:
+    /// each of its own such tables read after the closure's, and its own
+    /// declarations after the closure's.
     ///
     /// # Specification
     /// - requires: each of this module's tables by declaration holds no key
-    ///   `closure`'s holds.
+    ///   `closure`'s holds, and its declarations are those its lowering
+    ///   admitted after `declarations`.
     /// - ensures: each accessor of those tables answers a closure's declaration
-    ///   from `closure` and any other from this module's own.
+    ///   from `closure` and any other from this module's own; the declarations
+    ///   read `declarations`, shared, then this module's own.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the tables are read through accessors at each
     ///   declaration, which the witness compares with the whole lowering's.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`KeyedTables`].
+    /// - hypothesis: L3 — as [`KeyedTables`]; a document resumed after its
+    ///   closure reads its declarations as the whole lowering's module does.
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     #[must_use]
     pub(crate) fn after_closure(
         mut self,
         closure: &KeyedTables<'source>,
+        declarations: &Arc<[LoweredDeclaration<'source>]>,
     ) -> Self
     {
         self.operation_rules = self.operation_rules.after(&closure.operation_rules);
@@ -11755,6 +11787,7 @@ impl<'source> LoweredModule<'source>
         self.supplies = self.supplies.after(&closure.supplies);
         self.handler_laws = self.handler_laws.after(&closure.handler_laws);
         self.models = self.models.after(&closure.models);
+        self.declarations = self.declarations.after(declarations);
         self
     }
 
@@ -11814,7 +11847,7 @@ impl<'source> LoweredModule<'source>
     ) -> Vec<DeprecatedUse<'source>>
     {
         let deprecated: BTreeMap<ConstantIndex, (SurfaceName<'source>, Deprecation)> = self
-            .declarations
+            .declarations()
             .iter()
             .filter_map(|declaration| {
                 [declaration.signature(), declaration.definition()]
@@ -12355,7 +12388,7 @@ impl<'source> LoweredModule<'source>
                         .all(|segment| !segment.as_ref().contains(NameSegment::SEPARATOR))
             };
             let mut named = alloc::collections::BTreeSet::new();
-            self.declarations
+            self.declarations()
                 .iter()
                 .rev()
                 .filter(|declaration| eligible(declaration))
@@ -12379,7 +12412,7 @@ impl<'source> LoweredModule<'source>
     pub fn structured_names(&self) -> BTreeMap<ConstantIndex, StructuredName>
     {
         let mut names = BTreeMap::new();
-        for declaration in &self.declarations {
+        for declaration in self.declarations.read() {
             if !matches!(declaration.role(), Role::Declared | Role::Abstract) {
                 continue;
             }
@@ -12436,15 +12469,16 @@ impl<'source> LoweredModule<'source>
         &self.recognition
     }
 
-    /// The declarations, in admission order.
+    /// The declarations, in admission order: a closure's, then the module's
+    /// own.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn declarations(&self) -> &[LoweredDeclaration<'source>]
+    pub fn declarations(&self) -> Listed<'_, LoweredDeclaration<'source>>
     {
-        &self.declarations
+        self.declarations.read()
     }
 
     /// The attribute side table.
@@ -12939,7 +12973,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub fn declaration_count(&self) -> DeclarationCount
     {
-        DeclarationCount(self.declarations.len())
+        DeclarationCount(self.declarations.count().0)
     }
 }
 
@@ -13100,8 +13134,9 @@ mod tests
             crate::namespace::Recognition::default(),
         )
         .unwrap();
+        let mut declarations: Vec<_> = lowered.declarations().iter().copied().collect();
         let [ref mut first, ref mut last, ref mut dotted, ref mut hidden] =
-            *lowered.declarations.as_mut_slice()
+            *declarations.as_mut_slice()
         else {
             panic!("four source definitions have four declarations");
         };
@@ -13110,6 +13145,7 @@ mod tests
         dotted.parts.name = SurfaceName::from("bad.name");
         dotted.parts.constant = constant;
         hidden.parts.role = Role::Held;
+        lowered.declarations = super::LayeredList::whole(declarations);
         let names = lowered.structured_names();
         assert_eq!(names.keys().copied().collect::<Vec<_>>(), [constant]);
         let Some(exported) = names.get(&constant)

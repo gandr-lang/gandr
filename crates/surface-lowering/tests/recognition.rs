@@ -213,10 +213,11 @@ fn declaration(at: ByteSpan) -> Trie<Recognized, RecognitionSite>
             ret.declarations()
                 .iter()
                 .all(|declaration| usize::from(declaration.span().end()) <= spelled.len())
-                && ret.declarations().windows(2).all(|pair| match *pair {
-                    | [ref left, ref right] => left.constant() < right.constant(),
-                    | _ => false,
-                })
+                && ret
+                    .declarations()
+                    .iter()
+                    .zip(ret.declarations().iter().skip(1))
+                    .all(|(left, right)| left.constant() < right.constant())
         },
     )]
 fn lowered(

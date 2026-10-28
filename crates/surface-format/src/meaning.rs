@@ -354,7 +354,7 @@ pub fn agree(
     };
     let declared = before.declarations();
     let written = after.declarations();
-    if declared.len() != written.len() {
+    if declared.iter().len() != written.iter().len() {
         return Agreement::Unpaired;
     }
     let differing: Vec<Differing> = declared

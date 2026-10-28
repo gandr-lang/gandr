@@ -149,7 +149,7 @@ fn a_many_out_operation_lowers_to_a_function_the_checker_accepts()
         "walk Operation",
         "divmod Operation"
     ]);
-    let Some(divmod) = module.declarations().last()
+    let Some(divmod) = module.declarations().iter().next_back()
     else {
         panic!("divmod is declared");
     };
@@ -319,7 +319,7 @@ fn a_leaf_delivers_its_results_in_port_order()
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_eq!(rows(&module), ["Flag Declared", "swap Operation"]);
-    let Some(swap) = module.declarations().last()
+    let Some(swap) = module.declarations().iter().next_back()
     else {
         panic!("swap is declared");
     };

@@ -1902,7 +1902,8 @@ mod tests
         let declaration = lowered
             .module
             .declarations()
-            .first()
+            .iter()
+            .next()
             .expect("one marker declaration");
         let Maybe::Present(digest) = declaration.definition()
         else {
@@ -1971,7 +1972,8 @@ mod tests
         let declaration = lowered
             .module
             .declarations()
-            .first()
+            .iter()
+            .next()
             .expect("one marker declaration");
         let Maybe::Present(digest) = declaration.definition()
         else {

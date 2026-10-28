@@ -676,10 +676,11 @@ fn parsed<'source>(
         ensures: |ret| match ret {
             | Ok(ref module) => {
                 tree.grammar() == pbg.fingerprint()
-                    && module.declarations().windows(2).all(|pair| match *pair {
-                        | [ref left, ref right] => left.constant() < right.constant(),
-                        | _ => false,
-                    })
+                    && module
+                        .declarations()
+                        .iter()
+                        .zip(module.declarations().iter().skip(1))
+                        .all(|(left, right)| left.constant() < right.constant())
             },
             | Err(LoweringRefusal::GrammarMismatch { .. }) => tree.grammar() != pbg.fingerprint(),
             | Err(_) => tree.grammar() == pbg.fingerprint(),
@@ -1193,7 +1194,7 @@ fn source_import_reaches_the_namespace_engine_and_exposes_its_alias()
     .expect("import declarations lower");
 
     assert!(
-        module.declarations().is_empty(),
+        module.declarations().iter().next().is_none(),
         "an import is not a declaration"
     );
     assert_eq!(
@@ -1268,7 +1269,7 @@ fn an_import_binds_its_alias_and_resolves_no_address()
         "the alias is the one binding, to the import's position, tagged with its bytes"
     );
     assert_eq!(
-        module.declarations().len(),
+        module.declarations().iter().len(),
         1_usize,
         "the declarations after an import are collected as before"
     );
@@ -1471,7 +1472,7 @@ fn an_unqualified_import_answers_a_name_its_source_declares()
         "the importer's type head, value and constructor resolve in the base"
     );
     assert_eq!(
-        module.declarations().len(),
+        module.declarations().iter().len(),
         4_usize,
         "the family, `one`, `again` and `made` are declared once each"
     );
@@ -2252,9 +2253,9 @@ fn a_source_lowers_alike_whatever_follows_it_776()
         &mut Decisions::none(),
     )
     .expect("the base and its importer lower");
-    let own = alone.declarations().len();
+    let own = alone.declarations().iter().len();
     assert!(
-        whole.declarations().len() > own
+        whole.declarations().iter().len() > own
             && whole.declarations().iter().all(|declaration| !matches!(
                 declaration.outcome(),
                 DeclarationOutcome::Refused(_)
@@ -2262,8 +2263,8 @@ fn a_source_lowers_alike_whatever_follows_it_776()
         "the importer adds declarations of its own, and nothing is refused"
     );
     assert_eq!(
-        whole.declarations().get(.. own),
-        Some(alone.declarations()),
+        whole.declarations().iter().take(own).collect::<Vec<_>>(),
+        alone.declarations().iter().collect::<Vec<_>>(),
         "the base's declarations are the same, ids included, with the importer after it"
     );
     let start = CoreArena::new().watermark();
@@ -2674,9 +2675,9 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
         })
     };
     let (alone, _) = closure.alone().expect("the closure lowers to its end");
-    let (closure_part, document_part) = whole
-        .declarations()
-        .split_at_checked(alone.declarations().len())
+    let declared: Vec<LoweredDeclaration<'_>> = whole.declarations().iter().copied().collect();
+    let (closure_part, document_part) = declared
+        .split_at_checked(alone.declarations().iter().len())
         .expect("the closure's declarations lead the whole lowering's");
     assert_eq!(
         filed(&whole, closure_part),
@@ -2876,10 +2877,14 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     )
     .expect("the unit lowers");
     let (alone, alone_arena) = closure.alone().expect("the closure lowers to its end");
-    let leading = alone.declarations().len();
+    let leading = alone.declarations().iter().len();
     assert_eq!(
-        Some(alone.declarations()),
-        whole.declarations().get(.. leading),
+        alone.declarations().iter().collect::<Vec<_>>(),
+        whole
+            .declarations()
+            .iter()
+            .take(leading)
+            .collect::<Vec<_>>(),
         "the closure's own declarations lead the importer's"
     );
     let mut onto = alone_arena.clone();
@@ -2938,9 +2943,8 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     let bodies = |module: &LoweredModule<'_>| {
         module
             .declarations()
-            .get(leading ..)
-            .unwrap_or_default()
             .iter()
+            .skip(leading)
             .filter_map(|declaration| match declaration.outcome() {
                 DeclarationOutcome::Completed { body, .. }
                 | DeclarationOutcome::Bodied { body } => Some(module.origins().value(body)),
@@ -2959,8 +2963,12 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
         "and the document's bodies where the whole lowering locates them"
     );
     assert_eq!(
-        after.declarations().get(.. leading),
-        Some(alone.declarations()),
+        after
+            .declarations()
+            .iter()
+            .take(leading)
+            .collect::<Vec<_>>(),
+        alone.declarations().iter().collect::<Vec<_>>(),
         "the closure's declarations stand"
     );
     assert_eq!(
@@ -3258,7 +3266,7 @@ fn an_unresolved_import_refuses_its_source()
 
     assert!(
         matches!(
-            module.declarations(),
+            *module.declarations().iter().collect::<Vec<_>>(),
             [declaration] if matches!(
                 declaration.outcome(),
                 DeclarationOutcome::Refused(LoweringRefusal::ImportUnresolved { span, .. })
@@ -3282,7 +3290,7 @@ fn an_import_closing_a_cycle_refuses_its_source()
 
     assert!(
         matches!(
-            module.declarations(),
+            *module.declarations().iter().collect::<Vec<_>>(),
             [declaration] if matches!(
                 declaration.outcome(),
                 DeclarationOutcome::Refused(LoweringRefusal::ImportCycle { span, .. })

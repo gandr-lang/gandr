@@ -2581,6 +2581,8 @@ INSERT INTO purpose VALUES('surface-lowering','module::declaration_half::Absent'
 INSERT INTO purpose VALUES('surface-lowering','module::functor::FunctorIndex','struct','Names the index of a functor, so the functor''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::functor::InstanceIndex','struct','Names the index of a functor''s instance, so the instance''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::functor::Stratum','enum','Names a functor''s stratum, so the stratum''s level is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::layered::Listed','struct','Holds a module''s declarations as a reader sees them, the closure''s then the module''s own, so they are read in order or found by key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::layered::ListedIter','struct','Walks a listed module''s declarations in order from either end, so a reader iterates them without joining the two parts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model::FamilyIndex','struct','Names the index of a model''s family, so the family''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model::ModelIndex','struct','Names the index of a model, so the model''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model::ParameterList','struct','Holds a model''s parameter list, so the parameters'' sorts are read.',NULL,'fits','sound',NULL);

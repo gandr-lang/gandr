@@ -65,7 +65,7 @@ use crate::resolve::SurfaceName;
 /// # Adequacy
 /// - hypothesis: L3 — every witness below reads its module through here.
 /// - witness: `lower::capability::tests::a_capability_type_lowers_to_its_authority`
-#[spec(ensures: |ret| !ret.declarations().is_empty())]
+#[spec(ensures: |ret| ret.declarations().iter().next().is_some())]
 fn lowered<'source>(
     source: SourceText<'source>,
     arena: &mut CoreArena,
@@ -97,7 +97,7 @@ fn lowered<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — the capability rules judge what the lowering made.
 /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
-#[spec(ensures: |ret| ret.judged().len() <= module.declarations().len())]
+#[spec(ensures: |ret| ret.judged().len() <= module.declarations().iter().len())]
 fn judged(
     module: &LoweredModule<'_>,
     arena: &mut CoreArena,

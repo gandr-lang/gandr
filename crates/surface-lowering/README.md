@@ -35,7 +35,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
 - `LoweringRefusal::classify` and `FailureClass`, the latter re-exported from `gandr-core-term`, which every producer of refusals in the core pipeline classifies into: the classifier.
 - The closed attribute registry, its five diagnostics and the side table, filed for refused declarations too; [`attribute`](src/attribute.rs) names its types.
-- `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's or a module's documentation read from both spellings into one text, filed under its form's `NodeKey`, its links resolved; the whole filing, for a consumer that keeps it past the lowering.
+- `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's, a module's or a source's documentation as one text, its links resolved ([`doc`](src/doc.rs)).
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
 - Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     let mut arena = CoreArena::new();
     let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT, Recognition::default())?;
 
-    let [declaration] = module.declarations() else {
+    let [declaration] = *module.declarations().iter().collect::<Vec<_>>() else {
         unreachable!("one name is declared");
     };
     assert!(matches!(declaration.outcome(), DeclarationOutcome::Completed { .. }));

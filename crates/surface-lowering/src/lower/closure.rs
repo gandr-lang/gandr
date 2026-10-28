@@ -104,13 +104,14 @@ struct Suspended<'closure>
     lowerer: Lowerer<'closure, 'closure>,
     /// The arena the closure's sources minted into.
     arena: CoreArena,
-    /// Where each node they minted came from.
+    /// Where each node they minted came from, and, when finishing the closure
+    /// alone answers, where each of its declarations was introduced.
     origins: OriginTable,
     /// The mint sweep's tables beside the arena.
     tables: SinkTables,
-    /// The tables the closure's own module finished with, which every
-    /// document resumed after it leads with; none when finishing it alone
-    /// refuses.
+    /// The tables and declarations the closure's own module finished with,
+    /// which every document resumed after it leads with; none when finishing
+    /// it alone refuses.
     finished: Option<Finished<'closure>>,
 }
 
@@ -494,10 +495,15 @@ impl ClosureLowering
         else {
             return None;
         };
+        // The closure's module is the lowering resumed with no source after
+        // it: its suspended origin table records the closure's declarations
+        // already, and its declarations and tables are the finished ones.
+        let finished = state.finished.as_ref()?;
         let arena = state.arena.clone();
         let lowerer = state.lowerer.clone();
+        let resumed = lowerer.resumed(finished, &state.origins);
         lowerer
-            .finish(&arena, state.origins.clone(), None)
+            .finish(&arena, state.origins.clone(), Some(resumed))
             .ok()
             .map(|module| (module, arena))
     }
@@ -843,11 +849,15 @@ fn suspend<'closure>(
     }
     let tables = sink.into_tables();
     lowerer.share_tables();
-    let finished = lowerer
+    // The closure's declarations are recorded once, here: every lowering
+    // resumed after it starts from the table that records them.
+    let (finished, origins) = lowerer
         .clone()
         .finish(&arena, origins.clone(), None)
-        .ok()
-        .map(Finished::of);
+        .map_or((None, origins), |module| {
+            let (finished, origins) = Finished::of(module);
+            (Some(finished), origins)
+        });
 
     Prefix::Suspended {
         rooted,

@@ -3548,13 +3548,13 @@ struct Lowerer<'run, 'source>
 /// The tables a closure's own module finishes with that a document's module
 /// resumed after the closure leads with: the binders in scope, the
 /// resolutions and the nested sites, built once when the closure's lowering
-/// is suspended, and the tables by declaration, shared with every module
-/// resumed after the closure.
+/// is suspended, and the tables by declaration and the declarations, shared
+/// with every module resumed after the closure.
 ///
 /// # Specification
 /// - requires: built by [`Finished::of`] from the module the closure's
 ///   suspended lowering finishes alone.
-/// - ensures: each table is that module's.
+/// - ensures: each table, and the declarations, are that module's.
 /// - panics: none.
 /// - executable: none — a carrier; [`Lowerer::finish`] states what it builds
 ///   from it.
@@ -3576,24 +3576,33 @@ struct Finished<'source>
     /// The tables a declaration's checking reads by its key, at the closure's
     /// declarations.
     keyed: KeyedTables<'source>,
+    /// The closure's declarations, in admission order.
+    declarations: Arc<[LoweredDeclaration<'source>]>,
 }
 
 impl<'source> Finished<'source>
 {
-    /// The tables `module`, a closure's own, finished with.
+    /// The tables `module`, a closure's own, finished with, beside its origin
+    /// table, which records the closure's declarations.
     ///
     /// # Specification
     /// trivial.
-    fn of(mut module: LoweredModule<'source>) -> Self
+    fn of(mut module: LoweredModule<'source>) -> (Self, OriginTable)
     {
         let keyed = module.take_keyed_tables();
+        let declarations = module.take_declarations();
+        let origins = core::mem::replace(module.origins_mut(), OriginTable::new());
         let (in_scope, resolutions, nested) = module.into_scope_tables();
-        Self {
-            in_scope,
-            resolutions,
-            nested,
-            keyed,
-        }
+        (
+            Self {
+                in_scope,
+                resolutions,
+                nested,
+                keyed,
+                declarations,
+            },
+            origins,
+        )
     }
 }
 
@@ -3885,7 +3894,7 @@ struct Sink<'run>
 /// - hypothesis: L3 — every witness of [`lower_unit`] runs through this entry.
 /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
-    usize::from(module.origins().declaration_count()) == module.declarations().len()
+    usize::from(module.origins().declaration_count()) == module.declarations().iter().len()
 }))]
 #[inline]
 pub fn lower_module<'source>(
@@ -4051,11 +4060,12 @@ pub fn lower_module<'source>(
             | Ok(module) => {
                 agrees
                     && usize::from(module.origins().declaration_count())
-                        == module.declarations().len()
-                    && module.declarations().windows(2).all(|pair| match *pair {
-                        | [ref left, ref right] => left.constant() < right.constant(),
-                        | _ => false,
-                    })
+                        == module.declarations().iter().len()
+                    && module
+                        .declarations()
+                        .iter()
+                        .zip(module.declarations().iter().skip(1))
+                        .all(|(left, right)| left.constant() < right.constant())
                     && module.declarations().iter().all(|declaration| {
                         match module.origins().declaration(declaration.origin()) {
                             | Maybe::Present(origin) => {
@@ -4523,10 +4533,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   finished tables followed by those of the entries past the marks, which
     ///   every entry of a later source follows; its tables by declaration
     ///   answer a closure's declaration from the closure's, shared, and any
-    ///   other from its own entries past the slot mark.
+    ///   other from its own entries past the slot mark; its declarations are
+    ///   the closure's, shared, then those of the slots past the mark, whose
+    ///   origins `origins` records after the closure's.
     /// - provides: the tail of [`lower_unit`] and of a resumed lowering, the
-    ///   latter's scope tables and tables by declaration built in the size of
-    ///   its own sources.
+    ///   latter's scope tables, tables by declaration and declarations built in
+    ///   the size of its own sources.
     /// - fails: as the attribute and documentation readings.
     /// - panics: none.
     ///
@@ -4540,7 +4552,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
-        usize::from(module.origins().declaration_count()) == module.declarations().len()
+        usize::from(module.origins().declaration_count()) == usize::from(module.declaration_count())
     }))]
     fn finish(
         mut self,
@@ -4556,7 +4568,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let elidable = self.elidable_exits();
         let nested = self.nested_sites(&origins, resumed);
         let linear = self.linear_runs(arena, &origins);
-        let declarations = self.assemble(&mut origins);
+        // A document resumed after its closure assembles its own declarations
+        // and builds its tables by declaration at them alone: the closure's
+        // module's are shared with it.
+        let own = SlotIndex::from(resumed.map_or(0, |resumed| resumed.slots));
+        let declarations = self.assemble(&mut origins, own);
         let structures = self.structures();
         let in_scope = self.in_scope(resumed);
         // A derived rule's statement is read under its theory's name, `T.r`,
@@ -4618,10 +4634,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             })
             .collect();
-        // A document resumed after its closure builds its tables by
-        // declaration at its own declarations alone: the closure's module's
-        // are shared with it.
-        let own = SlotIndex::from(resumed.map_or(0, |resumed| resumed.slots));
         // Each model implicit a telescope writes, by its function's slot and
         // entry, with the number of parameters it binds and, when every
         // sort it fixes minted, how a printed telescope writes it.
@@ -4859,7 +4871,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_forgets(forgets)
         .with_forgettings(forgettings);
         Ok(match resumed {
-            Some(resumed) => module.after_closure(&resumed.finished.keyed),
+            Some(resumed) => {
+                module.after_closure(&resumed.finished.keyed, &resumed.finished.declarations)
+            },
             None => module,
         })
     }
@@ -19013,7 +19027,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Assemble one declaration per slot, in admission order.
+    /// Assemble one declaration per slot from `from` on, in admission order:
+    /// every slot's for a lowering finished whole, and those past a closure's
+    /// for one resumed after it, whose declarations the closure's module
+    /// shares.
     ///
     /// # Specification
     /// - requires: the classification, the mint sweep and the attribute pass
@@ -19073,7 +19090,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             origins.declaration(row.origin()),
                         )
                     })
-                    .eq(self.collected.slots.iter().enumerate().filter_map(
+                    .eq(self.collected.slots.iter().enumerate().skip(usize::from(from)).filter_map(
                         |(position, slot)| match self.outcome(SlotIndex::from(position), slot) {
                             | Maybe::Absent(_) => None,
                             | Maybe::Present(outcome) => Some((
@@ -19102,10 +19119,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn assemble(
         &self,
         origins: &mut OriginTable,
+        from: SlotIndex,
     ) -> Vec<LoweredDeclaration<'source>>
     {
-        let mut declarations = Vec::with_capacity(self.collected.slots.len());
-        for (position, slot) in self.collected.slots.iter().enumerate() {
+        let mut declarations =
+            Vec::with_capacity(self.collected.slots.len().saturating_sub(usize::from(from)));
+        for (position, slot) in self
+            .collected
+            .slots
+            .iter()
+            .enumerate()
+            .skip(usize::from(from))
+        {
             let Maybe::Present(outcome) = self.outcome(SlotIndex::from(position), slot)
             else {
                 continue;
@@ -21421,7 +21446,7 @@ mod tests
             SourceText::from("def answer : +U (-F Bool) ; def answer = thunk { become 19 < 7 } ;"),
             &mut arena,
         );
-        let declared = declared_of(module.declarations()[0].outcome());
+        let declared = declared_of(module.declarations().iter().next().unwrap().outcome());
         let Some(&ValueType::Thunk(computation)) = arena.value_type(declared)
         else {
             panic!("thunk classifier");
@@ -21457,7 +21482,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from("def subtract = sub ;"), &mut arena);
-        let value = body_of(module.declarations()[0].outcome());
+        let value = body_of(module.declarations().iter().next().unwrap().outcome());
         let Some(&Value::Primitive { mut body, .. }) = arena.value(value)
         else {
             panic!("native binding");
@@ -21491,7 +21516,7 @@ mod tests
             SourceText::from("def answer = thunk { become 19 - 7 } ;"),
             &mut arena,
         );
-        let body = body_of(module.declarations()[0].outcome());
+        let body = body_of(module.declarations().iter().next().unwrap().outcome());
         let Some(&Value::Thunk(body)) = arena.value(body)
         else {
             panic!("thunk");
@@ -21618,10 +21643,11 @@ mod tests
                 let span = declaration.span();
                 usize::from(span.start()) <= usize::from(span.end())
                     && usize::from(span.end()) <= spelled.len()
-            }) && ret.declarations().windows(2).all(|pair| match *pair {
-                | [ref left, ref right] => left.constant() < right.constant(),
-                | _ => false,
-            })
+            }) && ret
+                .declarations()
+                .iter()
+                .zip(ret.declarations().iter().skip(1))
+                .all(|(left, right)| left.constant() < right.constant())
         },
     )]
     fn lowered<'source>(
@@ -23359,7 +23385,7 @@ mod tests
             ),
             &mut arena,
         );
-        let [ref declaration] = *module.declarations()
+        let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("the tail declares one name");
         };
@@ -23502,7 +23528,7 @@ mod tests
         ] {
             let mut arena = CoreArena::new();
             let module = lowered(SourceText::from(source), &mut arena);
-            let [ref declaration] = *module.declarations()
+            let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
             else {
                 panic!("`{source}` declares one name");
             };
@@ -23568,7 +23594,7 @@ mod tests
             .lowered
             .get_mut(half.declaration.node)
             .expect("the definition half's node") = Maybe::Absent(super::lowered::Absent::Unminted);
-        let declarations = lowerer.assemble(&mut origins);
+        let declarations = lowerer.assemble(&mut origins, super::SlotIndex::from(0_usize));
         let [ref declaration] = *declarations
         else {
             panic!("`f` is assembled, not dropped: {declarations:?}");
@@ -26009,7 +26035,7 @@ mod tests
                 LoweringBudget::DEFAULT,
                 Recognition::default(),
             )
-            .map(|module| module.declarations().len())
+            .map(|module| module.declarations().iter().len())
         };
         let mut made = Handmade::new(&pbg, SourceText::from("  "));
         let space = made.raw(
@@ -26296,7 +26322,7 @@ mod tests
             SourceText::from("@[ form(explicit) ] def a : Integer ;"),
             &mut arena,
         );
-        let [ref declaration] = *module.declarations()
+        let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("one name is declared");
         };
@@ -26365,7 +26391,7 @@ mod tests
             ),
             &mut arena,
         );
-        let [ref declaration, ref other] = *module.declarations()
+        let [declaration, other] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("two names are declared");
         };
@@ -26436,7 +26462,7 @@ mod tests
             SourceText::from("@[ decomposes(primes  =\n 2) ]\ndef a : Integer ;"),
             &mut arena,
         );
-        let [ref declaration] = *module.declarations()
+        let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("one name is declared");
         };
@@ -26489,7 +26515,7 @@ mod tests
             ),
             &mut arena,
         );
-        let [ref declaration] = *module.declarations()
+        let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("one name is declared");
         };
@@ -26540,7 +26566,7 @@ mod tests
             SourceText::from("@[ owes(1) ] def a : Integer ;"),
             &mut arena,
         );
-        let [ref declaration] = *module.declarations()
+        let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("one name is declared");
         };
@@ -26579,7 +26605,7 @@ mod tests
             ),
             &mut arena,
         );
-        let [ref square, ref cube, ref color, ref plain] = *module.declarations()
+        let [square, cube, color, plain] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("four names are declared");
         };
@@ -26606,7 +26632,7 @@ mod tests
         assert_eq!(text(key(plain)), None, "an undocumented form has none");
         let mut bare_arena = CoreArena::new();
         let bare = lowered(SourceText::from("def square = 1 ;"), &mut bare_arena);
-        let [ref undocumented] = *bare.declarations()
+        let [undocumented] = *bare.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("one name is declared");
         };
@@ -26685,7 +26711,7 @@ mod tests
             SourceText::from("/// See [gone].\ndef a = 1 ;\n@[ doc(\"Or [`a`].\") ] def b = 2 ;"),
             &mut arena,
         );
-        let [ref stale, ref linked] = *module.declarations()
+        let [stale, linked] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("two names are declared");
         };
@@ -26753,7 +26779,7 @@ mod tests
             ),
             &mut arena,
         );
-        let [ref defined, ref signed] = *module.declarations()
+        let [defined, signed] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("two names are declared");
         };
@@ -26965,7 +26991,7 @@ mod tests
             Recognition::default(),
         )
         .unwrap();
-        let [ref p, _] = *module.declarations()
+        let [p, _] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("`p` and `x` are declared");
         };
@@ -27265,7 +27291,7 @@ mod tests
         let negation = |source: &'static str| {
             let mut arena = CoreArena::new();
             let module = lowered(SourceText::from(source), &mut arena);
-            let body = body_of(module.declarations()[0].outcome());
+            let body = body_of(module.declarations().iter().next().unwrap().outcome());
             let Some(&Value::Thunk(body)) = arena.value(body)
             else {
                 panic!("`{source}` lowers to a thunk");
@@ -27430,7 +27456,7 @@ mod tests
             SourceText::from("def x : Integer ; def x = 3 ;"),
             &mut arena,
         );
-        let [ref declaration] = *module.declarations()
+        let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("one name is declared");
         };
@@ -27551,7 +27577,7 @@ mod tests
             SourceText::from("def x = 1 ; def x = 2 ; def y = 3 ;"),
             &mut arena,
         );
-        let [ref twice, ref once] = *module.declarations()
+        let [twice, once] = *module.declarations().iter().collect::<Vec<_>>()
         else {
             panic!("two names are declared");
         };
