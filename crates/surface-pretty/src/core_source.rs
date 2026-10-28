@@ -27,7 +27,6 @@ use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::FixpointEvidence;
 use quenchant_shape::shape::Maybe;
 
 use crate::former::Answered;
@@ -672,12 +671,7 @@ impl<'arena> CoreSource<'arena>
         else {
             return None;
         };
-        Some(match evidence {
-            FixpointEvidence::StructuralDescent | FixpointEvidence::Staged { .. } => {
-                Recursion::Descends
-            },
-            FixpointEvidence::Partial => Recursion::Productive,
-        })
+        Some(Recursion::from(evidence))
     }
 
     /// This source, its roots standing in capability scopes named by

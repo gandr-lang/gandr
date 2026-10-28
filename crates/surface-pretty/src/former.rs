@@ -40,6 +40,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 
 /// An effect row as the printer spells it: a capability's authority, operation
@@ -163,6 +164,24 @@ pub enum Recursion
     Descends,
     /// `f[>](…)`: each call stands behind an observation.
     Productive,
+}
+
+impl From<FixpointEvidence> for Recursion
+{
+    /// The claim a fixpoint's calls write: a descent where its evidence
+    /// claims structural recursion on any parameter, productive where it
+    /// claims nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(evidence: FixpointEvidence) -> Self
+    {
+        match evidence {
+            FixpointEvidence::StructuralDescent | FixpointEvidence::Staged { .. } => Self::Descends,
+            FixpointEvidence::Partial => Self::Productive,
+        }
+    }
 }
 
 /// A recursive definition's own binder in a presented body: the claim each
