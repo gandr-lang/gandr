@@ -2076,8 +2076,7 @@ fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
 fn include_faults(module: &LoweredModule<'_>) -> Vec<SignatureFault>
 {
     module
-        .descriptions()
-        .diagnostics
+        .description_diagnostics()
         .iter()
         .filter_map(|diagnostic| {
             if let DescriptionFault::Signature(

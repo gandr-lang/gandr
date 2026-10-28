@@ -54,7 +54,11 @@ fn certified(
     else {
         panic!("one block")
     };
-    let description = &module.descriptions().declarations[0].description;
+    let description = &module
+        .described()
+        .next()
+        .expect("one described block")
+        .description;
     let certificate = rule_certificate(description, cells);
     let mut symbols = Symbols::new(&certificate.ranks);
     let written: Vec<TheoryRule> = cells

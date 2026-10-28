@@ -389,13 +389,12 @@ impl Referents
         // Each family's constructors by tag, where its declaration writes them:
         // the described or native family whose name tile is the declaration's.
         let mut written: BTreeMap<ByteSpan, &[WrittenConstructor]> = BTreeMap::new();
-        let descriptions = module.descriptions();
-        for described in &descriptions.declarations {
+        for described in module.described() {
             let _first = written
                 .entry(described.named.span)
                 .or_insert(described.written.constructors.as_slice());
         }
-        for native in &descriptions.natives {
+        for native in module.natives() {
             let _first = written
                 .entry(native.named.span)
                 .or_insert(native.written.constructors.as_slice());

@@ -57,15 +57,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Inertness::Content;
         };
-        let inert = self
-            .collected
-            .models
-            .get(usize::from(model))
-            .is_some_and(|signature| {
-                signature.components.iter().any(|component| {
-                    component.inert && component.name.as_ref() == slot.name.as_ref()
-                })
-            });
+        let inert = matches!(
+            self.collected.models.get(&model),
+            Maybe::Present(signature) if signature.components.iter().any(|component| {
+                component.inert && component.name.as_ref() == slot.name.as_ref()
+            })
+        );
         if inert {
             Inertness::Inert
         }

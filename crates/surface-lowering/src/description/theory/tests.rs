@@ -1261,7 +1261,7 @@ fn a_theory_block_defines_its_presentation()
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    assert_eq!(module.descriptions().diagnostics, []);
+    assert_eq!(module.description_diagnostics(), []);
     // Each theory's forgetting map is derived from its block beside it.
     let declared: alloc::vec::Vec<_> = module
         .declarations()

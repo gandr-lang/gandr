@@ -776,7 +776,11 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
 }"#,
     );
     lowered(source, |module| {
-        let description = &module.descriptions().declarations[0].description;
+        let description = &module
+            .described()
+            .next()
+            .expect("one described block")
+            .description;
         let orient = |orientations: &[RuleOrientation]| {
             orient_block(description, orientations).map(|block| block.directions)
         };
@@ -804,7 +808,11 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
 }"#,
     );
     lowered(commuting, |module| {
-        let description = &module.descriptions().declarations[0].description;
+        let description = &module
+            .described()
+            .next()
+            .expect("one described block")
+            .description;
         assert_eq!(
             orient_block(description, &[Unpinned]).map(|block| block.directions),
             Err(RuleIndex::from(0_usize)),
@@ -1056,7 +1064,7 @@ fn an_equation_written_backwards_orients_forwards()
 }"#,
     );
     lowered(source, |module| {
-        let described = &module.descriptions().declarations[0];
+        let described = module.described().next().expect("one described block");
         let printed: Vec<_> = described.rules().map(|rule| rule.print_data()).collect();
         assert_eq!(printed, ["rule x <=> S(P(x))", "rule P(S(x)) <=> x"]);
         assert_eq!(

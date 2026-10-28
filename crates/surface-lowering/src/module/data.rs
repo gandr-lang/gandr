@@ -1428,7 +1428,7 @@ impl<'source> Collector<'_, 'source>
             else {
                 return;
             };
-            let (Some(described), Some(cells)) = (
+            let (Maybe::Present(described), Some(cells)) = (
                 collected.descriptions.get(&declaration.node),
                 collected
                     .cells

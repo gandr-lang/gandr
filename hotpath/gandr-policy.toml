@@ -29,14 +29,14 @@ judged = false
 # allocates to reuse the prelude's judgement, checked on every report without
 # a baseline. Where a reuse still copies the prelude's part rather than
 # sharing it (#2461), its average grows with the prelude; a ceiling broken by
-# a grown prelude is the floor growing with it. Measured in the series: 1.04
-# MB per resumed lowering, whose per-node tables and tables by declaration
-# are shared, 439 KB per continued program, 14 KB per resumed kernel record,
-# whose arena, entries and exports are shared.
+# a grown prelude is the floor growing with it. Measured in the series: 1.01
+# MB per resumed lowering, whose per-node tables, tables by declaration,
+# descriptions and model signatures are shared, 439 KB per continued program,
+# 14 KB per resumed kernel record, whose arena, entries and exports are shared.
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_onto_closure"
-alloc = { avg = "1264 KB" }
-message = "a component's lowering resumed onto the prelude's copies the prelude's collected tables, origins and declarations (#2461)"
+alloc = { avg = "1213 KB" }
+message = "a component's lowering resumed onto the prelude's copies the prelude's slots, structures and other collected tables, origins and declarations (#2461)"
 
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::evaluate::after"
