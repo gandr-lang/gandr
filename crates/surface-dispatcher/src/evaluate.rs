@@ -3355,6 +3355,7 @@ mod tests
     use core::ops::ControlFlow;
 
     use anodized::spec;
+    use gandr_core_sequent::ClosureRefusal;
     use gandr_core_sequent::CommandArena;
     use gandr_core_sequent::CommandId;
     use gandr_core_sequent::Definition;
@@ -3364,6 +3365,7 @@ mod tests
     use gandr_core_sequent::Store;
     use gandr_core_sequent::Stuck;
     use gandr_core_sequent::convert_all;
+    use gandr_core_sequent::enter_all;
     use gandr_kernel_term::ConstantIndex;
     use gandr_runtime_emitter::Declined;
     use gandr_runtime_emitter::Fuel;
@@ -4785,24 +4787,28 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         }
     }
 
-    /// `definitions` with every closure of every body converted, at the
-    /// positions they stood at.
+    /// A sweep of the command IL: [`convert_all`] or [`enter_all`].
+    type Sweep = fn(&mut CommandArena, NodeAddress) -> Result<NodeAddress, ClosureRefusal>;
+
+    /// `definitions` with every body swept by `sweep`, at the positions they
+    /// stood at.
     ///
     /// # Specification
     /// trivial.
-    fn converted(
+    fn swept(
         arena: &mut CommandArena,
         definitions: &Definitions,
+        sweep: Sweep,
     ) -> Definitions
     {
         let mut rebuilt = Definitions::new();
         for position in 0 .. usize::from(definitions.len()) {
             let definition = match definitions.get(ConstantIndex::from(position)) {
                 Some(Definition::Transparent(body)) => {
-                    match convert_all(arena, NodeAddress::Producer(body))
-                        .expect("every corpus body converts")
+                    match sweep(arena, NodeAddress::Producer(body))
+                        .expect("every corpus body sweeps")
                     {
-                        NodeAddress::Producer(converted) => Definition::Transparent(converted),
+                        NodeAddress::Producer(swept) => Definition::Transparent(swept),
                         NodeAddress::Command(_) | NodeAddress::Consumer(_) => {
                             panic!("a sweep answers a producer for a producer")
                         },
@@ -4815,7 +4821,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         rebuilt
     }
 
-    /// Whether conversion rewrote the run's commands or its program's
+    /// Whether a sweep rewrote the run's commands or its program's
     /// definitions.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Change
@@ -4823,58 +4829,58 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         /// A command the run starts from, or a definition of its program,
         /// came out rewritten.
         Rewritten,
-        /// No command or definition holds a closure naming a context
-        /// variable.
+        /// The sweep left every command and definition as it stood.
         Unchanged,
     }
 
-    /// One declaration run on the portable executor as written and with
-    /// every closure of its program converted.
-    struct Converted<'source>
+    /// One declaration run on the portable executor as written and with its
+    /// program swept.
+    struct Swept<'source>
     {
         /// The run as written.
         written: Result<Evaluation<'source>, Declined>,
-        /// The run converted.
+        /// The run swept.
         ran: Result<Evaluation<'source>, Declined>,
-        /// Whether conversion rewrote the commands or the definitions.
+        /// Whether the sweep rewrote the commands or the definitions.
         change: Change,
     }
 
     /// Run the declaration at `constant` of `program`, prepared to return
     /// through `returned` and force through `forced`, on the portable executor
     /// as written, then with those commands and every definition it unfolds
-    /// converted to abstract closures, the written definitions put back after.
+    /// swept by `sweep`, the written definitions put back after.
     ///
     /// # Specification
     /// - requires: `returned` and `forced` are what `program.prepare` answered
     ///   for `constant`.
-    /// - ensures: the two runs and whether conversion rewrote a command or a
+    /// - ensures: the two runs and whether the sweep rewrote a command or a
     ///   definition; `program`'s definitions are the ones it held on entry.
-    /// - panics: on a conversion refusal.
-    /// - executable: none — the two runs are what the witness compares.
+    /// - panics: on a refusal of the sweep.
+    /// - executable: none — the two runs are what the witnesses compare.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — as the witness.
+    /// - hypothesis: L2 — as the witnesses.
     /// - witness: `evaluate::tests::the_corpus_runs_items_run_converted_as_written`
-    fn run_converted<'source>(
+    /// - witness: `evaluate::tests::the_corpus_runs_items_run_entered_as_written_3635`
+    fn run_swept<'source>(
         program: &mut Program<'source>,
         constant: ConstantIndex,
-        returned: CommandId,
-        forced: CommandId,
-    ) -> Converted<'source>
+        (returned, forced): (CommandId, CommandId),
+        sweep: Sweep,
+    ) -> Swept<'source>
     {
         let executor = Choice::Tier(Tier::Executor);
         let written = program.tiered(constant, returned, forced, executor, Hosting::Bare);
-        let converted_returned = command_of(
-            convert_all(&mut program.arena, NodeAddress::Command(returned))
-                .expect("a returning command converts"),
+        let swept_returned = command_of(
+            sweep(&mut program.arena, NodeAddress::Command(returned))
+                .expect("a returning command sweeps"),
         );
-        let converted_forced = command_of(
-            convert_all(&mut program.arena, NodeAddress::Command(forced))
-                .expect("a forcing command converts"),
+        let swept_forced = command_of(
+            sweep(&mut program.arena, NodeAddress::Command(forced))
+                .expect("a forcing command sweeps"),
         );
-        let rebuilt = converted(&mut program.arena, &program.definitions);
-        let change = if (converted_returned, converted_forced) == (returned, forced)
+        let rebuilt = swept(&mut program.arena, &program.definitions, sweep);
+        let change = if (swept_returned, swept_forced) == (returned, forced)
             && rebuilt == program.definitions
         {
             Change::Unchanged
@@ -4885,26 +4891,34 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         let written_definitions = core::mem::replace(&mut program.definitions, rebuilt);
         let ran = program.tiered(
             constant,
-            converted_returned,
-            converted_forced,
+            swept_returned,
+            swept_forced,
             executor,
             Hosting::Bare,
         );
         program.definitions = written_definitions;
-        Converted {
+        Swept {
             written,
             ran,
             change,
         }
     }
 
-    /// Every `runs` item of the corpus runs on the portable executor, every
-    /// closure of its program converted to an abstract closure, to the
-    /// evaluation it runs to as written; conversion rewrites the programs of
-    /// the `abstract-closures` exemplar, a closure a call returns and a thunk
-    /// over two arguments.
-    #[test]
-    fn the_corpus_runs_items_run_converted_as_written()
+    /// What a sweep did to the corpus's `runs` items.
+    struct Walked
+    {
+        /// Each item that ran apart from its written form, with both runs.
+        differing: alloc::string::String,
+        /// Each item whose program the sweep rewrote.
+        rewritten: alloc::vec::Vec<alloc::string::String>,
+    }
+
+    /// Run every `runs` item of the corpus on the portable executor as written
+    /// and with its program swept by `sweep`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn runs_swept(sweep: Sweep) -> Walked
     {
         let corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let walk = crate::Walk::new(
@@ -4950,23 +4964,22 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                         continue;
                     }
                     let constant = declaration.constant();
-                    let Ok((returned, forced)) =
-                        program.prepare(constant, Start::Accepted, Reach::Value)
+                    let Ok(prepared) = program.prepare(constant, Start::Accepted, Reach::Value)
                     else {
                         continue;
                     };
-                    let Converted {
+                    let Swept {
                         written,
                         ran,
                         change,
-                    } = run_converted(&mut program, constant, returned, forced);
+                    } = run_swept(&mut program, constant, prepared, sweep);
                     if change == Change::Rewritten {
                         rewritten.push(alloc::format!("{item} {}", declaration.name()));
                     }
                     if written != ran {
                         writeln!(
                             differing,
-                            "{item} {}\n    written:   {}\n    converted: {}",
+                            "{item} {}\n    written: {}\n    swept:   {}",
                             declaration.name(),
                             spelled(&written),
                             spelled(&ran),
@@ -4977,6 +4990,24 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 ControlFlow::Continue(())
             },
         );
+        Walked {
+            differing,
+            rewritten,
+        }
+    }
+
+    /// Every `runs` item of the corpus runs on the portable executor, every
+    /// closure of its program converted to an abstract closure, to the
+    /// evaluation it runs to as written; conversion rewrites the programs of
+    /// the `abstract-closures` exemplar, a closure a call returns and a thunk
+    /// over two arguments.
+    #[test]
+    fn the_corpus_runs_items_run_converted_as_written()
+    {
+        let Walked {
+            differing,
+            rewritten,
+        } = runs_swept(convert_all);
         assert!(
             differing.is_empty(),
             "converted programs ran apart from their written forms:\n{differing}"
@@ -4988,5 +5019,27 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 "conversion rewrote the program of `{exemplar}`"
             );
         }
+    }
+
+    /// Every `runs` item of the corpus runs on the portable executor, every
+    /// closure redex of its program entered, to the evaluation it runs to as
+    /// written; entering rewrites the program of an item that applies a
+    /// recursive function.
+    #[test]
+    fn the_corpus_runs_items_run_entered_as_written_3635()
+    {
+        let Walked {
+            differing,
+            rewritten,
+        } = runs_swept(enter_all);
+        assert!(
+            differing.is_empty(),
+            "entered programs ran apart from their written forms:\n{differing}"
+        );
+        let recursive = "corpus/model/data/recursive-addition.gandr five";
+        assert!(
+            rewritten.iter().any(|item| item == recursive),
+            "entering rewrote the program of `{recursive}`"
+        );
     }
 }
