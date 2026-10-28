@@ -1294,14 +1294,18 @@ pub struct Handler
 }
 
 /// A label a frame resumes at in a window: what a capture copies of the
-/// window, and which of the copied values the frame owns.
+/// window, which of the copied values the frame owns, and which hold its
+/// linear names.
 ///
 /// While a frame waits, its window holds one owner of each intuitionistic
 /// name the block it resumes will consume; the slots holding them, one entry
 /// per owner, are the frame's run of the owner table. A capture takes the
 /// frame off the region, so those owners pass to the stack with no count
 /// changed; each replay copies them out with an owner of its own; the
-/// stack's release drops them.
+/// stack's release drops them. The window also holds, each in its cell, the
+/// linear names the block will consume; the slots holding them are the
+/// frame's run of the linear table, where an abandonment finds the session
+/// ends the frame holds.
 ///
 /// # Specification
 /// trivial.
@@ -1312,20 +1316,28 @@ pub struct Window
     pub label: Label,
     /// The window's slot count.
     pub slots: Slots,
-    /// The frame's run of [`Lowered::owners`]; none for a frame that resumes
-    /// a block midway, after a constant's unfolding, whose owners are the
-    /// rest of the block's and no node's.
+    /// The frame's runs of [`Lowered::owners`] and [`Lowered::linears`];
+    /// none for a frame that resumes a block midway, after a constant's
+    /// unfolding, whose owners are the rest of the block's and no node's.
     pub owners: Option<OwnerRun>,
 }
 
-/// A run of [`Lowered::owners`]: the slots a frame owns while it waits, one
-/// entry per owner.
+/// A frame's runs of the two slot tables.
+///
+/// The run of [`Lowered::owners`] names the slots the frame owns while it
+/// waits, one entry per owner; the run of [`Lowered::linears`] names the
+/// slots holding the linear names its block will consume.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct OwnerRun(pub Range<usize>);
+pub struct OwnerRun
+{
+    /// The run of [`Lowered::owners`].
+    pub owned: Range<usize>,
+    /// The run of [`Lowered::linears`].
+    pub linear: Range<usize>,
+}
 
 /// A lowered command: the function, its closure sites and the tables its
 /// objects and calls name.
@@ -1367,6 +1379,9 @@ pub struct Lowered
     /// The owner table: the slots each window's frame owns, as runs its
     /// [`Window::owners`] names.
     pub owners: Vec<Slot>,
+    /// The linear table: the slots holding each window's frame's linear
+    /// names, as runs its [`Window::owners`] names.
+    pub linears: Vec<Slot>,
     /// Each access's frame label with its unwind's label: what an abandoned
     /// stack runs for each access it captured.
     pub unwinds: Vec<(Label, Label)>,
@@ -1556,10 +1571,13 @@ struct Lowering<'run>
     /// counts.
     windows: Vec<Window>,
     /// The frame labels of the current window, its slot count still open,
-    /// with their runs of the owner table.
+    /// with their runs of the owner and linear tables.
     pending: Vec<(Label, Option<OwnerRun>)>,
     /// The slots each frame owns while it waits, as runs its window names.
     owners: Vec<Slot>,
+    /// The slots holding each frame's linear names, as runs its window
+    /// names.
+    linears: Vec<Slot>,
     /// Each access's frame label with its unwind's label.
     unwinds: Vec<(Label, Label)>,
     /// The consumer of each unmatched exit so far.
@@ -2306,8 +2324,8 @@ impl Lowering<'_>
         label
     }
 
-    /// No owners: the run of a frame whose block consumes nothing of its
-    /// window.
+    /// No owners and no linear names: the runs of a frame whose block
+    /// consumes nothing of its window.
     ///
     /// # Specification
     /// trivial.
@@ -2319,8 +2337,12 @@ impl Lowering<'_>
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn unowned(&self) -> OwnerRun
     {
-        let at = self.owners.len();
-        OwnerRun(at .. at)
+        let owned = self.owners.len();
+        let linear = self.linears.len();
+        OwnerRun {
+            owned: owned .. owned,
+            linear: linear .. linear,
+        }
     }
 
     /// The slot in `scope` of each intuitionistic name `node`'s support
@@ -2358,10 +2380,40 @@ impl Lowering<'_>
             .collect()
     }
 
+    /// The slot in `scope` of each linear name `node`'s support selects past
+    /// the linear binders `crossed` counts, once each, in support order: the
+    /// cells holding what the node consumes linearly, a session's ends among
+    /// them.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::named`].
+    fn linear(
+        &self,
+        node: NodeAddress,
+        scope: Scope,
+        crossed: Crossed,
+    ) -> Result<Vec<Slot>, Form>
+    {
+        let support = self.arena.node_scope(node).ok_or(Form::Dangling)?;
+        let depth = BinderDepth::from(usize::try_from(crossed.linears).unwrap_or(usize::MAX));
+        support
+            .producers()
+            .outside(Zone::Linear, depth)
+            .map(|index| {
+                let name = Index(u32::from(index).saturating_sub(crossed.linears));
+                self.scopes.slot(scope, Binding::Linear, name)
+            })
+            .collect()
+    }
+
     /// Record the owners a frame holds while it waits to run `node` in
     /// `scope`, its block opening the binders `crossed` counts: the slot of
-    /// each name [`Self::named`] reads, one owner each. Answers their run of
-    /// the owner table.
+    /// each name [`Self::named`] reads, one owner each, and the slot of each
+    /// linear name [`Self::linear`] reads. Answers their runs of the owner and
+    /// linear tables.
     ///
     /// # Specification
     /// trivial.
@@ -2382,10 +2434,16 @@ impl Lowering<'_>
         crossed: Crossed,
     ) -> Result<OwnerRun, Form>
     {
-        let start = self.owners.len();
+        let owned = self.owners.len();
         let named = self.named(node, scope, crossed)?;
         self.owners.extend(named);
-        Ok(OwnerRun(start .. self.owners.len()))
+        let linear = self.linears.len();
+        let held = self.linear(node, scope, crossed)?;
+        self.linears.extend(held);
+        Ok(OwnerRun {
+            owned: owned .. self.owners.len(),
+            linear: linear .. self.linears.len(),
+        })
     }
 
     /// The slots in `scope` of the names the handler `handle` keeps for its
@@ -2439,8 +2497,9 @@ impl Lowering<'_>
     /// Record the owners the frame of the handler `handle` holds while it
     /// waits, in `scope`: each name its return clause `on_return` selects past
     /// the value it binds, each name the handler keeps for its clauses, and
-    /// the capability in the slot `capability` when it introduces one. Answers
-    /// their run of the owner table.
+    /// the capability in the slot `capability` when it introduces one; and the
+    /// linear names its return clause selects. Answers their runs of the owner
+    /// and linear tables.
     ///
     /// # Specification
     /// trivial.
@@ -2470,7 +2529,10 @@ impl Lowering<'_>
         let kept = self.kept(handle, scope)?;
         self.owners.extend(kept);
         self.owners.extend(capability);
-        Ok(OwnerRun(returned.0.start .. self.owners.len()))
+        Ok(OwnerRun {
+            owned: returned.owned.start .. self.owners.len(),
+            linear: returned.linear,
+        })
     }
 
     /// The word of `constant`, defined as `definition`, in the run's constant
@@ -3110,7 +3172,11 @@ impl Lowering<'_>
             SessionAction::Receive { endpoint, body } => {
                 let end = self.end(scope, endpoint)?;
                 let call = self.call(&Callee::Receive(id), Immediate::from(1_u32))?;
-                let owners = self.owners(NodeAddress::Command(body), scope, Crossed::NONE)?;
+                // The body opens the received payload's linear binder.
+                let owners = self.owners(NodeAddress::Command(body), scope, Crossed {
+                    producers: 0,
+                    linears: 1,
+                })?;
                 let resumed = self.frame_label(Some(owners));
                 self.blocks
                     .push((resumed, Task::Received(body, scope, falls)));
@@ -3127,16 +3193,23 @@ impl Lowering<'_>
                 )?;
                 let mut targets = Vec::with_capacity(arms.len());
                 let mut named = BTreeSet::new();
+                let mut held = BTreeSet::new();
                 for &arm in arms.values() {
                     named.extend(self.named(NodeAddress::Command(arm), scope, Crossed::NONE)?);
+                    held.extend(self.linear(NodeAddress::Command(arm), scope, Crossed::NONE)?);
                     let label = self.function.label();
                     let (inner, _) = self.bind(scope, falls);
                     self.blocks.push((label, Task::Command(arm, inner)));
                     targets.push(label);
                 }
-                let start = self.owners.len();
+                let owned = self.owners.len();
                 self.owners.extend(named);
-                let offered = self.frame_label(Some(OwnerRun(start .. self.owners.len())));
+                let linear = self.linears.len();
+                self.linears.extend(held);
+                let offered = self.frame_label(Some(OwnerRun {
+                    owned: owned .. self.owners.len(),
+                    linear: linear .. self.linears.len(),
+                }));
                 let branch = self.callee(&Callee::Branch(targets))?;
                 self.blocks.push((offered, Task::Offered(branch)));
                 self.awaited(continuation, scope, offered, end, call);
@@ -4616,7 +4689,10 @@ impl Lowering<'_>
                     producers: 2,
                     linears: 0,
                 })?;
-                let label = self.frame_label(Some(OwnerRun(empty.0.start .. cells.0.end)));
+                let label = self.frame_label(Some(OwnerRun {
+                    owned: empty.owned.start .. cells.owned.end,
+                    linear: empty.linear.start .. cells.linear.end,
+                }));
                 self.blocks.push((label, Task::Fold(id, scope)));
                 self.tasks.push(Task::Emit(
                     StencilId::Pushf,
@@ -4818,6 +4894,7 @@ fn lowered(
         windows: Vec::new(),
         pending: Vec::new(),
         owners: Vec::new(),
+        linears: Vec::new(),
         unwinds: Vec::new(),
         ownership,
         reuses,
@@ -4918,6 +4995,7 @@ fn lowered(
         handlers: lowering.handlers,
         windows: lowering.windows,
         owners: lowering.owners,
+        linears: lowering.linears,
         unwinds: lowering.unwinds,
         unmatched: lowering.unmatched,
         globals: lowering
@@ -5640,7 +5718,7 @@ mod tests
             .owners
             .clone()
             .expect("the handler's frame owns a run");
-        let owned = &lowered.owners[run.0];
+        let owned = &lowered.owners[run.owned];
         assert_eq!(1, owned.len(), "the frame owns the pair alone: {owned:?}");
         let dropped = lowered.function.instructions().iter().any(|instruction| {
             instruction.stencil == StencilId::Drop && instruction.a == owned[0].operand()

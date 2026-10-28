@@ -107,6 +107,7 @@ use gandr_runtime_stencils::count_word;
 use self::sessions::Message;
 use self::sessions::Scheduler;
 use self::sessions::Waits;
+use self::sessions::gather_end;
 use crate::executor::Program;
 use crate::function::Function;
 use crate::function::Label;
@@ -364,6 +365,9 @@ pub enum Refused
     /// Every task waits at a receive or an offer and none is ready: the
     /// actions they wait at, in the order the tasks forked.
     Deadlock(Vec<CommandId>),
+    /// The root's action here met an end its peer cancelled, abandoning the
+    /// root's continuation: the run has no answer.
+    Cancelled(CommandId),
 }
 
 /// The parts a run's host state holds: the function lowered from `arena`
@@ -702,8 +706,10 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Decompose => self.decompose(runtime, first),
             Callee::Migrate { at, world, body } => self.migrated(runtime, (at, world, body), first),
             Callee::Fork(at) => self.forked(runtime, at, first),
-            Callee::Send(_) => self.sent(runtime, first, Message::Payload(second)),
-            Callee::Select { ref label, .. } => self.sent(runtime, first, Message::Label(label)),
+            Callee::Send(at) => self.sent(runtime, first, at, Message::Payload(second)),
+            Callee::Select { at, ref label } => {
+                self.sent(runtime, first, at, Message::Label(label))
+            },
             Callee::Receive(at) => self.awaited(runtime, first, at, Waits::Payload),
             Callee::Offer { at, ref labels } => {
                 self.awaited(runtime, first, at, Waits::Label(labels))
@@ -1654,17 +1660,13 @@ impl<'run, 'host> Calls<'run, 'host>
         Ok(answer)
     }
 
-    /// Push above the top a frame for each access `stack` captured, in the
-    /// stack's order so the innermost is on top, each entering that access's
-    /// unwind in the window its frame held; answers the unit. The stack's
-    /// other frames are dropped unrun.
+    /// Abandon `stack` as [`Self::unwound`] does; answers the unit.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Refusal::Operands`] for a value that is no stack;
-    /// [`Refusal::Frames`] past the frame region's limit; as [`unit()`].
+    /// As [`Self::unwound`] and [`unit()`].
     ///
     /// # Adequacy
     /// - hypothesis: L2 — an access abandoned by a shift, whose unwind reads a
@@ -1673,10 +1675,39 @@ impl<'run, 'host> Calls<'run, 'host>
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn abandon(
-        &self,
+        &mut self,
         runtime: &mut Runtime,
         stack: Word,
     ) -> Result<Word, Refusal>
+    {
+        self.unwound(runtime, stack)?;
+        unit(runtime)
+    }
+
+    /// Push above the top a frame for each access `stack` captured, in the
+    /// stack's order so the innermost is on top, each entering that access's
+    /// unwind in the window its frame held; cancel each session end the
+    /// stack's other frames hold in their linear slots and no unwind consumes;
+    /// and give the stack up. The stack's other frames are dropped unrun.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a value that is no stack;
+    /// [`Refusal::Frames`] past the frame region's limit; as
+    /// [`Self::cancel_cells`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a peer waiting on an end the abandoned stack holds is
+    ///   abandoned and the run answers: an abandonment that cancels no end
+    ///   leaves the peer waiting and the run stuck.
+    /// - witness: `tests::sessions::an_abandoned_end_s_waiting_peer_is_abandoned`
+    fn unwound(
+        &mut self,
+        runtime: &mut Runtime,
+        stack: Word,
+    ) -> Result<(), Refusal>
     {
         if kind(stack)? != Kind::Stack {
             return Err(Refusal::Operands);
@@ -1685,18 +1716,35 @@ impl<'run, 'host> Calls<'run, 'host>
         // SAFETY: a stack's first word is its header.
         let header = Header::from_word(unsafe { *object });
         let mut top = runtime.frame_top();
+        let mut held = Vec::new();
+        let mut spared = Vec::new();
         for index in 0 .. usize::from(header.arity()) {
             let at = object.wrapping_add(STACK_PREFIX.saturating_add(index.saturating_mul(2)));
             // SAFETY: the stack holds its frames after its prefix.
             let code = unsafe { *at };
-            let Some(&unwind) = self.unwinds.get(&code)
+            // SAFETY: as above.
+            let window = unsafe { *at.wrapping_add(1) };
+            let unwinds = self.unwinds.get(&code).copied();
+            for &slot in self.sites.linears(code) {
+                // SAFETY: a frame holding linear names is a window frame, whose
+                // word is its window copy, each such slot holding a cell.
+                let cell = unsafe { *slot_in(window.to_pointer::<Word>(), slot)? };
+                gather_end(
+                    if unwinds.is_some() {
+                        &mut spared
+                    }
+                    else {
+                        &mut held
+                    },
+                    cell,
+                );
+            }
+            let Some(unwind) = unwinds
             else {
                 continue;
             };
             let next = top.wrapping_add(2);
             hold_frames(next, runtime.frame_limit())?;
-            // SAFETY: as above.
-            let window = unsafe { *at.wrapping_add(1) };
             if let Some(Owners::Window(slots)) = self.sites.owners(code) {
                 // The unwind consumes what the access's frame owns, which
                 // the stack's release below drops too: each gains an owner.
@@ -1718,13 +1766,16 @@ impl<'run, 'host> Calls<'run, 'host>
             top = next;
         }
         runtime.set_frame_top(top);
+        spared.sort_unstable();
+        held.retain(|cell| spared.binary_search(cell).is_err());
+        self.cancel_cells(runtime, &held)?;
         let sites = self.sites;
         // SAFETY: a counted abandonment owns the stack it was handed, a
         // value of the run's heap, and reads it no more.
         unsafe {
             give_up(runtime, stack, |object| owned(object, sites));
         }
-        unit(runtime)
+        Ok(())
     }
 
     /// Pop an access's frame with `answer` in hand and the view `view`: a

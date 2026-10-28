@@ -145,6 +145,8 @@ pub struct Sites<'lowered>
     frames: BTreeMap<Word, Resumed<'lowered>>,
     /// What each frame owns, by its code word.
     owners: BTreeMap<Word, Owners<'lowered>>,
+    /// The slots holding each window frame's linear names, by its code word.
+    linears: BTreeMap<Word, &'lowered [Slot]>,
     /// Each fold cell closure's owned capture positions, by its entry's code
     /// word.
     cells: BTreeMap<Word, &'lowered [Slot]>,
@@ -172,7 +174,7 @@ impl<'lowered> Sites<'lowered>
 {
     /// Index `lowered`'s closure sites, fold cell closures and reified bind
     /// frames, the application and projection stubs, and what each frame
-    /// owns, by their code words in `codes`.
+    /// owns and holds linearly, by their code words in `codes`.
     ///
     /// # Specification
     /// trivial.
@@ -190,13 +192,23 @@ impl<'lowered> Sites<'lowered>
         frames.insert(codes.stub(Stub::Apply), Resumed::Apply);
         frames.insert(codes.stub(Stub::Project), Resumed::Project);
         let mut owners = BTreeMap::new();
+        let mut linears = BTreeMap::new();
         for window in &lowered.windows {
+            let code = codes.label(window.label);
             let owned = window
                 .owners
                 .as_ref()
-                .and_then(|run| lowered.owners.get(run.0.clone()))
+                .and_then(|run| lowered.owners.get(run.owned.clone()))
                 .map_or(Owners::Unplaced, Owners::Window);
-            owners.insert(codes.label(window.label), owned);
+            owners.insert(code, owned);
+            if let Some(held) = window
+                .owners
+                .as_ref()
+                .and_then(|run| lowered.linears.get(run.linear.clone()))
+                .filter(|held| !held.is_empty())
+            {
+                linears.insert(code, held);
+            }
         }
         owners.insert(codes.stub(Stub::Apply), Owners::Word);
         owners.insert(codes.stub(Stub::Argument), Owners::Word);
@@ -208,6 +220,7 @@ impl<'lowered> Sites<'lowered>
                 .collect(),
             frames,
             owners,
+            linears,
             cells: lowered
                 .cells
                 .iter()
@@ -236,6 +249,21 @@ impl<'lowered> Sites<'lowered>
     ) -> Option<Owners<'lowered>>
     {
         self.owners.get(&code).copied()
+    }
+
+    /// The slots of its window holding the linear names the frame resuming
+    /// at `code` will consume, each a cell; none for a frame that holds none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linears(
+        &self,
+        code: Word,
+    ) -> &'lowered [Slot]
+    {
+        self.linears.get(&code).copied().unwrap_or_default()
     }
 
     /// The code word and site of a thunk suspending `body` in this function,

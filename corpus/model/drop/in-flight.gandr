@@ -9,6 +9,7 @@ import "../completion/ring-base.gandr";
 
 /// A read submitted and its completion abandoned in flight: the clause
 /// abandons the rest that would reap it (#1334).
+@[ runs("unit") ]
 def inFlight() -> Unit {
   handle c : Proc {
     fork (kernel : Ring.Submission) {

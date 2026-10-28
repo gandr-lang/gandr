@@ -62,6 +62,12 @@ pub enum Stuck
     /// Every task of the run waits on a session and none is ready: the
     /// receive or offer each waits at, in the order the tasks forked.
     Deadlock(Vec<CommandId>),
+    /// The root's session action met its peer's cancellation.
+    ///
+    /// The peer abandoned its end before the protocol ended, so the action
+    /// abandoned the root's continuation and the run has no answer. The send,
+    /// selection, receive or offer the root acted at.
+    Cancelled(CommandId),
 }
 
 impl fmt::Display for Stuck
@@ -102,6 +108,12 @@ impl fmt::Display for Stuck
                     write!(f, " {at}")?;
                 }
                 Ok(())
+            },
+            Self::Cancelled(at) => {
+                write!(
+                    f,
+                    "the root's session action at {at} met its peer's cancellation"
+                )
             },
         }
     }
