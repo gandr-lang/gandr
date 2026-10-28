@@ -1667,11 +1667,13 @@ if [[ -n "$findings" ]]; then
 fi
 {% endraw %}'''
 
-# The issue automations' decisions. An epic's closing is a ruling (#2973):
-# `.config/epics/close.jq` decides what a closed issue's parent gets, an
-# epic left with no open sub-issue asked for its close ruling and never
-# closed, each case in `.config/epics/cases.json` a parent, its
-# sub-issues and the decision it must give. An issue is filed with a `kind:`
+# The issue automations' decisions. An epic closes itself when every issue
+# it is blocked by is closed, never with none (#3398): `.config/epics/close.jq`
+# decides what an epic the closed issue blocked gets, each case in
+# `.config/epics/cases.json` an epic, the issues it is blocked by and the
+# decision it must give; `link.jq` decides each open epic's members by body
+# reference for `epics:link`, each case in `.config/epics/link.json` the
+# issues and the members. An issue is filed with a `kind:`
 # and an `area:` label (#2538): `.config/triage/triage.jq` decides whether
 # `needs:triage` is added, removed or kept, each case in
 # `.config/triage/cases.json` an issue's labels and that decision. An issue
@@ -1703,6 +1705,7 @@ cases() {
   .config/cases/run.bash "$1" "$3" --program "$2" || failed=1
 }
 cases epics .config/epics/close.jq .config/epics/cases.json
+.config/cases/run.bash links .config/epics/link.json --program .config/epics/link.jq --mode c || failed=1
 cases triage .config/triage/triage.jq .config/triage/cases.json
 labelled=$(mktemp)
 trap 'rm -f "$labelled"' EXIT
@@ -1729,7 +1732,7 @@ for template in .config/issues/templates/*.md; do
   fi
 done
 (( failed == 0 )) || exit 1
-echo "issues check OK: $(jq length .config/epics/cases.json) parents gave their decisions, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals, $(jq length .config/issues/templates.json) renderings theirs, $templates filer templates render units, $(jq length .config/issues/form.json) form bodies and $(jq length .config/issues/unsectioned.json) issues give theirs, and the concerns read as sqlite reads them"
+echo "issues check OK: $(jq length .config/epics/cases.json) epics gave their decisions, $(jq length .config/epics/link.json) boards their epics' members, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals, $(jq length .config/issues/templates.json) renderings theirs, $templates filer templates render units, $(jq length .config/issues/form.json) form bodies and $(jq length .config/issues/unsectioned.json) issues give theirs, and the concerns read as sqlite reads them"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each

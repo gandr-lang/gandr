@@ -1,8 +1,8 @@
 # The GitHub dependency and sub-issue calls the tracker tasks share (#2902),
 # sourced by `unit:check`, `issue:file`, `epic:order`, `epic:deps`,
-# `claim:next` and `report:deps`. REST for the per-issue reads, as
-# `claim:next` reads the board: the GraphQL limit, shared by every seat's
-# watches, runs out. The one exception is `deps_open_graph`, a single pass
+# `epics:link`, `claim:next` and `report:deps`. REST for the per-issue
+# reads, as `claim:next` reads the board: the GraphQL limit, shared by every
+# seat's watches, runs out. The one exception is `deps_open_graph`, a single pass
 # over every open issue at two points a page, where REST takes a call per
 # issue (#3192).
 #
@@ -17,6 +17,33 @@ deps_id() {
 # The issues $2 is blocked by, as [{number, state}].
 deps_blocked_by() {
   gh api --paginate "repos/$1/issues/$2/dependencies/blocked_by?per_page=100" --jq '[.[] | {number, state}]' | jq -s 'add // []'
+}
+
+# The issues $2 blocks, as [{number, state}]: an epic $2 belongs to among
+# them (#3398).
+deps_blocking() {
+  gh api --paginate "repos/$1/issues/$2/dependencies/blocking?per_page=100" --jq '[.[] | {number, state}]' | jq -s 'add // []'
+}
+
+# The open `kind:epic` issues the body $2 names as its epic (`epic_refs` in
+# `sections.jq`: an `Advances`, `Part of` or `from:` line), one number a line.
+deps_named_epics() {
+  local repo=$1 body=$2 n
+  for n in $(jq -R -s -r -L "$(dirname "${BASH_SOURCE[0]}")" 'include "sections"; epic_refs[]' <<< "$body"); do
+    gh api "repos/$repo/issues/$n" \
+      --jq 'select(.state == "open" and .pull_request == null and ([.labels[].name] | index("kind:epic") != null)) | .number' 2> /dev/null || true
+  done
+}
+
+# Set each open epic the body $3 names (`deps_named_epics`) blocked by $2
+# unless it is (#3398): an epic is blocked by its units, and closes once
+# every one is closed.
+deps_block_named_epics() {
+  local repo=$1 issue=$2 body=$3 epic
+  for epic in $(deps_named_epics "$repo" "$body"); do
+    [[ $epic != "$issue" ]] || continue
+    deps_block "$repo" "$epic" "$issue"
+  done
 }
 
 # The open issues among those $2 is blocked by, as `#n` words.
@@ -79,21 +106,14 @@ deps_set_block() {
 }
 
 # Make $3 a sub-issue of the epic $2 unless it is, and the epic blocked by it
-# while it is open (#2902): the epic's page shows its open work, and an epic
-# cannot close over it. An open sub-issue answers an epic's close ruling
-# (#2973): its `needs:close-ruling` comes off.
+# (#2902, #3398): the epic's page shows its work, and the epic closes once
+# every issue it is blocked by is closed.
 deps_link() {
-  local repo=$1 epic=$2 child=$3 parent state
-  IFS='|' read -r parent state < <(gh api "repos/$repo/issues/$child" --jq '"\(.parent_issue_url // "" | sub(".*/"; ""))|\(.state)"')
+  local repo=$1 epic=$2 child=$3 parent
+  parent=$(gh api "repos/$repo/issues/$child" --jq '.parent_issue_url // "" | sub(".*/"; "")')
   if [[ $parent != "$epic" ]]; then
     gh api -X POST "repos/$repo/issues/$epic/sub_issues" -F sub_issue_id="$(deps_id "$repo" "$child")" -F replace_parent=true > /dev/null
     printf 'linked #%s under #%s\n' "$child" "$epic"
   fi
-  if [[ $state == open ]]; then
-    deps_block "$repo" "$epic" "$child"
-    if [[ $(gh api "repos/$repo/issues/$epic" --jq '[.labels[].name] | index("needs:close-ruling") != null') == true ]]; then
-      gh api -X DELETE "repos/$repo/issues/$epic/labels/needs:close-ruling" > /dev/null
-      printf '#%s no longer awaits its close ruling: #%s is open under it\n' "$epic" "$child"
-    fi
-  fi
+  deps_block "$repo" "$epic" "$child"
 }

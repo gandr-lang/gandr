@@ -338,19 +338,13 @@
     "output": "{\n  \"count\": 3,\n  \"body\": \"The nightly tracker report (`mise run report:deps`, #2902): what an open issue says it waits on that GitHub does not record, each open issue short of its label set, and each ledger row owing on a closed or closing issue. A finding three nights running is a candidate for a refusal (#2902).\\n\\n## Labels\\n\\nAn issue carries one `kind:`, `priority:` and `effort:` and one or more `area:`, an epic `kind:epic` alone. Repair a default or an epic's extra kind by `mise run issue:labels --sweep`, the rest by hand.\\n\\n| Issue | Found | Nights |\\n| --- | --- | --- |\\n| #10 | no `priority:` (its kind's default: `priority:high`); no `effort:` (its kind's default: `effort:easy`) | 1 |\\n| #11 | `kind:feature` beside `kind:epic` | 1 |\\n| #14 | no `kind:` label: give one; no `priority:` label, and no single `kind:` to take its default from: give one; no `effort:` label, and no single `kind:` to take its default from: give one | 1 |\\n\\n<!-- deps-report: {\\\"labels:10\\\":1,\\\"labels:11\\\":1,\\\"labels:14\\\":1} -->\\n\"\n}"
   },
   {
-    "name": "#2973: a ledger row owing on a closed issue alone, and one owing only on an epic awaiting its close ruling, are found; one owing on an open issue, or on a closed and an open one, is not",
+    "name": "#3398: a ledger row owing on a closed issue alone, and one owing only on an open epic, which closes itself once its units close, are found; one owing on an open unit, or on a closed and an open one, is not",
     "input": {
       "issues": [],
       "open": [
         {
           "number": 628,
-          "labels": [
-            "kind:epic",
-            "area:std",
-            "priority:medium",
-            "effort:hard",
-            "needs:close-ruling"
-          ]
+          "labels": ["kind:epic", "area:std", "priority:medium", "effort:hard"]
         },
         {
           "number": 2971,
@@ -413,6 +407,6 @@
         }
       }
     },
-    "output": "{\n  \"count\": 2,\n  \"body\": \"The nightly tracker report (`mise run report:deps`, #2902): what an open issue says it waits on that GitHub does not record, each open issue short of its label set, and each ledger row owing on a closed or closing issue. A finding three nights running is a candidate for a refusal (#2902).\\n\\n## Ledger\\n\\nA features row without a witness owes on an open issue (`check:ledger`, #2526, #2635). Repair it by naming the issue that owes the rest in the row's `issue` or its exemplar's `/// Not implemented:` line, before the issue closes (#2973).\\n\\n| Row | Found | Nights |\\n| --- | --- | --- |\\n| `std-module-map` | owes on #2767, no open issue: `check:ledger` refuses it; name the open issue that owes the rest | 1 |\\n| `std-package` | owes on #628, awaiting the close ruling: closing it turns `check:ledger` red unless the row names another open issue first | 1 |\\n\\n<!-- deps-report: {\\\"ledger:std-module-map\\\":1,\\\"ledger:std-package\\\":1} -->\\n\"\n}"
+    "output": "{\n  \"count\": 2,\n  \"body\": \"The nightly tracker report (`mise run report:deps`, #2902): what an open issue says it waits on that GitHub does not record, each open issue short of its label set, and each ledger row owing on a closed or closing issue. A finding three nights running is a candidate for a refusal (#2902).\\n\\n## Ledger\\n\\nA features row without a witness owes on an open issue (`check:ledger`, #2526, #2635). Repair it by naming the issue that owes the rest in the row's `issue` or its exemplar's `/// Not implemented:` line, before the issue closes (#2973).\\n\\n| Row | Found | Nights |\\n| --- | --- | --- |\\n| `std-module-map` | owes on #2767, no open issue: `check:ledger` refuses it; name the open issue that owes the rest | 1 |\\n| `std-package` | owes on #628, an epic that closes itself once the issues it is blocked by close: `check:ledger` turns red then unless the row names an open unit first | 1 |\\n\\n<!-- deps-report: {\\\"ledger:std-module-map\\\":1,\\\"ledger:std-package\\\":1} -->\\n\"\n}"
   }
 ]

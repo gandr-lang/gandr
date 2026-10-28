@@ -1574,7 +1574,10 @@ wt step copy-ignored
 # `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
 # missing is refused, naming `--fix`, which sets it (idempotent) and leaves
 # the rest of the check as it was. A dependency set on GitHub that neither
-# names is printed as a note, not refused: the section is the record.
+# names is printed as a note, not refused: the section is the record. An
+# open epic the body names as its own (`Advances #n`, `Part of #n` or
+# `from: #n`, #3398) is `blocked by` the issue in turn, so the epic closes
+# only once the issue does; one that is not is refused, `--fix` setting it.
 ["unit:check"]
 description = "Refuse a unit issue missing a section work needs, or a dependency its ## After names"
 usage = '''
@@ -1620,6 +1623,16 @@ while IFS=$'\t' read -r verb blocker why; do
     extra) echo "note: #$issue is blocked by #$blocker on GitHub, and its \`## After\` does not list it" ;;
   esac
 done <<< "$plan"
+blocking=$(deps_blocking "$repo" "$issue")
+for epic in $(deps_named_epics "$repo" "$body"); do
+  [[ $epic != "$issue" ]] || continue
+  jq -e --argjson n "$epic" 'any(.[]; .number == $n)' <<< "$blocking" > /dev/null && continue
+  if [[ ${usage_fix:-false} == true ]]; then
+    deps_set_block "$repo" "$epic" "$issue"
+  else
+    findings=$(printf '%s\n%s\n' "$findings" "#$epic, the epic the body names, is not set \`blocked by\` #$issue on GitHub, so it would close with #$issue open: run \`mise run unit:check --fix $issue\`" | awk 'NF')
+  fi
+done
 pages=$(vault_pages)
 shown=
 if [[ $pages != null ]]; then
@@ -1862,10 +1875,12 @@ echo "body check OK: nothing on the private-names list in ${usage_title:+the tit
 # before it is filed when it lacks a section (`findings.jq`, as `unit:check`
 # reads it), and once filed has the dependencies its `## After` names set by
 # `unit:check --fix`, so no filed unit lacks them. `--epic <n>` links the
-# issue under the epic, sets the epic `blocked by` it and takes the epic's
-# `needs:close-ruling` off, the ruling answered by the new unit (#2973)
-# (`.config/claims/deps.bash`). A closing keyword in the body outside its
-# head's keyword lines (`targets.jq`'s `strays`, #2980) is noted on stderr:
+# issue under the epic and sets the epic `blocked by` it, and a body line
+# `Advances #n`, `Part of #n` or `from: #n` naming an open `kind:epic` sets
+# that epic `blocked by` it too (#3398): an epic is blocked by its units and
+# closes once every one is closed (`.config/claims/deps.bash`). A closing
+# keyword in the body outside its head's keyword lines (`targets.jq`'s
+# `strays`, #2980) is noted on stderr:
 # it does nothing in an issue, but the same words in a pull request's body
 # close the issue they name on merge. A mechanism files a unit or marks what
 # it could not (#3112, `tracker.md` § tracker-filing): `--template <filer>`
@@ -1969,6 +1984,7 @@ repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
 if [[ -n $epic ]]; then
   deps_link "$repo" "$epic" "$number" >&2
 fi
+deps_block_named_epics "$repo" "$number" "$(< "$body")" >&2
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
 fi
@@ -2228,14 +2244,64 @@ done
 echo "epic:deps: ${#epics[@]} epic(s) blocked by their open sub-issues"
 {% endraw %}'''
 
+# An epic's membership as `blocked by`, backfilled (#3398): `epics:link`
+# reads every issue once, open or closed, and sets each open `kind:epic`
+# blocked by every issue whose body names it or that its body names
+# (`.config/epics/link.jq`, neither an epic nor a `collector` a member), so
+# the epics workflow closes it once the last of them closes. It prints, per
+# epic, what it added and how many of its members are open; `--dry-run`
+# prints the same and sets nothing. A dependency GitHub refuses is printed
+# and the run goes on, exiting 1 at its end. It is idempotent.
+["epics:link"]
+description = "Set each open epic blocked by every issue its body names or that names it"
+usage = '''
+flag "--dry-run" help="print what would be set and set nothing"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/claims/deps.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+issues=$(gh api --paginate "repos/$repo/issues?state=all&per_page=100" \
+  --jq '.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], body: (.body // "")}' | jq -s -c '.')
+plan=$(jq -c '{issues: .}' <<< "$issues" | jq -c -f "$root/.config/epics/link.jq")
+states=$(jq -c 'map({key: (.number | tostring), value: .state}) | from_entries' <<< "$issues")
+refused=0
+epics=0
+while read -r entry; do
+  epic=$(jq -r .epic <<< "$entry")
+  set_now=$(deps_blocked_by "$repo" "$epic" | jq -c '[.[].number]')
+  added=0
+  for member in $(jq -r --argjson set "$set_now" '.members[] | select(IN($set[]) | not)' <<< "$entry"); do
+    if [[ ${usage_dry_run:-false} == true ]]; then
+      added=$((added + 1))
+    elif deps_set_block "$repo" "$epic" "$member" > /dev/null 2>&1; then
+      added=$((added + 1))
+    else
+      printf '#%s: GitHub refused #%s as a blocked-by dependency\n' "$epic" "$member"
+      refused=$((refused + 1))
+    fi
+  done
+  read -r open total < <(jq -r --argjson set "$set_now" --argjson states "$states" \
+    '(.members + $set | unique) as $all | "\([$all[] | select($states[tostring] == "open")] | length) \($all | length)"' <<< "$entry")
+  printf '#%s: %s %s; %s open of %s blocked-by\n' "$epic" "$([[ ${usage_dry_run:-false} == true ]] && echo 'would add' || echo added)" "$added" "$open" "$total"
+  epics=$((epics + 1))
+done < <(jq -c '.[]' <<< "$plan")
+echo "epics:link: $epics open epic(s) read; $refused dependency(ies) refused"
+(( refused == 0 ))
+{% endraw %}'''
+
 # The nightly tracker report (#2902): `report:deps` reruns `epic:deps
 # --all`, then reads every open issue for a dependency stated and not set
 # (prose naming an open issue as `after #n`, `blocked on #n`, `waits on #n`,
 # `once #n lands` or `needs #n`; an `## After` item; an epic's open
 # sub-issue) and for a label set short of one `kind:`, `area:`, `priority:`
 # and `effort:` (`.config/issues/labels.jq`), and for a features ledger row
-# owing on no open issue, or only on epics awaiting their close ruling
-# (`.config/ledger/owing.bash`, #2973), and writes them on one
+# owing on no open issue, or only on open epics, each closing itself once
+# its units close (`.config/ledger/owing.bash`, #2973, #3398), and writes
+# them on one
 # `collector` issue, `report: dependencies`, opened by the first finding,
 # updated each night, and closed by a night with none. The rule is
 # `.config/claims/report.jq`, its cases held by `check:claims`. Only issues
@@ -3564,9 +3630,7 @@ exit 2
 # is paged by its name, never a block id: the page script resolves it at
 # page time (#2977). Each reading also asks the `check` command whether each
 # seat has a live block, and pages the coordinator once when one has had
-# none for two readings in a row, and once for each epic the epics workflow
-# labelled `needs:close-ruling` (#2973), until the label comes off. The
-# thresholds, the page script, the check
+# none for two readings in a row. The thresholds, the page script, the check
 # and each target's arguments (the triage seat's, the coordinator's, and each
 # lane's seat's under `seats`, a lane without one paging the triage seat) are
 # configuration,
@@ -3644,21 +3708,6 @@ sweep() {
     fi
   done < <(jq -c '[.triage, (.seats // {})[]] | unique[]' <<< "$page")
   echo "$gone"
-}
-# Each epic awaiting its close ruling (#2973): an open issue labelled
-# `needs:close-ruling` by the epics workflow is paged to the coordinator
-# once, until the label comes off. Reads and answers the epics paged, `[n]`;
-# a failed read pages nothing and keeps them.
-rulings() {
-  local paged=$1 open n
-  open=$(gh issue list -R "$repo" --state open --label needs:close-ruling --limit 100 --json number --jq '[.[].number]') \
-    || { echo "$paged"; return; }
-  for n in $(jq -r --argjson paged "$paged" '.[] | select(. as $n | $paged | index($n) | not)' <<< "$open"); do
-    if "${command[@]}" "${coordinator[@]}" "EPIC #$n awaits its close ruling: every filed sub-issue is closed; close it with the ruling, or file its next unit under it (issue:file --epic $n)" >&2; then
-      paged=$(jq -c --argjson n "$n" '. + [$n]' <<< "$paged")
-    fi
-  done
-  jq -c --argjson open "$open" 'map(select(. as $n | $open | index($n)))' <<< "$paged"
 }
 # Close each open stall report whose event is over (#3112): `reports.jq`
 # decides from the reading's findings and each report's pull request's state,
@@ -3739,9 +3788,8 @@ while :; do
   done
   gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
   reports
-  ruled=$(rulings "$(stall_memory | jq -c '.rulings // []')")
-  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson rulings "$ruled" \
-    '{seen, paged: $paged, stalled: $stalled, gone: $gone, rulings: $rulings}' <<< "$reading" > "$stall_state.tmp"
+  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" \
+    '{seen, paged: $paged, stalled: $stalled, gone: $gone}' <<< "$reading" > "$stall_state.tmp"
   mv "$stall_state.tmp" "$stall_state"
   sleep "$interval"
 done

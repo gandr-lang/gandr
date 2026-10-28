@@ -1,16 +1,16 @@
 [
   {
-    "name": "the last sub-issue to close asks for its epic's close ruling, naming itself, and closes nothing (#2973)",
+    "name": "#3398: the last issue an epic is blocked by to close closes it, naming every one and the last",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
-      "parent": {
+      "epic": {
         "number": 10,
         "repository": "gandr-lang/gandr",
         "state": "open",
         "labels": ["kind:epic", "area:workflow"]
       },
-      "sub_issues": [
+      "blocked_by": [
         {
           "number": 11,
           "repository": "gandr-lang/gandr",
@@ -23,20 +23,20 @@
         }
       ]
     },
-    "output": "ask\tEvery filed sub-issue is closed, the last #12. Close this epic with its ruling, or file its next unit under it (`mise run issue:file <title> <body> --epic 10`, which takes `needs:close-ruling` off)."
+    "output": "close\tEvery issue this epic is blocked by is closed, the last #12: #11, #12. Reopen it to add a unit."
   },
   {
-    "name": "an open sibling keeps the epic open, named, in this repository or another",
+    "name": "#3398: an open issue the epic is blocked by keeps it open, named, in this repository or another",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
-      "parent": {
+      "epic": {
         "number": 10,
         "repository": "gandr-lang/gandr",
         "state": "open",
         "labels": ["kind:epic", "area:workflow"]
       },
-      "sub_issues": [
+      "blocked_by": [
         {
           "number": 11,
           "repository": "gandr-lang/gandr",
@@ -54,20 +54,35 @@
         }
       ]
     },
-    "output": "keep\t#11, gandr-lang/domhringr#5 still open"
+    "output": "keep\t#10: #11, gandr-lang/domhringr#5 still open"
   },
   {
-    "name": "a parent that is not an epic is kept",
+    "name": "#3398: an epic blocked by nothing is never closed: its units are not linked yet",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
-      "parent": {
+      "epic": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "blocked_by": []
+    },
+    "output": "keep\t#10 is blocked by nothing: an epic closes only once its units are linked"
+  },
+  {
+    "name": "#3398: an issue blocked that is not an epic is kept",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "epic": {
         "number": 10,
         "repository": "gandr-lang/gandr",
         "state": "open",
         "labels": ["kind:feature"]
       },
-      "sub_issues": [
+      "blocked_by": [
         {
           "number": 12,
           "repository": "gandr-lang/gandr",
@@ -75,20 +90,25 @@
         }
       ]
     },
-    "output": "keep\tthe parent is not an epic"
+    "output": "keep\t#10 is not an epic"
   },
   {
-    "name": "a parent already closed is kept",
+    "name": "#3398: an epic already closed is kept, as a sibling closing in the same seconds leaves it",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
-      "parent": {
+      "epic": {
         "number": 10,
         "repository": "gandr-lang/gandr",
         "state": "closed",
         "labels": ["kind:epic", "area:workflow"]
       },
-      "sub_issues": [
+      "blocked_by": [
+        {
+          "number": 11,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        },
         {
           "number": 12,
           "repository": "gandr-lang/gandr",
@@ -96,20 +116,20 @@
         }
       ]
     },
-    "output": "keep\tthe parent is closed"
+    "output": "keep\t#10 is closed"
   },
   {
-    "name": "an epic in another repository is listed, not labelled",
+    "name": "#3398: an epic in another repository is listed, not closed",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
-      "parent": {
+      "epic": {
         "number": 400,
         "repository": "example-org/plans",
         "state": "open",
         "labels": ["kind:epic", "area:workflow"]
       },
-      "sub_issues": [
+      "blocked_by": [
         {
           "number": 12,
           "repository": "gandr-lang/gandr",
@@ -120,24 +140,34 @@
     "output": "list\texample-org/plans#400 is in another repository"
   },
   {
-    "name": "#628's case: the one filed sub-issue of a ladder mostly unfiled closing asks for the ruling, never closes the epic (#2973)",
+    "name": "#3398: #2765's case, an epic whose units are open by body reference, stays open once they block it",
     "input": {
       "repo": "gandr-lang/gandr",
-      "closed": 2767,
-      "parent": {
-        "number": 628,
+      "closed": 2764,
+      "epic": {
+        "number": 2765,
         "repository": "gandr-lang/gandr",
         "state": "open",
-        "labels": ["kind:epic", "area:std"]
+        "labels": ["kind:epic", "area:workflow"]
       },
-      "sub_issues": [
+      "blocked_by": [
         {
-          "number": 2767,
+          "number": 2764,
           "repository": "gandr-lang/gandr",
           "state": "closed"
+        },
+        {
+          "number": 2763,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        },
+        {
+          "number": 533,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
         }
       ]
     },
-    "output": "ask\tEvery filed sub-issue is closed, the last #2767. Close this epic with its ruling, or file its next unit under it (`mise run issue:file <title> <body> --epic 628`, which takes `needs:close-ruling` off)."
+    "output": "keep\t#2765: #2763, #533 still open"
   }
 ]

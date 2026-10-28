@@ -8,14 +8,14 @@
 # summary of what, how many and the verdict.
 name: epics
 
-# An epic's closing is a ruling, not an event (#2973, `tracker.md`
-# § tracker-issues): the workflow closes no epic. On every closed issue,
-# `.config/epics/epics.sh` reads its parent and the parent's sub-issues, and
-# `close.jq` decides: an open `kind:epic` here with no open sub-issue left is
-# labelled `needs:close-ruling` and commented `<!-- epic-complete -->`, and
-# the coordinator, paged by `stall:watch` while the label stands, closes it
-# or files its next unit. An epic in another repository is listed in the run
-# log, not labelled.
+# An epic closes itself when every issue it is blocked by is closed, never
+# with none (#3398, `tracker.md` § tracker-issues). On every closed issue,
+# `.config/epics/epics.sh` reads the epics it blocks and, for each, the
+# issues that epic is blocked by, and `close.jq` decides: an open `kind:epic`
+# here blocked by at least one issue and none of them open is closed with a
+# comment under `<!-- epic-closed -->` naming them. An epic blocked by
+# nothing is left alone, its units not linked yet; one in another repository
+# is listed in the run log, not closed.
 on:
   issues:
     types: [closed]
@@ -23,13 +23,13 @@ on:
 permissions:
   contents: read
 # No concurrency group: one shared group would let any later closing replace
-# a pending run, the last sub-issue's among them. Sub-issues closing in the
-# same seconds may both see every sibling closed; the script asks only on an
-# epic not yet labelled.
+# a pending run, the last unit's among them. Units closing in the same
+# seconds may both see every sibling closed; the script reads the epic again
+# before it acts, and leaves one already closed.
 
 jobs:
   epics:
-    name: ask for the close ruling on an epic whose last sub-issue closed
+    name: close an epic whose last open blocked-by issue closed
     # ci.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
@@ -44,7 +44,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
           ref: ${{ github.event.repository.default_branch }}
-      - name: ask for the parent epic's close ruling
+      - name: close each epic this issue was the last open unit of
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
