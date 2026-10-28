@@ -272,6 +272,11 @@
 //! their oracle has no caret and holds nothing; the quiet scenario types one
 //! declaration under the interval and pins every keystroke's publication.
 //!
+//! A session trace (`tests/replay.rs`) carries an editor's own session in as
+//! evidence: a scene recorded through `gandr lsp` replays line for line
+//! against a fresh connection, a trace whose answer was altered parts at that
+//! line, and a session that asks for a trace writes one its replay holds.
+//!
 //! **One execution per session.** A single editor's session is `serve`
 //! itself, on a thread of its own over in-memory framed streams, so every
 //! answer the session holds to the oracle is one the transport wrote, and the
@@ -408,6 +413,7 @@ mod run;
 mod saved;
 mod search;
 mod server;
+mod session_trace;
 mod signature;
 mod sweep;
 mod syntax;
@@ -461,6 +467,11 @@ pub use crate::server::Server;
 pub use crate::server::Settled;
 pub use crate::server::Workspace;
 pub use crate::server::serve;
+pub use crate::session_trace::Divergence;
+pub use crate::session_trace::Parted;
+pub use crate::session_trace::Replayed;
+pub use crate::session_trace::TraceLine;
+pub use crate::session_trace::replay;
 pub use crate::tokens::TOKEN_MODIFIERS;
 pub use crate::tokens::TOKEN_TYPES;
 pub use crate::transport::Body;

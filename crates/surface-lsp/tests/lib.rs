@@ -8,4 +8,6 @@ mod capabilities;
 #[cfg(test)]
 mod editor;
 #[cfg(test)]
+mod replay;
+#[cfg(test)]
 mod session;
