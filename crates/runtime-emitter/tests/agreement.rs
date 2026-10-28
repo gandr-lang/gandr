@@ -3,6 +3,9 @@
 //! code's compared with the executor's value by value, through the policy's
 //! own entry too, and each with the answer the program states.
 
+use std::io::Write as _;
+use std::process::Command;
+
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
@@ -18,6 +21,8 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::POLICY_VARIABLE;
+use gandr_runtime_emitter::Policy;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate;
 use gandr_runtime_emitter::evaluate_on;
@@ -60,6 +65,75 @@ fn the_named_programs_agree_on_both_executors()
         });
         assert_eq!(shows, policy, "{name} under the policy");
     }
+}
+
+/// The line the cached policy's child ends with once every named program
+/// agreed under it.
+const SERVED: &str = "the cached policy served every named program";
+
+/// The named programs halt under the cached policy with the answer each
+/// states, in a child process whose `GANDR_NATIVE` reads `cached`: each
+/// misses the cache and runs on the executor, then, once a native run has
+/// emitted it, runs the code the cache serves.
+#[test]
+fn the_named_programs_agree_under_the_cached_policy()
+{
+    let ran = Command::new(std::env::current_exe().expect("the test binary is named"))
+        .args([
+            "--exact",
+            "agreement::the_cached_policy_child",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(POLICY_VARIABLE, "cached")
+        .output()
+        .expect("the child runs");
+    let transcript = String::from_utf8_lossy(&ran.stdout);
+    assert!(
+        ran.status.success(),
+        "{transcript}\n{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert!(
+        transcript.contains(SERVED),
+        "the child ran under the cached policy: {transcript}"
+    );
+}
+
+/// The cached policy's process: run only when the parent test starts this
+/// binary for it with `GANDR_NATIVE=cached`, ending with [`SERVED`].
+#[test]
+#[ignore = "run by `the_named_programs_agree_under_the_cached_policy` as a child process"]
+fn the_cached_policy_child()
+{
+    if Policy::from_environment() != Policy::Cached {
+        return;
+    }
+    for named in named() {
+        let name = named.program.name;
+        let shows = Verdict::Halted(Some(String::from(named.shows)));
+        let (commands, root) = focus(&named.program);
+        let definitions = Definitions::new();
+        let policy =
+            |store: &mut Store| evaluate(&commands, &definitions, root, Fuel::from(BUDGET), store);
+        assert_eq!(
+            shows,
+            agree_with(Label(name), &commands, &definitions, root, policy),
+            "{name} missing the cache"
+        );
+        assert_eq!(
+            shows,
+            agree(Label(name), &commands, &definitions, root),
+            "{name} across the tiers"
+        );
+        assert_eq!(
+            shows,
+            agree_with(Label(name), &commands, &definitions, root, policy),
+            "{name} served from the cache"
+        );
+    }
+    writeln!(std::io::stdout().lock(), "{SERVED}").expect("the line is written");
 }
 
 /// The named programs answer fused what their unfused lowering answers on

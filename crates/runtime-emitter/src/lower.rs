@@ -3096,6 +3096,14 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// [`Form::Dangling`] for a body the arena does not hold.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — thunks over no capture, one and two run from the
+    ///   store and answer what forcing each in place answers. L3 — an
+    ///   environment binding one value too few or too many declines; a capture
+    ///   slot left out shifts which environment the run takes.
+    /// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+    /// - witness: `tests::closed::an_environment_other_than_the_captures_declines`
     fn suspended(
         &mut self,
         body: CommandId,
@@ -4393,6 +4401,12 @@ pub fn lower_suspended(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the named programs answer fused what their unfused
+///   lowering answers, and each fused function is the replay of its trace over
+///   the unfused one.
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
 fn fused(lowered: Lowered) -> Lowered
 {
     let (function, trace) = fuse(&lowered.function);

@@ -894,6 +894,14 @@ impl<'run, 'host> Calls<'run, 'host>
     ///
     /// # Errors
     /// As [`Laying::laid`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — commands over captures run from the store and answer
+    ///   what forcing each in place answers, and a record a migration answers
+    ///   comes back; a word missing or zero leaves a capture slot or the answer
+    ///   addressing nothing.
+    /// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+    /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
     #[inline]
     pub fn laid_out(
         &mut self,
@@ -1457,6 +1465,14 @@ impl<'run, 'host> Calls<'run, 'host>
     /// [`Refusal::Operands`] when there is no host, it declines or aborts —
     /// recorded — or its reply cannot be laid out on the run's heap, or the
     /// payload moved into the store; [`Refusal::Heap`] past the heap's limit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — scripted hosts that resume, abort and decline an
+    ///   operation no handler of the run claims, on each tier; an offer never
+    ///   made, or a reply that addresses nothing, changes the answer or the
+    ///   ending.
+    /// - witness: `tests::seam::a_host_resumes_a_single_unhandled_perform`
+    /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
     fn offered(
         &mut self,
         runtime: &mut Runtime,
@@ -2467,7 +2483,10 @@ impl Laying<'_>
     ///   run as it states; a second holder left uncounted frees the value while
     ///   it is read. A record a migration answers, which the caller's function
     ///   never builds, is laid out under the head it joins to the table. A
-    ///   thunk a migration answers runs at the caller's site for its body.
+    ///   thunk a migration answers runs at the caller's site for its body. Two
+    ///   holders count alike whichever is counted, and an owner too many shows
+    ///   in no answer, so the counts of a value under three holders, two roots
+    ///   and a field, and of values under one are read where they are laid.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
@@ -2475,6 +2494,7 @@ impl Laying<'_>
     /// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
     /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
     /// - witness: `tests::world::a_thunk_a_migration_returns_runs_at_the_caller_3265`
+    /// - witness: `host::tests::a_laying_counts_one_owner_per_holder`
     fn laid(
         &mut self,
         runtime: &mut Runtime,
@@ -3330,11 +3350,28 @@ impl Captured
 #[cfg(test)]
 mod tests
 {
+    use gandr_core_sequent::CommandArena;
+    use gandr_core_sequent::ConstructorTag;
+    use gandr_core_sequent::HeapValue;
+    use gandr_core_sequent::HeapValueId;
+    use gandr_core_sequent::ProducerArity;
+    use gandr_core_sequent::Store;
+    use gandr_kernel_term::IntegerLiteral;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Sign;
+    use gandr_runtime_stencils::Fuel;
     use gandr_runtime_stencils::Refusal;
+    use gandr_runtime_stencils::Runtime;
     use gandr_runtime_stencils::Word;
+    use gandr_runtime_stencils::count_word;
 
     use super::Captured;
+    use super::Laying;
+    use super::enter;
     use super::hold_frames;
+    use crate::transfer::Moved;
+    use crate::transfer::Sites;
 
     /// Frames fill their region up to its limit, and one frame past it is
     /// refused before it is written.
@@ -3391,6 +3428,97 @@ mod tests
             mark(from, 7),
             captured.moved(mark(from, 7)),
             "a word past the frames stays"
+        );
+    }
+
+    /// A laying counts one owner per holder, the allocation counting the
+    /// first: `[x, x, p]` with `x = (1, 2)` and `p = (x, 3)` lays `x` out once,
+    /// held by both roots and `p`'s first field, and `1`, `2`, `3` and `p`
+    /// under one holder each. An owner counted at the first holder rather than
+    /// a later one, or at every holder, is a leak or a free no answer shows.
+    #[test]
+    fn a_laying_counts_one_owner_per_holder()
+    {
+        let mut store = Store::new();
+        let mut integer = |digits: &str| {
+            store
+                .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+                    Sign::NonNegative,
+                    Magnitude::from_decimal_text(String::from(digits)).expect("decimal digits"),
+                ))))
+                .expect("the store has room")
+        };
+        let one = integer("1");
+        let two = integer("2");
+        let three = integer("3");
+        let pair = |store: &mut Store, fields: [HeapValueId; 2]| {
+            store
+                .allocate(HeapValue::Constructed {
+                    tag: ConstructorTag::Tuple(ProducerArity::from(2_usize)),
+                    fields: Box::new(fields),
+                })
+                .expect("the store has room")
+        };
+        let x = pair(&mut store, [one, two]);
+        let p = pair(&mut store, [x, three]);
+        let mut heap = [Word::ZERO; 64];
+        let mut frames = [Word::ZERO; 2];
+        let heap_base = (&raw mut heap).cast::<Word>();
+        let frame_base = (&raw mut frames).cast::<Word>();
+        let mut runtime = Runtime::new(
+            heap_base,
+            heap_base.wrapping_add(64),
+            frame_base.wrapping_add(2),
+            frame_base,
+            Fuel::from(0_usize),
+            enter,
+            Word::ZERO,
+        );
+        let arena = CommandArena::new();
+        let sites = Sites::default();
+        let moved = Moved::new();
+        let mut heads = Vec::new();
+        let mut literals = Vec::new();
+        let laid = Laying {
+            store: &store,
+            heads: &mut heads,
+            code_table: &[],
+            literals: &mut literals,
+            moved: &moved,
+            sites: &sites,
+            arena: &arena,
+        }
+        .laid(&mut runtime, &[x, x, p])
+        .expect("the values fit the heap");
+        let [laid_x, again, laid_p] = <[Word; 3]>::try_from(laid).expect("one word per root");
+        let count = |object: Word| {
+            // SAFETY: the laying allocated `object` on `heap`, its count word
+            // before its header.
+            usize::from(unsafe { *count_word(object) })
+        };
+        let fields = |object: Word| {
+            let header = object.to_pointer::<Word>();
+            // SAFETY: the laying allocated `object` on `heap`, a pair whose
+            // first field follows its header.
+            let first = unsafe { *header.wrapping_add(1) };
+            // SAFETY: as above, its second field after the first.
+            let second = unsafe { *header.wrapping_add(2) };
+            [first, second]
+        };
+        let [held, laid_three] = fields(laid_p);
+        let [laid_one, laid_two] = fields(laid_x);
+        assert_eq!(laid_x, again, "x is laid out once");
+        assert_eq!(laid_x, held, "p's first field is x");
+        assert_eq!(
+            [3, 1, 1, 1, 1],
+            [
+                count(laid_x),
+                count(laid_one),
+                count(laid_two),
+                count(laid_three),
+                count(laid_p)
+            ],
+            "the counts of x, 1, 2, 3 and p"
         );
     }
 }
