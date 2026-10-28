@@ -174,6 +174,8 @@ pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
 pub use crate::arena::Family;
 pub use crate::arena::TermArena;
+pub use crate::arena::Truncated;
+pub use crate::arena::TruncationStamp;
 pub use crate::arena::ValueId;
 pub use crate::arena::ValueTypeId;
 pub use crate::base::BaseType;

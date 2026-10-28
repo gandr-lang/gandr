@@ -6157,18 +6157,22 @@ fn check_sealing_provenance(
 }
 
 /// Check a declaration through the default path: a fresh live memo, built here
-/// and dropped here.
+/// and dropped here, against the session its environment lends it.
 ///
 /// This is the entry the admission choke point calls, and it takes **no memo
 /// parameter** — which is the structural form of the lifetime rule. A caller
 /// cannot hand admission a memo, so nothing an earlier call recorded can reach
-/// a later one through the checked entry.
+/// a later one through the checked entry. The session it takes carries names,
+/// not answers: its table keeps the names of the environment's nodes across
+/// admissions, and [`SupportContext::begin_admission`] opens it with its
+/// rewrite memo and accruals empty.
 ///
 /// # Specification
 /// - requires: `declaration`'s content roots were minted into `arena`;
 ///   `judgement` pairs the environment's admission log with the declaration's
 ///   level context and the ascending positions of the abstract types whose
-///   minting admission is open, outside any block.
+///   minting admission is open, outside any block; `session` has been used with
+///   no arena but `arena`.
 /// - ensures: the occurrence walk's accessibility for a data declaration, and
 ///   the reading of none for any other, when the declared type forms, sealing
 ///   provenance re-derives, a definition's body checks — at its declared type
@@ -6180,8 +6184,9 @@ fn check_sealing_provenance(
 ///   readable. Synthesized intermediates are appended for the caller to
 ///   truncate.
 /// - provides: the body check the choke point runs, with a fresh live memo on
-///   both machines. Full typing and admission-log provenance still require the
-///   rule derivation; an operational refusal does not establish ill-typedness.
+///   both machines and the environment's names. Full typing and admission-log
+///   provenance still require the rule derivation; an operational refusal does
+///   not establish ill-typedness.
 /// - fails: any [`KernelError`] the checker surfaces.
 /// - panics: none.
 ///
@@ -6214,17 +6219,18 @@ pub fn check_declaration(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
     declaration: &Declaration,
+    session: &mut SupportContext,
 ) -> Result<occurrence::Accessibility, KernelError>
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
-    let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
+    session.begin_admission();
     check_declaration_with_memo(
         arena,
         judgement,
         declaration,
         &mut memo,
-        &mut session,
+        session,
         &mut census,
     )
 }
@@ -6234,7 +6240,8 @@ pub fn check_declaration(
 ///
 /// # Specification
 /// - requires: `judgement` holds the block's families in scope and none of its
-///   definitions; `declared` was minted into `arena`.
+///   definitions; `declared` was minted into `arena`; `session` has been used
+///   with no arena but `arena`.
 /// - ensures: `Ok(())` when the type forms and every code it owes checks, as a
 ///   lone declaration's declared type does; intermediates are appended for the
 ///   caller to truncate.
@@ -6255,11 +6262,12 @@ pub(crate) fn form_declared(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
     declared: ValueTypeId,
+    session: &mut SupportContext,
 ) -> Result<(), KernelError>
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
-    let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
+    session.begin_admission();
     session.name_constants(judgement.entries);
     let presentations = crate::presented::Presentations::of(judgement.entries);
     let judgement = judgement.presenting(&presentations);
@@ -6273,12 +6281,12 @@ pub(crate) fn form_declared(
         Vec::new(),
         Recording {
             memo: &mut memo,
-            session: &mut session,
+            session,
             census: &mut census,
             owed: &mut owed,
         },
     )?;
-    drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)
+    drain_code_obligations(arena, judgement, &mut memo, session, &mut census, owed)
 }
 
 /// Check a declaration against a caller-supplied memo — the **opt-in** entry.
@@ -6303,8 +6311,10 @@ pub(crate) fn form_declared(
 /// resolve.
 ///
 /// # Specification
-/// - requires: as [`check_declaration`]; additionally, `memo` holds only
-///   entries recorded during this same call against this same arena.
+/// - requires: as [`check_declaration`]; additionally, `memo`, and the rewrite
+///   memo and open accruals of `session`, hold only entries recorded during
+///   this same call against this same arena
+///   ([`SupportContext::begin_admission`] empties the session's).
 /// - ensures: the typing verdict agrees with [`check_declaration`] and the null
 ///   memo when neither execution reaches
 ///   [`KernelError::CodeObligationCeiling`]. A live memo can avoid repeated
