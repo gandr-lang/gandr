@@ -39,16 +39,19 @@
 //! | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 //! | static dispatch on a null-object seam that compiles away | [`check::check_declaration_with_memo`] is generic; every memo interaction is behind a compile-time activity constant |
 //! | the public admission entry cannot reach the opt-in entry | [`env::Environment::add_decl`] takes no memo and builds its own; the memo-taking entry admits nothing and returns no receipt |
-//! | a lifetime of one check call                            | [`check::check_declaration`] builds a memo and drops it; nothing stores one                        |
+//! | a lifetime of one check call                            | [`check::check_declaration`] builds a memo and drops it. The environment's session keeps only content outcomes, each under its judgement's parameters |
 //! | the content-only key                                    | [`encoding`] and [`support`]: the id of the goal's record in the session's content table — direction, obligation, expected type, and the read binders as pairs of position and type — arena-free |
 //! | storage and policy outside the kernel crate             | the seam crate owns the table and its ordering; this crate holds a type parameter                  |
 //! | no authority and no persistence in a hit                | a hit claims only that this process already computed this answer for this support                   |
 //!
-//! The key carries no arena id, so dangling ids are not why the memo lives for
-//! one call. The lifetime rests on what a hit claims: only this process's own
-//! history, which another process has no ground to take on trust. An outcome
-//! also carries arena ids even though the key does not, so an entry outliving
-//! its arena would hand back a type that does not resolve.
+//! The key carries no arena id. So dangling ids are not why a declaration's
+//! memo lives for one call. Its key names nothing of the judgement. A call
+//! holds the judgement fixed. The outcomes that the environment keeps carry no
+//! arena id. Their key names the judgement's parameters. Neither memo outlives
+//! the process. A hit claims only this process's own history. Another process
+//! has no ground to take that history on trust. Some outcomes carry arena ids,
+//! though the key does not. An entry that outlives its arena would hand back a
+//! type that does not resolve. The environment keeps no such outcome.
 //!
 //! The verdict differential excludes operational refusal: with sound per-call
 //! histories, the typing answers agree when neither run reaches

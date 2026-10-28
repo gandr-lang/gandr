@@ -300,6 +300,7 @@ use crate::conv::case_branch_mismatch;
 use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
 use crate::conv::pending_endpoints;
+use crate::encoding::ContentId;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
 use crate::env::Entries;
@@ -786,13 +787,56 @@ pub struct Judgement<'session>
 /// Whether a fixpoint without termination evidence may recurse at a type that
 /// ends in a returner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Partiality
+pub(crate) enum Partiality
 {
     /// It may not: every call in the kernel's fragment returns.
     Refused,
     /// It may: the declaration is a ruled operation, whose rules the kernel
     /// admits only oriented, so its recursion terminates.
     Ruled,
+}
+
+/// A walk's parameters as the kept memo names them. A walk names them at its
+/// first miss. A walk never changes its judgement.
+#[derive(Clone, Copy, Debug)]
+enum KeptParameters
+{
+    /// Not named yet.
+    Unnamed,
+    /// The judgement does not ask or keep. [`Judgement::parameters`] gives
+    /// none for it.
+    Uncrossed,
+    /// Named in the session's table.
+    Named(ContentId),
+}
+
+impl KeptParameters
+{
+    /// The name of `judgement`'s parameters in `session`. The first ask names
+    /// them. None means that the judgement does not ask or keep.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn name(
+        &mut self,
+        arena: &TermArena,
+        judgement: &Judgement<'_>,
+        session: &mut SupportContext,
+    ) -> Option<ContentId>
+    {
+        if matches!(*self, Self::Unnamed) {
+            *self = judgement
+                .parameters()
+                .map_or(Self::Uncrossed, |parameters| {
+                    Self::Named(session.name_parameters(arena, &parameters))
+                });
+        }
+        match *self {
+            Self::Named(name) => Some(name),
+            Self::Unnamed | Self::Uncrossed => None,
+        }
+    }
 }
 
 /// The block a judgement may name past the admitted prefix.
@@ -905,6 +949,77 @@ impl<'session> Judgement<'session>
             following: Maybe::Present(fixpoint),
             ..self
         }
+    }
+
+    /// This judgement's parameters, as the kept memo names them.
+    ///
+    /// A mutual block's members are whole declarations. A relating
+    /// definition's endpoints carry their dialogue. So this function names
+    /// neither. A judgement in a mutual block gets none. A judgement with
+    /// relating endpoints gets none. Such a judgement does not ask or keep. It
+    /// loses its recalls. It cannot receive a wrong recall.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none exactly when the block is mutual or the judgement
+    ///   relates endpoints. Otherwise every parameter as the judgement holds
+    ///   it. A data or codata block comes with its position and signature.
+    /// - provides: the parameters that a kept memo's key names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data declaration refused after its own field
+    ///   formed, another admitted at its position one level up, and a third
+    ///   whose field names it. Parameters without the block serve the refused
+    ///   declaration's level to the third.
+    /// - witness: `env::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    #[spec(ensures: |ret| ret.is_none()
+        == (matches!(self.block, Block::Mutual { .. }) || !self.related.is_empty()))]
+    pub(crate) fn parameters(&self) -> Option<crate::encoding::Parameters<'session>>
+    {
+        use crate::encoding::ParametersBlock;
+        if !self.related.is_empty() {
+            return None;
+        }
+        let block = match self.block {
+            Block::Outside => ParametersBlock::Outside,
+            Block::Inside {
+                position,
+                signature,
+            } => ParametersBlock::Data {
+                position,
+                kind: signature.kind,
+                parameters: signature.parameters,
+                indices: signature.indices,
+                constructors: signature.constructors,
+                results: signature.results,
+            },
+            Block::Codata {
+                position,
+                signature,
+            } => ParametersBlock::Codata {
+                position,
+                kind: signature.kind,
+                parameters: signature.parameters,
+                observations: signature.observations,
+            },
+            Block::Mutual { .. } => return None,
+        };
+        let fixpoint = |fixpoint: Maybe<ComputationId, recursion::Unowned>| match fixpoint {
+            Maybe::Present(id) => Some(id),
+            Maybe::Absent(_) => None,
+        };
+        Some(crate::encoding::Parameters {
+            level_params: self.levels.params(),
+            constraints: self.levels.constraints(),
+            manifest: self.manifest,
+            laws: self.laws,
+            block,
+            own: fixpoint(self.own),
+            following: fixpoint(self.following),
+            partiality: self.partial,
+        })
     }
 
     /// The same judgement rewriting the terms of the presented types in
@@ -1517,6 +1632,9 @@ where
     // The barriers opened where the walk swapped its context, innermost last;
     // empty when the memo is inactive.
     let mut barriers: Vec<Opened> = Vec::new();
+    // The judgement's parameters as the kept memo names them. The walk names
+    // them at its first miss.
+    let mut parameters = KeptParameters::Unnamed;
     let mut goal = root;
     'expand: loop {
         // A type's level reads no binder itself; the codes and arguments it
@@ -1546,6 +1664,14 @@ where
                 // had run.
                 session.read(hit.support().reads(), &context);
                 recalled = Some(level.clone());
+            }
+            else if let Some(NodeOutcome::Formed(level)) = parameters
+                .name(arena, &judgement, session)
+                .and_then(|named| session.recall_kept(arena, question, context.as_slice(), named))
+            {
+                // An earlier admission formed it under these parameters. Its
+                // binders are read here as if its walk had run.
+                recalled = Some(level);
             }
             else {
                 let opened = session.open(&context);
@@ -1859,7 +1985,11 @@ where
                     // A memo at its ceiling declines to record. The check
                     // proceeds unmemoized from there, which costs collapse and
                     // never correctness.
-                    let _recorded = memo.remember(support, NodeOutcome::Formed(produced.clone()));
+                    let outcome = NodeOutcome::Formed(produced.clone());
+                    if let Some(named) = parameters.name(arena, &judgement, session) {
+                        session.keep(&support, named, &outcome);
+                    }
+                    let _recorded = memo.remember(support, outcome);
                 },
                 TypeLevelFrame::MaxSecondValue(second) => {
                     frames.push(TypeLevelFrame::MaxWith(produced));
@@ -3014,6 +3144,9 @@ where
     // refilled per goal, so the walk allocates them once.
     let mut owed_values: Vec<ValueId> = Vec::new();
     let mut owed_components: Vec<gandr_kernel_term::EvaluationComponent> = Vec::new();
+    // The judgement's parameters as the kept memo names them. The walk names
+    // them at its first miss.
+    let mut parameters = KeptParameters::Unnamed;
     'expand: loop {
         // Ask the memo this goal's question before reading the node, and take
         // an entry whose recorded binders this context agrees with. When the
@@ -3038,6 +3171,15 @@ where
                 // The recalled goal's binders are read here, as if its
                 // subgoals had run.
                 session.read(hit.support().reads(), &context);
+                recalled = Some(outcome);
+            }
+            else if let Some(Maybe::Present(outcome)) = parameters
+                .name(arena, &judgement, session)
+                .and_then(|named| session.recall_kept(arena, question, context.as_slice(), named))
+                .map(|outcome| Produced::of_outcome(&outcome))
+            {
+                // An earlier admission answered it under these parameters.
+                // Its binders are read here as if its subgoals had run.
                 recalled = Some(outcome);
             }
             else {
@@ -4843,7 +4985,11 @@ where
                     let support = question.answered(arena, session, context.as_slice(), reads);
                     // A memo at its ceiling declines to record; see the same
                     // note in `type_level`.
-                    let _recorded = memo.remember(support, produced.outcome());
+                    let outcome = produced.outcome();
+                    if let Some(named) = parameters.name(arena, &judgement, session) {
+                        session.keep(&support, named, &outcome);
+                    }
+                    let _recorded = memo.remember(support, outcome);
                 },
                 Frame::PathProductFirst(second) => {
                     let first_type = produced.value_type()?;
@@ -6184,9 +6330,9 @@ fn check_sealing_provenance(
 ///   readable. Synthesized intermediates are appended for the caller to
 ///   truncate.
 /// - provides: the body check the choke point runs, with a fresh live memo on
-///   both machines and the environment's names. Full typing and admission-log
-///   provenance still require the rule derivation; an operational refusal does
-///   not establish ill-typedness.
+///   both machines, and the environment's names and kept outcomes. Full typing
+///   and admission-log provenance still require the rule derivation. An
+///   operational refusal does not establish ill-typedness.
 /// - fails: any [`KernelError`] the checker surfaces.
 /// - panics: none.
 ///
@@ -6295,26 +6441,36 @@ pub(crate) fn form_declared(
 ///
 /// It returns a verdict and never a checked id, so a caller reaching it cannot
 /// get a declaration into an environment. Admission goes through
-/// [`check_declaration`], which builds its own memo; there is no admitting
-/// entry that accepts one. So the memo's lifetime being a single call is a
-/// property of the surface rather than a discipline a caller has to remember.
+/// [`check_declaration`], which builds its own memo. No admitting entry
+/// accepts one. So the surface makes a single call `memo`'s lifetime. A
+/// caller does not have to remember a discipline.
 ///
-/// # Why the memo lives for one call
+/// # Why `memo` lives for one call
 ///
-/// The key is content and carries no arena id, so dangling ids are not the
-/// reason. The rule rests on the two-wall discipline directly: **a hit claims
-/// only its own history, and no kernel-checked support discipline exists**, so
-/// nothing here persists.
+/// The key is content. It carries no arena id. So dangling ids are not the
+/// reason. A support names a goal and the binders that it read. It names
+/// nothing of the judgement. One call holds the judgement fixed. So a hit in
+/// `memo` claims only its own history. Across calls, the judgement changes.
 ///
-/// An *outcome* also carries arena ids even though the key does not, so an
-/// entry outliving its arena would hand back a synthesized type that does not
+/// An *outcome* can carry arena ids, though the key does not. An entry that
+/// outlives its arena would hand back a synthesized type that does not
 /// resolve.
 ///
+/// # What the session keeps
+///
+/// `session` keeps the content outcomes of the environment's earlier
+/// admissions. A content outcome is a check that succeeded or a level that a
+/// type formed at. Each is kept under the parameters of its judgement. A goal
+/// that `memo` misses asks these outcomes. Its answer is kept there too. A
+/// judgement in a mutual block does not ask or keep. A judgement with
+/// relating endpoints does not ask or keep.
+///
 /// # Specification
-/// - requires: as [`check_declaration`]; additionally, `memo`, and the rewrite
+/// - requires: as [`check_declaration`]. Additionally, `memo`, and the rewrite
 ///   memo and open accruals of `session`, hold only entries recorded during
-///   this same call against this same arena
-///   ([`SupportContext::begin_admission`] empties the session's).
+///   this same call against this same arena.
+///   [`SupportContext::begin_admission`] empties the session's. The outcomes
+///   that `session` keeps were answered against this environment.
 /// - ensures: the typing verdict agrees with [`check_declaration`] and the null
 ///   memo when neither execution reaches
 ///   [`KernelError::CodeObligationCeiling`]. A live memo can avoid repeated
