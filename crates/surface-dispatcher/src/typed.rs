@@ -188,6 +188,7 @@ use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_lowering::documentation;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
+use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
@@ -197,6 +198,8 @@ use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Recursion;
+use gandr_surface_pretty::Recursive;
 use gandr_surface_pretty::Scopes;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Wildcards;
@@ -739,6 +742,10 @@ struct Context
     /// The model implicits among the binders, each over the binders of its
     /// components.
     slots: Vec<ContextSlot>,
+    /// The binder a recursive definition binds for itself, and the claim its
+    /// calls write: the surface writes it `f[<]` or `f[>]`, never by its bare
+    /// name, which names the declaration.
+    recursive: Option<Recursive>,
 }
 
 /// A model implicit among a context's binders, `@[s : Model(S) with sort x =
@@ -3825,6 +3832,10 @@ impl TypeTable
             .flattening(&flattened)
             .within(&binders)
             .scoped(&regions);
+        // A recursive definition's own binder writes its claim, `f[<](…)`.
+        let printer = context
+            .recursive
+            .map_or(printer, |recursive| printer.recursing(recursive));
         present_type(&printer, root(node), page, style)
             .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
     }
@@ -3896,6 +3907,7 @@ impl TypeTable
                     regions: Vec::new(),
                     types: Vec::new(),
                     slots: Vec::new(),
+                    recursive: None,
                 };
             },
             Standing::Judged(within) => (within, None),
@@ -3917,11 +3929,36 @@ impl TypeTable
                 )
             },
         );
+        let around = around.unwrap_or_default();
         let mut context = Context::default();
-        for binder in around.unwrap_or_default() {
+        for binder in &around {
             context.binders.push(binder.name.map(String::from));
             context.types.push(self.bound_type(binder.opener));
         }
+        // A recursive definition's own binder: the first a fixpoint opens past
+        // the declaration's parameters, named, its body a lambda of its own.
+        let lambda = |opener: CoreNode| {
+            matches!(opener, CoreNode::Computation(id)
+                if matches!(self.arena.computation(id), Some(&Computation::Lambda(_))))
+        };
+        let parameters = around
+            .iter()
+            .take_while(|binder| lambda(binder.opener))
+            .count();
+        context.recursive = around.get(parameters).and_then(|binder| {
+            let CoreNode::Computation(id) = binder.opener
+            else {
+                return None;
+            };
+            let &Computation::Fixpoint { body, evidence } = self.arena.computation(id)?
+            else {
+                return None;
+            };
+            (binder.name.is_some() && lambda(CoreNode::Computation(body))).then(|| Recursive {
+                claim: Recursion::from(evidence),
+                uniform: Arity::from(parameters),
+            })
+        });
         // A model implicit's components stand among the declaration's own
         // binders, each named by its path where the naming reached it.
         for &(ref slot, ref paths) in self.slots.get(&constant).into_iter().flatten() {
@@ -3986,9 +4023,9 @@ impl TypeTable
     }
 
     /// The binders of `context` declared as parameters, each type spelled
-    /// under the parameters before it, a binder the source names nothing
-    /// named afresh, and a model implicit's components declared as the
-    /// implicit whole.
+    /// under the parameters before it, a binder the source names nothing and
+    /// a recursive definition's own binder named afresh, and a model
+    /// implicit's components declared as the implicit whole.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -3997,8 +4034,10 @@ impl TypeTable
     ///   in `style` on a page of `page` columns under the names before it, and
     ///   one implicit per model implicit, `s : Model(S) with sort x = A`, each
     ///   fixed sort's type spelled under the names before the slot, its
-    ///   components keeping their paths; none when `context` binds nothing, or
-    ///   a binder's type is unknown to the table or spells a `?`.
+    ///   components keeping their paths; a recursive definition's own binder
+    ///   takes a generated name, so no type that names the declaration reads
+    ///   the binder; none when `context` binds nothing, or a binder's type is
+    ///   unknown to the table or spells a `?`.
     /// - provides: the context [`Self::read_back`] reads an open type under.
     /// - fails: never.
     /// - panics: none.
@@ -4007,9 +4046,12 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read_back`]; a type under a model
-    ///   implicit's components reads back under the implicit.
+    ///   implicit's components reads back under the implicit; a type under a
+    ///   recursive definition's own binder that names the declaration reads
+    ///   back as the declaration's.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
     /// - witness: `typed::tests::a_type_under_a_model_implicit_reads_back_under_it_2364`
+    /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
     fn telescope(
         &self,
         context: &Context,
@@ -4064,8 +4106,15 @@ impl TypeTable
             }
             let ty = context.types.get(at).copied().flatten()?;
             let spelled = spelled(ty)?;
+            // The surface writes a recursive definition's own binder `f[<]`;
+            // its bare name names the declaration, which a parameter of that
+            // name would capture.
+            let own = context
+                .recursive
+                .is_some_and(|recursive| usize::from(recursive.uniform) == at);
             let name = name
                 .clone()
+                .filter(|_| !own)
                 .unwrap_or_else(|| format!("read_back_bound_{at}"));
             for part in [name.as_str(), " : "] {
                 parameters.push_str(part);
@@ -4087,6 +4136,7 @@ impl TypeTable
                 regions: context.regions.clone(),
                 types: context.types.clone(),
                 slots: context.slots.clone(),
+                recursive: None,
             },
         })
     }
@@ -4111,24 +4161,27 @@ impl TypeTable
     ///   the parameters of a fresh function, `def f(x₁ : A₁, …, xₙ : Aₙ, it :
     ///   T) -> -F Unit`, each `Aᵢ` spelled under the names before it, and the
     ///   type read as `it`'s under all `n`, the binders the lowering dropped
-    ///   from a non-dependent arrow put back; it is [`RoundTrip::Open`] when
-    ///   the table does not know a binder's type — a capability scope's, a
-    ///   described member's — or the function does not lower. A closed one that
-    ///   does not parse as the type of `def x : … ;` with no repair is
-    ///   [`RoundTrip::Unparsed`]. Every other is appended to the source as a
-    ///   signature of a fresh name — a computation type `C` as `+U (C)` — the
-    ///   whole lowered once in the unit the table was built in, and is
-    ///   [`RoundTrip::Equal`] when the type read is the table's node, `U C` for
-    ///   a computation type, compared by [`equal_type_reading`] under the
-    ///   source's data signatures — the same syntax with path evidence erased,
-    ///   a type of words as the path at its point, a session type by its
-    ///   protocol's behaviour from its state; [`RoundTrip::Different`]
-    ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
-    ///   lowering refused a closed signature or the whole source. Each type
-    ///   read is printed again under the same binders, with the names, labels,
-    ///   relations and model types the reread recorded for it, standing also at
-    ///   every copy the put-back binders made of it, a model type's carriers at
-    ///   their copies.
+    ///   from a non-dependent arrow put back. A recursive definition's own
+    ///   binder is declared under a generated name, so a type that names the
+    ///   declaration reads the declaration; a type that names the binder writes
+    ///   its claim, `f[<](…)`, which no function outside the definition lowers.
+    ///   It is [`RoundTrip::Open`] when the table does not know a binder's type
+    ///   — a capability scope's, a described member's — or the function does
+    ///   not lower. A closed one that does not parse as the type of `def x : …
+    ///   ;` with no repair is [`RoundTrip::Unparsed`]. Every other is appended
+    ///   to the source as a signature of a fresh name — a computation type `C`
+    ///   as `+U (C)` — the whole lowered once in the unit the table was built
+    ///   in, and is [`RoundTrip::Equal`] when the type read is the table's
+    ///   node, `U C` for a computation type, compared by [`equal_type_reading`]
+    ///   under the source's data signatures — the same syntax with path
+    ///   evidence erased, a type of words as the path at its point, a session
+    ///   type by its protocol's behaviour from its state;
+    ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
+    ///   the refusal when the lowering refused a closed signature or the whole
+    ///   source. Each type read is printed again under the same binders, with
+    ///   the names, labels, relations and model types the reread recorded for
+    ///   it, standing also at every copy the put-back binders made of it, a
+    ///   model type's carriers at their copies.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -4140,15 +4193,17 @@ impl TypeTable
     ///   spelling, a universe, a computation type and a declaration read back
     ///   equal; a term typed under parameters and a bind, one of them a binder
     ///   the type does not name, reads back equal under them; a term whose two
-    ///   types disagree reads back at both; a type of a source that imports a
-    ///   sibling reads back beside it; and the corpus census reads back every
-    ///   printed type of every source, failing on a class the findings do not
-    ///   pin.
+    ///   types disagree reads back at both; a type inside a recursive
+    ///   definition that names the declaration reads back equal, and one that
+    ///   names the definition's own binder spells its claim; a type of a source
+    ///   that imports a sibling reads back beside it; and the corpus census
+    ///   reads back every printed type of every source, failing on a class the
+    ///   findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
     /// - witness: `typed::tests::a_record_parameter_reprints_with_its_labels_1655`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
-    /// - witness: `typed::tests::a_term_checked_against_a_type_spelled_alike_reads_back_once_1791`
+    /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -8891,38 +8946,70 @@ mod tests
         );
     }
 
-    /// A term checked against a type spelled like its own reads back once, at
-    /// its own type. Here the term is the field `b` passed back to `PiL`,
-    /// and its two types are distinct nodes printed alike, whose
-    /// presentations differ only in the declarations their names link to. A
-    /// spelling cannot tell them apart, so a second trip would read the
-    /// checked-against type back as the synthesised one.
+    /// #3584: inside a recursive definition, a type that names the declaration
+    /// reads back as the declaration's, though the definition's own binder
+    /// carries the same name. A type that names the binder spells it as a
+    /// call of it is written, `f[<](…)`, its uniform parameters first, and no
+    /// function outside the definition reads it. A field that a decoder's
+    /// arm passes back holds the binder's decode, and the constructor checks
+    /// it against the declaration's, so its two types read apart.
     #[test]
-    fn a_term_checked_against_a_type_spelled_alike_reads_back_once_1791()
+    fn a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584()
     {
         use super::ReadSite;
+        use super::RoundTrip;
 
-        let source = SourceText::from(include_str!(
-            "../../../corpus/pathological/universe/inductive-recursive.gandr"
-        ));
+        let source = SourceText::from(
+            "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; } data Both(a : Type, b : \
+             Type) : Type { MkBoth : (x : a, y : b) --> Both(a, b); } def apart(x : Nat, y : \
+             Nat) -> -F Type { return Unit } rec { data Fresh : Type { FNil : Fresh; FCons : (x \
+             : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh; } def rec fresh(x : Nat, xs : \
+             Fresh) -> -F Type { case xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
+             apart(x, y); run r <- fresh[<](x, ys); return (Both(p, r)) } } } } rec { data \
+             UD(d : Type) : Type { BaseD : UD(d); PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
+             UD(d))) --> UD(d); } def rec elD(d : Type, u : UD(d)) -> -F Type { case u { BaseD \
+             => return d, PiD(a, b) => return (+U ((x : elD[<](d, a)) -> -F elD[<](d, b(x)))) \
+             } } } rec { data Loop : Type { Base : Loop; PiL : (a : Loop, b : +U (unloop(a) -> \
+             -F Loop)) --> Loop; } def rec unloop(u : Loop) -> -F Type { case u { Base => \
+             return Nat, PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Nat)) } } }",
+        );
         let grammar = built_in().expect("the built-in grammar builds");
-        let table = table(source);
+        let reads =
+            table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        let trip = |spelled: &str| {
+            reads
+                .iter()
+                .find(|read| read.spelled == spelled)
+                .map(|read| read.trip.clone())
+        };
+        assert_eq!(
+            trip("fresh(y, ys) -> -F Type"),
+            Some(RoundTrip::Equal),
+            "the freshness a cons's evidence is at reads the declaration `fresh`"
+        );
+        assert_eq!(
+            trip("elD[<](d, a) => UD(d)"),
+            Some(RoundTrip::Open),
+            "the field's decode is the binder, written after its uniform parameter"
+        );
         let at = <&str>::from(source)
             .find("unloop[<](PiL(a, b))")
             .expect("the field is passed back")
             .saturating_add("unloop[<](PiL(a, ".len());
-        let sides: Vec<(ReadSite, String)> = table
-            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
-            .into_iter()
-            .filter(|back| {
-                matches!(back.site, ReadSite::Own(span) | ReadSite::CheckedAgainst(span)
+        let sides: Vec<(&ReadSite, &str)> = reads
+            .iter()
+            .filter(|read| {
+                matches!(read.site, ReadSite::Own(span) | ReadSite::CheckedAgainst(span)
                     if usize::from(span.start()) == at)
             })
-            .map(|back| (back.site, back.spelled))
+            .map(|read| (&read.site, read.spelled.as_str()))
             .collect();
         assert!(
-            matches!(sides.as_slice(), [(ReadSite::Own(_), own)] if own == "unloop(a) => Loop"),
-            "the field reads back once, at its own type: {sides:?}"
+            matches!(sides.as_slice(), [
+                (ReadSite::Own(_), "unloop[<](a) => Loop"),
+                (ReadSite::CheckedAgainst(_), "unloop(a) => Loop")
+            ]),
+            "the field reads at the binder's decode, then at the declaration's: {sides:?}"
         );
     }
 
