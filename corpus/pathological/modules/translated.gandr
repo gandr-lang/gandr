@@ -1,0 +1,39 @@
+// An import read through a flow whose domain its source does not answer.
+//
+// The flow reads a `label` the newer source does not publish. Reading the
+// source through it would bind a member over nothing.
+//
+// Every declaration here is refused at the flow's name, naming `label`, a read
+// through the import included. The flow's body is a template and declares
+// nothing, so nothing of it is refused.
+//
+// - see: #3378 — flows and `via`
+// - see: `model/modules/translated.gandr` — the source read through its flows
+
+/// The older signature, as this importer wrote it.
+@[ refuses("SignatureMismatch.Missing") ]
+theory Older {
+  /// The answer.
+  oper answer : Integer;
+}
+
+/// A newer signature with a label, which the newer source does not keep.
+@[ refuses("SignatureMismatch.Missing") ]
+theory Tagged {
+  /// The reply.
+  oper reply : Integer;
+  /// The label.
+  oper label : String;
+}
+
+/// A flow that reads the tagged version at the older signature.
+flow retagged : Tagged ~~> Older {
+  def answer = reply;
+}
+
+// The newer version, which publishes `reply` and no `label`.
+import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
+
+/// The answer, which is refused with its import.
+@[ refuses("SignatureMismatch.Missing") ]
+def relayed() -> Integer { newer.answer }

@@ -60,7 +60,9 @@
 //!   family's. A declaration refused for binding again a name an unqualified
 //!   import binds answers at none of its sites: every name it writes reads as
 //!   the import's, so a type naming its own family would print as the type it
-//!   hides.
+//!   hides. Nor does any site of a source refused with an import its signature
+//!   or its flow does not match: that import refuses every declaration of the
+//!   source, so no type printed there could read back.
 //! - **A described member** — a `theory` block's sorts, operations, laws and
 //!   circuits, a `data` family's constructors, operations and rules, each port
 //!   and each node of a rule's sides — is spelled at the type its member states
@@ -86,6 +88,15 @@
 //! the nodes inside it. The choice reverses when a face reads the table on
 //! every revision — inlay hints of every binder's type — and the composition
 //! should then carry it from the run that already judges.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the
+//!   directed-univalence design (§ The surface family) — a source whose import
+//!   its flow does not match answers at no site.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — the translation is the importer's to supply,
+//!   and an import it fails refuses every declaration of the importer.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -1247,10 +1258,11 @@ impl TypeTable
     ///   source's own tree, which no offset moves, and a sibling's — even one
     ///   writing the same form byte for byte (#596) — are not kept. A
     ///   declaration refused for binding again a name an unqualified import
-    ///   binds answers at none of its sites (#677). The table keeps the unit,
-    ///   which every reading back lowers in again, and the documentation each
-    ///   source of it writes of itself, by the source. Unchanged at offset zero
-    ///   over [`Unit::single`].
+    ///   binds answers at none of its sites (#677), nor does any site of a
+    ///   source refused with an import its signature or its flow does not
+    ///   match. The table keeps the unit, which every reading back lowers in
+    ///   again, and the documentation each source of it writes of itself, by
+    ///   the source. Unchanged at offset zero over [`Unit::single`].
     /// - provides: what an editor answers inside a document that imports a
     ///   sibling: an imported name types as its declaration does.
     /// - fails: as [`of`](Self::of).
@@ -1262,9 +1274,11 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — a name a sibling declares types at its use in the
     ///   importer, at the importer's own offset; a declaration the import
-    ///   shadows answers nowhere and the importer's others still read back.
+    ///   shadows answers nowhere and the importer's others still read back; a
+    ///   source refused with an import its flow does not match answers nowhere.
     /// - witness: `typed::tests::an_imported_name_types_at_its_use`
     /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
+    /// - witness: `typed::tests::a_source_refused_with_its_signature_answers_at_no_site`
     /// - witness: `typed::tests::the_table_keeps_each_source_s_own_documentation_1365`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
         usize::from(entry.span.end())
@@ -2305,12 +2319,26 @@ impl TypeTable
                 },
             )
             .collect();
-        entries.retain(|entry| {
-            !hidden
-                .iter()
-                .any(|form| form.start() <= entry.span.start() && entry.span.end() <= form.end())
-        });
+        // Nor does any site of a source refused with an import its signature
+        // or its flow does not match: the import refuses every declaration of
+        // the source, so no type printed there could read back.
         let own_source = unit.source_at(base);
+        let unmatched = module.declarations().iter().any(|declaration| {
+            unit.source_at(declaration.span().start()) == own_source
+                && matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(
+                        LoweringRefusal::SignatureMismatch { .. }
+                            | LoweringRefusal::NotATranslation { .. }
+                    )
+                )
+        });
+        entries.retain(|entry| {
+            let shadowing = hidden
+                .iter()
+                .any(|form| form.start() <= entry.span.start() && entry.span.end() <= form.end());
+            !(shadowing || (unmatched && entry.span.start() >= base))
+        });
         let mut declared = BTreeMap::new();
         let mut runs = Vec::new();
         for declaration in module.declarations() {
@@ -8036,6 +8064,47 @@ mod tests
             !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
             "the importer's other declarations still read back: {trips:?}"
         );
+    }
+
+    /// A source refused with an import whose flow its source does not answer
+    /// answers at none of its sites, its theories and its flow included: the
+    /// import refuses every declaration of the source, a type read back there
+    /// among them.
+    #[test]
+    fn a_source_refused_with_its_signature_answers_at_no_site()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = "pub def reply = 42 ;";
+        let importer = "theory Older {\n  oper answer : Integer;\n}\ntheory Tagged {\n  oper \
+                        reply : Integer;\n  oper label : String;\n}\nflow retagged : Tagged ~~> \
+                        Older {\n  def answer = reply;\n}\nimport \"./newer.gandr\" as newer : \
+                        Older via retagged ;\ndef relayed() -> Integer { newer.answer }";
+        let laid = format!("{sibling}\n{importer}");
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        assert!(
+            table.entries.is_empty(),
+            "no site of the refused source answers: {:?}",
+            table.entries
+        );
+        let refused: Vec<(String, RoundTrip)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .filter(|back| matches!(back.trip, RoundTrip::Refused(_)))
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert_eq!(refused, Vec::new(), "no printed type reads back refused");
     }
 
     /// #298: a `run` binder answers at what its bound computation returns,

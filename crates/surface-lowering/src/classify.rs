@@ -257,6 +257,7 @@ impl LoweringRefusal<'_>
             | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
+            | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::LowercaseModuleName { .. }
@@ -330,6 +331,7 @@ impl LoweringRefusal<'_>
             | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
+            | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::UninterfacedMember { .. }

@@ -42,6 +42,18 @@
 //! a client that shows them, beside its label. A resolution adds the
 //! documentation.
 //!
+//! # References
+//!
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the
+//!   directed-univalence design (§ The surface family) — an item slot offers
+//!   `flow`, the form of a flow between two signatures.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — the `flow` an item slot offers is how an
+//!   importer supplies the translation it reads through.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — the `flow` snippet opens a body
+//!   of members, where a renaming by one name costs nothing.
+//!
 //! [`Signatures`]: crate::signature::Signatures
 //!
 //! [`TypeTable::binders_at`]: gandr_surface_dispatcher::TypeTable::binders_at
@@ -1189,6 +1201,10 @@ mod tests
             row("data", "data ${1:type_identifier} { \\}"),
             row("codata", "codata ${1:type_identifier} { \\}"),
             row("module", "module ${1:type_identifier} { ${2:member} \\}"),
+            row(
+                "flow",
+                "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}",
+            ),
             row("import", "import ${1:identifier};"),
             row("world", "world ${1:identifier};"),
             row("op", "op infixl ${1:number} \"${2:string_fragment}\";"),

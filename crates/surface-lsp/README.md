@@ -8,6 +8,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -27,7 +28,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `relay`, on Unix: a client's frames carried to a hub and back, the session ending as a standalone one would.
 - `Face`, on Unix: `run_hub`'s second face, handed every connection whose first byte is `{` rather than a frame's header, over the same workspace.
 - `Workspace::held`, `Workspace::published`, `Workspace::watch` and `Workspace::query`: what another face reads off the shared workspace, each off the copy that synchronised last — the open documents and their versions, the diagnostics last published for each, a channel told of each publication and forgotten document, and any request the server answers, run on a connection that holds nothing.
-- `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes, each applied alone to the text of a held document's latest copy as a synchronisation applies it, judged by that copy's session's trial without submitting any and ranked best first, each with the diagnostics a synchronisation to its text would publish; every copy and its session unchanged.
+- `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes judged without submitting any, ranked best first, each with the diagnostics its text would publish; every copy and its session unchanged.
 - `Workspace::propose`, `Proposal` and `ProposalRefusal`: a model's fill of a range kept beside the document once it checks, refused when stale or failing, and withdrawn by the next synchronisation; kept fills served as ghost text, code lenses, code actions and hover notes.
 - `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket — a connection opening with the preface greeted with the held documents and sent each one's report, then the report of every publication; a resync answered at the current version, a detach closing it, another bus version detached at once.
 - Incremental synchronisation: each content change applied in order and the document judged again in its session on the worker pool, molding only the forms the change touched; one log line per publication.
@@ -69,7 +70,7 @@ gandr lsp --standalone
 gandr serve --linger-ms 600000
 ```
 
-`gandr lsp --capabilities` prints the `initialize` result as one line and exits; `gandr lsp` carries a session on standard input and output to the current directory's hub until `exit`, starting one when none runs; `gandr lsp --standalone` serves the session in its own process; `gandr serve` runs the hub itself, here lingering ten minutes after its last client. The crate-level example serves a session from `initialize` to `exit` in memory.
+`gandr lsp` serves a session through the workspace's hub, `gandr serve` runs the hub, and the driver's rustdoc (`gandr-lang`, `src/main.rs`) tabulates each invocation and its exit. The crate's example serves a session from `initialize` to `exit` in memory.
 
 Tests: `cargo nextest run -p gandr-surface-lsp`; the example: `cargo test -p gandr-surface-lsp --doc`.
 
@@ -98,6 +99,12 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | The render bus | [`bus`](src/bus.rs) |
 | The transport | [`transport`](src/transport.rs) |
 | Coverage of the specification, editors and extensions, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: an item slot offers `flow`.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `flow` supplies an import's translation.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming in a `flow` body is free.
 
 ## License
 

@@ -76,6 +76,16 @@
 //! - `Kovács-2022-staged_compilation_twolevel_type_theorya` — lineage: the
 //!   splice `~t`, a compile-stage program run where an object-level term is
 //!   read.
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: the
+//!   directed-univalence design (§ The surface family) — `flow_declaration`
+//!   writes a flow between two signatures, and an import's `via` names the flow
+//!   it rides.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — an import names the translation it is read
+//!   through; no form asks for one to be found.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — a flow's body is module members,
+//!   so a renaming is written as a definition by one name.
 
 use alloc::vec::Vec;
 
@@ -120,7 +130,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 108 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=10 => Sort::Item, 11..=16 => Sort::ModuleMember, 17..=28 | 98..=99 => Sort::Pattern, 29..=34 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 109 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=11 => Sort::Item, 12..=17 => Sort::ModuleMember, 18..=29 | 99..=100 => Sort::Pattern, 30..=35 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -233,8 +243,9 @@ fn items(
 }
 
 /// Append the declaration forms: `data` and `codata` datatypes and their
-/// members, `import`, the reserved operator-fixity declaration, and the
-/// reserved mutual-recursion `rec` block.
+/// members, `module` and the `flow` translations between theories, `import`,
+/// `world`, the reserved operator-fixity declaration, the reserved
+/// mutual-recursion `rec` block and the `pub` mark.
 ///
 /// All land at `item.singleton` beside the def family. Every form is
 /// keyword-led (a fresh first-token discriminator with no lookahead against
@@ -245,8 +256,8 @@ fn items(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends the six ordered declaration families at the item sort and
-///   supplied band.
+/// - ensures: appends the nine ordered declaration families at the item sort
+///   and supplied band.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -257,7 +268,7 @@ fn items(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 8 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "import_declaration", "world_declaration", "operator_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 9 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "import_declaration", "world_declaration", "operator_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -432,6 +443,32 @@ fn declarations(
     ));
     out.push(module);
 
+    // --- flow declaration --------------------------------------------------
+    // `flow f : V1 ~~> V2 { … }`: a flow from the signature `V1` to `V2`, a
+    // `Flow` between signatures written with the flow's type-level arrow. Its
+    // body is the translator, `V2`'s members over `V1`'s. Both signatures are
+    // type paths, as `Model(…)` writes one, around the flow tile `⇝`, which
+    // the labeler offers for `~~>`. The body is the module body's repetition
+    // of `Sort::ModuleMember` holes. The reserved lead `flow` chooses the form
+    // at an item slot, so the choice stays one token deep.
+    out.push(r(
+        RuleName("flow_declaration"),
+        Provenance("flow_declaration"),
+        s,
+        p,
+        seq([
+            t(TileLabel("flow")),
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            theory_path(),
+            t(TileLabel("⇝")),
+            theory_path(),
+            t(TileLabel("{")),
+            repeat(h(Sort::ModuleMember)),
+            t(TileLabel("}")),
+        ]),
+    ));
+
     // --- module `import` -------------------------------
     // `import "URI" ;` and `import "URI" as name ;`. The URI is a plain string
     // literal, so a new scheme needs no grammar change.
@@ -450,6 +487,11 @@ fn declarations(
     // source's `pub` interface is matched against (#3098). The `:` after the
     // address, the alias or nothing opens it, so the choice stays one token
     // deep.
+    //
+    // `via f` after the signature rides the source along the flow `f`,
+    // `import hello : Older via downgrade ;`: the source is matched against
+    // the flow's domain, and the signature against its codomain. `via` is
+    // contextual: no identifier stands after a signature's path.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),
@@ -467,11 +509,8 @@ fn declarations(
             opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
             opt(seq([
                 t(TileLabel(":")),
-                t(TileLabel("type_identifier")),
-                repeat(seq([
-                    t(TileLabel(".")),
-                    alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
-                ])),
+                theory_path(),
+                opt(seq([t(TileLabel("via")), t(TileLabel("identifier"))])),
             ])),
             opt(seq([
                 t(TileLabel("(")),
@@ -717,6 +756,35 @@ fn functor_application_tail() -> Regex
         ])),
         t(TileLabel(")")),
         t(TileLabel(";")),
+    ])
+}
+
+/// Build a theory's path, `Greeting` or `Gandr.Package`: a type name, then
+/// any number of dotted segments of either name case, the segments before the
+/// last naming the modules the theory is declared in, as `Model(…)` reads one.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a type name followed by a repetition of a dot and a name of
+///   either case.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
+fn theory_path() -> Regex
+{
+    seq([
+        t(TileLabel("type_identifier")),
+        repeat(seq([
+            t(TileLabel(".")),
+            alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+        ])),
     ])
 }
 

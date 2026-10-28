@@ -189,6 +189,7 @@ unproduced = [
   { rule = "f_type.result", reason = "a definition's result row: core keeps the returner with its row, which the walk writes as `f_type.row`, and the whole-definition printer leaves the returner's tile out of that spelling at the result, `-> [E] B`" },
   { rule = "f_type.result.labelled", reason = "a definition's labelled result row: core keeps the returner with its row, which the walk writes as `f_type.row.labelled`, and the whole-definition printer leaves the returner's tile out of that spelling at the result, `-> [a : E] B`" },
   { rule = "file_descriptor", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "flow_declaration", reason = "a module item: the printer presents one core term or type, and a flow lowers to a functor in the module's environment, never to a core node" },
 
   { rule = "glob_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
   { rule = "hole.pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },

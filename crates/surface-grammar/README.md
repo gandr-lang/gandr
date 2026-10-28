@@ -117,6 +117,9 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index binder over the host's types is a type identifier.
 - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design (§ theories-models-manifest-sorts) — the tail `with sort x = A`.
 - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — lineage: the syntax bikeshed — the row entry's spelling, `T with sort x = A`.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: the directed-univalence design (§ The surface family) — `flow` between two signatures, and an import's `via`.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — an import names its translation.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a renaming is written as a definition by one name.
 
 ## License
 

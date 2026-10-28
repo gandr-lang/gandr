@@ -47,13 +47,6 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 
-Each nontrivial operation states a contract or an exemption, and an adequacy claim naming its witnesses. The boundary evidence includes:
-
-| Surface | Observed boundary |
-| ------- | ----------------- |
-| [Reports](src/report.rs) and [exercised rows](src/exercised.rs) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
-| [Corpus registration](tests/corpus.rs) | A directory with a source extension is traversed rather than registered as a source. |
-
 ## Expected features
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
@@ -101,7 +94,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 | Topic | Module |
 | ----- | ------ |
-| Routing, optional tracing | [`src/lib.rs`](src/lib.rs) |
+| Routing, specification evidence, optional tracing | [`src/lib.rs`](src/lib.rs) |
 | One composition, the kernel's re-derivation, a component judged once | [`compose`](src/compose.rs), [`component`](src/component.rs) |
 | The run stage, native universe-path boundaries | [`evaluate`](src/evaluate.rs) |
 | What each verb prints of a step | [`entry`](src/entry.rs) |
@@ -126,6 +119,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — only a cache a driver installs recalls; the rest recheck.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's worlds.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run is a local artifact.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: a source its flow refuses answers at no site.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a failed translation refuses its importer.
 
 ## License
 

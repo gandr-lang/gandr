@@ -1,0 +1,16 @@
+/// `flow_declaration`: a flow: one theory's members, defined over another's, written with its glyph and in ASCII.
+theory Older {
+  oper answer : Integer;
+}
+
+theory Newer {
+  oper reply : Integer;
+}
+
+flow downgrade : Newer ⇝ Older {
+  def answer = reply;
+}
+
+flow downgradeAscii : Newer ~~> Older {
+  def answer = reply;
+}

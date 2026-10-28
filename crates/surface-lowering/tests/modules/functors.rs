@@ -721,3 +721,52 @@ fn an_application_named_twice_is_refused_naming_the_first()
         "the second application of `O` is refused at its name: {found:?}"
     );
 }
+
+/// The two signatures the flow tests translate between.
+const VERSIONS: &str = "theory Older { oper answer : Integer ; oper tag : Integer ; }\ntheory \
+                        Newer { oper reply : Integer ; oper tag : Integer ; }\n";
+
+#[test]
+fn a_flow_reads_its_domain_s_members_by_name()
+{
+    let source = [
+        VERSIONS,
+        "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = tag ; }\n",
+    ]
+    .concat();
+    let found = rows(&lower(source.as_str()));
+    assert!(
+        found
+            .iter()
+            .all(|&(_, _, amounts)| !matches!(amounts, Amounts::Refused(_))),
+        "a bare name in a flow's body reads the domain's member, the shared `tag` included, \
+         never the body's own: {found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .all(|&(ref path, ..)| path != "answer" && path != "tag"),
+        "a flow is a template: its members reach the kernel only through an import's \
+         translation: {found:?}"
+    );
+}
+
+#[test]
+fn a_flow_from_no_theory_is_refused_under_its_name()
+{
+    let source = [
+        VERSIONS,
+        "flow lost : Nowhere ~~> Older { def answer = 1 ; def tag = 2 ; }\n",
+    ]
+    .concat();
+    let found = rows(&lower(source.as_str()));
+    assert!(
+        found.iter().any(|&(ref path, _, amounts)| path == "lost"
+            && matches!(
+                amounts,
+                Amounts::Refused(LoweringRefusal::UnresolvedTypeHead { span, name: named, .. })
+                    if named == name("Nowhere") && span == span_of(source.as_str(), "Nowhere", 0_usize)
+            )),
+        "a domain naming no theory refuses the flow under its name, at the domain: {found:?}"
+    );
+}

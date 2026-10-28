@@ -41,7 +41,7 @@ The expectation language over a lowered module and its verdicts — the eight cl
 
 ## Examples
 
-The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests.
+The crate-level doctest (`src/lib.rs`, § Example) is the example. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests.
 
 The control subjects take a case that is hard in other languages and write it as gandr does, the accepting programs under `fixture/model/<subject>/` and each misuse refused by name under `fixture/pathological/<subject>/`:
 
@@ -64,7 +64,7 @@ The corpus is a proof library and a test suite at once, and it grows by subject,
 - **Every item and block member carries its comment; every item its attribute.** `///` before the attribute block or the member, one of `checks`, `runs`, `normalizes`, `decomposes`, `reads`, `owes`, `refuses`, `runs` beside `refuses` for a refused program whose run is part of the claim, or `runs` beside one `traces` per channel for a run whose play is part of the claim. No claim means `checks`. A refused item sits beside the item it blocks, and its issue is a `- see: #n` line in the head's references (§ Comments); there is no `declined` fixture — a refusal the record admits is a defect to file and fix. A fix's regression is an item in the subject's file.
 - **A refusal has a twin.** What a model source proves, `pathological/<subject>/` refuses by name, one refusal per item, the same subject directory on both sides.
 - **A law sits beside what it governs.** A definition with an algebraic law — a unit, associativity, a functor's composition — states it as a `rule` of its own `data` or `theory` block, oriented by the order or by a written `==>`, so the coincidence check certifies it with the block's other rules, and a `normalizes` row fires it (`model/data/map-laws.gandr`, `model/identity/group-laws.gandr`). A law is never adjoined as an axiom: one the check cannot certify yet is refused by name in the subject's twin, naming the issue that admits it — a rule over a `def` (#525), a law that joins only through a cell completion derives (#338).
-- **Size follows the sweeps.** A source stays within the per-source bounds the sweeps enforce (#416: typed when at most a kibibyte, erased within the test bound); a sweep that checks at each step measures a source by the bytes its check reads — the source laid out after its import closure — so a source over a long closure is typed nightly and erased and hovered more coarsely on the pull request (#776). Split by claim, never by count.
+- **Size follows the sweeps.** A source stays within the per-source bounds the sweeps enforce; each sweep's ceiling states how it measures a source. Split by claim, never by count.
 - **Names say the claim.** Files are kebab-case by subject and claim (`circle-group`, not `circle2`); items are the language's camelCase; a name that coincides with cubical's or the book's is kept.
 - **Sugared, but where the spelling is the claim.** A corpus source is written in the sugared form `gandr fmt --form=sugared` writes: `A => B` for `+U (A -> -F B)`, `A * B` for `#{A, B}`, `def x : T = e ;` for a pair. A source whose claim is a former's own shape declares `@[ form(explicit) ]` at its head and keeps the explicit form: the arity sources (`surface/arity/` `product`, `sum`, `records`), the engine's fragment and classifier sources (`fragment/`, `classifier/`), the universe sources (`model/universe/` and `pathological/universe/`) and `model/identity/cong-thunk.gandr`, whose path lies in a thunk type. A refusal is sugared unless it is about the explicit form. `check:corpus` holds every source of both roots to this with `gandr fmt --check --form=sugared`.
 - **The strict root is strict.** `strict/` admits only `checks` and its `runs`, `normalizes`, `decomposes`, `traces` and `reads` refinements.
@@ -95,6 +95,9 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, classed a malformed source.
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design (§ layouts-semantic-abi) — the clauses `BoundaryClause` names.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a port at a `Type[-]` sort.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `NotATranslation`, a `via` riding no flow.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a `via` naming no flow is a malformed source.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a flow's code is demanded by a `via` alone.
 
 ## License
 

@@ -71,6 +71,19 @@
 //! refused by name, `ProjectionFromApplication`, and the instance it would
 //! name is bound first, `module A = MkCounter(Seed) ;`, then read as `A.T`.
 //!
+//! # A flow is a functor between two theories
+//!
+//! `flow downgrade : Newer ~~> Older { def answer = reply ; }` is collected as
+//! a functor whose parameter is `Model(Newer)` and whose result is ascribed
+//! `Model(Older)`, under the flow's name. Its body reads the domain's members
+//! by their bare names, before its own, so `def tag = tag ;` reads the
+//! domain's `tag`. A flow is applied only by an import read through it, whose
+//! argument is the imported source: each component is the source's `pub`
+//! declaration of its name. The instance enters no module path. Its witnesses
+//! are named at the import's `via`, and a body member whose definition is a
+//! domain member's name alone is a renaming: its image is the source's
+//! declaration, and no slot of the instance mints for it.
+//!
 //! # Held outside this rung
 //!
 //! A functor is declared and applied at the top level, over one parameter
@@ -92,15 +105,27 @@
 //! - Andreas Rossberg, Claudio Russo and Derek Dreyer. "F-ing Modules."
 //!   _Journal of Functional Programming_ 24(5) (2014).
 //!   <https://doi.org/10.1017/S0956796814000264>
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: the
+//!   directed-univalence design (§ The surface family) — a flow is the functor
+//!   from `Model(V1)` to `Model(V2)`, and an import's `via` applies it to the
+//!   source: the flow's ride at the models' motive.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: the univalence
+//!   design (§ The trust story) — an import's flow is the one it names, applied
+//!   to its source; nothing is searched for.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — a renaming's image is the
+//!   source's declaration, and no slot of the instance mints for it.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 use super::Coerced;
+use super::Collected;
 use super::Collector;
 use super::Component;
 use super::ComponentForm;
@@ -120,13 +145,22 @@ use super::Structure;
 use super::StructureIndex;
 use super::TypeComponent;
 use super::TypeMeaning;
+use super::Visibility;
 use super::component_kind;
 use super::declaration_half;
 use super::slot_refusal;
 use crate::error::AscriptionForm;
 use crate::error::LoweringRefusal;
+use crate::form::Pieces;
 use crate::form::Placed;
+use crate::import::ImportResolution;
+use crate::import::Translation;
+use crate::import::lacked;
+use crate::import::unflowed;
+use crate::import::uninstantiated;
 use crate::resolve::SurfaceName;
+use crate::unit::ImportTarget;
+use crate::unit::SourceIndex;
 
 quenchant_shape::reason_enum! {
     /// Why a module form declares no functor parameter.
@@ -211,6 +245,42 @@ pub enum Stratum
     Instance(InstanceIndex),
 }
 
+/// Where a functor's body reads a bare name first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub enum BodyScope<'source>
+{
+    /// A functor written `module F(X : …)`: its body reads its own members by
+    /// name, and its parameter's by path, `X.x`.
+    #[default]
+    Own,
+    /// A flow, `f : V1 ~~> V2`: its body reads its domain's members by name
+    /// and never its own, so `def answer = answer ;` carries a member both
+    /// signatures share.
+    Domain
+    {
+        /// `V1`, the theory the body reads.
+        domain: TheoryPath<'source>,
+        /// `V2`, the theory the body is a model of.
+        codomain: TheoryPath<'source>,
+    },
+}
+
+/// A theory as a header names it, `Kit.Older`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TheoryPath<'source>
+{
+    /// Each module before the theory's name, with its bytes.
+    pub prefix: Vec<(ByteSpan, SurfaceName<'source>)>,
+    /// The theory's name tile.
+    pub named: Placed,
+}
+
 /// A functor's parameter, as its header writes it.
 ///
 /// # Specification
@@ -227,6 +297,8 @@ pub struct WrittenParameter<'source>
     /// The model signature a parameter written `(S : Model(T))` derives from
     /// `T`, or why none: a record signature states its components itself.
     pub model: Maybe<crate::model::ModelSignature, super::derived::Absent>,
+    /// Where the body reads a bare name first.
+    pub scope: BodyScope<'source>,
 }
 
 /// What one parameter component stands for in the template.
@@ -318,6 +390,8 @@ pub struct Functor<'source>
     pub end: SlotIndex,
     /// The module past the template's last.
     pub structures_end: StructureIndex,
+    /// Where the body reads a bare name first.
+    pub scope: BodyScope<'source>,
 }
 
 /// What the instance matched one parameter component with.
@@ -374,6 +448,20 @@ pub enum Matched<'source>
     },
 }
 
+/// What an application's argument is.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Argument
+{
+    /// A module, `module A = F(X) ;`: its exports are the components.
+    Module(StructureIndex),
+    /// A source an import reads through a flow: its `pub` top-level
+    /// declarations and type members are the components.
+    Source(SourceIndex),
+}
+
 /// One application, as the collection found it.
 ///
 /// # Specification
@@ -400,8 +488,8 @@ pub struct Instance<'source>
     pub declared_by: Placed,
     /// The functor applied.
     pub functor: FunctorIndex,
-    /// The argument module.
-    pub argument: StructureIndex,
+    /// The argument.
+    pub argument: Argument,
     /// The instance's module: the image of the functor's body.
     pub structure: StructureIndex,
     /// What each parameter component matched, in signature order.
@@ -410,6 +498,9 @@ pub struct Instance<'source>
     pub body_first: SlotIndex,
     /// Each module of the functor's body, with its image.
     pub images: BTreeMap<StructureIndex, StructureIndex>,
+    /// Each image of a flow's member defined as one domain member, a
+    /// renaming, with the argument's member it binds in the image's place.
+    pub renamed: BTreeMap<SlotIndex, SlotIndex>,
 }
 
 impl Instance<'_>
@@ -681,6 +772,7 @@ impl<'source> Collector<'_, 'source>
             body_first,
             end: body_first,
             structures_end: StructureIndex(self.collected.structures.len()),
+            scope: written.scope,
         });
     }
 
@@ -897,7 +989,7 @@ impl<'source> Collector<'_, 'source>
             .map_or(applied.functor.span, |last| last.span);
         let mut found = Vec::new();
         for component in &template.components {
-            match self.argument_component(argument, component) {
+            match self.argument_component(Argument::Module(argument), component) {
                 Maybe::Present(argued) => found.push(argued),
                 Maybe::Absent(_) => {
                     refuse(self, LoweringRefusal::UnknownMember {
@@ -909,7 +1001,140 @@ impl<'source> Collector<'_, 'source>
                 },
             }
         }
-        self.instantiate(form, applied, functor, &template, argument, &found);
+        let binding = Binding {
+            name: applied.name,
+            named: applied.named,
+            entered: Entered::Module,
+        };
+        let _instance = self.instantiate(
+            form,
+            binding,
+            functor,
+            &template,
+            Argument::Module(argument),
+            &found,
+        );
+    }
+
+    /// The translation the import `import` reads its source through, the flow
+    /// named by the tile `flow`, its address come to `resolution`.
+    ///
+    /// # Specification
+    /// - requires: `import` is an import form whose signature is read `via` the
+    ///   name `flow` spells.
+    /// - ensures: the flow of that name declared in the import's source before
+    ///   the import or, where none is, the one the imported source declares
+    ///   `pub`; then, when the import's address resolves to a source of the
+    ///   unit that publishes a value member of each value component's name and
+    ///   a type member of each type component's, the flow's instance over that
+    ///   source, entered under no module name, its witnesses and its image
+    ///   named at `flow`. Absent, with its reason, where no flow resolves, the
+    ///   address resolves to no source, or a component finds no member; the
+    ///   first component that finds none is the translation's lacking member.
+    /// - provides: the collection half of an import read through a flow.
+    /// - fails: never; the refusal is the import's match's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow the importer declares and one its source
+    ///   publishes each translate the source; a name no flow bears translates
+    ///   nothing.
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    #[spec(ensures: |ret| (matches!(ret.instance, Maybe::Absent(_)) || matches!(ret.flow, Maybe::Present(_)))
+        && (matches!(ret.lacking, Maybe::Absent(_)) || matches!((ret.flow, ret.instance), (Maybe::Present(_), Maybe::Absent(_)))))]
+    pub(super) fn translate(
+        &mut self,
+        import: Placed,
+        flow: Placed,
+        resolution: ImportResolution,
+    ) -> Translation<'source>
+    {
+        let name = self.name_of(flow);
+        let source = self.collected.unit.source_at(import.span.start());
+        let target = match resolution {
+            ImportResolution::Path(ImportTarget::Source(target)) => Maybe::Present(target),
+            ImportResolution::Path(_) | ImportResolution::Foreign => {
+                Maybe::Absent(uninstantiated::Absent::Unimported)
+            },
+        };
+        let collected: &Collected<'source> = self.collected;
+        let published =
+            |at: SourceIndex| matches!(target, Maybe::Present(imported) if imported == at);
+        let resolved = collected
+            .functors
+            .iter()
+            .enumerate()
+            .filter(|&(_, functor)| {
+                matches!(functor.scope, BodyScope::Domain { .. }) && functor.name == name && {
+                    let at = collected.unit.source_at(functor.declared_by.span.start());
+                    (at == source && functor.declared_by.span.end() <= import.span.start())
+                        || (published(at)
+                            && collected.structure_visibility(functor.body) == Visibility::Public)
+                }
+            })
+            .min_by_key(|&(_, functor)| {
+                collected.unit.source_at(functor.declared_by.span.start()) != source
+            })
+            .map(|(index, functor)| (FunctorIndex(index), functor.clone()));
+        let Some((index, template)) = resolved
+        else {
+            return Translation {
+                named: flow,
+                name,
+                flow: Maybe::Absent(unflowed::Absent::Undeclared),
+                instance: Maybe::Absent(uninstantiated::Absent::Unflowed),
+                lacking: Maybe::Absent(lacked::Absent::Unsought),
+            };
+        };
+        let untranslated = |reason, lacking| Translation {
+            named: flow,
+            name,
+            flow: Maybe::Present(index),
+            instance: Maybe::Absent(reason),
+            lacking,
+        };
+        let target = match target {
+            Maybe::Present(target) => target,
+            Maybe::Absent(reason) => {
+                return untranslated(reason, Maybe::Absent(lacked::Absent::Unsought));
+            },
+        };
+        let mut found = Vec::with_capacity(template.components.len());
+        for component in &template.components {
+            match self.argument_component(Argument::Source(target), component) {
+                Maybe::Present(argued) => found.push(argued),
+                Maybe::Absent(_) => {
+                    return untranslated(
+                        uninstantiated::Absent::Unmatched,
+                        Maybe::Present(component.name),
+                    );
+                },
+            }
+        }
+        let binding = Binding {
+            name,
+            named: flow,
+            entered: Entered::Import,
+        };
+        let instance = self.instantiate(
+            import,
+            binding,
+            index,
+            &template,
+            Argument::Source(target),
+            &found,
+        );
+        Translation {
+            named: flow,
+            name,
+            flow: Maybe::Present(index),
+            instance: match instance {
+                Maybe::Present(instance) => Maybe::Present(instance),
+                Maybe::Absent(_) => Maybe::Absent(uninstantiated::Absent::Unmatched),
+            },
+            lacking: Maybe::Absent(lacked::Absent::Published),
+        }
     }
 
     /// The module the argument path `head`, then `rest`, names.
@@ -1020,22 +1245,26 @@ impl<'source> Collector<'_, 'source>
         Ok(current)
     }
 
-    /// What the argument at `argument` exports for the parameter component
+    /// What the argument `argument` exports for the parameter component
     /// `component`.
     ///
     /// # Specification
-    /// - ensures: for a value or a derived component, the argument's exported
-    ///   value member of its name, read through the witness a sealed argument
-    ///   exports in its place; for a type component, the argument's exported
-    ///   type component of its name that reads a type; absent otherwise.
+    /// - ensures: for a module, and a value or a derived component, the
+    ///   module's exported value member of its name, read through the witness a
+    ///   sealed argument exports in its place; for a type component, its
+    ///   exported type component of its name that reads a type. For a source,
+    ///   its `pub` top-level declaration of the component's name, or its `pub`
+    ///   top-level type member of the name that reads a type. Absent otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an argument exporting every component and one missing
-    ///   one.
+    ///   one; a source publishing a flow's domain, and one keeping a member
+    ///   private.
     /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
     /// - witness: `tests::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && slot.0 < self.collected.slots.len(),
         | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_) | ParameterForm::Derived(_)) && found.name == component.name,
@@ -1043,85 +1272,110 @@ impl<'source> Collector<'_, 'source>
     })]
     fn argument_component(
         &self,
-        argument: StructureIndex,
+        argument: Argument,
         component: &ParameterComponent<'source>,
     ) -> Maybe<Argued<'source>, argued::Absent>
     {
-        let Some(entry) = self.collected.structures.get(argument.0)
-        else {
-            return Maybe::Absent(argued::Absent::Unexported);
+        let reads_type = |stated: &&TypeComponent<'source>| {
+            stated.name == component.name && !matches!(stated.meaning, TypeMeaning::Family(_))
         };
-        match component.form {
-            ParameterForm::Value(_) | ParameterForm::Derived(_) => entry
-                .exports
-                .iter()
-                .find_map(|&export| match export {
-                    Member::Slot(slot)
-                        if self
-                            .collected
-                            .slots
-                            .get(slot.0)
-                            .is_some_and(|member| member.name == component.name) =>
-                    {
-                        Some(Argued::Value(
-                            entry.exported_as.get(&slot).copied().unwrap_or(slot),
-                        ))
-                    },
-                    Member::Slot(_) | Member::Module(_) => None,
+        let found = match (argument, component.form) {
+            (Argument::Module(module), ParameterForm::Value(_) | ParameterForm::Derived(_)) => {
+                self.collected.structures.get(module.0).and_then(|entry| {
+                    entry.exports.iter().find_map(|&export| match export {
+                        Member::Slot(slot)
+                            if self
+                                .collected
+                                .slots
+                                .get(slot.0)
+                                .is_some_and(|member| member.name == component.name) =>
+                        {
+                            Some(Argued::Value(
+                                entry.exported_as.get(&slot).copied().unwrap_or(slot),
+                            ))
+                        },
+                        Member::Slot(_) | Member::Module(_) => None,
+                    })
                 })
-                .map_or(Maybe::Absent(argued::Absent::Unexported), Maybe::Present),
-            ParameterForm::Abstract(_) | ParameterForm::Manifest(_) => entry
-                .exported_types()
-                .iter()
-                .find(|stated| {
-                    stated.name == component.name
-                        && !matches!(stated.meaning, TypeMeaning::Family(_))
+            },
+            (Argument::Module(module), ParameterForm::Abstract(_) | ParameterForm::Manifest(_)) => {
+                self.collected.structures.get(module.0).and_then(|entry| {
+                    entry
+                        .exported_types()
+                        .iter()
+                        .find(reads_type)
+                        .map(|&stated| Argued::Type(stated))
                 })
-                .map_or(Maybe::Absent(argued::Absent::Unexported), |&stated| {
-                    Maybe::Present(Argued::Type(stated))
-                }),
-        }
+            },
+            (Argument::Source(source), ParameterForm::Value(_) | ParameterForm::Derived(_)) => self
+                .collected
+                .by_name
+                .get(&(Container::TopLevel(source), component.name))
+                .copied()
+                .filter(|&slot| self.collected.slot_visibility(slot) == Visibility::Public)
+                .map(Argued::Value),
+            (Argument::Source(source), ParameterForm::Abstract(_) | ParameterForm::Manifest(_)) => {
+                self.collected
+                    .type_members_in(Container::TopLevel(source))
+                    .filter(reads_type)
+                    .last()
+                    .filter(|stated| {
+                        self.collected.slot_visibility(stated.held) == Visibility::Public
+                    })
+                    .map(|&stated| Argued::Type(stated))
+            },
+        };
+        found.map_or(Maybe::Absent(argued::Absent::Unexported), Maybe::Present)
     }
 
     /// Bind the instance of `template`, the functor at `functor`, applied to
-    /// the module at `argument`, whose components are `found`.
+    /// `argument`, whose components are `found`, under `binding`.
     ///
     /// # Specification
     /// - requires: `found` holds one entry per parameter component, in order.
-    /// - ensures: as [`Self::apply`] for a matched argument.
+    /// - ensures: as [`Self::apply`] for a matched argument, the instance
+    ///   entered among its container's modules only for a module binding, and
+    ///   an import's witnesses named at the binding's name. For a flow, each
+    ///   image of a body member defined as one value component, a renaming, is
+    ///   recorded with the argument's member that component matched.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::apply`].
+    /// - hypothesis: L3 — as [`Self::apply`] and [`Self::translate`].
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.structures.len()),
-        ensures: self.collected.instances.len() == before.0.saturating_add(1)
-            && self.collected.structures.len() > before.1,
+        ensures: |ret| match ret {
+            | Maybe::Present(index) => usize::from(index) == before.0
+                && self.collected.instances.len() == before.0.saturating_add(1)
+                && self.collected.structures.len() > before.1,
+            | Maybe::Absent(_) => self.collected.instances.len() == before.0,
+        },
     )]
     fn instantiate(
         &mut self,
         form: Placed,
-        applied: &Applied<'source>,
+        binding: Binding<'source>,
         functor: FunctorIndex,
         template: &Functor<'source>,
-        argument: StructureIndex,
+        argument: Argument,
         found: &[Argued<'source>],
-    )
+    ) -> Maybe<InstanceIndex, uninstantiated::Absent>
     {
         let index = InstanceIndex(self.collected.instances.len());
         let structure = StructureIndex(self.collected.structures.len());
         let Some(body) = self.collected.structures.get(template.body.0).cloned()
         else {
-            return;
+            return Maybe::Absent(uninstantiated::Absent::Bodiless);
         };
         self.collected.structures.push(Structure {
-            name: applied.name,
+            name: binding.name,
             container: self.collected.top(form.span.start()),
             declared_by: form,
-            named: applied.named,
+            named: binding.named,
             ascription: body.ascription.clone(),
             model: body.model,
             sealed: body.sealed,
@@ -1134,10 +1388,15 @@ impl<'source> Collector<'_, 'source>
             coerced: body.coerced,
             stratum: Stratum::Instance(index),
         });
-        let _fresh = self.collected.modules.insert(
-            (self.collected.top(form.span.start()), applied.name),
-            structure,
-        );
+        match binding.entered {
+            Entered::Module => {
+                let _fresh = self.collected.modules.insert(
+                    (self.collected.top(form.span.start()), binding.name),
+                    structure,
+                );
+            },
+            Entered::Import => {},
+        }
         let container = Container::Module(structure);
         let mut matched = Vec::with_capacity(found.len());
         for (component, &argued) in template.components.iter().zip(found) {
@@ -1152,7 +1411,11 @@ impl<'source> Collector<'_, 'source>
                     continue;
                 },
             };
-            let witness = self.witness_slot(container, component.name, component.named, form);
+            let named = match binding.entered {
+                Entered::Module => component.named,
+                Entered::Import => binding.named,
+            };
+            let witness = self.witness_slot(container, component.name, named, form);
             let parameter = component.slot;
             matched.push(match paired {
                 Paired::Value(member) => Matched::Value {
@@ -1201,9 +1464,9 @@ impl<'source> Collector<'_, 'source>
             let _fresh = images.insert(StructureIndex(nested), image);
         }
         let body_first = SlotIndex(self.collected.slots.len());
-        let instance = Instance {
-            name: applied.name,
-            named: applied.named,
+        let mut instance = Instance {
+            name: binding.name,
+            named: binding.named,
             declared_by: form,
             functor,
             argument,
@@ -1211,6 +1474,7 @@ impl<'source> Collector<'_, 'source>
             matched,
             body_first,
             images,
+            renamed: BTreeMap::new(),
         };
         for template_slot in template.body_first.0 .. template.end.0 {
             let Some(slot) = self.collected.slots.get(template_slot).cloned()
@@ -1282,7 +1546,86 @@ impl<'source> Collector<'_, 'source>
                     .collect();
             }
         }
+        if matches!(template.scope, BodyScope::Domain { .. }) {
+            instance.renamed = self.renamings(template, &instance);
+        }
         self.collected.instances.push(instance);
+
+        Maybe::Present(index)
+    }
+
+    /// Each image `instance` makes of a member of the flow `template` whose
+    /// definition is one value component's name, with the argument's member
+    /// that component matched.
+    ///
+    /// # Specification
+    /// - requires: `instance` applies `template`, and its images are pushed.
+    /// - ensures: one entry per exported body member whose definition is a lone
+    ///   name a value or derived component bears, its image keyed to the member
+    ///   that component's witness checks; no other.
+    /// - fails: never; a member whose definition does not read is no renaming.
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of each member's definition
+    ///   off the tree, which a clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `def answer = reply ;` binds the source's `reply`,
+    ///   and `def answer = reply + 1 ;` is the importer's own code.
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    fn renamings(
+        &self,
+        template: &Functor<'source>,
+        instance: &Instance<'source>,
+    ) -> BTreeMap<SlotIndex, SlotIndex>
+    {
+        let mut renamed = BTreeMap::new();
+        let Some(body) = self.collected.structures.get(template.body.0)
+        else {
+            return renamed;
+        };
+        let mut scratch = Pieces::default();
+        for &export in &body.exports {
+            let Member::Slot(slot) = export
+            else {
+                continue;
+            };
+            let Some(&DeclarationSlot {
+                definition:
+                    Maybe::Present(Half {
+                        operand: Operand::Written(written),
+                        ..
+                    }),
+                ..
+            }) = self.collected.slots.get(slot.0)
+            else {
+                continue;
+            };
+            let Ok(Some(tile)) = self.lone_name(written.node, &mut scratch)
+            else {
+                continue;
+            };
+            let read = self.name_of(tile);
+            let member = template
+                .components
+                .iter()
+                .filter(|component| component.name == read)
+                .find_map(|component| {
+                    instance.matched.iter().find_map(|&matched| match matched {
+                        Matched::Value {
+                            parameter, member, ..
+                        } if parameter == component.slot => Some(member),
+                        Matched::Value { .. }
+                        | Matched::Abstract { .. }
+                        | Matched::Manifest { .. } => None,
+                    })
+                });
+            if let (Some(member), Maybe::Present(image)) = (member, instance.image(template, slot))
+            {
+                let _fresh = renamed.insert(image, member);
+            }
+        }
+
+        renamed
     }
 
     /// A witness slot named `name` in `container`, checking one parameter
@@ -1328,6 +1671,35 @@ impl<'source> Collector<'_, 'source>
 
         minted
     }
+}
+
+/// The name an instance is bound under, and where it is entered.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Binding<'source>
+{
+    /// The name.
+    name: SurfaceName<'source>,
+    /// The name's tile.
+    named: Placed,
+    /// Where the name is entered.
+    entered: Entered,
+}
+
+/// Where an instance's name is entered.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Entered
+{
+    /// A module binding's, `module A = F(X) ;`: among its container's
+    /// modules, so a path reads it.
+    Module,
+    /// An import's translation's: nowhere, so only the import reads it.
+    Import,
 }
 
 /// What an argument exports for one parameter component.
