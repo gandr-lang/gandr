@@ -1343,5 +1343,20 @@
       ]
     },
     "output": "the `## Rows` item `rec-loop` names no open row of #2558 (`rec-block`, `a`): name the rows the change clears as #2558 keys them, then run `pr:open` again\nthe `## Rows` item `b` names no open row of #2558 (`rec-block`, `a`): name the rows the change clears as #2558 keys them, then run `pr:open` again\nthe `## Rows` item `rec-none` names no open row of #2558 (`rec-block`, `a`): name the rows the change clears as #2558 keys them, then run `pr:open` again"
+  },
+  {
+    "name": "#3371: a collector row whose mutant name holds an escaped `\\|` keys whole, so a `## Rows` item spelling the mutant whole names it",
+    "input": {
+      "branch": "workflow-3202-laying",
+      "body": "Advances #3202\n\n## Rows\n\n- `host.rs:1581:47: replace && with || in Laying<'_>::laid`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 3202,
+          "labels": ["kind:defect", "area:runtime", "collector"],
+          "body": "| mutant | verdict |\n| --- | --- |\n| `host.rs:1581:47: replace && with \\|\\| in Laying<'_>::laid` | missed |\n| `host.rs:1581:50: delete ! in Laying<'_>::laid` | missed |\n"
+        }
+      ]
+    },
+    "output": ""
   }
 ]
