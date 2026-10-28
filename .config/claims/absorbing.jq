@@ -6,8 +6,9 @@
 # `report:absorption` writes them, `{"<filename>": [{path, status}]}`, or
 # null where no vault checkout has written them, as in CI.
 #
-# A vault page an issue's `## Sources` marks primary, named by its filename
-# (every page that filename names) or by its vault path (that page alone),
+# A vault page an issue's `## Sources` row marks primary (#3594), named by
+# its filename (every page that filename names) or by its vault path (that
+# page alone),
 # whose status is `design` or `partly` (the tree does not yet state all of
 # it), is answered in the body's `## Vault`: an item `` - `<page>` —
 # absorbed: <the tree locations this change adds> ``, the paired vault pull
@@ -25,8 +26,8 @@ def answer: test("^(absorbed|stays design):\\s*\\S");
 . as $in
 | select($in.absorption != null)
 | [($in.issues // [])[] | .number as $n
-    | (.body // "" | section("Sources") // []) | items | keyed
-    | select(. != null and (.text | test("\\bprimary\\b"; "i")))
+    | (.body // "") | source_rows
+    | select(.role == "primary")
     | .keys[] | select(test("^[^\\s]+\\.md$"))
     | . as $name
     | (if test("/") then [$in.absorption[split("/") | last] // [] | .[] | select(.path == $name)]

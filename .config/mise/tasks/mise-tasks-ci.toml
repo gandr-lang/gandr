@@ -1517,7 +1517,7 @@ wt step copy-ignored
 # workflow (#3113) runs the same reading on every opened or edited issue,
 # labelling `status:unsectioned` while it fails.
 #
-# A `## Sources` line naming a vault page by its filename (#2793) is read
+# A `## Sources` row naming a vault page by its filename (#2793) is read
 # against the vault checkout `$XDG_CONFIG_HOME/gandr/references` names
 # (`.config/references/vault.bash`, the rule `.config/claims/vault.jq`): the
 # page's `vault:<mint>` is shown beside its name, and a filename no vault page
@@ -1528,7 +1528,7 @@ wt step copy-ignored
 # The term map (#3158): a unit whose title or prose meets a row of
 # `.config/references/terms.toml` is refused while its `## Sources` names
 # none of the vault pages, tree paths or issues that row says own the term
-# (`.config/claims/terms.jq`). A line `- <owner> — not read: <why>` names
+# (`.config/claims/terms.jq`). A row whose role is `not read` names
 # it. The two listings find what a seat searches for; the map finds what it
 # did not know to search for. An epic or a `collector` is not read.
 #

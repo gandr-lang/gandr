@@ -6,9 +6,11 @@
 #
 # A unit issue carries, each with content (`units.md` § units-issue):
 #
-# - `## Sources`: items `` - `<key>` — <what it decides> ``, each marked
-#   primary or secondary, or `` - `<key>` — not read: <why> `` for an owner
-#   the term map routes to and the unit declines (#3158);
+# - `## Sources`: a table with the columns Source, Role and What it gives
+#   (#3594), one row per source. The Source cell names the source in
+#   backquotes. The Role is `primary`, `secondary`, or `not read` for an owner
+#   the term map routes to and the unit declines (#3158). A `not read` row
+#   gives its reason in What it gives. A list item is refused;
 # - `## Readings`: a table answering each of the seven axes `yes — <what it
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question;
@@ -40,9 +42,16 @@ def findings:
   . as $body
   | need("Sources"),
     ((section("Sources") // []) as $lines
-      | ($lines | items | select(keyed == null) | "`## Sources` line `\(.)` is not `- `<key>` — <what it decides>`"),
-        ($lines | items | keyed | select(. != null) | select(.text | test("\\b(primary|secondary)\\b|^\\s*not read:\\s*\\S"; "i") | not)
-          | "`## Sources` line `\(.line)` marks its source neither primary nor secondary")),
+      | [source_rows] as $rows
+      | ($lines | items | "`## Sources` line `\(.)` is a list item: write it as a row of the table `| Source | Role | What it gives |`"),
+        (if ($rows | length) == 0 and ([$lines | items] | length) == 0 and ($lines | filled)
+         then "`## Sources` holds no table: write `| Source | Role | What it gives |` and one row per source" else empty end),
+        ($rows[]
+          | if (.keys | length) == 0 then "`## Sources` row `\(.line)` names no source in backquotes"
+            elif IN(.role; source_roles[]) | not then "`## Sources` row `\(.line)` gives the role `\(.role)`: write `primary`, `secondary` or `not read`"
+            elif .role == "not read" and .text == "" then "`## Sources` row `\(.line)` declines its source with no reason in What it gives"
+            else empty
+            end)),
     (if section("Readings") == null then "`## Readings` is missing"
      else [marks] as $marks
      | (axes[] | . as $axis

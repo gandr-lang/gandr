@@ -12,9 +12,11 @@ Time `{{job}}`'s parts in its last run's log and split them into shares by cost:
 
 ## Sources
 
-- `.github/workflows/{{workflow}}` — primary: the jobs and the budget its header states
-- `crates/workflow-lane-budget` — primary: the guard that reads the jobs' timings against the budgets
-- `docs/agents/ci-local.md` — secondary: the hosted CI budget and its ceiling
+| Source | Role | What it gives |
+| ------ | ---- | ------------- |
+| `.github/workflows/{{workflow}}` | primary | the jobs and the budget its header states |
+| `crates/workflow-lane-budget` | primary | the guard that reads the jobs' timings against the budgets |
+| `docs/agents/ci-local.md` | secondary | the hosted CI budget and its ceiling |
 
 ## Readings
 

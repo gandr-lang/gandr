@@ -64,9 +64,12 @@ body:
     attributes:
       label: Sources
       description: >-
-        One line per source, marked primary (read whole, or the cited sections) or secondary. Include the
-        vault's two listings.
-      placeholder: "- `<library stem or design page>` — **primary**: <what it decides for this unit>"
+        One row per source. The role is primary (read whole, or the cited sections), secondary, or not read.
+        Include the vault's two listings.
+      value: |
+        | Source | Role | What it gives |
+        | ------ | ---- | ------------- |
+        | `<library stem or design page>` | primary | <what it decides for this unit> |
     validations:
       required: true
   - type: textarea

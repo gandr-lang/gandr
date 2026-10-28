@@ -11,9 +11,11 @@
 
 ## Sources
 
-- `#{{pr}}` — primary: the stalled pull request
-- `.config/stall/detect.jq` — primary: the `{{kind}}` finding, its threshold and its line
-- `docs/agents/coordinator.md` — secondary: who routes a lane no seat holds
+| Source | Role | What it gives |
+| ------ | ---- | ------------- |
+| `#{{pr}}` | primary | the stalled pull request |
+| `.config/stall/detect.jq` | primary | the `{{kind}}` finding, its threshold and its line |
+| `docs/agents/coordinator.md` | secondary | who routes a lane no seat holds |
 
 ## Readings
 

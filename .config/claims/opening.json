@@ -63,7 +63,7 @@
       "issues": [
         {
           "number": 2499,
-          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-pr | primary | the vocabulary |\n| `Caspar-2026-s4` | secondary | the calculus |\n\n## Readings\n"
         }
       ]
     },
@@ -77,7 +77,7 @@
       "issues": [
         {
           "number": 2499,
-          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-pr | primary | the vocabulary |\n| `Caspar-2026-s4` | secondary | the calculus |\n\n## Readings\n"
         }
       ]
     },
@@ -91,7 +91,7 @@
       "issues": [
         {
           "number": 2499,
-          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-pr | primary | the vocabulary |\n| `Caspar-2026-s4` | secondary | the calculus |\n\n## Readings\n"
         }
       ]
     },
@@ -105,7 +105,7 @@
       "issues": [
         {
           "number": 2499,
-          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-pr | primary | the vocabulary |\n| `Caspar-2026-s4` | secondary | the calculus |\n\n## Readings\n"
         }
       ]
     },
@@ -119,14 +119,14 @@
       "issues": [
         {
           "number": 2499,
-          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-pr | primary | the vocabulary |\n| `Caspar-2026-s4` | secondary | the calculus |\n\n## Readings\n"
         }
       ]
     },
     "output": ""
   },
   {
-    "name": "an issue line naming no key is noted, and the body opens",
+    "name": "#3594: an issue row naming no key, and an issue whose `## Sources` is a list, are noted, and the body opens",
     "input": {
       "branch": "workflow-2499-sources",
       "body": "Closes #2499\n\n## Refactoring\n\nno\n",
@@ -134,10 +134,14 @@
         {
           "number": 2499,
           "body": "## Sources\n\n- the vault's listing\n"
+        },
+        {
+          "number": 2500,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| the vault's listing | secondary | the pages |\n"
         }
       ]
     },
-    "output": "note: #2499's `## Sources` line `- the vault's listing` is not `- `<key>` — <text>`, so no key is read from it"
+    "output": "note: #2499's `## Sources` is a list, so no key is read from it: write it as the table `| Source | Role | What it gives |`\nnote: #2500's `## Sources` row `| the vault's listing | secondary | the pages |` names no source in backquotes, so no key is read from it"
   },
   {
     "name": "an issue with no `## Sources` asks for none",
@@ -1081,7 +1085,7 @@
       "issues": [
         {
           "number": 2793,
-          "body": "## Sources\n\n- `core-kernel-reassessment.md` § layers — **primary**: the layer\n- `bicontextual-core.md` — secondary: the contexts\n",
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
           "labels": []
         }
       ],
@@ -1115,7 +1119,7 @@
       "issues": [
         {
           "number": 2793,
-          "body": "## Sources\n\n- `core-kernel-reassessment.md` § layers — **primary**: the layer\n- `bicontextual-core.md` — secondary: the contexts\n",
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
           "labels": []
         }
       ],
@@ -1150,7 +1154,7 @@
       "issues": [
         {
           "number": 2793,
-          "body": "## Sources\n\n- `core-kernel-reassessment.md` § layers — **primary**: the layer\n- `bicontextual-core.md` — secondary: the contexts\n",
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
           "labels": []
         }
       ],
@@ -1182,7 +1186,7 @@
       "issues": [
         {
           "number": 2793,
-          "body": "## Sources\n\n- `core-kernel-reassessment.md` § layers — **primary**: the layer\n- `bicontextual-core.md` — secondary: the contexts\n",
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
           "labels": []
         }
       ],
@@ -1214,7 +1218,7 @@
       "issues": [
         {
           "number": 2793,
-          "body": "## Sources\n\n- `core-kernel-reassessment.md` § layers — **primary**: the layer\n- `bicontextual-core.md` — secondary: the contexts\n",
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
           "labels": []
         }
       ],

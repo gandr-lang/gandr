@@ -30,8 +30,9 @@
 # issue's `## Sources` names has an item in the body's `## Sources read`, and
 # every item there carries a disposition from the vocabulary with its
 # evidence. A `supersedes` item is refused while the tree still names the old
-# key on a line that does not mark it demoted. An issue's `## Sources` line
-# that names no key is noted, not refused.
+# key on a line that does not mark it demoted. An issue's `## Sources` row
+# that names no key, or a `## Sources` written as a list, is noted, not
+# refused (#3594).
 #
 # A primary source that is a vault page is cited where the change decides
 # something by it (#2793): when an issue's `## Sources` marks a vault page
@@ -120,11 +121,13 @@ def claim:
 # The notes and refusals of `## Sources read` against the issues' `## Sources`.
 def sources:
   (.mentions // {}) as $mentions
-  | [(.issues // [])[] | .number as $n | (.body | section("Sources") // []) | items | {n: $n, line: ., item: keyed}] as $asked
+  | [(.issues // [])[] | .number as $n | .body | source_rows | {n: $n, line, keys}] as $asked
+  | [(.issues // [])[] | select([.body | section("Sources") // [] | items] | length > 0) | .number] as $listed_form
   | [(.body | section("Sources read") // []) | items] as $read
   | [$read[] | keyed | select(. != null) | .keys[]] as $listed
-  | ($asked[] | select(.item == null) | "note: #\(.n)'s `## Sources` line `\(.line)` is not `- `<key>` — <text>`, so no key is read from it"),
-    ([$asked[] | select(.item != null) | .n as $n | .item.keys[] | {n: $n, key: .}]
+  | ($listed_form[] | "note: #\(.)'s `## Sources` is a list, so no key is read from it: write it as the table `| Source | Role | What it gives |`"),
+    ($asked[] | select(.keys == []) | "note: #\(.n)'s `## Sources` row `\(.line)` names no source in backquotes, so no key is read from it"),
+    ([$asked[] | .n as $n | .keys[] | {n: $n, key: .}]
       | map(select(.key as $key | $listed | index($key) | not))
       | unique_by(.key)
       | if length == 0 then empty
@@ -156,7 +159,7 @@ def citations:
   .vault as $vault
   | select($vault != null)
   | [(.body | section("Sources read") // []) | items | keyed | select(. != null and (.text | test("^read:\\s*\\S"))) | .keys[]] as $read
-  | [(.issues // [])[] | .number as $n | .body | section("Sources") // [] | vault_sources($vault.pages; $vault.tree)
+  | [(.issues // [])[] | .number as $n | .body | [source_rows] | vault_sources($vault.pages; $vault.tree)
       | select(.primary and .verdict == "resolved") | . + {n: $n}]
   | unique_by(.mint)[]
   | . as $page

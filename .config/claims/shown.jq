@@ -11,6 +11,6 @@ include "vault";
 .pages as $pages
 | (.tree | vault_tree) as $tree
 | .body
-| section("Sources") // []
+| [source_rows]
 | vault_sources($pages; $tree)
 | vault_shown
