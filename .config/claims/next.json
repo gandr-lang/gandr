@@ -1384,10 +1384,46 @@
     "output": "collector: #20 (3 open rows)\n22\tdefect\tthe defect"
   },
   {
+    "name": "#3369: a hotpath collector counts only its open row: a fixed, accepted or runner-shift row settles, and the `## Settled` table is no row",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 20,
+          "title": "hotpath: the landed deltas",
+          "labels": ["kind:gap", "area:workflow", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "48 regressions — 1 open.\n\n## Index\n\n| pull request | commit | series | metric | delta | status | was |\n| --- | --- | --- | --- | --- | --- | --- |\n| #1454 | `ebe624c0` | `gandr` | allocations avg | +3.6 % | fixed — measured at `eafda96` | #1458 |\n| #2985 | `3266bca` | `gandr` | allocations | +3.3 % | open | |\n| #3372 | `f075b31` | `conversion` | allocations | +7.3 % | accepted — the products the path exercises | |\n| #3001 | `a1b2c3d` | `gandr` | time | +4.0 % | runner shift — the runner changed under the series | |\n\n## Settled\n\n| commit | best wall | was |\n| --- | --- | --- |\n| `ac58445` | 1.2 s | 1.3 s |\n| `ea7f13d21` | 1.1 s | 1.2 s |\n\n## Close\n\nThe issue closes when every row is `fixed`, `accepted` or `runner shift`.\n"
+        },
+        {
+          "number": 21,
+          "title": "perf: elsewhere",
+          "labels": ["kind:performance", "area:core", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "- [ ] `x`\n"
+        },
+        {
+          "number": 22,
+          "title": "the defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "collector: #20 (1 open row)\n22\tdefect\tthe defect"
+  },
+  {
     "name": "#3326: a defect collector with an open row heads the order, the oldest first, ahead of an older defect and a planned unit; an owned one is passed over, one with no open row is not listed, and the pick prints no section due",
     "input": {
       "area": "area:workflow",
-      "order": { "50": [40] },
+      "order": {
+        "50": [40]
+      },
       "issues": [
         {
           "number": 28,

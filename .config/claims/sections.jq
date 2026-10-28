@@ -31,13 +31,16 @@ def row_key:
 
 # A collector body's open rows (#3111, #3326), each by its key: its unchecked
 # `- [ ]` items, keyed by the item's text, and its table rows, keyed by the
-# first cell, header and rule left out, none of whose cells opens `landed` or
-# `fixed`. A `## Readings` or `## Concerns` table is a unit's shape, not rows.
+# first cell, header and rule left out, none of whose cells opens `landed`,
+# `fixed`, `accepted` or `runner shift`, the last three the statuses a hotpath
+# index settles a row with (#3369). A `## Readings` or `## Concerns` table is
+# a unit's shape, and a `## Settled` table measures settled rows: neither is
+# rows.
 def collector_rows:
   def rule: test("^\\s*\\|(\\s*:?-+:?\\s*\\|)+\\s*$");
   (lines
     | reduce .[] as $line ({shape: false, kept: []};
-        (if $line | test("^## ") then .shape = ($line | test("^## (Readings|Concerns)\\s*(:.*)?$")) else . end)
+        (if $line | test("^## ") then .shape = ($line | test("^## (Readings|Concerns|Settled)\\s*(:.*)?$")) else . end)
         | if .shape then . else .kept += [$line] end)
     | .kept) as $lines
   | [$lines[] | select(test("^\\s*[-*] \\[ \\]")) | sub("^\\s*[-*] \\[ \\]\\s*"; "") | row_key]
@@ -45,7 +48,7 @@ def collector_rows:
         | $lines[$i]
         | select(test("^\\s*\\|") and (rule | not))
         | select(($lines[$i + 1] // "" | rule) | not)
-        | select(test("\\|\\s*(landed|fixed)\\b"; "i") | not)
+        | select(test("\\|\\s*(landed|fixed|accepted|runner shift)\\b"; "i") | not)
         | sub("^\\s*\\|\\s*"; "") | split("|")[0] | row_key];
 
 # An item as {line, keys, text}, or null when it is not `- <head> — <text>`
