@@ -26,11 +26,15 @@ name: landing
 # The workflow's own token may not enqueue (the queue answers "Enqueuer is
 # not authorized to merge"), and GitHub starts no run for its pushes, so it
 # only tells: one comment per head, `pr-green`, `pr-red`, `pr-dirty` or
-# `pr-dequeued`. With the landing App's secrets, `LANDING_APP_ID` and
-# `LANDING_APP_PRIVATE_KEY` (#2706), the run acts as the App: it queues a
-# green stack's ready prefix and has GitHub rebase a dequeued pull request
-# onto its base, the rebased commits signed by GitHub. The App's token is
-# minted by `actions/create-github-app-token`, the run's only App-facing step.
+# `pr-dequeued`. With a token that may queue, the run queues a green stack's
+# ready prefix and has GitHub rebase a dequeued pull request onto its base.
+# The token is `LANDING_TOKEN` when that secret is set: a fine-grained token
+# of the agents' account (#3355). A linked stack member queues only through
+# the asynchronous merge API, and GitHub refuses an App installation token
+# as a stack's enqueuer; the App's rebases are unsigned, which the trunk's
+# rules refuse. Without it, the landing App's token, minted from
+# `LANDING_APP_ID` and `LANDING_APP_PRIVATE_KEY` (#2706) by
+# `actions/create-github-app-token`, queues an unlinked pull request.
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [CI]
@@ -94,6 +98,6 @@ jobs:
         run: gh extension install github/gh-stack --pin v0.2.1
       - name: read and land the open pull requests
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
-          LANDING_TOKEN_HELD: ${{ steps.app.outputs.token != '' }}
+          GH_TOKEN: ${{ secrets.LANDING_TOKEN || steps.app.outputs.token || github.token }}
+          LANDING_TOKEN_HELD: ${{ secrets.LANDING_TOKEN != '' || steps.app.outputs.token != '' }}
         run: .config/pr-stack/landing.bash
