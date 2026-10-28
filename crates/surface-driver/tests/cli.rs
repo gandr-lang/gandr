@@ -1124,7 +1124,7 @@ fn the_recovery_sweep_reports_its_table_and_count()
         "the table names what each tile is mistaken for: {printed}"
     );
     assert!(
-        printed.ends_with(" accepted, 0 well formed, 0 marked elsewhere\n"),
+        printed.ends_with(" accepted, 0 well formed, 0 closed early, 0 marked elsewhere\n"),
         "the count closes the report: {printed}"
     );
 }
