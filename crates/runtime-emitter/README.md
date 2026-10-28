@@ -31,6 +31,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — LAM as the value representation's specification, and `storage-conjecture-exclusivity`.
 - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime's representation question (§ runtime-question-what-runtime-means).
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: verdict reuse (§ kernel-verdict-reuse) — a host's reply read from verified chunks is checked for integrity alone; its reply type stays the host's to keep.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run records its channels' plays only when its caller asks.
 
 ## Provided features
 
@@ -42,6 +43,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `crossing::{commit, deref, profile, CrossingRefusal, Uncrossable}`: a store's value committed to the value plane and read back into another store, fresh there: a literal or a constructor over crossing fields crosses, sharing unfolded, a thunk crosses as its body's command and its captures, and a closure, a stack, a code, a capability, an opaque constant or a session's record is refused by name.
 - World forms run: `hold v` delivers `v`, `leta` binds the handle's content, and `migrate [w] { t }` runs where the host decides; here, `t` runs on a thread and over a store of its own, its captures crossed in and its answer crossed back by `crossing` through the one chunk store the process holds, and a thunk it answers is laid out at the site the caller's function keeps for each thunk literal the body reaches. `world::arrive` runs a migration another host shipped, by its place in the program both hosts hold, over captures read into a fresh store, and names why one ran nowhere by `gandr-core-term`'s `world::Unmigrated`. A value that does not cross, a body that answers nothing, or a host's refusal is `Declined::Migration`.
 - Sessions run: `fork`, `send`, `recv`, `select`, `offer` and `close` are host calls on one cooperative, deterministic scheduler the run's host state holds, on the run's thread. A channel keeps one queue per direction; a receive or an offer with nothing sent parks its task's frames until its peer sends, and a run whose tasks all wait is `Stuck::Deadlock`, naming each waiting action.
+- `evaluate_traced_with_host`, `Trace`, `Play`, `Played`, `Carried`, `TaskNumber`, `ChannelNumber`: a hosted run that records each channel it forks as a play, every move with the task and side that made it and its payload's place in the store, and reads a play's causal web, `Play::web`, by the facing rule a dialogue's is read by. A run through `evaluate_with_host` records nothing.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
 - `PATCHER`: whether this host emits native code.
 - `Fuel` and `Status`, re-exported: the code-word jumps a run may take, and why it returned.

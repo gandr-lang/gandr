@@ -5010,10 +5010,12 @@ fn literal(literal: &Literal) -> Spelled
     })
 }
 
-/// A causal web's modular decomposition as the surface writes it:
+/// A causal web's modular decomposition as the surface writes it.
+///
 /// `series(…)`, `parallel(…)` and `prime(…)` over their factors, and a leaf
 /// `event(left, 0)` naming a move by its endpoint and its position in that
-/// endpoint's order.
+/// endpoint's order: how a web value prints, and how a traced run's channel
+/// spells the web its play decomposes to.
 ///
 /// # Specification
 /// - requires: nothing; a node owed more factors than the pieces hold is closed
@@ -5031,7 +5033,9 @@ fn literal(literal: &Literal) -> Spelled
 #[spec(ensures: |ret| !ret.contains('\n')
     && ret.matches('(').count() == ret.matches(')').count()
     && ret.matches("event(").count() == pieces.iter().filter(|piece| matches!(**piece, WebPiece::Event { .. })).count())]
-fn web_spelled(pieces: &[WebPiece]) -> String
+#[inline]
+#[must_use]
+pub fn web_spelled(pieces: &[WebPiece]) -> String
 {
     alloc::string::ToString::to_string(&WebSpelling(pieces))
 }

@@ -8,8 +8,22 @@
 import "./seat-base.gandr";
 
 /// A desk dispatching a task to a forked seat and following its reports to a
-/// retirement or a handoff.
-@[ runs("unit") ]
+/// retirement or a handoff. Its run plays the handoff, whose last five moves
+/// leave a prime node.
+@[
+  runs("unit"),
+  traces(decomposes(seat, series(
+    event(right, 0),
+    event(left, 0),
+    event(left, 1),
+    parallel(event(left, 2), event(right, 1)),
+    event(right, 2),
+    event(right, 3),
+    event(left, 3),
+    event(left, 4),
+    prime(event(left, 5), event(left, 6), event(right, 4), series(event(right, 5), event(right, 6)))
+  )))
+]
 def exchange() -> Unit {
   fork (seat : Seat.SeatEnd) {
     recv(seat) as task;

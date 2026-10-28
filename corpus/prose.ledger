@@ -1114,7 +1114,6 @@ crates/storage-values/README.md IngMain f27842cdfa743a93
 crates/surface-corpus/README.md Passive 1020525fdac9af18
 crates/surface-corpus/README.md Passive 3783997c18446b55
 crates/surface-corpus/README.md Passive aba927a6da737d5e
-crates/surface-corpus/README.md Glossary f1c7afe8ba05d191
 crates/surface-diagnostics/README.md Tense 0a3e2fde4ece19f9
 crates/surface-dispatcher/README.md Tense 30f62e5d9d0d6fe2
 crates/surface-driver/README.md NounStack b701528af635402b

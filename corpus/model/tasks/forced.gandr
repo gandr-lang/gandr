@@ -1,0 +1,36 @@
+// A task answering its parent's request cannot reply before the request
+// arrives.
+//
+// The parent's send, the task's receipt and the task's reply form a chain.
+// The channel's web opens on a series of those three events. Only the task's
+// close commutes with the parent reading the reply.
+//
+// The parent forks the task, sends it a request and reads the reply. The
+// trace states the web the run plays on the task's channel.
+//
+// - see: `independent.gandr` — two tasks whose plays do not order each other
+// - see: #3338 — the run's trace and the web a source states for a channel
+
+// The task's protocols.
+import "./task-base.gandr";
+
+/// A parent sends its task a request and reads the reply.
+@[
+  runs("unit"),
+  traces(decomposes(task, series(
+    event(right, 0),
+    event(left, 0),
+    event(left, 1),
+    parallel(event(left, 2), series(event(right, 1), event(right, 2)))
+  )))
+]
+def forced() -> Unit {
+  fork (task : Task.Relay) {
+    recv(task) as request;
+    send(task, request);
+    close(task)
+  } as asked;
+  send(asked, Task.notes);
+  recv(asked) as reply;
+  close(asked)
+}

@@ -6,10 +6,12 @@
 // task by reading the end to its close, so no task outlives its parent, as no
 // task outlives the nursery that started it in Trio.
 
-/// A task: the protocol its end carries back to the parent, and the path it
+/// A task: the protocols its end carries back to the parent, and the path it
 /// reads.
 pub module Task :> #{
   type Join = !String. end,
+  type Relay = ?String. !String. end,
+  type Volunteer = !String. ?String. end,
   notes : String
 } {
   /// The path a task reads.

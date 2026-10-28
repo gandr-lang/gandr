@@ -584,7 +584,10 @@ fn stated_runs(tree: Tree) -> Vec<(String, Settlement)>
             return;
         };
         for declaration in report.declarations() {
-            if let Stated::Verdict(Outcome::Runs(ref spelled)) = *declaration.stated() {
+            if let Stated::Verdict(
+                Outcome::Runs(ref spelled) | Outcome::RunsTracing(ref spelled, _),
+            ) = *declaration.stated()
+            {
                 runs.push((
                     format!(
                         "{}: `{}` states runs to {spelled}, {}",

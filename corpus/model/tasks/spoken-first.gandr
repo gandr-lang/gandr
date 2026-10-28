@@ -1,0 +1,37 @@
+// A task that speaks before it is asked plays another web than one asked
+// first.
+//
+// The relay in `forced.gandr` puts the parent's request before the task's
+// reply. Swapping the two sends turns the chain around: the task's send, the
+// parent's receipt and the parent's answer. A source stating the forced web
+// for this run does not settle.
+//
+// The task sends its notes, then reads the parent's answer. The trace states
+// the web the runner reports when the forced web is stated against this run.
+//
+// - see: `forced.gandr` — the same exchange, asked first
+// - see: #3338 — the run's trace and the web a source states for a channel
+
+// The task's protocols.
+import "./task-base.gandr";
+
+/// A task sending its notes before it reads its parent's answer.
+@[
+  runs("unit"),
+  traces(decomposes(task, series(
+    event(left, 0),
+    event(right, 0),
+    event(right, 1),
+    parallel(series(event(left, 1), event(left, 2)), event(right, 2))
+  )))
+]
+def spokenFirst() -> Unit {
+  fork (task : Task.Volunteer) {
+    send(task, Task.notes);
+    recv(task) as answer;
+    close(task)
+  } as heard;
+  recv(heard) as told;
+  send(heard, told);
+  close(heard)
+}

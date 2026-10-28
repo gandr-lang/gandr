@@ -1,11 +1,12 @@
-//! The five expectation schemas, the verdict a declaration states, and the
+//! The seven expectation schemas, the verdict a declaration states, and the
 //! reading of a declared name's attributes into it.
 //!
 //! # A name states one verdict or none
 //!
-//! A declared name carries one expectation, or a `runs` beside a `refuses`
-//! (see below). Any other two on one name — `checks` beside `owes`, or one on
-//! the signature and another on the definition — state no verdict:
+//! A declared name carries one expectation, a `runs` beside a `refuses`, or a
+//! `runs` beside `traces` (see below). Any other two on one name — `checks`
+//! beside `owes`, or one on the signature and another on the definition —
+//! state no verdict:
 //! [`ExpectationFault::ConflictingExpectations`] names the first two, and the
 //! name is unsettled even when one of them would hold. A form that writes both
 //! halves, a signed function tail, is one form with one set of attributes, read
@@ -23,6 +24,22 @@
 //! The declaration settles only when both hold: the produced refusal is `Name`
 //! and the runner, asked to run the refused declaration, spells `v`. It is a
 //! `refuses`, so the strict root guards it as it guards any.
+//!
+//! # A run states its channels' webs
+//!
+//! `@[ runs("v"), traces(decomposes(c, web)) ]` states that running the
+//! declaration comes to `v` and that the channel its fork names `c` — the
+//! binder the fork writes at its protocol — plays a dialogue whose causal web
+//! decomposes to `web`; `traces(primes(c, n))` states only the web's prime
+//! count, as `decomposes(primes = n)` does. A `runs` beside one or more
+//! `traces` reads as [`Outcome::RunsTracing`], the channels in the order
+//! written. The runner is asked for a traced run, and the declaration settles
+//! when the run spells `v` and each stated channel's play decomposes as
+//! stated. A channel the run never forks reads `unplayed`; one forked more
+//! than once reads each play's web in turn. A `traces` with no `runs` beside
+//! it states no verdict ([`ExpectationFault::TraceWithoutRun`]), and one
+//! whose payload is neither form states none either
+//! ([`ExpectationFault::UnwrittenTrace`]).
 //!
 //! # A run outcome refines *checks*
 //!
@@ -119,6 +136,7 @@ use crate::refusal::CorpusRefusal;
 use crate::refusal::RefusalName;
 use crate::refusal::refusal_name;
 use crate::root::CorpusRoot;
+use crate::run::Channel;
 use crate::run::RunSpelling;
 use crate::settle::SettleFault;
 
@@ -159,7 +177,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the five expectation schemas.
+/// One of the seven expectation schemas.
 ///
 /// # Specification
 /// - requires: nothing; source correspondence is established by the reader or
@@ -197,6 +215,10 @@ pub enum ExpectationSchema
     /// `decomposes(web)`: the dialogue checks, owing nothing, and its causal
     /// web decomposes to the web written.
     Decomposes,
+    /// `traces(decomposes(c, web))`: beside a `runs`, the channel the run's
+    /// fork names `c` plays a dialogue whose web decomposes to the web
+    /// written.
+    Traces,
 }
 
 impl ExpectationSchema
@@ -205,9 +227,9 @@ impl ExpectationSchema
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `checks`, `owes`, `refuses`, `runs`, `normalizes` and
-    ///   `decomposes` name their schemas; any other registered attribute names
-    ///   none.
+    /// - ensures: `checks`, `owes`, `refuses`, `runs`, `normalizes`,
+    ///   `decomposes` and `traces` name their schemas; any other registered
+    ///   attribute names none.
     /// - provides: the filter that decides which attributes state a verdict.
     /// - fails: never; an attribute stating something else is the
     ///   [`expectation_schema::Absent::Unrelated`] absence.
@@ -227,9 +249,10 @@ impl ExpectationSchema
     | ("refuses", Maybe::Present(Self::Refuses))
     | ("runs", Maybe::Present(Self::Runs))
     | ("normalizes", Maybe::Present(Self::Normalizes))
-    | ("decomposes", Maybe::Present(Self::Decomposes)) => true,
+    | ("decomposes", Maybe::Present(Self::Decomposes))
+    | ("traces", Maybe::Present(Self::Traces)) => true,
     (name, Maybe::Absent(expectation_schema::Absent::Unrelated)) => {
-        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes")
+        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes" | "traces")
     }
     _ => false,
 },
@@ -245,6 +268,7 @@ impl ExpectationSchema
             "runs" => Maybe::Present(Self::Runs),
             "normalizes" => Maybe::Present(Self::Normalizes),
             "decomposes" => Maybe::Present(Self::Decomposes),
+            "traces" => Maybe::Present(Self::Traces),
             _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
@@ -286,6 +310,7 @@ impl fmt::Display for ExpectationSchema
             Self::Runs => "runs",
             Self::Normalizes => "normalizes",
             Self::Decomposes => "decomposes",
+            Self::Traces => "traces",
         })
     }
 }
@@ -331,13 +356,18 @@ pub enum Outcome
     /// anyway produces the outcome spelled: a program that runs while the
     /// checker refuses it.
     RefusesRunning(RefusalName, RunSpelling),
+    /// The declaration checks, owing nothing, running it produces the outcome
+    /// spelled, and each channel named plays a dialogue whose web decomposes
+    /// to the web spelled beside it.
+    RunsTracing(RunSpelling, Vec<Channel>),
 }
 
 impl fmt::Display for Outcome
 {
     /// Writes `checks owing n`, `refuses Name`, `runs to outcome`,
-    /// `normalizes call ~> normal form`, `decomposes to web` or
-    /// `refuses Name and runs to outcome`.
+    /// `normalizes call ~> normal form`, `decomposes to web`,
+    /// `refuses Name and runs to outcome` or `runs to outcome tracing c to
+    /// web, …`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -373,6 +403,15 @@ impl fmt::Display for Outcome
             Self::Decomposes(ref spelled) => write!(f, "decomposes to {spelled}"),
             Self::RefusesRunning(name, ref spelled) => {
                 write!(f, "refuses {name} and runs to {spelled}")
+            },
+            Self::RunsTracing(ref spelled, ref channels) => {
+                write!(f, "runs to {spelled} tracing")?;
+                let mut separator = " ";
+                for channel in channels {
+                    write!(f, "{separator}{} to {}", channel.name, channel.web)?;
+                    separator = ", ";
+                }
+                Ok(())
             },
         }
     }
@@ -507,6 +546,19 @@ pub enum ExpectationFault
         /// The bytes the attribute covers.
         span: ByteSpan,
     },
+    /// A `traces` payload that is neither `decomposes(c, web)` over a web
+    /// node nor `primes(c, n)` over a count.
+    UnwrittenTrace
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+    },
+    /// A `traces` with no `runs` beside it: a channel of no stated run.
+    TraceWithoutRun
+    {
+        /// The bytes the first `traces` covers.
+        span: ByteSpan,
+    },
 }
 
 impl fmt::Display for ExpectationFault
@@ -553,6 +605,12 @@ impl fmt::Display for ExpectationFault
             Self::UnwrittenWeb { .. } => f.write_str(
                 "the `decomposes` payload is no `series`, `parallel`, `prime` or `event` node",
             ),
+            Self::UnwrittenTrace { .. } => f.write_str(
+                "the `traces` payload is no `decomposes(channel, web)` or `primes(channel, n)`",
+            ),
+            Self::TraceWithoutRun { .. } => {
+                f.write_str("the `traces` states a channel of no run: it needs a `runs` beside it")
+            },
         }
     }
 }
@@ -631,7 +689,8 @@ pub struct Expectations
 ///   in reading order its root does not admit — under the strict root an `owes`
 ///   or a `refuses` — and then stating checks owing nothing with no payload
 ///   read; unguarded, stating its one expectation's verdict, the two together
-///   when it carries exactly a `runs` and a `refuses`, in either order, or
+///   when it carries exactly a `runs` and a `refuses`, in either order, the run
+///   and its channels when it carries `traces` as [`traced`] reads them, or
 ///   [`ExpectationFault::ConflictingExpectations`] naming the first two when it
 ///   carries any other pair or more than two.
 /// - provides: the stated side of the settle comparison.
@@ -729,30 +788,38 @@ where
             guard: Maybe::Present(refusal),
         });
     }
-    let stated = match *written.as_slice() {
-        [
-            (ExpectationSchema::Runs, ran),
-            (ExpectationSchema::Refuses, refused),
-        ]
-        | [
-            (ExpectationSchema::Refuses, refused),
-            (ExpectationSchema::Runs, ran),
-        ] => {
-            let spelled = run_spelled(ran, arena)?;
-            match refusal_named(refused, arena)? {
-                Maybe::Present(name) => Stated::Verdict(Outcome::RefusesRunning(name, spelled)),
-                Maybe::Absent(refusal_name::Absent::Unnamed) => {
-                    Stated::Malformed(ExpectationFault::UnknownRefusal {
-                        span: refused.span(),
-                    })
-                },
-            }
-        },
-        [_, (_, second), ..] => Stated::Malformed(ExpectationFault::ConflictingExpectations {
-            first: entry.span(),
-            second: second.span(),
-        }),
-        [_] | [] => stated_by(schema, entry, arena, spelled(entry).as_ref())?,
+    let stated = if written
+        .iter()
+        .any(|&(schema, _)| schema == ExpectationSchema::Traces)
+    {
+        traced(&written, arena, &spelled)?
+    }
+    else {
+        match *written.as_slice() {
+            [
+                (ExpectationSchema::Runs, ran),
+                (ExpectationSchema::Refuses, refused),
+            ]
+            | [
+                (ExpectationSchema::Refuses, refused),
+                (ExpectationSchema::Runs, ran),
+            ] => {
+                let spelled = run_spelled(ran, arena)?;
+                match refusal_named(refused, arena)? {
+                    Maybe::Present(name) => Stated::Verdict(Outcome::RefusesRunning(name, spelled)),
+                    Maybe::Absent(refusal_name::Absent::Unnamed) => {
+                        Stated::Malformed(ExpectationFault::UnknownRefusal {
+                            span: refused.span(),
+                        })
+                    },
+                }
+            },
+            [_, (_, second), ..] => Stated::Malformed(ExpectationFault::ConflictingExpectations {
+                first: entry.span(),
+                second: second.span(),
+            }),
+            [_] | [] => stated_by(schema, entry, arena, spelled(entry).as_ref())?,
+        }
     };
     Ok(Expectations {
         membership: Membership::Fixture,
@@ -773,8 +840,8 @@ where
 ///   preserves a text payload that writes `~>` and reports one that does not;
 ///   `decomposes` preserves a spelling that is a `series`, `parallel`, `prime`
 ///   or `event` node, or a prime count `primes = n`, and reports one that is
-///   neither. Malformed counts, names, lines and webs retain the attribute
-///   span.
+///   neither; a `traces` read alone states no verdict, a channel of no run.
+///   Malformed counts, names, lines and webs retain the attribute span.
 /// - fails: `UnreadablePayload` at the attribute span for an absent or
 ///   wrong-kind payload required by the schema, or a `decomposes` with no
 ///   spelling.
@@ -811,6 +878,8 @@ where
             }
             Some(_) => ret == Ok(Stated::Malformed(ExpectationFault::UnwrittenWeb { span: entry.span() })),
         }
+    } else if schema == ExpectationSchema::Traces {
+        ret == Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun { span: entry.span() }))
     } else {
         payload(entry, arena)
             .map_or_else(
@@ -918,6 +987,9 @@ fn stated_by(
                 Stated::Malformed(ExpectationFault::UnwrittenWeb { span })
             })
         },
+        ExpectationSchema::Traces => Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun {
+            span,
+        })),
     }
 }
 
@@ -928,6 +1000,159 @@ const WEB_NODES: [&str; 4] = ["series(", "parallel(", "prime(", "event("];
 /// The opening of a `decomposes` payload that states only the web's prime
 /// count, `primes = 2`.
 const PRIMES: &str = "primes = ";
+
+/// What a name carrying `traces` among `written` states: the run its one
+/// `runs` spells, and each channel a `traces` names, in the order written.
+///
+/// # Specification
+/// - requires: `written` holds a `traces`, its entries in reading order;
+///   `spelled` answers the spelling the lowering filed beside each.
+/// - ensures: [`ExpectationFault::ConflictingExpectations`] naming the first
+///   two entries when one is neither a `runs` nor a `traces`, or there are two
+///   `runs`; else [`ExpectationFault::UnwrittenTrace`] at the first `traces`
+///   whose payload names no channel; else [`ExpectationFault::TraceWithoutRun`]
+///   at the first `traces` when no `runs` stands beside them; else
+///   [`Outcome::RunsTracing`] of the run and the channels.
+/// - fails: as [`run_spelled`].
+/// - panics: none.
+/// - executable: none — the clause is the body's walk.
+///
+/// # Errors
+/// [`SettleFault::UnreadablePayload`] when the `runs` payload is no text
+/// literal of `arena`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run beside two channels, one stated by its prime count;
+///   a `traces` alone; one beside a `checks`; a payload of neither form.
+/// - witness: `expectation::tests::a_run_beside_traces_states_its_channels_3338`
+fn traced<Spell>(
+    written: &[(ExpectationSchema, &AttributeEntry)],
+    arena: &CoreArena,
+    spelled: &Spell,
+) -> Result<Stated, SettleFault>
+where
+    Spell: Fn(&AttributeEntry) -> Option<RunSpelling>,
+{
+    let runs: Vec<&AttributeEntry> = written
+        .iter()
+        .filter(|&&(schema, _)| schema == ExpectationSchema::Runs)
+        .map(|&(_, entry)| entry)
+        .collect();
+    let foreign = written
+        .iter()
+        .any(|&(schema, _)| !matches!(schema, ExpectationSchema::Runs | ExpectationSchema::Traces));
+    if (foreign || runs.len() > 1)
+        && let [(_, first), (_, second), ..] = *written
+    {
+        return Ok(Stated::Malformed(
+            ExpectationFault::ConflictingExpectations {
+                first: first.span(),
+                second: second.span(),
+            },
+        ));
+    }
+    let mut channels = Vec::new();
+    let mut first = None;
+    for &(schema, entry) in written {
+        if schema != ExpectationSchema::Traces {
+            continue;
+        }
+        first = first.or_else(|| Some(entry.span()));
+        let channel = spelled(entry).map_or(
+            Maybe::Absent(channel_stated::Absent::Unwritten),
+            |spelling| channel_stated(&spelling),
+        );
+        match channel {
+            Maybe::Present(channel) => channels.push(channel),
+            Maybe::Absent(channel_stated::Absent::Unwritten) => {
+                return Ok(Stated::Malformed(ExpectationFault::UnwrittenTrace {
+                    span: entry.span(),
+                }));
+            },
+        }
+    }
+    match (runs.first(), first) {
+        (Some(&ran), _) => Ok(Stated::Verdict(Outcome::RunsTracing(
+            run_spelled(ran, arena)?,
+            channels,
+        ))),
+        (None, Some(span)) => Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun {
+            span,
+        })),
+        (None, None) => Ok(owing_nothing()),
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a `traces` payload names no channel.
+    mod channel_stated {
+        /// The payload is neither form.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// It is no `decomposes(c, web)` over a web node and no
+            /// `primes(c, n)` over a count.
+            Unwritten,
+        }
+    }
+}
+
+/// The channel a `traces` payload spelled `spelled` states: `decomposes(c,
+/// web)` names `c` with `web`, and `primes(c, n)` names `c` with the prime
+/// count `primes = n`, as a `decomposes` payload states one.
+///
+/// # Specification
+/// - ensures: a channel named by an identifier, whose web is a `series`,
+///   `parallel`, `prime` or `event` node or a prime count; unwritten for a
+///   payload of neither form, or an empty or spaced name.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`traced`].
+/// - witness: `expectation::tests::a_run_beside_traces_states_its_channels_3338`
+#[spec(ensures: |ref ret| match *ret {
+    Maybe::Present(ref channel) => !channel.name.is_empty()
+        && (WEB_NODES.iter().any(|node| channel.web.as_ref().starts_with(node))
+            || channel.web.as_ref().starts_with(PRIMES)),
+    Maybe::Absent(_) => true,
+})]
+fn channel_stated(spelled: &RunSpelling) -> Maybe<Channel, channel_stated::Absent>
+{
+    let unwritten = Maybe::Absent(channel_stated::Absent::Unwritten);
+    let text: &str = spelled.as_ref();
+    let read = |opening: &str| {
+        text.strip_prefix(opening)
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(|inner| inner.split_once(','))
+            .map(|(name, rest)| (name, rest.trim_start()))
+    };
+    let named = |name: &str| {
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|glyph| glyph.is_alphanumeric() || glyph == '_' || glyph == '\'')
+    };
+    if let Some((name, web)) = read("decomposes(")
+        && named(name)
+        && WEB_NODES.iter().any(|node| web.starts_with(node))
+        && web.ends_with(')')
+    {
+        return Maybe::Present(Channel {
+            name: String::from(name),
+            web: RunSpelling::from(String::from(web)),
+        });
+    }
+    if let Some((name, count)) = read("primes(")
+        && named(name)
+        && !count.is_empty()
+        && count.bytes().all(|digit| digit.is_ascii_digit())
+    {
+        return Maybe::Present(Channel {
+            name: String::from(name),
+            web: RunSpelling::from(alloc::format!("{PRIMES}{count}")),
+        });
+    }
+    unwritten
+}
 
 /// `web` as the `decomposes` payload `stated` reads it: the count of its
 /// prime nodes, `primes = k`, when the payload states a count, and its whole
@@ -1222,6 +1447,7 @@ mod tests
     use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::string::ToString as _;
+    use alloc::vec::Vec;
     use core::fmt;
     use core::iter;
 
@@ -1255,6 +1481,7 @@ mod tests
     use crate::refusal::CorpusRefusal;
     use crate::refusal::RefusalName;
     use crate::root::CorpusRoot;
+    use crate::run::Channel;
     use crate::run::RunSpelling;
     use crate::settle::SettleFault;
 
@@ -1267,6 +1494,7 @@ mod tests
             ("refuses", ExpectationSchema::Refuses),
             ("owes", ExpectationSchema::Owes),
             ("normalizes", ExpectationSchema::Normalizes),
+            ("traces", ExpectationSchema::Traces),
         ] {
             assert_eq!(
                 ExpectationSchema::of(registered(SurfaceName::from(spelled))),
@@ -1622,6 +1850,7 @@ mod tests
             ExpectationSchema::Runs,
             ExpectationSchema::Normalizes,
             ExpectationSchema::Decomposes,
+            ExpectationSchema::Traces,
         ] {
             assert_eq!(
                 fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{schema}")),
@@ -1643,6 +1872,16 @@ mod tests
                 Outcome::Decomposes(RunSpelling::from(String::from("series(event(left, 0))"))),
                 "series(event(left, 0))",
             ),
+            (
+                Outcome::RunsTracing(
+                    RunSpelling::from(String::from("unit")),
+                    Vec::from([Channel {
+                        name: String::from("seat"),
+                        web: RunSpelling::from(String::from("event(left, 0)")),
+                    }]),
+                ),
+                "seat to event(left, 0)",
+            ),
         ] {
             let stated = Stated::Verdict(outcome);
             assert!(stated.to_string().contains(payload));
@@ -1663,6 +1902,8 @@ mod tests
             ExpectationFault::ConflictingExpectations { first, second },
             ExpectationFault::UnwrittenNormalForm { span: first },
             ExpectationFault::UnwrittenWeb { span: first },
+            ExpectationFault::UnwrittenTrace { span: first },
+            ExpectationFault::TraceWithoutRun { span: first },
         ] {
             let stated = Stated::Malformed(fault);
             let rendered = stated.to_string();
@@ -1697,5 +1938,111 @@ mod tests
             spelling("primes = 0")
         );
         assert_eq!(super::web_as_stated(&series, &web), web);
+    }
+
+    /// #3338: `runs` beside `traces` states the run and each channel in the
+    /// order written, a channel by its web or by its prime count; a `traces`
+    /// with no `runs`, beside another expectation, or naming no channel states
+    /// no verdict.
+    #[test]
+    fn a_run_beside_traces_states_its_channels_3338()
+    {
+        let at = |start: usize| span(ByteOffset::from(start), ByteOffset::from(start + 1_usize));
+        let mut arena = CoreArena::new();
+        let ran = Maybe::Present(
+            arena.value_literal(Literal::Text(StringLiteral::new(String::from("unit")))),
+        );
+        let entry = |name: &str, schema, start| {
+            AttributeEntry::new(registered(SurfaceName::from(name)), schema, ran, at(start))
+        };
+        let runs = entry("runs", AttributeSchema::Text, 0_usize);
+        let webbed = entry("traces", AttributeSchema::Spelled, 2_usize);
+        let counted = entry("traces", AttributeSchema::Spelled, 4_usize);
+        let spaced = entry("traces", AttributeSchema::Spelled, 6_usize);
+        let bare = entry("traces", AttributeSchema::Spelled, 8_usize);
+        let checks = entry("checks", AttributeSchema::Marker, 10_usize);
+        let spellings = [
+            (
+                2_usize,
+                "decomposes(seat, series(event(left, 0), event(right, 0)))",
+            ),
+            (4_usize, "primes(other, 1)"),
+            (6_usize, "decomposes(a b, event(left, 0))"),
+            (8_usize, "decomposes(seat, 3)"),
+        ];
+        let spelled = |written: &AttributeEntry| {
+            spellings
+                .iter()
+                .find(|&&(start, _)| at(start) == written.span())
+                .map(|&(_, text)| RunSpelling::from(String::from(text)))
+        };
+        let channel = |name: &str, web: &str| Channel {
+            name: String::from(name),
+            web: RunSpelling::from(String::from(web)),
+        };
+        let both = Stated::Verdict(Outcome::RunsTracing(
+            RunSpelling::from(String::from("unit")),
+            Vec::from([
+                channel("seat", "series(event(left, 0), event(right, 0))"),
+                channel("other", "primes = 1"),
+            ]),
+        ));
+        let malformed = |fault| {
+            Ok((
+                Stated::Malformed(fault),
+                Maybe::Absent(guard::Absent::Admitted),
+            ))
+        };
+        let rows = [
+            (
+                CorpusRoot::Strict,
+                Vec::from([&runs, &webbed, &counted]),
+                Ok((both.clone(), Maybe::Absent(guard::Absent::Admitted))),
+            ),
+            (
+                CorpusRoot::Fixture,
+                Vec::from([&webbed, &counted, &runs]),
+                Ok((both, Maybe::Absent(guard::Absent::Admitted))),
+            ),
+            (
+                CorpusRoot::Fixture,
+                Vec::from([&webbed]),
+                malformed(ExpectationFault::TraceWithoutRun { span: at(2_usize) }),
+            ),
+            (
+                CorpusRoot::Fixture,
+                Vec::from([&checks, &webbed, &runs]),
+                malformed(ExpectationFault::ConflictingExpectations {
+                    first: at(10_usize),
+                    second: at(2_usize),
+                }),
+            ),
+            (
+                CorpusRoot::Fixture,
+                Vec::from([&runs, &webbed, &runs]),
+                malformed(ExpectationFault::ConflictingExpectations {
+                    first: at(0_usize),
+                    second: at(2_usize),
+                }),
+            ),
+            (
+                CorpusRoot::Fixture,
+                Vec::from([&runs, &webbed, &spaced]),
+                malformed(ExpectationFault::UnwrittenTrace { span: at(6_usize) }),
+            ),
+            (
+                CorpusRoot::Fixture,
+                Vec::from([&runs, &bare]),
+                malformed(ExpectationFault::UnwrittenTrace { span: at(8_usize) }),
+            ),
+        ];
+        for (root, entries, expected) in rows {
+            assert_eq!(
+                read(root, entries.iter().copied(), &arena, spelled)
+                    .map(|expectations| (expectations.stated, expectations.guard)),
+                expected,
+                "{entries:?} under the {root} root states as pinned"
+            );
+        }
     }
 }

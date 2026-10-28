@@ -107,6 +107,7 @@ use crate::host;
 use crate::host::Calls;
 use crate::host::Codes;
 use crate::host::Parts;
+use crate::host::Recording;
 use crate::host::Refused;
 use crate::host::Unlaid;
 use crate::lower::Form;
@@ -124,6 +125,7 @@ use crate::seam::Adapter;
 use crate::seam::HostHandler;
 use crate::seam::HostOutcome;
 use crate::seam::Offer;
+use crate::trace::Trace;
 use crate::transfer::Sites;
 use crate::transfer::TransferRefusal;
 
@@ -487,7 +489,15 @@ pub fn evaluate(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    by_policy(&lowered, (arena, definitions), fuel, store, &[], None)?.hostless()
+    by_policy(
+        &lowered,
+        (arena, definitions),
+        fuel,
+        store,
+        &[],
+        (None, Recording::Off),
+    )?
+    .hostless()
 }
 
 /// Run `root` on `tier` with `fuel` code-word jumps and move its outcome into
@@ -521,7 +531,16 @@ pub fn evaluate_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    on_tier(tier, &lowered, (arena, definitions), fuel, store, &[], None)?.hostless()
+    on_tier(
+        tier,
+        &lowered,
+        (arena, definitions),
+        fuel,
+        store,
+        &[],
+        (None, Recording::Off),
+    )?
+    .hostless()
 }
 
 /// As [`evaluate_on`], the command's unfused lowering run: every instruction
@@ -550,7 +569,16 @@ pub fn evaluate_unfused_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower_unfused(arena, definitions, root)?;
-    on_tier(tier, &lowered, (arena, definitions), fuel, store, &[], None)?.hostless()
+    on_tier(
+        tier,
+        &lowered,
+        (arena, definitions),
+        fuel,
+        store,
+        &[],
+        (None, Recording::Off),
+    )?
+    .hostless()
 }
 
 /// Run `body`, a command binding one covariable, on `tier` over the values
@@ -602,7 +630,7 @@ pub fn evaluate_closed_on(
         fuel,
         store,
         &captured,
-        None,
+        (None, Recording::Off),
     )?
     .hostless()
 }
@@ -634,6 +662,64 @@ pub fn evaluate_with_host<Host>(
 where
     Host: HostHandler,
 {
+    hosted_by_policy(
+        (arena, definitions, root),
+        (fuel, store),
+        (host, Recording::Off),
+    )
+}
+
+/// As [`evaluate_with_host`], each channel's play appended to `trace`.
+///
+/// # Specification
+/// - ensures: as [`evaluate_with_host`]; `trace` gains one play per fork the
+///   run took, in the order taken, each holding its channel's moves in the
+///   order the run made them.
+/// - executable: none — as [`evaluate`].
+///
+/// # Errors
+/// As [`evaluate_with_host`], and [`Declined::Transfer`] for a payload a
+/// channel carries that does not move into `store`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run whose two children each send once and receive once
+///   decomposes each channel to the web its order forces, and a delegated end
+///   is recorded as the channel and side it names; a send, receipt or close
+///   left unrecorded changes a web.
+/// - witness: `tests::sessions::a_traced_run_plays_each_channel_as_its_dialogue`
+#[inline]
+pub fn evaluate_traced_with_host<Host>(
+    (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
+    (fuel, store): (Fuel, &mut Store),
+    host: &mut Host,
+    trace: &mut Trace,
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
+    hosted_by_policy(
+        (arena, definitions, root),
+        (fuel, store),
+        (host, Recording::Into(trace)),
+    )
+}
+
+/// Run `root` hosted by `host` on the tier the policy picks, its channels'
+/// plays recorded as `recording` asks.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`evaluate_with_host`].
+fn hosted_by_policy<Host>(
+    (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
+    (fuel, store): (Fuel, &mut Store),
+    (host, recording): (&mut Host, Recording<'_>),
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
     let lowered = lower(arena, definitions, root)?;
     let mut adapter = Adapter {
         host,
@@ -645,7 +731,7 @@ where
         fuel,
         store,
         &[],
-        Some(&mut adapter),
+        (Some(&mut adapter), recording),
     )?;
     hosted(ran, adapter)
 }
@@ -692,7 +778,7 @@ where
         fuel,
         store,
         &[],
-        Some(&mut adapter),
+        (Some(&mut adapter), Recording::Off),
     )?;
     hosted(ran, adapter)
 }
@@ -722,49 +808,51 @@ where
 }
 
 /// Run `lowered`, closed over `captured`, on the tier the policy picks, the
-/// executor wherever native code is not to be had.
+/// executor wherever native code is not to be had, its channels' plays
+/// recorded as `recording` asks.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate`], and [`Declined::Capture`] as [`on_tier`] names it.
+/// As [`on_tier`], but never [`Declined::NoPatcher`] or an emission refusal:
+/// the executor runs the command instead.
 pub fn by_policy(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
-    mut offer: Option<&mut (dyn Offer + '_)>,
+    (mut offer, mut recording): (Option<&mut (dyn Offer + '_)>, Recording<'_>),
 ) -> Result<Ran, Declined>
 {
+    let hosting = (offer.as_deref_mut(), recording.again());
     match *POLICY {
-        Policy::Always => {
-            match run_native(lowered, source, fuel, store, captured, offer.as_deref_mut()) {
-                Err(Declined::NoPatcher) => {
-                    run_executor(lowered, source, fuel, store, captured, offer)
-                },
-                #[cfg(gandr_patcher)]
-                Err(Declined::Emission(_)) => {
-                    run_executor(lowered, source, fuel, store, captured, offer)
-                },
-                ran => ran,
-            }
+        Policy::Always => match run_native(lowered, source, fuel, store, captured, hosting) {
+            Err(Declined::NoPatcher) => {
+                run_executor(lowered, source, fuel, store, captured, (offer, recording))
+            },
+            #[cfg(gandr_patcher)]
+            Err(Declined::Emission(_)) => {
+                run_executor(lowered, source, fuel, store, captured, (offer, recording))
+            },
+            ran => ran,
         },
-        Policy::Never => run_executor(lowered, source, fuel, store, captured, offer),
-        Policy::Cached => run_cached(lowered, source, fuel, store, captured, offer),
+        Policy::Never => run_executor(lowered, source, fuel, store, captured, hosting),
+        Policy::Cached => run_cached(lowered, source, fuel, store, captured, hosting),
     }
 }
 
 /// Run `lowered`, lowered from `source`'s arena over its definitions, on
-/// `tier`.
+/// `tier`, its channels' plays recorded as `recording` asks.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on_with_host`], and [`Declined::Capture`] naming a value of
-/// `captured` the run cannot hold.
+/// As [`evaluate_on_with_host`]; [`Declined::Transfer`] as
+/// [`evaluate_traced_with_host`] names it when `hosting` records; and
+/// [`Declined::Capture`] naming a value of `captured` the run cannot hold.
 pub fn on_tier(
     tier: Tier,
     lowered: &Lowered,
@@ -772,12 +860,12 @@ pub fn on_tier(
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
-    offer: Option<&mut (dyn Offer + '_)>,
+    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
 ) -> Result<Ran, Declined>
 {
     match tier {
-        Tier::Native => run_native(lowered, source, fuel, store, captured, offer),
-        Tier::Executor => run_executor(lowered, source, fuel, store, captured, offer),
+        Tier::Native => run_native(lowered, source, fuel, store, captured, hosting),
+        Tier::Executor => run_executor(lowered, source, fuel, store, captured, hosting),
     }
 }
 
@@ -794,7 +882,7 @@ fn run_executor(
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
-    offer: Option<&mut (dyn Offer + '_)>,
+    (offer, recording): (Option<&mut (dyn Offer + '_)>, Recording<'_>),
 ) -> Result<Ran, Declined>
 {
     let program = Program::build(&lowered.function)?;
@@ -810,6 +898,7 @@ fn run_executor(
             definitions,
             store,
             offer,
+            recording,
         },
         fuel,
         captured,
@@ -830,7 +919,7 @@ fn run_native(
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
-    offer: Option<&mut (dyn Offer + '_)>,
+    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
 ) -> Result<Ran, Declined>
 {
     let emitted = {
@@ -853,7 +942,7 @@ fn run_native(
             emitted
         }
     };
-    run_emitted(&emitted, lowered, source, fuel, (store, captured, offer))
+    run_emitted(&emitted, lowered, source, fuel, (store, captured, hosting))
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -870,10 +959,10 @@ fn run_native(
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
-    offer: Option<&mut (dyn Offer + '_)>,
+    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
 ) -> Result<Ran, Declined>
 {
-    let _ = (lowered, source, fuel, store, captured, offer);
+    let _unrun = (lowered, source, fuel, store, captured, hosting);
     Err(Declined::NoPatcher)
 }
 
@@ -890,7 +979,7 @@ fn run_cached(
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
-    offer: Option<&mut (dyn Offer + '_)>,
+    hosting: (Option<&mut (dyn Offer + '_)>, Recording<'_>),
 ) -> Result<Ran, Declined>
 {
     #[cfg(gandr_patcher)]
@@ -902,10 +991,10 @@ fn run_cached(
             .get(&lowered.function)
             .map(Arc::clone);
         if let Some(emitted) = held {
-            return run_emitted(&emitted, lowered, source, fuel, (store, captured, offer));
+            return run_emitted(&emitted, lowered, source, fuel, (store, captured, hosting));
         }
     }
-    run_executor(lowered, source, fuel, store, captured, offer)
+    run_executor(lowered, source, fuel, store, captured, hosting)
 }
 
 /// Run code the cache served.
@@ -921,7 +1010,11 @@ fn run_emitted(
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
     fuel: Fuel,
-    (store, captured, offer): (&mut Store, &[HeapValueId], Option<&mut (dyn Offer + '_)>),
+    (store, captured, (offer, recording)): (
+        &mut Store,
+        &[HeapValueId],
+        (Option<&mut (dyn Offer + '_)>, Recording<'_>),
+    ),
 ) -> Result<Ran, Declined>
 {
     let codes = Codes::Native {
@@ -939,6 +1032,7 @@ fn run_emitted(
             definitions,
             store,
             offer,
+            recording,
         },
         fuel,
         captured,

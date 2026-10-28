@@ -469,6 +469,10 @@ impl RegisteredAttribute
     /// member's declared types, printed by Rust's default layout, realise its
     /// row, or the block is refused by the first clause a member breaks.
     pub const BOUNDARY: Self = Self("boundary");
+    /// `traces`: the run of the declaration it decorates is recorded, and the
+    /// payload states the web one channel's play decomposes to. It is the one
+    /// attribute written more than once on a name, once per channel.
+    pub const TRACES: Self = Self("traces");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -702,13 +706,14 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 15_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 16_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
     ("runs", AttributeSchema::Text),
     ("normalizes", AttributeSchema::Text),
     ("decomposes", AttributeSchema::Spelled),
+    (RegisteredAttribute::TRACES.0, AttributeSchema::Spelled),
     (RegisteredAttribute::DOC.0, AttributeSchema::Text),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
@@ -1366,9 +1371,10 @@ pub struct AttributeTable
     /// Type member key to the relation, reflexivity and transport law its
     /// `identity` entry names, in that order, as the payload's components.
     interfaces: BTreeMap<UnitKey, Vec<ValueId>>,
-    /// Declaration key and attribute to the spelling of a payload its schema
-    /// reads unquoted: [`AttributeSchema::Spelled`].
-    spellings: BTreeMap<(UnitKey, RegisteredAttribute), String>,
+    /// Declaration key and entry span to the spelling of a payload its schema
+    /// reads unquoted: [`AttributeSchema::Spelled`]. The span tells apart the
+    /// entries of an attribute written more than once.
+    spellings: BTreeMap<(UnitKey, ByteSpan), String>,
 }
 
 impl AttributeTable
@@ -1658,55 +1664,57 @@ impl AttributeTable
         self.interfaces.get(&key).map_or(&[], Vec::as_slice)
     }
 
-    /// File `spelled`, the spelling of the payload the `attribute` entry filed
-    /// under `key` was written with, its schema reading it unquoted.
+    /// File `spelled`, the spelling of the payload the entry spanning `at`
+    /// filed under `key` was written with, its schema reading it unquoted.
     ///
     /// # Specification
-    /// - requires: an entry of `attribute` whose schema is
+    /// - requires: an entry spanning `at` whose schema is
     ///   [`AttributeSchema::Spelled`] is filed under `key`.
-    /// - ensures: [`Self::spelled`] at `key` and `attribute` answers `spelled`.
+    /// - ensures: [`Self::spelled`] at `key` and `at` answers `spelled`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a spelling filed under one key is read back from it,
-    ///   and from no other key or attribute.
+    ///   and from no other key or entry.
     /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
-    #[spec(ensures: self.spellings.contains_key(&(key, attribute)))]
+    /// - witness: `lower::tests::traces_is_written_once_per_channel_3338`
+    #[spec(ensures: self.spellings.contains_key(&(key, at)))]
     #[inline]
     pub fn file_spelled(
         &mut self,
         key: UnitKey,
-        attribute: RegisteredAttribute,
+        at: ByteSpan,
         spelled: String,
     )
     {
-        let _replaced = self.spellings.insert((key, attribute), spelled);
+        let _replaced = self.spellings.insert((key, at), spelled);
     }
 
-    /// The spelling of the payload the `attribute` entry filed under `key` was
-    /// written with, when its schema reads it unquoted.
+    /// The spelling of the payload the entry spanning `at` filed under `key`
+    /// was written with, when its schema reads it unquoted.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the spelling filed under `key` and `attribute`; absent when
-    ///   none was.
+    /// - ensures: the spelling filed under `key` and `at`; absent when none
+    ///   was.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::file_spelled`].
     /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
-    #[spec(ensures: |ret| ret.is_some() == self.spellings.contains_key(&(key, attribute)))]
+    /// - witness: `lower::tests::traces_is_written_once_per_channel_3338`
+    #[spec(ensures: |ret| ret.is_some() == self.spellings.contains_key(&(key, at)))]
     #[inline]
     #[must_use]
     pub fn spelled(
         &self,
         key: UnitKey,
-        attribute: RegisteredAttribute,
+        at: ByteSpan,
     ) -> Option<&String>
     {
-        self.spellings.get(&(key, attribute))
+        self.spellings.get(&(key, at))
     }
 
     /// What the `deprecated` entry filed under `key` states, read off its
@@ -1943,6 +1951,7 @@ mod tests
             ("runs", AttributeSchema::Text),
             ("normalizes", AttributeSchema::Text),
             ("decomposes", AttributeSchema::Spelled),
+            ("traces", AttributeSchema::Spelled),
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
@@ -2011,6 +2020,7 @@ mod tests
             ("identiy", "identity"),
             ("deprecate", "deprecated"),
             ("decompose", "decomposes"),
+            ("trace", "traces"),
             ("boundary", "boundary"),
         ];
 

@@ -280,13 +280,16 @@ pub enum FocusOrigin
 }
 
 /// The provenance table: the [`FocusOrigin`] of every command focusing
-/// created, in creation order.
+/// created, in creation order, and the core action each session command was
+/// focused from.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct Provenance
 {
     /// Each created command with its origin, in increasing command address.
     origins: Vec<(CommandId, FocusOrigin)>,
+    /// Each session command with the core action it was focused from, in
+    /// increasing command address.
+    sessions: Vec<(CommandId, ComputationId)>,
 }
 
 impl Provenance
@@ -348,6 +351,17 @@ impl Provenance
         self.origins.iter().copied()
     }
 
+    /// Every session command with the core action it was focused from, in
+    /// creation order: a run's fork names its source by it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn sessions(&self) -> impl Iterator<Item = (CommandId, ComputationId)>
+    {
+        self.sessions.iter().copied()
+    }
+
     /// The number of recorded commands.
     ///
     /// # Specification
@@ -387,7 +401,21 @@ impl Provenance
         self.origins.push((command, origin));
     }
 
-    /// Truncate the table to an earlier length.
+    /// Record the core action `source` a session command was focused from.
+    ///
+    /// # Specification
+    /// trivial.
+    fn record_session(
+        &mut self,
+        command: CommandId,
+        source: ComputationId,
+    )
+    {
+        self.sessions.push((command, source));
+    }
+
+    /// Truncate the table to an earlier length, the session commands past it
+    /// with it.
     ///
     /// # Specification
     /// trivial.
@@ -396,6 +424,12 @@ impl Provenance
         length: NodeCount,
     )
     {
+        if let Some(&(first, _)) = self.origins.get(usize::from(length)) {
+            let kept = self
+                .sessions
+                .partition_point(|&(command, _)| command < first);
+            self.sessions.truncate(kept);
+        }
         self.origins.truncate(usize::from(length));
     }
 }
@@ -1886,6 +1920,9 @@ impl<'run> Focusing<'run>
         };
         let command = self.arena.mint_command(node)?;
         self.provenance.record(command, origin);
+        if origin == FocusOrigin::Session {
+            self.provenance.record_session(command, source);
+        }
         self.commands.push(command);
         Ok(())
     }

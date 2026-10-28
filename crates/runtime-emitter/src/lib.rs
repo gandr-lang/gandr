@@ -140,6 +140,9 @@
 //! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
 //!   LAM a run's regions are, a regioned store whose locations no other run
 //!   or world reads.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a run records
+//!   its channels' plays only when its caller asks, so a run that does not ask
+//!   records nothing.
 
 // Module documentation that predates the shape lint: 6 headings outside the
 // vocabulary, 5 decision records, 1 issue reference and 3 budgets exceeded.
@@ -167,6 +170,7 @@ mod lower;
 mod native;
 mod run;
 mod seam;
+mod trace;
 mod transfer;
 pub mod world;
 
@@ -199,6 +203,7 @@ pub use crate::run::evaluate;
 pub use crate::run::evaluate_closed_on;
 pub use crate::run::evaluate_on;
 pub use crate::run::evaluate_on_with_host;
+pub use crate::run::evaluate_traced_with_host;
 pub use crate::run::evaluate_unfused_on;
 pub use crate::run::evaluate_with_host;
 pub use crate::seam::HostHandler;
@@ -208,6 +213,12 @@ pub use crate::seam::HostRequest;
 pub use crate::seam::HostValues;
 pub use crate::seam::Migrated;
 pub use crate::seam::MigrationRequest;
+pub use crate::trace::Carried;
+pub use crate::trace::ChannelNumber;
+pub use crate::trace::Play;
+pub use crate::trace::Played;
+pub use crate::trace::TaskNumber;
+pub use crate::trace::Trace;
 pub use crate::transfer::TransferRefusal;
 
 /// Whether this host has a patcher: native code runs here.
