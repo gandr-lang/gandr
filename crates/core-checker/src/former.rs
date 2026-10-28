@@ -31,9 +31,12 @@
 //!
 //! **Conversion boundary.** Index equality is structural in both checkers,
 //! including under thunks, and ignores only candidate path evidence as ordinary
-//! kernel conversion does. It does not reduce beta, delta or eta redexes.
-//! General definitional index conversion waits for a certified kernel
-//! conversion reader; frontend conversion alone cannot authorize it.
+//! kernel conversion does. One rule reads further. In a type conversion, an
+//! index written as a call converts with the value the call returns, because
+//! the kernel reads that side by reduction. A constructor's stated index meets
+//! its annotation as syntax alone, because the kernel's constructor rule reads
+//! no call ([`crate::conversion::indices_agree`]). Conversion reduces no other
+//! beta, delta or eta redex.
 //! `term_indices_are_structural_in_both_checkers` witnesses separately
 //! allocated equal function indices and constant references, and refuses beta-
 //! and delta-related indices rather than accepting a declaration the kernel

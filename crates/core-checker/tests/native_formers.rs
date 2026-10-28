@@ -2319,6 +2319,78 @@ fn a_family_argument_written_as_a_call_converts_with_its_value_3579()
 }
 
 #[test]
+fn a_constructor_annotated_at_a_call_stands_apart_from_its_stated_index_3624()
+{
+    use gandr_core_term::Summand;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let truth = arena.value_type_sum(&[unit_type, unit_type]);
+    let returns_truth = arena.comp_type_returner(truth);
+    let asked = arena.comp_type_arrow(unit_type, returns_truth);
+    let asked = arena.value_type_thunk(asked);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let yes = arena.value_injection(Summand::from(0_usize), unit);
+    // `fn (_) { return yes }`, the definition the call unfolds.
+    let answered = arena.computation_return(yes);
+    let answered = arena.computation_lambda(answered);
+    let answered = arena.value_thunk(answered);
+    let answer = arena.value_constant(ConstantIndex::from(0_usize));
+    let answer = arena.computation_force(answer);
+    let call = arena.computation_application(answer, unit);
+    let call = arena.value_returned(call);
+    // `I : Truth -> Type { Made : I(yes); }`: the kernel's constructor rule
+    // compares `Made`'s stated index with its annotation as syntax, so `Made`
+    // annotated at the call is refused in both checkers. `Made` at `yes` meets
+    // a declared type that writes the call, which a type conversion reads.
+    let indexed = ConstantIndex::from(1_usize);
+    let family = Declaration::data(
+        indexed,
+        DataSignature::new(vec![], vec![vec![]], kind)
+            .indexed(vec![truth], vec![vec![yes]])
+            .into(),
+        OriginToken::from(1_usize),
+    );
+    let tag = ConstructorTag::from(0_usize);
+    let at_call = arena.value_type_data(indexed, vec![call]);
+    let at_yes = arena.value_type_data(indexed, vec![yes]);
+    let made_at_call = arena.value_constructor(at_call, tag, vec![]);
+    let made_at_yes = arena.value_constructor(at_yes, tag, vec![]);
+    let (report, crossed) = run(&mut arena, &[
+        definition(ConstantIndex::from(0_usize), asked, answered),
+        family,
+        definition(ConstantIndex::from(2_usize), at_yes, made_at_call),
+        definition(ConstantIndex::from(3_usize), at_call, made_at_yes),
+    ]);
+    assert!(
+        matches!(
+            report.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "a constructor annotated at a call stands apart from its stated index: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(
+            crossed.readmitted()[2].outcome(),
+            Outcome::Marked(CheckRefusal::TypeMismatch(_))
+        ),
+        "{:?}",
+        crossed.readmitted()[2].outcome()
+    );
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "a constructor at its stated index meets a type written as the call: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+        "{:?}",
+        crossed.readmitted()[3].outcome()
+    );
+}
+
+#[test]
 fn empty_data_elimination_preserves_the_ambient_scope()
 {
     let mut arena = CoreArena::new();

@@ -6,6 +6,8 @@
 //! stays exact in its labels; assignability is directional. The empty record
 //! is the record top, not a top for arbitrary values.
 
+use alloc::vec::Vec;
+
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::Computation;
@@ -423,8 +425,10 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: `term` is a constructor value of `datatype` tagged `tag`, at
     ///   its declared field count.
-    /// - ensures: success exactly when the family has no index or the
-    ///   annotation converts with the application [`former::stated_at`] reads.
+    /// - ensures: success exactly when the family has no index or each index of
+    ///   the application [`former::stated_at`] reads agrees with the
+    ///   annotation's as syntax ([`crate::conversion::indices_agree`]), as the
+    ///   kernel compares them.
     /// - fails: [`CheckRefusal::TypeMismatch`] with the stated application as
     ///   found and the annotation as expected; otherwise as
     ///   [`former::stated_at`].
@@ -435,8 +439,10 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Nil` annotated at `Vec(a, S(Z))` is refused and at
-    ///   `Vec(a, Z)` admitted.
+    ///   `Vec(a, Z)` admitted. A constructor annotated at a call that returns
+    ///   its stated index is refused in both checkers.
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_stands_apart_from_its_stated_index_3624`
     #[spec(captures: depth = self.context.depth(Zone::Intuitionistic), ensures: self.context.depth(Zone::Intuitionistic) == depth)]
     fn stands_at(
         &mut self,
@@ -446,19 +452,46 @@ impl Machine<'_, '_>
     ) -> Result<(), CheckRefusal>
     {
         let stated = former::stated_at(self.context, (datatype, term), tag)?;
-        if stated == datatype
-            || crate::conversion::equivalent(self.context, stated, datatype)?
-                == crate::conversion::Agreement::Convertible
-        {
+        if stated == datatype {
             return Ok(());
         }
-        Err(CheckRefusal::TypeMismatch(
-            crate::refusal::Mismatch::Value {
-                at: term,
-                synthesised: stated,
-                expected: datatype,
-            },
-        ))
+        let parameters = former::signature(self.context, datatype)?
+            .parameters()
+            .len();
+        let arena = self.context.arena();
+        let (
+            Some(&ValueType::Data {
+                arguments: ref found,
+                ..
+            }),
+            Some(&ValueType::Data {
+                arguments: ref wanted,
+                ..
+            }),
+        ) = (arena.value_type(stated), arena.value_type(datatype))
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let pairs: Vec<(ValueId, ValueId)> = found
+            .iter()
+            .copied()
+            .zip(wanted.iter().copied())
+            .skip(parameters)
+            .collect();
+        for (found, wanted) in pairs {
+            if crate::conversion::indices_agree(self.context, found, wanted)?
+                != crate::conversion::Agreement::Convertible
+            {
+                return Err(CheckRefusal::TypeMismatch(
+                    crate::refusal::Mismatch::Value {
+                        at: term,
+                        synthesised: stated,
+                        expected: datatype,
+                    },
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Synthesize all record field types without making the host stack
