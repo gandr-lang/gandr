@@ -52,6 +52,7 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::crossing::CrossingRefusal;
 use gandr_runtime_emitter::evaluate_on_with_host;
@@ -453,14 +454,14 @@ fn assert_host(
             Some(tier) => evaluate_on_with_host(
                 tier,
                 (&arena, &definitions, root),
-                (budget(), &mut store),
+                (budget(), RunInputs::new(&mut store)),
                 &mut host,
             ),
             None => evaluate_with_host(
                 &arena,
                 &definitions,
                 root,
-                (budget(), &mut store),
+                (budget(), RunInputs::new(&mut store)),
                 &mut host,
             ),
         }
@@ -876,7 +877,7 @@ fn a_host_abort_never_resumes_and_a_missing_reply_declines()
             evaluate_on_with_host(
                 tier,
                 (&arena, &definitions, root),
-                (budget(), &mut Store::new()),
+                (budget(), RunInputs::new(&mut Store::new())),
                 &mut abort
             ),
             "{tier:?}"
@@ -891,7 +892,7 @@ fn a_host_abort_never_resumes_and_a_missing_reply_declines()
             evaluate_on_with_host(
                 tier,
                 (&arena, &definitions, root),
-                (budget(), &mut Store::new()),
+                (budget(), RunInputs::new(&mut Store::new())),
                 &mut invalid
             ),
             "{tier:?}"
@@ -1078,14 +1079,14 @@ fn a_host_built_reply_the_run_cannot_hold_declines()
                 Some(tier) => evaluate_on_with_host(
                     tier,
                     (&arena, &definitions, root),
-                    (budget(), &mut store),
+                    (budget(), RunInputs::new(&mut store)),
                     &mut host,
                 ),
                 None => evaluate_with_host(
                     &arena,
                     &definitions,
                     root,
-                    (budget(), &mut store),
+                    (budget(), RunInputs::new(&mut store)),
                     &mut host,
                 ),
             };

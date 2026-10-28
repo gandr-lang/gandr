@@ -38,6 +38,7 @@ use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::evaluate_with_host;
 use gandr_runtime_net::Net;
 use gandr_surface_lowering::Arguments;
@@ -319,7 +320,7 @@ impl<'source> Program<'source>
             &self.arena,
             &self.definitions,
             command,
-            (Fuel::from(RUN_BUDGET), &mut store),
+            (Fuel::from(RUN_BUDGET), RunInputs::new(&mut store)),
             &mut EntryHost {
                 console,
                 net,

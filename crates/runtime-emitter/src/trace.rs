@@ -2,13 +2,13 @@
 //! two ends made in the order the run made them, a dialogue whose
 //! [`DialogueWeb`] its causal web is.
 //!
-//! A run records only when its caller asks
-//! ([`crate::evaluate_traced_with_host`]); otherwise the scheduler keeps no
-//! play, and a run pays nothing for one. A channel's left endpoint is the end
-//! its fork's child holds, at the fork's protocol, and its right the forking
-//! task's, at the dual, as a dialogue literal names them. A payload is recorded
-//! as the value it moves into the caller's store, and an end sent as a payload
-//! as the channel and the side it names.
+//! A run records only when its caller asks ([`crate::RunInputs::traced`]);
+//! otherwise the scheduler keeps no play, and a run pays nothing for one. A
+//! channel's left endpoint is the end its fork's child holds, at the fork's
+//! protocol, and its right the forking task's, at the dual, as a dialogue
+//! literal names them. A payload is recorded as the value it moves into the
+//! caller's store, and an end sent as a payload as the channel and the side it
+//! names.
 
 use alloc::vec::Vec;
 

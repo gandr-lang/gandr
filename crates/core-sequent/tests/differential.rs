@@ -47,6 +47,7 @@ use gandr_kernel_term::Summand;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Form;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
 use proptest::prelude::*;
@@ -243,7 +244,14 @@ pub fn run_on_tiers(
         .map(|&tier| {
             let mut store = Store::new();
             let fuel = gandr_runtime_emitter::Fuel::from(1_usize << 20_u32);
-            match evaluate_on(tier, arena, &definitions, command, fuel, &mut store) {
+            match evaluate_on(
+                tier,
+                arena,
+                &definitions,
+                command,
+                fuel,
+                RunInputs::new(&mut store),
+            ) {
                 Ok(Outcome::Halted(value)) => {
                     let mut read = CoreArena::new();
                     let term = read_back_terminal(arena, &store, value, &mut read)

@@ -47,6 +47,7 @@ use gandr_kernel_term::Sign;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
 
@@ -926,7 +927,7 @@ pub fn agree(
                 definitions,
                 root,
                 Fuel::from(BUDGET),
-                store,
+                RunInputs::new(store),
             )
         },
     )
@@ -963,7 +964,7 @@ pub fn agree_with(
         definitions,
         root,
         Fuel::from(BUDGET),
-        &mut expected_store,
+        RunInputs::new(&mut expected_store),
     );
     let mut store = Store::new();
     let ran = run(&mut store);

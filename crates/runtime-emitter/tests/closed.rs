@@ -28,6 +28,7 @@ use gandr_kernel_term::Sign;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_closed_on;
 use gandr_runtime_emitter::evaluate_on;
@@ -122,7 +123,14 @@ fn suspended(
     store: &mut Store,
 ) -> (CommandId, Environment)
 {
-    let outcome = evaluate_on(tier, arena, &Definitions::new(), root, budget(), store);
+    let outcome = evaluate_on(
+        tier,
+        arena,
+        &Definitions::new(),
+        root,
+        budget(),
+        RunInputs::new(store),
+    );
     let Ok(Outcome::Halted(thunk)) = outcome
     else {
         panic!("the program answers on {tier:?}: {outcome:?}");
@@ -171,7 +179,14 @@ fn assert_closed(
     let definitions = Definitions::new();
     for &tier in tiers() {
         let mut here = Store::new();
-        let outcome = evaluate_on(tier, &forcing, &definitions, forced, budget(), &mut here);
+        let outcome = evaluate_on(
+            tier,
+            &forcing,
+            &definitions,
+            forced,
+            budget(),
+            RunInputs::new(&mut here),
+        );
         let actual = answer((&forcing, &here), &outcome, core);
         assert_eq!(
             CertificateEquality::Equal,
@@ -184,7 +199,7 @@ fn assert_closed(
             tier,
             (&arena, &definitions),
             (body, environment),
-            (budget(), &mut store),
+            (budget(), RunInputs::new(&mut store)),
         );
         let actual = answer((&arena, &store), &outcome, core);
         assert_eq!(
@@ -202,7 +217,7 @@ fn assert_closed(
                         tier,
                         (&arena, &definitions),
                         (body, environment),
-                        (budget(), &mut apart),
+                        (budget(), RunInputs::new(&mut apart)),
                     )
                 })
                 .join()
@@ -329,7 +344,7 @@ fn an_environment_other_than_the_captures_declines()
                     tier,
                     (&arena, &definitions),
                     (body, wrong),
-                    (budget(), &mut store),
+                    (budget(), RunInputs::new(&mut store)),
                 ),
                 "on {tier:?}"
             );
@@ -342,7 +357,7 @@ fn an_environment_other_than_the_captures_declines()
                 tier,
                 (&functional, &definitions),
                 (body, environment),
-                (budget(), &mut store),
+                (budget(), RunInputs::new(&mut store)),
             ),
             "on {tier:?}"
         );

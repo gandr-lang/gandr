@@ -74,6 +74,7 @@ use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Form;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Status;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::TransferRefusal;
@@ -288,7 +289,14 @@ fn ran(
         .iter()
         .map(|&tier| {
             let mut store = Store::new();
-            let outcome = evaluate_on(tier, arena, definitions, root, fuel, &mut store);
+            let outcome = evaluate_on(
+                tier,
+                arena,
+                definitions,
+                root,
+                fuel,
+                RunInputs::new(&mut store),
+            );
             (tier, outcome.map(|outcome| Ran { outcome, store }))
         })
         .collect();
