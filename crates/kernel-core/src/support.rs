@@ -122,13 +122,15 @@ use crate::rewrite::RewritePlane;
 /// same session it then hands to the check. There is no way to mint a key that
 /// outlives its call by accident.
 ///
-/// **An environment keeps one session for its life** and lends it to each
-/// admission's check. Its content table keeps the names of the
-/// environment's nodes across admissions, so a later declaration reads an
-/// earlier one's nodes by the names they already have; a truncation of the
-/// arena retires the names of the nodes it drops. The memo, the rewrite memo
-/// and the open accruals stay each admission's own
-/// ([`SupportContext::begin_admission`]).
+/// **An environment keeps one session for its life.** It lends the session
+/// to each admission's check. The session's content table keeps the names of
+/// the environment's nodes across admissions. So a later declaration reads an
+/// earlier one's nodes by their existing names. A truncation of the arena
+/// retires the names of the nodes that it drops. The session's kept memo
+/// holds the content outcomes of earlier admissions. Each outcome is kept
+/// under the parameters of its judgement. The declaration's memo, the rewrite
+/// memo and the open accruals belong to each admission.
+/// [`SupportContext::begin_admission`] starts them empty.
 #[derive(Clone, Debug, Default)]
 pub struct SupportContext
 {
@@ -140,6 +142,8 @@ pub struct SupportContext
     rewrites: RewriteMemo,
     /// The goals open on the session's machines, innermost last.
     open: Vec<Accrual>,
+    /// The content outcomes the environment's earlier admissions answered.
+    kept: KeptMemo,
 }
 
 /// One open goal and the binders its judgement has read so far, or a barrier.
@@ -274,10 +278,30 @@ impl SupportContext
     }
 
     /// Forget the names of the constants from `first` on, as
-    /// [`ContentTable::forget_constants_from`] does.
+    /// [`ContentTable::forget_constants_from`] does. Also forget every kept
+    /// outcome.
+    ///
+    /// A refused block's codata member answers under parameters that name the
+    /// members before it by position. A later admission at those positions can
+    /// name the same parameters. The session does not record which kept
+    /// outcomes read a member. So every kept outcome goes. That costs recalls.
+    /// It cannot cause a wrong recall.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the table names no constant from `first` on. The kept memo
+    ///   holds no outcome.
+    /// - provides: a block rollback's retirement of what named its members.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the kept memo's emptiness is its storage's
+    ///   accounting. This crate does not read it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block refused after its codata member formed an
+    ///   observation over a family before it, a family one level up admitted at
+    ///   that family's position, and the codata declaration again.
+    /// - witness: `env::tests::a_refused_block_s_outcomes_do_not_answer_at_its_positions`
     #[inline]
     pub(crate) fn forget_constants_from(
         &mut self,
@@ -285,6 +309,108 @@ impl SupportContext
     )
     {
         self.table.forget_constants_from(first);
+        self.kept = KeptMemo::default();
+    }
+
+    /// Name `parameters` in this session's table, as
+    /// [`ContentTable::parameters`] does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn name_parameters(
+        &mut self,
+        arena: &TermArena,
+        parameters: &crate::encoding::Parameters<'_>,
+    ) -> ContentId
+    {
+        self.table.parameters(arena, parameters)
+    }
+
+    /// Recall `question` from the kept memo under `parameters`, asked in
+    /// `context`. The result is the outcome of an earlier admission. Its
+    /// binders are read here as if its walk had run.
+    ///
+    /// # Specification
+    /// - requires: `question` was asked in this session. `parameters` names the
+    ///   asking judgement's parameters in it.
+    /// - ensures: an outcome kept for this question under these parameters,
+    ///   whose recorded binders agree with `context`. Its reads join the
+    ///   innermost open goal. None when no such entry is kept.
+    /// - provides: the recall a walk takes on a miss of its declaration's memo.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — agreement interns the asking context's record. A
+    ///   predicate could restate it only by interning it again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Question::agreement`], over entries that earlier
+    ///   admissions of generated environments keep. The environments reuse
+    ///   refused positions. The reference checks each declaration on an empty
+    ///   session.
+    /// - witness: `env::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    /// - witness: `env::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    pub(crate) fn recall_kept(
+        &mut self,
+        arena: &TermArena,
+        question: Question,
+        context: &[ValueTypeId],
+        parameters: ContentId,
+    ) -> Option<NodeOutcome>
+    {
+        let kept = core::mem::take(&mut self.kept);
+        let recalled = kept
+            .filed(kept_digest(question.asked, parameters))
+            .find(|hit| {
+                hit.support().parameters == parameters
+                    && matches!(
+                        question.agreement(arena, self, context, &hit.support().support),
+                        ContentAgreement::Agree
+                    )
+            })
+            .map(|hit| {
+                self.read(&hit.support().support.reads, context);
+                hit.outcome().clone()
+            });
+        self.kept = kept;
+        recalled
+    }
+
+    /// Keep `outcome` as `support`'s answer under `parameters` when it is
+    /// content. Content is a check that succeeded or a level that a type
+    /// formed at.
+    ///
+    /// # Specification
+    /// - requires: `support` was answered in this session under the parameters
+    ///   `parameters` names.
+    /// - ensures: a checked or formed outcome is kept unless the kept memo is
+    ///   at its ceiling. It replaces an entry that agrees with it. A
+    ///   synthesized type names arena nodes. It is not kept.
+    /// - provides: what a later admission recalls.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the kept memo's ceiling decides. A predicate could
+    ///   restate it only by reading its accounting.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::recall_kept`].
+    /// - witness: `env::tests::kept_outcomes_leave_every_verdict_as_fresh_sessions_give`
+    pub(crate) fn keep(
+        &mut self,
+        support: &NodeSupport,
+        parameters: ContentId,
+        outcome: &NodeOutcome,
+    )
+    {
+        if matches!(*outcome, NodeOutcome::Checked | NodeOutcome::Formed(_)) {
+            let _recorded = self.kept.remember(
+                KeptSupport {
+                    support: support.clone(),
+                    parameters,
+                },
+                outcome.clone(),
+            );
+        }
     }
 
     /// How this session's table names the constant at `index`, as
@@ -919,6 +1045,97 @@ impl MemoKey for NodeSupport
         }
     }
 }
+
+/// A support that the kept memo files. It is the goal's support and the name
+/// of the judgement's parameters.
+///
+/// The goal's support carries the question and the binders read. The
+/// parameters carry what the judgement holds beside them. They are its level
+/// context, manifest, laws, block, fixpoints and partiality. They can differ
+/// between declarations. They never differ within one walk.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct KeptSupport
+{
+    /// The goal's support.
+    support: NodeSupport,
+    /// The judgement's parameters, named in the session's table.
+    parameters: ContentId,
+}
+
+impl MemoKey for KeptSupport
+{
+    type Plane = SupportPlane;
+
+    /// The plane the goal's support was built on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn plane(&self) -> Self::Plane
+    {
+        self.support.plane
+    }
+
+    /// The digest of the question and the parameters. Every entry kept for one
+    /// question under one parameter set shares a bucket.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn digest(&self) -> ContentDigest
+    {
+        kept_digest(self.support.asked, self.parameters)
+    }
+
+    /// The deciding comparison between two kept supports. Their goals'
+    /// supports must agree. They must name one parameter set.
+    ///
+    /// # Specification
+    /// - requires: both supports were built against one session.
+    /// - ensures: `ContentAgreement::Agree` exactly when the goals' supports
+    ///   agree and the parameters' names are one.
+    /// - provides: the comparison that a kept record replaces an entry under.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentTable::parameters`]. One goal kept under
+    ///   two parameter sets takes two entries.
+    /// - witness: `env::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+        == (matches!(self.support.agreement(&other.support), ContentAgreement::Agree)
+            && self.parameters == other.parameters))]
+    #[inline]
+    fn agreement(
+        &self,
+        other: &Self,
+    ) -> ContentAgreement
+    {
+        if self.parameters == other.parameters {
+            self.support.agreement(&other.support)
+        }
+        else {
+            ContentAgreement::Differ
+        }
+    }
+}
+
+/// The digest every entry kept for the question named `asked` under the
+/// parameters named `parameters` is filed under.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn kept_digest(
+    asked: ContentId,
+    parameters: ContentId,
+) -> ContentDigest
+{
+    ContentDigest::new(DigestWord::from(asked), DigestWord::from(parameters))
+}
+
+/// The memo that an environment keeps across its declarations. It holds only
+/// content outcomes. Each is kept under the parameters of its judgement.
+pub(crate) type KeptMemo = gandr_kernel_check_memo::HashedMemo<KeptSupport, NodeOutcome>;
 
 impl From<SupportPlane> for DigestWord
 {

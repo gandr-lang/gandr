@@ -3348,6 +3348,7 @@ mod tests
 {
     use alloc::string::String;
     use alloc::vec;
+    use alloc::vec::Vec;
 
     use anodized::spec;
     use gandr_kernel_strata::Level;
@@ -3364,6 +3365,7 @@ mod tests
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
 
+    use super::CheckedId;
     use super::Environment;
     use super::OutstandingCount;
     use super::StagedDeclaration;
@@ -4617,5 +4619,332 @@ mod tests
             ),
             "a universe lives one level above the kind it would be sealed at"
         );
+    }
+
+    /// A field type a generated declaration carries.
+    #[derive(Clone, Copy, Debug)]
+    enum Field
+    {
+        /// The value universe at a level.
+        Universe(LevelConstant),
+        /// The type of the declaration being admitted.
+        Own,
+        /// A data type in scope, chosen by the draw.
+        Earlier(usize),
+        /// The unit type.
+        Unit,
+    }
+
+    /// One generated declaration, admitted alone or as a block's member.
+    #[derive(Clone, Debug)]
+    enum Member
+    {
+        /// A monomorphic data declaration whose one constructor carries the
+        /// fields, at the value universe at the level.
+        Data(LevelConstant, Vec<Field>),
+        /// A codata declaration whose one observation returns the field's
+        /// type, at the computation universe at the level.
+        Codata(LevelConstant, Field),
+        /// An axiom of the field's type.
+        Axiom(Field),
+        /// A definition whose body reads an unbound variable. The kernel
+        /// refuses it.
+        Refused,
+    }
+
+    /// Mint `field` in `arena`. The declaration being admitted is at `own`.
+    /// The data types in scope are at `data`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn form(
+        arena: &mut TermArena,
+        field: Field,
+        own: ConstantIndex,
+        data: &[ConstantIndex],
+    ) -> gandr_kernel_term::ValueTypeId
+    {
+        match field {
+            Field::Universe(at) => arena.value_type_universe(GroundSort::Value, level(at)),
+            Field::Own => arena.value_type_data(own, vec![]),
+            Field::Earlier(draw) => {
+                match draw.checked_rem(data.len()).and_then(|at| data.get(at)) {
+                    Some(&position) => arena.value_type_data(position, vec![]),
+                    None => arena.value_type_unit(),
+                }
+            },
+            Field::Unit => arena.value_type_unit(),
+        }
+    }
+
+    /// Stage `member` in `environment` for admission at `own`. Its fields come
+    /// from the data types in scope at `data`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stage_member(
+        environment: &mut Environment,
+        member: &Member,
+        own: ConstantIndex,
+        data: &[ConstantIndex],
+    ) -> StagedDeclaration
+    {
+        let mut staging = environment.stage();
+        match *member {
+            Member::Data(kind, ref fields) => {
+                let kind = form(staging.arena(), Field::Universe(kind), own, data);
+                let fields = fields
+                    .iter()
+                    .map(|&field| form(staging.arena(), field, own, data))
+                    .collect();
+                staging.data(LevelSignature::monomorphic(), vec![], vec![fields], kind)
+            },
+            Member::Codata(kind, field) => {
+                let arena = staging.arena();
+                let result = form(arena, field, own, data);
+                let returns = arena.comp_type_returner(result);
+                let kind = arena.value_type_universe(GroundSort::Computation, level(kind));
+                staging.codata(LevelSignature::monomorphic(), vec![], vec![returns], kind)
+            },
+            Member::Axiom(field) => {
+                let declared = form(staging.arena(), field, own, data);
+                staging.axiom(LevelSignature::monomorphic(), declared)
+            },
+            Member::Refused => {
+                let declared = staging.arena().value_type_unit();
+                let body = staging.arena().value_variable(DeBruijnIndex::from(0_u32));
+                staging.def(LevelSignature::monomorphic(), declared, body)
+            },
+        }
+    }
+
+    #[test]
+    fn a_refused_data_declaration_s_outcomes_do_not_answer_its_successor()
+    {
+        let mut environment = Environment::new();
+        let position = ConstantIndex::from(0_usize);
+        let zero = LevelConstant::from(0_u64);
+        let one = LevelConstant::from(1_u64);
+        let refused = stage_member(
+            &mut environment,
+            &Member::Data(zero, vec![Field::Own, Field::Universe(zero)]),
+            position,
+            &[],
+        );
+        assert!(
+            matches!(
+                environment.add_decl(refused),
+                Err(KernelError::UniverseViolation(_))
+            ),
+            "a universe is no field of a type in that universe. The type's own \
+             field formed at its level first"
+        );
+        let admitted = stage_member(
+            &mut environment,
+            &Member::Data(one, vec![Field::Own, Field::Universe(zero)]),
+            position,
+            &[],
+        );
+        assert_eq!(
+            Ok(position),
+            environment.add_decl(admitted).map(CheckedId::position),
+            "one level up, the declaration admits at the refused one's position"
+        );
+        let successor = stage_member(
+            &mut environment,
+            &Member::Data(zero, vec![Field::Earlier(0)]),
+            ConstantIndex::from(1_usize),
+            &[position],
+        );
+        let verdict = environment.add_decl(successor).map(CheckedId::position);
+        assert!(
+            matches!(verdict, Err(KernelError::UniverseViolation(_))),
+            "the type at that position lives one level up. The refused \
+             declaration formed it at the bottom, under its own block: \
+             {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn a_refused_block_s_outcomes_do_not_answer_at_its_positions()
+    {
+        let mut environment = Environment::new();
+        let family = ConstantIndex::from(0_usize);
+        let bottom = LevelConstant::from(0_u64);
+        let observer = Member::Codata(bottom, Field::Earlier(0));
+        let block = vec![
+            stage_member(&mut environment, &Member::Data(bottom, vec![]), family, &[]),
+            stage_member(
+                &mut environment,
+                &observer,
+                ConstantIndex::from(1_usize),
+                &[family],
+            ),
+            stage_member(
+                &mut environment,
+                &Member::Refused,
+                ConstantIndex::from(2_usize),
+                &[],
+            ),
+        ];
+        assert_eq!(
+            Err(KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(0_u32)
+            }),
+            environment.add_block(block).map(|ids| ids.len()),
+            "the block refuses at its last member, after its codata member's \
+             observation formed at the bottom over the family before it"
+        );
+        let second_family = stage_member(
+            &mut environment,
+            &Member::Data(LevelConstant::from(1_u64), vec![]),
+            family,
+            &[],
+        );
+        assert_eq!(
+            Ok(family),
+            environment.add_decl(second_family).map(CheckedId::position),
+            "a family one level up admits at the refused family's position"
+        );
+        let staged = stage_member(
+            &mut environment,
+            &observer,
+            ConstantIndex::from(1_usize),
+            &[family],
+        );
+        let verdict = environment.add_decl(staged).map(CheckedId::position);
+        assert!(
+            matches!(verdict, Err(KernelError::UniverseViolation(_))),
+            "the same observation now returns a type one level up. The refused \
+             block's codata member formed it at the bottom under the same \
+             parameters: {verdict:?}"
+        );
+    }
+
+    /// One admission of a generated environment.
+    #[derive(Clone, Debug)]
+    enum Generated
+    {
+        /// A declaration admitted alone.
+        Lone(Member),
+        /// Declarations admitted together, or refused whole.
+        Block(Vec<Member>),
+    }
+
+    /// A generated field type. The alphabet is small, so declarations repeat.
+    ///
+    /// # Specification
+    /// trivial.
+    fn field() -> impl proptest::strategy::Strategy<Value = Field>
+    {
+        use proptest::prelude::Just;
+        use proptest::strategy::Strategy as _;
+        proptest::prop_oneof![
+            (0_u64 .. 2).prop_map(|at| Field::Universe(LevelConstant::from(at))),
+            Just(Field::Own),
+            (0_usize .. 4).prop_map(Field::Earlier),
+            Just(Field::Unit),
+        ]
+    }
+
+    /// A generated declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    fn member() -> impl proptest::strategy::Strategy<Value = Member>
+    {
+        use proptest::prelude::Just;
+        use proptest::strategy::Strategy as _;
+        proptest::prop_oneof![
+            3 => ((0_u64 .. 2), proptest::collection::vec(field(), 0 .. 3))
+                .prop_map(|(kind, fields)| Member::Data(LevelConstant::from(kind), fields)),
+            1 => ((0_u64 .. 2), field())
+                .prop_map(|(kind, field)| Member::Codata(LevelConstant::from(kind), field)),
+            1 => field().prop_map(Member::Axiom),
+            1 => Just(Member::Refused),
+        ]
+    }
+
+    /// A generated admission.
+    ///
+    /// # Specification
+    /// trivial.
+    fn generated() -> impl proptest::strategy::Strategy<Value = Generated>
+    {
+        use proptest::strategy::Strategy as _;
+        proptest::prop_oneof![
+            3 => member().prop_map(Generated::Lone),
+            1 => proptest::collection::vec(member(), 1 .. 4).prop_map(Generated::Block),
+        ]
+    }
+
+    /// Admit `generated` in `environment`. A member's fields come from the
+    /// data types at `data` and from the block's data members before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_generated(
+        environment: &mut Environment,
+        generated: &Generated,
+        data: &[ConstantIndex],
+    ) -> Result<Vec<ConstantIndex>, KernelError>
+    {
+        let base = usize::from(environment.entries().len());
+        match *generated {
+            Generated::Lone(ref member) => {
+                let staged = stage_member(environment, member, ConstantIndex::from(base), data);
+                environment
+                    .add_decl(staged)
+                    .map(|admitted| vec![admitted.position()])
+            },
+            Generated::Block(ref members) => {
+                let mut scope = data.to_vec();
+                let mut staged = Vec::with_capacity(members.len());
+                for (offset, member) in members.iter().enumerate() {
+                    let own = ConstantIndex::from(base.saturating_add(offset));
+                    staged.push(stage_member(environment, member, own, &scope));
+                    if matches!(*member, Member::Data(..)) {
+                        scope.push(own);
+                    }
+                }
+                environment
+                    .add_block(staged)
+                    .map(|ids| ids.into_iter().map(CheckedId::position).collect())
+            },
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
+
+        /// An environment that keeps its content outcomes gives every
+        /// admission the verdict that a fresh session gives. A kept outcome
+        /// answers only under its own parameters. The generated environments
+        /// reuse the positions that refused declarations and blocks free.
+        #[test]
+        fn kept_outcomes_leave_every_verdict_as_fresh_sessions_give(
+            admissions in proptest::collection::vec(generated(), 1 .. 12),
+        ) {
+            let mut kept = Environment::new();
+            let mut fresh = Environment::new();
+            let mut data: Vec<ConstantIndex> = Vec::new();
+            for admission in &admissions {
+                let verdict = admit_generated(&mut kept, admission, &data);
+                // A clone keeps no session. So the reference checks each
+                // admission on an empty one.
+                fresh = fresh.clone();
+                let reference = admit_generated(&mut fresh, admission, &data);
+                proptest::prop_assert_eq!(&reference, &verdict);
+                let members = match *admission {
+                    Generated::Lone(ref member) => core::slice::from_ref(member),
+                    Generated::Block(ref members) => members.as_slice(),
+                };
+                for (member, position) in members.iter().zip(verdict.unwrap_or_default()) {
+                    if matches!(*member, Member::Data(..)) {
+                        data.push(position);
+                    }
+                }
+            }
+        }
     }
 }

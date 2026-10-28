@@ -267,7 +267,7 @@ const _: () = {
     let mut rows = gandr_kernel_term::NODE_TAG_TABLE.as_slice();
     while let &[row, ref rest @ ..] = rows {
         assert!(
-            row.tag.0 < DEFINITION_TAG,
+            row.tag.0 < PARAMETERS_TAG,
             "node tag overlaps a reserved byte"
         );
         rows = rest;
@@ -289,9 +289,13 @@ const CONTEXT_TAG: u8 = 0xFB;
 const GOAL_TAG: u8 = 0xFA;
 
 /// The byte a definition record reserves: a reference to a plain definition,
-/// named by its declared type and body. The lowest reserved byte; every node
-/// tag sits below it.
+/// named by its declared type and body.
 const DEFINITION_TAG: u8 = 0xF9;
+
+/// The byte that a parameters record reserves. The record names the
+/// parameters that a judgement answers under. It is the lowest reserved byte.
+/// Every node tag sits below it.
+const PARAMETERS_TAG: u8 = 0xF8;
 
 /// The tag distinguishing an absent optional component from a present one.
 ///
@@ -311,7 +315,7 @@ fn component_present() -> WireTag
     WireTag::from(0x01_u8)
 }
 
-/// The four records the memo key adds to a [`ContentTable`], beside the
+/// The five records the memo key adds to a [`ContentTable`], beside the
 /// nodes' own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum KeyRecord
@@ -324,6 +328,8 @@ enum KeyRecord
     Context,
     /// One question: its direction, subject, expected type and binders.
     Goal,
+    /// The parameters a judgement answers under.
+    Parameters,
 }
 
 impl KeyRecord
@@ -340,8 +346,71 @@ impl KeyRecord
             Self::Cover => COVER_TAG,
             Self::Context => CONTEXT_TAG,
             Self::Goal => GOAL_TAG,
+            Self::Parameters => PARAMETERS_TAG,
         })
     }
+}
+
+/// The parameters that a judgement answers under beside its goal. They are
+/// every input of the judgement that its goals' supports do not carry. A memo
+/// kept across declarations names them.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Parameters<'parameters>
+{
+    /// The level context's prenex parameter count.
+    pub level_params: gandr_kernel_term::LevelParamCount,
+    /// The level context's declared constraints, in declaration order.
+    pub constraints: &'parameters [gandr_kernel_strata::LandmarkConstraint],
+    /// The atoms read as their representations, ascending.
+    pub manifest: &'parameters [ConstantIndex],
+    /// The laws a lawful definition's folds rest on.
+    pub laws: &'parameters [ConstantIndex],
+    /// The declaration being admitted beside the prefix.
+    pub block: ParametersBlock<'parameters>,
+    /// The fixpoint a definition's body thunks as its own.
+    pub own: Option<ComputationId>,
+    /// The fixpoint whose result is read at its recursed-on parameter's
+    /// stage.
+    pub following: Option<ComputationId>,
+    /// Whether a fixpoint without termination evidence may recurse.
+    pub partiality: crate::check::Partiality,
+}
+
+/// The declaration a judgement has in scope beside the admitted prefix, as
+/// its parameters name it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ParametersBlock<'parameters>
+{
+    /// No declaration. Every nominal head names an admitted declaration.
+    Outside,
+    /// A data declaration being admitted at `position`.
+    Data
+    {
+        /// The position the declaration takes.
+        position: ConstantIndex,
+        /// The universe bounding its fields.
+        kind: ValueTypeId,
+        /// Its parameters' classifiers.
+        parameters: &'parameters [ValueTypeId],
+        /// Its indices' classifiers.
+        indices: &'parameters [ValueTypeId],
+        /// Each constructor's field types.
+        constructors: &'parameters [Vec<ValueTypeId>],
+        /// Each constructor's result index.
+        results: &'parameters [Vec<ValueId>],
+    },
+    /// A codata declaration being admitted at `position`.
+    Codata
+    {
+        /// The position the declaration takes.
+        position: ConstantIndex,
+        /// The computation universe it inhabits.
+        kind: ValueTypeId,
+        /// Its parameters' classifiers.
+        parameters: &'parameters [ValueTypeId],
+        /// Its observations' types.
+        observations: &'parameters [CompTypeId],
+    },
 }
 
 /// How a table names one admitted constant when a reference reaches it.
@@ -1755,6 +1824,154 @@ impl ContentTable
         self.scratch.put_count(ComponentCount(members.len()));
         for &member in &members {
             self.scratch.put_content(member);
+        }
+        self.members = members;
+        self.intern_scratch()
+    }
+
+    /// Name `parameters` by one record over their content. The record holds
+    /// the level context, the manifest and the laws. It holds the block by its
+    /// position and its signature's content. It holds the two fixpoints by
+    /// content and the partiality.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the one this table has been used with.
+    /// - ensures: two parameter sets take one id exactly when every component
+    ///   agrees. The level counts, constraints, manifests, laws and
+    ///   partialities are equal. The blocks are of one variant at one position,
+    ///   with structurally identical signatures. The fixpoints are structurally
+    ///   identical.
+    /// - provides: the parameters component of a kept memo's key. A walk names
+    ///   it once.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — data blocks at one position with different kinds, an
+    ///   equal block minted twice, a codata block at the same position, and the
+    ///   empty parameters. A name by position alone merges two that differ. A
+    ///   dropped component merges two that differ.
+    /// - witness: `encoding::tests::parameters_name_their_block_by_content`
+    #[spec(ensures: |ret| ret.0 < self.records)]
+    pub(crate) fn parameters(
+        &mut self,
+        arena: &TermArena,
+        parameters: &Parameters<'_>,
+    ) -> ContentId
+    {
+        let mut members = core::mem::take(&mut self.members);
+        members.clear();
+        match parameters.block {
+            ParametersBlock::Outside => {},
+            ParametersBlock::Data {
+                kind,
+                parameters: classifiers,
+                indices,
+                constructors,
+                results,
+                ..
+            } => {
+                members.push(self.place(arena, AnyNode::ValueType(kind)));
+                for &classifier in classifiers
+                    .iter()
+                    .chain(indices)
+                    .chain(constructors.iter().flatten())
+                {
+                    members.push(self.place(arena, AnyNode::ValueType(classifier)));
+                }
+                for &result in results.iter().flatten() {
+                    members.push(self.place(arena, AnyNode::Value(result)));
+                }
+            },
+            ParametersBlock::Codata {
+                kind,
+                parameters: classifiers,
+                observations,
+                ..
+            } => {
+                members.push(self.place(arena, AnyNode::ValueType(kind)));
+                for &classifier in classifiers {
+                    members.push(self.place(arena, AnyNode::ValueType(classifier)));
+                }
+                for &observation in observations {
+                    members.push(self.place(arena, AnyNode::CompType(observation)));
+                }
+            },
+        }
+        for fixpoint in [parameters.own, parameters.following].into_iter().flatten() {
+            members.push(self.place(arena, AnyNode::Computation(fixpoint)));
+        }
+        {
+            let mut placed = members.iter().copied();
+            let record = &mut self.scratch;
+            record.0.clear();
+            record.put_tag(KeyRecord::Parameters.tag());
+            record.put_word(EncodedWord(u64::from(u32::from(parameters.level_params))));
+            record.put_count(ComponentCount(parameters.constraints.len()));
+            for constraint in parameters.constraints {
+                put_level(record, constraint.left());
+                record.put_tag(match constraint.relation() {
+                    gandr_kernel_strata::ConstraintRelation::Leq => WireTag::from(0x00_u8),
+                    gandr_kernel_strata::ConstraintRelation::Eq => WireTag::from(0x01_u8),
+                });
+                put_level(record, constraint.right());
+            }
+            for positions in [parameters.manifest, parameters.laws] {
+                record.put_count(ComponentCount(positions.len()));
+                for &position in positions {
+                    record.put_count(ComponentCount(usize::from(position)));
+                }
+            }
+            match parameters.block {
+                ParametersBlock::Outside => record.put_tag(WireTag::from(0x00_u8)),
+                ParametersBlock::Data {
+                    position,
+                    parameters: classifiers,
+                    indices,
+                    constructors,
+                    results,
+                    ..
+                } => {
+                    record.put_tag(WireTag::from(0x01_u8));
+                    record.put_count(ComponentCount(usize::from(position)));
+                    put_placed(record, &mut placed, ComponentCount(1));
+                    put_placed(record, &mut placed, ComponentCount(classifiers.len()));
+                    put_placed(record, &mut placed, ComponentCount(indices.len()));
+                    record.put_count(ComponentCount(constructors.len()));
+                    for fields in constructors {
+                        put_placed(record, &mut placed, ComponentCount(fields.len()));
+                    }
+                    record.put_count(ComponentCount(results.len()));
+                    for result in results {
+                        put_placed(record, &mut placed, ComponentCount(result.len()));
+                    }
+                },
+                ParametersBlock::Codata {
+                    position,
+                    parameters: classifiers,
+                    observations,
+                    ..
+                } => {
+                    record.put_tag(WireTag::from(0x02_u8));
+                    record.put_count(ComponentCount(usize::from(position)));
+                    put_placed(record, &mut placed, ComponentCount(1));
+                    put_placed(record, &mut placed, ComponentCount(classifiers.len()));
+                    put_placed(record, &mut placed, ComponentCount(observations.len()));
+                },
+            }
+            for fixpoint in [parameters.own, parameters.following] {
+                if fixpoint.is_some() {
+                    record.put_tag(component_present());
+                    put_placed(record, &mut placed, ComponentCount(1));
+                }
+                else {
+                    record.put_tag(component_absent());
+                }
+            }
+            record.put_tag(match parameters.partiality {
+                crate::check::Partiality::Refused => WireTag::from(0x00_u8),
+                crate::check::Partiality::Ruled => WireTag::from(0x01_u8),
+            });
         }
         self.members = members;
         self.intern_scratch()
@@ -3492,6 +3709,37 @@ fn put_level(
     for (variable, offset) in atoms {
         record.put_word(EncodedWord(u64::from(u32::from(variable.index()))));
         record.put_word(EncodedWord(u64::from(offset)));
+    }
+}
+
+/// Append `count`, then the next `count` ids of `placed`. The result is one
+/// framed list of a record. The record's nodes were placed before it was
+/// written.
+///
+/// # Specification
+/// - requires: `placed` yields the list's ids in the order the record lists
+///   them.
+/// - ensures: appends the count's varint, then each id taken. The count frames
+///   the list. So two records that split their ids differently differ.
+/// - provides: the framing that [`ContentTable::parameters`] writes its lists
+///   with.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the appended bytes are the iterator's next items. A
+///   predicate could restate them only by consuming them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ContentTable::parameters`].
+/// - witness: `encoding::tests::parameters_name_their_block_by_content`
+fn put_placed(
+    record: &mut ContentEncoding,
+    placed: &mut impl Iterator<Item = ContentId>,
+    count: ComponentCount,
+)
+{
+    record.put_count(count);
+    for id in placed.take(count.0) {
+        record.put_content(id);
     }
 }
 
@@ -5463,6 +5711,108 @@ mod tests
                     },
                 }
             }
+        }
+    }
+
+    #[test]
+    fn parameters_name_their_block_by_content()
+    {
+        use gandr_kernel_strata::Level;
+        use gandr_kernel_strata::LevelConstant;
+        use gandr_kernel_term::GroundSort;
+        use gandr_kernel_term::LevelParamCount;
+
+        use super::Parameters;
+        use super::ParametersBlock;
+        use crate::check::Partiality;
+
+        let mut arena = TermArena::new();
+        let mut table = ContentTable::new();
+        let bottom = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let bottom_again = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let top = arena.value_type_universe(
+            GroundSort::Value,
+            Level::constant(LevelConstant::from(1_u64)),
+        );
+        let unit = arena.value_type_unit();
+        let unit_again = arena.value_type_unit();
+        let first_takes_both = vec![vec![unit, unit], vec![]];
+        let first_takes_both_again = vec![vec![unit_again, unit_again], vec![]];
+        let one_each = vec![vec![unit], vec![unit]];
+        let results: Vec<Vec<ValueId>> = vec![vec![], vec![]];
+        let at = |position: usize| ConstantIndex::from(position);
+        let data = |position, kind, constructors| ParametersBlock::Data {
+            position,
+            kind,
+            parameters: &[],
+            indices: &[],
+            constructors,
+            results: &results,
+        };
+        let parameters = |block, partiality| Parameters {
+            level_params: LevelParamCount::from(0_u32),
+            constraints: &[],
+            manifest: &[],
+            laws: &[],
+            block,
+            own: None,
+            following: None,
+            partiality,
+        };
+        let named = table.parameters(
+            &arena,
+            &parameters(data(at(0), bottom, &first_takes_both), Partiality::Refused),
+        );
+        assert_eq!(
+            named,
+            table.parameters(
+                &arena,
+                &parameters(
+                    data(at(0), bottom_again, &first_takes_both_again),
+                    Partiality::Refused
+                ),
+            ),
+            "a block minted twice with equal content is named once"
+        );
+        for (other, why) in [
+            (
+                parameters(data(at(0), top, &first_takes_both), Partiality::Refused),
+                "a block at one position whose kind differs",
+            ),
+            (
+                parameters(data(at(1), bottom, &first_takes_both), Partiality::Refused),
+                "an equal block at another position",
+            ),
+            (
+                parameters(data(at(0), bottom, &one_each), Partiality::Refused),
+                "the same fields split between the constructors otherwise",
+            ),
+            (
+                parameters(
+                    ParametersBlock::Codata {
+                        position: at(0),
+                        kind: bottom,
+                        parameters: &[],
+                        observations: &[],
+                    },
+                    Partiality::Refused,
+                ),
+                "a codata block at the position",
+            ),
+            (
+                parameters(ParametersBlock::Outside, Partiality::Refused),
+                "no block",
+            ),
+            (
+                parameters(data(at(0), bottom, &first_takes_both), Partiality::Ruled),
+                "a ruled operation's block",
+            ),
+        ] {
+            assert_ne!(
+                named,
+                table.parameters(&arena, &other),
+                "{why} is named apart"
+            );
         }
     }
 }

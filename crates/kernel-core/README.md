@@ -18,7 +18,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 **Why.** The kernel grants a producer no credence: every declaration is re-checked before admission, including one a decoder built from untrusted bytes. Such a term can be arbitrarily deep and heavily shared, so the checker must be total on adversarial depth and must not pay for a shared subterm once per occurrence.
 
-**How.** The checker is a defunctionalized machine over explicit stacks, so it is total on depth; conversion is structural comparison with a positive-only id-equality fast path; both machines consult a content-keyed check memo that lives for one check call; and admission truncates the arena on both verdicts, clamped at the admission floor. [`src/lib.rs`](src/lib.rs) states why the four are decided together.
+**How.** The checker is a defunctionalized machine over explicit stacks. It is total on depth. Conversion is structural comparison with a positive-only id-equality fast path. Both machines consult a content-keyed check memo per call, then the environment's kept outcomes. Admission truncates the arena on both verdicts, clamped at the admission floor. [`src/lib.rs`](src/lib.rs) states why the four are decided together.
 
 ## Provided features
 

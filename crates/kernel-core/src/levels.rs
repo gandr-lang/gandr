@@ -123,6 +123,18 @@ impl LevelContext
         self.params
     }
 
+    /// The declared constraints that the poset was admitted from, in
+    /// declaration order. With the parameter count, they are the whole context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn constraints(&self) -> &[gandr_kernel_strata::LandmarkConstraint]
+    {
+        self.poset.constraints()
+    }
+
     /// Check that every variable of `level` is within the prenex parameters.
     ///
     /// # Specification
