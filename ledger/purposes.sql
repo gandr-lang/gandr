@@ -203,7 +203,7 @@ INSERT INTO purpose VALUES('core-checker','staging::ProgramError','enum','Why a 
 INSERT INTO purpose VALUES('core-checker','staging::Readmission','enum','The kernel''s verdict on one certificate.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','staging::SourceIndex','struct','A source''s position in its program.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','staging::Stages','struct','Time spent at each stage of a check, read from the caller''s clock.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','staging::check','function','Checks a staged program: normalizes every source, merges the syntax, harvests the families, then readmits every certificate beside admitting every family through the memo.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','staging::check','function','Checks a staged program: normalizes every source, merges the syntax, harvests the families, then readmits every certificate beside admitting every family through the memo.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','support::CodataConsulted','struct','One codata-signature answer, including a missing declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','support::Consulted','struct','One answer a judgement read from the signature table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','support::DataConsulted','struct','One nominal-signature answer, including a missing declaration.',NULL,'fits','sound',NULL);
@@ -216,7 +216,7 @@ INSERT INTO purpose VALUES('core-checker','template::PriceGate','enum','Which in
 INSERT INTO purpose VALUES('core-checker','template::Production','enum','A producer result; ordinary replay is selected whenever compression declines.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::ProgramId','struct','Producer identity within one readmission run; unrelated programs never merge.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::Substitution','struct','The member''s choices, selected only by matching its own source.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','template::Template','struct','A priced and inheritance-checked equation family, retaining no members.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','template::Template','struct','A priced and inheritance-checked equation family, retaining no members.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::admission::AdmissionCandidate','struct','A kernel proposal and independent point-ordered rows for harvested members.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::analyze','function','Anti-unifies and prices a uniform family without replay or admission authority.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::draft::ArmCount','struct','How many arms a draft added to its template''s.',NULL,'fits','sound',NULL);
@@ -225,14 +225,14 @@ INSERT INTO purpose VALUES('core-checker','template::draft::Miss','enum','Why a 
 INSERT INTO purpose VALUES('core-checker','template::draft::RepairCount','struct','How many binders a rebase replaced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::draft::Unfit','enum','Why a draft that matched every member is not offered to the kernel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::harvest::Family','struct','One recurring decision region from a single meta-program.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','template::harvest::harvest','function','Harvests every equation, partitioning by decision and shallow source shape.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','template::harvest::harvest','function','Harvests every equation, partitioning by decision and shallow source shape.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::image::plain_image','function','Builds the independent serial image of one plain equation, excluding arena garbage.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::Clock','trait','A monotone clock the caller supplies; the checker reads no clock of its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::Decline','enum','Why the controller did not draft a family whose key holds a template.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::Drafting','enum','What the drafter did with one family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::FamilyAdmission','enum','What became of one family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::FamilyReport','struct','One family''s outcome, the drafter''s part in it, and the time spent.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','template::memo::Memo','struct','Each harvest key''s last template, the controller''s state, and the buffers drafting and admission reuse, carried by the caller across programs.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','template::memo::Memo','struct','Each harvest key''s last template, the controller''s state, and the buffers drafting and admission reuse, carried by the caller across programs.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::Origin','enum','Where an admitted schema came from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::Spent','struct','Time spent on one family, by stage.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::memo::Unheld','enum','Why the memo holds no template for a family.',NULL,'fits','sound',NULL);
@@ -507,7 +507,7 @@ INSERT INTO purpose VALUES('core-nbe','resharing::SupportSides','enum','The two 
 INSERT INTO purpose VALUES('core-nbe','stage::double','function','Build a doubling program over a staged natural.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','stage::normalize','function','Normalize staging syntax, recording a replayable equation per step.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','stage::power','function','Build a power program over a staged natural.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-nbe','traced::TracedDuplication','struct','A duplication stance installed bound to the trace sink.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','traced::TracedDuplication','struct','A duplication stance installed bound to the trace sink.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','boundary::ConsumerArity','struct','Names the number of children a consumer frame takes, so the check and the machine read the count rather than a constant.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','boundary::NodeCount','struct','Names a count of arena nodes, so a size or a length reads as a count and not an address.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','boundary::ProducerArity','struct','Names the number of children a producer head declares, so the check and the machine read the count rather than a constant.',NULL,'fits','sound',NULL);
@@ -709,9 +709,9 @@ INSERT INTO purpose VALUES('core-term','handler::LawNode','enum','One node of a 
 INSERT INTO purpose VALUES('core-term','handler::ReadLaw','struct','A law of a theory read for a handler: its two sides over its metavariables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','handler::obligation','function','Reads a side of a law through a handler''s clauses, each operation its clause''s body applied to its payload and resumed through its continuation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','handler::read_law','function','Reads a law''s two sides for a handler whose operations arity gives, each side in preorder over the law''s metavariables.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','handler::subject::SubjectRule','struct','A law of a theory oriented as a rewrite of the subject a scope over the theory handles.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','handler::subject::SubjectRule','struct','A law of a theory oriented as a rewrite of the subject a scope over the theory handles.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','handler::subject::normalize','function','Rewrites the subject of a scope over a theory by the theory''s laws until none applies, so two requests a law glues run as one.','sharing','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','handler::subject::subject_rule','function','Reads a law as a rewrite of a scope''s subject when its right side makes fewer of its left side''s requests, or none.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','handler::subject::subject_rule','function','Reads a law as a rewrite of a scope''s subject when its right side makes fewer of its left side''s requests, or none.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::CodomainScope','enum','Where a matched function type''s codomain stands: in the ambient context, or under the domain''s binder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::Components','enum','The components of a matched type, or the reason it matched no former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::HoleId','struct','The name of a typed hole: what a fill finds it by, split into written, nominated and wildcard halves.',NULL,'fits','sound',NULL);
@@ -1112,7 +1112,7 @@ INSERT INTO purpose VALUES('kernel-core','stage_order::StageOrder','struct','The
 INSERT INTO purpose VALUES('kernel-core','stage_order::Unminted','enum','Why a stage could not be minted below another.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','stage_order::below','function','The bound one step below stage: every stage strictly below it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::NodeOutcome','enum','What one goal expansion produced, as the memo stores it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core','support::NodeSupport','struct','The complete support of one goal expansion, as the name of its goal record.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','support::NodeSupport','struct','The complete support of one goal expansion, as the name of its goal record.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportContext','struct','The state one checking session derives its memo keys against: the canonical content numbering, and the buffer one goal''s read binders are gathered in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportPlane','enum','Which of the two machines a support belongs to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::EncodedVerdict','struct','Holds the canonical bytes of what one checked admission read of its declaration.',NULL,'fits','sound',NULL);
@@ -1228,12 +1228,12 @@ INSERT INTO purpose VALUES('kernel-term','decl::StructuredName','struct','A decl
 INSERT INTO purpose VALUES('kernel-term','decode::DecodedArtifact','struct','A fully decoded artifact.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::DecodedPrefix','struct','What decoding an artifact''s leading declarations left, which a decode of an artifact leading with the same segments resumes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::SegmentLayout','struct','Where the decoder found an artifact''s segments, as offsets into the image it read: the end of the header and the end of each declaration segment.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','decode::decode','function','Decode an artifact image into its declaration sequence and shared arena.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','decode::decode','function','Decode an artifact image into its declaration sequence and shared arena.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::decode_after','function','Decode of image, resuming after prefix when image''s declaration segments lead with prefix''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::decode_keeping','function','Decode of image, keeping what decoding its first end declarations left for decode_after to resume.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::EncodedPrefix','struct','The encoding of an admission-ordered sequence''s leading declarations, which an encoding of any sequence leading with them resumes.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','encode::SegmentEncoder','struct','Encodes an admission-ordered sequence one declaration at a time, each as the segment the whole sequence''s encoding writes for it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','encode::encode','function','Encode an admission-ordered declaration sequence over `arena` into canonical bytes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','encode::SegmentEncoder','struct','Encodes an admission-ordered sequence one declaration at a time, each as the segment the whole sequence''s encoding writes for it.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','encode::encode','function','Encode an admission-ordered declaration sequence over `arena` into canonical bytes.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::encode_after','function','Encode of the sequence prefix''s declarations lead and after follows, writing prefix''s segments as they were encoded and encoding after''s alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::encode_prefix','function','The encoding of `declarations`, the leading declarations of a sequence over `arena`, for encode_after to resume.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','error::DecodeError','enum','Why decoding an artifact failed.',NULL,'fits','sound',NULL);
@@ -1292,7 +1292,7 @@ INSERT INTO purpose VALUES('kernel-term','session::PayloadSlot','struct','A zero
 INSERT INTO purpose VALUES('kernel-term','session::State','struct','A position in a finite session graph.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','session::StatePair','struct','A supplied coinductive hypothesis in source-to-target order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','session::Word','struct','One unsigned word in the canonical session inline payload.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','stage::Arena','struct','Append-only staging syntax with canonical classifier identities.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','stage::Arena','struct','Append-only staging syntax with canonical classifier identities.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','stage::Budget','struct','Declare an arena-local nominal coordinate.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','stage::Certificate','struct','A normalization proposal; replay must relate its endpoints through steps.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','stage::Child','enum','A constructor child slot, vacant exactly when that position is unused.',NULL,'fits','sound',NULL);
@@ -1317,7 +1317,7 @@ INSERT INTO purpose VALUES('kernel-term','stage_signature::StageReach','enum','W
 INSERT INTO purpose VALUES('kernel-term','stage_signature::StageSignature','struct','The stages a definition''s signature quantifies over and where its declared type reads each; empty for a definition quantified over none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','support::LooseDepth','struct','One more than the largest free de Bruijn index a node mentions; zero for a closed node.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','support::ReadIndices','enum','The indices a Reads holds, ascending.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','support::Reads','struct','The binders a node reads, carried on the node from its mint: exactly the free de Bruijn indices it mentions.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','support::Reads','struct','The binders a node reads, carried on the node from its mint: exactly the free de Bruijn indices it mentions.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::ADMISSION_CHECKED','constant','Admission mark: admitted through the checked choke point.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::ADMISSION_UNCHECKED','constant','Admission mark: admitted through the warned bypass.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::BASE_CHARACTER','constant','Base-type atom: the character atom.',NULL,'fits','sound',NULL);
@@ -2159,7 +2159,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::NameKind','enu
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::Referent','struct','Where the unit writes what a use refers to: the source holding it, the name, and the whole binder or declaration form, each span in that source''s own text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::unrefused::Absent','enum','Why the table holds no refusal for a declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::AlreadyInstalled','struct','Says a process already installed its verdict cache.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct','Holds the policy, store, key and counts every readmission of a process recalls and records under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct','Holds the policy, store, key and counts every readmission of a process recalls and records under.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictTally','struct','Counts what a process''s verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_verdict_cache','function','Installs a process''s verdict cache before its walk, once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::verdict_tally','function','Reads what the installed verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
@@ -2856,7 +2856,7 @@ INSERT INTO purpose VALUES('surface-parser','label::label','function','Label a U
 INSERT INTO purpose VALUES('surface-parser','meld::BoundarySlot','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CandidateLabels','struct','Borrowed candidate-label set for the next lexical token.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::ChainReach','struct','A tile the source left out, written into a copy of the source so the copy molds without a repair, and read back as the close the melder mints.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-parser','meld::Checkpoint','struct','A serializable, first-order snapshot of a MeldState.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::Checkpoint','struct','A serializable, first-order snapshot of a MeldState.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CheckpointBytes','struct','Owned checkpoint byte stream.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CheckpointBytesRef','struct','Borrowed checkpoint byte stream.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CheckpointError','enum','A failure while decoding a serialized Checkpoint.',NULL,'fits','sound',NULL);
@@ -3183,7 +3183,7 @@ INSERT INTO purpose VALUES('theory-cell-complexes','pattern::splice_at','functio
 INSERT INTO purpose VALUES('theory-cell-complexes','pattern::splice_cmd','function','The copy of `cmd` with the subterm at `pos` replaced by `replacement`, still a command.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','pattern::subterm_at','function','The subterm `pos` addresses in `root`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','polarity::Polarity','enum','The evaluation-strategy orientation of a cut.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-cell-complexes','sequent::CellContractumUse','enum','How a hole is used on a cell''s contractum side: the step-growth half of the linearity discipline, beside CellVarMeta::linear''s redex-side count.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes','sequent::CellContractumUse','enum','How a hole is used on a cell''s contractum side: the step-growth half of the linearity discipline, beside CellVarMeta::linear''s redex-side count.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','sequent::CellMeta','struct','The derived metadata of a cell: per-metavariable variance, linearity and contractum use, and whether the cell is an invertible joinability certificate rather than an oriented optimization cell.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','sequent::CellProvenance','enum','Where a cell came from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','sequent::CellVarMeta','struct','The derived metadata of one cell metavariable.',NULL,'fits','sound',NULL);
@@ -3485,8 +3485,8 @@ INSERT INTO purpose VALUES('theory-deep-inference','shift::ShiftObstruction','en
 INSERT INTO purpose VALUES('theory-deep-inference','shift::derive_shift_equivalence','function','Derive the shift-equivalence witness for a pair of adjacent applications in `peak`, or refuse it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-deep-inference','template::ArmAddress','struct','The content address of an arm''s body: the substitution that puts it in place.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-deep-inference','template::FamilyCostReport','struct','The cost of a family with its template and without: the sizes, the inheritance cache''s two counts, and the replay each way.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-deep-inference','template::GuardedTemplate','struct','A family of certificates folded into one: the generalized certificate, one entry per point where the members differ, and the sizes that licensed its emission.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-deep-inference','template::InheritanceCache','struct','The inheritance verdicts of one producer run, keyed by content triple.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-deep-inference','template::GuardedTemplate','struct','A family of certificates folded into one: the generalized certificate, one entry per point where the members differ, and the sizes that licensed its emission.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-deep-inference','template::InheritanceCache','struct','The inheritance verdicts of one producer run, keyed by content triple.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-deep-inference','template::InheritanceKey','struct','The triple an inheritance check is memoized under: a template region, one of its entries, and the body of one arm at that entry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-deep-inference','template::InheritanceVerdict','enum','What an inheritance check found for one triple.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-deep-inference','template::MemoizedPriceRefusal','enum','Why the distinct-triple price cannot establish both strict bounds.',NULL,'fits','sound',NULL);
