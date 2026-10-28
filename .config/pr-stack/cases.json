@@ -2822,6 +2822,61 @@
     "output": "{\"act\":\"confirm\",\"seen\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
   },
   {
+    "name": "#3615: a stack with a queued bottom waits for it to merge; the heal pushes no branch",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": [
+        { "number": 3608, "red": false, "queued": true },
+        { "number": 3611, "red": false, "queued": false },
+        { "number": 3613, "red": false, "queued": false }
+      ]
+    },
+    "output": "{\"act\":\"wait\",\"queued\":[3608]}"
+  },
+  {
+    "name": "#3615: a stack with no queued member and no red check is restacked",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": [
+        { "number": 3611, "red": false, "queued": false },
+        { "number": 3613, "red": false, "queued": false }
+      ]
+    },
+    "output": "{\"act\":\"restack\"}"
+  },
+  {
+    "name": "#3615: a red member stops the heal before a queued one makes it wait",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": [
+        { "number": 3608, "red": false, "queued": true },
+        { "number": 3613, "red": true, "queued": false }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#3615: a fourth heal stops",
+    "program": "heal.jq",
+    "input": {
+      "heals": 3,
+      "members": [{ "number": 3613, "red": false, "queued": false }]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#3615: an empty stack stops the heal",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": []
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
     "name": "#2854: a DIRTY reading repeated at the same head is a conflict",
     "program": "dirty.jq",
     "input": {

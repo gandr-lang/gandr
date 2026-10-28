@@ -3451,20 +3451,35 @@ heals=0
 required=$(required_contexts)
 # Restack this pull request's server stack onto main, when no pull request in
 # it has a red check; the landing trigger queues it again once its checks are
-# green.
+# green. A member in the merge queue never moves (`heal.jq`, #3615): the
+# heal waits for it to merge, printing `pr-waits` once, and the watch polls
+# on.
+waited=
 heal() {
-  local stack member red
-  (( heals < 3 )) || return 1
+  local stack member red queued members=() decision
   stack=$(server_stack "$number")
-  [[ $(jq length <<< "$stack") != 0 ]] || return 1
+  queued=$(queued_of "$stack")
   for member in $(jq -r '.[].number' <<< "$stack"); do
     red=$(red_check "$member") || return 1
-    [[ -z "$red" ]] || return 1
+    members+=("$(jq -cn --argjson number "$member" --argjson red "$([[ -n $red ]] && echo true || echo false)" \
+      --argjson queued "$queued" '{number: $number, red: $red, queued: ($number | IN($queued[]))}')")
   done
+  decision=$(jq -cn --argjson heals "$heals" '{heals: $heals, members: ($ARGS.positional | map(fromjson))}' --args "${members[@]}" \
+    | jq -c -f "$pr_stack_dir/heal.jq")
+  case $(jq -r .act <<< "$decision") in
+    stop) return 1 ;;
+    wait)
+      queued=$(jq -r '.queued | map("#\(.)") | join(" ")' <<< "$decision")
+      [[ $waited == "$queued" ]] || echo "pr-waits #$number: $queued in the merge queue never moves; the restack waits for it to merge" >&2
+      waited=$queued
+      return 0
+      ;;
+  esac
   restack "$stack" >&2 || return 1
   heals=$((heals + 1))
   seen_queued=false
   gone=0
+  waited=
   echo "pr-restacked #$number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" >&2
 }
 # The open pull requests stacked above this one, bottom first: each one's base
