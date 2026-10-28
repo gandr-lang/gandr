@@ -242,10 +242,19 @@ unproduced = [
 # Building the policy library or its driver links rustc's own crates, which
 # rustc-dev and llvm-tools supply. The CI image leaves both out (its
 # Dockerfile says why), so the task adds them; where they are installed the
-# add is a no-op.
+# add is a no-op. A driver missing for the toolchain is built against the
+# pinned rust-clippy (`.github/docker/rust-clippy.bash`, #3531), whose
+# repository is kept under the cache directory; a cached driver, as the CI
+# image bakes, is used as it is.
 run = '''
 rustup component add rustc-dev llvm-tools
-.config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets
+toolchain=$(rustup show active-toolchain | awk '{print $1}')
+set -- .config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets
+if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver" ]; then
+  channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
+  set -- .github/docker/rust-clippy.bash "${XDG_CACHE_HOME:-$HOME/.cache}/gandr/rust-clippy.git" "$channel" "$@"
+fi
+"$@"
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
@@ -1438,6 +1447,16 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 ["check:host-lock"]
 description = "A host lock's slots refuse or wait while held and free when their holder and its children are gone"
 run = ".config/mise/host-lock-cases.bash"
+
+# The pinned rust-clippy the Dylint driver's build reads, in the CI image and
+# in `check:dylint` (#3531): `.config/rust-clippy/cases.bash` runs
+# `.github/docker/rust-clippy.bash` over each case of
+# `.config/rust-clippy/cases.json` against a scratch rust-clippy: a driver
+# build's clone, the kept repository and the two refusals.
+["check:rust-clippy"]
+description = "A Dylint driver build's rust-clippy clone reads the pinned commit as master; a pin off the toolchain's channel is refused"
+tools.jq = "1.8.1"
+run = ".config/rust-clippy/cases.bash"
 
 # A build state's sources, recorded when it is archived and restamped when it
 # is unpacked (#3206): `.config/build-state/restamp.bash` runs each case in

@@ -107,30 +107,14 @@ RUN ln -sf "$(mise which node)" /opt/ci/.local/bin/node \
 # only the driver reaches the image: it runs on the toolchain's own rustc
 # library, and rustup cannot remove a component inside a layer.
 #
-# The driver's build script clones rust-clippy, checks out the ref `master`
-# and walks first parents back to the commit that set the toolchain's channel.
-# It reads no pin of ours, so the clone is served from a local repository
-# holding that commit as `master`, through a rewrite scoped to the one
-# command. The commit is the one under rust-clippy's rust-<stable> tag that
-# set the channel, the tag quenchant's clippy_utils pins; `mise run
-# toolchain:bump` moves it with the channel. The build refuses a commit naming
-# another channel, or one whose parent names the same: depth 2 then serves the
-# walk, which stops at the first parent whose channel differs.
+# The driver's build script clones rust-clippy and reads no pin of ours;
+# rust-clippy.bash serves it the pinned commit (that script says how), as it
+# does for `check:dylint` on a host.
 FROM tools AS driver
-# rust-clippy's rust-1.98.0, the commit that set nightly-2026-06-25.
-ARG RUST_CLIPPY_REV=64c7431d6cd823d1a7663165c7e59d78e6dc726a
+COPY --chown=1000:1000 .github/docker/rust-clippy.bash /opt/pins/
 WORKDIR /opt/ci/warmup/app
 RUN set -eux; \
     TC="$(rustup show active-toolchain | awk '{print $1}')"; \
-    CLIPPY=/opt/ci/warmup/rust-clippy.git; \
-    git init --quiet --bare "$CLIPPY"; \
-    git -C "$CLIPPY" fetch --quiet --depth 2 https://github.com/rust-lang/rust-clippy "$RUST_CLIPPY_REV"; \
-    git -C "$CLIPPY" update-ref refs/heads/master "$RUST_CLIPPY_REV"; \
-    git -C "$CLIPPY" symbolic-ref HEAD refs/heads/master; \
-    CLIPPY_CHANNEL="$(git -C "$CLIPPY" show "$RUST_CLIPPY_REV:rust-toolchain.toml" | sed -n 's/^channel = "\(.*\)"/\1/p')"; \
-    [ "$CLIPPY_CHANNEL" = "$RUSTUP_TOOLCHAIN" ] || { echo "RUST_CLIPPY_REV $RUST_CLIPPY_REV sets $CLIPPY_CHANNEL, the toolchain is $RUSTUP_TOOLCHAIN: run mise run toolchain:bump" >&2; exit 1; }; \
-    PARENT_CHANNEL="$(git -C "$CLIPPY" show "$RUST_CLIPPY_REV^:rust-toolchain.toml" | sed -n 's/^channel = "\(.*\)"/\1/p')"; \
-    [ "$PARENT_CHANNEL" != "$CLIPPY_CHANNEL" ] || { echo "RUST_CLIPPY_REV $RUST_CLIPPY_REV does not set $CLIPPY_CHANNEL: its parent names it too" >&2; exit 1; }; \
     rustup component add rustc-dev llvm-tools; \
     mkdir -p /opt/ci/warmup/gates/src /opt/ci/warmup/app/src; \
     printf '[package]\nname = "dylint-warmup-gates"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n' > /opt/ci/warmup/gates/Cargo.toml; \
@@ -159,8 +143,8 @@ RUN set -eux; \
     printf 'fn main() {}\n' > /opt/ci/warmup/app/src/main.rs; \
     cargo build --manifest-path /opt/ci/warmup/gates/Cargo.toml --release; \
     mv "/opt/ci/warmup/gates/target/release/libdylint_warmup_gates.so" "/opt/ci/warmup/gates/target/release/libdylint_warmup_gates@${TC}.so"; \
-    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$CLIPPY.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/rust-lang/rust-clippy \
-        DYLINT_LIBRARY_PATH=/opt/ci/warmup/gates/target/release cargo dylint --lib dylint_warmup_gates --no-deps; \
+    DYLINT_LIBRARY_PATH=/opt/ci/warmup/gates/target/release \
+        /opt/pins/rust-clippy.bash /opt/ci/warmup/rust-clippy.git "$RUSTUP_TOOLCHAIN" cargo dylint --lib dylint_warmup_gates --no-deps; \
     ls -l "/opt/ci/.dylint_drivers/${TC}/dylint-driver"
 
 FROM tools

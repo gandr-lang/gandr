@@ -5,8 +5,9 @@
 # An external consumer takes the nightly from a reviewed full workflow commit
 # and changes its Dylint metadata revision in the same operation. The installer
 # reads that metadata too, so no independently editable binary revision exists.
-# Either way the CI image's rust-clippy commit, which the Dylint driver's build
-# reads, moves with them: the commit that set the channel under the Clippy tag.
+# Either way the rust-clippy commit the Dylint driver's build reads
+# (`.github/docker/rust-clippy.bash`, for the CI image and `check:dylint`)
+# moves with them: the commit that set the channel under the Clippy tag.
 ["toolchain:bump"]
 description = "Move the compiler and its local or external lint source together"
 usage = '''
@@ -59,9 +60,10 @@ case "$channel" in
   *) echo 'toolchain:bump: source carries no usable nightly channel' >&2; exit 1 ;;
 esac
 
-# The tag's commit sets the channel on rust-clippy's first-parent line: the CI
-# image serves it to the driver's build as `master`, and the build's walk
-# stops there because the commit's first parent names an earlier channel.
+# The tag's commit sets the channel on rust-clippy's first-parent line:
+# rust-clippy.bash serves it to the driver's build as `master`, and the
+# build's walk stops there because the commit's first parent names an earlier
+# channel.
 case "$clippy_tag" in
   rust-[0-9]*) ;;
   *) echo 'toolchain:bump: source carries no rust-<stable> clippy_utils tag' >&2; exit 1 ;;
@@ -84,8 +86,8 @@ elif [ -f Cargo.toml ]; then
   perl -0777 -pi -e 's{(^\[workspace\.dependencies\.clippy_utils\]\n)(.*?)(?=^\[|\z)}{my ($head, $body) = ($1, $2); $body =~ s/^tag = ".*"$/tag = "rust-$ENV{WORKFLOW_STABLE}"/m; "$head$body"}gmse' Cargo.toml
 fi
 perl -pi -e 's/^channel = .*/channel = "$ENV{WORKFLOW_CHANNEL}"/' rust-toolchain.toml
-if [ -f .github/docker/ci.Dockerfile ]; then
-  perl -0777 -pi -e 's{^# rust-clippy.s \S+, the commit that set \S+\.\nARG RUST_CLIPPY_REV=[0-9a-f]{40}$}{# rust-clippy\x27s $ENV{CLIPPY_TAG}, the commit that set $ENV{WORKFLOW_CHANNEL}.\nARG RUST_CLIPPY_REV=$ENV{CLIPPY_REV}}m or die "ci.Dockerfile carries no RUST_CLIPPY_REV pin\n"' .github/docker/ci.Dockerfile
+if [ -f .github/docker/rust-clippy.bash ]; then
+  perl -0777 -pi -e 's{^# rust-clippy.s \S+, the commit that set \S+\.\nrev=[0-9a-f]{40}$}{# rust-clippy\x27s $ENV{CLIPPY_TAG}, the commit that set $ENV{WORKFLOW_CHANNEL}.\nrev=$ENV{CLIPPY_REV}}m or die "rust-clippy.bash carries no rust-clippy pin\n"' .github/docker/rust-clippy.bash
 fi
 
 echo "pinned channel $channel; workflow revision ${revision:-local-library}; rust-clippy $clippy_tag at $clippy_rev"
