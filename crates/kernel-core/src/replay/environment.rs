@@ -16,6 +16,20 @@
 //! ([`crate::rewrite::unload_computation`]). A cell holding a variable its own
 //! environment binds is an alias of that binder's cell, so a read takes one
 //! hop and an alias closes as its cell does.
+//!
+//! The alias is how the reduction keeps practical values. It never
+//! substitutes a variable for a variable. A pushed variable that its own
+//! environment binds becomes an alias of the cell holding that binder's value,
+//! and that cell never holds another alias. A chain of variables bound to
+//! variables thus aliases its first cell at every link. Each read takes at
+//! most one hop, so the reads stay linear in the β-steps.
+//!
+//! # References
+//!
+//! - `Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century`
+//!   — exemplar: § 3.9, the value of variables. Practical values disable the
+//!   substitution of a variable for a variable. The substitution steps then
+//!   stay linear in the β-steps, not quadratic.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -165,6 +179,7 @@ impl Environments
     ///   reduction's own binders reads them as the substituting reduction does,
     ///   through one alias each.
     /// - witness: `replay::tests::the_environment_reduction_agrees_with_the_substituting_one`
+    /// - witness: `replay::environment::tests::a_chain_of_variables_aliases_the_cell_that_holds_its_value`
     #[spec(
         captures: before = self.cells.len(),
         ensures: |ret| self.cells.len() == before.saturating_add(1) && ret != Environment::EMPTY,
@@ -254,6 +269,7 @@ impl Environments
     ///   binders, several deep, read through one alias each as the substituting
     ///   reduction reads them.
     /// - witness: `replay::tests::the_environment_reduction_agrees_with_the_substituting_one`
+    /// - witness: `replay::environment::tests::a_chain_of_variables_aliases_the_cell_that_holds_its_value`
     fn bound(
         &self,
         arena: &TermArena,
@@ -682,3 +698,6 @@ impl Environments
         (arena.value_tuple(&components), self.width(environment))
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -27,6 +27,11 @@
 //! Entries are domain value ids, so an environment is two flat vectors of
 //! `Copy` ids and capturing one is a vector clone rather than a graph walk.
 //!
+//! The ids keep practical values. A binder holds the value its argument
+//! evaluated to, a variable's value too. Evaluation never substitutes a
+//! variable for a variable, and no chain of variables forms. A read takes one
+//! index, so the reads stay linear in the β-steps.
+//!
 //! # Closure spaces
 //!
 //! `ValueClosure` suspends a source value or a virtual
@@ -36,6 +41,13 @@
 //! the two-zone `Environment`; entering a closure extends that environment and
 //! evaluates its body. Entries are `Copy` ids, so capturing an environment
 //! clones two flat vectors.
+//!
+//! # References
+//!
+//! - `Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century`
+//!   — exemplar: § 3.9, the value of variables. Practical values disable the
+//!   substitution of a variable for a variable. The substitution steps then
+//!   stay linear in the β-steps, not quadratic.
 //!
 //! [the domain]: crate::domain
 
