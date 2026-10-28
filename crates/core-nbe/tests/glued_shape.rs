@@ -12,7 +12,6 @@ use gandr_core_nbe::DuplicationPolicy;
 use gandr_core_nbe::DuplicationStance;
 use gandr_core_nbe::Glued;
 use gandr_core_nbe::NeutralHead;
-use gandr_core_nbe::PolicyRefusal;
 use gandr_core_nbe::SchedulingPolicy;
 use gandr_core_nbe::SchedulingStance;
 use gandr_core_nbe::TermFace;
@@ -107,12 +106,5 @@ fn the_two_parameters_install_side_by_side()
     assert!(
         u32::from(scheduling.share(DefinitionHeight::from(0_u32))) > 0_u32,
         "the weighted stance installs without a gate, because a share forecloses nothing"
-    );
-    assert_eq!(
-        Err(PolicyRefusal::StanceGated {
-            stance: DuplicationStance::Spinal,
-        }),
-        DuplicationPolicy::new(DuplicationStance::Spinal),
-        "while the duplication parameter's finer stance waits on its certification trace"
     );
 }

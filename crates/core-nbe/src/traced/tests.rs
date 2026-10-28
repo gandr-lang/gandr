@@ -3,7 +3,6 @@ use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_conversion_trace::TraceLog;
 use gandr_kernel_conversion_trace::TraceSink as _;
 
-use super::DuplicationPolicy;
 use super::DuplicationStance;
 use super::PolicyRefusal;
 use super::TraceNode;
@@ -38,13 +37,6 @@ fn the_spinal_stance_installs_only_bound_to_a_recording_sink()
         TracedDuplication::install(DuplicationStance::EraseAndClone, &mut log)
             .map(|installed| installed.stance()),
         "and the reference stance with it"
-    );
-    assert_eq!(
-        Err(PolicyRefusal::StanceGated {
-            stance: DuplicationStance::Spinal,
-        }),
-        DuplicationPolicy::new(DuplicationStance::Spinal),
-        "the sinkless installation still refuses the spinal stance"
     );
 }
 

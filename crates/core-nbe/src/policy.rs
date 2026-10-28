@@ -26,19 +26,18 @@
 //! source's conjecture. It motivates the parameter; it does not commit it,
 //! which is why the default stance is the uniform one.
 //!
-//! # The finer duplication stance is gated, and the gate is the point
+//! # The spinal duplication stance enters under the testing stance
 //!
-//! The erase-and-clone stance is the baseline and the reference every other
-//! stance replays against. The spinal stance is representable here — the
-//! parameter's shape has to admit it or the parameter buys nothing — and it is
-//! **refused at installation** by [`DuplicationPolicy::new`], which takes no
-//! certification trace. It installs only through
-//! [`TracedDuplication::install`], bound to a trace sink that retains every
-//! decision, which then owns every evaluation and conversion decided under it,
-//! so each verdict carries the derivation the kernel replays. Installing an
-//! uncertified strategy is precisely the inversion the trace-before-strategy
-//! ordering forbids, so the refusal is the ordering made mechanical rather than
-//! a note in a design document.
+//! The erase-and-clone stance is the baseline and the reference the spinal
+//! stance is tested against. Both install through [`DuplicationPolicy::new`].
+//! The spinal stance enters as a sharing mechanism enters the kernel: assumed
+//! to hold, checked by a property test against its reference, and admitted
+//! with an informal simulation argument rather than a proof. That is the
+//! testing reading of a judgement's meaning (Dybjer 2012): a generated root is
+//! the input, its evaluation and readback under both stances the run, and
+//! agreement modulo erasure the observation that corroborates or refutes it.
+//! A verdict decided under the stance through [`TracedDuplication`] still
+//! records the derivation the kernel replays.
 //!
 //! # Scheduling share
 //!
@@ -64,16 +63,80 @@
 //!
 //! `DuplicationPolicy::copies` answers, per part of a shared value, whether a
 //! duplication copies it. `DuplicationStance::EraseAndClone` copies everything
-//! and is the unshared reference output every other stance replays against.
+//! and is the unshared reference output the spinal stance is tested against.
 //! `DuplicationStance::Spinal` copies the binder-to-occurrence spine and shares
-//! the ribs. `DuplicationPolicy::new` refuses it with
-//! `PolicyRefusal::StanceGated`, so `duplicate_value`, `eval_overlay_value` and
-//! their siblings, which take a policy from `new` or `default`, run only the
-//! reference; the stance installs only through `TracedDuplication`, bound to a
-//! sink that records (see `traced`). The results that would certify the stance
-//! on their own are stated over simply-typed systems that type no fragment of
-//! this language, so a spinal verdict is certified by the kernel's replay of
-//! its trace instead.
+//! the ribs. `DuplicationPolicy::new` installs either, and
+//! `DuplicationPolicy::default` is the reference, so every check runs the
+//! copying stance until a measurement moves the default. `duplicate_value` and
+//! `duplicate_computation` take either policy; the run that evaluates each
+//! shared leg once per configuration is `TracedDuplication`'s, bound to a sink
+//! that records (see `traced`).
+//!
+//! # The property
+//!
+//! `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+//! generates overlay roots of both evaluation families — abstractions shared
+//! among several occurrences, shares nested in legs and bodies, occurrences of
+//! outer shares inside legs, opaque core terms reading the binders around them
+//! — evaluates and reads back each under both stances, and requires the same
+//! tree, compared over the core arena, or the same refusal. Each case runs a
+//! closed root and an open body applied to two different arguments, so a share
+//! inside the body evaluates its leg under two bindings of the body's binder.
+//! Closed roots alone rarely reach that: a remembered leg keyed without its
+//! bindings passes 256 of them and fails the applied roots on every run. That
+//! agreement modulo erasure is the whole certifying property. Step counts are a
+//! measurement, not part of it.
+//!
+//! # The simulation argument
+//!
+//! A spinal run follows the reference run over the same erased term, each
+//! later evaluation of a shared leg replaced by a recall:
+//!
+//! - **Duplication.** The spinal walk copies each spine and keeps each rib as a
+//!   share, and the duplicate erases to the tree its input erases to
+//!   (`tests::duplication::spinal_duplication_is_invisible_to_erasure`), so
+//!   both runs evaluate one term.
+//! - **Erasure.** Erasing the duplicate keeps each share's leg with its free
+//!   indices and otherwise gives the reference's erasure, the leg standing
+//!   unshifted at each occurrence, so a free index names at each occurrence the
+//!   binder it reaches from there.
+//! - **Evaluation.** The machine evaluates the erasure as the reference does,
+//!   except at a leg: its first evaluation in a configuration — one binding at
+//!   each of its free indices, in both zones — is remembered, and a later
+//!   occurrence in that configuration takes it. The invariant is that a
+//!   remembered weak head is the one the reference computes for that leg there.
+//!   It holds because evaluation is deterministic and a leg reads its
+//!   environment only at its free indices, so two occurrences in one
+//!   configuration evaluate one closed instance. A leg with an index the
+//!   environment does not bind is never remembered.
+//! - **Readback** reads the same weak heads, so it reads back the same tree. A
+//!   refusal met inside a leg is met at the leg's first evaluation in its
+//!   configuration, where the reference meets it too.
+//!
+//! The argument rests on the test in two places: that the free indices a leg
+//! is keyed by are exactly those its evaluation reads (the property's applied
+//! roots), and that a configuration tells the zones apart and ignores the
+//! bindings a leg does not read
+//! (`eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`).
+//! It holds for runs that finish: the two stances spend different fuel, so at
+//! a budget's edge one may decline where the other answers, and the kernel
+//! reads a decline as neither verdict.
+//!
+//! # What the stance costs
+//!
+//! Over 1,000 generated roots every root agrees, 365 on a tree and 635 on a
+//! refusal (the generator is untyped). The spinal run spends fewer steps on 6,
+//! as many on 330 and more on 29, at most two more and at most a quarter over.
+//! Remembering a configuration costs the step that pops the remembering task,
+//! and a recall the step that pops it: a leg of `c` steps met `k` times costs
+//! `k·c` in the reference and `c + k` spinal, so the sharing saves
+//! `(k − 1)(c − 1) − 1` steps and loses one on a one-step leg.
+//! The generator's legs are a few steps long. The full-laziness witnesses'
+//! legs cost more than the remembering, and there the step count's slope
+//! shows each rib evaluated once (`tests::full_laziness`). Spinal and ordinary
+//! full laziness are both β-optimal for weak reduction (Balabonski 2013), so
+//! the stance pays only under strong reduction and stays a measured choice:
+//! the default moves only when a measurement moves it.
 //!
 //! # Granularity stance
 //!
@@ -97,6 +160,17 @@
 //! table's own deduplication. Reversal: when certified spinal runs show the
 //! parameter costs more than the sharing it buys, the parameter goes and the
 //! skeleton is the machine's only shape.
+//!
+//! # References
+//!
+//! - `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory`
+//!   — background: § 1.4 reads the meaning explanations as a testing manual,
+//!   a judgement corroborated or refuted by running it on generated input and
+//!   observing the result; the spinal stance enters on that reading, its
+//!   property the observation.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — the
+//!   kernel replicates the sharing mechanisms, each entering on a property test
+//!   against its reference and an informal simulation argument.
 
 use anodized::spec;
 use gandr_core_term::DefinitionHeight;
@@ -176,7 +250,7 @@ impl SchedulingPolicy
     /// - requires: nothing; both stances install.
     /// - ensures: the policy carries exactly the stance offered.
     /// - provides: the total installation the paragraph above justifies — the
-    ///   contrast with [`DuplicationPolicy::new`], which gates one of its own
+    ///   contrast with [`GranularityPolicy::new`], which gates one of its own
     ///   stances.
     /// - fails: never.
     /// - panics: none.
@@ -263,15 +337,13 @@ impl SchedulingPolicy
 pub enum DuplicationStance
 {
     /// Erase the sharing and clone the whole value. The conservative baseline,
-    /// and the reference byte-for-byte output every later stance replays
-    /// against.
+    /// and the reference output the spinal stance is tested against.
     #[default]
     EraseAndClone,
     /// Copy the binder-to-occurrence paths and leave the maximal subexpressions
     /// free of the duplicated binder shared. Finer than full laziness, and
-    /// gated: the results that would certify it are stated over simply-typed
-    /// systems that type no fragment of this language, so it installs only
-    /// behind the conversion trace that makes it checkable by replay.
+    /// admitted under the testing stance: a property test checks it against
+    /// the erase-and-clone stance modulo erasure (see the module doc).
     Spinal,
 }
 
@@ -299,25 +371,17 @@ pub enum Copied
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PolicyRefusal
 {
-    /// The stance installs only behind a certification trace, which this crate
-    /// does not take. Installing it would put an uncertified strategy where the
-    /// design requires evidence, which is the ordering the gate makes
-    /// mechanical.
-    StanceGated
-    {
-        /// The stance that was refused.
-        stance: DuplicationStance,
-    },
     /// The granularity stance installs only behind a certification trace,
-    /// for the same reason as the gated duplication stance.
+    /// which this crate does not take: a finer sharing changes which
+    /// evaluations a derivation reads.
     GranularityGated
     {
         /// The stance that was refused.
         stance: GranularityStance,
     },
-    /// The stance was bound to a trace sink that retains nothing, so no
-    /// verdict decided under it would carry the derivation the kernel
-    /// replays.
+    /// A traced installation of the spinal stance was asked for over a sink
+    /// that retains nothing, so its verdicts would carry no derivation for the
+    /// kernel to replay.
     Untraced
     {
         /// The stance that was refused.
@@ -338,69 +402,26 @@ impl DuplicationPolicy
 {
     /// Install a stance.
     ///
-    /// # Specification
-    /// - requires: nothing — every stance is admissible input, and the gated
-    ///   one is refused rather than unrepresentable. The parameter has to
-    ///   *admit* the finer stance or it fixes nothing; what it withholds is the
-    ///   installation.
-    /// - ensures: on success a policy at `stance`.
-    /// - provides: the installation point a measurement moves, and the gate
-    ///   that keeps an uncertified stance out of it.
-    /// - fails: [`PolicyRefusal::StanceGated`] for the spinal stance, naming
-    ///   the stance it refused, because no certification trace is an input
-    ///   here.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// - [`PolicyRefusal::StanceGated`] — the stance needs a certification
-    ///   trace, and installation takes none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the decision surface is the gate, separated by
-    ///   installing the baseline stance and the gated one, each asserted by
-    ///   variant, with the refusal asserted to name the stance it refused.
-    ///   Admitting the spinal branch, refusing the baseline or changing the
-    ///   refusal payload changes an observation.
-    /// - witness: `policy::tests::the_finer_duplication_stance_is_gated`
-    #[inline]
-    #[spec(ensures: |ret| match stance {
-        | DuplicationStance::EraseAndClone => {
-            ret.as_ref().is_ok_and(|policy| policy.stance() == stance)
-        },
-        | DuplicationStance::Spinal => {
-            matches!(ret, Err(PolicyRefusal::StanceGated { stance: refused }) if refused == stance)
-        },
-    })]
-    pub fn new(stance: DuplicationStance) -> Result<Self, PolicyRefusal>
-    {
-        match stance {
-            DuplicationStance::EraseAndClone => Ok(Self { stance }),
-            DuplicationStance::Spinal => Err(PolicyRefusal::StanceGated { stance }),
-        }
-    }
-
-    /// Install a stance for a caller bound to a recording trace sink.
+    /// Both stances install: the spinal one under the testing stance, checked
+    /// against the erase-and-clone reference by the property the module doc
+    /// names.
     ///
     /// # Specification
-    /// - requires: the caller holds a sink that retains every decision and
-    ///   routes every conversion decided under the policy into it;
-    ///   [`TracedDuplication::install`] is the one caller, and checks it.
+    /// - requires: nothing; both stances install.
     /// - ensures: a policy at `stance`.
-    /// - provides: the installation behind the certifying gate, unreachable
-    ///   from outside the crate.
+    /// - provides: the installation point a measurement moves.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both stances cross the trace-bound installation,
-    ///   while a discarding sink refuses only the spinal stance; substituting a
-    ///   stance or applying the sinkless gate changes the installed observer or
-    ///   refusal.
-    /// - witness: `traced::tests::the_spinal_stance_installs_only_bound_to_a_recording_sink`
+    /// - hypothesis: L3 — both stances are installed and observed after
+    ///   installation; installing one in the other's place changes the observed
+    ///   stance.
+    /// - witness: `policy::tests::every_duplication_stance_installs`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| matches!((stance, ret.stance), (DuplicationStance::EraseAndClone, DuplicationStance::EraseAndClone) | (DuplicationStance::Spinal, DuplicationStance::Spinal)))]
-    pub(crate) const fn bound_to_trace(stance: DuplicationStance) -> Self
+    pub const fn new(stance: DuplicationStance) -> Self
     {
         Self { stance }
     }
@@ -409,19 +430,16 @@ impl DuplicationPolicy
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the installed stance, which is
-    ///   [`DuplicationStance::EraseAndClone`] for every policy
-    ///   [`DuplicationPolicy::new`] installs, since it refuses the other.
+    /// - ensures: the installed stance.
     /// - provides: the stance a duplication walk over the sharing overlay
     ///   consults, so the overlay itself decides nothing.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — sinkless baseline installation and both trace-bound
-    ///   stances are observed after installation; confusing the baseline with
-    ///   the certified spinal stance changes the result.
-    /// - witness: `policy::tests::the_finer_duplication_stance_is_gated`
+    /// - hypothesis: L3 — the default and both installed stances are observed;
+    ///   confusing the baseline with the spinal stance changes the result.
+    /// - witness: `policy::tests::every_duplication_stance_installs`
     /// - witness: `traced::tests::the_spinal_stance_installs_only_bound_to_a_recording_sink`
     #[inline]
     #[must_use]

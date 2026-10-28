@@ -76,25 +76,20 @@ fn the_weighted_stance_rises_with_the_height()
 }
 
 #[test]
-fn the_finer_duplication_stance_is_gated()
+fn every_duplication_stance_installs()
 {
-    let baseline = DuplicationPolicy::new(DuplicationStance::EraseAndClone);
-    assert_eq!(
-        Ok(DuplicationStance::EraseAndClone),
-        baseline.map(|policy| policy.stance()),
-        "the conservative stance installs and is the default"
-    );
     assert_eq!(
         DuplicationStance::EraseAndClone,
-        DuplicationPolicy::default().stance()
+        DuplicationPolicy::default().stance(),
+        "the copying stance is the default"
     );
-    assert_eq!(
-        Err(PolicyRefusal::StanceGated {
-            stance: DuplicationStance::Spinal,
-        }),
-        DuplicationPolicy::new(DuplicationStance::Spinal),
-        "the finer stance is representable and refused: the gate is the ordering, mechanized"
-    );
+    for stance in [DuplicationStance::EraseAndClone, DuplicationStance::Spinal] {
+        assert_eq!(
+            stance,
+            DuplicationPolicy::new(stance).stance(),
+            "the spinal stance installs under the testing stance, as the reference does"
+        );
+    }
 }
 
 #[test]
@@ -129,12 +124,7 @@ fn the_stances_differ_only_on_the_ribs()
         "the erasure copies everything, which is what makes it the unshared reference"
     );
 
-    // The gated stance's table is still the parameter's shape, so it is
-    // asserted here through the stance rather than through an installation
-    // the gate refuses.
-    let spinal = DuplicationPolicy {
-        stance: DuplicationStance::Spinal,
-    };
+    let spinal = DuplicationPolicy::new(DuplicationStance::Spinal);
     assert_eq!(Copied::Copied, spinal.copies(SharedPart::Spine));
     assert_eq!(
         Copied::Shared,

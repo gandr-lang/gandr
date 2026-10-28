@@ -25,6 +25,7 @@ CREATE TABLE reference(
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
+INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
@@ -331,6 +332,7 @@ INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surfa
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','run','lineage','b8599ac5de3fe16adc880c95313461946ef27436','2026-10-28','cb0287c16655dee00f9c1654e845d8e2025ab1c4');
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','encoding','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','support','lineage',NULL,NULL,NULL);

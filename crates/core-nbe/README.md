@@ -8,12 +8,13 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
 ## Synopsis
 
-**What.** The semantic half of the core language. `eval_value` and `eval_computation` evaluate a `gandr-core-term` term to weak head in a `DomainArena`; `readback_value` and `readback_computation` read a domain node back into the core arena; `convert_values` and `convert_computations` run the three conversion steps that need no search, and `decide` runs the search behind them, emitting its winning derivation as a conversion trace. A domain node is glued: it carries what it denotes together with the core term it came from, and a neutral carries its unfolded form beside its neutral form. `SchedulingPolicy`, `DuplicationPolicy` and `GranularityPolicy` are the three parameters the domain and its conversion machine are written against; an `Overlay` holds the sharing syntax a duplication stance is asked over, `erase_value` and its siblings erase it back to the unshared term, and `SharingMeasure::of` measures one root of it. `duplicate_value` and `duplicate_computation` rebuild a root under a `DuplicationPolicy`, `eval_overlay_value` and `eval_overlay_computation` evaluate one through erasure, and `TracedDuplication` is the one place the spinal stance installs, bound to the trace sink its conversions record into. Types are not evaluated. The crate is `no_std` over `core` and `alloc`.
+**What.** The semantic half of the core language. `eval_value` and `eval_computation` evaluate a `gandr-core-term` term to weak head in a `DomainArena`; `readback_value` and `readback_computation` read a domain node back into the core arena; `convert_values` and `convert_computations` run the three conversion steps that need no search, and `decide` runs the search behind them, emitting its winning derivation as a conversion trace. A domain node is glued: it carries what it denotes together with the core term it came from, and a neutral carries its unfolded form beside its neutral form. `SchedulingPolicy`, `DuplicationPolicy` and `GranularityPolicy` are the three parameters the domain and its conversion machine are written against; an `Overlay` holds the sharing syntax a duplication stance is asked over, `erase_value` and its siblings erase it back to the unshared term, and `SharingMeasure::of` measures one root of it. `duplicate_value` and `duplicate_computation` rebuild a root under a `DuplicationPolicy`, `eval_overlay_value` and `eval_overlay_computation` evaluate one through erasure, and `TracedDuplication` runs the spinal stance's shared evaluation, bound to the trace sink its conversions record into. Types are not evaluated. The crate is `no_std` over `core` and `alloc`.
 
 **Why.** A conversion checker compares neutral forms first and unfolds only when they disagree, and an elaborator wants a normal form that keeps the source term wherever nothing reduced. Both need a domain that holds both readings at once, and both run on terms whose depth is whatever an elaborator built, so neither machine may recurse on the host stack.
 
@@ -39,7 +40,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - **Well-scoped input.** Readback splices a source id under open binders on the strength of its term face, which is sound only if that source term is closed. Evaluating a well-scoped term guarantees it. A loose index inside an unevaluated thunk body is never seen — `thunk (λ. return x₁)` keeps its face in the empty environment — and checking closedness at the splice is the traversal the face exists to avoid.
 - **Lowering one body.** The definition chain names a body by its canonical subterm-table entry index, which is arena-independent; `LoweredChain::lower` runs the one pass in admission order and asks the caller, once per distinct index, for that body as a closed core value in the arena the run evaluates against. Reading a table entry as a core term is the caller's, because the caller holds the table. A lowering that is not closed surfaces as `EvalFault::UnboundVariable`, inside `ReadbackFault::Eval`, when the body is forced.
 - **A fuel budget.** The caller sizes `Fuel` for the run; exhaustion is `EvalFault::OutOfFuel` or `ReadbackFault::OutOfFuel`, a decline rather than a verdict.
-- **A conversion problem's depth.** `Problem::under` names the first intuitionistic binder level neither side mentions, so the machine's fresh variables start past the binders the caller already opened; a side that mentions a level at or past it compares a caller's variable with the machine's. `Problem::values` and `Problem::computations` start at the floor, for closed sides. A request to enter another binder at the representable level ceiling refuses with `ConversionFault::MachineInvariant` before allocating a fresh variable or channel. Witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`.
+- **A conversion problem's depth.** `Problem::under` names the first intuitionistic binder level neither side mentions, so the machine's fresh variables start past the binders the caller already opened; a side that mentions a level at or past it compares a caller's variable with the machine's. `Problem::values` and `Problem::computations` start at the floor, for closed sides.
 - **A step budget.** The caller sizes `StepBudget` in `MachineSettings`, or takes `StepBudget::DEFAULT`; exhaustion is `MachineVerdict::Declined(DeclineReason::Budget)`, a decline rather than a verdict.
 - **A memo type, not a memo.** The caller names the memo type `decide` re-shares through — `ResharingMemo` on the engine path, `NullMemo` for the memoless differential — and `decide` builds it empty for the run, because its outcomes are that run's process ids. The memo's entry accounting refusing at its ceiling is `ConversionFault::Memo`.
 - **Shares placed where their legs are read.** Erasure copies a leg's indices to every occurrence unshifted, so a free index in a leg names the binder it reaches from the occurrence. A producer that means one binder at every occurrence places the share inside that binder.
@@ -115,6 +116,12 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Closed-configuration sharing and the certifying path | [`traced`](src/traced.rs) |
 | Live evaluation | [`live`](src/live.rs) |
 | Strict stage normalization | [`stage`](src/stage.rs) |
+| References | [`src/lib.rs`](src/lib.rs), [`policy`](src/policy.rs) |
+
+## References
+
+- `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory` — background: Peter Dybjer, "Program Testing and the Meaning Explanations of Intuitionistic Type Theory", _Epistemology versus Ontology_, 2012 — a judgement tested by running it on generated input, the reading the spinal stance enters on.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — a sharing mechanism enters on a property test against its reference and an informal simulation argument.
 
 ## License
 

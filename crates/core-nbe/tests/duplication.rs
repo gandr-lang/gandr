@@ -8,6 +8,13 @@
 //! the binders around them — under both stances, and compares the two
 //! erasures as trees with a walk that reads the core arena alone.
 //!
+//! A second property evaluates generated roots under both stances and reads
+//! each weak head back: the spinal run reads back as the copying run's tree, or
+//! refuses as it does. Each case runs a closed root and an open body applied
+//! to two arguments, whose shares evaluate their legs under two bindings. That
+//! agreement modulo erasure is the property the spinal stance is admitted on
+//! (`policy`'s module doc).
+//!
 //! The treatments are pinned beside it: the copying stance's output is the
 //! expansion, the sharing stance keeps a leg that is no abstraction and
 //! distributes an abstraction over its ribs, and a refusal leaves the overlay
@@ -20,14 +27,21 @@ use anodized::spec;
 use gandr_core_nbe::Bound;
 use gandr_core_nbe::CompGraft;
 use gandr_core_nbe::CompNode;
+use gandr_core_nbe::Definitions;
+use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::DuplicationFault;
 use gandr_core_nbe::DuplicationPolicy;
 use gandr_core_nbe::DuplicationStance;
+use gandr_core_nbe::Fuel;
+use gandr_core_nbe::LoweredChain;
 use gandr_core_nbe::Overlay;
 use gandr_core_nbe::OverlayCompId;
+use gandr_core_nbe::OverlayEvalFault;
 use gandr_core_nbe::OverlayId;
 use gandr_core_nbe::OverlayRefusal;
 use gandr_core_nbe::OverlayValueId;
+use gandr_core_nbe::ReadbackFault;
+use gandr_core_nbe::ReadbackMode;
 use gandr_core_nbe::ShareArity;
 use gandr_core_nbe::ShareDistance;
 use gandr_core_nbe::SharePosition;
@@ -40,12 +54,18 @@ use gandr_core_nbe::duplicate_computation;
 use gandr_core_nbe::duplicate_value;
 use gandr_core_nbe::erase_computation;
 use gandr_core_nbe::erase_value;
+use gandr_core_nbe::readback_computation;
+use gandr_core_nbe::readback_value;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_kernel_conversion_trace::TraceLog;
 use gandr_kernel_term::DeBruijnIndex;
+use proptest::prelude::ProptestConfig;
+use proptest::prelude::prop_assert;
+use proptest::prelude::proptest;
 
 use crate::trees::Term;
 use crate::trees::Trees;
@@ -221,6 +241,11 @@ impl Seeded
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Budget(u32);
+
+/// The intuitionistic binders a generated root stands under.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Binders(u32);
 
 /// One node still to generate.
 #[derive(Clone, Copy, Debug)]
@@ -730,8 +755,9 @@ enum Visit
     Close,
 }
 
-/// Generate one closed overlay of `family` from `seeded`, its opaque nodes
-/// in `core`.
+/// Generate one overlay of `family` from `seeded`, standing under `binders`
+/// intuitionistic binders and closed when there are none, its opaque nodes in
+/// `core`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -757,6 +783,7 @@ fn generated(
     seeded: &mut Seeded,
     core: &mut CoreArena,
     family: Family,
+    binders: Binders,
 ) -> (Overlay, OverlayId)
 {
     let mut generator = Generator {
@@ -771,7 +798,7 @@ fn generated(
         slot: root,
         family,
         budget: Budget(BUDGET),
-        binders: 0,
+        binders: binders.0,
         scope: Scope(0),
     });
     generator.run();
@@ -1002,6 +1029,109 @@ fn measured(
     SharingMeasure::of(overlay, root).expect("a small root measures")
 }
 
+/// How an evaluation and its readback refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Refused
+{
+    /// The overlay's evaluation refused.
+    Evaluation(OverlayEvalFault),
+    /// The readback of its weak head refused.
+    Readback(ReadbackFault),
+}
+
+/// Fuel well above any generated root's evaluation or readback.
+///
+/// # Specification
+/// trivial.
+fn ample() -> Fuel
+{
+    Fuel::from(1_000_000_u32)
+}
+
+/// Evaluate `root` under `stance` and read its weak head back, in copies of
+/// `overlay` and `core`.
+///
+/// # Specification
+/// - requires: `root` is an evaluation root that validates, and `core` holds
+///   its opaque nodes.
+/// - ensures: the arena the run erased and read back into, with the term read
+///   back in the root's family; or how the run refused. `overlay` and `core`
+///   are untouched.
+/// - provides: the one run both stances of the agreement property go through.
+/// - panics: when the root is a type root, which the requirement excludes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a valid generated root of either family. The term read
+///   back resolves in its returned arena in the root's family, and the run
+///   under the other stance is compared with it as a tree, or its refusal as a
+///   value: a run that read back another root, ran under the other stance or
+///   met a refusal the other run did not changes that comparison.
+/// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+#[spec(
+        requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok(),
+        ensures: |ret| ret.as_ref().map_or(true, |&(ref arena, read)| match (root, read) {
+            (OverlayId::Value(_), Term::Value(id)) => arena.value(id).is_some(),
+            (OverlayId::Computation(_), Term::Computation(id)) => arena.computation(id).is_some(),
+            _ => false,
+        })
+    )]
+fn evaluated(
+    stance: DuplicationStance,
+    overlay: &Overlay,
+    core: &CoreArena,
+    root: OverlayId,
+) -> Result<(CoreArena, Term), Refused>
+{
+    let mut overlay = overlay.clone();
+    let mut core = core.clone();
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let mut log = TraceLog::new();
+    let installed = TracedDuplication::install(stance, &mut log)
+        .expect("a recording sink carries either stance");
+    let mode = ReadbackMode::Unfolding;
+    let read = match root {
+        OverlayId::Value(id) => {
+            let (head, _) = installed
+                .eval_overlay_value(
+                    &mut overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    id,
+                )
+                .map_err(Refused::Evaluation)?;
+            Term::Value(
+                readback_value(&mut core, &mut domain, definitions, mode, ample(), head)
+                    .map_err(Refused::Readback)?,
+            )
+        },
+        OverlayId::Computation(id) => {
+            let (head, _) = installed
+                .eval_overlay_computation(
+                    &mut overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    id,
+                )
+                .map_err(Refused::Evaluation)?;
+            Term::Computation(
+                readback_computation(&mut core, &mut domain, definitions, mode, ample(), head)
+                    .map_err(Refused::Readback)?,
+            )
+        },
+        OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            panic!("the property generates evaluation roots")
+        },
+    };
+    Ok((core, read))
+}
+
 /// Mint a value node.
 ///
 /// # Specification
@@ -1044,6 +1174,88 @@ fn occurrence(
             position,
         }),
     )
+}
+
+/// `share f = thunk (λ. b) in (x ← force f ⟨⟩; y ← force f (⟨⟩, ⟨⟩); return
+/// (x, y))`, with `b` a computation generated from `seeded` under one binder:
+/// each share inside `b` whose leg reads that binder is evaluated under two
+/// bindings of it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a computation overlay that validates from the returned root, its
+///   root an arity-two share whose leg is a thunked abstraction.
+/// - provides: the open configurations the agreement property reads.
+/// - panics: when a mint is refused, which a plan this small never provokes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — any seed. The root validates as an arity-two share of a
+///   thunked abstraction. Keying a remembered leg by the leg alone, ignoring
+///   its binding, makes the second application read the first's evaluation,
+///   which the agreement property's tree comparison sees.
+/// - witness: `tests::duplication::spinal_evaluation_agrees_with_the_copying_stance`
+#[spec(
+        ensures: |ret| ret.0.validate(ret.1).is_ok() && matches!(ret.1, OverlayId::Computation(_))
+    )]
+fn applied_twice(
+    seeded: &mut Seeded,
+    core: &mut CoreArena,
+) -> (Overlay, OverlayId)
+{
+    let (mut overlay, body) = generated(seeded, core, Family::Computation, Binders(1));
+    let OverlayId::Computation(body) = body
+    else {
+        panic!("a computation body was asked for");
+    };
+    let lambda = computation(&mut overlay, CompNode::Grafted(CompGraft::Lambda(body)));
+    let leg = value(&mut overlay, ValueNode::Grafted(ValueGraft::Thunk(lambda)));
+    let first = occurrence(&mut overlay, SharePosition::from(0_u32));
+    let forced = computation(&mut overlay, CompNode::Grafted(CompGraft::Force(first)));
+    let unit = value(&mut overlay, ValueNode::Grafted(ValueGraft::Unit));
+    let applied = computation(
+        &mut overlay,
+        CompNode::Grafted(CompGraft::Application(forced, unit)),
+    );
+    let second = occurrence(&mut overlay, SharePosition::from(1_u32));
+    let forced = computation(&mut overlay, CompNode::Grafted(CompGraft::Force(second)));
+    let left = value(&mut overlay, ValueNode::Grafted(ValueGraft::Unit));
+    let right = value(&mut overlay, ValueNode::Grafted(ValueGraft::Unit));
+    let units = value(
+        &mut overlay,
+        ValueNode::Grafted(ValueGraft::Pair(left, right)),
+    );
+    let applied_again = computation(
+        &mut overlay,
+        CompNode::Grafted(CompGraft::Application(forced, units)),
+    );
+    let variable = |index: u32| {
+        ValueNode::Grafted(ValueGraft::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        })
+    };
+    let x = value(&mut overlay, variable(1));
+    let y = value(&mut overlay, variable(0));
+    let both = value(&mut overlay, ValueNode::Grafted(ValueGraft::Pair(x, y)));
+    let returned = computation(&mut overlay, CompNode::Grafted(CompGraft::Return(both)));
+    let rest = computation(
+        &mut overlay,
+        CompNode::Grafted(CompGraft::Bind(applied_again, returned)),
+    );
+    let chain = computation(
+        &mut overlay,
+        CompNode::Grafted(CompGraft::Bind(applied, rest)),
+    );
+    let root = OverlayId::Computation(computation(
+        &mut overlay,
+        CompNode::Shared(Sharing {
+            arity: ShareArity::from(2_u32),
+            leg: OverlayId::Value(leg),
+            body: chain,
+        }),
+    ));
+    overlay.validate(root).expect("the wrapper validates");
+    (overlay, root)
 }
 
 /// A chain of `links` shares, each sharing the one below among the two
@@ -1109,7 +1321,7 @@ fn spinal_duplication_is_invisible_to_erasure()
     for case in 0 .. CASES {
         let family = seeded.pick(&[Family::Value, Family::Computation]);
         let mut core = CoreArena::new();
-        let (mut overlay, root) = generated(&mut seeded, &mut core, family);
+        let (mut overlay, root) = generated(&mut seeded, &mut core, family, Binders(0));
         for stance in [DuplicationStance::EraseAndClone, DuplicationStance::Spinal] {
             let mut log = TraceLog::new();
             let installed = TracedDuplication::install(stance, &mut log)
@@ -1138,6 +1350,41 @@ fn spinal_duplication_is_invisible_to_erasure()
     }
 }
 
+proptest! {
+    // About one root in seventy evaluates an open leg under two bindings, so
+    // every run reaches one.
+    #![proptest_config(ProptestConfig::with_cases(2048))]
+
+    /// Over generated overlay roots, a spinal run reads back as the copying
+    /// stance's run, or refuses as it does: a closed root, and an open body
+    /// applied under two bindings of its binder.
+    #[test]
+    fn spinal_evaluation_agrees_with_the_copying_stance(seed in 1_u64 ..)
+    {
+        let mut seeded = Seeded(seed);
+        let family = seeded.pick(&[Family::Value, Family::Computation]);
+        let mut closed_core = CoreArena::new();
+        let closed = generated(&mut seeded, &mut closed_core, family, Binders(0));
+        let mut open_core = CoreArena::new();
+        let open = applied_twice(&mut seeded, &mut open_core);
+        for (shape, core, (overlay, root)) in [("closed", &closed_core, closed), ("applied twice", &open_core, open)] {
+            let reference = evaluated(DuplicationStance::EraseAndClone, &overlay, core, root);
+            let spinal = evaluated(DuplicationStance::Spinal, &overlay, core, root);
+            let agreed = match (reference.as_ref(), spinal.as_ref()) {
+                (Ok(expected), Ok(read)) => same_tree(&read.0, read.1, &expected.0, expected.1) == Trees::Same,
+                (Err(expected), Err(refused)) => expected == refused,
+                (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
+            };
+            prop_assert!(
+                agreed,
+                "seed {seed}, the {shape} root: the copying stance gave {:?}, the spinal stance {:?}",
+                reference.as_ref().map(|&(_, read)| read),
+                spinal.as_ref().map(|&(_, read)| read)
+            );
+        }
+    }
+}
+
 #[test]
 fn a_copying_duplicate_is_the_expansion()
 {
@@ -1145,7 +1392,7 @@ fn a_copying_duplicate_is_the_expansion()
     for case in 0 .. CASES {
         let family = seeded.pick(&[Family::Value, Family::Computation]);
         let mut core = CoreArena::new();
-        let (mut overlay, root) = generated(&mut seeded, &mut core, family);
+        let (mut overlay, root) = generated(&mut seeded, &mut core, family, Binders(0));
         let input = measured(&overlay, root);
         let policy = DuplicationPolicy::default();
         let rebuilt = match root {
