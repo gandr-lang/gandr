@@ -265,6 +265,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_strata::Level;
@@ -279,6 +280,7 @@ use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LooseDepth;
+use gandr_kernel_term::Reads;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
@@ -286,6 +288,7 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use gandr_kernel_term::WIDEST;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
 
@@ -324,6 +327,8 @@ use crate::seal;
 use crate::stage_order::StageOrder;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
+use crate::support::Opened;
+use crate::support::Question;
 use crate::support::SupportContext;
 use crate::support::SupportPlane;
 use crate::witness::comp_type_witness;
@@ -1229,6 +1234,100 @@ enum CodeObligation
     },
 }
 
+impl CodeObligation
+{
+    /// Join into the goal open on `session` the binders the driver's check of
+    /// this obligation can read: those its nodes carry, in the context it was
+    /// owed at.
+    ///
+    /// The driver checks an obligation against its own context, so what that
+    /// check reads lies within its nodes' carried supports; joining those is
+    /// the syntactic layer standing in for a judgement that has not run yet.
+    ///
+    /// # Specification
+    /// - requires: the obligation's nodes live in `arena`.
+    /// - ensures: the open goal gains, as [`SupportContext::read`] joins them,
+    ///   the supports of the code, the application, or the domain and both
+    ///   endpoints the obligation checks, in the context it was owed at.
+    /// - provides: the support an owing goal records, so a recall of it never
+    ///   skips an owed check under a context that differs where the check
+    ///   reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the accrual stack is the session's own, and what
+    ///   the join adds shows only in the key the goal later records.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one decode formed under a code binder and under a
+    ///   binder that is not a code: the second formation must owe its code
+    ///   again rather than be served the first's level.
+    /// - witness: `tests::acceptance::an_owed_code_keeps_its_binder_in_the_formation_key`
+    #[inline]
+    fn accrue(
+        &self,
+        arena: &TermArena,
+        session: &mut SupportContext,
+    )
+    {
+        match *self {
+            Self::Universe {
+                code, ref context, ..
+            } => session.read(arena.value_support(code), context),
+            Self::Data {
+                datatype,
+                ref context,
+                ..
+            } => session.read(arena.value_type_support(datatype), context),
+            Self::Codata {
+                codata,
+                ref context,
+                ..
+            } => session.read(arena.comp_type_support(codata), context),
+            Self::Endpoints {
+                domain,
+                left,
+                right,
+                ref context,
+                ..
+            } => {
+                session.read(arena.value_type_support(domain), context);
+                session.read(arena.value_support(left), context);
+                session.read(arena.value_support(right), context);
+            },
+        }
+    }
+}
+
+/// Owe `obligation` to the driver, its nodes' carried supports joining the goal
+/// open on `session` when the memo is active.
+///
+/// # Specification
+/// - requires: the obligation's nodes live in `arena`.
+/// - ensures: `obligation` is owed last; with an active memo, the open goal
+///   gains what [`CodeObligation::accrue`] joins.
+/// - provides: the formation walk's one way to owe.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`CodeObligation::accrue`].
+/// - witness: `tests::acceptance::an_owed_code_keeps_its_binder_in_the_formation_key`
+#[spec(captures: count = owed.len(), ensures: owed.len() == count.saturating_add(1))]
+#[inline]
+fn owe<M>(
+    arena: &TermArena,
+    session: &mut SupportContext,
+    owed: &mut Vec<CodeObligation>,
+    obligation: CodeObligation,
+) where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    if matches!(M::ACTIVITY, MemoActivity::Active) {
+        obligation.accrue(arena, session);
+    }
+    owed.push(obligation);
+}
+
 /// The mutual block an obligation was owed inside, which its drain reads it
 /// in: a field a definition reads inside its own fixpoint names the block's
 /// later definitions, as its family did, and the codes it owes are checked
@@ -1327,12 +1426,13 @@ enum TypeLevelFrame
     /// The inner level is in the register; check the lift's strictness and
     /// replace it with the target.
     LiftCheck(Level),
-    /// The goal this frame was pushed for is now answered; record it.
+    /// The goal this frame was pushed for is now answered; record it under
+    /// its question and the binders its accrual gathered.
     ///
     /// Pushed **before** the goal's own continuations, so it pops after all of
     /// them — which is exactly when the register holds that goal's final
     /// answer, by the machine's own unwinding invariant.
-    Memoize(NodeSupport),
+    Memoize(Question, Opened),
 }
 
 /// The universe level of a well-formed value or computation type: the
@@ -1414,28 +1514,42 @@ where
         owed,
     } = recording;
     let mut frames: Vec<TypeLevelFrame> = Vec::new();
+    // The barriers opened where the walk swapped its context, innermost last;
+    // empty when the memo is inactive.
+    let mut barriers: Vec<Opened> = Vec::new();
     let mut goal = root;
     'expand: loop {
-        // A type's level depends on the type node and on the binders its codes
-        // read, so the support carries the same read binders a term
-        // goal's does. When the memo is inactive this whole block is a
-        // constant-false branch that monomorphization removes.
+        // A type's level reads no binder itself; the codes and arguments it
+        // owes do, and their supports join this goal's as they are owed. The
+        // goal is asked by its question and served an entry whose recorded
+        // binders this context agrees with. When the memo is inactive this
+        // whole block is a constant-false branch that monomorphization
+        // removes.
         let mut recalled: Option<Level> = None;
         if matches!(M::ACTIVITY, MemoActivity::Active) {
-            let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
-            match memo.recall(&support) {
-                Some(hit) => match *hit.outcome() {
-                    NodeOutcome::Formed(ref level) => recalled = Some(level.clone()),
-                    // A term-shaped answer cannot have come from this walk. The
-                    // memo is shared between the two machines, and a shape
-                    // disagreement means the entry was not this machine's:
-                    // decline it and recompute, which costs one expansion and
-                    // cannot fabricate a level.
-                    NodeOutcome::Checked | NodeOutcome::ValueType(_) | NodeOutcome::CompType(_) => {
-                        frames.push(TypeLevelFrame::Memoize(support));
-                    },
-                },
-                None => frames.push(TypeLevelFrame::Memoize(support)),
+            let question = Question::ask(arena, session, goal.support());
+            let hit = memo.filed(question.digest()).find(|hit| {
+                matches!(
+                    question.agreement(arena, session, context.as_slice(), hit.support()),
+                    ContentAgreement::Agree
+                )
+            });
+            // A term-shaped answer cannot have come from this walk. The memo
+            // is shared between the two machines, and a shape disagreement
+            // means the entry was not this machine's: decline it and
+            // recompute, which costs one expansion and cannot fabricate a
+            // level.
+            if let Some(hit) = hit
+                && let NodeOutcome::Formed(ref level) = *hit.outcome()
+            {
+                // The recalled goal's binders are read here, as if its walk
+                // had run.
+                session.read(hit.support().reads(), &context);
+                recalled = Some(level.clone());
+            }
+            else {
+                let opened = session.open(&context);
+                frames.push(TypeLevelFrame::Memoize(question, opened));
             }
         }
         census.record(SupportPlane::Type, match recalled {
@@ -1459,7 +1573,7 @@ where
                             let level = former::level(arena, signature.kind)?;
                             judgement.levels.check_level_scope(&level)?;
                             if !arguments.is_empty() {
-                                owed.push(CodeObligation::Data {
+                                owe::<M>(arena, session, owed, CodeObligation::Data {
                                     datatype: id,
                                     context: context.clone(),
                                     stages: StageOrder::default(),
@@ -1483,6 +1597,9 @@ where
                         } => {
                             crate::session::validate_graph(arena, graph, payloads)
                                 .map_err(KernelError::Session)?;
+                            if matches!(M::ACTIVITY, MemoActivity::Active) {
+                                barriers.push(session.open_barrier());
+                            }
                             frames
                                 .push(TypeLevelFrame::SessionScope(core::mem::take(&mut context)));
                             goal = TypeLevelGoal::Value(payloads);
@@ -1529,7 +1646,7 @@ where
                             source: left,
                             target: right,
                         } => {
-                            owed.push(CodeObligation::Endpoints {
+                            owe::<M>(arena, session, owed, CodeObligation::Endpoints {
                                 domain,
                                 left,
                                 right,
@@ -1555,7 +1672,7 @@ where
                                 crate::identity_recursion::Interfaces::of(judgement.entries),
                                 domain,
                             )?;
-                            owed.push(CodeObligation::Endpoints {
+                            owe::<M>(arena, session, owed, CodeObligation::Endpoints {
                                 domain,
                                 left,
                                 right,
@@ -1589,7 +1706,7 @@ where
                         // obligation has been checked.
                         ValueType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
-                            owed.push(CodeObligation::Universe {
+                            owe::<M>(arena, session, owed, CodeObligation::Universe {
                                 code,
                                 sort: GroundSort::Value,
                                 level: target.clone(),
@@ -1680,7 +1797,7 @@ where
                         // against the computation universe at that level.
                         CompType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
-                            owed.push(CodeObligation::Universe {
+                            owe::<M>(arena, session, owed, CodeObligation::Universe {
                                 code,
                                 sort: GroundSort::Computation,
                                 level: target.clone(),
@@ -1717,7 +1834,7 @@ where
                             let level = codata::level(arena, signature.kind)?;
                             judgement.levels.check_level_scope(&level)?;
                             if !arguments.is_empty() {
-                                owed.push(CodeObligation::Codata {
+                                owe::<M>(arena, session, owed, CodeObligation::Codata {
                                     codata: id,
                                     context: context.clone(),
                                     stages: StageOrder::default(),
@@ -1736,7 +1853,9 @@ where
                 return Ok(produced);
             };
             match frame {
-                TypeLevelFrame::Memoize(support) => {
+                TypeLevelFrame::Memoize(question, opened) => {
+                    let reads = session.close(opened);
+                    let support = question.answered(arena, session, context.as_slice(), reads);
                     // A memo at its ceiling declines to record. The check
                     // proceeds unmemoized from there, which costs collapse and
                     // never correctness.
@@ -1766,7 +1885,12 @@ where
                     goal = TypeLevelGoal::Value(second);
                     continue 'expand;
                 },
-                TypeLevelFrame::SessionScope(outer) => context = outer,
+                TypeLevelFrame::SessionScope(outer) => {
+                    context = outer;
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
+                },
                 TypeLevelFrame::ScopeExit => {
                     let _popped = context.pop();
                 },
@@ -2431,12 +2555,13 @@ enum Frame
     /// A binder scope has closed: strengthen the computation type synthesized
     /// under it back out of it.
     Strengthen,
-    /// The goal this frame was pushed for is now answered; record it.
+    /// The goal this frame was pushed for is now answered; record it under
+    /// its question and the binders its accrual gathered.
     ///
     /// Pushed **before** the goal's own continuations, so it pops after all of
     /// them — which is exactly when the produced register holds that goal's
     /// final answer, by the machine's own unwinding invariant.
-    Memoize(NodeSupport),
+    Memoize(Question, Opened),
 }
 
 quenchant_shape::reason_enum! {
@@ -2573,6 +2698,8 @@ fn lookup(
             return Maybe::Absent(variable_type::Absent::Unbound);
         },
     };
+    // The variable's type is read: its binder is in the goal's support.
+    session.read(&Reads::variable(index), context);
     let amount = BinderDepth::past(BinderDepth::from(u32::from(index)));
     let (table, rewrites) = session.rewrite_parts();
     Maybe::Present(shift_value_type(
@@ -2857,6 +2984,9 @@ where
     } = recording;
     let first_owed = owed.len();
     let mut frames: Vec<Frame> = Vec::new();
+    // The barriers opened where the machine swapped its context, innermost
+    // last; empty when the memo is inactive.
+    let mut barriers: Vec<Opened> = Vec::new();
     let mut goal = initial;
     // The case a structural fixpoint opens with, read as that fixpoint against
     // its type's rules, until the case is met. The goals between the two —
@@ -2885,25 +3015,34 @@ where
     let mut owed_values: Vec<ValueId> = Vec::new();
     let mut owed_components: Vec<gandr_kernel_term::EvaluationComponent> = Vec::new();
     'expand: loop {
-        // Consult the memo for this goal's support before reading the node.
-        // When the memo is inactive this whole block — the support
-        // construction included — is a constant-false branch that
-        // monomorphization removes, so the memoless path compiles to the code
-        // it would have with no memo at all.
+        // Ask the memo this goal's question before reading the node, and take
+        // an entry whose recorded binders this context agrees with. When the
+        // memo is inactive this whole block — the question included — is a
+        // constant-false branch that monomorphization removes, so the memoless
+        // path compiles to the code it would have with no memo at all.
         let mut recalled: Option<Produced> = None;
         if matches!(M::ACTIVITY, MemoActivity::Active)
             && matches!(root, Maybe::Absent(_))
             && staged_bodies == 0
         {
-            let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
-            if let Some(hit) = memo.recall(&support) {
-                recalled = match Produced::of_outcome(hit.outcome()) {
-                    Maybe::Present(outcome) => Some(outcome),
-                    Maybe::Absent(term_outcome::Absent::Formation) => None,
-                };
+            let question = Question::ask(arena, session, goal.support());
+            let hit = memo.filed(question.digest()).find(|hit| {
+                matches!(
+                    question.agreement(arena, session, context.as_slice(), hit.support()),
+                    ContentAgreement::Agree
+                )
+            });
+            if let Some(hit) = hit
+                && let Maybe::Present(outcome) = Produced::of_outcome(hit.outcome())
+            {
+                // The recalled goal's binders are read here, as if its
+                // subgoals had run.
+                session.read(hit.support().reads(), &context);
+                recalled = Some(outcome);
             }
-            if recalled.is_none() {
-                frames.push(Frame::Memoize(support));
+            else {
+                let opened = session.open(&context);
+                frames.push(Frame::Memoize(question, opened));
             }
         }
         census.record(SupportPlane::Term, match recalled {
@@ -2988,6 +3127,9 @@ where
                             crate::session::Relation::Bisimulation,
                         )
                         .map_err(KernelError::Session)?;
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
                         frames.push(Frame::SessionPayload {
                             classifier: path_type,
                             context: core::mem::take(&mut context),
@@ -3028,6 +3170,9 @@ where
                             crate::session::Relation::Simulation,
                         )
                         .map_err(KernelError::Session)?;
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
                         frames.push(Frame::SessionPayload {
                             classifier: flow_type,
                             context: core::mem::take(&mut context),
@@ -3071,6 +3216,9 @@ where
                         let result = arena.comp_type_returner(endpoints.target);
                         let function = arena.comp_type_arrow(endpoints.source, result);
                         let expected = arena.value_type_thunk(function);
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
                         frames.push(Frame::FlowForward {
                             flow: id,
                             endpoints,
@@ -3159,6 +3307,9 @@ where
                         let result = arena.comp_type_returner(endpoints.target);
                         let function = arena.comp_type_arrow(endpoints.source, result);
                         let translator = arena.value_type_thunk(function);
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
                         frames.push(Frame::PathForward {
                             path: id,
                             endpoints,
@@ -3467,6 +3618,11 @@ where
                     // A mutual block's families share the stage: a field of
                     // any of them stands one step below.
                     let block = recursion::families(arena, judgement.entries, datatype)?;
+                    // The stage witness scans the context for a value at a
+                    // stage, so every binder is read.
+                    if matches!(M::ACTIVITY, MemoActivity::Active) {
+                        session.read(&WIDEST, &context);
+                    }
                     recursion::constructor_fields(
                         arena,
                         (&stages, context.as_slice()),
@@ -3759,6 +3915,9 @@ where
                             &owed_components,
                         )?;
                         remaining.reverse();
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
                         frames.push(Frame::Components {
                             outer: core::mem::take(&mut context),
                             remaining,
@@ -3787,6 +3946,9 @@ where
                             &owed_values,
                         )?;
                         remaining.reverse();
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
                         frames.push(Frame::Components {
                             outer: core::mem::take(&mut context),
                             remaining,
@@ -3921,6 +4083,13 @@ where
                     {
                         let signature = entry.declaration().stages();
                         let declared = entry.declared_id();
+                        // The instantiation reads the slots of the spine's
+                        // variables, which their carried supports cover.
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            for &applied in &arguments {
+                                session.read(arena.value_support(applied), &context);
+                            }
+                        }
                         let at = quantified::instantiation(
                             (arena, &stages),
                             context.as_slice(),
@@ -4425,6 +4594,17 @@ where
                         produced = Produced::CompType(result);
                     }
                     else {
+                        // Whether the self binder still stands at its slot is a
+                        // read of that slot.
+                        if matches!(M::ACTIVITY, MemoActivity::Active)
+                            && let Maybe::Present((slot, _)) = own_fixpoint
+                            && let Some(index) = context
+                                .len()
+                                .checked_sub(slot.saturating_add(1))
+                                .and_then(|index| u32::try_from(index).ok())
+                        {
+                            session.read(&Reads::variable(DeBruijnIndex::from(index)), &context);
+                        }
                         // Inside the declaration's own fixpoint, its constant
                         // in a field type reads as the self binder, at the
                         // binder's index in the case's context.
@@ -4522,6 +4702,11 @@ where
                     )?;
                 },
                 Frame::Loops(case, datatype) => {
+                    // The loops read the slots of the variables nested cases
+                    // are over, which the case's carried support covers.
+                    if matches!(M::ACTIVITY, MemoActivity::Active) {
+                        session.read(arena.computation_support(case), &context);
+                    }
                     loops::respected(
                         arena,
                         &admitted_unfoldings(judgement),
@@ -4653,7 +4838,9 @@ where
                     goal = Goal::CheckComp(body, under_both);
                     continue 'expand;
                 },
-                Frame::Memoize(support) => {
+                Frame::Memoize(question, opened) => {
+                    let reads = session.close(opened);
+                    let support = question.answered(arena, session, context.as_slice(), reads);
                     // A memo at its ceiling declines to record; see the same
                     // note in `type_level`.
                     let _recorded = memo.remember(support, produced.outcome());
@@ -4790,6 +4977,9 @@ where
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Path)?;
                     context = outer;
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
                     produced = Produced::ValueType(path_type);
                 },
                 Frame::Transport(value) => {
@@ -4870,6 +5060,9 @@ where
                     let Some(component) = remaining.pop()
                     else {
                         context = outer;
+                        if let Some(barrier) = barriers.pop() {
+                            let _closed = session.close(barrier);
+                        }
                         produced = Produced::Checked;
                         continue;
                     };
@@ -5128,6 +5321,9 @@ where
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Flow)?;
                     context = outer;
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
                     produced = Produced::ValueType(flow_type);
                 },
                 // A function flow's boundary must run the way the arrow's
@@ -5664,6 +5860,9 @@ where
                     context: outer,
                 } => {
                     context = outer;
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
                     produced = Produced::ValueType(classifier);
                 },
                 Frame::ProduceValue(codomain) => {
@@ -6168,6 +6367,11 @@ pub fn check_declaration_with_memo<M>(
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
+    // A declaration's check opens on an empty accrual stack, whatever a
+    // refusal before it left there.
+    if matches!(M::ACTIVITY, MemoActivity::Active) {
+        session.reset_accruals();
+    }
     let declared = declaration.declared_id();
     // Keys read a plain definition's reference by its content, so they do not
     // depend on where the environment admitted it.

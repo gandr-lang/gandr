@@ -45,11 +45,10 @@
 //! | no authority and no persistence in a hit                | a hit claims only that this process already computed this answer for this support                   |
 //!
 //! The key carries no arena id, so dangling ids are not why the memo lives for
-//! one call. The lifetime rests on the two-wall discipline directly: a hit
-//! claims only its own history, and no kernel-checked support discipline
-//! exists. An outcome also carries arena ids even though the key does not, so
-//! an entry outliving its arena would hand back a type that does not
-//! resolve.
+//! one call. The lifetime rests on what a hit claims: only this process's own
+//! history, which another process has no ground to take on trust. An outcome
+//! also carries arena ids even though the key does not, so an entry outliving
+//! its arena would hand back a type that does not resolve.
 //!
 //! The verdict differential excludes operational refusal: with sound per-call
 //! histories, the typing answers agree when neither run reaches

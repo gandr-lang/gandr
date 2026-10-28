@@ -321,6 +321,10 @@ INSERT INTO reference VALUES('doi:10.4230/lipics.types.2015.5','theory-shapes','
 INSERT INTO reference VALUES('doi:10.4230/lipics.types.2024.9','theory-shapes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4310/hha.2018.v20.n2.a11','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.46298/lmcs-18(1:10)2022','theory-circuit-algebras','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-core','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-term','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
@@ -334,6 +338,7 @@ INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','run','lineage','b8599ac5de3fe16adc880c95313461946ef27436','2026-10-28','cb0287c16655dee00f9c1654e845d8e2025ab1c4');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-sequent','closure','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','encoding','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-term','support','lineage',NULL,NULL,NULL);

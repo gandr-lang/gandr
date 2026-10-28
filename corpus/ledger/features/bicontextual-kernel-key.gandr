@@ -1,12 +1,12 @@
-/// `bicontextual-kernel-key` keys the kernel's check memo by the binders a goal reads, as the support its node carries names them.
+/// `bicontextual-kernel-key` keys the kernel's check memo by the binders a goal's judgement reads.
 ///
-/// Implemented: every kernel node carries the free indices it mentions from its mint, and a goal's key takes only the binders that support names, so one goal under two contexts that differ only where it does not read is one memo entry.
-/// Not implemented: #3123 owes a kernel judgement that returns the support it read, so the kernel builds the key beside the check rather than deriving it.
+/// Implemented: every kernel node carries the free indices it mentions from its mint, the check gathers each goal's support from the binders its judgement read, and it records the goal's memo entry over them, so one goal under two contexts that differ only where it did not read is one memo entry.
 ///
 /// Each branch of the case in `side` answers `n` under the field its constructor binds, a natural in one branch and a flag in the other.
-/// The two goals read `n` and not the field, so the kernel keys them alike and checks `n` once.
+/// The two goals read `n` and not the field, so the memo serves the second the first's entry and the kernel checks `n` once.
 ///
 /// - see: crates/kernel-term/src/support.rs
+/// - see: crates/kernel-core/src/support.rs
 
 /// The naturals `side` answers.
 data Nat : Type {
