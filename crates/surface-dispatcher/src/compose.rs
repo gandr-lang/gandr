@@ -2586,7 +2586,8 @@ type JudgedUnit<'source> = (
 ///   each declaration judged is decided as
 ///   [`type_module`](gandr_core_checker::type_module) decides it, keeping the
 ///   first formation of every type the last source writes, and the table of the
-///   last source is assembled from that run over copies of the module and the
+///   last source is assembled from that run once it closes the mutual block it
+///   left open, as `type_module` closes it, over copies of the module and the
 ///   arena as the run left them; otherwise no table is. Untabled under
 ///   [`Recording::Recorded`], a unit whose judgement reads the inputs the held
 ///   judgement read takes that judgement's arena and verdicts and judges no
@@ -2701,11 +2702,14 @@ where
         {
             return Polled::Retired(retired, ());
         }
-        let read = run
-            .take_typings()
+        // The run closes the mutual block it left open before its typings are
+        // read, as `type_module` closes it: an open block still reads its
+        // families as forming.
+        let typings = run.take_typings();
+        let verdicts = run.finish(&mut context);
+        let read = typings
             .zip(written)
             .map(|(typed, written)| TypedRun::read(&context, typed, written));
-        let verdicts = run.finish(&mut context);
         if let (Some(recorded), Some(reading)) = (recorded, reading) {
             recorded.keep(reading, (arena.clone(), verdicts.clone()));
         }
@@ -7292,6 +7296,56 @@ def delivered() -> -F Unit {
             (polled.settled, polled_table),
             (whole.settled, whole_table),
             "and answers what the tabled judgement nobody polls answers"
+        );
+    }
+
+    /// #3671: a module whose last mutual block is refused keeps, in its
+    /// judgement's table, the entries its table typed alone keeps. The block
+    /// is closed before the table reads its typings, so no family of the block
+    /// still reads as forming.
+    #[test]
+    fn a_refused_last_block_tables_as_typed_alone_3671()
+    {
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Checking;
+        use super::judge_member_tabled;
+
+        let grammar = grammar();
+        let source = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\nrec {\n  data \
+             ULevel : Nat -> Type {\n    NatV : (n : Nat) --> ULevel(n);\n    TypeV : (n : Nat) \
+             --> ULevel(Succ(n));\n    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> \
+             -F ULevel(n))) --> ULevel(n);\n  }\n\n  def rec elLevel(n : Nat, u : ULevel(n)) -> \
+             -F Type {\n    case u {\n      NatV(m) => return Nat,\n      TypeV(m) => return \
+             (ULevel(m)),\n      PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F \
+             elLevel[<](m, b(x))))\n    }\n  }\n}\n",
+        );
+        let typed = crate::typed::TypeTable::of(&grammar, source).expect("the source types");
+        let Lowered::Module { module, arena } =
+            lower_source(&grammar, source, &mut LoweringCount::default())
+                .expect("the module lowers")
+                .into_lowered()
+        else {
+            panic!("the module is read");
+        };
+        let (_judged, table) = judge_member_tabled(
+            CorpusRoot::Strict,
+            (module, source),
+            arena,
+            (&HostGrant::UNBOUNDED, Checking::Whole),
+            (&alone(), ByteOffset::from(0_usize)),
+        );
+        let Maybe::Present(table) = table
+        else {
+            panic!("the judgement keeps its table");
+        };
+        let page = PageWidth::from(80_u32);
+        let style = Form::Explicit.into();
+        assert_eq!(
+            table.entries(page, style).collect::<Vec<_>>(),
+            typed.entries(page, style).collect::<Vec<_>>(),
+            "the judgement's table holds the entries of the table typed alone"
         );
     }
 
