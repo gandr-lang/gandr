@@ -2684,7 +2684,10 @@ fn stage(
 /// - witness: `tests::cli::an_unreadable_path_exits_two`
 /// - witness: `tests::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
-/// - witness: `tests::cli::every_width_prints_the_serial_run`
+/// - witness: `tests::cli::every_width_prints_the_serial_run_of_the_model_corpus`
+/// - witness: `tests::cli::every_width_prints_the_serial_run_of_the_pathological_corpus`
+/// - witness: `tests::cli::every_width_prints_the_serial_run_of_the_other_roots`
+/// - witness: `tests::cli::every_width_prints_the_serial_check`
 /// - witness: `tests::cli::verbosity_chooses_how_much_of_a_report_prints`
 /// - witness: `tests::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`

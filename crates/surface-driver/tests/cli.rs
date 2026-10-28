@@ -1198,63 +1198,159 @@ fn the_features_ledger_lists_and_shows_1827()
     assert_eq!(code(&committed), Code(0_i32), "{}", stderr(&committed));
 }
 
-#[test]
-fn every_width_prints_the_serial_run()
+/// A width a run is asked at, by flag, by the environment, or neither.
+#[derive(Clone, Copy, Debug)]
+enum Width
 {
-    let at = |arguments: &[PathBuf], jobs: &[&str], environment: Option<&str>| {
-        let mut command = gandr(arguments);
-        command.args(jobs);
-        match environment {
-            Some(threads) => command.env("GANDR_JOBS", threads),
-            None => command.env_remove("GANDR_JOBS"),
-        };
-        ran(command)
-    };
-    let agrees = |arguments: &[PathBuf], wider: &[(&str, Output)]| {
-        let serial = at(arguments, &["--jobs", "1"], None);
-        assert!(
-            stdout(&serial).contains("verdict: "),
-            "{arguments:?}: {}",
-            stderr(&serial)
+    /// `--jobs 1`: the serial run.
+    Serial,
+    /// `--jobs 4`.
+    FourByFlag,
+    /// `GANDR_JOBS=3`.
+    ThreeByEnvironment,
+    /// No flag and no environment: the host's width.
+    Host,
+}
+
+/// The finished run of `gandr` on `arguments` at `width`, its output
+/// captured.
+///
+/// # Specification
+/// - requires: as [`ran`].
+/// - ensures: runs `arguments` with the flag or the environment `width` names,
+///   `GANDR_JOBS` removed unless `width` sets it, and returns the run.
+/// - fails: never.
+/// - panics: as [`ran`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — the corpus and a faulting path list run at each width
+///   print byte-identical streams and exits to the serial run.
+/// - witness: `tests::cli::every_width_prints_the_serial_run_of_the_model_corpus`
+/// - witness: `tests::cli::every_width_prints_the_serial_check`
+#[spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 255)))]
+fn at(
+    arguments: &[PathBuf],
+    width: Width,
+) -> Output
+{
+    let mut command = gandr(arguments);
+    match width {
+        Width::Serial => {
+            command.args(["--jobs", "1"]).env_remove("GANDR_JOBS");
+        },
+        Width::FourByFlag => {
+            command.args(["--jobs", "4"]).env_remove("GANDR_JOBS");
+        },
+        Width::ThreeByEnvironment => {
+            command.env("GANDR_JOBS", "3");
+        },
+        Width::Host => {
+            command.env_remove("GANDR_JOBS");
+        },
+    }
+    ran(command)
+}
+
+/// Assert that `arguments` run at each of `wider` prints the serial run: the
+/// same exit and the same bytes on both streams.
+///
+/// # Specification
+/// - requires: `arguments` is a `gandr` verb with operands whose serial run
+///   prints a verdict.
+/// - ensures: returns only when the serial run printed a verdict and every
+///   wider run's exit and streams equal the serial run's.
+/// - fails: never.
+/// - panics: at the serial run without a verdict, or the first wider run that
+///   differs from it.
+/// - executable: none — the assertions are the check.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every corpus root runs serially and at one wider width,
+///   and the scratch check at three, so a width that reorders, drops or
+///   duplicates a source's output, or exits otherwise, fails.
+/// - witness: `tests::cli::every_width_prints_the_serial_run_of_the_model_corpus`
+/// - witness: `tests::cli::every_width_prints_the_serial_check`
+fn agrees(
+    arguments: &[PathBuf],
+    wider: &[Width],
+)
+{
+    let serial = at(arguments, Width::Serial);
+    assert!(
+        stdout(&serial).contains("verdict: "),
+        "{arguments:?}: {}",
+        stderr(&serial)
+    );
+    for &width in wider {
+        let output = at(arguments, width);
+        assert_eq!(
+            (code(&output), stdout(&output), stderr(&output)),
+            (code(&serial), stdout(&serial), stderr(&serial)),
+            "{arguments:?} at {width:?} prints the serial run"
         );
-        for &(label, ref output) in wider {
-            assert_eq!(
-                (code(output), stdout(output), stderr(output)),
-                (code(&serial), stdout(&serial), stderr(&serial)),
-                "{arguments:?} at {label} prints the serial run"
-            );
-        }
-    };
-    // The corpus roots share out over the three wider widths: every source runs
-    // once serially and once off the serial schedule, and each width is observed
-    // over enough sources to interleave, in two corpus passes rather than four.
-    // Each root settles on its own, so a share prints what its roots print
-    // within a whole run.
+    }
+}
+
+/// A `gandr test` over the corpus roots `roots`, each a path from the
+/// workspace root.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: returns the verb `test` followed by each root under the workspace
+///   root, in order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each share names its roots, and a root that does not
+///   resolve faults the serial run, which the assertion reports.
+/// - witness: `tests::cli::every_width_prints_the_serial_run_of_the_model_corpus`
+#[spec(ensures: |ref ret| ret.first() == Some(&PathBuf::from("test"))
+        && ret.len().checked_sub(1) == Some(roots.len()))]
+fn share(roots: &[&Path]) -> Vec<PathBuf>
+{
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let share = |roots: &[&str]| {
-        roots
-            .iter()
-            .fold(vec![PathBuf::from("test")], |mut run, root| {
-                run.push(corpus.join(root));
-                run
-            })
-    };
-    let model = share(&["corpus/model"]);
-    agrees(&model, &[("--jobs 4", at(&model, &["--jobs", "4"], None))]);
-    let pathological = share(&["corpus/pathological"]);
-    agrees(&pathological, &[(
-        "GANDR_JOBS=3",
-        at(&pathological, &[], Some("3")),
-    )]);
-    let rest = share(&[
+    let mut run = vec![PathBuf::from("test")];
+    run.extend(roots.iter().map(|root| corpus.join(root)));
+    run
+}
+
+// The corpus roots share out over the three wider widths, one test each: every
+// source runs once serially and once off the serial schedule, and each width
+// is observed over enough sources to interleave. Each root settles on its own,
+// so a share prints what its roots print within a whole run.
+
+#[test]
+fn every_width_prints_the_serial_run_of_the_model_corpus()
+{
+    agrees(&share(&[Path::new("corpus/model")]), &[Width::FourByFlag]);
+}
+
+#[test]
+fn every_width_prints_the_serial_run_of_the_pathological_corpus()
+{
+    agrees(&share(&[Path::new("corpus/pathological")]), &[
+        Width::ThreeByEnvironment,
+    ]);
+}
+
+#[test]
+fn every_width_prints_the_serial_run_of_the_other_roots()
+{
+    let roots = [
         "crates/surface-corpus/strict",
         "corpus/classifier",
         "corpus/fragment",
         "corpus/pending",
         "corpus/surface",
-    ]);
-    agrees(&rest, &[("the host's width", at(&rest, &[], None))]);
+    ]
+    .map(Path::new);
+    agrees(&share(&roots), &[Width::Host]);
+}
 
+#[test]
+fn every_width_prints_the_serial_check()
+{
     let scratch = Scratch::new(Path::new("widths"));
     let settled = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
     let broken = scratch.file(
@@ -1272,9 +1368,9 @@ fn every_width_prints_the_serial_run()
         scratch.0.clone(),
     ];
     agrees(&check, &[
-        ("--jobs 4", at(&check, &["--jobs", "4"], None)),
-        ("GANDR_JOBS=3", at(&check, &[], Some("3"))),
-        ("the host's width", at(&check, &[], None)),
+        Width::FourByFlag,
+        Width::ThreeByEnvironment,
+        Width::Host,
     ]);
 }
 
