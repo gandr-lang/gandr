@@ -366,10 +366,11 @@ mod sweeps
         size: SampleSize(24),
     };
 
-    /// The nights the nightly profile takes to script every source: an eighth
-    /// a night, because the whole corpus scripted with specifications enforced
-    /// takes five minutes of the nightly budget. A quarter took 50 to 55 s.
-    const NIGHTS: Nights = Nights(8);
+    /// The nights the nightly profile takes to script every source: a
+    /// seventh a night, the count the nightly's sweeps share (#3013). An
+    /// eighth of the corpus scripted with specifications enforced took 67 s
+    /// on the nightly runner (run 40602657172).
+    const NIGHTS: Nights = Nights(7);
 
     /// The longest source text, its import closure laid out before it, a
     /// sampled run scripts. A script submits the text ten times, and where

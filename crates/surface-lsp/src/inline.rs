@@ -2742,9 +2742,10 @@ mod tests
         };
 
         /// The nights the nightly profile takes to read every source: a
-        /// quarter a night. The whole corpus read for 154 s to 211 s on the
-        /// nightly runner, past its share of the nightly budget.
-        const NIGHTS: Nights = Nights(4);
+        /// seventh a night, the count the nightly's sweeps share (#3013). A
+        /// quarter of the corpus read for 80 s on the nightly runner (run
+        /// 40602657172).
+        const NIGHTS: Nights = Nights(7);
 
         /// Every source's cursors are read without specification enforcement;
         /// the enforcing build checks every contract on every call and reads

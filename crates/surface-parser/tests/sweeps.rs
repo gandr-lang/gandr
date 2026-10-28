@@ -60,10 +60,11 @@ const RECOVERY: Sample = Sample {
 const RECOVERY_STRIDE: usize = 16;
 
 /// The nights the nightly recovery sweep takes to visit the corpus: a
-/// thirty-second a night. A quarter took 179 s and 410 s with specifications
-/// enforced on the nightly runner, and a sixteenth 128 s, past its share of
-/// the nightly budget alone.
-const RECOVERY_NIGHTS: Nights = Nights(32);
+/// thirteenth a night, the fewest that keep its night within half the
+/// nightly sweeps' test wall (#3013). A thirty-second took 65 s with
+/// specifications enforced on the nightly runner (run 40602657172), the
+/// whole about 2,080 s.
+const RECOVERY_NIGHTS: Nights = Nights(13);
 
 /// The most tab-separated fields a recovery record row holds, with room
 /// to spare: a row with more is read as its first this many.
@@ -79,10 +80,11 @@ const TABLES: Sample = Sample {
     size: SampleSize(12),
 };
 
-/// The nights the nightly table sweep takes to visit the corpus: a sixteenth
-/// a night. A quarter took 102 s and 196 s with specifications enforced on
-/// the nightly runner, and an eighth 95 s.
-const TABLES_NIGHTS: Nights = Nights(16);
+/// The nights the nightly table sweep takes to visit the corpus: a seventh a
+/// night, the count the nightly's sweeps share (#3013). A sixteenth took 68 s
+/// with specifications enforced on the nightly runner (run 40602657172), and
+/// an eighth 95 s before it.
+const TABLES_NIGHTS: Nights = Nights(7);
 
 /// The step between the token rows the table sample molds over its stated
 /// size.

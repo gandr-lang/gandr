@@ -1033,6 +1033,8 @@ fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
 mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -1045,13 +1047,19 @@ mod sweeps
     /// family under the top-level `corpus` — and every source the change adds
     /// or modifies (`gandr-workflow-sweep`), each walked as its own path. A
     /// sampled run holds each node and each byte to the gate, and each owed
-    /// kind to at most its pin. The `sweeps` and nightly profiles walk the
-    /// roots whole and hold the census exactly: every pin met, every by-design
-    /// kind seen without its entry, every listed kind written.
+    /// kind to at most its pin, and so does the nightly profile over the
+    /// night's slice. The `sweeps` profile walks the roots whole and holds
+    /// the census exactly: every pin met, every by-design kind seen without
+    /// its entry, every listed kind written.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_judged_node_answers_at_its_own_span"),
         size: SampleSize(32),
     };
+
+    /// The nights the nightly profile takes to walk every source: a seventh
+    /// a night, the count the nightly's sweeps share (#3013). The whole
+    /// corpus walked for 66 s on the nightly runner (run 40602657172).
+    const NIGHTS: Nights = Nights(7);
 
     #[test]
     fn every_judged_node_answers_at_its_own_span()
@@ -1064,7 +1072,7 @@ mod sweeps
         let mut astray = Vec::new();
         let mut nodes = 0_usize;
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let whole = sweep.coverage() == Coverage::Full;
+        let whole = sweep.coverage() == Coverage::Full && sweep.rotation() == Rotation::Whole;
         let paths: Vec<PathBuf> = if whole {
             let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
@@ -1080,8 +1088,10 @@ mod sweeps
             ]
         }
         else {
-            let visited = sweep.visit(
+            eprintln!("{}", sweep.rotation());
+            let visited = sweep.visit_rotating(
                 SAMPLE,
+                NIGHTS,
                 &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
             );
             assert!(

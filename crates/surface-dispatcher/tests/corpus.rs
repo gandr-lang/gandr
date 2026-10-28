@@ -815,6 +815,8 @@ fn no_subject_declares_a_name_twice()
 /// typed alone.
 mod sweeps
 {
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -826,23 +828,33 @@ mod sweeps
     /// this name, at least one of each corpus class — `strict` and each
     /// directory below `fixture` — and every source the change adds or
     /// modifies (`gandr-workflow-sweep`), each walked as its own path. The
-    /// `sweeps` profile walks the two roots whole.
+    /// nightly profile walks the night's slice the same way, and the `sweeps`
+    /// profile walks the two roots whole.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_width_composes_the_corpus_alike"),
         size: SampleSize(64),
     };
 
+    /// The nights the nightly profile takes to walk every source at every
+    /// width: a seventh a night, the count the nightly's sweeps share
+    /// (#3013). The two roots walked whole for 56 s on the nightly runner
+    /// (run 40602657172).
+    const NIGHTS: Nights = Nights(7);
+
     #[test]
     fn every_width_composes_the_corpus_alike()
     {
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let paths: Vec<PathBuf> = match sweep.coverage() {
-            gandr_workflow_sweep::Coverage::Full => {
+        let paths: Vec<PathBuf> = match (sweep.coverage(), sweep.rotation()) {
+            (gandr_workflow_sweep::Coverage::Full, Rotation::Whole) => {
                 vec![strict_root(), fixture_root()]
             },
-            gandr_workflow_sweep::Coverage::Sampled => {
-                let visited = sweep.visit(
+            (gandr_workflow_sweep::Coverage::Full, Rotation::Night(_))
+            | (gandr_workflow_sweep::Coverage::Sampled, _) => {
+                eprintln!("{}", sweep.rotation());
+                let visited = sweep.visit_rotating(
                     SAMPLE,
+                    NIGHTS,
                     &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
                 );
                 assert!(

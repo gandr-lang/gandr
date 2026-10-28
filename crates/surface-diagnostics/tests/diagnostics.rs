@@ -2857,9 +2857,10 @@ mod sweeps
     };
 
     /// The nights the nightly profile takes to cut every pathological
-    /// source: half a night. All of them cut for 44 s to 50 s on the nightly
-    /// runner.
-    const NIGHTS: Nights = Nights(2);
+    /// source: a seventh a night, the count the nightly's sweeps share
+    /// (#3013). Half of them cut for 99 s on the nightly runner (run
+    /// 40602657172).
+    const NIGHTS: Nights = Nights(7);
 
     #[test]
     fn a_malformed_form_reports_its_parse_error_alone()

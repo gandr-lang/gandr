@@ -1401,6 +1401,8 @@ fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
 mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -1412,19 +1414,26 @@ mod sweeps
     /// digest under this name, at least one of each corpus class — `strict`
     /// and each directory below `fixture` — and every source the change adds
     /// or modifies (`gandr-workflow-sweep`), each walked as its own path. The
-    /// `sweeps` and nightly profiles walk the two roots whole.
+    /// nightly profile walks the night's slice the same way, and the `sweeps`
+    /// profile walks the two roots whole.
     const DIAGNOSTICS: Sample = Sample {
         name: SampleName("every_corpus_diagnostic_is_published_as_the_model_builds_it"),
         size: SampleSize(32),
     };
+
+    /// The nights the nightly profile takes to publish every source's
+    /// diagnostics: a seventh a night, the count the nightly's sweeps share
+    /// (#3013). The two roots published whole for 126 s on the nightly runner
+    /// (run 40602657172).
+    const DIAGNOSTICS_NIGHTS: Nights = Nights(7);
 
     #[test]
     fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
     {
         let root = corpus();
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let paths: Vec<PathBuf> = match sweep.coverage() {
-            Coverage::Full => {
+        let paths: Vec<PathBuf> = match (sweep.coverage(), sweep.rotation()) {
+            (Coverage::Full, Rotation::Whole) => {
                 let top = Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("../..")
                     .join("corpus");
@@ -1438,14 +1447,18 @@ mod sweeps
                     top.join("surface"),
                 ]
             },
-            Coverage::Sampled => sweep
-                .visit(
-                    DIAGNOSTICS,
-                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
-                )
-                .into_iter()
-                .map(|source| source.path)
-                .collect(),
+            (Coverage::Full, Rotation::Night(_)) | (Coverage::Sampled, _) => {
+                eprintln!("{}", sweep.rotation());
+                sweep
+                    .visit_rotating(
+                        DIAGNOSTICS,
+                        DIAGNOSTICS_NIGHTS,
+                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                    )
+                    .into_iter()
+                    .map(|source| source.path)
+                    .collect()
+            },
         };
         let walk = Walk::new(paths);
         let mut expected = BTreeMap::new();
@@ -1497,13 +1510,13 @@ mod sweeps
                 ControlFlow::Continue(())
             },
         );
-        let drawn = match sweep.coverage() {
-            Coverage::Full => 100_usize,
-            Coverage::Sampled => DIAGNOSTICS.size.0,
+        let drawn = match (sweep.coverage(), sweep.rotation()) {
+            (Coverage::Full, Rotation::Whole) => 100_usize,
+            (Coverage::Full, Rotation::Night(_)) | (Coverage::Sampled, _) => DIAGNOSTICS.size.0,
         };
         assert!(
             sources.len() >= drawn,
-            "the corpus is walked whole, or its sample drawn: {} sources",
+            "the corpus is walked whole, or its night's slice or sample drawn: {} sources",
             sources.len()
         );
         let mut messages = opening();
@@ -1534,13 +1547,18 @@ mod sweeps
     /// The tokens sample: sixty-four sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class — `strict` and each
     /// directory below `fixture` — and every source the change adds or
-    /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
-    /// source. Every run holds the whole corpus's membership to the
-    /// dispatcher's walk.
+    /// modifies (`gandr-workflow-sweep`). The nightly profile reads the
+    /// night's slice, and the `sweeps` profile every source. Every run holds
+    /// the whole corpus's membership to the dispatcher's walk.
     const SAMPLE: Sample = Sample {
         name: SampleName("corpus_tokens_cover_the_highlighted_bytes"),
         size: SampleSize(64),
     };
+
+    /// The nights the nightly profile takes to read every source's tokens: a
+    /// seventh a night, the count the nightly's sweeps share (#3013). The
+    /// whole corpus read for 150 s on the nightly runner (run 40602657172).
+    const NIGHTS: Nights = Nights(7);
 
     #[test]
     fn corpus_tokens_cover_the_highlighted_bytes()
@@ -1594,7 +1612,8 @@ mod sweeps
             expected_uris
         );
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let sources = opened(&sweep.visit(SAMPLE, &all));
+        eprintln!("{}", sweep.rotation());
+        let sources = opened(&sweep.visit_rotating(SAMPLE, NIGHTS, &all));
         assert!(
             sources.len() >= SAMPLE.size.0,
             "the sample is drawn: {}",
