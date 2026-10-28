@@ -1283,5 +1283,65 @@
       "issues": []
     },
     "output": ""
+  },
+  {
+    "name": "#3326: a body advancing a collector and listing open rows under `## Rows` opens, a row keyed with its text after the key",
+    "input": {
+      "branch": "surface-2558-recovery",
+      "body": "Advances #2558\n\n## Rows\n\n- `rec-block`\n- `rec-item` — the shared cause\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2558,
+          "labels": ["kind:defect", "area:surface", "collector"],
+          "body": "The findings.\n\n- [ ] `rec-block`\n- [x] `rec-loop`\n- [ ] `rec-item`\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#3326: a body closing a collector is refused: the guard closes it",
+    "input": {
+      "branch": "surface-2558-recovery",
+      "body": "Closes #2558\n\n## Rows\n\n- `rec-block`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2558,
+          "labels": ["kind:gap", "area:surface", "collector"],
+          "body": "- [ ] `rec-block`\n"
+        }
+      ]
+    },
+    "output": "the body closes #2558, a `collector`: its guard closes it once no row is open, so write `Advances #2558` and list the rows the change clears under `## Rows`, then run `pr:open` again"
+  },
+  {
+    "name": "#3326: a body advancing a collector without `## Rows`, or with it empty, is refused",
+    "input": {
+      "branch": "surface-2558-recovery",
+      "body": "Advances #2558\n\n## Rows\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2558,
+          "labels": ["kind:defect", "area:surface", "collector"],
+          "body": "- [ ] `rec-block`\n"
+        }
+      ]
+    },
+    "output": "the body advances #2558, a `collector`, and names no row it clears: add `## Rows` with one item `` - `<row>` `` per row of #2558 the change clears, keyed as #2558 keys it, then run `pr:open` again"
+  },
+  {
+    "name": "#3326: a `## Rows` item naming a checked row, a landed table row or no row of the collector is refused, each named",
+    "input": {
+      "branch": "surface-2558-recovery",
+      "body": "Advances #2558\n\n## Rows\n\n- `rec-block`\n- `rec-loop`\n- `b`\n- `rec-none`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2558,
+          "labels": ["kind:defect", "area:surface", "collector"],
+          "body": "- [ ] `rec-block`\n- [x] `rec-loop`\n\n| mutant | verdict |\n| --- | --- |\n| `a` | unwitnessed |\n| `b` | landed in #9 |\n"
+        }
+      ]
+    },
+    "output": "the `## Rows` item `rec-loop` names no open row of #2558 (`rec-block`, `a`): name the rows the change clears as #2558 keys them, then run `pr:open` again\nthe `## Rows` item `b` names no open row of #2558 (`rec-block`, `a`): name the rows the change clears as #2558 keys them, then run `pr:open` again\nthe `## Rows` item `rec-none` names no open row of #2558 (`rec-block`, `a`): name the rows the change clears as #2558 keys them, then run `pr:open` again"
   }
 ]

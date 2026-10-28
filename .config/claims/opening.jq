@@ -87,6 +87,13 @@
 # `no`; a `yes` or `maybe` lists a table `| Kind | Where | Observation |`,
 # each kind one of `refactor_kinds` and each `Where` an item path or a
 # repository path, which `check:refactoring` resolves.
+#
+# A landing on a `collector` names the rows it clears (#3326): the guard
+# closes the collector once no row is open, so the body `Advances #n` and
+# never closes it, and its `## Rows` lists the rows the change clears, one
+# item `` - `<row>` `` per row, keyed as the collector keys it
+# (`collector_rows`). An empty or missing `## Rows`, or an item naming no
+# open row of the collector, is refused.
 
 include "targets";
 include "sections";
@@ -297,6 +304,21 @@ def surface:
   | select(length > 0)
   | "the change touches the parser (\($paths[:3] | map("`\(.)`") | join(", "))\(if ($paths | length) > 3 then ", …" else "" end)) and the body lacks \(join(", and ")) (#2527); add it, then run `pr:open` again";
 
+# The refusals of a body working a `collector` (#3326): closed by a keyword,
+# or advanced without `## Rows` naming its open rows.
+def collectors:
+  (.body | targets(closing)) as $closed
+  | [(.body | section("Rows") // []) | items | sub("^[-*]\\s+"; "") | row_key] as $named
+  | (.issues // [])[]
+  | select((.labels // []) | index("collector"))
+  | .number as $n
+  | (.body // "" | collector_rows) as $open
+  | if ($closed | index($n)) then "the body closes #\($n), a `collector`: its guard closes it once no row is open, so write `Advances #\($n)` and list the rows the change clears under `## Rows`, then run `pr:open` again"
+    elif ($named | length) == 0 then "the body advances #\($n), a `collector`, and names no row it clears: add `## Rows` with one item `` - `<row>` `` per row of #\($n) the change clears, keyed as #\($n) keys it, then run `pr:open` again"
+    else $named[] | select(. as $row | $open | index($row) | not)
+    | "the `## Rows` item `\(.)` names no open row of #\($n)\(if ($open | length) == 0 then ", which has none" else " (`\($open[:8] | join("`, `"))`\(if ($open | length) > 8 then ", …" else "" end))" end): name the rows the change clears as #\($n) keys them, then run `pr:open` again"
+    end;
+
 # The refusal of a closing keyword outside the head's keyword lines (#2980):
 # GitHub would close the issue it names on merge, and `pr:open` and the claim
 # lifecycle read it as a closing target even quoted as code.
@@ -331,4 +353,4 @@ def refactorings:
           | "the `## Refactoring` row `\(.line)` gives no observation: say what this change found there, then run `pr:open` again")
     end;
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings
+claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors

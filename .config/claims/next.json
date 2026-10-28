@@ -651,7 +651,7 @@
     "output": ""
   },
   {
-    "name": "#2621: a collector, the oldest defect in the area, is passed over for the next candidate",
+    "name": "#3326: a defect collector with no open row is neither picked nor listed; the next defect is claimed",
     "input": {
       "area": "area:workflow",
       "issues": [
@@ -672,10 +672,10 @@
       ],
       "order": {}
     },
-    "output": "collector: #5 (0 open rows)\n9\tdefect\tthe next defect"
+    "output": "9\tdefect\tthe next defect"
   },
   {
-    "name": "#2621: a board of collectors alone gives no claim",
+    "name": "#3326: a board of collectors with no open row gives no claim and lists none",
     "input": {
       "area": "area:workflow",
       "issues": [
@@ -703,7 +703,7 @@
       ],
       "order": {}
     },
-    "output": "collector: #5 (0 open rows)\ncollector: #7 (0 open rows)"
+    "output": ""
   },
   {
     "name": "#3134: the first candidate is the pick though it lacks its sections; each section it lacks is printed as due ahead of the claim",
@@ -1350,15 +1350,15 @@
     "output": "12\tdefect\ta ten-minute fix"
   },
   {
-    "name": "#3111: a collector in the area prints with its open rows, a landed or fixed row and a checked item not counted; another area's does not print",
+    "name": "#3111: a collector in the area that is no defect prints with its open rows, a landed or fixed row and a checked item not counted; another area's does not print",
     "input": {
       "area": "area:workflow",
       "order": {},
       "issues": [
         {
           "number": 20,
-          "title": "recovery: a cause",
-          "labels": ["kind:defect", "area:workflow", "collector"],
+          "title": "hotpath: the landed deltas",
+          "labels": ["kind:gap", "area:workflow", "collector"],
           "parent": null,
           "blocked": null,
           "body": "The causes.\n\n- [ ] `break-expression`\n- [x] `loop-expression`\n- [ ] `return-expression`\n\n| mutant | verdict |\n| --- | --- |\n| `a` | unwitnessed |\n| `b` | landed in #9 |\n| `c` | fixed — passed at `d` |\n"
@@ -1382,6 +1382,72 @@
       ]
     },
     "output": "collector: #20 (3 open rows)\n22\tdefect\tthe defect"
+  },
+  {
+    "name": "#3326: a defect collector with an open row heads the order, the oldest first, ahead of an older defect and a planned unit; an owned one is passed over, one with no open row is not listed, and the pick prints no section due",
+    "input": {
+      "area": "area:workflow",
+      "order": { "50": [40] },
+      "issues": [
+        {
+          "number": 28,
+          "title": "recovery: an owned cause",
+          "labels": ["kind:defect", "area:workflow", "collector", "status:claimed"],
+          "parent": null,
+          "blocked": null,
+          "body": "The causes.\n\n- [ ] `hold_expression`\n"
+        },
+        {
+          "number": 29,
+          "title": "the older defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "blocked": null,
+          "body": "Text.\n"
+        },
+        {
+          "number": 30,
+          "title": "recovery: a cause",
+          "labels": ["kind:defect", "area:workflow", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "The causes.\n\n- [ ] `migrate_expression`\n- [x] `loop_expression`\n"
+        },
+        {
+          "number": 31,
+          "title": "recovery: a cause worked out",
+          "labels": ["kind:defect", "area:workflow", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "The causes.\n\n- [x] `return_expression`\n"
+        },
+        {
+          "number": 33,
+          "title": "recovery: a later cause",
+          "labels": ["kind:defect", "area:workflow", "collector"],
+          "parent": null,
+          "blocked": null,
+          "body": "The causes.\n\n- [ ] `break_expression`\n"
+        },
+        {
+          "number": 40,
+          "title": "the planned unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 50,
+          "blocked": null,
+          "body": "Text.\n"
+        },
+        {
+          "number": 50,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null,
+          "blocked": null,
+          "body": "Text.\n"
+        }
+      ]
+    },
+    "output": "30\tcollector\trecovery: a cause"
   },
   {
     "name": "#3134: `status:unsectioned` is informational: the filed defect first in order is the pick, its sections due, and no other issue is named",
