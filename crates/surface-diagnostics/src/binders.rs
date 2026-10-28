@@ -605,6 +605,28 @@ impl Naming
     }
 }
 
+/// Each id of `written` with the name `text` writes at its span.
+///
+/// The ids stay in `written`'s order; an id whose span `text` does not hold
+/// is left out. The lists [`Naming`] keeps, read this way, are what
+/// [`CoreSource`] names a dependent arrow's or pair's binder by.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn written_names<Id, Written>(
+    written: Written,
+    text: SourceText<'_>,
+) -> impl Iterator<Item = (Id, Name<'_>)>
+where
+    Written: IntoIterator<Item = (Id, ByteSpan)>,
+{
+    written.into_iter().filter_map(move |(id, span)| {
+        let fragment = text.fragment(span).ok()?;
+        Some((id, Name::from(<&str>::from(fragment))))
+    })
+}
+
 /// One binder a node stands under: the intuitionistic binder around it, the
 /// name the source writes for it, whether it names a region a type may be
 /// kept in, and the former opening it.

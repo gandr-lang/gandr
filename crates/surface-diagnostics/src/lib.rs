@@ -125,6 +125,7 @@ pub use crate::advice::help;
 pub use crate::binders::Around;
 pub use crate::binders::Naming;
 pub use crate::binders::Scoped;
+pub use crate::binders::written_names;
 pub use crate::culprit::Culprit;
 pub use crate::frame::Sentence;
 pub use crate::frame::sentence;

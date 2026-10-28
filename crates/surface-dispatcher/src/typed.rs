@@ -149,6 +149,7 @@ use gandr_surface_diagnostics::PATHLESS;
 use gandr_surface_diagnostics::Subject as DiagnosedSubject;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::written_names;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ClauseBinder;
 use gandr_surface_lowering::ClausePlace;
@@ -787,13 +788,7 @@ fn labelled<'names>(
     reread: &'names [(ValueTypeId, String)],
 ) -> Vec<(ValueTypeId, Name<'names>)>
 {
-    let text: &str = text.into();
-    let mut labelled: Vec<(ValueTypeId, Name<'names>)> = named
-        .iter()
-        .filter_map(|&(pair, span)| {
-            text.get(usize::from(span.start()) .. usize::from(span.end()))
-                .map(|name| (pair, Name::from(name)))
-        })
+    let mut labelled: Vec<(ValueTypeId, Name<'names>)> = written_names(named.iter().copied(), text)
         .chain(
             reread
                 .iter()

@@ -84,7 +84,6 @@ use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::ConstructorSpelling;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
-use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SurfaceName;
@@ -105,6 +104,7 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::binders::written_names;
 use crate::frame::opened;
 use crate::frame::written_binder;
 
@@ -565,9 +565,30 @@ fn spell<'failure>(
     let constructors = families.naming();
     let contexts = printed_names(&scopes);
     let enclosing = printed_names(&regions);
-    let arrows: Vec<(CompTypeId, Name<'_>)> = written_names(origins.arrows(), text);
-    let pairs: Vec<(ValueTypeId, Name<'_>)> = written_names(origins.pairs(), text);
-    let seconds: Vec<(ValueTypeId, Name<'_>)> = written_names(origins.seconds(), text);
+    let arrows: Vec<(CompTypeId, Name<'_>)> = written_names(
+        origins
+            .arrows()
+            .iter()
+            .map(|&(arrow, origin)| (arrow, origin.span())),
+        text,
+    )
+    .collect();
+    let pairs: Vec<(ValueTypeId, Name<'_>)> = written_names(
+        origins
+            .pairs()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span())),
+        text,
+    )
+    .collect();
+    let seconds: Vec<(ValueTypeId, Name<'_>)> = written_names(
+        origins
+            .seconds()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span())),
+        text,
+    )
+    .collect();
     let mut relations = origins.relations().to_vec();
     relations.sort_by_key(|&(related, _)| related);
     let mut models: Vec<(ValueTypeId, Modelled<'_>)> = origins
@@ -649,29 +670,6 @@ fn spell<'failure>(
         unicode: Spellings(unicode),
         ascii: Spellings(ascii),
     }
-}
-
-/// Each node of `named` with the name `text` writes at its origin, in
-/// `named`'s order; a node whose origin falls outside `text` is left out.
-///
-/// # Specification
-/// trivial.
-fn written_names<'text, Id>(
-    named: &[(Id, Origin)],
-    text: SourceText<'text>,
-) -> Vec<(Id, Name<'text>)>
-where
-    Id: Copy,
-{
-    let text: &str = text.into();
-    named
-        .iter()
-        .filter_map(|&(node, origin)| {
-            let span = origin.span();
-            text.get(usize::from(span.start()) .. usize::from(span.end()))
-                .map(|name| (node, Name::from(name)))
-        })
-        .collect()
 }
 
 impl Spellings
