@@ -76,8 +76,9 @@ mutants_scope=("$(cd "${BASH_SOURCE[0]%/*}" && pwd)/scope" -p MemoryMax=16G -p M
 # The survivors of one witnessed run (`mutants:witnessed`'s outcome directory
 # `$1`) as a Markdown table collapsed under a summary counting them: each
 # missed mutant with its verdict, `missed` or `unwitnessed` (no witness names
-# its function), then each one timed out. Returns 1 and prints nothing when
-# none survives.
+# its function), then each one timed out. A `|` in a name is written `\|`,
+# the escape a table cell reads (#3371), so `replace && with ||` stays one
+# cell. Returns 1 and prints nothing when none survives.
 mutants_survivors() {
   local out=$1 name verdict count noun=survivors
   [[ -s "$out/missed.txt" || -s "$out/timeout.txt" ]] || return 1
@@ -87,8 +88,8 @@ mutants_survivors() {
   while IFS= read -r name; do
     verdict=missed
     ! grep -Fxq -- "$name" "$out/unwitnessed.txt" || verdict=unwitnessed
-    printf '| `%s` | %s |\n' "$name" "$verdict"
+    printf '| `%s` | %s |\n' "${name//|/\\|}" "$verdict"
   done < "$out/missed.txt"
-  while IFS= read -r name; do printf '| `%s` | timeout |\n' "$name"; done < "$out/timeout.txt"
+  while IFS= read -r name; do printf '| `%s` | timeout |\n' "${name//|/\\|}"; done < "$out/timeout.txt"
   printf '\n</details>\n'
 }

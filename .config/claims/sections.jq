@@ -33,9 +33,10 @@ def row_key:
 # `- [ ]` items, keyed by the item's text, and its table rows, keyed by the
 # first cell, header and rule left out, none of whose cells opens `landed`,
 # `fixed`, `accepted` or `runner shift`, the last three the statuses a hotpath
-# index settles a row with (#3369). A `## Readings` or `## Concerns` table is
-# a unit's shape, and a `## Settled` table measures settled rows: neither is
-# rows.
+# index settles a row with (#3369). A cell ends at an unescaped `|`, and a
+# `\|` in the first cell reads as `|` (#3371), so a mutant name holding one
+# keys whole. A `## Readings` or `## Concerns` table is a unit's shape, and a
+# `## Settled` table measures settled rows: neither is rows.
 def collector_rows:
   def rule: test("^\\s*\\|(\\s*:?-+:?\\s*\\|)+\\s*$");
   (lines
@@ -48,8 +49,8 @@ def collector_rows:
         | $lines[$i]
         | select(test("^\\s*\\|") and (rule | not))
         | select(($lines[$i + 1] // "" | rule) | not)
-        | select(test("\\|\\s*(landed|fixed|accepted|runner shift)\\b"; "i") | not)
-        | sub("^\\s*\\|\\s*"; "") | split("|")[0] | row_key];
+        | select(test("(?<!\\\\)\\|\\s*(landed|fixed|accepted|runner shift)\\b"; "i") | not)
+        | sub("^\\s*\\|\\s*"; "") | [splits("(?<!\\\\)\\|")][0] | gsub("\\\\\\|"; "|") | row_key];
 
 # An item as {line, keys, text}, or null when it is not `- <head> — <text>`
 # with at least one backquoted key in its head.
