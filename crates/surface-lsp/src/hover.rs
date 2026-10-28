@@ -3252,6 +3252,53 @@ mod tests
         }
     }
 
+    /// #3197: a block of `doc` entries alone, which the parser files as the
+    /// documentation of what follows it — the declaration, or another block
+    /// before it — answers that declaration at each of its tiles, as any
+    /// attribute block before a head does.
+    #[test]
+    fn a_doc_attribute_hovers_its_declaration_3197()
+    {
+        let documented = Ok(String::from("```gandr\nf : Integer\n```\n\nfirst\nsecond"));
+        let deprecated = Ok(String::from(
+            "```gandr\nf : Integer\n```\n\ndeprecated\n\nfirst",
+        ));
+        for (what, fixture, answer) in [
+            (
+                "the opening",
+                "$0@[ doc(\"first\") ]\n@[ doc(\"second\") ]\ndef f = 42;",
+                &documented,
+            ),
+            (
+                "the name",
+                "@[ $0doc(\"first\") ]\n@[ doc(\"second\") ]\ndef f = 42;",
+                &documented,
+            ),
+            (
+                "the payload",
+                "@[ doc(\"fi$0rst\") ]\n@[ doc(\"second\") ]\ndef f = 42;",
+                &documented,
+            ),
+            (
+                "the second block",
+                "@[ doc(\"first\") ]\n@[ doc(\"second\") $0]\ndef f = 42;",
+                &documented,
+            ),
+            (
+                "before another block",
+                "@[ $0doc(\"first\") ]\n@[ deprecated ]\ndef f = 42;",
+                &deprecated,
+            ),
+        ] {
+            let (text, position) = marker(SourceText::from(fixture));
+            assert_eq!(
+                &shown_at(SourceText::from(text.as_str()), position),
+                answer,
+                "{what}"
+            );
+        }
+    }
+
     /// The sweep over every tile of the corpus. A hover finds its entry by a
     /// scan of the table, which the enforcing build scans again for each
     /// specification, so a run visits the sources [`Sweep::visit`] names:
