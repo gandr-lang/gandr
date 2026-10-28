@@ -2063,7 +2063,11 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::ShownFeature'
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum','Where a feature stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Absence','enum','Whether reconciling a held file writes it where none stands, or leaves none because the model states nothing it would record.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Body','struct','The body of a file the checker wrote, below its digest header.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Differing','enum','What reconciling does with a file the checker wrote whose text is not the render: keep it or rewrite it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Field','enum','A field of the `Package` model a manifest records.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Held','trait','A file the checker writes from a model: its opening line, its render, and how reconciling answers an absent, edited or differing file.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Identity','struct','What a package is: its address over its dependencies'' addresses, and the key of the paths its root exports.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::LIBRARY','constant','The file name of a package''s library, the source that declares the package''s model.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::MANIFEST','constant','The file name of the manifest the checker writes at a package''s root.',NULL,'fits','sound',NULL);
@@ -2071,7 +2075,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::Manifest','struct','Wh
 INSERT INTO purpose VALUES('surface-dispatcher','package::ManifestFault','enum','Why a manifest was not reconciled: it was edited by hand, or could not be read or written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Package','struct','A package: its library and the root its manifest is written at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::PackageAddress','struct','A package''s address: the digest of its items'' content keys, its models'' inert components left out.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::Reconciled','enum','What reconciling a manifest did to it: written, rewritten or left unchanged.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Reconciled','enum','What reconciling a file the checker writes did to it: written, rewritten or left unchanged.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unaddressed','enum','Why a package has no address: a source that does not read or lower, or an item the lowering refused or no content key names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unmanifested','enum','Why a library''s model gives no manifest: a field it does not declare, or one that runs to no string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Unpathed','enum','Why a verb has no paths to walk: no path given in no package and no workspace, or a workspace naming no packages.',NULL,'fits','sound',NULL);
@@ -2088,10 +2092,9 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::lock::LockFault','enum
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Locked','struct','One dependency as its dependent''s lock records it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::SignatureKey','struct','A package''s signature key: the digest of the dotted paths its root exports.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Unresolved','enum','Why a package''s dependencies resolve to no lock: an unreadable `dependencies`, a coordinate rooting no package, a cycle, a stale dependency lock, an alias twice, or a dependency with no address.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::reconcile_lock','function','Hold a package''s lock to what its dependencies resolve to, writing it only where none stands and refusing drift.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::relock','function','Write a package''s lock as its dependencies resolve, whatever stands there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package and a workspace''s directory to its members, and the packages they reach.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a package''s manifest to what its model states, refusing one edited by hand.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a file the checker writes, a package''s manifest or its lock, to its model, refusing one edited by hand or drifted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Running','struct','The toolchain a package is checked by: its version, the features its ledger implements and the system it runs on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Separated','struct','A model''s line of `,`-separated entries, as its field states it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Toolchain','struct','What a package''s model asks of the toolchain: a least language version, the features its sources use and the systems it is built on.',NULL,'fits','sound',NULL);

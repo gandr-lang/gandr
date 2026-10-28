@@ -379,7 +379,6 @@ use gandr_surface_dispatcher::WorldName;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
-use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
@@ -1136,8 +1135,8 @@ fn opened() -> Result<Store, ExitCode>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Package::resolve`] under the built-in grammar into `store`,
-///   then [`reconcile_lock`]: [`Locking::Held`] with what it did, the lock and
-///   the package's address over it, read through `store`, as
+///   then [`reconcile`] of its [`LOCK`]: [`Locking::Held`] with what it did,
+///   the lock and the package's address over it, read through `store`, as
 ///   [`Package::identity`] gives it; [`Locking::Refused`] with its fault, and
 ///   [`Locking::Unresolved`] for dependencies that do not resolve or a grammar
 ///   that does not build.
@@ -1167,7 +1166,7 @@ fn locking(
         },
     };
     match package.resolve(&grammar, store) {
-        Ok(lock) => match reconcile_lock(package, &lock) {
+        Ok(lock) => match reconcile(&package.root().join(LOCK), &lock) {
             Ok(reconciled) => {
                 let address = package
                     .identity(&grammar, &Unshadowed, &lock, store)
