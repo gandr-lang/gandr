@@ -3455,6 +3455,10 @@ struct Lowerer<'run, 'source>
     /// Each head of a call of no arguments, beside the call: such a call is
     /// its head's force, so the force carries the call's origin.
     nullary: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each head of a call standing where a type is read, beside the call:
+    /// the call is the type application it spells, and the head, a node of
+    /// its own, carries the function the unquote calls.
+    typed_heads: BTreeMap<NodeIndex, NodeIndex>,
     /// The head of each call that applies a function with implicits, each
     /// supplied by name, `f[a = T](…)`, or nominated where the call omits it
     /// (`Self::nominated`): the one place such a function is named without
@@ -4505,6 +4509,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.injected.is_empty()
         && self.type_read.is_empty()
         && self.nullary.is_empty()
+        && self.typed_heads.is_empty()
         && self.supplied.is_empty()
         && self.regions.is_empty())]
     fn end_source(&mut self)
@@ -4549,6 +4554,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.injected.clear();
         self.type_read.clear();
         self.nullary.clear();
+        self.typed_heads.clear();
         self.supplied.clear();
         self.regions.clear();
     }
@@ -5245,6 +5251,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reader: Reading::Unread,
             type_read: BTreeSet::new(),
             nullary: BTreeMap::new(),
+            typed_heads: BTreeMap::new(),
             supplied: BTreeSet::new(),
             nominated: BTreeMap::new(),
             abstracted: BTreeMap::new(),
@@ -6818,14 +6825,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   around it ([`Self::standing`]), except a type standing where a value
     ///   is read, which is quoted, and a term name or a capitalised name
     ///   standing where a type is read, which is read as the type head of that
-    ///   spelling; a block's last computation written as a statement that is
-    ///   not an exit and does not leave on every path is recorded as trailing,
-    ///   not where a path ends; a form where a body ends that is neither an
-    ///   exit nor a form that passes the end on — a block, a match, a grouping
-    ///   — nor a hole takes the exit its polarity names, recorded as inferred
-    ///   and leaving, and is handed to its reader; every other former is handed
-    ///   to its own reader, a declaration form to the function reader, the one
-    ///   reading of the family that seeds one.
+    ///   spelling, and a call standing where a type is read, which is read as
+    ///   the type application it spells; a block's last computation written as
+    ///   a statement that is not an exit and does not leave on every path is
+    ///   recorded as trailing, not where a path ends; a form where a body ends
+    ///   that is neither an exit nor a form that passes the end on — a block, a
+    ///   match, a grouping — nor a hole takes the exit its polarity names,
+    ///   recorded as inferred and leaving, and is handed to its reader; every
+    ///   other former is handed to its own reader, a declaration form to the
+    ///   function reader, the one reading of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -6852,6 +6860,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if family_of(former) != site.reading.family()
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
                 && !(matches!(former, Former::Name | Former::Constructor) && site.reading.family() == Family::Type)
+                && !(former == Former::Call && site.reading.family() == Family::Type)
             {
                 ret == Err(self.standing(site).out(FragmentBoundary::WrongSort))
             }
@@ -6886,7 +6895,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
         let headed = matches!(former, Former::Name | Former::Constructor)
             && site.reading.family() == Family::Type;
-        if family != site.reading.family() && !quoted && !headed {
+        // A call the expression grammar molds inside a quoted type, at a
+        // type's own position, is the type application it spells.
+        let applied = former == Former::Call && site.reading.family() == Family::Type;
+        if family != site.reading.family() && !quoted && !headed && !applied {
             return Err(self.standing(site).out(FragmentBoundary::WrongSort));
         }
         // A block's last statement that is not an exit runs, its result
@@ -10799,7 +10811,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Classify an application, `c(v, …)`.
     ///
     /// # Specification
-    /// - requires: `site` is a call in term position.
+    /// - requires: `site` is a call in term position, or at a type's own
+    ///   position inside a type a body quotes.
     /// - ensures: a call whose head is a constructor of a data family declared
     ///   strictly earlier is that constructor applied to the arguments as its
     ///   fields; a call whose head is `here`, `back` or `cong`, a name no
@@ -10815,21 +10828,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the type it spells, as [`Self::applied_head`] plans it, quoted, and
     ///   one whose head names a data or a codata family is that family's type
     ///   over the arguments, as [`Self::static_application`] plans it, quoted,
-    ///   so `Box(Integer)` passed for a type parameter is the type (#2512); any
-    ///   other call standing as a computation reads its head at the head
-    ///   position and each argument as a value, all in its own frame, a model
-    ///   implicit's components and an omitted instance standing at the call
-    ///   itself, and is planned as the head applied to the arguments left to
-    ///   right; a call whose head is an instantiation, a recursive call,
-    ///   records every argument for the head's claim to check, reads each as a
-    ///   value so a later parameter's type can name a leading one, and applies
-    ///   those from the staged parameter's on, the ones its fixpoint takes; a
-    ///   call of no arguments is its head, whose force [`Self::mint_at`] marks
-    ///   as the call the source wrote.
+    ///   so `Box(Integer)` passed for a type parameter is the type (#2512); a
+    ///   call standing where a type is read is the type application it spells,
+    ///   as [`Self::typed_call`] plans it; any other call standing as a
+    ///   computation reads its head at the head position and each argument as a
+    ///   value, all in its own frame, a model implicit's components and an
+    ///   omitted instance standing at the call itself, and is planned as the
+    ///   head applied to the arguments left to right; a call whose head is an
+    ///   instantiation, a recursive call, records every argument for the head's
+    ///   claim to check, reads each as a value so a later parameter's type can
+    ///   name a leading one, and applies those from the staged parameter's on,
+    ///   the ones its fixpoint takes; a call of no arguments is its head, whose
+    ///   force [`Self::mint_at`] marks as the call the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
-    /// - fails: yields the wrong-sort refusal outside computation position, and
-    ///   the hole's own refusal.
+    /// - fails: yields the wrong-sort refusal outside computation position
+    ///   where no type is read, the refusals of [`Self::typed_call`] where one
+    ///   is, and the hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -10849,6 +10864,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `lower::tests::a_call_at_a_quoted_path_carrier_unquotes_as_at_a_binder_3573`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
@@ -10876,9 +10892,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && constructed.fields.end == self.operands.len()
                     },
                     | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
-                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..) | Plan::Data(..) | Plan::Codata(..))) => {
+                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
+                    | Some(&(Plan::Data(..) | Plan::Codata(..))) => {
+                        matches!(site.reading, Reading::Value(_)) || site.reading.family() == Family::Type
+                    },
+                    | Some(&(Plan::Decode(..) | Plan::Unquote(..))) => site.reading.family() == Family::Type,
                     | _ => false,
                 }
         },
@@ -10919,6 +10939,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let _head = cursor.operands();
             return self.generic_call(site, derivation, cursor);
+        }
+        if site.reading.family() == Family::Type {
+            return self.typed_call(site, cursor);
         }
         if let Reading::Value(_) = site.reading
             && let Run::One(head) = cursor.clone().operands()
@@ -11011,6 +11034,83 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, Plan::Application(head.node, applied));
 
         Ok(())
+    }
+
+    /// A call standing where a type is read: the type application it spells.
+    ///
+    /// The expression grammar molds a type quoted in a body, so a call at a
+    /// type's own position there, a path type's carrier, is a call form. Read
+    /// as the type application it spells, it is the type that application is
+    /// in a binder's type.
+    ///
+    /// # Specification
+    /// - requires: `site` reads a type, and `cursor` holds the call's pieces.
+    /// - ensures: a head that is one name or one capitalised name, resolving to
+    ///   a binder or a declaration, applied to the arguments as
+    ///   [`Self::static_application`] plans it: a family's type, the decode of
+    ///   a static application, or the unquote of a function's call. Any other
+    ///   head is refused by its sort.
+    /// - provides: a quoted type's call read as the same type its binder's type
+    ///   writes.
+    /// - fails: the wrong-sort refusal for a head that is not a resolving name,
+    ///   and the refusals of the name's resolution, the arguments and the
+    ///   application.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function called at a quoted path type's carrier
+    ///   unquotes its call, as at a binder's type.
+    /// - witness: `lower::tests::a_call_at_a_quoted_path_carrier_unquotes_as_at_a_binder_3573`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(site.at.node),
+                    Some(&(Plan::Decode(..) | Plan::Unquote(..) | Plan::Data(..) | Plan::Codata(..)))
+                )
+        },
+    )]
+    fn typed_call(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Run::One(head) = cursor.clone().operands()
+        else {
+            return Err(self.standing(site).out(FragmentBoundary::WrongSort));
+        };
+        let named = self.tree.node(head.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Name | Former::Constructor,
+                    ..
+                })
+            )
+        });
+        if !named {
+            return Err(self.standing(site).out(FragmentBoundary::WrongSort));
+        }
+        let name = self.name_at(head);
+        let _first = self.typed_heads.insert(site.at.node, head.node);
+        let at_head = Site { at: head, ..site };
+        let Maybe::Present(resolved) = self.resolve_name(at_head, site.reading.frame(), name)?
+        else {
+            return Err(self.standing(site).out(FragmentBoundary::WrongSort));
+        };
+        self.resolved(head.span, resolved);
+        let _head = cursor.operands();
+        let start = self.operands.len();
+        arguments(site, &mut cursor, &mut self.operands)?;
+        let applied = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.static_application(site, resolved, applied)
     }
 
     /// Lower native prefix and infix syntax using the shared vocabulary.
@@ -15389,7 +15489,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_decode(code, arguments, universe, sink, origin)
             },
             Plan::Unquote(code, arguments, universe) => {
-                self.mint_unquote(code, arguments, universe, sink, origin)
+                let head = match self
+                    .typed_heads
+                    .get(&origin.node())
+                    .map(|&head| self.origin_at(head))
+                {
+                    Some(Maybe::Present(head)) => head,
+                    Some(Maybe::Absent(_)) | None => origin,
+                };
+                self.mint_unquote(code, arguments, universe, sink, (origin, head))
             },
             Plan::Carrier(code, selected, ref label) => {
                 self.mint_carrier(code, selected, label.as_ref(), sink, origin)
@@ -15398,7 +15506,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_fixed_carrier(code, written, sink, origin)
             },
             Plan::Called(code, arguments) => self
-                .mint_called(code, arguments, sink, origin)
+                .mint_called(code, arguments, sink, (origin, origin))
                 .map(Lowered::Computation),
             Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
@@ -15819,10 +15927,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         arguments: Stretch,
         universe: Universe,
         sink: &mut Sink<'_>,
-        origin: Origin,
+        (origin, head): (Origin, Origin),
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let called = match self.mint_called(function, arguments, sink, origin) {
+        let called = match self.mint_called(function, arguments, sink, (origin, head)) {
             Maybe::Present(called) => called,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
@@ -15856,10 +15964,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   type reads as the value a call returns, `⟨c⟩`, runs first instead: the
     ///   application is bound under one `c ← …` per such argument, in written
     ///   order, the first outermost, the argument read as its bind's variable
-    ///   and everything else raised past the binds. The head and the
-    ///   applications carry the written origin; the force is marked inserted,
-    ///   and each bind the nested origin of the argument it runs. Nothing is
-    ///   minted when an argument did not lower.
+    ///   and everything else raised past the binds. The applications carry the
+    ///   written origin, and the head carries `head`, the call's own origin or
+    ///   its head's where a call the expression grammar molds stands in a type;
+    ///   the force is marked inserted, and each bind the nested origin of the
+    ///   argument it runs. Nothing is minted when an argument did not lower.
     /// - provides: the call an unquote decodes, and a type-position call's
     ///   argument written as a call, which the checker runs. A descent through
     ///   a function field, `el[<](b(x))`, is then the bind `c ← b(x); el[<](c)`
@@ -15896,7 +16005,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         function: Code,
         arguments: Stretch,
         sink: &mut Sink<'_>,
-        origin: Origin,
+        (origin, head_origin): (Origin, Origin),
     ) -> Maybe<ComputationId, lowered::Absent>
     {
         let written = stretch(&self.operands, arguments);
@@ -15962,7 +16071,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Code::Constant(constant) => sink.arena.value_constant(constant),
         };
-        sink.origins.record_value(head, origin);
+        sink.origins.record_value(head, head_origin);
         let mut called = sink.arena.computation_force(head);
         sink.origins
             .record_computation(called, origin.inserted(Insertion::Force));
@@ -25209,6 +25318,57 @@ mod tests
                 Maybe::Present(Provenance::Written)
             ),
             "the call is the source's"
+        );
+    }
+
+    /// A function called at the carrier of a path type a body quotes is the
+    /// decode of the code its call returns, as it is at a binder's type: the
+    /// expression grammar molds it as a call, and it is read as the type
+    /// application it spells.
+    #[test]
+    fn a_call_at_a_quoted_path_carrier_unquotes_as_at_a_binder_3573()
+    {
+        let mut arena = CoreArena::new();
+        let text = "def same(a : Type) -> -F Type { return a } def pathSame(a : Type, x : a) -> \
+                    -F Type { return (Path(same(a), x, x)) }";
+        let module = lowered(SourceText::from(text), &mut arena);
+        let lowered = outcomes(&module);
+        assert!(
+            !matches!(lowered[1], DeclarationOutcome::Refused(_)),
+            "the quoted path type lowers: {:?}",
+            lowered[1]
+        );
+        let at = text.rfind("same(a)").expect("the carrier is written");
+        let carrier = module
+            .origins()
+            .value_types()
+            .iter()
+            .find(|&&(_, origin)| {
+                usize::from(origin.span().start()) == at
+                    && origin.provenance() == Provenance::Inserted(Insertion::Decode)
+            })
+            .map(|&(id, _)| id)
+            .expect("the carrier's decode is located at the call");
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(carrier)
+        else {
+            panic!("the carrier is a decode");
+        };
+        let Some(&Value::Returned(called)) = arena.value(code)
+        else {
+            panic!("the code is what the call returns: {:?}", arena.value(code));
+        };
+        let Some(&Computation::Application(forced, _)) = arena.computation(called)
+        else {
+            panic!("the call applies the function to its argument");
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            panic!("the function is forced");
+        };
+        assert_eq!(
+            arena.value(head).cloned(),
+            Some(Value::Constant(ConstantIndex::from(0_usize))),
+            "the function is `same`"
         );
     }
 
