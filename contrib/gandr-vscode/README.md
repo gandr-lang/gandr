@@ -135,3 +135,5 @@ code --extensionDevelopmentPath="$PWD"
 ```
 
 Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`. `mise run check:extension` from the repository root type-checks, lints, compiles, runs the `node:test` suites under `src/`, bundles, and packages the extension; a deprecation fails that gate.
+
+`mise run check:vscode-smoke` runs the end-to-end smoke after that gate. VS Code at the manifest's floor, downloaded once into `~/.cache/gandr/vscode`, starts without a display on a scratch copy of `corpus/model/basics/definitions.gandr` with this extension alone, served by the `gandr` the workspace builds. The scene in `src/smoke/scene.ts` activates the extension, types a definition, and holds its hover to exactly one answer in the server's HTML. The local gate runs it; hosted CI does not, as its image carries no Electron runtime.
