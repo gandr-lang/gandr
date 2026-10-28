@@ -192,7 +192,10 @@ mod tests
         ];
         let text = write(HEADER, findings.iter().map(Key::of));
         let ledger = Ledger::<Key>::read(Text(&text)).expect("the written ledger reads");
-        assert!(ledger.check(&findings, Key::of).is_clean());
+        assert_eq!(
+            ledger.check(&findings, Key::of).standing(),
+            gandr_workflow_ledger::Standing::Agreed
+        );
         for line in [
             "corpus/a.gandr Passive 0123",
             "corpus/a.gandr Unknown 0123456789abcdef",

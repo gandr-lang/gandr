@@ -21,6 +21,7 @@ use std::process::ExitCode;
 
 use gandr_workflow_ledger::Ledger;
 use gandr_workflow_ledger::LedgerError;
+use gandr_workflow_ledger::Standing;
 use gandr_workflow_prose::Finding;
 use gandr_workflow_prose::Glossary;
 use gandr_workflow_prose::Key;
@@ -205,7 +206,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         )
         .map_err(output)?;
     }
-    if !verdict.is_clean() {
+    if verdict.standing() == Standing::Disagreed {
         return Ok(Outcome::Disagreed);
     }
     writeln!(

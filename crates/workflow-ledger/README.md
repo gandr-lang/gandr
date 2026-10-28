@@ -20,7 +20,7 @@ The debt ledger two workflow gates share: the findings a gate has committed to o
 ## Provided features
 
 - `Ledger::read` trims each line, skips a blank or `#` line, and reads a key from each other line; `LedgerError::Unread` names the first line no key reads from.
-- `Ledger::check` gives a `Verdict`: the first finding of each key the ledger lacks, in the findings' order, and each held key no finding carries, in key order.
+- `Ledger::check` gives a `Verdict`: the first finding of each key the ledger lacks, in the findings' order, and each held key no finding carries, in key order. `Verdict::standing` is `Agreed` when both are empty and `Disagreed` otherwise.
 - `write` writes a header as `#` lines, then each distinct key once, in key order, every line ended by a newline.
 
 ## Expected features

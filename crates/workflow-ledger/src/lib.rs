@@ -31,6 +31,7 @@ pub use crate::error::LedgerError;
 ///
 /// # Specification
 /// - provides: the bytes a ledger file holds.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct Text<'text>(pub &'text str);
 
@@ -40,6 +41,7 @@ pub struct Text<'text>(pub &'text str);
 /// # Specification
 /// - provides: what a ledger says of its own lines, for the reader who opens
 ///   the file.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct Header<'header>(pub &'header str);
 
@@ -47,6 +49,7 @@ pub struct Header<'header>(pub &'header str);
 ///
 /// # Specification
 /// - provides: the committed side of a check's comparison.
+#[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ledger<K>
 {
@@ -107,7 +110,7 @@ impl<K: Ord> Ledger<K>
     /// - ensures: [`Verdict::new`] holds the first finding of each key the
     ///   ledger lacks, in the findings' order; [`Verdict::stale`] each held key
     ///   no finding carries, in the keys' order.
-    /// - provides: the check's verdict: clean exactly when both are empty.
+    /// - provides: the check's verdict: agreed exactly when both are empty.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the outcome is the verdict itself.
@@ -159,6 +162,19 @@ pub struct Verdict<'findings, 'ledger, F, K>
     pub stale: Vec<&'ledger K>,
 }
 
+/// Whether a check's findings and its ledger agree.
+///
+/// # Specification
+/// - provides: the check's outcome, from which it chooses its exit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Standing
+{
+    /// Nothing new and nothing stale.
+    Agreed,
+    /// A new finding, a stale key, or both.
+    Disagreed,
+}
+
 impl<F, K> Verdict<'_, '_, F, K>
 {
     /// Whether the findings and the ledger agree: nothing new and nothing
@@ -172,9 +188,14 @@ impl<F, K> Verdict<'_, '_, F, K>
     /// - witness: `tests::a_new_finding_and_a_stale_key_are_each_named_once`
     #[inline]
     #[must_use]
-    pub fn is_clean(&self) -> bool
+    pub fn standing(&self) -> Standing
     {
-        self.new.is_empty() && self.stale.is_empty()
+        if self.new.is_empty() && self.stale.is_empty() {
+            Standing::Agreed
+        }
+        else {
+            Standing::Disagreed
+        }
     }
 }
 
@@ -225,6 +246,7 @@ mod tests
     use super::Header;
     use super::Ledger;
     use super::LedgerError;
+    use super::Standing;
     use super::Text;
     use super::write;
 
@@ -261,8 +283,8 @@ mod tests
         let verdict = ledger.check(&findings, |&(key, _)| key);
         assert_eq!(verdict.new, vec![&(3, "new")]);
         assert_eq!(verdict.stale, vec![&9]);
-        assert!(!verdict.is_clean());
+        assert_eq!(verdict.standing(), Standing::Disagreed);
         let settled = ledger.check(&[(1, "a"), (2, "b"), (9, "c")], |&(key, _)| key);
-        assert!(settled.is_clean());
+        assert_eq!(settled.standing(), Standing::Agreed);
     }
 }
