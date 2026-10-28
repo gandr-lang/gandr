@@ -224,6 +224,7 @@ use crate::compose::judge_lowering;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
+use crate::compose::pattern_holes;
 use crate::evaluate::Evaluation;
 use crate::typed::referent::Referents;
 
@@ -1397,7 +1398,9 @@ impl TypeTable
     /// - requires: `lowering` lowers `source` over `unit`.
     /// - ensures: as [`of_unit`](Self::of_unit) over `lowering`; after a
     ///   closure whose declarations lead the module, the typed run resumed on
-    ///   the checker's state after them and run over the rest.
+    ///   the checker's state after them and run over the rest. The run keeps
+    ///   the module's pattern holes, so a declaration whose match a pattern
+    ///   hole leaves undecided is refused, as its judgement refuses it.
     /// - fails: never; a source refused whole types nothing.
     /// - panics: none.
     /// - executable: none — as [`of_unit`](Self::of_unit), which types through
@@ -1408,11 +1411,13 @@ impl TypeTable
     ///   [`of_parsed_after`](Self::of_parsed_after); a constructor's stated
     ///   index answers under its frame and a function between two frames under
     ///   its own binders; a term after a declaration refused as shadowing still
-    ///   answers.
+    ///   answers; a match left to a pattern hole is refused as its judgement
+    ///   refuses it.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
     /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
     /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
+    /// - witness: `typed::tests::a_pattern_hole_refuses_its_match_in_both_tables_3617`
     fn typed(
         source: SourceText<'_>,
         lowering: Lowering<'_>,
@@ -1447,6 +1452,7 @@ impl TypeTable
                 ),
             };
             context.decide_closed_on(crate::tier::Emitted::boxed());
+            context.keep_pattern_holes(&pattern_holes(&module));
             context.keep_formations(Formations::Firsts(wanted));
             // A model stands at a model of a theory its own includes by the
             // maps the module mints, as the judgement reads it.
@@ -9192,6 +9198,66 @@ mod tests
                 ("_) => Z\n", String::from("N")),
             ],
             "each name at the index its constructor states, each field at its declared type"
+        );
+    }
+
+    /// #3617: a match that leaves an arm to a pattern hole is refused in the
+    /// table typed alone as in the table its judgement keeps, and a match
+    /// with every arm written is refused in neither.
+    #[test]
+    fn a_pattern_hole_refuses_its_match_in_both_tables_3617()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let refusals = |arms: &str| {
+            let own = alloc::format!(
+                "data Color : Type {{ Red : Color; Green : Color; Blue : Color; }}\ndef pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"
+            );
+            let text = SourceText::from(own.as_str());
+            let alone = table(text);
+            let Ok(crate::Lowered::Module { module, arena }) =
+                crate::lower_source(&grammar, text, &mut crate::LoweringCount::default())
+                    .map(crate::Lowering::into_lowered)
+            else {
+                panic!("the source lowers to a module");
+            };
+            let (_judged, judged) = crate::judge_member_tabled(
+                gandr_surface_corpus::CorpusRoot::Fixture,
+                (module, text),
+                arena,
+                (&crate::HostGrant::UNBOUNDED, crate::Checking::Whole),
+                (
+                    &gandr_surface_lowering::Unit::single(),
+                    ByteOffset::from(0_usize),
+                ),
+            );
+            let Maybe::Present(judged) = judged
+            else {
+                panic!("the judgement keeps its table");
+            };
+            let read = |typed: &TypeTable| -> Vec<Option<String>> {
+                typed
+                    .declared
+                    .keys()
+                    .map(|&key| match typed.refusal(key) {
+                        Maybe::Present(refusal) => Some(String::from(<&str>::from(refusal))),
+                        Maybe::Absent(_) => None,
+                    })
+                    .collect()
+            };
+            (read(&alone), read(&judged))
+        };
+        let undecided = Some(String::from(
+            "a pattern hole leaves the match's arm undecided",
+        ));
+        let (alone, judged) = refusals("Red => return 0, ? => return 1");
+        assert!(
+            alone.contains(&undecided) && alone == judged,
+            "the match left to a pattern hole is refused alike in both tables: {alone:?} and {judged:?}"
+        );
+        let (alone, judged) = refusals("Red => return 0, Green => return 1, Blue => return 2");
+        assert!(
+            alone.iter().all(Option::is_none) && alone == judged,
+            "the match with every arm written is refused in neither table: {alone:?} and {judged:?}"
         );
     }
 }

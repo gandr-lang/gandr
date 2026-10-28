@@ -977,9 +977,10 @@ mod sweeps
     };
 
     /// #1521: every corpus source, judged keeping its type table, answers
-    /// every entry, every declaration and every declared name as its table
-    /// typed alone does, so a document's table can come from the judgement
-    /// that checks it. Held to the 30 s bound by its sample (#2037).
+    /// every entry, every declaration, every declaration's refusal and every
+    /// declared name as its table typed alone does, so a document's table can
+    /// come from the judgement that checks it. Held to the 30 s bound by its
+    /// sample (#2037).
     #[test]
     fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
     {
@@ -1020,6 +1021,14 @@ mod sweeps
             (
                 table.entries(page, style).collect::<Vec<_>>(),
                 table.declarations(page, style).collect::<Vec<_>>(),
+                table
+                    .declarations(page, style)
+                    .map(|(key, _)| {
+                        table
+                            .refusal(key)
+                            .map(|refusal| String::from(<&str>::from(refusal)))
+                    })
+                    .collect::<Vec<_>>(),
                 table.declared_names().to_vec(),
             )
         };

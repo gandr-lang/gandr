@@ -3776,7 +3776,7 @@ fn declared_worlds(module: &LoweredModule<'_>) -> BTreeMap<WorldName, ConstantIn
 ///
 /// # Specification
 /// trivial.
-fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
+pub fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 {
     module
         .origins()
