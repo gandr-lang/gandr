@@ -629,6 +629,7 @@ use crate::module::Half;
 use crate::module::HalfAt;
 use crate::module::Halves;
 use crate::module::InstanceIndex;
+use crate::module::KeyedTables;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
 use crate::module::LoweredStructure;
@@ -3531,7 +3532,8 @@ struct Lowerer<'run, 'source>
 /// The tables a closure's own module finishes with that a document's module
 /// resumed after the closure leads with: the binders in scope, the
 /// resolutions and the nested sites, built once when the closure's lowering
-/// is suspended.
+/// is suspended, and the tables by declaration, shared with every module
+/// resumed after the closure.
 ///
 /// # Specification
 /// - requires: built by [`Finished::of`] from the module the closure's
@@ -3546,7 +3548,7 @@ struct Lowerer<'run, 'source>
 ///   the whole lowering does.
 /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[derive(Clone, Debug)]
-struct Finished
+struct Finished<'source>
 {
     /// The binders in scope at each span the closure's lowering read under one.
     in_scope: crate::InScope,
@@ -3555,21 +3557,26 @@ struct Finished
     /// The site of each syntax node of the closure a computation was nested
     /// at.
     nested: BTreeMap<NodeIndex, NestedSite>,
+    /// The tables a declaration's checking reads by its key, at the closure's
+    /// declarations.
+    keyed: KeyedTables<'source>,
 }
 
-impl Finished
+impl<'source> Finished<'source>
 {
     /// The tables `module`, a closure's own, finished with.
     ///
     /// # Specification
     /// trivial.
-    fn of(module: LoweredModule<'_>) -> Self
+    fn of(mut module: LoweredModule<'source>) -> Self
     {
+        let keyed = module.take_keyed_tables();
         let (in_scope, resolutions, nested) = module.into_scope_tables();
         Self {
             in_scope,
             resolutions,
             nested,
+            keyed,
         }
     }
 }
@@ -3591,10 +3598,12 @@ impl Finished
 /// - hypothesis: L3 — as [`Finished`].
 /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
 #[derive(Clone, Copy, Debug)]
-struct Resumed<'finished>
+struct Resumed<'finished, 'source>
 {
     /// The closure's finished tables.
-    finished: &'finished Finished,
+    finished: &'finished Finished<'source>,
+    /// The closure's declarations: the slots collected before the document's.
+    slots: usize,
     /// The closure's nodes: the readings before the document's.
     nodes: usize,
     /// The origin values recorded before the document's.
@@ -4496,9 +4505,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the module [`lower_unit`] answers. After a closure, its
     ///   binders in scope, resolutions and nested sites are the closure's
     ///   finished tables followed by those of the entries past the marks, which
-    ///   every entry of a later source follows.
+    ///   every entry of a later source follows; its tables by declaration
+    ///   answer a closure's declaration from the closure's, shared, and any
+    ///   other from its own entries past the slot mark.
     /// - provides: the tail of [`lower_unit`] and of a resumed lowering, the
-    ///   latter's scope tables built in the size of its own sources.
+    ///   latter's scope tables and tables by declaration built in the size of
+    ///   its own sources.
     /// - fails: as the attribute and documentation readings.
     /// - panics: none.
     ///
@@ -4510,6 +4522,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   closure finishes as the whole lowering does.
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
         usize::from(module.origins().declaration_count()) == module.declarations().len()
     }))]
@@ -4517,7 +4530,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut self,
         arena: &CoreArena,
         mut origins: OriginTable,
-        resumed: Option<Resumed<'_>>,
+        resumed: Option<Resumed<'_, 'source>>,
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
         let mut attributes = AttributeTable::new();
@@ -4589,6 +4602,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             })
             .collect();
+        // A document resumed after its closure builds its tables by
+        // declaration at its own declarations alone: the closure's module's
+        // are shared with it.
+        let own = SlotIndex::from(resumed.map_or(0, |resumed| resumed.slots));
         // Each model implicit a telescope writes, by its function's slot and
         // entry, with the number of parameters it binds and, when every
         // sort it fixes minted, how a printed telescope writes it.
@@ -4596,6 +4613,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             SlotIndex,
             BTreeMap<usize, (usize, Option<FlattenedSlot<'source>>)>,
         > = core::mem::take(&mut self.written_slots)
+            .split_off(&own)
             .into_iter()
             .map(|(slot, written)| {
                 let resolved = written
@@ -4641,7 +4659,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             supplies,
             handler_laws,
             models,
-            region_binders,
+            mut region_binders,
             ..
         } = self;
         let declared_use = |&(span, slot): &(ByteSpan, SlotIndex)| {
@@ -4701,13 +4719,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let reached: Vec<ByteSpan> = collected.reached.iter().copied().collect();
         let operation_rules = collected
             .operations
-            .iter()
+            .range(own ..)
             .map(|(&slot, plan)| (ConstantIndex::from(usize::from(slot)), plan.rules().clone()))
             .collect();
         // Each definition over regions names its binders by ordinal, so a
         // diagnostic spells a type kept at one as the source writes it.
         let region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> =
             region_binders
+                .split_off(&own)
                 .into_iter()
                 .filter_map(|(slot, binders)| {
                     let constant = collected.slots.get(usize::from(slot))?.constant;
@@ -4731,7 +4750,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> =
             BTreeMap::new();
         let mut model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>> = BTreeMap::new();
-        for (&slot, merged) in &collected.plicities {
+        for (&slot, merged) in collected.plicities.range(own ..) {
             let Ok(entries) = merged.as_ref()
             else {
                 continue;
@@ -4785,7 +4804,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
 
-        Ok(LoweredModule::new(
+        let module = LoweredModule::new(
             declarations,
             data,
             structures,
@@ -4824,7 +4843,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_qualified(qualified)
         .with_reducts(reducts)
         .with_forgets(forgets)
-        .with_forgettings(forgettings))
+        .with_forgettings(forgettings);
+        Ok(match resumed {
+            Some(resumed) => module.after_closure(&resumed.finished.keyed),
+            None => module,
+        })
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
@@ -19769,7 +19792,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
     fn in_scope(
         &self,
-        resumed: Option<Resumed<'_>>,
+        resumed: Option<Resumed<'_, '_>>,
     ) -> crate::InScope
     {
         let from = resumed.map_or(0, |resumed| resumed.nodes);
@@ -19795,12 +19818,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// trivial.
     fn resumed<'finished>(
         &self,
-        finished: &'finished Finished,
+        finished: &'finished Finished<'source>,
         origins: &OriginTable,
-    ) -> Resumed<'finished>
+    ) -> Resumed<'finished, 'source>
     {
         Resumed {
             finished,
+            slots: self.collected.slots.len(),
             nodes: usize::from(self.readings.count()),
             values: origins.values().len(),
             resolved: self.resolutions.len(),

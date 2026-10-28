@@ -13,6 +13,7 @@ use alloc::sync::Arc;
 use anodized::spec;
 use gandr_core_term::Carried;
 use gandr_core_term::CoreArena;
+use gandr_kernel_term::OperationRules;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::ClosureLowering;
@@ -26,6 +27,7 @@ use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportResolution;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::ImportUri;
+use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
@@ -2531,6 +2533,199 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         ),
         expected
     );
+}
+
+/// #3321: a document resumed after its closure reads each table by
+/// declaration — operation rules, stage bounds, region names, implicits,
+/// model slots, supplies, handler laws and model plans — at the closure's
+/// declarations and at its own as the whole lowering's module does, the
+/// closure's declarations and the document's each filing every table.
+#[test]
+fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321()
+{
+    let pbg = grammar();
+    let base = SourceText::from(concat!(
+        "pub data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n",
+        "pub def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\n",
+        "def appliedAt @[j : Size, k : Size] (f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
+        "  applyAt[i = k](f, x)\n}\n",
+        "def crossed @[s : Region, r : Region] (k : (() => Integer) at r, j : (() => Integer) \
+         at s) -> -F Integer {\n  force k\n}\n",
+        "pub theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
+         read : (c : C) --> Integer; }\n",
+        "pub module Up : Model(Counter) {\n  type C = Integer;\n  def zero = 0;\n  def incr(c : \
+         Integer) -> -F Integer { c + 1 }\n  def read(c : Integer) -> -F Integer { c }\n}\n",
+        "pub def stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
+        "def omitted() -> -F Integer { stepped(4) }\n",
+        "pub theory StatePutLaws {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
+         (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put(s, \
+         get(bind t . k(t))) <=> put(s, k(s));\n  rule putPut : put(s, put(u, k)) <=> put(u, \
+         k);\n}\n",
+        "def forgetful() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
+         st.put(1); st.get() } with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => \
+         k(unit) } }\n",
+        "data NatAdd : Type {\n  AddZero : NatAdd;\n  AddSucc : (n : NatAdd) --> NatAdd;\n  oper \
+         add(m : NatAdd, n : NatAdd) -> NatAdd;\n  rule add(AddZero, n) ==> n;\n  rule \
+         add(AddSucc(m), n) ==> AddSucc(add(m, n));\n}\n",
+    ));
+    let document = SourceText::from(concat!(
+        "import \"./base.gandr\" ;\n",
+        "def appliedAgain @[k : Size] (f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
+        "  applyAt[i = k](f, x)\n}\n",
+        "def crossedAgain @[r : Region] (k : (() => Integer) at r) -> -F Integer {\n  force \
+         k\n}\n",
+        "def fixed @[s : Model(Counter) with sort C = Integer] (c : Integer) -> -F Integer { \
+         s.read(s.incr(c + s.zero)) }\n",
+        "def omittedAgain() -> -F Integer { stepped(5) }\n",
+        "def forgetfulAgain() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
+         st.put(2); st.get() } with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => \
+         k(unit) } }\n",
+        "data Bit : Type {\n  Off : Bit;\n  On : Bit;\n  oper not(a : Bit) -> Bit;\n  rule \
+         not(Off) ==> On;\n  rule not(On) ==> Off;\n}\n",
+    ));
+    let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
+    let (text, unit) = laid(&[(base, &[]), (document, &imports)]);
+    let start = unit
+        .sources()
+        .get(1_usize)
+        .map(|source| usize::from(source.start()))
+        .expect("the document is the second source");
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        String::from(text.get(.. start).expect("the closure's text")),
+        Unit::new(unit.sources().get(.. 1_usize).expect("the base").to_vec())
+            .expect("the base alone is a unit"),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    let joined = parse(
+        &pbg,
+        SourceText::from(text.get(start ..).expect("the document's text")),
+    )
+    .expect("the document parses")
+    .after(closure.tree(), SourceText::from(text.as_str()))
+    .expect("the document lays after its closure")
+    .into_tree();
+    let whole = lower_unit(
+        &pbg,
+        &joined,
+        &unit,
+        &mut CoreArena::new(),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    )
+    .expect("the unit lowers");
+    let refused: Vec<(SurfaceName<'_>, DeclarationOutcome<'_>)> = whole
+        .declarations()
+        .iter()
+        .filter(|declaration| matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
+        .map(|declaration| (declaration.name(), declaration.outcome()))
+        .collect();
+    assert!(refused.is_empty(), "nothing is refused: {refused:?}");
+    // Which of the eight tables `module` files an entry in at any of
+    // `declarations`.
+    let filed = |module: &LoweredModule<'_>, declarations: &[LoweredDeclaration<'_>]| {
+        declarations.iter().fold([false; 8], |filed, declaration| {
+            let constant = declaration.constant();
+            let [
+                rules,
+                stages,
+                regions,
+                implicits,
+                slots,
+                supplies,
+                laws,
+                models,
+            ] = filed;
+            [
+                rules || module.operation_rules(declaration) != OperationRules::default(),
+                stages || !module.stages(declaration).is_empty(),
+                regions || !module.region_names(constant).is_empty(),
+                implicits || !module.implicits(constant).is_empty(),
+                slots || !module.model_slots(constant).is_empty(),
+                supplies || !module.supplies(declaration).is_empty(),
+                laws || !module.handler_laws(declaration).is_empty(),
+                models || !module.models(declaration).is_empty(),
+            ]
+        })
+    };
+    let (alone, _) = closure.alone().expect("the closure lowers to its end");
+    let (closure_part, document_part) = whole
+        .declarations()
+        .split_at_checked(alone.declarations().len())
+        .expect("the closure's declarations lead the whole lowering's");
+    assert_eq!(
+        filed(&whole, closure_part),
+        [true; 8],
+        "the closure's declarations file every table"
+    );
+    assert_eq!(
+        filed(&whole, document_part),
+        [true; 8],
+        "and so do the document's"
+    );
+    for _ in 0_usize .. 2_usize {
+        let resumed = closure
+            .resume(
+                &joined,
+                &unit,
+                &mut CoreArena::new(),
+                &mut Decisions::none(),
+            )
+            .expect("the unit lowers resumed");
+        assert_eq!(
+            resumed.declarations(),
+            whole.declarations(),
+            "the whole lowering's declarations"
+        );
+        for declaration in whole.declarations() {
+            let (name, constant) = (declaration.name(), declaration.constant());
+            assert_eq!(
+                resumed.operation_rules(declaration),
+                whole.operation_rules(declaration),
+                "`{name:?}`'s operation rules"
+            );
+            assert_eq!(
+                resumed.stages(declaration),
+                whole.stages(declaration),
+                "`{name:?}`'s stage bounds"
+            );
+            assert_eq!(
+                resumed.region_names(constant),
+                whole.region_names(constant),
+                "`{name:?}`'s region names"
+            );
+            assert_eq!(
+                resumed.implicits(constant),
+                whole.implicits(constant),
+                "`{name:?}`'s implicits"
+            );
+            assert_eq!(
+                resumed.model_slots(constant),
+                whole.model_slots(constant),
+                "`{name:?}`'s model slots"
+            );
+            assert_eq!(
+                resumed.supplies(declaration),
+                whole.supplies(declaration),
+                "`{name:?}`'s supplies"
+            );
+            assert_eq!(
+                resumed.handler_laws(declaration),
+                whole.handler_laws(declaration),
+                "`{name:?}`'s handler laws"
+            );
+            assert_eq!(
+                resumed.models(declaration),
+                whole.models(declaration),
+                "`{name:?}`'s model plans"
+            );
+        }
+        assert_eq!(resumed, whole, "the module the whole unit lowers to");
+    }
 }
 
 /// A closure whose own sources refuse the unit halts where the refusal
