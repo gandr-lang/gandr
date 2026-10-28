@@ -137,7 +137,9 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
 use gandr_core_term::constructor_classifier;
+use gandr_core_term::constructor_classifier_at;
 use gandr_core_term::decoded_comp_reading;
 use gandr_core_term::equal_type_reading;
 use gandr_core_term::identity::Relation;
@@ -150,6 +152,7 @@ use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_value_type;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_surface_corpus::CorpusRoot;
@@ -174,6 +177,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
+use gandr_surface_lowering::PatternSpan;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
@@ -1862,6 +1866,7 @@ impl TypeTable
         let mut constructed = Vec::new();
         for (span, ty, within, earlier) in matched(
             &module,
+            source,
             &mut arena,
             &definitions,
             &scrutinised,
@@ -4957,9 +4962,9 @@ quenchant_shape::reason_enum! {
 /// earlier parts it stands under.
 ///
 /// # Specification
-/// - requires: `arena` is the one `module` was lowered into and `scrutinised`
-///   holds the first kept type of each match's scrutinee, keyed by the
-///   scrutinee's syntax node.
+/// - requires: `arena` is the one `module` was lowered into, `source` the text
+///   it was lowered from, and `scrutinised` holds the first kept type of each
+///   match's scrutinee, keyed by the scrutinee's syntax node.
 /// - ensures: for each match whose scrutinee is in `scrutinised` at a type
 ///   other than the unknown one, each root pattern at the scrutinee's type and
 ///   each part at the type its place gives it — a data constructor's field at
@@ -4977,13 +4982,13 @@ quenchant_shape::reason_enum! {
 ///   is read as the decode of what it reduces to, as the checker read it, while
 ///   the pattern itself answers at its type as judged. A part whose type names
 ///   a part before it — a data constructor's field, a dependent pair's second —
-///   is read under those parts, each written as a binder, and so is every part
-///   inside it; a span carries the spans of every binder its type stands under,
-///   outermost first. A span under an earlier part not written as a binder
-///   answers nothing. A part whose place no rule above types, and every span
-///   inside it, answers nothing. Each constructor name read at a data family's
-///   type is pushed onto `constructed` with the family's constant and the
-///   constructor's tag.
+///   is read under those parts, each written as a binder or as `_`, and so is
+///   every part inside it; a span carries the spans of every binder its type
+///   stands under, outermost first, a `_` naming its binder `_`. A span under
+///   an earlier part written otherwise, or not written at all, answers nothing.
+///   A part whose place no rule above types, and every span inside it, answers
+///   nothing. Each constructor name read at a data family's type is pushed onto
+///   `constructed` with the family's constant and the constructor's tag.
 /// - provides: the pattern half of [`TypeTable::of`], and the constructor names
 ///   its referents read.
 /// - fails: never; an untyped pattern answers nothing.
@@ -4997,7 +5002,8 @@ quenchant_shape::reason_enum! {
 ///   dependent pair's second component, at its type under the first; a
 ///   constructor pattern's name refers to the constructor it names, over the
 ///   name's own bytes; a match on a comparison written as its scrutinee types
-///   its patterns at what the comparison returns.
+///   its patterns at what the comparison returns; an indexed family's pattern
+///   types its name and fields, a field after a wildcard under `_`.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
@@ -5005,9 +5011,12 @@ quenchant_shape::reason_enum! {
 /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
 /// - witness: `typed::tests::a_pattern_on_a_computed_scrutinee_answers_1141`
 /// - witness: `typed::tests::a_name_ends_where_it_is_written`
+/// - witness: `typed::tests::an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181`
+/// - witness: `typed::tests::an_indexed_constructor_pattern_types_its_fields_and_name_3539`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
 fn matched(
     module: &LoweredModule<'_>,
+    source: SourceText<'_>,
     arena: &mut CoreArena,
     definitions: &CodeDefinitions,
     scrutinised: &BTreeMap<NodeIndex, Scrutinised>,
@@ -5087,10 +5096,21 @@ fn matched(
                     continue 'spans;
                 };
                 for &field in preceding(shape, before).iter().rev() {
+                    // A wildcard written `_` names its binder as the pattern
+                    // writes it; one the lowering supplies for an unwritten
+                    // part spans no `_` and names nothing.
+                    let written = |held: &&PatternSpan| {
+                        held.pattern == field && matches!(held.reading, PatternReading::Matched)
+                    };
                     let named = match case.patterns.pattern(field) {
-                        Some(&Pattern::Binder) => case.spans.iter().find(|held| {
-                            held.pattern == field && matches!(held.reading, PatternReading::Matched)
-                        }),
+                        Some(&Pattern::Binder) => case.spans.iter().find(written),
+                        Some(&Pattern::Wildcard) => {
+                            case.spans.iter().find(written).filter(|held| {
+                                <&str>::from(source).get(
+                                    usize::from(held.span.start()) .. usize::from(held.span.end()),
+                                ) == Some("_")
+                            })
+                        },
                         Some(_) | None => None,
                     };
                     let Some(held) = named
@@ -5325,23 +5345,26 @@ fn parts(
 }
 
 /// The field types of the constructor `tag` of the data family `ty`, its
-/// parameters read at the family's arguments.
+/// parameters read at the family's leading arguments.
 ///
 /// # Specification
 /// - requires: as [`parts`].
 /// - ensures: the constructor's declared fields, in order, each with the
-///   family's arguments substituted for its parameters beneath the fields
-///   before it, outermost first, as the checker's branch types read them: a
-///   telescope over the context `ty` is read in.
+///   family's parameter arguments substituted for its parameters beneath the
+///   fields before it, outermost first, as the checker's branch types read
+///   them: a telescope over the context `ty` is read in. An indexed family's
+///   index arguments follow its parameters' and enter no field.
 /// - provides: what a data constructor pattern's parts and name are typed by.
 /// - fails: never; a family the module does not declare, an argument count
-///   other than its parameters', or a tag past its constructors answers
-///   [`named::Absent::Undeclared`].
+///   other than its parameters' and indices' together, or a tag past its
+///   constructors answers [`named::Absent::Undeclared`].
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`matched`].
+/// - hypothesis: L3 — as [`matched`], and an indexed family's wildcard field
+///   answers at its declared type under the scrutinee's parameters.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
+/// - witness: `typed::tests::an_indexed_constructor_pattern_types_its_fields_and_name_3539`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref fields) => matches!(arena.value_type(ty), Some(&ValueType::Data { declaration, .. })
         if signatures.get(&declaration)
@@ -5367,27 +5390,118 @@ fn declared(
     else {
         return Maybe::Absent(named::Absent::Undeclared);
     };
-    let (Some(fields), true) = (
+    let count = signature.parameters().len();
+    let (Some(fields), Some(parameters), true) = (
         signature.constructors().get(usize::from(tag)),
-        signature.parameters().len() == arguments.len(),
+        arguments.get(.. count),
+        count.saturating_add(signature.indices().len()) == arguments.len(),
     )
     else {
         return Maybe::Absent(named::Absent::Undeclared);
     };
-    let arguments = arguments.clone();
+    let parameters = parameters.to_vec();
     let mut declared = Vec::with_capacity(fields.len());
     let mut earlier = Binders::NONE;
     for &field in fields {
-        let mut subject = field;
-        for (index, &argument) in arguments.iter().enumerate().rev() {
-            let depth = Binders::from(u32::try_from(index).unwrap_or(u32::MAX));
-            let argument = shift_value(arena, argument, depth).settle(arena);
-            subject = instantiate_value_type_under(arena, subject, argument, earlier);
-        }
-        declared.push(subject);
+        declared.push(instantiated(arena, field, &parameters, earlier));
         earlier = earlier.deeper();
     }
     Maybe::Present(declared)
+}
+
+/// `subject`, scoped under a family's parameters and then `under` binders,
+/// with `parameters` substituted for the family's parameters.
+///
+/// # Specification
+/// - requires: `subject` is a type of `arena` scoped under the family's
+///   parameters and then `under` binders, and `parameters` one value per
+///   parameter, outermost first, read in the context the family is.
+/// - ensures: `subject` scoped under the `under` binders alone, each parameter
+///   variable read as its value, raised past the binders between.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the substitution mints its answer into the arena, which
+///   no predicate restates.
+///
+/// # Termination
+/// A `for` loop over the parameters.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `MkBox`'s field reads at `N` in `Box(N)`, and `V(a)`'s
+///   field `x : a` at the scrutinee's element type.
+/// - witness: `typed::tests::an_indexed_constructor_pattern_types_its_fields_and_name_3539`
+fn instantiated(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    parameters: &[ValueId],
+    under: Binders,
+) -> ValueTypeId
+{
+    let mut subject = subject;
+    for (index, &argument) in parameters.iter().enumerate().rev() {
+        let depth = Binders::from(u32::try_from(index).unwrap_or(u32::MAX));
+        let argument = shift_value(arena, argument, depth).settle(arena);
+        subject = instantiate_value_type_under(arena, subject, argument, under);
+    }
+    subject
+}
+
+/// The family the constructor `tag` of the indexed family `ty` states as its
+/// result: its parameters read at `ty`'s and its index row as the declaration
+/// writes it, under the constructor's fields.
+///
+/// # Specification
+/// - requires: as [`parts`].
+/// - ensures: `F(p₁, …, pₖ, row)` scoped under the constructor's fields, each
+///   `pᵢ` `ty`'s parameter argument raised past them and `row` the
+///   constructor's row of [`DataSignature::results`]; none for a family with no
+///   indices, a family the module does not declare, a tag past its constructors
+///   or an argument count other than the family's.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — as [`instantiated`].
+///
+/// # Termination
+/// A `for` loop over the parameters.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `FZ`'s pattern name answers at `Fin(S(n))` under its
+///   field, and `VC`'s at `V(N, S(n))`.
+/// - witness: `typed::tests::an_indexed_constructor_pattern_types_its_fields_and_name_3539`
+fn stated(
+    arena: &mut CoreArena,
+    signatures: &BTreeMap<ConstantIndex, &DataSignature>,
+    tag: ConstructorTag,
+    ty: ValueTypeId,
+) -> Option<ValueTypeId>
+{
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(ty)
+    else {
+        return None;
+    };
+    let signature = signatures.get(&declaration)?;
+    let count = signature.parameters().len();
+    if signature.indices().is_empty()
+        || count.saturating_add(signature.indices().len()) != arguments.len()
+    {
+        return None;
+    }
+    let parameters = arguments.get(.. count)?.to_vec();
+    let fields = signature.constructors().get(usize::from(tag))?.len();
+    let row = signature.results().get(usize::from(tag))?;
+    let mut written = Vec::with_capacity(count.saturating_add(row.len()));
+    for index in (0 .. count).rev() {
+        let index =
+            DeBruijnIndex::from(u32::try_from(index.saturating_add(fields)).unwrap_or(u32::MAX));
+        written.push(arena.value_variable(Zone::Intuitionistic, index));
+    }
+    written.extend_from_slice(row);
+    let result = arena.value_type_data(declaration, written);
+    let under = Binders::from(u32::try_from(fields).unwrap_or(u32::MAX));
+    Some(instantiated(arena, result, &parameters, under))
 }
 
 /// The type of the constructor `pattern` names, matched at `ty`: from its
@@ -5397,18 +5511,22 @@ fn declared(
 /// - requires: as [`parts`].
 /// - ensures: for a constructor pattern at a data family, the family itself
 ///   when the constructor has no field, and otherwise `U (A₁ → … → F T)` over
-///   its fields' telescope, as a data declaration's constructor is described.
+///   its fields' telescope, as a data declaration's constructor is described;
+///   an indexed family answers at the index row the constructor states, read at
+///   `ty`'s parameters ([`stated`]), rather than at `ty`.
 /// - provides: what the name of a constructor pattern answers at.
 /// - fails: never; any other pattern, or one at a type no data family
 ///   classifies, answers [`named::Absent::Undeclared`].
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`matched`].
+/// - hypothesis: L3 — as [`matched`], and `FZ` in `FZ(_)` answers at `(n : N)
+///   => Fin(S(n))` matched at `Fin(n)`.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
+/// - witness: `typed::tests::an_indexed_constructor_pattern_types_its_fields_and_name_3539`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(answer) => matches!(*pattern, Pattern::Constructor { .. })
-        && (answer == ty || matches!(arena.value_type(answer), Some(&ValueType::Thunk(_)))),
+        && (answer == ty || matches!(arena.value_type(answer), Some(&(ValueType::Thunk(_) | ValueType::Data { .. })))),
     Maybe::Absent(named::Absent::Undeclared) => true,
 })]
 fn constructor(
@@ -5426,10 +5544,12 @@ fn constructor(
     else {
         return Maybe::Absent(named::Absent::Undeclared);
     };
-    if fields.is_empty() {
-        return Maybe::Present(ty);
-    }
-    Maybe::Present(constructor_classifier(arena, ty, &fields))
+    Maybe::Present(match stated(arena, signatures, tag, ty) {
+        Some(result) if fields.is_empty() => result,
+        Some(result) => constructor_classifier_at(arena, result, &fields),
+        None if fields.is_empty() => ty,
+        None => constructor_classifier(arena, ty, &fields),
+    })
 }
 
 #[cfg(test)]
@@ -9012,6 +9132,65 @@ mod tests
         assert!(
             noted.len() == 2_usize && noted.iter().all(|rule| rule.contains("==>")),
             "each rule notes its direction at its own bytes: {noted:?}"
+        );
+    }
+
+    /// #3539: a constructor pattern of an indexed family types each field at
+    /// its declared type under the scrutinee's parameters, a field naming an
+    /// earlier one under it, by the name the pattern writes or `_`, and its
+    /// name at the index the constructor states; a parametric family's pattern
+    /// reads as before.
+    #[test]
+    fn an_indexed_constructor_pattern_types_its_fields_and_name_3539()
+    {
+        let source = SourceText::from(
+            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\ndata Fin : N -> Type {\n  FZ : \
+             (n : N) --> Fin(S(n));\n  FS : (n : N, i : Fin(n)) --> Fin(S(n));\n}\ndata V(a : \
+             Type) : N -> Type {\n  VN : V(a, Z);\n  VC : (n : N, x : a, t : V(a, n)) --> V(a, \
+             S(n));\n}\ndata Box(a : Type) : Type {\n  MkBox : (x : a) --> Box(a);\n}\ndef rec \
+             toN(m : N, i : Fin(m)) -> N {\n  case i {\n    FZ(_) => Z,\n    FS(p, j) => \
+             S(toN[<](p, j))\n  }\n}\ndef vlen(m : N, v : V(N, m)) -> N {\n  case v {\n    VN \
+             => Z,\n    VC(k, _, t) => S(k)\n  }\n}\ndef vsnd(m : N, v : V(N, m)) -> N {\n  case \
+             v {\n    VN => Z,\n    VC(k, y, _) => S(k)\n  }\n}\ndef vthd(m : N, v : V(N, m)) \
+             -> N {\n  case v {\n    VN => Z,\n    VC(_, y, _) => y\n  }\n}\ndef unbox(b : \
+             Box(N)) -> N {\n  case b {\n    MkBox(_) => Z\n  }\n}\n",
+        );
+        let table = table(source);
+        let read: Vec<(&str, String)> = [
+            "FZ(_)",
+            "_) => Z,",
+            "VC(k, _, t)",
+            "_, t)",
+            "_) => S(k)",
+            "_) => y",
+            "MkBox(_)",
+            "_) => Z\n",
+        ]
+        .into_iter()
+        .map(|needle| {
+            let ty = match answer(&table, source, SourceText::from(needle)) {
+                Maybe::Present(Answer { ty, .. }) => ty,
+                Maybe::Absent(reason) => alloc::format!("{reason:?}"),
+            };
+            (needle, ty)
+        })
+        .collect();
+        assert_eq!(
+            read,
+            [
+                ("FZ(_)", String::from("+U ((a : N) -> -F Fin(S(a)))")),
+                ("_) => Z,", String::from("N")),
+                (
+                    "VC(k, _, t)",
+                    String::from("+U ((a : N) -> N -> V(N, a) -> -F V(N, S(a)))")
+                ),
+                ("_, t)", String::from("N")),
+                ("_) => S(k)", String::from("V(N, k)")),
+                ("_) => y", String::from("V(N, _)")),
+                ("MkBox(_)", String::from("+U (N -> -F Box(N))")),
+                ("_) => Z\n", String::from("N")),
+            ],
+            "each name at the index its constructor states, each field at its declared type"
         );
     }
 }
