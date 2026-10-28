@@ -1978,6 +1978,8 @@ jobs:
         run: mise run treefmt:check-ci
       - name: markdown allowlist and budgets
         run: mise run check:markdown
+      - name: the root README matches the owner's pin
+        run: mise run check:readme-pin
       - name: merge residue check
         run: mise run check:merge-residue
       - name: workflow hashing check

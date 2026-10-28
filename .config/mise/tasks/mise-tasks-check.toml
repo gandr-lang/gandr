@@ -707,6 +707,22 @@ echo 'markdown check OK: every tracked markdown file is on the README allowlist'
   "git ls-files -z -- '*.md' ':(exclude,glob)ledger/syntax.md' | xargs -0 sizelint check",
 ]
 
+# The root README is the project's vision statement, curated by the owner
+# (#3260): every section is the owner's approved rendering, and the vault's
+# pages point here for the whole picture. Its bytes are pinned by
+# `.config/readme.sha256`; a change to `README.md` is an owner act and lands
+# with the pin re-written in the same commit (`sha256sum README.md >
+# .config/readme.sha256`), never by a seat on its own.
+["check:readme-pin"]
+description = "The root README matches the owner's pin"
+run = '''
+if ! sha256sum --check --quiet .config/readme.sha256; then
+  echo 'readme pin FAILED: README.md differs from .config/readme.sha256; the root README changes only with the owner, who re-writes the pin in the same commit' >&2
+  exit 1
+fi
+echo 'readme pin OK: README.md is the owner-approved synopsis'
+'''
+
 # The syntax ledger is generated from the grammar, the attribute registry and
 # the committed rules' exemplars, which each rule's admission is read off
 # (`gandr-surface-dispatcher`'s `ledger` module): regenerated into a temporary
