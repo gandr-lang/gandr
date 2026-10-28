@@ -242,6 +242,31 @@ pub trait Runner
         &mut self,
         constant: ConstantIndex,
     ) -> TracedRun;
+
+    /// The items the declaration at `constant` mentions, spelled as a
+    /// `reads` payload writes them ([`crate::reads_spelled`]).
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker accepted or read as data, and
+    ///   that states the items it reads.
+    /// - ensures: the items its footprint names, read off the roots of its
+    ///   content table; a spelling no `reads` payload writes when no footprint
+    ///   can be read.
+    /// - provides: the produced side of a `reads` comparison.
+    /// - fails: never; a footprint that cannot be read is spelled.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration stating the items it reads in another
+    ///   order, and one stating an item fewer; settlement asks the runner for
+    ///   each, and compares the two sets.
+    /// - witness: `settle::tests::a_reads_claim_settles_against_the_items_read_2520`
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
 }
 
 impl<Run> Runner for Run
@@ -303,6 +328,20 @@ where
             run: self(constant),
             channels: Vec::new(),
         }
+    }
+
+    /// Calls the closure: a closure spells what a declaration reads by
+    /// position, as it spells a run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
     }
 }
 

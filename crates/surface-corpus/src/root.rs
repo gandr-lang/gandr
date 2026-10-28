@@ -223,7 +223,7 @@ impl CorpusRoot
         ensures: |ret| {
     matches!(
         (self, schema, ret), (Self::Fixture, _, Ok(())) | (Self::Strict,
-        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes | ExpectationSchema::Decomposes | ExpectationSchema::Traces, Ok(())) | (Self::Strict,
+        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes | ExpectationSchema::Decomposes | ExpectationSchema::Traces | ExpectationSchema::Reads, Ok(())) | (Self::Strict,
         ExpectationSchema::Owes, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
         schema : ExpectationSchema::Owes, .. })) | (Self::Strict,
         ExpectationSchema::Refuses, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
@@ -247,7 +247,8 @@ impl CorpusRoot
                 | ExpectationSchema::Runs
                 | ExpectationSchema::Normalizes
                 | ExpectationSchema::Decomposes
-                | ExpectationSchema::Traces,
+                | ExpectationSchema::Traces
+                | ExpectationSchema::Reads,
             )
             | (
                 Self::Strict,
@@ -255,7 +256,8 @@ impl CorpusRoot
                 | ExpectationSchema::Runs
                 | ExpectationSchema::Normalizes
                 | ExpectationSchema::Decomposes
-                | ExpectationSchema::Traces,
+                | ExpectationSchema::Traces
+                | ExpectationSchema::Reads,
             ) => Ok(()),
             (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
                 Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span })
@@ -390,6 +392,7 @@ mod tests
             (CorpusRoot::Strict, ExpectationSchema::Normalizes, Ok(())),
             (CorpusRoot::Strict, ExpectationSchema::Decomposes, Ok(())),
             (CorpusRoot::Strict, ExpectationSchema::Traces, Ok(())),
+            (CorpusRoot::Strict, ExpectationSchema::Reads, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Checks, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Owes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Refuses, Ok(())),
@@ -397,6 +400,7 @@ mod tests
             (CorpusRoot::Fixture, ExpectationSchema::Normalizes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Decomposes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Traces, Ok(())),
+            (CorpusRoot::Fixture, ExpectationSchema::Reads, Ok(())),
         ];
 
         for (root, schema, admitted) in table {

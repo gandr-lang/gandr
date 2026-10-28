@@ -22,12 +22,16 @@
 //! size.
 
 use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::boundary::ItemOrdinal;
 use crate::content::ItemContent;
 use crate::content::Opacity;
+use crate::content::encode_item;
+use crate::region::Program;
 use crate::region::Reference;
 
 /// Whether an item's body is a hole.
@@ -231,6 +235,32 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
             | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
         },
     }
+}
+
+/// The footprint of each item of `program`, in item order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one footprint per item: at each ordinal, [`footprint_of`] the
+///   content that item encodes to.
+/// - provides: what each item reads, for a front end that states it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated programs and their edited intermediates, each
+///   item's fresh footprint held equal to the one its checkpoint carries.
+/// - witness: `tests::supports::carried_footprint_matches_reference_walk`
+#[spec(ensures: |ret| ret.len() == program.items().len())]
+#[inline]
+#[must_use]
+pub fn footprints(program: &Program) -> Vec<Footprint>
+{
+    (0 .. program.items().len())
+        .map(|index| {
+            let encoded = encode_item(program.arena(), program.layout(), ItemOrdinal::from(index));
+            footprint_of(&encoded.content)
+        })
+        .collect()
 }
 
 #[cfg(test)]

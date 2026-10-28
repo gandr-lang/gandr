@@ -115,6 +115,7 @@
 //! _checks, owing 0_; that schema is admitted beside `checks`, as `runs` and
 //! `normalizes` are.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
@@ -177,13 +178,14 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the seven expectation schemas.
+/// One of the eight expectation schemas.
 ///
 /// # Specification
 /// - requires: nothing; source correspondence is established by the reader or
 ///   producer.
 /// - ensures: A schema selects whether the declaration expects zero
-///   obligations, a stated count, a named refusal or an exact run spelling.
+///   obligations, a stated count, a named refusal, an exact run spelling or the
+///   items it reads.
 /// - panics: none.
 /// - executable: none — The enum has no invocation at which to read a
 ///   registered name or declaration; `of`, `read` and `CorpusRoot::admit` carry
@@ -219,6 +221,9 @@ pub enum ExpectationSchema
     /// fork names `c` plays a dialogue whose web decomposes to the web
     /// written.
     Traces,
+    /// `reads(names)`: the declaration checks, owing nothing, and mentions
+    /// exactly the items named, `()` when it mentions none.
+    Reads,
 }
 
 impl ExpectationSchema
@@ -228,8 +233,8 @@ impl ExpectationSchema
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `checks`, `owes`, `refuses`, `runs`, `normalizes`,
-    ///   `decomposes` and `traces` name their schemas; any other registered
-    ///   attribute names none.
+    ///   `decomposes`, `traces` and `reads` name their schemas; any other
+    ///   registered attribute names none.
     /// - provides: the filter that decides which attributes state a verdict.
     /// - fails: never; an attribute stating something else is the
     ///   [`expectation_schema::Absent::Unrelated`] absence.
@@ -250,9 +255,10 @@ impl ExpectationSchema
     | ("runs", Maybe::Present(Self::Runs))
     | ("normalizes", Maybe::Present(Self::Normalizes))
     | ("decomposes", Maybe::Present(Self::Decomposes))
-    | ("traces", Maybe::Present(Self::Traces)) => true,
+    | ("traces", Maybe::Present(Self::Traces))
+    | ("reads", Maybe::Present(Self::Reads)) => true,
     (name, Maybe::Absent(expectation_schema::Absent::Unrelated)) => {
-        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes" | "traces")
+        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes" | "traces" | "reads")
     }
     _ => false,
 },
@@ -269,6 +275,7 @@ impl ExpectationSchema
             "normalizes" => Maybe::Present(Self::Normalizes),
             "decomposes" => Maybe::Present(Self::Decomposes),
             "traces" => Maybe::Present(Self::Traces),
+            "reads" => Maybe::Present(Self::Reads),
             _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
@@ -311,6 +318,7 @@ impl fmt::Display for ExpectationSchema
             Self::Normalizes => "normalizes",
             Self::Decomposes => "decomposes",
             Self::Traces => "traces",
+            Self::Reads => "reads",
         })
     }
 }
@@ -360,14 +368,17 @@ pub enum Outcome
     /// spelled, and each channel named plays a dialogue whose web decomposes
     /// to the web spelled beside it.
     RunsTracing(RunSpelling, Vec<Channel>),
+    /// The declaration checks, owing nothing, and mentions exactly the items
+    /// spelled: `()`, one name, or a tuple of names.
+    Reads(RunSpelling),
 }
 
 impl fmt::Display for Outcome
 {
     /// Writes `checks owing n`, `refuses Name`, `runs to outcome`,
     /// `normalizes call ~> normal form`, `decomposes to web`,
-    /// `refuses Name and runs to outcome` or `runs to outcome tracing c to
-    /// web, …`.
+    /// `refuses Name and runs to outcome`, `runs to outcome tracing c to
+    /// web, …` or `reads names`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -413,6 +424,7 @@ impl fmt::Display for Outcome
                 }
                 Ok(())
             },
+            Self::Reads(ref spelled) => write!(f, "reads {spelled}"),
         }
     }
 }
@@ -559,6 +571,13 @@ pub enum ExpectationFault
         /// The bytes the first `traces` covers.
         span: ByteSpan,
     },
+    /// A `reads` payload that is neither `()`, one name, nor a tuple of
+    /// names.
+    UnwrittenReads
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+    },
 }
 
 impl fmt::Display for ExpectationFault
@@ -610,6 +629,9 @@ impl fmt::Display for ExpectationFault
             ),
             Self::TraceWithoutRun { .. } => {
                 f.write_str("the `traces` states a channel of no run: it needs a `runs` beside it")
+            },
+            Self::UnwrittenReads { .. } => {
+                f.write_str("the `reads` payload is no `()`, name or tuple of names")
             },
         }
     }
@@ -840,16 +862,18 @@ where
 ///   preserves a text payload that writes `~>` and reports one that does not;
 ///   `decomposes` preserves a spelling that is a `series`, `parallel`, `prime`
 ///   or `event` node, or a prime count `primes = n`, and reports one that is
-///   neither; a `traces` read alone states no verdict, a channel of no run.
-///   Malformed counts, names, lines and webs retain the attribute span.
+///   neither; `reads` preserves a spelling that is `()`, a name or a tuple of
+///   names, and reports one that is none of them; a `traces` read alone states
+///   no verdict, a channel of no run. Malformed counts, names, lines, webs and
+///   reads retain the attribute span.
 /// - fails: `UnreadablePayload` at the attribute span for an absent or
-///   wrong-kind payload required by the schema, or a `decomposes` with no
-///   spelling.
+///   wrong-kind payload required by the schema, or a `decomposes` or `reads`
+///   with no spelling.
 /// - panics: none.
 ///
 /// # Errors
 /// [`SettleFault::UnreadablePayload`] when the payload is not the schema's
-/// literal of `arena`, or a `decomposes` payload has no spelling.
+/// literal of `arena`, or a `decomposes` or `reads` payload has no spelling.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — integer boundaries, exact refusal names and a near miss,
@@ -862,6 +886,7 @@ where
 /// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
 /// - witness: `run::tests::run_mismatches_expose_both_spellings_and_preserve_sink_refusal`
 /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
+/// - witness: `settle::tests::a_reads_claim_settles_against_the_items_read_2520`
 #[spec(
     ensures: |ret| {
     let unreadable = SettleFault::UnreadablePayload {
@@ -877,6 +902,14 @@ where
                 matches!(ret, Ok(Stated::Verdict(Outcome::Decomposes(ref stated))) if stated == web)
             }
             Some(_) => ret == Ok(Stated::Malformed(ExpectationFault::UnwrittenWeb { span: entry.span() })),
+        }
+    } else if schema == ExpectationSchema::Reads {
+        match spelled {
+            None => ret == Err(unreadable),
+            Some(names) if matches!(read_names(names), Maybe::Present(_)) => {
+                matches!(ret, Ok(Stated::Verdict(Outcome::Reads(ref stated))) if stated == names)
+            }
+            Some(_) => ret == Ok(Stated::Malformed(ExpectationFault::UnwrittenReads { span: entry.span() })),
         }
     } else if schema == ExpectationSchema::Traces {
         ret == Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun { span: entry.span() }))
@@ -987,6 +1020,15 @@ fn stated_by(
                 Stated::Malformed(ExpectationFault::UnwrittenWeb { span })
             })
         },
+        ExpectationSchema::Reads => {
+            let names = spelled.ok_or(unreadable)?;
+            Ok(match read_names(names) {
+                Maybe::Present(_) => Stated::Verdict(Outcome::Reads(names.clone())),
+                Maybe::Absent(read_names::Absent::Unwritten) => {
+                    Stated::Malformed(ExpectationFault::UnwrittenReads { span })
+                },
+            })
+        },
         ExpectationSchema::Traces => Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun {
             span,
         })),
@@ -1000,6 +1042,141 @@ const WEB_NODES: [&str; 4] = ["series(", "parallel(", "prime(", "event("];
 /// The opening of a `decomposes` payload that states only the web's prime
 /// count, `primes = 2`.
 const PRIMES: &str = "primes = ";
+
+quenchant_shape::reason_enum! {
+    /// Why a `reads` spelling names no items.
+    mod read_names {
+        /// The spelling is no `()`, name or tuple of names.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// It is none of the three forms.
+            Unwritten,
+        }
+    }
+}
+
+/// The items a `reads` spelling names, each once.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct ReadNames<'spelled>(BTreeSet<&'spelled str>);
+
+/// The items `spelled` names, read as a `reads` payload writes them: none
+/// for `()`, the one a bare name writes, and each component of a tuple of
+/// names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: present exactly when `spelled` is `()`, one name, or names
+///   between parentheses separated by commas, each name nonempty and holding no
+///   white space, comma or parenthesis; each name written is held once.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the three forms and a repeated name read, and an empty
+///   component, a nested tuple and a phrase refused.
+/// - witness: `expectation::tests::a_reads_payload_names_each_item_once_2520`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref names) => names.0.iter().all(|name| !name.is_empty() && name.chars().all(|glyph| !glyph.is_whitespace() && !matches!(glyph, ',' | '(' | ')'))),
+    Maybe::Absent(_) => true,
+})]
+fn read_names(spelled: &RunSpelling) -> Maybe<ReadNames<'_>, read_names::Absent>
+{
+    let text: &str = spelled.as_ref();
+    let components: Vec<&str> = match text
+        .strip_prefix('(')
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
+        Some("") => Vec::new(),
+        Some(inner) => inner.split(',').map(str::trim).collect(),
+        None => Vec::from([text]),
+    };
+    let named = components.iter().all(|name| {
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|glyph| !glyph.is_whitespace() && !matches!(glyph, ',' | '(' | ')'))
+    });
+    if named {
+        Maybe::Present(ReadNames(components.into_iter().collect()))
+    }
+    else {
+        Maybe::Absent(read_names::Absent::Unwritten)
+    }
+}
+
+/// `produced` as the `reads` payload `stated` reads it: `stated` itself when
+/// both name the same items, in whatever order and however often, and
+/// `produced` otherwise.
+///
+/// # Specification
+/// - requires: `produced` is a spelling the runner gave for what a declaration
+///   reads.
+/// - ensures: `stated` when both spellings read as names and the two sets are
+///   equal; `produced` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the same items in another order, one item fewer and a
+///   produced spelling that names no items.
+/// - witness: `expectation::tests::a_reads_payload_names_each_item_once_2520`
+/// - witness: `settle::tests::a_reads_claim_settles_against_the_items_read_2520`
+#[spec(ensures: |ret| ret == *stated || ret == *produced)]
+#[must_use]
+pub fn reads_as_stated(
+    stated: &RunSpelling,
+    produced: &RunSpelling,
+) -> RunSpelling
+{
+    match (read_names(stated), read_names(produced)) {
+        (Maybe::Present(written), Maybe::Present(read)) if written == read => stated.clone(),
+        (Maybe::Present(_) | Maybe::Absent(_), _) => produced.clone(),
+    }
+}
+
+/// The `reads` spelling of `names`: `()` for none, the name itself for one,
+/// and the names between parentheses, in ascending order and each once,
+/// separated by `, ` for more.
+///
+/// # Specification
+/// - requires: no name is empty or holds white space, a comma or a parenthesis.
+/// - ensures: a spelling a `reads` payload writes, naming exactly `names`.
+/// - provides: the produced side of a `reads` comparison, spelled as the
+///   payload is written.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — none, one and several names, one of them repeated, read
+///   back.
+/// - witness: `expectation::tests::a_reads_payload_names_each_item_once_2520`
+#[spec(ensures: |ref ret| matches!(read_names(ret), Maybe::Present(_)))]
+#[inline]
+#[must_use]
+pub fn reads_spelled<Names, Name>(names: Names) -> RunSpelling
+where
+    Names: IntoIterator<Item = Name>,
+    Name: AsRef<str>,
+{
+    let held: Vec<Name> = names.into_iter().collect();
+    let sorted: BTreeSet<&str> = held.iter().map(AsRef::as_ref).collect();
+    let mut spelled = String::new();
+    if sorted.len() == 1_usize {
+        spelled.extend(sorted.first().copied());
+    }
+    else {
+        spelled.push('(');
+        for (index, name) in sorted.iter().enumerate() {
+            if index > 0_usize {
+                spelled.push_str(", ");
+            }
+            spelled.push_str(name);
+        }
+        spelled.push(')');
+    }
+    RunSpelling::from(spelled)
+}
 
 /// What a name carrying `traces` among `written` states: the run its one
 /// `runs` spells, and each channel a `traces` names, in the order written.
@@ -1495,6 +1672,7 @@ mod tests
             ("owes", ExpectationSchema::Owes),
             ("normalizes", ExpectationSchema::Normalizes),
             ("traces", ExpectationSchema::Traces),
+            ("reads", ExpectationSchema::Reads),
         ] {
             assert_eq!(
                 ExpectationSchema::of(registered(SurfaceName::from(spelled))),
@@ -1851,6 +2029,7 @@ mod tests
             ExpectationSchema::Normalizes,
             ExpectationSchema::Decomposes,
             ExpectationSchema::Traces,
+            ExpectationSchema::Reads,
         ] {
             assert_eq!(
                 fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{schema}")),
@@ -1882,6 +2061,10 @@ mod tests
                 ),
                 "seat to event(left, 0)",
             ),
+            (
+                Outcome::Reads(RunSpelling::from(String::from("(Nat, λ)"))),
+                "(Nat, λ)",
+            ),
         ] {
             let stated = Stated::Verdict(outcome);
             assert!(stated.to_string().contains(payload));
@@ -1904,6 +2087,7 @@ mod tests
             ExpectationFault::UnwrittenWeb { span: first },
             ExpectationFault::UnwrittenTrace { span: first },
             ExpectationFault::TraceWithoutRun { span: first },
+            ExpectationFault::UnwrittenReads { span: first },
         ] {
             let stated = Stated::Malformed(fault);
             let rendered = stated.to_string();
@@ -1938,6 +2122,52 @@ mod tests
             spelling("primes = 0")
         );
         assert_eq!(super::web_as_stated(&series, &web), web);
+    }
+
+    /// #2520: a `reads` payload reads as the set of items it names, `()` for
+    /// none, a bare name or a tuple, each name once and in any order; an
+    /// empty component, a nested tuple and a phrase name nothing. A set the
+    /// runner spells reads back as itself, and a stated set settles against a
+    /// produced one only when the two are equal.
+    #[test]
+    fn a_reads_payload_names_each_item_once_2520()
+    {
+        let spelling = |text: &str| RunSpelling::from(String::from(text));
+        let named = |text: &str| match super::read_names(&spelling(text)) {
+            Maybe::Present(names) => {
+                Some(names.0.into_iter().map(String::from).collect::<Vec<_>>())
+            },
+            Maybe::Absent(_) => None,
+        };
+        let names = |written: &[&str]| Some(written.iter().copied().map(String::from).collect());
+        assert_eq!(named("()"), names(&[]));
+        assert_eq!(named("Nat"), names(&["Nat"]));
+        assert_eq!(named("Inner.leaf"), names(&["Inner.leaf"]));
+        assert_eq!(named("(side, Nat, side)"), names(&["Nat", "side"]));
+        for unwritten in [
+            "",
+            "(Nat,, side)",
+            "((Nat, side))",
+            "f(x)",
+            "no footprint: opaque",
+        ] {
+            assert_eq!(named(unwritten), None, "`{unwritten}` names nothing");
+        }
+        assert_eq!(
+            super::reads_spelled(["side", "Nat", "side"]),
+            spelling("(Nat, side)")
+        );
+        assert_eq!(super::reads_spelled(["Nat"]), spelling("Nat"));
+        assert_eq!(super::reads_spelled(Vec::<&str>::new()), spelling("()"));
+        let produced = spelling("(Nat, side)");
+        let reordered = spelling("(side, Nat)");
+        assert_eq!(super::reads_as_stated(&reordered, &produced), reordered);
+        assert_eq!(
+            super::reads_as_stated(&spelling("Nat"), &produced),
+            produced
+        );
+        let opaque = spelling("no footprint: opaque");
+        assert_eq!(super::reads_as_stated(&spelling("()"), &opaque), opaque);
     }
 
     /// #3338: `runs` beside `traces` states the run and each channel in the

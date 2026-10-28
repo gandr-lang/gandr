@@ -442,7 +442,8 @@ impl Annotations
             | ExpectationFault::UnwrittenNormalForm { span }
             | ExpectationFault::UnwrittenWeb { span }
             | ExpectationFault::UnwrittenTrace { span }
-            | ExpectationFault::TraceWithoutRun { span }) =>
+            | ExpectationFault::TraceWithoutRun { span }
+            | ExpectationFault::UnwrittenReads { span }) =>
             *ret == Self::at(span, Label::Unsettled(Unsettlement::Malformed)),
         Stated::Verdict(_) => *ret == Self::at(declaration, Label::Unsettled(Unsettlement::Malformed)),
     })]
@@ -475,7 +476,8 @@ impl Annotations
                 | ExpectationFault::UnwrittenNormalForm { span }
                 | ExpectationFault::UnwrittenWeb { span }
                 | ExpectationFault::UnwrittenTrace { span }
-                | ExpectationFault::TraceWithoutRun { span },
+                | ExpectationFault::TraceWithoutRun { span }
+                | ExpectationFault::UnwrittenReads { span },
             ) => Self::at(span, label),
             Stated::Verdict(_) => Self::at(declaration, label),
         }

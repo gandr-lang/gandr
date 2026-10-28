@@ -473,6 +473,10 @@ impl RegisteredAttribute
     /// payload states the web one channel's play decomposes to. It is the one
     /// attribute written more than once on a name, once per channel.
     pub const TRACES: Self = Self("traces");
+    /// `reads`: the declaration it decorates checks, owing nothing, and
+    /// mentions exactly the items its payload names, `()` when it mentions
+    /// none: the footprint read off its content table's roots.
+    pub const READS: Self = Self("reads");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -706,7 +710,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 16_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 17_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -714,6 +718,7 @@ const REGISTRY: [(&str, AttributeSchema); 16_usize] = [
     ("normalizes", AttributeSchema::Text),
     ("decomposes", AttributeSchema::Spelled),
     (RegisteredAttribute::TRACES.0, AttributeSchema::Spelled),
+    (RegisteredAttribute::READS.0, AttributeSchema::Spelled),
     (RegisteredAttribute::DOC.0, AttributeSchema::Text),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
@@ -1952,6 +1957,7 @@ mod tests
             ("normalizes", AttributeSchema::Text),
             ("decomposes", AttributeSchema::Spelled),
             ("traces", AttributeSchema::Spelled),
+            ("reads", AttributeSchema::Spelled),
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
@@ -2021,6 +2027,7 @@ mod tests
             ("deprecate", "deprecated"),
             ("decompose", "decomposes"),
             ("trace", "traces"),
+            ("read", "reads"),
             ("boundary", "boundary"),
         ];
 

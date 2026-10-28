@@ -17,6 +17,7 @@ use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
 use gandr_core_incremental::check_program;
 use gandr_core_incremental::footprint_of;
+use gandr_core_incremental::footprints;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -197,12 +198,12 @@ fn walk(
 }
 
 /// Check `program` and compare every item's carried footprint with
-/// [`walk`].
+/// [`walk`], and the footprint [`footprints`] reads afresh with the carried.
 ///
 /// # Specification
 /// - ensures: asserts exact reads, type reads, opacity and hole marks for every
-///   item; checking keeps the program's items, whose count the predicate
-///   checks.
+///   item, and one fresh footprint per item equal to the carried; checking
+///   keeps the program's items, whose count the predicate checks.
 /// - panics: on a disagreement, or a fixture the checker refuses to order.
 ///
 /// # Adequacy
@@ -213,14 +214,26 @@ fn walk(
 fn assert_footprints(program: &mut Program)
 {
     let checked = check_program(program, CheckBudget::DEFAULT).expect("ordered program");
+    let fresh = footprints(program);
+    assert_eq!(
+        fresh.len(),
+        program.items().len(),
+        "one fresh footprint per item"
+    );
     let mut found = BTreeSet::new();
-    for (item, checkpoint) in program.items().iter().zip(checked.checkpoints().items()) {
+    for ((item, checkpoint), read) in program
+        .items()
+        .iter()
+        .zip(checked.checkpoints().items())
+        .zip(&fresh)
+    {
         let DeclarationContent::Value { signature, body } = *item.declaration().content()
         else {
             panic!("the generator declares values only");
         };
         let (reads, type_reads, opacity) = walk(program, signature, body);
         let footprint = footprint_of(checkpoint.content());
+        assert_eq!(*read, footprint, "fresh footprint of {:?}", item.key());
         found.clear();
         found.extend(footprint.reads().cloned());
         assert_eq!(found, reads, "reads of {:?}", item.key());

@@ -5,7 +5,7 @@ Generated from the built-in grammar by `gandr ledger syntax --write ledger`; nev
 - Grammar fingerprint: `0x4dd2bd6a9564c9b0`
 - Rules: 167 — 166 committed, 1 internal
 - Molds: 3265
-- Attributes: 16
+- Attributes: 17
 
 ## Reading a form
 
@@ -229,7 +229,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Attributes — 16 attributes
+## Attributes — 17 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -242,6 +242,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`normalizes`](../corpus/ledger/attributes/normalizes.gandr) | a text payload |
 | [`decomposes`](../corpus/ledger/attributes/decomposes.gandr) | an unquoted form |
 | [`traces`](../corpus/ledger/attributes/traces.gandr) | an unquoted form |
+| [`reads`](../corpus/ledger/attributes/reads.gandr) | an unquoted form |
 | [`doc`](../corpus/ledger/attributes/doc.gandr) | a text payload |
 | [`explicit_exits`](../corpus/ledger/attributes/explicit_exits.gandr) | no payload |
 | [`explicit_runs`](../corpus/ledger/attributes/explicit_runs.gandr) | no payload or the text "effects" |

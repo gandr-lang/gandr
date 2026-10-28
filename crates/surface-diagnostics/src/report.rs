@@ -354,6 +354,8 @@ pub enum Unsettlement
     /// It states a normal form, and its block's rules read the call to
     /// another, or to none.
     NormalForm,
+    /// It states the items it reads, and its footprint names others.
+    Reads,
     /// Its expectation states no verdict.
     Malformed,
 }
@@ -372,7 +374,7 @@ impl fmt::Display for Unsettlement
     ///   independent destination-failure observer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — all five unsettlement kinds have distinct class
+    /// - hypothesis: L3 — all six unsettlement kinds have distinct class
     ///   labels.
     /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
@@ -386,6 +388,7 @@ impl fmt::Display for Unsettlement
             Self::Unproduced => "unproduced refusal",
             Self::RunOutcome => "another run outcome",
             Self::NormalForm => "another normal form",
+            Self::Reads => "another footprint",
             Self::Malformed => "malformed expectation",
         })
     }
@@ -1003,7 +1006,8 @@ impl Report<'_>
                 unsettlement:
                     unsettlement @ (Unsettlement::Unproduced
                     | Unsettlement::RunOutcome
-                    | Unsettlement::NormalForm),
+                    | Unsettlement::NormalForm
+                    | Unsettlement::Reads),
                 ..
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
             Subject::Source(refusal) => Annotations::lowering(refusal),
@@ -1529,6 +1533,11 @@ impl fmt::Display for NoteText<'_>
                 "`{name}` is expected to decompose to {spelled}, and this refusal leaves it \
                  unsettled"
             )?,
+            Stated::Verdict(Outcome::Reads(ref spelled)) => write!(
+                f,
+                "`{name}` is expected to mention exactly {spelled}, and this refusal leaves it \
+                 unsettled"
+            )?,
             Stated::Verdict(Outcome::RunsTracing(ref spelled, _)) => write!(
                 f,
                 "`{name}` is expected to run to {spelled}, its channels playing as stated, and \
@@ -1546,7 +1555,8 @@ impl fmt::Display for NoteText<'_>
                     | Outcome::Runs(_)
                     | Outcome::Normalizes(_)
                     | Outcome::Decomposes(_)
-                    | Outcome::RunsTracing(..) => {
+                    | Outcome::RunsTracing(..)
+                    | Outcome::Reads(_) => {
                         write!(
                             f,
                             "`{name}` is expected to be refused with {expected} and run to {spelled}, \
@@ -1704,6 +1714,7 @@ mod tests
             Class::Unsettled(Unsettlement::Unproduced),
             Class::Unsettled(Unsettlement::RunOutcome),
             Class::Unsettled(Unsettlement::NormalForm),
+            Class::Unsettled(Unsettlement::Reads),
             Class::Unsettled(Unsettlement::Malformed),
             Class::Goal,
             Class::Warning,

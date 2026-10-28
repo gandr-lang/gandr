@@ -651,7 +651,8 @@ pub fn encode_submission(
                         | Outcome::Runs(_)
                         | Outcome::Normalizes(_)
                         | Outcome::Decomposes(_)
-                        | Outcome::RunsTracing(..)),
+                        | Outcome::RunsTracing(..)
+                        | Outcome::Reads(_)),
                     ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         let line = match spelling {
@@ -672,7 +673,8 @@ pub fn encode_submission(
                         | Outcome::Runs(_)
                         | Outcome::Normalizes(_)
                         | Outcome::Decomposes(_)
-                        | Outcome::RunsTracing(..)),
+                        | Outcome::RunsTracing(..)
+                        | Outcome::Reads(_)),
                     ) => {
                         lines.push((
                             OutKind::Type,
@@ -688,7 +690,8 @@ pub fn encode_submission(
                         | Outcome::Runs(_)
                         | Outcome::Normalizes(_)
                         | Outcome::Decomposes(_)
-                        | Outcome::RunsTracing(..)),
+                        | Outcome::RunsTracing(..)
+                        | Outcome::Reads(_)),
                     ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         lines.push((OutKind::Type, typed_line(fragment, &spelling)));
@@ -706,7 +709,8 @@ pub fn encode_submission(
                         | Outcome::Normalizes(_)
                         | Outcome::Decomposes(_)
                         | Outcome::RefusesRunning(..)
-                        | Outcome::RunsTracing(..)),
+                        | Outcome::RunsTracing(..)
+                        | Outcome::Reads(_)),
                     ) => {},
                 }
             }
