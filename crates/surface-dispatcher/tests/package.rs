@@ -69,7 +69,6 @@ use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_dispatcher::package_root;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
-use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
@@ -1376,7 +1375,10 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "and the pointer reads back as hello's identity"
     );
     assert!(
-        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &lock),
+            Ok(Reconciled::Written)
+        ),
         "an absent lock is written"
     );
     let written =
@@ -1391,7 +1393,10 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "a second resolution is the same lock"
     );
     assert!(
-        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Unchanged)),
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &lock),
+            Ok(Reconciled::Unchanged)
+        ),
         "a second run writes nothing"
     );
     assert_eq!(
@@ -1417,7 +1422,10 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "the lock is the same bytes resolved from another directory into another store"
     );
     assert!(
-        matches!(reconcile_lock(&other, &relocked), Ok(Reconciled::Written)),
+        matches!(
+            reconcile(&other.root().join(LOCK), &relocked),
+            Ok(Reconciled::Written)
+        ),
         "the copy's lock is written"
     );
     assert_eq!(
@@ -1454,7 +1462,10 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         .resolve(&grammar, &mut store)
         .expect("the dependencies resolve");
     assert!(
-        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &lock),
+            Ok(Reconciled::Written)
+        ),
         "the lock is written"
     );
     let standing = std::fs::read_to_string(&path).expect("the lock reads");
@@ -1464,8 +1475,8 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
     });
     assert!(
         matches!(
-            reconcile_lock(
-                &sibling,
+            reconcile(
+                &sibling.root().join(LOCK),
                 &sibling.resolve(&grammar, &mut store).expect("it resolves")
             ),
             Ok(Reconciled::Unchanged)
@@ -1490,7 +1501,7 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         address(&lock),
         "a content edit moves the dependency's address, and the pointer its identity commits to"
     );
-    let drifted = reconcile_lock(&sibling, &moved);
+    let drifted = reconcile(&sibling.root().join(LOCK), &moved);
     assert!(
         matches!(drifted, Err(LockFault::Drifted(ref aliases)) if *aliases == [Alias::new(String::from("hello"))]),
         "the standing lock is drift at `hello`: {drifted:?}"
@@ -1513,14 +1524,20 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         "relocking rewrites it"
     );
     assert!(
-        matches!(reconcile_lock(&sibling, &moved), Ok(Reconciled::Unchanged)),
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &moved),
+            Ok(Reconciled::Unchanged)
+        ),
         "the relocked lock holds"
     );
     let mut edited = std::fs::read_to_string(&path).expect("the lock reads");
     edited.push_str("# by hand\n");
     std::fs::write(&path, edited).expect("the lock is edited");
     assert!(
-        matches!(reconcile_lock(&sibling, &moved), Err(LockFault::Edited)),
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &moved),
+            Err(LockFault::Edited)
+        ),
         "a hand edit is refused"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
@@ -1545,7 +1562,10 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
         .resolve(&grammar, &mut committed)
         .expect("the dependencies resolve");
     assert!(
-        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &lock),
+            Ok(Reconciled::Written)
+        ),
         "the lock is written, so the use through the alias reads it"
     );
     let pointer = lock

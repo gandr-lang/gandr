@@ -1270,7 +1270,7 @@ impl core::fmt::Display for Unmanifested
     }
 }
 
-/// What [`reconcile`] did to a manifest.
+/// What [`reconcile`] did to a file the checker writes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Reconciled
 {
@@ -1336,60 +1336,199 @@ impl core::error::Error for ManifestFault
 {
 }
 
-/// Bring the manifest at `path` to `manifest`.
+/// A file the checker writes from a model: the line it opens with, its
+/// render, and how [`reconcile`] answers each way the file may stand.
+pub trait Held
+{
+    /// Why the file was left as it stands.
+    type Fault;
+
+    /// The line the file opens with when the checker wrote it.
+    const OPENING: &'static str;
+
+    /// The file as the checker writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rendered(&self) -> String;
+
+    /// Whether an absent file is written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn absent(&self) -> Absence;
+
+    /// The fault for a file whose header does not carry its body's digest.
+    ///
+    /// # Specification
+    /// trivial.
+    fn edited(&self) -> Self::Fault;
+
+    /// What a file the checker wrote, whose text is not the render, is, from
+    /// its `body` below the header.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The file's fault, when it is left as it stands.
+    fn differing(
+        &self,
+        body: Body<'_>,
+    ) -> Result<Differing, Self::Fault>;
+
+    /// The fault for a file that cannot be read or written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreadable(error: io::Error) -> Self::Fault;
+}
+
+/// The body of a file the checker wrote: everything below its header.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Body<'file>(&'file str);
+
+/// Whether [`reconcile`] writes a held file where none stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Absence
+{
+    /// The render is written.
+    Written,
+    /// Nothing is written: the model states nothing the file would record.
+    Left,
+}
+
+/// What [`reconcile`] does with a file the checker wrote whose text is not
+/// the render.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Differing
+{
+    /// The file reads as the model: it is kept.
+    Kept,
+    /// The file states another model: the render overwrites it.
+    Rewritten,
+}
+
+/// Bring the file at `path` to `held`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an absent file is written with [`Manifest::render`] and is
-///   [`Reconciled::Written`]. A file whose header carries the digest of its
-///   body is the checker's: when it is the render, nothing is written and it is
-///   [`Reconciled::Unchanged`]; otherwise it is overwritten with the render and
-///   is [`Reconciled::Rewritten`]. Any other file is left unchanged and is
-///   [`ManifestFault::Drifted`].
-/// - provides: the manifest step of `gandr check`.
-/// - fails: a drifted file, or one that cannot be read or written.
+/// - ensures: an absent file is written with [`Held::rendered`] and is
+///   [`Reconciled::Written`], or is [`Reconciled::Unchanged`] where
+///   [`Held::absent`] leaves it. A file whose header, opening with
+///   [`Held::OPENING`], does not carry its body's digest is left as it stands,
+///   [`Held::edited`]. A file that is the render is [`Reconciled::Unchanged`].
+///   Any other is as [`Held::differing`] answers from its body: kept and
+///   [`Reconciled::Unchanged`], overwritten with the render and
+///   [`Reconciled::Rewritten`], or left as it stands with its fault.
+/// - provides: the step of `gandr check` that holds the manifest and the lock
+///   to their models.
+/// - fails: an edited file, a fault [`Held::differing`] answers, or a file that
+///   cannot be read or written ([`Held::unreadable`]).
 /// - panics: none.
 /// - executable: none — the clause is about the file, which a predicate could
-///   only check by reading it again after the write; the witness observes each
+///   only check by reading it again after the write; the witnesses observe each
 ///   case on disk.
 ///
 /// # Errors
-/// [`ManifestFault::Drifted`] for a file the checker did not write as it
-/// stands, and [`ManifestFault::Io`] for one that cannot be read or written.
+/// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an absent file is written; the written file is unchanged
-///   on a second run; a model change rewrites it; a hand edit to its body, and
-///   a file with no header, are each refused as drift and left byte for byte.
+/// - hypothesis: L3 — an absent manifest is written; the written file is
+///   unchanged on a second run; a model change rewrites it; a hand edit to its
+///   body, and a file with no header, are each refused and left byte for byte;
+///   an absent lock is written and unchanged on a second run; a content edit to
+///   a dependency is drift until relocked.
 /// - witness: `tests::package::a_manifest_is_written_rewritten_and_refused_as_drift_2687`
+/// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+/// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
 #[inline]
-pub fn reconcile(
+pub fn reconcile<H>(
     path: &Path,
-    manifest: &Manifest,
-) -> Result<Reconciled, ManifestFault>
+    held: &H,
+) -> Result<Reconciled, H::Fault>
+where
+    H: Held + ?Sized,
 {
-    let rendered = manifest.render();
     let standing = match std::fs::read_to_string(path) {
         Ok(standing) => standing,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return std::fs::write(path, rendered)
-                .map(|()| Reconciled::Written)
-                .map_err(ManifestFault::Io);
+            return match held.absent() {
+                Absence::Left => Ok(Reconciled::Unchanged),
+                Absence::Written => std::fs::write(path, held.rendered())
+                    .map(|()| Reconciled::Written)
+                    .map_err(H::unreadable),
+            };
         },
-        Err(error) => return Err(ManifestFault::Io(error)),
+        Err(error) => return Err(H::unreadable(error)),
     };
-    if matches!(
-        Split::of(Manifested(&standing), Opening(WRITTEN)).authorship(),
-        Authorship::Hand
-    ) {
-        return Err(ManifestFault::Drifted);
+    let split = Split::of(Manifested(&standing), Opening(H::OPENING));
+    if matches!(split.authorship(), Authorship::Hand) {
+        return Err(held.edited());
     }
+    let rendered = held.rendered();
     if standing == rendered {
         return Ok(Reconciled::Unchanged);
     }
-    std::fs::write(path, rendered)
-        .map(|()| Reconciled::Rewritten)
-        .map_err(ManifestFault::Io)
+    match held.differing(Body(split.body))? {
+        Differing::Kept => Ok(Reconciled::Unchanged),
+        Differing::Rewritten => std::fs::write(path, rendered)
+            .map(|()| Reconciled::Rewritten)
+            .map_err(H::unreadable),
+    }
+}
+
+/// The manifest: a file the checker writes from the `Package` model, which a
+/// model change rewrites.
+impl Held for Manifest
+{
+    type Fault = ManifestFault;
+
+    const OPENING: &'static str = WRITTEN;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn rendered(&self) -> String
+    {
+        self.render()
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn absent(&self) -> Absence
+    {
+        Absence::Written
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn edited(&self) -> ManifestFault
+    {
+        ManifestFault::Drifted
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn differing(
+        &self,
+        _body: Body<'_>,
+    ) -> Result<Differing, ManifestFault>
+    {
+        Ok(Differing::Rewritten)
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unreadable(error: io::Error) -> ManifestFault
+    {
+        ManifestFault::Io(error)
+    }
 }
 
 /// The text of a manifest file as it stands.

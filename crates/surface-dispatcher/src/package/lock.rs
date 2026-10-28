@@ -62,9 +62,13 @@ use gandr_storage_values::ValueError;
 use gandr_surface_lowering::SurfaceName;
 use quenchant_shape::shape::Maybe;
 
+use super::Absence;
 use super::Authorship;
 use super::Basic;
+use super::Body;
 use super::DIGEST;
+use super::Differing;
+use super::Held;
 use super::Identity;
 use super::Key;
 use super::Manifested;
@@ -371,7 +375,8 @@ impl Lock
     ///   string, the digest lowercase hexadecimal and the offset decimal. The
     ///   same lock renders the same bytes wherever it is rendered, and
     ///   [`Lock::read`] reads the render back as the lock.
-    /// - provides: the file [`reconcile_lock`] and [`relock`] write.
+    /// - provides: the file [`reconcile`](super::reconcile) and [`relock`]
+    ///   write.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -975,75 +980,78 @@ impl core::error::Error for LockFault
 {
 }
 
-/// Hold the lock at `package`'s root to `lock`, writing it only where none
-/// stands.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: where no lock stands, `lock` is written with [`Lock::render`] and
-///   is [`Reconciled::Written`], or nothing is written and it is
-///   [`Reconciled::Unchanged`] when `lock` records no dependency. A lock the
-///   checker wrote reading as `lock` is [`Reconciled::Unchanged`]. Anything
-///   else is left as it stands: [`LockFault::Edited`] for a file edited by
-///   hand, and [`LockFault::Drifted`] naming, in order, each alias whose entry
-///   the standing lock and `lock` record differently or only one records.
-/// - provides: the lock step of `gandr check`.
-/// - fails: a drifted or edited lock, or one that cannot be read or written.
-/// - panics: none.
-/// - executable: none — the clause is about the file; the witnesses observe
-///   each case on disk.
-///
-/// # Errors
-/// [`LockFault`], as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an absent lock is written; it is unchanged on a second
-///   run; a content edit to the dependency is drift until relocked; an inert
-///   edit leaves it.
-/// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
-/// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
-#[inline]
-pub fn reconcile_lock(
-    package: &Package,
-    lock: &Lock,
-) -> Result<Reconciled, LockFault>
+/// The lock: a file the checker writes from the package's dependencies,
+/// written only where none stands. A lock standing otherwise is left as it
+/// stands until `gandr lock` relocks it ([`relock`]): [`LockFault::Edited`]
+/// for a file edited by hand or no render, and [`LockFault::Drifted`] naming,
+/// in order, each alias whose entry the standing lock and this one record
+/// differently or only one records. A lock recording no dependency leaves no
+/// file where none stands.
+impl Held for Lock
 {
-    let path = package.root().join(LOCK);
-    match std::fs::metadata(&path) {
-        Ok(_) => {},
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            if lock.0.is_empty() {
-                return Ok(Reconciled::Unchanged);
-            }
-            return std::fs::write(&path, lock.render())
-                .map(|()| Reconciled::Written)
-                .map_err(LockFault::Io);
-        },
-        Err(error) => return Err(LockFault::Io(error)),
+    type Fault = LockFault;
+
+    const OPENING: &'static str = WRITTEN;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn rendered(&self) -> String
+    {
+        self.render()
     }
-    let standing = match Lock::read(package) {
-        Maybe::Present(standing) => standing,
-        Maybe::Absent(lock_file::Absent::Edited | lock_file::Absent::Unread) => {
-            return Err(LockFault::Edited);
-        },
-        Maybe::Absent(lock_file::Absent::Unwritten) => {
-            return Err(LockFault::Io(io::Error::other(format!(
-                "`{}` cannot be read",
-                path.display()
-            ))));
-        },
-    };
-    if standing == *lock {
-        return Ok(Reconciled::Unchanged);
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn absent(&self) -> Absence
+    {
+        if self.0.is_empty() {
+            Absence::Left
+        }
+        else {
+            Absence::Written
+        }
     }
-    let aliases: BTreeSet<&Alias> = standing.0.keys().chain(lock.0.keys()).collect();
-    Err(LockFault::Drifted(
-        aliases
-            .into_iter()
-            .filter(|alias| standing.0.get(*alias) != lock.0.get(*alias))
-            .cloned()
-            .collect(),
-    ))
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn edited(&self) -> LockFault
+    {
+        LockFault::Edited
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn differing(
+        &self,
+        body: Body<'_>,
+    ) -> Result<Differing, LockFault>
+    {
+        let Body(text) = body;
+        let standing = parsed(Text(text)).ok_or(LockFault::Edited)?;
+        if standing == *self {
+            return Ok(Differing::Kept);
+        }
+        let aliases: BTreeSet<&Alias> = standing.0.keys().chain(self.0.keys()).collect();
+        Err(LockFault::Drifted(
+            aliases
+                .into_iter()
+                .filter(|alias| standing.0.get(*alias) != self.0.get(*alias))
+                .cloned()
+                .collect(),
+        ))
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unreadable(error: io::Error) -> LockFault
+    {
+        LockFault::Io(error)
+    }
 }
 
 /// Write the lock at `package`'s root as `lock`, whatever stands there.
@@ -1059,7 +1067,8 @@ pub fn reconcile_lock(
 /// - provides: `gandr lock`.
 /// - fails: a file that cannot be read, written or removed.
 /// - panics: none.
-/// - executable: none — as [`reconcile_lock`].
+/// - executable: none — the clause is about the file; the witness observes each
+///   case on disk.
 ///
 /// # Errors
 /// [`LockFault::Io`].
