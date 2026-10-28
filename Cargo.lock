@@ -1116,6 +1116,7 @@ dependencies = [
  "allocation-counter",
  "crossbeam-channel",
  "crossbeam-deque",
+ "gandr-core-fork",
  "gandr-core-nbe",
  "gandr-core-session",
  "gandr-core-term",
@@ -1139,6 +1140,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "gandr-core-fork"
+version = "0.0.0"
 
 [[package]]
 name = "gandr-core-incremental"
@@ -1481,6 +1486,7 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "gandr-core-checker",
+ "gandr-core-fork",
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-sequent",
@@ -1723,6 +1729,7 @@ version = "0.0.0"
 dependencies = [
  "allocation-counter",
  "gandr-core-checker",
+ "gandr-core-fork",
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
@@ -1759,6 +1766,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-incremental",
  "gandr-kernel-term",
+ "gandr-surface-dispatcher",
  "gandr-surface-grammar",
  "gandr-surface-render-remote",
  "gandr-surface-render-terminal",

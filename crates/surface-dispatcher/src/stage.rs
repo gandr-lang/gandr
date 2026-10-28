@@ -4,9 +4,9 @@
 //! # The pool is the driver's; the checker forks through it
 //!
 //! [`gandr_core_checker::staging::check`] names no thread: it hands each
-//! stage's independent jobs to a [`Fork`](gandr_core_checker::fork::Fork).
+//! stage's independent jobs to a [`Fork`](gandr_core_fork::Fork).
 //! Here that fork is the driver's [`Pool`], entered once per program; at one
-//! thread it is the checker's [`Serial`] fork and no pool is built. Every
+//! thread it is the [`Serial`] fork and no pool is built. Every
 //! program of one invocation is checked through one memo, in order, so a
 //! later program drafts from the templates an earlier one left.
 //!
@@ -35,7 +35,7 @@
 //! one build; it is not a format.
 //!
 //! **On the driver's pool.** The checker names no thread: it forks through
-//! `gandr_core_checker::fork::Fork`, and the dispatcher's fork runs on the
+//! `gandr_core_fork::Fork`, and the dispatcher's fork runs on the
 //! driver's pool (the `pool` module, which records the choice of `rayon`),
 //! entered once per program. Each forked stage spawns one task per worker, at
 //! most one per item; the tasks take items from one shared cursor, and each
@@ -55,7 +55,6 @@ use std::hash::DefaultHasher;
 use std::time::Instant;
 
 use anodized::spec;
-use gandr_core_checker::fork::Serial;
 use gandr_core_checker::staging;
 use gandr_core_checker::staging::Allowance;
 use gandr_core_checker::staging::Checked;
@@ -66,6 +65,7 @@ use gandr_core_checker::template::FamilyAdmission;
 use gandr_core_checker::template::Memo;
 use gandr_core_checker::template::PriceGate;
 use gandr_core_checker::template::ProgramId;
+use gandr_core_fork::Serial;
 use gandr_kernel_term::stage::Arena;
 use gandr_kernel_term::stage::Budget;
 use gandr_kernel_term::stage::Extent;

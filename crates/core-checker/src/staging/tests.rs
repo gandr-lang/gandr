@@ -4,6 +4,7 @@
 use alloc::format;
 use alloc::string::String;
 
+use gandr_core_fork::Serial;
 use gandr_kernel_term::stage::Extent;
 use gandr_kernel_term::stage::Index;
 use gandr_kernel_term::stage::Model;
@@ -13,7 +14,6 @@ use gandr_kernel_term::stage::Term;
 use gandr_kernel_term::stage::Type;
 
 use super::*;
-use crate::fork::Serial;
 use crate::template::harvest;
 
 /// A clock that never advances, so every report is free of time.

@@ -1,6 +1,7 @@
 //! What the suites share: the grammar, a backend identity, fresh sessions,
 //! the corpus roots, and the batch judgement a resume is compared with.
 
+use alloc::sync::Arc;
 use core::fmt;
 use core::num::NonZeroUsize;
 use std::path::Path;
@@ -23,6 +24,7 @@ use gandr_core_incremental::project;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
@@ -55,16 +57,23 @@ pub fn backend() -> BackendArtifact
     BackendArtifact::from(b"gandr-surface-session tests".as_slice())
 }
 
-/// Three threads: wider than one, narrower than the host. The corpus sweeps
-/// mold at this width because a session defaults to every performance core,
-/// and sweeps beside a workspace run each claiming every core oversubscribe the
-/// host until one outruns the per-test limit.
+/// The pool of three threads every session of a test process shares.
+static THREE: LazyLock<Arc<Pool>> = LazyLock::new(|| {
+    Arc::new(Pool::new(Width::Threads(Threads::from(
+        NonZeroUsize::MIN.saturating_add(2),
+    ))))
+});
+
+/// A pool of three threads: wider than one, narrower than the host. The
+/// corpus sweeps mold on it, so that sweeps beside a workspace run fork
+/// without each claiming every core, which oversubscribes the host until one
+/// outruns the per-test limit.
 ///
 /// # Specification
 /// trivial.
-pub fn three() -> Width
+pub fn three() -> Arc<Pool>
 {
-    Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(2)))
+    Arc::clone(&THREE)
 }
 
 /// A fresh session over memory stores, for a source under `root`.

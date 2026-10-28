@@ -1,0 +1,19 @@
+[package]
+name = "gandr-core-fork"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The fork a gandr check hands its independent jobs to, and its serial reference"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["fork-join", "gandr", "no-std", "parallelism"]
+categories = ["concurrency", "no-std"]
+publish.workspace = true
+
+# The trait names no thread and no pool, so the crate depends on nothing. A
+# driver implements it over its own pool.
+[dependencies]
+
+[lints]
+workspace = true

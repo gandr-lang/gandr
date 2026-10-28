@@ -170,7 +170,7 @@ fn a_session_asking_for_a_trace_writes_one_its_replay_holds()
         &mut input.as_slice(),
         &mut Vec::new(),
         &mut Vec::new(),
-        (Workspace::spelled(Spelling::Unicode), &SERIAL),
+        Workspace::spelled(Spelling::Unicode),
     )
     .expect("the session's streams carry every frame");
     assert_eq!(served, Served::Clean, "the session ends cleanly");

@@ -115,6 +115,7 @@ use core::fmt;
 use core::time::Duration;
 
 use anodized::spec;
+use gandr_core_fork::Fork;
 use gandr_kernel_term::stage::Arena;
 use gandr_kernel_term::stage::Budget;
 use gandr_kernel_term::stage::Certificate;
@@ -122,7 +123,6 @@ use gandr_kernel_term::stage::StageError;
 use gandr_kernel_term::stage::TermId;
 use gandr_kernel_term::stage::TypeId;
 
-use crate::fork::Fork;
 use crate::template::Clock;
 use crate::template::Family;
 use crate::template::FamilyReport;

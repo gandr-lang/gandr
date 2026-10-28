@@ -392,7 +392,12 @@ fn a_failed_input_preserves_its_cause_and_stops_reading()
         Input::Key(Key::Char('x')),
     ]));
     let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("the backend opens");
-    let ended = drive(&mut terminal, &mut script, Spelling::Unicode).expect("the backend draws");
+    let ended = drive(
+        &mut terminal,
+        &mut script,
+        (Spelling::Unicode, alloc::sync::Arc::default()),
+    )
+    .expect("the backend draws");
     let Ended::Faulted(gandr_surface_repl::Fault::Input(error)) = ended
     else {
         panic!("the input failure must remain an input failure");
@@ -542,8 +547,12 @@ fn the_face_drives_the_loop_from_its_keys()
         .then(Input::Redraw)
         .entered(":q");
     let mut terminal = Terminal::new(TestBackend::new(60, 14)).expect("the headless backend opens");
-    let ended =
-        drive(&mut terminal, &mut script, Spelling::Unicode).expect("the headless backend draws");
+    let ended = drive(
+        &mut terminal,
+        &mut script,
+        (Spelling::Unicode, alloc::sync::Arc::default()),
+    )
+    .expect("the headless backend draws");
     assert!(matches!(ended, Ended::Completed), "{ended:?}");
     assert!(script.0.is_empty(), "`:q` ended the run, not the script");
     let pane = pane_rows(terminal.backend().buffer());
@@ -642,7 +651,8 @@ fn the_terminal_face_completes_and_restores_its_settings()
         .output()
         .expect("terminal settings can be read");
     assert!(before.status.success());
-    let ended = gandr_surface_tui::run(Spelling::Unicode).expect("the terminal face runs");
+    let ended = gandr_surface_tui::run(Spelling::Unicode, alloc::sync::Arc::default())
+        .expect("the terminal face runs");
     let after = Command::new("stty")
         .arg("-g")
         .stdin(Stdio::inherit())

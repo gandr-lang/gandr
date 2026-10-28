@@ -1,11 +1,13 @@
 //! The batch face: lines from any reader, a plain transcript to any writer.
 
+use alloc::sync::Arc;
 use core::fmt;
 use std::io;
 use std::io::BufRead;
 use std::io::Write;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_render_remote::TranscriptBlock;
@@ -102,7 +104,8 @@ where
     Ok(())
 }
 
-/// Run the loop over every line of `input`, writing each block to `output`.
+/// Run the loop over every line of `input`, its session molding on `pool`,
+/// writing each block to `output`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -137,19 +140,19 @@ pub fn run_batch<Input, Output>(
     input: Input,
     output: &mut Output,
     style: RenderStyle,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Arc<Pool>),
 ) -> io::Result<Ended>
 where
     Input: BufRead,
     Output: Write,
 {
-    let ended = transcribe(input, output, style, spelling)?;
+    let ended = transcribe(input, output, style, (spelling, pool))?;
     output.flush()?;
     Ok(ended)
 }
 
-/// Offer every line of `input` to a fresh loop, writing each block to
-/// `output`, without flushing.
+/// Offer every line of `input` to a fresh loop on `pool`, writing each block
+/// to `output`, without flushing.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -171,14 +174,14 @@ fn transcribe<Input, Output>(
     input: Input,
     output: &mut Output,
     style: RenderStyle,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Arc<Pool>),
 ) -> io::Result<Ended>
 where
     Input: BufRead,
     Output: Write,
 {
     let mut repl = match SessionLoop::new(style) {
-        Ok(repl) => repl.spelling(spelling),
+        Ok(repl) => repl.spelling(spelling).pooled(pool),
         Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     for line in input.lines() {

@@ -44,6 +44,7 @@ extern crate alloc;
 mod large;
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::fmt;
 use core::num::NonZeroUsize;
 use core::time::Duration;
@@ -53,11 +54,13 @@ use std::time::Instant;
 
 use allocation_counter::AllocationInfo;
 use anodized::spec;
+use gandr_core_fork::Fork as _;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
@@ -197,14 +200,14 @@ impl Setting
     }
 }
 
-/// A fresh session under `root`, parsing at `width`.
+/// A fresh session under `root`, parsing on `pool`.
 ///
 /// # Specification
 /// trivial.
 fn fresh(
     grammar: &Pbg,
     root: SourceRoot,
-    width: Width,
+    pool: &Arc<Pool>,
 ) -> MeasuredSession
 {
     Session::new(
@@ -214,7 +217,7 @@ fn fresh(
         InMemoryBlockStore::default(),
         BackendArtifact::from(b"edit-loop".as_slice()),
     )
-    .with_width(width)
+    .with_pool(Arc::clone(pool))
 }
 
 /// The median of `samples`.
@@ -298,7 +301,7 @@ fn timed<State>(
 fn whole(
     grammar: &Pbg,
     root: SourceRoot,
-    width: Width,
+    pool: &Arc<Pool>,
     text: SourceText<'_>,
     repeats: Repeats,
 ) -> Result<Duration, Failure>
@@ -307,7 +310,7 @@ fn whole(
         repeats,
         &mut None,
         |session| {
-            *session = Some(fresh(grammar, root, width));
+            *session = Some(fresh(grammar, root, pool));
             Ok(())
         },
         |session: &mut Option<MeasuredSession>| {
@@ -354,12 +357,16 @@ fn rows(
 {
     let mut generated = module(forms, root);
     let mut previous = generated.text();
-    let mut session = fresh(grammar, root, width);
+    let pool = Arc::new(Pool::new(width));
+    // The pool starts before any clock does, so no row times its threads
+    // starting.
+    pool.join(|| (), || ());
+    let mut session = fresh(grammar, root, &pool);
     let threads = usize::from(NonZeroUsize::from(width.threads()));
     let first = whole(
         grammar,
         root,
-        width,
+        &pool,
         SourceText::from(previous.as_str()),
         repeats,
     )?;
@@ -417,7 +424,7 @@ fn rows(
         let whole = whole(
             grammar,
             root,
-            width,
+            &pool,
             SourceText::from(edited.as_str()),
             repeats,
         )?;
@@ -527,9 +534,8 @@ fn memory(
             .collect();
         Ok((units, text.clone(), split.into_labeling()))
     })?;
-    let one = Width::Threads(Threads::from(NonZeroUsize::MIN));
     let (mut session, first) = kept(|| {
-        let mut session = fresh(grammar, SourceRoot::Strict, one);
+        let mut session = fresh(grammar, SourceRoot::Strict, &Arc::default());
         session
             .submit(source)
             .map(drop)

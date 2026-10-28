@@ -482,8 +482,8 @@ struct Asked
 impl Document
 {
     /// An empty copy of the document at `uri`, at `version`, with a session
-    /// of its own, whose first judgement restores from `restorer` when one is
-    /// given.
+    /// of its own on `pool`, whose first judgement restores from `restorer`
+    /// when one is given.
     ///
     /// # Specification
     /// trivial.
@@ -491,9 +491,10 @@ impl Document
         uri: &DocumentUri,
         version: DocumentVersion,
         restorer: Option<Box<dyn Restorer>>,
+        pool: &Arc<Pool>,
     ) -> Self
     {
-        let mut session = open(uri);
+        let mut session = open(uri, pool);
         if let (Ok(judging), Some(restorer)) = (session.as_mut(), restorer) {
             judging.restore_from(restorer);
         }
@@ -1005,8 +1006,8 @@ impl Held
         }
     }
 
-    /// Give `peer` a copy, an empty one at `version` when it holds none, and
-    /// make it the latest.
+    /// Give `peer` a copy, an empty one at `version` on `pool` when it holds
+    /// none, and make it the latest.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1029,14 +1030,14 @@ impl Held
         &mut self,
         peer: Peer,
         uri: &DocumentUri,
-        (version, saved): (DocumentVersion, Option<&Saved>),
+        (version, saved, pool): (DocumentVersion, Option<&Saved>, &Arc<Pool>),
     )
     {
         if matches!(self.own(peer), Maybe::Absent(_)) {
             let restorer = restorer(handed_on(&self.document), saved);
             let _first = self
                 .others
-                .insert(peer, Document::opened(uri, version, restorer));
+                .insert(peer, Document::opened(uri, version, restorer, pool));
         }
         self.promote(peer);
     }
@@ -1482,6 +1483,10 @@ pub struct Workspace
     /// judgement, by the document's URI: what the first judgement of the next
     /// copy opened at it resumes from, whatever its text.
     handed: BTreeMap<DocumentUri, Checkpoints>,
+    /// The pool every session the workspace opens molds its forms and judges
+    /// its candidates on, and every connection's judgements and admissions
+    /// run on.
+    pool: Arc<Pool>,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
@@ -1594,6 +1599,31 @@ impl Workspace
             saved: Some(saved),
             ..self
         }
+    }
+
+    /// This workspace, every session it opens and every connection serving it
+    /// running on `pool`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pooled(
+        self,
+        pool: Arc<Pool>,
+    ) -> Self
+    {
+        Self { pool, ..self }
+    }
+
+    /// The pool every session the workspace opens and every connection
+    /// serving it runs on.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn pool(&self) -> &Arc<Pool>
+    {
+        &self.pool
     }
 }
 
@@ -3454,7 +3484,7 @@ impl Server
         }
         let judging = Judging {
             uri: uri.clone(),
-            session: Arc::new(Mutex::new(open(&uri))),
+            session: Arc::new(Mutex::new(open(&uri, &workspace.pool))),
             text: text.clone(),
             laid,
             wanted: Tables::Unkept,
@@ -5623,13 +5653,17 @@ impl Server
                 let restorer = restorer(workspace.handed.remove(&uri), workspace.saved.as_ref());
                 let held = Held {
                     latest: self.peer,
-                    document: Document::opened(&uri, version, restorer),
+                    document: Document::opened(&uri, version, restorer, &workspace.pool),
                     others: BTreeMap::new(),
                     path,
                 };
                 (uri, held, true)
             };
-        held.take_up(self.peer, &uri, (version, workspace.saved.as_ref()));
+        held.take_up(
+            self.peer,
+            &uri,
+            (version, workspace.saved.as_ref(), &workspace.pool),
+        );
         let document = &mut held.document;
         document.version = version;
         document.text.replace(text_document.text);
@@ -7399,7 +7433,7 @@ impl Workspace
             }));
         }
         let text = std::fs::read_to_string(&path).ok()?;
-        let session = open(uri);
+        let session = open(uri, &self.pool);
         let judging = session.as_ref().ok()?;
         let source = SourceText::from(text.as_str());
         Some(read(Read {
@@ -7646,7 +7680,7 @@ impl Workspace
             if read.is_err() || !text.contains(written.spelled.as_str()) {
                 continue;
             }
-            let Ok(ref judging) = *session.get_or_insert_with(|| open(&uri))
+            let Ok(ref judging) = *session.get_or_insert_with(|| open(&uri, &self.pool))
             else {
                 return Ok(());
             };
@@ -7931,7 +7965,8 @@ impl Workspace
             },
             Maybe::Absent(_) => None,
         };
-        let tried = held.unwrap_or_else(|| trial(uri, &open(uri), &candidates, shadows));
+        let tried =
+            held.unwrap_or_else(|| trial(uri, &open(uri, &self.pool), &candidates, shadows));
         let of = |index: usize| {
             tried
                 .iter()
@@ -8905,7 +8940,7 @@ fn publication(
 ///
 /// Each synchronisation's timing line goes to `log`, `workspace` holds what
 /// its user's configuration names — the spelling, and where saves are kept —
-/// and its judgements and kernel admissions run on `pool`.
+/// and its sessions, judgements and kernel admissions run on its pool.
 ///
 /// # Specification
 /// - requires: nothing of the streams; `input` carries the client's frames,
@@ -8914,12 +8949,12 @@ fn publication(
 ///   the progress the work it starts reports, as [`Server::reported`] states,
 ///   begins first, and every message it produces is written as one frame, in
 ///   order; then the judgements its synchronisations made due and the
-///   admissions they left start on `pool`, as [`Server::admit`] states, and
-///   every line logged that waits for no admission is written to `log` with a
-///   line terminator, before the next frame is read; the progress ends once no
-///   judgement running then runs. A judgement or an admission that ended is
-///   settled before the next frame, as [`Server::admitted`] states, each
-///   message it produces written as one frame and its lines logged. A
+///   admissions they left start on the workspace's pool, as [`Server::admit`]
+///   states, and every line logged that waits for no admission is written to
+///   `log` with a line terminator, before the next frame is read; the progress
+///   ends once no judgement running then runs. A judgement or an admission that
+///   ended is settled before the next frame, as [`Server::admitted`] states,
+///   each message it produces written as one frame and its lines logged. A
 ///   publication that held a diagnostic back arms its document's deadline the
 ///   server's quiet interval later, and one that held nothing, or whose
 ///   correction replaced what it held, disarms it; a deadline that passes with
@@ -8959,15 +8994,16 @@ pub fn serve<Input, Output, Log>(
     input: &mut Input,
     output: &mut Output,
     log: &mut Log,
-    (workspace, pool): (Workspace, &Pool),
+    workspace: Workspace,
 ) -> Result<Served, TransportFault>
 where
     Input: BufRead + Send,
     Output: Write,
     Log: Write,
 {
+    let pool = Arc::clone(workspace.pool());
     let inbox = Inbox::default();
-    let mut drive = Drive::new(workspace, pool, inbox.changes(), SessionTrace::asked());
+    let mut drive = Drive::new(workspace, &pool, inbox.changes(), SessionTrace::asked());
     paced(input, inbox, |met, deadlines| {
         drive.met(met, deadlines, (&mut *output, &mut *log))
     })

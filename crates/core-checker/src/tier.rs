@@ -2,12 +2,12 @@
 //! machine.
 //!
 //! The checker names no evaluator. A run hands its context a [`ClosedTier`]
-//! the driver supplies, as it hands a staging check a [`crate::fork::Fork`],
-//! and the driver owns the emitter, its code and its fuel. The `here` rule
-//! offers the tier each endpoint pair whose two sides mention no variable. A
-//! pair the tier meets carries the one decision `Evaluate`, which the kernel
-//! converts by its own evaluation; every other pair goes to the machine, as
-//! every pair does in a context with no tier.
+//! the driver supplies, as it hands a staging check a
+//! [`gandr_core_fork::Fork`], and the driver owns the emitter, its code and its
+//! fuel. The `here` rule offers the tier each endpoint pair whose two sides
+//! mention no variable. A pair the tier meets carries the one decision
+//! `Evaluate`, which the kernel converts by its own evaluation; every other
+//! pair goes to the machine, as every pair does in a context with no tier.
 
 use alloc::boxed::Box;
 

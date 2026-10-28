@@ -146,6 +146,7 @@
 //! settled or unsettled as its report's tally is. The L2 witness over every
 //! corpus source holds it to the walk's own reports.
 
+use alloc::sync::Arc;
 use core::fmt;
 use core::fmt::Write as _;
 use core::time::Duration;
@@ -170,6 +171,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Polled;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::SourceRoot;
@@ -353,14 +355,15 @@ pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
 }
 
 /// A fresh session for the document at `uri`, under the root its `file`
-/// URI's path classifies as.
+/// URI's path classifies as, molding its forms and judging its candidates on
+/// `pool`.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a session with nothing submitted, parsing under the process's
-///   grammar, under the classified root, over a checkpoint store that keeps
-///   nothing and an empty block store, which it therefore never writes; the
-///   grammar's build fault when it did not build.
+///   grammar, under the classified root, on `pool`, over a checkpoint store
+///   that keeps nothing and an empty block store, which it therefore never
+///   writes; the grammar's build fault when it did not build.
 /// - provides: the session a document opened in the editor keeps.
 /// - fails: the grammar's [`PbgError`], carried for the document's diagnostics.
 /// - panics: none.
@@ -374,7 +377,10 @@ pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
 /// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |session| session.root() == classify(&uri.path())))]
-pub fn open(uri: &DocumentUri) -> DocumentSession
+pub fn open(
+    uri: &DocumentUri,
+    pool: &Arc<Pool>,
+) -> DocumentSession
 {
     let toolkit = toolkit()?;
     Ok(Session::new(
@@ -383,7 +389,8 @@ pub fn open(uri: &DocumentUri) -> DocumentSession
         DiscardingCheckpointStore,
         InMemoryBlockStore::default(),
         BackendArtifact::from(b"gandr-surface-lsp".as_slice()),
-    ))
+    )
+    .with_pool(Arc::clone(pool)))
 }
 
 /// What one synchronisation cost: the forms its parse molded, the items the
@@ -1744,6 +1751,8 @@ fn imported(
 #[cfg(test)]
 mod tests
 {
+    use alloc::sync::Arc;
+
     use gandr_surface_diagnostics::Verbosity;
     use gandr_surface_grammar::Spelling;
     use gandr_surface_syntax::SourceText;
@@ -1788,7 +1797,7 @@ mod tests
     {
         recheck(
             uri,
-            &mut open(uri),
+            &mut open(uri, &Arc::default()),
             text,
             &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
@@ -1807,7 +1816,7 @@ mod tests
     {
         let uri = DocumentUri::from("file:///tmp/refused-2440.gandr");
         let text = SourceText::from("def1 f(x : Integer) -> -F Integer {\n  return x\n}\n");
-        let mut session = open(&uri);
+        let mut session = open(&uri, &Arc::default());
         if let Ok(judging) = session.as_mut() {
             judging.keep(gandr_surface_session::Tables::Kept);
         }
@@ -1931,7 +1940,7 @@ mod tests
                 )
                 .expect("a path spells");
                 let uri = DocumentUri::from(spelled.as_str());
-                let mut session = open(&uri);
+                let mut session = open(&uri, &Arc::default());
                 if let Ok(judging) = session.as_mut() {
                     judging.keep(gandr_surface_session::Tables::Kept);
                 }
@@ -2352,7 +2361,7 @@ mod tests
         .map(|verbosity| {
             let diagnostics = recheck(
                 &uri,
-                &mut open(&uri),
+                &mut open(&uri, &Arc::default()),
                 text,
                 &gandr_surface_dispatcher::Unshadowed,
                 verbosity,
@@ -2525,7 +2534,7 @@ mod tests
     fn an_admission_follows_the_published_diagnostics()
     {
         let uri = DocumentUri::from("file:///strict/admitted.gandr");
-        let mut session = open(&uri);
+        let mut session = open(&uri, &Arc::default());
         let rechecked = recheck(
             &uri,
             &mut session,
@@ -2600,7 +2609,7 @@ mod tests
             "@[ checks ]\n",
             "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
         ];
-        let mut session = open(&uri);
+        let mut session = open(&uri, &Arc::default());
         let before = recheck(
             &uri,
             &mut session,

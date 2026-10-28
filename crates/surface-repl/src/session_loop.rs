@@ -21,6 +21,7 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 use std::path::Path;
@@ -30,6 +31,7 @@ use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
@@ -159,12 +161,15 @@ fn backend() -> BackendArtifact
     BackendArtifact::from(concat!("gandr-surface-repl ", env!("CARGO_PKG_VERSION")).as_bytes())
 }
 
-/// A session over the strict root, its checkpoints and kernel records kept in
-/// memory.
+/// A session over the strict root on `pool`, its checkpoints and kernel
+/// records kept in memory.
 ///
 /// # Specification
 /// trivial.
-fn fresh(grammar: Pbg) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
+fn fresh(
+    grammar: Pbg,
+    pool: &Arc<Pool>,
+) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
 {
     Session::new(
         grammar,
@@ -173,6 +178,7 @@ fn fresh(grammar: Pbg) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
         InMemoryBlockStore::default(),
         backend(),
     )
+    .with_pool(Arc::clone(pool))
 }
 
 /// A block answering `echo` with one line of `kind`.
@@ -244,6 +250,8 @@ pub struct SessionLoop
 {
     /// The session every chunk is submitted to.
     session: Session<MemoryCheckpointStore, InMemoryBlockStore>,
+    /// The pool the session molds on, which a reset hands its next session.
+    pool: Arc<Pool>,
     /// The role table the echo is highlighted with.
     roles: RoleTable,
     /// Every chunk kept so far.
@@ -263,7 +271,8 @@ pub struct SessionLoop
 impl SessionLoop
 {
     /// A loop over a fresh session under the built-in grammar, rendering
-    /// refusals under `style`, its types and values in [`Spelling::Unicode`].
+    /// refusals under `style`, its types and values in [`Spelling::Unicode`],
+    /// molding on the calling thread alone.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -291,8 +300,10 @@ impl SessionLoop
     {
         let grammar = built_in()?;
         let roles = RoleTable::build(&grammar)?;
+        let pool = Arc::<Pool>::default();
         Ok(Self {
-            session: fresh(grammar),
+            session: fresh(grammar, &pool),
+            pool,
             roles,
             accepted: String::new(),
             loaded: Vec::new(),
@@ -327,6 +338,36 @@ impl SessionLoop
     {
         self.spelling = spelling;
         self
+    }
+
+    /// This loop, its session molding on `pool`, and every session a reset
+    /// starts too.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the session and every later one mold on `pool`; nothing
+    ///   accepted or pending changes.
+    /// - provides: the driver's pool for every face the loop drives.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a piped transcript is the same on a serial pool and
+    ///   on a wide one.
+    /// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+    #[spec(captures: handed = Arc::clone(&pool), ensures: |ret| Arc::ptr_eq(&ret.pool, &handed))]
+    #[inline]
+    #[must_use]
+    pub fn pooled(
+        self,
+        pool: Arc<Pool>,
+    ) -> Self
+    {
+        Self {
+            session: self.session.with_pool(Arc::clone(&pool)),
+            pool,
+            ..self
+        }
     }
 
     /// Which prompt a face shows before the next line.
@@ -576,7 +617,7 @@ impl SessionLoop
                     .collect(),
             },
             Command::Reset => {
-                self.session = fresh(self.session.grammar().clone());
+                self.session = fresh(self.session.grammar().clone(), &self.pool);
                 self.accepted.clear();
                 self.loaded.clear();
                 self.standings = Standings::default();

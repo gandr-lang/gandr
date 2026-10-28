@@ -235,16 +235,13 @@ fn lsp_session(
     let mut input: &[u8] = &frames;
     let mut output = Vec::new();
     let mut log = Vec::new();
-    // At one thread each admission runs where it is submitted, so the counts
-    // the report judges stay exact.
+    // The workspace's own pool has one thread, so each admission runs where
+    // it is submitted and the counts the report judges stay exact.
     let served = gandr_surface_lsp::serve(
         &mut input,
         &mut output,
         &mut log,
-        (
-            gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
-            &Pool::new(Width::SERIAL),
-        ),
+        gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
     )
     .expect("the session is served");
     core::hint::black_box((served, output, log));

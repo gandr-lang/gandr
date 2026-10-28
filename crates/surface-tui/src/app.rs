@@ -18,9 +18,11 @@
 //! no history, offers no completion, and edits only at the end of the line.
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_render_remote::TranscriptBlock;
@@ -112,6 +114,23 @@ impl App
             waiting: Vec::new(),
             transcript: Vec::new(),
         })
+    }
+
+    /// This face, its loop molding on `pool`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pooled(
+        self,
+        pool: Arc<Pool>,
+    ) -> Self
+    {
+        Self {
+            repl: self.repl.pooled(pool),
+            ..self
+        }
     }
 
     /// Every block the loop answered, oldest first.

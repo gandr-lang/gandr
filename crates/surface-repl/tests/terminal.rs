@@ -25,8 +25,12 @@ fn terminal_face_child()
         return;
     }
     let mut output = std::io::stdout().lock();
-    let ended = run_interactive(&mut output, RenderStyle::Plain, Spelling::Unicode)
-        .expect("the transcript is written");
+    let ended = run_interactive(
+        &mut output,
+        RenderStyle::Plain,
+        (Spelling::Unicode, alloc::sync::Arc::default()),
+    )
+    .expect("the transcript is written");
     writeln!(output, "ended: {}", match ended {
         Ended::Completed => "completed",
         Ended::Faulted(_) => "faulted",
