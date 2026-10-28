@@ -210,6 +210,7 @@ impl Erasure<'_, '_>
                         .extend(session.payloads().iter().rev().copied().map(value_type)),
                     ValueType::PathUniverse(..)
                     | ValueType::Path { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
                     | ValueType::Prefix(_)
@@ -536,6 +537,7 @@ impl Erasure<'_, '_>
                     },
                     ValueType::PathUniverse(..)
                     | ValueType::Path { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
                     | ValueType::Prefix(_)

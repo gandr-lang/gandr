@@ -935,6 +935,7 @@ pub fn decode_bridge(
         ValueTypeView::Unknown => Ok(()),
         ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
@@ -1365,6 +1366,18 @@ fn convert(
                             source: third,
                             target: fourth,
                         },
+                    )
+                    | (
+                        ValueTypeView::Bridge {
+                            carrier: a,
+                            left: first,
+                            right: second,
+                        },
+                        ValueTypeView::Bridge {
+                            carrier: b,
+                            left: third,
+                            right: fourth,
+                        },
                     ) => {
                         pending.push(Pairing::Endpoints(second, fourth));
                         pending.push(Pairing::Endpoints(first, third));
@@ -1624,6 +1637,7 @@ fn convert(
                     (
                         ValueTypeView::PathUniverse(..)
                         | ValueTypeView::Path { .. }
+                        | ValueTypeView::Bridge { .. }
                         | ValueTypeView::Flow { .. }
                         | ValueTypeView::Run(_)
                         | ValueTypeView::Prefix(_)
@@ -2245,6 +2259,7 @@ fn value_head(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
@@ -2510,6 +2525,7 @@ fn relocated_values(
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)

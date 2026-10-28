@@ -232,6 +232,7 @@ fn motive_heads_read_apart()
         MotiveHead::PathUniverse,
         MotiveHead::Path,
         MotiveHead::Flow,
+        MotiveHead::Bridge,
         MotiveHead::Run,
         MotiveHead::RecursiveRun,
         MotiveHead::Prefix,

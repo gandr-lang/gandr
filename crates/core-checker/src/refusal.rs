@@ -744,6 +744,27 @@ pub enum CheckRefusal
         /// The atom's admission position.
         atom: ConstantIndex,
     },
+    /// A bridge whose carrier reaches a sealed atom that states no interface:
+    /// the relation between the atom's elements is the abstraction's to
+    /// choose, so the bridge does not form.
+    BridgeAtSealedType
+    {
+        /// The bridge type.
+        at: ValueTypeId,
+        /// The atom's admission position.
+        atom: ConstantIndex,
+    },
+    /// An introduction checked at a bridge whose carrier holds a code the
+    /// bridge fold has no clause for: a dependent or effectful arrow, the path
+    /// universe, an identity, a flow or a bridge, a record, a sum or a product
+    /// of an arity other than two, or a data type the fold cannot read.
+    OutsideFold
+    {
+        /// The introduction.
+        at: ValueId,
+        /// The code outside the fold.
+        code: ValueTypeId,
+    },
     /// Two abstract types claimed one sealing site. The producer issues one
     /// site per abstract component of each ascription, so this is its fault.
     SealSiteRepeated(SealSite),
@@ -1474,7 +1495,7 @@ impl CheckRefusal
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
         | Self::OutOfFragment { former, .. } => ret == former.judged(),
-        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -1483,7 +1504,7 @@ impl CheckRefusal
         | Self::MachineInvariant | Self::TacticRefused { fault: TacticFault::Forged, .. } => matches!(ret, FailureClass::EngineFault),
         | Self::Undecided { .. } | Self::LoopUndecided { .. }
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. } | Self::HandlerUnlawful { .. }
@@ -1527,6 +1548,7 @@ impl CheckRefusal
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)
             | Self::AtomTransport { .. }
+            | Self::BridgeAtSealedType { .. }
             | Self::DataArgumentArity(_)
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)
@@ -1593,6 +1615,7 @@ impl CheckRefusal
             | Self::LoopUndecided { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment { former, .. } => former.judged(),
             Self::FunextUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FUNEXT),
+            Self::OutsideFold { .. } => FailureClass::Unimplemented(TrackingIssue::BRIDGE_FOLD),
             Self::EquivUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::EQUIV),
             Self::UncertifiedStratum { .. } => {
                 FailureClass::Unimplemented(TrackingIssue::LIST_TAIL)
@@ -1657,7 +1680,7 @@ impl CheckRefusal
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
         | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. } | Self::FootprintsOverlap { shared: found, .. }
-        | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
+        | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. } | Self::OutsideFold { code: found, .. } | Self::BridgeAtSealedType { at: found, .. }
         | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found }
         | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. }
         | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. }
@@ -1743,6 +1766,8 @@ impl CheckRefusal
                 classifier: found, ..
             }
             | Self::UncertifiedStratum { code: found, .. }
+            | Self::OutsideFold { code: found, .. }
+            | Self::BridgeAtSealedType { at: found, .. }
             | Self::SessionMismatch { state: found, .. }
             | Self::UnassertedLaw { at: found }
             | Self::Linearity {

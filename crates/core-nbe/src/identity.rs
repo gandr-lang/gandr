@@ -262,6 +262,7 @@ pub fn clause(
             | ValueType::Record(_)
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
+            | ValueType::Bridge { .. }
             | ValueType::Stack { .. }
             | ValueType::Capability { .. }
             | ValueType::Buffer

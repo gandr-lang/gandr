@@ -586,6 +586,15 @@ pub enum Refusal
         /// The List code whose tail the pattern leaves unobserved.
         code: TypeContent,
     },
+    /// An introduction checked at a bridge whose carrier holds a code the
+    /// bridge fold has no clause for.
+    OutsideFold
+    {
+        /// The introduction.
+        at: Site,
+        /// The code outside the fold.
+        code: TypeContent,
+    },
     /// A universe equivalence one of whose round trips does not return its
     /// input at some covering pattern.
     RoundTripDistinct(Site),
@@ -821,6 +830,14 @@ pub enum Refusal
     AtomTransport
     {
         /// The introduction.
+        at: Site,
+        /// The atom.
+        atom: Reference,
+    },
+    /// A bridge whose carrier reaches a sealed atom stating no interface.
+    BridgeAtSealedType
+    {
+        /// The bridge type.
         at: Site,
         /// The atom.
         atom: Reference,
@@ -1443,6 +1460,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::RepresentationAboveKind {representation,kind} = matched_left_value && let Refusal::RepresentationAboveKind {representation:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(representation)) && *stored == self.value_type(kind) }
  else if let CheckRefusal::NotAnAbstractType(constant) = matched_left_value && let Refusal::NotAnAbstractType(ref projected) = *matched_right_value { *projected == self.layout.resolve(constant) }
  else if let CheckRefusal::AtomTransport {at,atom} = matched_left_value && let Refusal::AtomTransport {at:projected,atom:ref stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.layout.resolve(atom) }
+ else if let CheckRefusal::BridgeAtSealedType {at,atom} = matched_left_value && let Refusal::BridgeAtSealedType {at:projected,atom:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) && *stored == self.layout.resolve(atom) }
  else if let CheckRefusal::SealSiteRepeated(site) = matched_left_value && let Refusal::SealSiteRepeated(projected) = *matched_right_value { site == projected }
  else if let CheckRefusal::DataArgumentArity(at) = matched_left_value && let Refusal::DataArgumentArity(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::DataFieldLevel {field,kind} = matched_left_value && let Refusal::DataFieldLevel {field:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(field)) && *stored == self.value_type(kind) }
@@ -1471,6 +1489,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let (CheckRefusal::PointwiseDistinct { at }, &Refusal::PointwiseDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::EquivUnsupported { at, .. } = matched_left_value && let Refusal::EquivUnsupported { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::UncertifiedStratum { at, .. } = matched_left_value && let Refusal::UncertifiedStratum { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::OutsideFold { at, .. } = matched_left_value && let Refusal::OutsideFold { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::RoundTripDistinct { at }, &Refusal::RoundTripDistinct(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::NotOver { at, synthesised, expected } = matched_left_value && let Refusal::NotOver { at: projected, synthesised: ref found, expected: ref wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *found == self.value_type(synthesised) && *wanted == self.value_type(expected) }
  else if let CheckRefusal::UaUncertified { at, stratum } = matched_left_value && let Refusal::UaUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
@@ -1659,6 +1678,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Value(at)),
                 atom: self.layout.resolve(atom),
             },
+            CheckRefusal::BridgeAtSealedType { at, atom } => Refusal::BridgeAtSealedType {
+                at: self.site(ArenaNode::ValueType(at)),
+                atom: self.layout.resolve(atom),
+            },
             CheckRefusal::SealSiteRepeated(site) => Refusal::SealSiteRepeated(site),
             CheckRefusal::DataArgumentArity(at) => {
                 Refusal::DataArgumentArity(self.site(ArenaNode::ValueType(at)))
@@ -1738,6 +1761,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 classifier: self.type_node(TypeNode::Value(classifier)),
             },
             CheckRefusal::UncertifiedStratum { at, code } => Refusal::UncertifiedStratum {
+                at: self.site(ArenaNode::Value(at)),
+                code: self.type_node(TypeNode::Value(code)),
+            },
+            CheckRefusal::OutsideFold { at, code } => Refusal::OutsideFold {
                 at: self.site(ArenaNode::Value(at)),
                 code: self.type_node(TypeNode::Value(code)),
             },

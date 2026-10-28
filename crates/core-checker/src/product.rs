@@ -190,6 +190,7 @@ pub fn component(
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Bridge { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
@@ -226,6 +227,7 @@ pub fn component(
         | ValueTypeView::Record(_)
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Flow { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
         | ValueTypeView::Dialogue(_)
@@ -356,6 +358,7 @@ pub fn flow_component(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)

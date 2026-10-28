@@ -1058,11 +1058,18 @@ where
                     pending.push((AnyNode::Value(source), reach.term()));
                     pending.push((AnyNode::Value(target), reach.term()));
                 },
-                Some(&ValueType::Path {
-                    carrier,
-                    left,
-                    right,
-                }) => {
+                Some(
+                    &(ValueType::Path {
+                        carrier,
+                        left,
+                        right,
+                    }
+                    | ValueType::Bridge {
+                        carrier,
+                        left,
+                        right,
+                    }),
+                ) => {
                     pending.push((AnyNode::ValueType(carrier), reach.nest()));
                     pending.push((AnyNode::Value(left), reach.term()));
                     pending.push((AnyNode::Value(right), reach.term()));

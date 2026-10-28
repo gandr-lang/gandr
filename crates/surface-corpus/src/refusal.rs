@@ -733,6 +733,8 @@ pub enum RefusalName
     NotAnAbstractType,
     /// The checker reports `AtomTransport`.
     AtomTransport,
+    /// A bridge whose carrier reaches a sealed atom stating no interface.
+    BridgeAtSealedType,
     /// The checker reports `SealSiteRepeated`.
     SealSiteRepeated,
     /// The checker reports `DataArgumentArity`.
@@ -795,6 +797,9 @@ pub enum RefusalName
     /// A universe equivalence whose round trip at a list cell does not return
     /// it with the tail unread.
     UncertifiedStratum,
+    /// An introduction at a bridge whose carrier holds a code the bridge fold
+    /// has no clause for.
+    OutsideFold,
     /// A universe equivalence whose round trip does not return its input.
     RoundTripDistinct,
     /// A telescope transport's second identity that does not lie over its
@@ -1250,7 +1255,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 223_usize] = [
+    pub const VOCABULARY: [Self; 225_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1263,6 +1268,7 @@ impl RefusalName
         Self::RepresentationAboveKind,
         Self::NotAnAbstractType,
         Self::AtomTransport,
+        Self::BridgeAtSealedType,
         Self::SealSiteRepeated,
         Self::DataArgumentArity,
         Self::UnknownConstructor,
@@ -1286,6 +1292,7 @@ impl RefusalName
         Self::PointwiseDistinct,
         Self::EquivUnsupported,
         Self::UncertifiedStratum,
+        Self::OutsideFold,
         Self::RoundTripDistinct,
         Self::NotOver,
         Self::UncertifiedDegree,
@@ -1637,6 +1644,7 @@ impl RefusalName
         | (Self::RepresentationAboveKind, b"RepresentationAboveKind")
         | (Self::NotAnAbstractType, b"NotAnAbstractType")
         | (Self::AtomTransport, b"AtomTransport")
+        | (Self::BridgeAtSealedType, b"BridgeAtSealedType")
         | (Self::SealSiteRepeated, b"SealSiteRepeated")
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
@@ -1663,6 +1671,7 @@ impl RefusalName
         | (Self::PointwiseDistinct, b"PointwiseDistinct")
         | (Self::EquivUnsupported, b"EquivUnsupported")
         | (Self::UncertifiedStratum, b"UncertifiedStratum")
+        | (Self::OutsideFold, b"OutsideFold")
         | (Self::RoundTripDistinct, b"RoundTripDistinct")
         | (Self::NotOver, b"NotOver")
         | (Self::UncertifiedDegree, b"UncertifiedDegree")
@@ -1768,6 +1777,7 @@ impl RefusalName
             Self::RepresentationAboveKind => "RepresentationAboveKind",
             Self::NotAnAbstractType => "NotAnAbstractType",
             Self::AtomTransport => "AtomTransport",
+            Self::BridgeAtSealedType => "BridgeAtSealedType",
             Self::SealSiteRepeated => "SealSiteRepeated",
             Self::DataArgumentArity => "DataArgumentArity",
             Self::UnknownConstructor => "UnknownConstructor",
@@ -1809,6 +1819,7 @@ impl RefusalName
             Self::PointwiseDistinct => "PointwiseDistinct",
             Self::EquivUnsupported => "EquivUnsupported",
             Self::UncertifiedStratum => "UncertifiedStratum",
+            Self::OutsideFold => "OutsideFold",
             Self::RoundTripDistinct => "RoundTripDistinct",
             Self::NotOver => "NotOver",
             Self::UncertifiedDegree => "UncertifiedDegree",
@@ -2720,6 +2731,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::RepresentationAboveKind { .. }), RefusalName::RepresentationAboveKind)
         | (Self::Checking(CheckRefusal::NotAnAbstractType(_)), RefusalName::NotAnAbstractType)
         | (Self::Checking(CheckRefusal::AtomTransport { .. }), RefusalName::AtomTransport)
+        | (Self::Checking(CheckRefusal::BridgeAtSealedType { .. }), RefusalName::BridgeAtSealedType)
         | (Self::Checking(CheckRefusal::SealSiteRepeated(_)), RefusalName::SealSiteRepeated)
         | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
         | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
@@ -2750,6 +2762,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::PointwiseDistinct { .. }), RefusalName::PointwiseDistinct)
         | (Self::Checking(CheckRefusal::EquivUnsupported { .. }), RefusalName::EquivUnsupported)
         | (Self::Checking(CheckRefusal::UncertifiedStratum { .. }), RefusalName::UncertifiedStratum)
+        | (Self::Checking(CheckRefusal::OutsideFold { .. }), RefusalName::OutsideFold)
         | (Self::Checking(CheckRefusal::RoundTripDistinct { .. }), RefusalName::RoundTripDistinct)
         | (Self::Checking(CheckRefusal::NotOver { .. }), RefusalName::NotOver)
         | (Self::Checking(CheckRefusal::UaUncertified { .. }), RefusalName::UncertifiedDegree | RefusalName::UncertifiedCondition | RefusalName::UncertifiedAllowance)
@@ -3108,6 +3121,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
         | (CheckRefusal::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
         | (CheckRefusal::AtomTransport { .. }, RefusalName::AtomTransport)
+        | (CheckRefusal::BridgeAtSealedType { .. }, RefusalName::BridgeAtSealedType)
         | (CheckRefusal::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
         | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
@@ -3136,6 +3150,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::PointwiseDistinct { .. }, RefusalName::PointwiseDistinct)
         | (CheckRefusal::EquivUnsupported { .. }, RefusalName::EquivUnsupported)
         | (CheckRefusal::UncertifiedStratum { .. }, RefusalName::UncertifiedStratum)
+        | (CheckRefusal::OutsideFold { .. }, RefusalName::OutsideFold)
         | (CheckRefusal::RoundTripDistinct { .. }, RefusalName::RoundTripDistinct)
         | (CheckRefusal::NotOver { .. }, RefusalName::NotOver)
         | (CheckRefusal::UaUncertified { stratum: StratumDefect::Degree { .. }, .. }, RefusalName::UncertifiedDegree)
@@ -3248,6 +3263,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
         CheckRefusal::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,
         CheckRefusal::AtomTransport { .. } => RefusalName::AtomTransport,
+        CheckRefusal::BridgeAtSealedType { .. } => RefusalName::BridgeAtSealedType,
         CheckRefusal::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
         CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
@@ -3270,6 +3286,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::PointwiseDistinct { .. } => RefusalName::PointwiseDistinct,
         CheckRefusal::EquivUnsupported { .. } => RefusalName::EquivUnsupported,
         CheckRefusal::UncertifiedStratum { .. } => RefusalName::UncertifiedStratum,
+        CheckRefusal::OutsideFold { .. } => RefusalName::OutsideFold,
         CheckRefusal::RoundTripDistinct { .. } => RefusalName::RoundTripDistinct,
         CheckRefusal::NotOver { .. } => RefusalName::NotOver,
         CheckRefusal::UaUncertified { stratum, .. } => match stratum {

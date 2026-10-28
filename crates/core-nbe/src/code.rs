@@ -1184,6 +1184,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     ValueType::PathUniverse(..)
                     | ValueType::Capability { .. }
                     | ValueType::Path { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::Data { .. }
                     | ValueType::Record(_)
                     | ValueType::Stack { .. }
@@ -1331,7 +1332,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 let second_right = self.atom(Node::Code(d, there))?;
                                 Ok([(first_left, first_right), (second_left, second_right)])
                             }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 1, 2) }),
-                        (&ValueType::Path { left: a, right: b, .. }, &ValueType::Path { left: c, right: d, .. }) =>
+                        (&ValueType::Path { left: a, right: b, .. }, &ValueType::Path { left: c, right: d, .. })
+                        | (&ValueType::Bridge { left: a, right: b, .. }, &ValueType::Bridge { left: c, right: d, .. }) =>
                             self.atom(Node::Code(a, here)).and_then(|first_left| {
                                 let first_right = self.atom(Node::Code(c, there))?;
                                 let second_left = self.atom(Node::Code(b, here))?;
@@ -1514,16 +1516,30 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             Ok(Alike::Same)
                         }
                     }
-                    else if let ValueType::Path {
-                        carrier: a,
-                        left: b,
-                        right: c,
-                    } = *matched_left_value
-                        && let ValueType::Path {
+                    else if let (
+                        &ValueType::Path {
+                            carrier: a,
+                            left: b,
+                            right: c,
+                        },
+                        &ValueType::Path {
                             carrier: d,
                             left: e,
                             right: f,
-                        } = *matched_right_value
+                        },
+                    )
+                    | (
+                        &ValueType::Bridge {
+                            carrier: a,
+                            left: b,
+                            right: c,
+                        },
+                        &ValueType::Bridge {
+                            carrier: d,
+                            left: e,
+                            right: f,
+                        },
+                    ) = (matched_left_value, matched_right_value)
                     {
                         pending.push((Node::ValueType(a, here), Node::ValueType(d, there)));
                         let left = (
@@ -1766,6 +1782,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 ValueType::PathUniverse(..)
                                 | ValueType::Capability { .. }
                                 | ValueType::Path { .. }
+                                | ValueType::Bridge { .. }
                                 | ValueType::Data { .. }
                                 | ValueType::Record(_)
                                 | ValueType::Base(_)
@@ -2468,6 +2485,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             atoms.push(self.atom(Node::Code(target, place))?);
                         },
                         ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        }
+                        | ValueType::Bridge {
                             carrier,
                             left,
                             right,

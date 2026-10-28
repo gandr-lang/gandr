@@ -2808,6 +2808,11 @@ pub fn loose_reach(
                         carrier,
                         left,
                         right,
+                    }
+                    | ValueType::Bridge {
+                        carrier,
+                        left,
+                        right,
                     } => work.extend([
                         (CoreNode::Type(TypeNode::Value(carrier)), depth),
                         (CoreNode::Term(TermNode::Value(left)), depth),

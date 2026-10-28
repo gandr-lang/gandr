@@ -821,7 +821,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
                 span: declaration, label,
             }) && ret.context == UNNAMED,
         CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
-        CheckRefusal::HandlerUnlawful { .. } |
+        CheckRefusal::HandlerUnlawful { .. } | CheckRefusal::BridgeAtSealedType { .. } | CheckRefusal::OutsideFold { .. } |
         CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::FootprintsOverlap { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
@@ -974,7 +974,9 @@ fn checked(
         | CheckRefusal::StageNotBelow { at, .. }
         | CheckRefusal::StagesDisagree { at, .. }
         | CheckRefusal::AtomTransport { at, .. }
+        | CheckRefusal::OutsideFold { at, .. }
         | CheckRefusal::Boundary { at } => (spanned(origins.value(at)), UNNAMED),
+        CheckRefusal::BridgeAtSealedType { at, .. } => (spanned(origins.value_type(at)), UNNAMED),
         CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
@@ -1281,6 +1283,7 @@ impl fmt::Display for Checked
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
             CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),
             CheckRefusal::AtomTransport {atom,..} => write!(f,"abstract type {} states no transport law, so its relation is no identity",usize::from(atom)),
+            CheckRefusal::BridgeAtSealedType {atom,..} => write!(f,"abstract type {} states no interface, so no bridge is read at it",usize::from(atom)),
             CheckRefusal::SealSiteRepeated(site) => write!(f,"{site} was sealed twice"),
             CheckRefusal::DataArgumentArity(_) => f.write_str("the datatype application has the wrong parameter count"),
             CheckRefusal::UnknownConstructor {tag,..} => write!(f,"constructor tag {} is absent from the datatype",usize::from(tag)),
@@ -1303,6 +1306,7 @@ impl fmt::Display for Checked
             | CheckRefusal::PointwiseDistinct { .. } => f.write_str("function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input"),
             | CheckRefusal::EquivUnsupported { .. } => f.write_str("a universe equivalence is decided for closed pure translators between first-order types and their lists"),
             | CheckRefusal::UncertifiedStratum { .. } => f.write_str("a universe equivalence over a list is certified one cell deep: each cell's round trip returns it with the tail unread"),
+            | CheckRefusal::OutsideFold { .. } => f.write_str("a bridge is read at units, discrete base types, the universe, binary products and sums, lists, pure functions, interfaced atoms and closed simple datatypes"),
             | CheckRefusal::RoundTripDistinct { .. } => f.write_str("a universe equivalence requires each round trip to return its input at every pattern"),
             | CheckRefusal::NotOver { .. } => f.write_str("a telescope transport requires its second identity to lie over its path, from the start transported along it"),
             | CheckRefusal::UaUncertified { stratum, .. } => match stratum {
@@ -2727,6 +2731,10 @@ mod tests
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::CapabilityConsumable(value_type),
             CheckRefusal::OpenSessionPayload { at: value_type },
+            CheckRefusal::BridgeAtSealedType {
+                at: value_type,
+                atom: 6_usize.into(),
+            },
             CheckRefusal::UnassertedLaw { at: value_type },
             CheckRefusal::RuleNotPresentable {
                 kind: value_type,
@@ -2783,6 +2791,10 @@ mod tests
                 classifier: value_type,
             },
             CheckRefusal::UncertifiedStratum {
+                at: value,
+                code: value_type,
+            },
+            CheckRefusal::OutsideFold {
                 at: value,
                 code: value_type,
             },
@@ -3400,6 +3412,7 @@ mod tests
                         | CheckRefusal::AbstractKindNotUniverse(_)
                         | CheckRefusal::CapabilityConsumable(_)
                         | CheckRefusal::OpenSessionPayload { .. }
+                        | CheckRefusal::BridgeAtSealedType { .. }
                         | CheckRefusal::UnassertedLaw { .. }
                         | CheckRefusal::RuleNotPresentable { .. }
                         | CheckRefusal::DataFieldLevel { .. }
@@ -3416,6 +3429,7 @@ mod tests
                         | CheckRefusal::FunextUnsupported { .. }
                         | CheckRefusal::EquivUnsupported { .. }
                         | CheckRefusal::UncertifiedStratum { .. }
+                        | CheckRefusal::OutsideFold { .. }
                         | CheckRefusal::TypeMismatch(Mismatch::Value { .. })
                         | CheckRefusal::CapabilityAmplified(Mismatch::Value { .. })
                         | CheckRefusal::SortMismatch { .. }

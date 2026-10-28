@@ -2525,6 +2525,25 @@ impl CoreArena
         })
     }
 
+    /// Mint the bridge type `Bridge(A, a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_bridge(
+        &mut self,
+        carrier: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Bridge {
+            carrier,
+            left,
+            right,
+        })
+    }
+
     /// Mint reflexivity `here(a)`.
     ///
     /// # Specification

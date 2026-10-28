@@ -429,6 +429,7 @@ pub fn session_code(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
@@ -1019,6 +1020,7 @@ pub fn endpoints(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
         | ValueTypeView::Dialogue(_)
@@ -1248,6 +1250,7 @@ pub fn covariant(
                 | ValueType::Sigma { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
+                | ValueType::Bridge { .. }
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
                 | ValueType::Abstract(_)
@@ -1535,6 +1538,7 @@ fn computed(
             | ValueType::Record(_)
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
+            | ValueType::Bridge { .. }
             | ValueType::Flow { .. }
             | ValueType::Run(_)
             | ValueType::Prefix(_)
@@ -1697,6 +1701,7 @@ pub fn run_premises(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
@@ -1815,6 +1820,7 @@ pub fn dialogue_premises(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)

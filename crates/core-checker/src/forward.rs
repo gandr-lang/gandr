@@ -529,6 +529,7 @@ fn first_order(
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
@@ -666,6 +667,7 @@ fn leaves(
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
@@ -840,6 +842,7 @@ fn natural(
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)

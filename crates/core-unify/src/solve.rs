@@ -1065,6 +1065,7 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::RowTail(_) => TypeHead::Rigid,
         ValueType::PathUniverse(..)
         | ValueType::Path { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Flow { .. }
         | ValueType::Run(_)
         | ValueType::Prefix(_)

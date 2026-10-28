@@ -582,6 +582,11 @@ impl CoreArena
                 left,
                 right,
             }
+            | ValueType::Bridge {
+                carrier,
+                left,
+                right,
+            }
             | ValueType::Flow {
                 carrier,
                 source: left,

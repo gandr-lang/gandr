@@ -348,6 +348,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
         CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
         CheckRefusal::AtomTransport { .. } => "an identity of an atom stating no transport law",
+        CheckRefusal::BridgeAtSealedType { .. } => "a bridge reaching an atom stating no interface",
         CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",
         CheckRefusal::DataArgumentArity(_) => "the wrong number of parameters",
         CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",
@@ -370,6 +371,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::PointwiseDistinct { .. } => "functions that differ at some input",
         CheckRefusal::EquivUnsupported { .. } => "translators outside the rule's fragment",
         CheckRefusal::UncertifiedStratum { .. } => "a list cell its round trip does not return",
+        CheckRefusal::OutsideFold { .. } => "a code the bridge fold has no clause for",
         CheckRefusal::RoundTripDistinct { .. } => "translators that are not inverse",
         CheckRefusal::NotOver { .. } => "an identity not over the path",
         CheckRefusal::UaUncertified { stratum, .. } => match stratum {

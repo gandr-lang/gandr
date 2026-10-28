@@ -242,8 +242,9 @@
 //! **Choice.** Native syntax in the ordinary arena, rather than a second path
 //! arena with different traversal and ownership rules. Core syntax itself
 //! grants no admission authority: the checker validates the closed endpoint
-//! fragment and the kernel replays candidates. Element-identity, higher-field
-//! and bridge-mode programs remain separate kernel APIs; the directed family's
+//! fragment and the kernel replays candidates. Element-identity and
+//! higher-field programs remain separate kernel APIs; a bridge type is core
+//! syntax the checker reads in bridge mode, and the directed family's
 //! statements are core values the checker decides and the bridge erases.
 //! **Reversal.**
 //! Extending the code fragment requires corresponding formation, admission and
@@ -1049,6 +1050,19 @@ pub enum ValueType
         source: ValueId,
         /// The target endpoint.
         target: ValueId,
+    },
+    /// Bridge `Bridge(A, a, b)`: the type of bridges from `a` to `b` in the
+    /// value type `A`, formed as a path type is. It grants no reflexivity of
+    /// its own, no transport and no `J`; the evaluator's identity recursion
+    /// in bridge mode classifies, carrier by carrier, what its bridges are.
+    Bridge
+    {
+        /// The carrier the two endpoints inhabit.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
     },
     /// `Run(s)`: the complete recorded runs of the session code `s`, each a
     /// finite trace the protocol's monitor accepts.
@@ -3480,6 +3494,18 @@ fn equal_syntax(
                             carrier: d,
                             source: e,
                             target: f,
+                        },
+                    )
+                    | (
+                        &ValueType::Bridge {
+                            carrier: a,
+                            left: b,
+                            right: c,
+                        },
+                        &ValueType::Bridge {
+                            carrier: d,
+                            left: e,
+                            right: f,
                         },
                     ) = (matched_left_value, matched_right_value)
                     {

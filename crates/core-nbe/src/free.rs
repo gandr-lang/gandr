@@ -1472,6 +1472,11 @@ Err(_) => false,
                         carrier,
                         left,
                         right,
+                    }
+                    | ValueType::Bridge {
+                        carrier,
+                        left,
+                        right,
                     } => [
                         Some((Reached::ValueType(carrier), Lowering::NONE)),
                         Some((value(left), Lowering::NONE)),

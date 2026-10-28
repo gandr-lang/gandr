@@ -301,6 +301,8 @@ pub enum MotiveHead
     Path,
     /// A flow type.
     Flow,
+    /// A bridge type: a bridge grants no transport.
+    Bridge,
     /// A run type whose code is not a quoted session.
     Run,
     /// A run of a recursive session: it admits unboundedly many shapes, and
@@ -376,6 +378,7 @@ impl fmt::Display for MotiveHead
             Self::PathUniverse => "a universe of native paths",
             Self::Path => "a path type",
             Self::Flow => "a flow type",
+            Self::Bridge => "a bridge type",
             Self::Run => "a run type",
             Self::RecursiveRun => "a run of a recursive session",
             Self::Prefix => "a prefix type",
@@ -545,6 +548,7 @@ fn head(node: &ValueType) -> MotiveHead
         ValueType::PathUniverse(..) => MotiveHead::PathUniverse,
         ValueType::Path { .. } => MotiveHead::Path,
         ValueType::Flow { .. } => MotiveHead::Flow,
+        ValueType::Bridge { .. } => MotiveHead::Bridge,
         ValueType::Run(_) => MotiveHead::Run,
         ValueType::Prefix(_) => MotiveHead::Prefix,
         ValueType::Dialogue(_) => MotiveHead::Dialogue,
@@ -691,6 +695,7 @@ fn row(
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
         | ValueType::Path { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Flow { .. }
         | ValueType::Run(_)
         | ValueType::Prefix(_)

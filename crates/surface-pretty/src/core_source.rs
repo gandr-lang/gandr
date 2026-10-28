@@ -1030,6 +1030,7 @@ impl<'arena> CoreSource<'arena>
             ValueType::Record(_)
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
+            | ValueType::Bridge { .. }
             | ValueType::Flow { .. }
             | ValueType::Run(_)
             | ValueType::Prefix(_)
@@ -1531,6 +1532,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Data { declaration, ref arguments }), Former::Data { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&ValueType::Path { carrier, left, right }), Former::Path { carrier: actual_carrier, left: actual_left, right: actual_right })
+        | (Some(&ValueType::Bridge { carrier, left, right }), Former::Bridge { carrier: actual_carrier, left: actual_left, right: actual_right })
         | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
             actual_carrier == CoreNode::ValueType(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
@@ -1607,6 +1609,15 @@ impl<'arena> CoreSource<'arena>
                 left,
                 right,
             } => Former::Path {
+                carrier: CoreNode::ValueType(carrier),
+                left: CoreNode::Value(left),
+                right: CoreNode::Value(right),
+            },
+            ValueType::Bridge {
+                carrier,
+                left,
+                right,
+            } => Former::Bridge {
                 carrier: CoreNode::ValueType(carrier),
                 left: CoreNode::Value(left),
                 right: CoreNode::Value(right),
@@ -2416,6 +2427,7 @@ impl Source for CoreSource<'_>
                 },
                 ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
+                | ValueType::Bridge { .. }
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Prefix(_)
@@ -2636,6 +2648,7 @@ impl Source for CoreSource<'_>
                 ValueType::Data { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
+                | ValueType::Bridge { .. }
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Prefix(_)

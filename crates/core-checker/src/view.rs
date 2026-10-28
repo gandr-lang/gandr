@@ -159,6 +159,16 @@ pub enum ValueTypeView<'arena>
         /// The target endpoint.
         target: ValueId,
     },
+    /// Bridge `Bridge(A, a, b)`: the bridges from `a` to `b` in `A`.
+    Bridge
+    {
+        /// The carrier `A`.
+        carrier: ValueTypeId,
+        /// The left endpoint.
+        left: ValueId,
+        /// The right endpoint.
+        right: ValueId,
+    },
     /// `Run(s)`: the complete recorded runs of the session code `s`.
     Run(ValueId),
     /// `Prefix(s)`: the recorded prefixes of the session code `s`, closed or
@@ -385,6 +395,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Path { carrier, left, right }) => matches!(arena.value_type(value_type), Some(&ValueType::Path { carrier: found, left: first, right: second }) if found == carrier && first == left && second == right),
     | Ok(ValueTypeView::Flow { carrier, source, target }) => matches!(arena.value_type(value_type), Some(&ValueType::Flow { carrier: found, source: first, target: second }) if found == carrier && first == source && second == target),
+    | Ok(ValueTypeView::Bridge { carrier, left, right }) => matches!(arena.value_type(value_type), Some(&ValueType::Bridge { carrier: found, left: first, right: second }) if found == carrier && first == left && second == right),
     | Ok(ValueTypeView::Run(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Run(found)) if found == session),
     | Ok(ValueTypeView::Prefix(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Prefix(found)) if found == session),
     | Ok(ValueTypeView::Dialogue(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Dialogue(found)) if found == session),
@@ -455,6 +466,15 @@ pub fn value_type_view(
             carrier,
             source,
             target,
+        }),
+        ValueType::Bridge {
+            carrier,
+            left,
+            right,
+        } => Ok(ValueTypeView::Bridge {
+            carrier,
+            left,
+            right,
         }),
         ValueType::Run(session) => Ok(ValueTypeView::Run(session)),
         ValueType::Prefix(session) => Ok(ValueTypeView::Prefix(session)),

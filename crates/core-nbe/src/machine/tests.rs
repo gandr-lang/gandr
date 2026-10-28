@@ -1882,7 +1882,7 @@ impl Kernel
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
               ValueType::Dialogue(_) | ValueType::Web |
               ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Buffer | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => false,
-              ValueType::Path { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
+              ValueType::Path { carrier, left, right } | ValueType::Bridge { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
               ValueType::StaticPi{domain:a,codomain:b} | ValueType::Sigma{first:a,second:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
@@ -2106,6 +2106,11 @@ impl Kernel
                     },
                     ValueType::Kept { .. } => panic!("the kernel has no kept type"),
                     ValueType::Path {
+                        carrier,
+                        left,
+                        right,
+                    }
+                    | ValueType::Bridge {
                         carrier,
                         left,
                         right,
@@ -2533,6 +2538,15 @@ impl Kernel
                         let carrier = value_type(self, carrier);
                         let (left, right) = (value(self, left), value(self, right));
                         self.arena.value_type_path(carrier, left, right)
+                    },
+                    ValueType::Bridge {
+                        carrier,
+                        left,
+                        right,
+                    } => {
+                        let carrier = value_type(self, carrier);
+                        let (left, right) = (value(self, left), value(self, right));
+                        self.arena.value_type_bridge(carrier, left, right)
                     },
                     ValueType::PathUniverse(source, target) => {
                         let (source, target) = (value(self, source), value(self, target));

@@ -2760,6 +2760,10 @@ fn every_refusal() -> Vec<Refusal>
             at,
             atom: reference.clone(),
         },
+        Refusal::BridgeAtSealedType {
+            at,
+            atom: reference.clone(),
+        },
         Refusal::SealSiteRepeated(SealSite::new(
             SealingSite::from(1_usize),
             ComponentOrdinal::from(2_usize),
@@ -2843,6 +2847,7 @@ fn every_refusal() -> Vec<Refusal>
             classifier: ty(),
         },
         Refusal::UncertifiedStratum { at, code: ty() },
+        Refusal::OutsideFold { at, code: ty() },
         Refusal::RoundTripDistinct(at),
         Refusal::NotOver {
             at,

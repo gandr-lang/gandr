@@ -430,7 +430,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
+        | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -473,6 +473,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Sigma { .. }
         | Former::Capability { .. }
         | Former::Path { .. }
+        | Former::Bridge { .. }
         | Former::Flow { .. }
         | Former::Relation { .. }
         | Former::Model { .. }
@@ -1268,6 +1269,11 @@ where
         | Former::StaticApplication(first, second)
         | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
         Former::Path {
+            carrier,
+            left,
+            right,
+        }
+        | Former::Bridge {
             carrier,
             left,
             right,
@@ -6533,6 +6539,7 @@ impl Walk<'_, '_>
                 | Former::Run(_)
                 | Former::Ua { .. }
                 | Former::Path { .. }
+                | Former::Bridge { .. }
                 | Former::Data { .. }
                 | Former::Codata { .. }
                 | Former::Constructor { .. }
@@ -7741,6 +7748,7 @@ impl Walk<'_, '_>
                 None
             },
             Former::Path { .. }
+            | Former::Bridge { .. }
             | Former::Flow { .. }
             | Former::Relation { .. }
             | Former::Model { .. }
@@ -9853,6 +9861,10 @@ impl Walk<'_, '_>
             },
             Former::Flow { .. } => {
                 let _ = parts.text("Flow").arguments(Arity(3_usize));
+                writes(Production("type_application"), Binding::Atom)
+            },
+            Former::Bridge { .. } => {
+                let _ = parts.text("Bridge").arguments(Arity(3_usize));
                 writes(Production("type_application"), Binding::Atom)
             },
             Former::Relation { relation, .. } => {
