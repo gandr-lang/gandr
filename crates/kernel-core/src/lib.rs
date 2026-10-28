@@ -657,6 +657,8 @@ pub mod encoding;
 pub mod env;
 pub mod error;
 pub mod flow_universe;
+#[cfg(test)]
+mod generated;
 mod hashed;
 pub mod higher_field;
 pub mod identity_recursion;

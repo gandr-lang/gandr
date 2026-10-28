@@ -565,6 +565,18 @@ enum Rewrite
         /// The free index moved innermost, counted from the root.
         band: BinderDepth,
     },
+    /// Replace the `width` binders just outside the root by `environment`'s
+    /// components, the index `k` past the root's depth by component `k`, and
+    /// lower every free index past them by `width`: an environment
+    /// substituted in one walk, the replay's unload.
+    Unload
+    {
+        /// The tuple of the replacements, the innermost binder's first, each
+        /// in the context outside every replaced binder.
+        environment: ValueId,
+        /// How many binders the environment replaces.
+        width: BinderDepth,
+    },
 }
 
 quenchant_shape::reason_enum! {
@@ -575,8 +587,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// An instantiation at a call, or the rotation it carries a body
             /// with, decides a decode by whether its returned code reads the
-            /// binder, and a share names its endpoint by its node; a content
-            /// key carries neither.
+            /// binder, a share names its endpoint by its node, and an unload
+            /// its replacements by the tuple holding them; a content key
+            /// carries none of these.
             Local,
         }
     }
@@ -620,7 +633,10 @@ impl Rewrite
                 constant,
                 index,
             },
-            Self::Instantiate { .. } | Self::Rotate { .. } | Self::Share { .. } => {
+            Self::Instantiate { .. }
+            | Self::Rotate { .. }
+            | Self::Share { .. }
+            | Self::Unload { .. } => {
                 return Maybe::Absent(keyed::Absent::Local);
             },
         })
@@ -1265,44 +1281,6 @@ where
     .computation_or(subject)
 }
 
-/// Instantiate the head binder of a fold's cell branch, preserving its result
-/// binder.
-///
-/// # Specification
-/// - requires: the branch is scoped under head then folded result; the
-///   replacement is scoped in the ambient context, and memo entries belong to
-///   this arena.
-/// - ensures: result index zero stays bound, head index one becomes the shifted
-///   replacement, and outer indices decrease by one without variable capture.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — open-head fold reduction distinguishes capture from
-///   substitution.
-/// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
-#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
-    arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
-pub(crate) fn substitute_fold_head<M>(
-    arena: &mut TermArena,
-    table: &mut ContentTable,
-    memo: &mut M,
-    subject: ComputationId,
-    replacement: ValueId,
-) -> ComputationId
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
-{
-    run_rewrite(
-        arena,
-        table,
-        memo,
-        Rewrite::Substitute { replacement },
-        AnyNode::Computation(subject),
-        BinderDepth::from(1_u32),
-    )
-    .computation_or(subject)
-}
-
 /// The computation `subject` with the binder `depth` binders out instantiated
 /// at `replacement`, the `depth` binders inside it kept.
 ///
@@ -1342,6 +1320,92 @@ where
         depth,
     )
     .computation_or(subject)
+}
+
+/// The computation `subject` with the `width` binders outside its `depth`
+/// innermost ones replaced by `environment`'s components, the binder `k`
+/// places out by component `k`, and every index past them lowered by `width`.
+///
+/// One walk substitutes the whole environment: the unload an
+/// environment-carrying reduction runs at the weak head it stops at.
+///
+/// # Specification
+/// - requires: `environment` is a tuple with a component for each replaced
+///   binder the subject reads, each scoped outside every replaced binder; memo
+///   entries belong to this arena.
+/// - ensures: indices below `depth` stay bound; an index `depth + k` with `k`
+///   below `width` becomes component `k` carried under the kept binders; every
+///   index past them falls by `width`, without capture. A subject reading none
+///   of them comes back as it is.
+/// - provides: an environment machine's state read back as the term the
+///   substituting machine holds at the same step.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unload agrees with substituting its components one
+///   binder at a time, the innermost first, on generated subjects that read
+///   replaced binders, indices past the band and binders of their own.
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+pub(crate) fn unload_computation<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    (subject, environment): (ComputationId, ValueId),
+    (width, depth): (BinderDepth, BinderDepth),
+) -> ComputationId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Unload { environment, width },
+        AnyNode::Computation(subject),
+        depth,
+    )
+    .computation_or(subject)
+}
+
+/// The value `subject` with the `width` binders outside it replaced by
+/// `environment`'s components; see [`unload_computation`].
+///
+/// # Specification
+/// - requires: as [`unload_computation`].
+/// - ensures: as [`unload_computation`] at depth zero, over the value family,
+///   where a replaced variable becomes its component itself.
+/// - provides: a held value read back in the context outside its environment.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`unload_computation`].
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+#[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
+    matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+pub(crate) fn unload_value<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    (subject, environment): (ValueId, ValueId),
+    width: BinderDepth,
+) -> ValueId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Unload { environment, width },
+        AnyNode::Value(subject),
+        BinderDepth::NONE,
+    )
+    .value_or(subject)
 }
 
 /// The value type `subject` with its second binder instantiated at
@@ -1418,13 +1482,13 @@ where
 ///   a minted node is never opened, so the set of openable nodes is finite. The
 ///   carried-occurrence arm and the decode close are the only ones whose
 ///   scheduled opens are not children, and **their nesting is exactly one
-///   deep**: they fire only for a substitution or an instantiation, and the
-///   sub-walks they schedule are a *shift* and a *rotation*, for which
+///   deep**: they fire only for a substitution, an instantiation or an unload,
+///   and the sub-walks they schedule are a *shift* and a *rotation*, for which
 ///   [`carried_occurrence`] returns nothing and whose closes push nothing — so
 ///   a sub-walk descends its own children and can never schedule a third walk.
-///   Their subjects are the replacement, the call and a decoded code's body,
-///   each fixed in the arena before the outer walk reaches it and therefore not
-///   a node the outer walk can grow.
+///   Their subjects are a replacement, the call and a decoded code's body, each
+///   fixed in the arena before the outer walk reaches it and therefore not a
+///   node the outer walk can grow.
 /// - input recursion: none.
 ///
 /// # Adequacy
@@ -1781,20 +1845,91 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The replacement a substitution has to carry under crossed binders, when this
-/// goal is the occurrence being substituted and there are binders to cross.
+/// The value `rewrite` puts at the variable `index`, met under `depth` crossed
+/// binders, when it replaces that variable.
 ///
-/// A substitution at depth zero needs no carrying, so it takes the ordinary
+/// # Specification
+/// - requires: `depth` is the number of binders the walk has crossed to reach
+///   the variable.
+/// - ensures: a substitution's or an instantiation's replacement at the index
+///   `depth` names; an unload's component `index - depth` when that is below
+///   its width and its environment holds it; nothing at every other index and
+///   for every other rewrite.
+/// - provides: the one reading of which variables a rewrite replaces, shared by
+///   the carrying arm and the variable rule.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unload's components land at the indices past the depth
+///   below its width, a substitution's at the depth alone, and every index past
+///   them lowers instead, observed against substituting one binder at a time.
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+#[spec(ensures: |ret| match rewrite {
+    Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => if index == depth {
+        matches!(ret, Maybe::Present(found) if found == replacement)
+    } else {
+        matches!(ret, Maybe::Absent(()))
+    },
+    Rewrite::Unload { width, .. } => matches!(ret, Maybe::Absent(()))
+        || index.0.checked_sub(depth.0).is_some_and(|past| past < width.0),
+    Rewrite::Shift { .. } | Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(())),
+})]
+#[inline]
+fn replaced(
+    arena: &TermArena,
+    rewrite: Rewrite,
+    index: BinderDepth,
+    depth: BinderDepth,
+) -> Maybe<ValueId, ()>
+{
+    match rewrite {
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
+            if index == depth {
+                Maybe::Present(replacement)
+            }
+            else {
+                Maybe::Absent(())
+            }
+        },
+        Rewrite::Unload { environment, width } => {
+            let slot = index
+                .0
+                .checked_sub(depth.0)
+                .filter(|&past| past < width.0)
+                .and_then(|past| usize::try_from(past).ok());
+            match (arena.value(environment).and_then(Value::components), slot) {
+                (Some(components), Some(slot)) => components
+                    .get(slot)
+                    .copied()
+                    .map_or(Maybe::Absent(()), Maybe::Present),
+                (Some(_) | None, None) | (None, Some(_)) => Maybe::Absent(()),
+            }
+        },
+        Rewrite::Shift { .. }
+        | Rewrite::Abstract { .. }
+        | Rewrite::Share { .. }
+        | Rewrite::Rotate { .. } => Maybe::Absent(()),
+    }
+}
+
+/// The replacement a substitution, an instantiation or an unload has to carry
+/// under crossed binders, when this goal is an occurrence it replaces and
+/// there are binders to cross.
+///
+/// A replacement at depth zero needs no carrying, so it takes the ordinary
 /// close path and hands the replacement back as it stands; every other case
 /// schedules the shift.
 ///
 /// # Specification
 /// - requires: `depth` is the number of binders the walk has crossed to reach
 ///   `node`.
-/// - ensures: the replacement exactly when this is a substitution or an
-///   instantiation, some binder has been crossed, and the node is the variable
-///   occurrence the depth names; nothing in every other case, including a
-///   substitution at depth zero, which takes the ordinary close path instead.
+/// - ensures: the replacement exactly when this is a substitution, an
+///   instantiation or an unload, some binder has been crossed, and the node is
+///   a variable occurrence it replaces ([`replaced`]); nothing in every other
+///   case, including a replacement at depth zero, which takes the ordinary
+///   close path instead.
 /// - provides: a replacement or [`Absent`]: `Shift` selects shifting,
 ///   `NoCrossedBinders` needs no raise, `DifferentOccurrence` is not the
 ///   target, and `UnreadableValue` leaves the ordinary unreadable-node path in
@@ -1803,14 +1938,16 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 on both rewrites, zero and positive depth, matching and
-///   different variables, another family and an unreadable value. Exact
-///   replacements and refusal reasons separate guard precedence and missing
-///   carrying; the nested-binder witness observes the raised replacement.
+/// - hypothesis: L3 on the replacing rewrites, zero and positive depth,
+///   matching and different variables, another family and an unreadable value.
+///   Exact replacements and refusal reasons separate guard precedence and
+///   missing carrying; the nested-binder witness observes the raised
+///   replacement.
 /// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
 /// - witness: `rewrite::tests::carrying_refusals_follow_rule_precedence`
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
 ///
 /// [`Absent`]: carrying::Absent
 #[spec(ensures: |ret| match rewrite {
@@ -1818,14 +1955,16 @@ quenchant_shape::reason_enum! {
     Rewrite::Abstract { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
     Rewrite::Share { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Sharing)),
     Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Rotation)),
-    Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
+    Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {
         if depth.0 == 0 {
             matches!(ret, Maybe::Absent(carrying::Absent::NoCrossedBinders))
         } else if let AnyNode::Value(id) = node {
             match arena.value(id) {
                 None => matches!(ret, Maybe::Absent(carrying::Absent::UnreadableValue)),
-                Some(&Value::Variable(index)) if u32::from(index) == depth.0 =>
-                    matches!(ret, Maybe::Present(found) if found == replacement),
+                Some(&Value::Variable(index)) => match replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth) {
+                    Maybe::Present(replacement) => matches!(ret, Maybe::Present(found) if found == replacement),
+                    Maybe::Absent(()) => matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence)),
+                },
                 Some(_) => matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence)),
             }
         } else {
@@ -1841,15 +1980,13 @@ fn carried_occurrence(
     depth: BinderDepth,
 ) -> Maybe<ValueId, carrying::Absent>
 {
-    let replacement = match rewrite {
-        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
-            replacement
-        },
+    match rewrite {
+        Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {},
         Rewrite::Shift { .. } => return Maybe::Absent(carrying::Absent::Shift),
         Rewrite::Abstract { .. } => return Maybe::Absent(carrying::Absent::Abstraction),
         Rewrite::Share { .. } => return Maybe::Absent(carrying::Absent::Sharing),
         Rewrite::Rotate { .. } => return Maybe::Absent(carrying::Absent::Rotation),
-    };
+    }
     if depth == BinderDepth::NONE {
         return Maybe::Absent(carrying::Absent::NoCrossedBinders);
     }
@@ -1862,8 +1999,11 @@ fn carried_occurrence(
         return Maybe::Absent(carrying::Absent::UnreadableValue);
     };
     match *value {
-        Value::Variable(index) if BinderDepth::from(u32::from(index)) == depth => {
-            Maybe::Present(replacement)
+        Value::Variable(index) => {
+            match replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth) {
+                Maybe::Present(replacement) => Maybe::Present(replacement),
+                Maybe::Absent(()) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
+            }
         },
         Value::Constructor { .. }
         | Value::Record(_)
@@ -1883,7 +2023,6 @@ fn carried_occurrence(
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }
         | Value::QuantifiedEvaluation { .. }
-        | Value::Variable(_)
         | Value::Constant(_)
         | Value::Literal(_)
         | Value::Tuple(..)
@@ -1914,18 +2053,19 @@ enum Reach
 /// walk opens it, or none, so the walk answers it with itself.
 ///
 /// A shift acts on the indices at or past its cutoff measured from `depth`; a
-/// substitution and an instantiation act on the index `depth` names and every
-/// one past it. A node whose support stops short of that index holds none of
-/// them. A share, an abstraction and a rotation match by node, by constant or
-/// by band rather than by how far a node reads, so they open every node.
+/// substitution, an instantiation and an unload act on the index `depth` names
+/// and every one past it. A node whose support stops short of that index holds
+/// none of them. A share, an abstraction and a rotation match by node, by
+/// constant or by band rather than by how far a node reads, so they open every
+/// node.
 ///
 /// # Specification
 /// - requires: `depth` is the number of binders the walk has crossed to reach
 ///   `node`.
 /// - ensures: [`Reach::Beyond`] exactly when the rewrite is a shift, a
-///   substitution or an instantiation and the node's support reaches no index
-///   at or past the first it acts on at `depth`; an unresolvable node's support
-///   reaches every binder.
+///   substitution, an instantiation or an unload and the node's support reaches
+///   no index at or past the first it acts on at `depth`; an unresolvable
+///   node's support reaches every binder.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1937,7 +2077,7 @@ enum Reach
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
 /// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
 #[spec(ensures: |ret| ret == Reach::Within || matches!(rewrite,
-    Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. }))]
+    Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. }))]
 #[inline]
 fn reach(
     arena: &TermArena,
@@ -1948,7 +2088,9 @@ fn reach(
 {
     let acted_on = match rewrite {
         Rewrite::Shift { cutoff, .. } => cutoff.0.saturating_add(depth.0),
-        Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } => depth.0,
+        Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {
+            depth.0
+        },
         Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => {
             return Reach::Within;
         },
@@ -2695,7 +2837,7 @@ Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 
         Some(&Value::Variable(_)) => true,
         Some(&Value::Constant(found)) => match rewrite {
             Rewrite::Abstract { constant, .. } if constant == found => matches!(arena.value(ret), Some(&Value::Variable(_))),
-            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } | Rewrite::Share { .. } => ret == id,
+            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } | Rewrite::Share { .. } | Rewrite::Unload { .. } => ret == id,
         },
         Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
     },
@@ -3023,7 +3165,8 @@ fn close_value(
             | Rewrite::Substitute { .. }
             | Rewrite::Instantiate { .. }
             | Rewrite::Rotate { .. }
-            | Rewrite::Share { .. } => id,
+            | Rewrite::Share { .. }
+            | Rewrite::Unload { .. } => id,
         },
         Value::ListNil | Value::Literal(_) => id,
         Value::Tuple(ref components) => {
@@ -3118,19 +3261,23 @@ fn close_value(
 /// below the depth is bound inside the walk and stands; an index equal to the
 /// depth is the one being replaced, and the replacement is carried in under the
 /// binders crossed to reach here; an index above it named a slot outside the
-/// binder that is now gone, so it lowers by one.
+/// binder that is now gone, so it lowers by one. An unload's are the same
+/// three over a band of `width` binders: an index inside the band becomes the
+/// component it names, and an index past it lowers by the width.
 ///
 /// # Specification
 /// - requires: `depth` counts crossed binders and `index` is this variable's
-///   index. A substituted occurrence at positive depth has already taken the
+///   index. A replaced occurrence at positive depth has already taken the
 ///   carrying path and never reaches this close.
 /// - ensures: for a shift, the index rises by the amount exactly when it is at
 ///   or above the cutoff measured from this depth, and stands otherwise, and a
 ///   share moves it as a shift by one from no cutoff does; for a substitution,
 ///   an index below the depth stands, an index equal to it becomes the
-///   replacement, and an index above it lowers by one. Shift cutoffs and raised
-///   indices clamp at the representable ceiling.
-/// - provides: the whole variable rule of both machines, written once.
+///   replacement, and an index above it lowers by one; for an unload, an index
+///   below the depth stands, an index inside the band becomes the component it
+///   names, and an index past the band lowers by the width. Shift cutoffs and
+///   raised indices clamp at the representable ceiling.
+/// - provides: the whole variable rule of every machine, written once.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3138,13 +3285,17 @@ fn close_value(
 /// - hypothesis: L3 on indices below, at and above the cutoff or substituted
 ///   binder, including zero shift and the u32 ceiling; exact variables,
 ///   replacement identity and arena watermark separate scope errors, wrapping
-///   and allocating an unchanged occurrence.
+///   and allocating an unchanged occurrence. An unload's band is observed
+///   against substituting its binders one at a time.
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+/// - witness: `rewrite::tests::an_unload_agrees_with_substituting_one_binder_at_a_time`
 #[spec(
     requires: matches!(arena.value(id), Some(&Value::Variable(actual)) if actual == index),
-    requires: !matches!(rewrite, Rewrite::Substitute { .. } | Rewrite::Instantiate { .. }) || depth.0 == 0 || u32::from(index) != depth.0,
+    requires: !matches!(rewrite, Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. })
+        || depth.0 == 0
+        || matches!(replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth), Maybe::Absent(())),
     ensures: |ret| match rewrite {
         Rewrite::Abstract { .. } => ret == id,
         Rewrite::Shift { cutoff, amount } => {
@@ -3169,6 +3320,14 @@ fn close_value(
             Some(past) if past == band.0 => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(depth.0))),
             Some(past) if past < band.0 => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(1)))),
             Some(_) | None => ret == id,
+        },
+        Rewrite::Unload { width, .. } => match u32::from(index).checked_sub(depth.0) {
+            None => ret == id,
+            Some(past) if past < width.0 => match replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth) {
+                Maybe::Present(replacement) => ret == replacement,
+                Maybe::Absent(()) => ret == id,
+            },
+            Some(_) => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_sub(width.0)))),
         },
     },
 )]
@@ -3224,6 +3383,25 @@ fn rewrite_variable(
                 arena.value_variable(DeBruijnIndex::from(raised))
             },
             Some(_) | None => id,
+        },
+        // An unload's band answers by its components, reached only at depth
+        // zero as a substitution's binder is, and every index past the band
+        // lowers by its width.
+        Rewrite::Unload { width, .. } => match index.0.checked_sub(depth.0) {
+            Some(past) if past < width.0 => match replaced(arena, rewrite, index, depth) {
+                Maybe::Present(replacement) => replacement,
+                Maybe::Absent(()) => id,
+            },
+            Some(_) => {
+                // index >= depth + width, so lowering by the width cannot
+                // underflow.
+                let lowered = u32::from(arith::sub(
+                    arith::Int::from(index.0),
+                    arith::Int::from(width.0),
+                ));
+                arena.value_variable(DeBruijnIndex::from(lowered))
+            },
+            None => id,
         },
     }
 }

@@ -64,6 +64,7 @@ INSERT INTO site VALUES('sharing','kernel-conversion-trace','','defines','couran
 INSERT INTO site VALUES('sharing','kernel-core','admission','implements','superposition','Guarded-superposition admission: one schema check for a family of members.');
 INSERT INTO site VALUES('sharing','kernel-core','admission::content','implements','exact-records','The consumer-owned arena a binding''s rows look their records up in, an id deciding syntactic identity with no hash premise.');
 INSERT INTO site VALUES('sharing','kernel-core','encoding','implements','incremental-memo','The memo key, naming a plain definition''s reference by its content.');
+INSERT INTO site VALUES('sharing','kernel-core','replay','implements','spinal','The replay''s weak-head reduction under an environment: the value a binder stands for held once in a cell for every occurrence and closed once at the unload, admitted on its agreement with the substituting reduction.');
 INSERT INTO site VALUES('sharing','kernel-core','support','implements','incremental-memo','The support of one node check: the complete input a memo key names, so equal supports force equal answers.');
 INSERT INTO site VALUES('sharing','kernel-core','verdict','implements','incremental-memo','The verdict key, chaining the kernel''s build and each admitted declaration, read by every later run over the same prefix.');
 INSERT INTO site VALUES('sharing','kernel-term','decode','consumes','subterm-table','The reader''s re-encode-compare: an artifact accepted only when the maximal-sharing encoder reproduces its bytes.');
