@@ -55,7 +55,8 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 
 # The nightly run (`mise run ci:sweeps-nightly`), held to fifteen minutes
 # summed over the whole workflow, twenty at the most, the sweeps job to its
-# 387 s share (#3013). A sweep too costly to visit the whole corpus inside its
+# 504 s share, its 458 s in nightly 40667395217 scaled by 900/818 (#3013).
+# A sweep too costly to visit the whole corpus inside its
 # share rotates (`gandr-workflow-sweep`'s rotation), each over the nights it
 # states beside its sample, sized from the nightly's timings: the sweeps share
 # one count, seven, and a sweep whose night would pass half the share's test

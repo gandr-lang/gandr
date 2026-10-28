@@ -151,7 +151,12 @@ jobs:
   # The sweeps restore main's enforcing test state, which Cargo's
   # fingerprints bring up to date, and run the nightly task. The plain build
   # of the whole test graph costs six minutes on its own; the sweeps run
-  # enforced alone, as every pull-request lane runs their samples.
+  # enforced alone, as every pull-request lane runs their samples. The job's
+  # share of the nightly's 900 s is 504 s, its 458 s in nightly 40667395217
+  # scaled by 900/818, as every job's share is (#3013): 56 s of setup and
+  # 402 s of sweeps. A night's slice of a rotating sweep costs what its
+  # sources cost, so one night's sweeps can run past the share while the
+  # whole nightly stays within 900 s.
   sweeps:
     name: sweep the night's inputs, specifications enforced
     needs: [ci-image-ref, freshness]
@@ -181,11 +186,10 @@ jobs:
   # together outrun one job's fifteen minutes. Its causes and counts are the
   # job summary, the whole backlog visible whether or not it is filed; the
   # report goes to `reports`, which holds the write token. The job's share of
-  # the nightly's 900 s is 184 s, its 243 s in the dispatched run 40602657172
-  # scaled by 900/1185 (#3013): 48 s of setup and a 190 s step that built a
-  # second driver before sweeping. The sweep runs the driver the restored test
-  # build links, resolved as that state was, so the step is the sweep: 7175
-  # mutants on one thread took 20 s locally (#3289).
+  # the nightly's 900 s is 107 s, its 97 s in nightly 40667395217 scaled by
+  # 900/818 (#3013). The sweep runs the driver the restored test build links,
+  # resolved as that state was, so the step is the sweep: 7175 mutants on one
+  # thread took 20 s locally (#3289).
   recovery:
     name: sweep the exemplars for recovery, specifications enforced
     needs: [ci-image-ref, freshness]
@@ -234,11 +238,10 @@ jobs:
   # a night (`mise run ci:all-features` says which), in the plain lane's
   # restored test state. The sweeps sample as on a landing that changed no
   # source. A feature-gated test that fails here is filed as a defect, never
-  # skipped (#1785). The job's share of the nightly's 900 s is 186 s, its
-  # 245 s in the dispatched run 40602657172 scaled by 900/1185 (#3013): 45 s
-  # of setup, 186 s building a third of the crates and 11 s testing them. One
-  # crate a night builds about its own closure; a crate whose night stays past
-  # the share gets its own saved build state (#3288).
+  # skipped (#1785). The job's share of the nightly's 900 s is 147 s, its
+  # 134 s in nightly 40667395217 scaled by 900/818 (#3013). One crate a night
+  # builds about its own closure; a crate whose night stays past the share
+  # gets its own saved build state (#3288).
   all-features:
     name: test every crate with every feature on
     needs: [ci-image-ref, freshness]
@@ -297,10 +300,10 @@ jobs:
   # with its lane's shape, in the same commit; the name is the job's display
   # name. Each budget is about 1.5 times the lane's median once build state
   # was pruned, the toolchain installed once and Clippy given its own state.
-  # This job's share of the nightly's 900 s is 133 s, its 175 s in the
-  # dispatched run 40602657172 scaled by 900/1185 (#3013). The lane budget
-  # took 120 s of it reading over a hundred runs' jobs one `gh` call at a
-  # time, so it reads them eight at a time (#3290).
+  # This job's share of the nightly's 900 s is 113 s, its 103 s in nightly
+  # 40667395217 scaled by 900/818 (#3013). The lane budget reads the runs'
+  # jobs eight at a time (#3290), and a read GitHub answers with a server
+  # error is read again (#3492).
   #
   # The enforcing lanes are held by the cone a landing touched: deep when it
   # changed a file under crates/kernel-* or crates/core-*, Cargo.lock,
