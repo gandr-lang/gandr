@@ -1,0 +1,7 @@
+error[UnresolvedTypeHead]: no type named `Missing` is written bare
+   ╭▸ corpus/pathological/worlds/requires.gandr:13:25
+   │
+13 │ pub world lost requires Missing;
+   │                         ━━━━━━━ no type head of this name and arity
+   │
+   ╰ note: `lost` is refused with UnresolvedTypeHead, as its expectation states

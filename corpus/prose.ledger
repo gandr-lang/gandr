@@ -1536,6 +1536,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-r
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d203717a6c072f2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure c7bd7e2325683c3a
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure ef85c85b9b0f6951
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/requires.txt Procedure 3bdc0addbf0ffa85
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/secret-crosses.txt Procedure c4b41bb602de3f53
 crates/surface-render-terminal/tests/golden/nested-application.txt Procedure dcd8e6b6a2087870
 crates/surface-render-terminal/tests/golden/nested-force.txt Procedure 9aee6bb840c488e8

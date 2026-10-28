@@ -1,0 +1,47 @@
+// A site offering a store of strings, the `Store` its role requires.
+//
+// A site's offer lives in its own file, so the program never names the place
+// that serves it.
+//
+// The offer is `Offers`, a model of the site's own theory `Hosted`. It need
+// not be the program's `Store`. It must hold each member of `Store` at its
+// type. This one also offers a clock.
+//
+// - see: `offers.gandr` — the program whose `far` requires `Store`
+// - see: `offers.manifold.gandr` — the manifold placing `far` here
+
+// The deployment theories, from `std.manifold` by its path.
+import "../../../library/std/src/manifold.gandr";
+
+/// What the site holds: a store and a clock.
+pub theory Hosted {
+  /// The value held at `key`.
+  oper get : (key : String) --> String;
+  /// Hold `value` at `key`.
+  oper put : (key : String, value : String) --> Unit;
+  /// The site's time, in seconds.
+  oper now : Integer;
+}
+
+/// The site's offer: every member a role placed here may need.
+pub module Offers : Model(Hosted) {
+  /// Every key holds its own name.
+  def get(key : String) -> String { key }
+  /// A write the store keeps nothing of.
+  def put(key : String, value : String) -> Unit { unit }
+  /// The epoch.
+  def now = 0;
+}
+
+/// The far site, on a loopback socket.
+pub module Site : Model(Site) {
+  /// The key the hosting process proves.
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  /// The socket it binds, where a dialer reaches it.
+  def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
+}
+
+/// The far site's model, where a manifold places a world.
+pub def site : Model(Site) = pack Site at Model(Site);

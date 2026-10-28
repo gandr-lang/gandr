@@ -4381,6 +4381,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_abstracts(sink);
         self.mint_models(sink);
         self.match_signatures(sink);
+        self.check_requirements();
         self.check_families(sink);
         self.check_sorts();
         self.mint_data(sink);
@@ -4575,6 +4576,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let theory = self.collected.slots.get(usize::from(reduct.source))?;
                 Some((entry.constant, theory.name))
             }))
+            .collect();
+        // The theory each world requires, as its declaration writes the path.
+        let requirements: BTreeMap<ConstantIndex, ByteSpan> = self
+            .collected
+            .requirements
+            .iter()
+            .filter_map(|(&slot, requirement)| {
+                let entry = self.collected.slots.get(usize::from(slot))?;
+                Some((entry.constant, requirement.written))
+            })
             .collect();
         // The reducts the checker may insert where a model of a theory stands
         // at a model of one it includes.
@@ -4855,6 +4866,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_handler_laws(handler_laws)
         .with_models(models)
         .with_qualified(qualified)
+        .with_requirements(requirements)
         .with_reducts(reducts)
         .with_forgets(forgets)
         .with_forgettings(forgettings);

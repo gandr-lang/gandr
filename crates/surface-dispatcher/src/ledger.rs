@@ -2136,7 +2136,11 @@ mod tests
     {
         let ledger = SyntaxLedger::build().expect("the ledger builds");
         let form = |name| row(&ledger, RuleName(name)).form.as_str();
-        assert_eq!(form("world_declaration"), "world ‹identifier› ;");
+        assert_eq!(
+            form("world_declaration"),
+            "world ‹identifier› ⦅ requires ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ \
+             ‹identifier› ⦆ ⦆* ⦆? ;"
+        );
         assert_eq!(
             form("import_declaration"),
             "import ⦅ \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ‖ ‹identifier› ⦅ . \

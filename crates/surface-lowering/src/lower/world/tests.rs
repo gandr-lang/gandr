@@ -10,6 +10,7 @@ use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::error::LoweringRefusal;
 use crate::lower::native::tests::body_named;
@@ -74,6 +75,50 @@ fn a_world_declared_twice_is_refused()
             LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("seat")
         ),
         "a second world of one name is the duplicate any name declared twice is"
+    );
+}
+
+/// `world w requires R ;` files the bytes of `R` beside the world, a dotted
+/// path whole; a world written with none requires nothing; a requirement
+/// naming no theory refuses its world at the name (#3376).
+#[test]
+fn a_world_s_requirement_names_its_theory_3376()
+{
+    let mut arena = CoreArena::new();
+    let text = concat!(
+        "theory Needs { sort Key : Type; }\n",
+        "theory Far.Store { sort Cell : Type; }\n",
+        "world near;\n",
+        "world far requires Needs;\n",
+        "world deep requires Far.Store;\n",
+        "world lost requires Missing;\n",
+    );
+    let module = lowered(SourceText::from(text), &mut arena);
+    let required = |name: &str| {
+        let declaration = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))?;
+        let Maybe::Present(span) = module.requirement(declaration)
+        else {
+            return None;
+        };
+        text.get(usize::from(span.start()) .. usize::from(span.end()))
+    };
+    assert_eq!(required("near"), None, "a bare world requires nothing");
+    assert_eq!(required("far"), Some("Needs"), "the theory's name is filed");
+    assert_eq!(
+        required("deep"),
+        Some("Far.Store"),
+        "a dotted path is filed whole"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("lost")),
+            LoweringRefusal::UnresolvedTypeHead { name, .. } if name == SurfaceName::from("Missing")
+        ),
+        "a requirement naming no theory refuses its world at the name: {:?}",
+        refusal_of(&module, SurfaceName::from("lost"))
     );
 }
 

@@ -38,6 +38,7 @@ use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::decode_escapes;
 use gandr_surface_syntax::SourceFragment;
@@ -47,6 +48,7 @@ use quenchant_shape::shape::Maybe;
 use crate::HostGrant;
 use crate::component::lay_out;
 use crate::compose::Composed;
+use crate::compose::Lowered;
 use crate::compose::LoweringCount;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
@@ -57,6 +59,9 @@ use crate::manifold::Placed;
 use crate::package::Package;
 use crate::package::package_root;
 use crate::root::classify;
+use crate::walk::SourceFault;
+use crate::walk::Standing;
+use crate::walk::Step;
 
 /// The file name of a workspace's source, at the workspace's root.
 pub const WORKSPACE: &str = "workspace.gandr";
@@ -332,6 +337,169 @@ fn alone<Read>(
     let text = std::fs::read_to_string(source).map_err(|error| Unran::Unread {
         message: error.to_string(),
     })?;
+    stepped_alone(source, SourceText::from(text.as_str()), |step| match step {
+        Step::Source {
+            composed: Composed::Settled { mut program, .. },
+            ..
+        } => Ok(read(&mut program)),
+        Step::Source {
+            composed: Composed::Refused(refusal),
+            ..
+        } => Err(Unran::Refused {
+            why: refusal.to_string(),
+        }),
+        Step::Fault { fault, .. } => Err(Unran::Refused {
+            why: fault.to_string(),
+        }),
+    })?
+}
+
+/// What `read` makes of the step the source at `source`, written `text`,
+/// takes through the pipeline, checked as [`ran_alone`] checks a source.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `text` laid out at `source` over the sources it imports, as the
+///   walk lays a source out, lowered and judged under the strict root; `read`
+///   given the step the walk would yield for it: the source under the root
+///   `source` is classified into, standing as its composition decides, or the
+///   fault composing it met.
+/// - provides: a judgement of a source's text other than its file's, with what
+///   `check` reports of it, such as the program a deployment check writes a
+///   check into.
+/// - fails: [`Unran::Refused`] when the grammar does not build.
+/// - panics: none.
+/// - executable: none — as [`ran_alone`].
+///
+/// # Errors
+/// [`Unran::Refused`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses of [`ran_alone`], and of the deployment
+///   check judged over a program's text.
+/// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
+/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+#[inline]
+pub fn stepped_alone<Read, Reader>(
+    source: &Path,
+    text: SourceText<'_>,
+    read: Reader,
+) -> Result<Read, Unran>
+where
+    Reader: FnOnce(Step<'_>) -> Read,
+{
+    let grammar = built_in().map_err(|error| Unran::Refused {
+        why: error.to_string(),
+    })?;
+    let root = classify(source);
+    let laid = lay_out(&grammar, source, root, text);
+    let laid_text = SourceText::from(laid.text.as_str());
+    let mut lowerings = LoweringCount::default();
+    let step = match lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings).and_then(
+        |lowering| {
+            judge_lowering(
+                CorpusRoot::Strict,
+                (lowering, laid_text),
+                &HostGrant::UNBOUNDED,
+                laid.base,
+            )
+        },
+    ) {
+        Ok(composed) => Step::Source {
+            path: source,
+            root,
+            text: laid_text,
+            base: laid.base,
+            standing: Standing::of(root, &composed),
+            composed,
+        },
+        Err(fault) => Step::Fault {
+            path: source,
+            fault: SourceFault::Compose(fault),
+        },
+    };
+    Ok(read(step))
+}
+
+/// What `read` makes of the module the source at `source`, written `text`,
+/// lowers to over the sources it imports, and of the unit's text its spans
+/// index, before anything judges it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `text` laid out at `source` over the sources it imports, as the
+///   walk lays a source out, and lowered; `read` given the module and the
+///   unit's text.
+/// - provides: what a source declares, read without judging it: the worlds a
+///   deployment's program declares and what each requires.
+/// - fails: [`Unran::Refused`] for a text that does not lower, or is refused as
+///   a whole.
+/// - panics: none.
+/// - executable: none — the module is the lowering's, which a clause would
+///   restate whole.
+///
+/// # Errors
+/// [`Unran::Refused`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a deployment's program read for its worlds, each with the
+///   theory it requires or none.
+/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+#[inline]
+pub fn lowered_alone<Read, Reader>(
+    source: &Path,
+    text: SourceText<'_>,
+    read: Reader,
+) -> Result<Read, Unran>
+where
+    Reader: FnOnce(&LoweredModule<'_>, SourceText<'_>) -> Read,
+{
+    let grammar = built_in().map_err(|error| Unran::Refused {
+        why: error.to_string(),
+    })?;
+    let laid = lay_out(&grammar, source, classify(source), text);
+    let laid_text = SourceText::from(laid.text.as_str());
+    let mut lowerings = LoweringCount::default();
+    let lowering =
+        lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings).map_err(|fault| {
+            Unran::Refused {
+                why: fault.to_string(),
+            }
+        })?;
+    match lowering.into_lowered() {
+        Lowered::Module { module, .. } => Ok(read(&module, laid_text)),
+        Lowered::Refused(refusal) => Err(Unran::Refused {
+            why: refusal.to_string(),
+        }),
+    }
+}
+
+/// The file of each source the source at `source` lays out over, its own
+/// among them, each canonical.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the canonical path of each source of the unit `source` lays out
+///   as the walk lays it out, in the unit's order, the prelude, which no file
+///   holds, left out.
+/// - provides: the files a manifold imports, among which its sites are found.
+/// - fails: [`Unran::Unread`] for a source that cannot be read, and
+///   [`Unran::Refused`] when the grammar does not build.
+/// - panics: none.
+/// - executable: none — the clause reads the file system.
+///
+/// # Errors
+/// [`Unran::Unread`] and [`Unran::Refused`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a manifold's sites are found among the files it imports.
+/// - witness: `manifold::tests::a_world_s_requirement_is_judged_against_its_site_s_offer_3376`
+#[inline]
+pub fn sources_alone(source: &Path) -> Result<Vec<PathBuf>, Unran>
+{
+    let text = std::fs::read_to_string(source).map_err(|error| Unran::Unread {
+        message: error.to_string(),
+    })?;
     let grammar = built_in().map_err(|error| Unran::Refused {
         why: error.to_string(),
     })?;
@@ -341,26 +509,11 @@ fn alone<Read>(
         classify(source),
         SourceText::from(text.as_str()),
     );
-    let laid_text = SourceText::from(laid.text.as_str());
-    let mut lowerings = LoweringCount::default();
-    let composed = lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings)
-        .and_then(|lowering| {
-            judge_lowering(
-                CorpusRoot::Strict,
-                (lowering, laid_text),
-                &HostGrant::UNBOUNDED,
-                laid.base,
-            )
-        })
-        .map_err(|fault| Unran::Refused {
-            why: fault.to_string(),
-        })?;
-    match composed {
-        Composed::Settled { mut program, .. } => Ok(read(&mut program)),
-        Composed::Refused(refusal) => Err(Unran::Refused {
-            why: refusal.to_string(),
-        }),
-    }
+    Ok(laid
+        .paths
+        .into_iter()
+        .filter(|path| path.is_file())
+        .collect())
 }
 
 /// What a function a source declares answered its host.
@@ -485,25 +638,27 @@ impl Spelling<'_>
         })
     }
 
-    /// The placements the spelling lists: `cons(At("far", "<key>",
-    /// "127.0.0.1:4733"), nil)` is the world `far` at that key and socket,
-    /// once, and `Instances("far", "<key>", "", 2)` is it twice; none for any
-    /// other spelling.
+    /// The placements the spelling lists: `cons(At("far", #{.key = "<key>",
+    /// .secret = "far", .sockets = "127.0.0.1:4733"}), nil)` is the world
+    /// `far` at the site of that key and socket, once, and `Instances("far",
+    /// #{…}, 2)` is it twice; none for any other spelling.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each element of a spelling `cons(p₁, cons(p₂, … nil))` read
-    ///   in order, each `pᵢ` written `At(n, k, s)`, read with the count `1`, or
-    ///   `Instances(n, k, s, c)`, read with the count `c` as spelled, `n`, `k`
-    ///   and `s` quoted strings decoded; none when anything else stands
+    ///   in order, each `pᵢ` written `At(n, s)`, read with the count `1`, or
+    ///   `Instances(n, s, c)`, read with the count `c` as spelled, `n` a quoted
+    ///   string decoded and `s` a site's model spelled `#{.key = k, .secret =
+    ///   e, .sockets = o}`, its labels in the order a run spells them and `k`
+    ///   and `o` read as quoted strings decoded; none when anything else stands
     ///   anywhere in it.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as [`Self::listed`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a placement of each constructor, none, and one
-    ///   missing its sockets each read as listed or not.
+    /// - hypothesis: L3 — a placement of each constructor, none, and one whose
+    ///   site lacks its sockets each read as listed or not.
     /// - witness: `workspace::tests::a_run_s_spelling_lists_its_placements_3374`
     pub(crate) fn placements(self) -> Option<Vec<Placed>>
     {
@@ -513,8 +668,10 @@ impl Spelling<'_>
                 None => (true, spelling.0.strip_prefix("Instances(")?),
             };
             let (name, Self(rest)) = Self(rest).quoted()?;
-            let (key, Self(rest)) = Self(rest.strip_prefix(", ")?).quoted()?;
-            let (sockets, Self(rest)) = Self(rest.strip_prefix(", ")?).quoted()?;
+            let (key, Self(rest)) = Self(rest.strip_prefix(", #{.key = ")?).quoted()?;
+            let (_secret, Self(rest)) = Self(rest.strip_prefix(", .secret = ")?).quoted()?;
+            let (sockets, Self(rest)) = Self(rest.strip_prefix(", .sockets = ")?).quoted()?;
+            let rest = rest.strip_prefix('}')?;
             let (count, rest) = if counted {
                 rest.strip_prefix(", ")?.split_once(')')?
             }
@@ -731,17 +888,22 @@ mod tests
             sockets: String::from(sockets),
             count: String::from(count),
         };
+        let site = |sockets: &str| {
+            format!("#{{.key = \"k\", .secret = \"far\", .sockets = \"{sockets}\"}}")
+        };
         assert_eq!(
-            Spelling(
-                "cons(At(\"far\", \"k\", \"127.0.0.1:4733\"), cons(Instances(\"near\", \"k\", \"\", \
-                 2), nil))"
-            )
+            Spelling(&format!(
+                "cons(At(\"far\", {}), cons(Instances(\"near\", {}, 2), nil))",
+                site("127.0.0.1:4733"),
+                site("")
+            ))
             .placements(),
             Some(Vec::from([
                 placed("far", "127.0.0.1:4733", "1"),
                 placed("near", "", "2")
             ])),
-            "a placement of each constructor reads in order, `At` counting one"
+            "a placement of each constructor reads its site's key and sockets in order, `At` \
+             counting one"
         );
         assert_eq!(
             Spelling("nil").placements(),
@@ -749,9 +911,9 @@ mod tests
             "no placement reads as none"
         );
         assert_eq!(
-            Spelling("cons(At(\"far\", \"k\"), nil)").placements(),
+            Spelling("cons(At(\"far\", #{.key = \"k\", .secret = \"far\"}), nil)").placements(),
             None,
-            "a placement without its sockets lists nothing"
+            "a placement whose site lacks its sockets lists nothing"
         );
     }
 }

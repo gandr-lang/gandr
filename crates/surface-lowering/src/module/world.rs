@@ -7,10 +7,17 @@
 //! name. The name enters the module's namespace, so every position that reads a
 //! world resolves it as it resolves any earlier declaration, and a world
 //! declared twice is the duplicate definition any name declared twice is.
+//!
+//! `world w requires R ;` files the theory path `R` beside the slot
+//! ([`super::Collected::requirements`]): the signature of what a role placed
+//! at `w` needs, which a deployment holds each site placing `w` to offer. The
+//! path is resolved once every name is collected, as an ascription's theory
+//! is.
 
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -23,6 +30,24 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::resolve::SurfaceName;
+
+/// The requirement a world is written with, `world w requires R ;`: the theory
+/// of what a role placed at `w` needs, named as `Model(Gandr.Package)` names
+/// one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorldRequirement<'source>
+{
+    /// Each module before the theory's name, with its bytes.
+    pub prefix: Vec<(ByteSpan, SurfaceName<'source>)>,
+    /// The bytes of the theory's name.
+    pub span: ByteSpan,
+    /// The theory's name.
+    pub name: SurfaceName<'source>,
+    /// The bytes of the whole path, from its first segment to the theory's
+    /// name.
+    pub written: ByteSpan,
+}
 
 impl<'source> Collector<'_, 'source>
 {
@@ -116,6 +141,10 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, declaration.node, &mut attributes);
             }
         }
+        let (written, read) = match read_requirement(&mut cursor) {
+            Ok(written) => (written, Ok(())),
+            Err(refusal) => (Vec::new(), Err(refusal)),
+        };
         let closed = matches!(cursor.tile(TileName::SEMICOLON), Maybe::Present(_))
             && matches!(cursor.peek(), Maybe::Absent(_));
         let tail = if let Maybe::Present(repaired) = pieces.repair {
@@ -124,14 +153,78 @@ impl<'source> Collector<'_, 'source>
         else if let Err(refusal) = attributed {
             Tail::Refused(refusal)
         }
+        else if let Err(refusal) = read {
+            Tail::Refused(refusal)
+        }
         else if !closed {
             Tail::Refused(misplaced_in(FormName::WORLD_DECLARATION, cursor.here()))
         }
         else {
             Tail::World
         };
+        if matches!(tail, Tail::World)
+            && let (Some(&first), Some((&theory, prefix))) = (written.first(), written.split_last())
+            && let Ok(whole) = ByteSpan::new(first.span.start(), theory.span.end())
+        {
+            let requirement = WorldRequirement {
+                prefix: prefix
+                    .iter()
+                    .map(|&segment| (segment.span, self.name_of(segment)))
+                    .collect(),
+                span: theory.span,
+                name: self.name_of(theory),
+                written: whole,
+            };
+            let _first = self.collected.requirements.insert(slot, requirement);
+        }
         self.file(slot, declaration, named, tail, attributes);
 
         Ok(())
     }
+}
+
+/// The theory path after `requires`, read off `cursor` where it stands: each
+/// segment's tile, the theory's name last; none when no `requires` follows.
+///
+/// # Specification
+/// - requires: `cursor` stands after a world declaration's name.
+/// - ensures: empty, the cursor unmoved, when the next tile is no `requires`;
+///   otherwise the type identifier after it and each segment after a `.`, in
+///   written order, the cursor past the last.
+/// - fails: a `requires` with no type identifier after it, or a `.` with no
+///   segment after it.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::MalformedForm`] at the tile that stands out of place.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a world written with a bare and with a dotted requirement
+///   files each path; one written with none files nothing.
+/// - witness: `lower::world::tests::a_world_s_requirement_names_its_theory_3376`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.is_sorted_by_key(|segment| segment.span.start())))]
+fn read_requirement(cursor: &mut Cursor<'_>) -> Result<Vec<Placed>, LoweringRefusal<'static>>
+{
+    let mut path = Vec::new();
+    if let Maybe::Absent(_) = cursor.tile(TileName::REQUIRES) {
+        return Ok(path);
+    }
+    let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+    else {
+        return Err(misplaced_in(FormName::WORLD_DECLARATION, cursor.here()));
+    };
+    path.push(head);
+    while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+        match cursor.tile(TileName::TYPE_IDENTIFIER) {
+            Maybe::Present(segment) => path.push(segment),
+            Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                Maybe::Present(segment) => path.push(segment),
+                Maybe::Absent(_) => {
+                    return Err(misplaced_in(FormName::WORLD_DECLARATION, cursor.here()));
+                },
+            },
+        }
+    }
+
+    Ok(path)
 }

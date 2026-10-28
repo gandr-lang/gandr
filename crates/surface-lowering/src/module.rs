@@ -1597,6 +1597,9 @@ pub struct Collected<'source>
     pub foreign: BTreeMap<(SourceIndex, EffectName), Arc<ForeignInterface>>,
     /// Each extern block carrying `boundary`, by the slot its check takes.
     pub boundaries: BTreeMap<SlotIndex, BoundarySlot>,
+    /// Each world written with a requirement, `world w requires R ;`, by its
+    /// slot: the theory a site placing it must offer.
+    pub requirements: BTreeMap<SlotIndex, world::WorldRequirement<'source>>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1607,6 +1610,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No source the source imports unqualified declares the name.
             Unbound,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a world names no requirement.
+    pub mod requirement {
+        /// The reason none is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declaration is no world written with `requires`.
+            Unrequired,
         }
     }
 }
@@ -3196,6 +3211,7 @@ pub fn begin_collection<'source>(
         reached: BTreeSet::new(),
         foreign: BTreeMap::new(),
         boundaries: BTreeMap::new(),
+        requirements: BTreeMap::new(),
     })
 }
 
@@ -11173,6 +11189,9 @@ pub struct LoweredModule<'source>
     /// The theory each derived rule's statement is read under, `T` in `T.r`,
     /// by the statement's position.
     qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
+    /// The bytes of the theory path each world is written to require, `R` of
+    /// `world w requires R ;`, by the world's position.
+    requirements: BTreeMap<ConstantIndex, ByteSpan>,
     /// The reducts the module mints, ascending by position.
     reducts: Vec<ConstantIndex>,
     /// The forgetting maps the module mints, ascending by position.
@@ -11234,6 +11253,7 @@ impl<'source> LoweredModule<'source>
             handler_laws: Layered::whole(BTreeMap::new()),
             models: Layered::whole(BTreeMap::new()),
             qualified: BTreeMap::new(),
+            requirements: BTreeMap::new(),
             reducts: Vec::new(),
             forgets: Vec::new(),
             forgettings: Vec::new(),
@@ -11309,6 +11329,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.qualified = qualified;
+        self
+    }
+
+    /// This module, carrying `requirements`, the bytes of the theory path each
+    /// world is written to require, by the world's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_requirements(
+        mut self,
+        requirements: BTreeMap<ConstantIndex, ByteSpan>,
+    ) -> Self
+    {
+        self.requirements = requirements;
         self
     }
 
@@ -12207,6 +12243,27 @@ impl<'source> LoweredModule<'source>
     ) -> Option<SurfaceName<'source>>
     {
         self.qualified.get(&declaration.constant()).copied()
+    }
+
+    /// The bytes of the theory path the world `declaration` is written to
+    /// require, `R` of `world w requires R ;`: what a site placing it must
+    /// offer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn requirement(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> Maybe<ByteSpan, requirement::Absent>
+    {
+        self.requirements
+            .get(&declaration.constant())
+            .copied()
+            .map_or(
+                Maybe::Absent(requirement::Absent::Unrequired),
+                Maybe::Present,
+            )
     }
 
     /// The reducts this module mints, ascending by position: each restricts

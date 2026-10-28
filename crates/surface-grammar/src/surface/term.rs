@@ -529,6 +529,11 @@ fn declarations(
     // `A at w` lives, where `migrate [w] { … }` runs its body, and where an
     // entry the host grants is homed. A world has no body and no type; its
     // name is all it brings into scope, and only the world positions read it.
+    //
+    // `world w requires R ;` names the theory `R` of what a role placed at `w`
+    // needs, a type path as `Model(Gandr.Package)` writes one; a deployment
+    // places `w` only at a site whose offer includes it. `requires` is
+    // contextual: only the slot after the world's name reads it.
     out.push(r(
         RuleName("world_declaration"),
         Provenance("world_declaration"),
@@ -537,6 +542,14 @@ fn declarations(
         seq([
             t(TileLabel("world")),
             t(TileLabel("identifier")),
+            opt(seq([
+                t(TileLabel("requires")),
+                t(TileLabel("type_identifier")),
+                repeat(seq([
+                    t(TileLabel(".")),
+                    alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+                ])),
+            ])),
             t(TileLabel(";")),
         ]),
     ));

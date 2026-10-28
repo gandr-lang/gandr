@@ -1,0 +1,34 @@
+// A role states what it needs of the site that hosts it.
+//
+// The requirement travels with the program, and the offer stays with the
+// site. A deployment that pairs them wrongly is refused before any process
+// starts.
+//
+// `far` requires `Store`, so a site that hosts `far` must offer a model of
+// `Store`, member for member. `gandr check` of the manifold packs the site's
+// `Offers` at `Model(Store)` and judges the pack.
+//
+// - see: `offers.site.gandr` — the site offering `Store`
+// - see: `offers.manifold.gandr` — the manifold placing `far` there
+// - see: `corpus/pathological/worlds/offers.gandr` — a site lacking `get`,
+//   and a world the program lacks
+
+/// What a role at `far` reads and writes: strings held by key.
+pub theory Store {
+  /// The value held at `key`.
+  oper get : (key : String) --> String;
+  /// Hold `value` at `key`.
+  oper put : (key : String, value : String) --> Unit;
+}
+
+/// The world the entry runs at.
+pub world near;
+
+/// The world the work runs at, placed only at a site offering `Store`.
+pub world far requires Store;
+
+/// `far` computes forty-two and hands it back.
+@[ entry((near, far)), runs("42") ]
+def main() -> Integer {
+  migrate [far] { pure (6 * 7) }
+}

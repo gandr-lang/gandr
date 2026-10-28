@@ -1,0 +1,23 @@
+/// `deployment-offers` places a world only at a site offering what the world requires.
+///
+/// Implemented: `world w requires R ;` names the theory of what a role placed at `w` needs; a site's file offers `pub module Offers : Model(T)`; `gandr check` of a manifold refuses a placement of a world the program does not declare, by its name, and judges each requiring world's site's `Offers` packed at `Model(R)`, refusing a member the offer lacks by its name and one at another type by both types.
+/// Not implemented: a requirement over host interfaces, and the offer as the world's authority; #3523 owes both.
+///
+/// The requirement travels with the program and the offer stays with the site, so the check is the deployment's: nothing of it enters the program's identity or a run.
+///
+/// - see: corpus/model/deployments/offers.site.gandr
+/// - see: corpus/model/deployments/offers.manifold.gandr
+/// - see: corpus/pathological/worlds/offers.gandr
+/// - see: crates/surface-driver/tests/cli.rs
+
+/// What a role at `far` reads: strings held by key.
+pub theory Store {
+  /// The value held at `key`.
+  oper get : (key : String) --> String;
+}
+
+/// The world the entry runs at.
+pub world near;
+
+/// The world the work runs at, placed only at a site offering `Store`.
+pub world far requires Store;

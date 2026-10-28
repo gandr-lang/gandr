@@ -3726,3 +3726,46 @@ fn an_unreadable_or_malformed_configuration_stops_the_run()
         "no home at all reads as no configuration"
     );
 }
+
+/// `gandr check` of a manifold judges its deployment before any process
+/// starts: a site offering what its world requires settles with nothing on
+/// standard error, and a site file checked beside it is no manifold; a site
+/// lacking `get` is refused naming it, and a placement of a world the program
+/// lacks by the world's name (#3376).
+#[test]
+fn a_manifold_s_deployment_is_judged_at_its_check_3376()
+{
+    let checked = |paths: &[&str]| {
+        let mut arguments = vec!["check"];
+        arguments.extend_from_slice(paths);
+        let mut command = gandr(&arguments);
+        command.current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+        ran(command)
+    };
+    let offered = checked(&[
+        "corpus/model/deployments/offers.manifold.gandr",
+        "corpus/model/deployments/offers.site.gandr",
+    ]);
+    assert_eq!(
+        (code(&offered), stderr(&offered)),
+        (Code(0_i32), String::new()),
+        "a site offering `Store` takes `far`, and the site's own file is judged as no \
+         deployment"
+    );
+    let refused = checked(&["corpus/pathological/worlds/offers.gandr"]);
+    assert_eq!(
+        (code(&refused), stderr(&refused)),
+        (
+            Code(1_i32),
+            String::from(concat!(
+                "gandr: `far` requires `Store`, and the site ",
+                "`corpus/pathological/worlds/offers.gandr` does not offer it: UnknownMember: ",
+                "the module `Offers` has no member `get`; no member of this name\n",
+                "gandr: `corpus/pathological/worlds/offers.gandr` places `nowhere`, a world ",
+                "`corpus/pathological/worlds/../../model/deployments/offers.gandr` does not ",
+                "declare: place one of its worlds\n",
+            ))
+        ),
+        "each refusal names what the site lacks or the world the program lacks"
+    );
+}

@@ -485,6 +485,7 @@ pub use crate::module::ValueComponent;
 pub use crate::module::Visibility;
 pub use crate::module::WrittenImport;
 pub use crate::module::manifest_type;
+pub use crate::module::requirement;
 pub use crate::module::unaliased;
 pub use crate::module::written_imports;
 pub use crate::origin::ArmOrigin;

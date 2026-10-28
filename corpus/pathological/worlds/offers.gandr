@@ -1,0 +1,55 @@
+// Deployments the check refuses before any process starts.
+//
+// A deployment pairs a role's requirement with a site's offer, and a mismatch
+// must stop the deployment rather than the role at arrival.
+//
+// This file is a site and a manifold at once. The site offers a clock and no
+// store. Placing `far`, which requires `Store`, at it is refused naming `get`,
+// the first member the offer lacks. `nowhere` is no world the program
+// declares, so its placement is refused by name. The file itself settles, and
+// `gandr check` of it as a deployment refuses both.
+//
+// - see: `corpus/model/deployments/offers.gandr` — the program, whose `far`
+//   requires `Store`
+// - see: `corpus/model/deployments/offers.site.gandr` — a site offering it
+// - see: `crates/surface-driver/tests/cli.rs` — the check refusing both
+
+// The deployment theories, from `std.manifold` by its path.
+import "../../../library/std/src/manifold.gandr";
+
+/// What the site holds: a clock alone.
+pub theory Clock {
+  /// The site's time, in seconds.
+  oper now : Integer;
+}
+
+/// The site's offer: a clock, and no store.
+pub module Offers : Model(Clock) {
+  /// The epoch.
+  def now = 0;
+}
+
+/// The site, on a loopback socket.
+pub module Site : Model(Site) {
+  /// The key the hosting process proves.
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  /// The socket it binds, where a dialer reaches it.
+  def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
+}
+
+/// The site's model, which a placement holds.
+pub def site : Model(Site) = pack Site at Model(Site);
+
+/// The program this deployment runs.
+pub module Manifold : Model(Manifold) {
+  /// The program whose `far` requires `Store`.
+  def artifact = "../../model/deployments/offers.gandr";
+}
+
+/// `far` at a site that offers no store, and a world the program lacks.
+pub def placements : List(Placement) = [
+  At("far", site),
+  At("nowhere", site),
+];

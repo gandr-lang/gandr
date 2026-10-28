@@ -84,7 +84,7 @@ impl FromStr for Secret
 /// The public key a peer is known by: its identity on the network.
 ///
 /// It prints as 64 lowercase hex digits.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct NodeId(iroh::PublicKey);
 
