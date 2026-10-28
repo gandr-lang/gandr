@@ -209,6 +209,15 @@ def refactoring:
 # The pull requests a filed refactor issue came from: its `from: #<n>` lines.
 def from_lines: [lines[] | capture("^from: #(?<n>[0-9]+)\\s*$") | .n | tonumber];
 
+# The issues a body names as its epic (#3398): every `#<n>` on a line opening
+# `Advances`, `Part of` or `from:`, in order, once each. Whether each is an
+# open `kind:epic` is the caller's read.
+def epic_refs:
+  [lines[]
+    | select(test("^\\s*(Advances|Part of)\\s+#[0-9]|^\\s*from:\\s*#[0-9]"; "i"))
+    | scan("(?<![\\w/])#([0-9]+)\\b") | .[0] | tonumber]
+  | reduce .[] as $n ([]; if index([$n]) then . else . + [$n] end);
+
 # Whether a `Where` is spelled as an item path, `crate::path` or a crate
 # alone, as rustdoc names it.
 def item_path: test("^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$");

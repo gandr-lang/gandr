@@ -27,9 +27,9 @@
 #   `.config/issues/labels.jq`), what `issue:labels --sweep` repairs
 #   included: a kind's default, a `kind:` beside `kind:epic`;
 # - ledger: a ledger row none of whose owing issues is open, which
-#   `check:ledger` refuses, or whose open ones all await their close ruling
-#   (`needs:close-ruling`, #2973), so that closing them would turn
-#   `check:ledger` red.
+#   `check:ledger` refuses, or whose open ones are all epics, each of which
+#   closes itself once the issues it is blocked by close (#3398), so that
+#   its closing would turn `check:ledger` red.
 #
 # The body keeps each finding's count of nights running in a trailing
 # comment; one at three nights or more is named a refusal candidate, the
@@ -92,8 +92,8 @@ def nights_cell: "\(.nights)\(if .nights >= 3 then " — a refusal candidate" el
     | [.issues[] | select($labelled[tostring])] as $live
     | if ($live | length) == 0 then
         {key: "ledger:\($row)", row: $row, found: "owes on \(.issues | map("#\(.)") | join(", ") | if . == "" then "no issue" else "\(.), no open issue" end): `check:ledger` refuses it; name the open issue that owes the rest"}
-      elif ($live | all($labelled[tostring] | index("needs:close-ruling"))) then
-        {key: "ledger:\($row)", row: $row, found: "owes on \($live | map("#\(.)") | join(", ")), awaiting the close ruling: closing it turns `check:ledger` red unless the row names another open issue first"}
+      elif ($live | all($labelled[tostring] | index("kind:epic"))) then
+        {key: "ledger:\($row)", row: $row, found: "owes on \($live | map("#\(.)") | join(", ")), an epic that closes itself once the issues it is blocked by close: `check:ledger` turns red then unless the row names an open unit first"}
       else empty end]
 | sort_by(.row)
 | map(. + {nights: (($nights[.key] // 0) + 1)}) as $ledger
