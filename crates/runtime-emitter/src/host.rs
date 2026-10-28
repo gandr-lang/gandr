@@ -116,6 +116,7 @@ use crate::lower::Callee;
 use crate::lower::Clause;
 use crate::lower::Handler;
 use crate::lower::Lowered;
+use crate::lower::Path;
 use crate::lower::Reach;
 use crate::lower::Reified;
 use crate::lower::Slot;
@@ -259,6 +260,9 @@ pub struct Calls<'run, 'host>
     windows: &'run [Window],
     /// Each access's frame code with its unwind's code.
     unwinds: BTreeMap<Word, Word>,
+    /// The marker's code, when a clause of the function leaves its frames
+    /// standing.
+    marker: Option<Word>,
     /// The heads a head object names, by family: the function's own, then the
     /// webs its decompositions made.
     heads: Vec<ConstructorTag>,
@@ -463,6 +467,7 @@ impl<'run, 'host> Calls<'run, 'host>
             ),
             recording,
             played_before,
+            marker: lowered.marker.map(|label| codes.label(label)),
         }
     }
 
@@ -661,6 +666,8 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Shift(_) => self.shift(runtime),
             Callee::Replay(_) => self.replay(runtime, first),
             Callee::Abandon(_) => self.abandon(runtime, first),
+            Callee::Rejoin(_) => self.rejoin(runtime, first),
+            Callee::Escape => self.escape(runtime, first),
             Callee::Hold => allocate_cell(runtime, &[first]),
             Callee::Access => {
                 let held = cell(first)?;
@@ -717,6 +724,8 @@ impl<'run, 'host> Calls<'run, 'host>
                 Callee::Migrate { at, .. } => Some(Refused::Migration(at, Unmigrated::Unanswered)),
                 Callee::Primitive(_)
                 | Callee::Abandon(_)
+                | Callee::Rejoin(_)
+                | Callee::Escape
                 | Callee::Hold
                 | Callee::Access
                 | Callee::AccessAt(_)
@@ -989,7 +998,8 @@ impl<'run, 'host> Calls<'run, 'host>
     ) -> Result<Option<Slots>, Refusal>
     {
         let codes = self.codes;
-        if Stub::ALL.iter().any(|&stub| codes.stub(stub) == code) {
+        // A stub's frame, and the marker's, holds a value or a mark there.
+        if Stub::ALL.iter().any(|&stub| codes.stub(stub) == code) || self.marker == Some(code) {
             return Ok(None);
         }
         self.windows
@@ -1062,15 +1072,26 @@ impl<'run, 'host> Calls<'run, 'host>
         else {
             return self.offered(runtime, at, payload);
         };
-        let stack = self.capture(runtime, frame)?;
-        runtime.set_frame_top(frame);
-        let at = slot_in(window, clause.payload)?;
-        // SAFETY: the payload's slot lies inside the handler's window.
-        unsafe {
-            *at = payload;
-        }
+        let answer = match clause.path {
+            Path::Capture => {
+                let stack = self.capture(runtime, frame)?;
+                runtime.set_frame_top(frame);
+                let at = slot_in(window, clause.payload)?;
+                // SAFETY: the payload's slot lies inside the handler's window.
+                unsafe {
+                    *at = payload;
+                }
+                stack
+            },
+            // The frames left standing hold the window's slots below the
+            // clause's, so the clause binds the payload in hand.
+            Path::Resume | Path::Return => {
+                self.stand(runtime, frame)?;
+                payload
+            },
+        };
         runtime.jump(self.codes.label(clause.label), window);
-        Ok(stack)
+        Ok(answer)
     }
 
     /// Offer the operation the command `at` performs with `payload` to the
@@ -1499,6 +1520,138 @@ impl<'run, 'host> Calls<'run, 'host>
             }
         }
         Ok(stack)
+    }
+
+    /// Leave the frames from `from`, a handler's frame, to the top standing,
+    /// and push the marker above them, its second word the mark `from`: the
+    /// clause about to run on top of them neither captures nor walks them.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a function with no marker;
+    /// [`Refusal::Frames`] past the frame region's limit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — clauses that resume from their root, answer without
+    ///   resuming, or do either by a case, over frames that own pairs, answer
+    ///   as they state on both tiers: a marker pushed below the top, or marking
+    ///   another frame, resumes or gives up the wrong frames.
+    /// - witness: `tests::forms::each_form_ends_alike_on_both_executors_as_its_program_states`
+    fn stand(
+        &self,
+        runtime: &mut Runtime,
+        from: *mut Word,
+    ) -> Result<(), Refusal>
+    {
+        let marker = self.marker.ok_or(Refusal::Operands)?;
+        let top = runtime.frame_top();
+        let next = top.wrapping_add(2);
+        hold_frames(next, runtime.frame_limit())?;
+        // SAFETY: the frame fits below the region's limit.
+        unsafe {
+            *top = marker;
+        }
+        // SAFETY: as above.
+        unsafe {
+            *top.wrapping_add(1) = Word::from_pointer(from);
+        }
+        runtime.set_frame_top(next);
+        Ok(())
+    }
+
+    /// Resume the frames a clause's operation left standing: pop the marker
+    /// above them, which a resumption from the clause's tail position finds
+    /// on top; answers `stand_in`, the word the clause held for its stack.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] when the marker is not on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Self::stand`]: a resumption that pops another
+    ///   frame delivers the clause's reply to the wrong rest.
+    /// - witness: `tests::forms::each_form_ends_alike_on_both_executors_as_its_program_states`
+    fn rejoin(
+        &self,
+        runtime: &mut Runtime,
+        stand_in: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let top = runtime.frame_top();
+        let frame = top.wrapping_sub(2);
+        // SAFETY: the base mark's sentinel frame lies below any frame above
+        // the base.
+        if top <= runtime.frame_base() || self.marker != Some(unsafe { *frame }) {
+            return Err(Refusal::Operands);
+        }
+        runtime.set_frame_top(frame);
+        Ok(stand_in)
+    }
+
+    /// Leave a clause whose operation left its frames standing, once the
+    /// clause answers `answer` to the marker the run just popped: give up what
+    /// each frame from the marker's mark to the top owns, as the release of a
+    /// stack holding them would, and pop them with their handler's frame;
+    /// answers `answer`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a mark outside the frames, or a frame whose
+    /// owners are unplaced; as [`slot_in`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a clause answering without resuming, over frames that
+    ///   own a pair, and one answering the pair its handler keeps, answer as
+    ///   they state on both tiers: a frame given up twice, or one the clause
+    ///   still reads given up first, frees a pair the answer holds.
+    /// - witness: `tests::forms::each_form_ends_alike_on_both_executors_as_its_program_states`
+    fn escape(
+        &self,
+        runtime: &mut Runtime,
+        answer: Word,
+    ) -> Result<Word, Refusal>
+    {
+        // The popped marker's second word is in the window register.
+        let from = runtime.environment();
+        let top = runtime.frame_top();
+        if from < runtime.frame_base() || from > top {
+            return Err(Refusal::Operands);
+        }
+        let sites = self.sites;
+        let mut cursor = from;
+        while cursor < top {
+            // SAFETY: every two words from the mark to the top are a frame.
+            let code = unsafe { *cursor };
+            // SAFETY: as above.
+            let word = unsafe { *cursor.wrapping_add(1) };
+            let held: Vec<Word> = match sites.owners(code) {
+                Some(Owners::Window(slots)) => slots
+                    .iter()
+                    // SAFETY: a window frame's word is its window, which
+                    // holds its frame's owned slots.
+                    .map(|&slot| slot_in(word.to_pointer::<Word>(), slot).map(|at| unsafe { *at }))
+                    .collect::<Result<_, _>>()?,
+                Some(Owners::Word) => Vec::from([word]),
+                Some(Owners::Unplaced) => return Err(Refusal::Operands),
+                None => Vec::new(),
+            };
+            for value in held {
+                // SAFETY: the frame owned `value`, a value of the run's heap or
+                // an immortal constant, and leaves the region unread.
+                unsafe {
+                    give_up(runtime, value, |object| owned(object, sites));
+                }
+            }
+            cursor = cursor.wrapping_add(2);
+        }
+        runtime.set_frame_top(from);
+        Ok(answer)
     }
 
     /// Push above the top a frame for each access `stack` captured, in the

@@ -62,6 +62,10 @@
 //!
 //! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
 //!   LAM whose locations a hold names and an access lends.
+//! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-record
+//!   and § quant-counts — [`HoldGrade`] and `CapabilityGrade` are the tree's
+//!   two-point grades, and the grade the page drafts keeps the count they
+//!   forget.
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
@@ -179,7 +183,8 @@ impl<V> Place<V>
     }
 }
 
-/// How many holders a held value may have while it is held.
+/// How many holders a held value may have while it is held: a grade of two
+/// points, `Many` forgetting how many past one.
 ///
 /// # Specification
 /// trivial.
