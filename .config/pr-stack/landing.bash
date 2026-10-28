@@ -2,10 +2,11 @@
 # The server-side landing watcher (#2701), run by `.github/workflows/landing.yml`
 # on each `CI` completion, dequeue and draft taken back (#2984): one reading
 # of every open pull request, decided by `landing.jq` and acted on with the
-# stacking rule `pr:land` and `pr:watch` use (`stack.bash`). With the landing
-# App's token (`LANDING_TOKEN_HELD` is `true`), a green pull request's stack
-# is queued (`land_prefix`) and a dequeued stack restacked onto the trunk;
-# without it, their seats are told.
+# stacking rule `pr:land` and `pr:watch` use (`stack.bash`). With a token
+# that may queue (`LANDING_TOKEN_HELD` is `true`: `LANDING_TOKEN`, or else
+# the landing App's, #3351), a green pull request's stack is queued
+# (`land_prefix`) and a dequeued stack restacked onto the trunk; without one,
+# their seats are told.
 # A red or conflicting pull request is its seat's. A seat is told by one
 # comment per head, ending with the mark `<!-- landing:<event>:<head> -->`
 # the next reading counts.
