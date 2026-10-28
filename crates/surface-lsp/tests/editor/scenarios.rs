@@ -145,6 +145,7 @@ const COUNTED: &[&str] = &[
     "expression shell_block",
     "expression shell_word",
     "expression single_quoted_string",
+    "expression splice_expression",
     "expression string",
     "expression subshell",
     "expression telescope_expression",
