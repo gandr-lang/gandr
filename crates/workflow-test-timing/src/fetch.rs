@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use anodized::spec;
+use gandr_workflow_github::Feed;
+use gandr_workflow_github::GitHubError;
 
 use crate::error::TimingError;
 use crate::report::History;
@@ -129,49 +131,6 @@ impl From<RunLimit> for usize
     }
 }
 
-/// Runs `command` and returns what it wrote to standard output.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the command's standard output, read as UTF-8 with any invalid
-///   sequence replaced.
-/// - provides: the one place a `gh` invocation's failure is turned into a
-///   refusal.
-/// - fails: [`TimingError::Gh`], naming the invocation, when the command cannot
-///   start or exits unsuccessfully; the message is its standard error.
-/// - panics: none.
-/// - executable: none — the outcome is the external process's; nothing in the
-///   call's own state can check it.
-///
-/// # Errors
-/// [`TimingError::Gh`] — the command did not start or did not succeed.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a fake `gh` that succeeds and one that fails with a
-///   message; a swallowed exit status or a lost message changes the report or
-///   the printed refusal.
-/// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
-/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
-fn output(command: &mut Command) -> Result<String, TimingError>
-{
-    let invocation = core::iter::once(command.get_program())
-        .chain(command.get_args())
-        .map(|part| part.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let output = command.output().map_err(|error| TimingError::Gh {
-        command: invocation.clone(),
-        message: error.to_string(),
-    })?;
-    if !output.status.success() {
-        return Err(TimingError::Gh {
-            command: invocation,
-            message: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        });
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
 /// The latest successful merge-queue runs of the CI workflow, newest first.
 ///
 /// # Specification
@@ -211,16 +170,15 @@ pub fn recent_runs(
         ])
         .args(["--limit", &limit.0.to_string()])
         .args(["--json", "databaseId", "--jq", ".[].databaseId"]);
-    let listing = output(&mut command)?;
+    let listing = gandr_workflow_github::run(&mut command, Feed::Nothing)?;
     let mut runs = Vec::new();
     for line in listing.lines().take(limit.into()) {
-        let id = line
-            .trim()
-            .parse::<u64>()
-            .map_err(|error| TimingError::Gh {
-                command: "gh run list".to_owned(),
-                message: format!("`{line}` is not a run identifier: {error}"),
-            })?;
+        let id = line.trim().parse::<u64>().map_err(|error| {
+            GitHubError::unread(
+                &command,
+                format!("`{line}` is not a run identifier: {error}"),
+            )
+        })?;
         runs.push(RunId(id));
     }
     Ok(runs)
@@ -291,7 +249,7 @@ pub fn download(
         .args(["run", "download", &run.to_string(), "--repo", &repository.0])
         .args(["--pattern", "junit-*", "--dir"])
         .arg(&scratch);
-    output(&mut command)?;
+    gandr_workflow_github::run(&mut command, Feed::Nothing)?;
     std::fs::rename(&scratch, &destination).map_err(io(&destination))?;
     Ok(Stored::Fetched)
 }

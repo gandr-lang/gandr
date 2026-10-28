@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use gandr_workflow_github::GitHubError;
+
 /// Why a budget report could not be produced or filed.
 ///
 /// # Specification
@@ -32,13 +34,7 @@ pub enum BudgetError
     },
     /// A `gh` invocation could not run, exited unsuccessfully, or printed
     /// what this crate does not read.
-    Gh
-    {
-        /// The invocation, as typed.
-        command: String,
-        /// Why it did not start, how it exited, or what it printed.
-        message: String,
-    },
+    Gh(GitHubError),
     /// A thread reading runs concurrently could not start, or stopped without
     /// its reads' results.
     Reader
@@ -100,10 +96,7 @@ impl fmt::Display for BudgetError
                 "`{text}` is not a workflow name, `=`, and whole seconds of a budget `/` a \
                  ceiling no smaller"
             ),
-            Self::Gh {
-                ref command,
-                ref message,
-            } => write!(f, "`{command}` failed: {message}"),
+            Self::Gh(ref error) => error.fmt(f),
             Self::Reader { ref message } => write!(f, "a concurrent read: {message}"),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
             Self::Ceiling { ref runs } => write!(f, "the newest run passed its ceiling: {runs}"),
@@ -114,6 +107,19 @@ impl fmt::Display for BudgetError
 /// A refusal is an error value, so clap can report a malformed `--budget`.
 impl core::error::Error for BudgetError
 {
+}
+
+impl From<GitHubError> for BudgetError
+{
+    /// The refusal of a failed `gh` invocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: GitHubError) -> Self
+    {
+        Self::Gh(error)
+    }
 }
 
 #[cfg(test)]
@@ -144,13 +150,6 @@ mod tests
                 },
                 "`Nightly=1200/900` is not a workflow name, `=`, and whole seconds of a budget \
                  `/` a ceiling no smaller",
-            ),
-            (
-                BudgetError::Gh {
-                    command: "gh issue list".into(),
-                    message: "HTTP 401: Bad credentials".into(),
-                },
-                "`gh issue list` failed: HTTP 401: Bad credentials",
             ),
             (
                 BudgetError::Reader {

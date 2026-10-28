@@ -23,11 +23,13 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
-# crate the `Maybe` a crate absent from one upload has for its lines. serde
-# reads Codecov's answers and `gh`'s issue listing.
+# crate the `Maybe` a crate absent from one upload has for its lines. The
+# GitHub boundary runs `gh`; serde reads Codecov's answers and `gh`'s issue
+# listing.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-workflow-github.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true

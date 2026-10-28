@@ -4,9 +4,10 @@
 use core::fmt;
 use std::process::Command;
 
+use gandr_workflow_github::Feed;
+use gandr_workflow_github::run;
+
 use crate::error::BudgetError;
-use crate::github::Feed;
-use crate::github::run;
 use crate::report::RunId;
 
 /// The cone a landing's changed files touch.

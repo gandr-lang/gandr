@@ -84,6 +84,7 @@ digraph crates {
     label = "workflow";
     "workflow-build-state";
     "workflow-coverage-guard";
+    "workflow-github";
     "workflow-hotpath-guard";
     "workflow-lane-budget";
     "workflow-prose";
@@ -325,11 +326,15 @@ digraph crates {
   "theory-virtual-doctrines" -> "theory-coherent-resolutions";
   "theory-virtual-doctrines" -> "theory-decomposition-spaces";
   "theory-virtual-doctrines" -> "theory-levitation";
+  "workflow-coverage-guard" -> "workflow-github";
+  "workflow-hotpath-guard" -> "workflow-github";
+  "workflow-lane-budget" -> "workflow-github";
   "workflow-spec-cost" -> "workflow-test-timing";
   "workflow-sweep" -> "surface-format";
   "workflow-sweep" -> "surface-grammar";
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
+  "workflow-test-timing" -> "workflow-github";
   "core-checker" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "fork"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "oracle"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "sharing"];

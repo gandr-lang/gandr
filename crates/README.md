@@ -117,15 +117,16 @@ crates/
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
 ├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
 ├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
+├── workflow-github/               the workflow binaries' one `gh` runner
 ├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
-├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, the whole corpus over the nightly rotation
+├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 
-The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins, and the `check:dylint` task states which of its lints deny and why, `spec_clause_traversal`'s cost rule among them.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins; `check:dylint` states which of its lints deny and why.
 
 A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
 

@@ -49,7 +49,7 @@ cargo nextest run -p gandr-workflow-hotpath-guard
 
 ## Dependencies
 
-`serde` and `serde_json` read `gh`'s answers and the hotpath reports; `toml` reads the regression policy the judge applies; each with the features the root `Cargo.toml` records.
+`gandr-workflow-github` runs every `gh` invocation and names the one that failed. `serde` and `serde_json` read `gh`'s answers and the hotpath reports; `toml` reads the regression policy the judge applies; each with the features the root `Cargo.toml` records.
 
 ## License
 

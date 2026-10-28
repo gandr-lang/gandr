@@ -4017,6 +4017,11 @@ INSERT INTO purpose VALUES('workflow-coverage-guard','report::IssueTitle','struc
 INSERT INTO purpose VALUES('workflow-coverage-guard','report::Row','struct','One crate''s line of the table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','report::Standing','enum','Whether the later upload calls for the issue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','report::TITLE_PREFIX','constant','The prefix every title the guard files starts with, by which it finds the one open issue.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-github','Body','struct','The text a `gh` invocation reads as a body on standard input.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-github','Feed','enum','What a `gh` invocation reads on standard input: nothing, or a body.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-github','Invocation','struct','A command as a shell spells it, the name a refusal gives what it refused.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-github','error::GitHubError','enum','Why a `gh` invocation gave no answer its caller reads: it did not start, exited unsuccessfully, or answered what the caller does not parse.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-github','run','function','Runs a `gh` invocation, feeding it a body when asked, and returns its standard output or the refusal naming it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::AreaLabel','struct','Names a repository label naming an area, so the label''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Benchmark','struct','Names a benchmark, so the benchmark''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::CommitSha','struct','Names a commit by its full or abbreviated hexadecimal name, so the commit''s name is read.',NULL,'fits','sound',NULL);
@@ -4100,7 +4105,6 @@ INSERT INTO purpose VALUES('workflow-lane-budget','budget::Seconds','struct','Wh
 INSERT INTO purpose VALUES('workflow-lane-budget','cone::Cone','enum','The cone a landing''s changed files touch.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','cone::classify','function','The cone of the files `run` changed against its merge base.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','error::BudgetError','enum','Why a budget report could not be produced or filed.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-lane-budget','github::Feed','enum','What a `gh` invocation reads on standard input.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::Filed','enum','What filing the report did to the issue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::IssueNumber','struct','An issue''s number in the repository.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-lane-budget','github::IssueTitle','struct','The title of the one issue the report files.',NULL,'fits','sound',NULL);

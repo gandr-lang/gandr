@@ -67,7 +67,7 @@ Runs are stored under `target/test-timing`, one directory per run identifier. A 
 
 ## Dependencies
 
-`roxmltree` reads the reports: a read-only tree with no unsafe code and no published advisory, chosen over `quick-xml`, which carries two advisories from 2026. `toml` reads the nextest configuration. Both keep their default features off; the root `Cargo.toml` records each enabled feature and its reason.
+`gandr-workflow-github` runs every `gh` invocation and names the one that failed. `roxmltree` reads the reports: a read-only tree with no unsafe code and no published advisory, chosen over `quick-xml`, which carries two advisories from 2026. `toml` reads the nextest configuration. Both keep their default features off; the root `Cargo.toml` records each enabled feature and its reason.
 
 ## License
 

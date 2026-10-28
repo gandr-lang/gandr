@@ -1967,6 +1967,7 @@ name = "gandr-workflow-coverage-guard"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-workflow-github",
  "quenchant-anodized",
  "quenchant-shape",
  "serde",
@@ -1974,10 +1975,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-github"
+version = "0.0.0"
+
+[[package]]
 name = "gandr-workflow-hotpath-guard"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-workflow-github",
  "quenchant-anodized",
  "quenchant-shape",
  "serde",
@@ -1990,6 +1996,7 @@ name = "gandr-workflow-lane-budget"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-workflow-github",
  "quenchant-anodized",
  "quenchant-shape",
  "serde",
@@ -2039,6 +2046,7 @@ name = "gandr-workflow-test-timing"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-workflow-github",
  "quenchant-anodized",
  "quenchant-shape",
  "roxmltree",

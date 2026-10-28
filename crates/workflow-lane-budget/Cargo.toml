@@ -23,11 +23,12 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
-# crate the `Maybe` a lane without a sample has for its median. serde reads
-# the issue listing `gh` prints.
+# crate the `Maybe` a lane without a sample has for its median. The GitHub
+# boundary runs `gh`; serde reads the issue listing it prints.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-workflow-github.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -27,12 +27,13 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
-# crate the `Maybe` a commit without a pull request has for it. serde reads
-# `gh`'s answers and the hotpath reports the judge compares; toml the
-# regression policy it applies.
+# crate the `Maybe` a commit without a pull request has for it. The GitHub
+# boundary runs `gh`; serde reads its answers and the hotpath reports the
+# judge compares; toml the regression policy it applies.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-workflow-github.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true
