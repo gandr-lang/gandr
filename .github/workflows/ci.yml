@@ -1711,11 +1711,13 @@ jobs:
       - *fetch-dependencies
       - name: upload the base head's reports
         if: ${{ github.event_name == 'pull_request' }}
-        run: mise run ci:hotpath-base gandr:gandr-lang:hotpath store:gandr-storage-schema:store
+        run: mise run ci:hotpath-base gandr:gandr-lang:hotpath store:gandr-storage-schema:store conversion:gandr-lang:conversion
       - name: run the gandr series
         run: mise run ci:hotpath gandr gandr-lang hotpath
       - name: run the store series
         run: mise run ci:hotpath store gandr-storage-schema store
+      - name: run the conversion series
+        run: mise run ci:hotpath conversion gandr-lang conversion
       # Each report `ci:hotpath` could not upload is named under
       # target/hotpath/unsent/; `hotpath-unsent` files them.
       - name: name the reports not uploaded
@@ -1729,7 +1731,7 @@ jobs:
           HOTPATH_JUDGE_ALL: ${{ github.event_name == 'push' }}
         run: |
           if [[ $HOTPATH_JUDGE_ALL == true ]]; then set -- --all; fi
-          mise run ci:hotpath-judge "$@" gandr store
+          mise run ci:hotpath-judge "$@" gandr store conversion
           if compgen -G 'target/hotpath/judged/checks/*.json' > /dev/null; then
             echo checks=true >> "$GITHUB_OUTPUT"
           fi

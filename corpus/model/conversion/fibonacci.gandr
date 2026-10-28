@@ -1,0 +1,45 @@
+// Fibonacci's doubly recursive definition and its iteration agree at fourteen.
+//
+// Only a run of both definitions shows that they agree. The doubly recursive
+// one makes many calls, and each call allocates unary naturals.
+//
+// The path's endpoints are the two definitions at fourteen. The conversion runs
+// both to the same numeral.
+//
+// - see: #2282 — the benchmark set, whose first probe this row was
+// - see: `pathological/data/conversion-budget.gandr` — the same claim at
+//   nineteen, past the step budget
+
+// The free naturals and their addition.
+import "../data/data-base.gandr";
+
+// The numeral twelve.
+import "./conversion-base.gandr";
+
+/// Fibonacci, the doubly recursive definition.
+def rec fib(n : Nat) -> Nat {
+  case n {
+    Zero => Zero,
+    Succ(m) => case m {
+      Zero => Succ(Zero),
+      Succ(k) => plus(fib[<](m), fib[<](k))
+    }
+  }
+}
+
+/// Fibonacci by iteration over a pair of accumulators.
+def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
+  case n {
+    Zero => a,
+    Succ(m) => fibFrom[<](m, b, plus(a, b))
+  }
+}
+
+/// The two definitions agree at fourteen.
+def fibAgrees() -> Path(
+  Nat,
+  fib(Succ(Succ(twelve))),
+  fibFrom(Succ(Succ(twelve)), Zero, Succ(Zero))
+) {
+  here(fib(Succ(Succ(twelve))))
+}

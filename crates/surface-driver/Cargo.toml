@@ -39,6 +39,16 @@ name = "hotpath"
 path = "benches/hotpath.rs"
 required-features = ["hotpath"]
 
+# The conversion series: the conversion subject's closed computations, each a
+# path the conversion settles by running both endpoints, profiled by hotpath
+# and uploaded from CI as the `conversion` series. Built only with the
+# `hotpath` feature.
+[[bench]]
+harness = false
+name = "conversion"
+path = "benches/conversion.rs"
+required-features = ["hotpath"]
+
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. serde_json encodes the run's summary line
 # under `--verbosity json`; the dispatcher reads the user's configuration

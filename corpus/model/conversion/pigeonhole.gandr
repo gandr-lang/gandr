@@ -1,0 +1,104 @@
+// A reflected truth-table check shows that three pigeons never sit one to a
+// hole in two holes.
+//
+// Boespflug, Dénès and Grégoire check the pigeonhole principle by a reflected
+// decision procedure. A run of the procedure stands where a proof by cases
+// would.
+//
+// The formula makes each pigeon's place in each hole a variable. The check
+// sets each variable both ways and evaluates the formula under all sixty-four
+// assignments.
+//
+// - see: Boespflug, Dénès and Grégoire, _Full Reduction at Full Throttle_,
+//   CPP 2011, § 4, BDD, which decides by binary decision diagrams instead
+// - see: #2282 — the benchmark set
+
+// The free naturals and the numerals two and three.
+import "../data/data-base.gandr";
+
+// The numeral four.
+import "./conversion-base.gandr";
+
+/// A propositional formula over numbered variables.
+data Formula : Type {
+  /// The variable of that number.
+  Atom : (index : Nat) --> Formula;
+  /// Negation.
+  Not : (f : Formula) --> Formula;
+  /// Conjunction.
+  And : (l : Formula, r : Formula) --> Formula;
+  /// Disjunction.
+  Or : (l : Formula, r : Formula) --> Formula;
+}
+
+/// The values of the variables set so far, the last one set first.
+data Assignment : Type {
+  /// No variable set.
+  Unset : Assignment;
+  /// One more variable, set to `value`.
+  Set : (value : Bool, rest : Assignment) --> Assignment;
+}
+
+/// The value of variable `i`, counted from the last one set.
+def rec lookup(i : Nat, a : Assignment) -> Bool {
+  case a {
+    Unset => false,
+    Set(value, rest) => case i {
+      Zero => value,
+      Succ(j) => lookup[<](j, rest)
+    }
+  }
+}
+
+/// Whether a formula holds under an assignment of its variables.
+def rec holds(f : Formula, a : Assignment) -> Bool {
+  case f {
+    Atom(i) => lookup(i, a),
+    Not(g) => case holds[<](g, a) {
+      true => false,
+      false => true
+    },
+    And(l, r) => case holds[<](l, a) {
+      true => holds[<](r, a),
+      false => false
+    },
+    Or(l, r) => case holds[<](l, a) {
+      true => true,
+      false => holds[<](r, a)
+    }
+  }
+}
+
+/// Whether a formula holds under every assignment of `k` more variables.
+def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool {
+  case k {
+    Zero => holds(f, a),
+    Succ(j) => case tautology[<](j, f, Set(true, a)) {
+      true => tautology[<](j, f, Set(false, a)),
+      false => false
+    }
+  }
+}
+
+/// Three pigeons in two holes: pigeon `i` in hole `j` is variable `2i + j`.
+def pigeons : Formula = Not(And(
+  And(
+    Or(Atom(Zero), Atom(Succ(Zero))),
+    And(Or(Atom(two), Atom(three)), Or(Atom(four), Atom(Succ(four))))
+  ),
+  And(
+    And(
+      Not(And(Atom(Zero), Atom(two))),
+      And(Not(And(Atom(Zero), Atom(four))), Not(And(Atom(two), Atom(four))))
+    ),
+    And(
+      Not(And(Atom(Succ(Zero)), Atom(three))),
+      And(Not(And(Atom(Succ(Zero)), Atom(Succ(four)))), Not(And(Atom(three), Atom(Succ(four)))))
+    )
+  )
+));
+
+/// No assignment places every pigeon in a hole of its own.
+def pigeonsDoNotFit() -> Path(Bool, tautology(Succ(Succ(four)), pigeons, Unset), true) {
+  here(true)
+}

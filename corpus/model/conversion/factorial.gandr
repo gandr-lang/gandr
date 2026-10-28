@@ -1,0 +1,55 @@
+// Factorial by recursion and by iteration agree, and a factorial is even.
+//
+// Grégoire and Leroy time factorial on unary naturals, its parity, and two
+// factorial terms with one normal form. The parity reads back one constant,
+// so the run dominates it.
+//
+// One path compares the recursive and the iterative factorial of six. The other
+// states that the factorial of five is even.
+//
+// - see: Grégoire and Leroy, _A compiled implementation of strong reduction_,
+//   ICFP 2002, § 6
+// - see: #2282 — the benchmark set
+
+// The free naturals.
+import "../data/data-base.gandr";
+
+// The products and the numeral four.
+import "./conversion-base.gandr";
+
+/// Factorial by recursion, which forms the product on the way back.
+def rec fact(n : Nat) -> Nat {
+  case n {
+    Zero => Succ(Zero),
+    Succ(m) => times(Succ(m), fact[<](m))
+  }
+}
+
+/// Factorial by iteration, the product carried in an accumulator.
+def rec factFrom(n : Nat, acc : Nat) -> Nat {
+  case n {
+    Zero => acc,
+    Succ(m) => factFrom[<](m, times(acc, Succ(m)))
+  }
+}
+
+/// Whether a natural is even.
+def rec even(n : Nat) -> Bool {
+  case n {
+    Zero => true,
+    Succ(m) => case even[<](m) {
+      true => false,
+      false => true
+    }
+  }
+}
+
+/// The two definitions agree at six.
+def factAgrees() -> Path(Nat, fact(Succ(Succ(four))), factFrom(Succ(Succ(four)), Succ(Zero))) {
+  here(fact(Succ(Succ(four))))
+}
+
+/// The factorial of five is even.
+def factEven() -> Path(Bool, even(fact(Succ(four))), true) {
+  here(true)
+}

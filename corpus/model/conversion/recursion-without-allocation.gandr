@@ -1,0 +1,34 @@
+// A doubly recursive function of twelve levels answers true without allocating.
+//
+// Boespflug, Dénès and Grégoire make 2^27 trivial calls, so the run measures
+// calls without garbage collection. Their native code gained most on that
+// workload.
+//
+// Each level calls the level below twice and answers a constant. The path
+// reads the answer at twelve levels.
+//
+// - see: Boespflug, Dénès and Grégoire, _Full Reduction at Full Throttle_,
+//   CPP 2011, § 4, RecNoAlloc
+// - see: #2282 — the benchmark set
+
+// The free naturals.
+import "../data/data-base.gandr";
+
+// The numeral twelve.
+import "./conversion-base.gandr";
+
+/// Two recursive calls at each level, which answer a constant.
+def rec calls(n : Nat) -> Bool {
+  case n {
+    Zero => true,
+    Succ(m) => case calls[<](m) {
+      true => calls[<](m),
+      false => false
+    }
+  }
+}
+
+/// Every call answers true.
+def callsAnswerTrue() -> Path(Bool, calls(twelve), true) {
+  here(true)
+}
