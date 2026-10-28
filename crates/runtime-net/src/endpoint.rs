@@ -58,6 +58,9 @@ pub const ALPN: &[u8] = b"gandr/net/0";
 /// The longest frame, in bytes, either end sends or accepts: 16 MiB.
 pub const MAX_FRAME: u32 = 0x0100_0000;
 
+/// The bytes of a length prefix.
+pub const PREFIX: usize = 4_usize;
+
 /// A stream an endpoint holds, by the name it minted.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -146,6 +149,119 @@ impl AsRef<[u8]> for Frame
     fn as_ref(&self) -> &[u8]
     {
         &self.0
+    }
+}
+
+/// The length a frame or a part opens with, at most [`MAX_FRAME`]: on the
+/// wire, [`PREFIX`] little-endian bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Prefix(u32);
+
+impl TryFrom<usize> for Prefix
+{
+    type Error = Oversized;
+
+    /// The prefix of `length` bytes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, the prefix's length is `length`.
+    /// - fails: [`Oversized`] for a length past [`MAX_FRAME`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Oversized`], carrying `length`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a frame or a part of at most [`MAX_FRAME`] bytes is
+    ///   sent whole, and a longer frame is refused before any byte is sent.
+    /// - witness: `tests::endpoint::two_endpoints_exchange_frames_on_loopback`
+    /// - witness: `tests::endpoint::an_oversized_frame_and_an_unknown_stream_are_refused`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&prefix| usize::from(prefix) == length))]
+    fn try_from(length: usize) -> Result<Self, Oversized>
+    {
+        u32::try_from(length)
+            .ok()
+            .filter(|&length| length <= MAX_FRAME)
+            .map(Self)
+            .ok_or_else(|| Oversized(u64::try_from(length).unwrap_or(u64::MAX)))
+    }
+}
+
+impl TryFrom<[u8; PREFIX]> for Prefix
+{
+    type Error = Oversized;
+
+    /// The prefix `bytes` announce.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, the prefix's bytes are `bytes`.
+    /// - fails: [`Oversized`] for a length announced past [`MAX_FRAME`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Oversized`], carrying the length announced.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a part announced at [`MAX_FRAME`] bytes is read, and
+    ///   one announced past it does not frame.
+    /// - witness: `tests::chunks::a_part_announced_past_the_frame_limit_does_not_frame`
+    /// - witness: `tests::endpoint::two_endpoints_exchange_frames_on_loopback`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&prefix| <[u8; PREFIX]>::from(prefix) == bytes))]
+    fn try_from(bytes: [u8; PREFIX]) -> Result<Self, Oversized>
+    {
+        let length = u32::from_le_bytes(bytes);
+        if length > MAX_FRAME {
+            return Err(Oversized(u64::from(length)));
+        }
+        Ok(Self(length))
+    }
+}
+
+impl From<Prefix> for [u8; PREFIX]
+{
+    /// The prefix's bytes on the wire.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(Prefix(length): Prefix) -> Self
+    {
+        length.to_le_bytes()
+    }
+}
+
+impl From<Prefix> for usize
+{
+    /// The length the prefix announces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(Prefix(length): Prefix) -> Self
+    {
+        // `MAX_FRAME` fits every supported target's `usize`.
+        Self::try_from(length).unwrap_or(Self::MAX)
+    }
+}
+
+/// A frame or a part longer than [`MAX_FRAME`], by its length in bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct Oversized(u64);
+
+impl From<Oversized> for Fault
+{
+    /// The endpoint's refusal of an oversized frame.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(Oversized(length): Oversized) -> Self
+    {
+        Self::Oversized { length }
     }
 }
 

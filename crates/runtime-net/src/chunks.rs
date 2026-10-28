@@ -70,15 +70,14 @@ use gandr_storage_values::ValueManifest;
 use gandr_storage_values::verify_chunk_image;
 
 use crate::endpoint::Fault;
-use crate::endpoint::MAX_FRAME;
+use crate::endpoint::Oversized;
+use crate::endpoint::PREFIX;
+use crate::endpoint::Prefix;
 use crate::peer::NodeId;
 
 /// The protocol name a holder answers fetches under, offered beside
 /// [`ALPN`](crate::ALPN) by every endpoint.
 pub const CHUNKS_ALPN: &[u8] = b"gandr/chunks/0";
-
-/// The bytes of a part's length prefix.
-const PREFIX: usize = 4_usize;
 
 /// The chunks a host holds: what its run commits and fetches, and what its
 /// endpoint serves. Clones share one store.
@@ -253,7 +252,7 @@ pub struct Fetched
 }
 
 /// A request or an answer: parts, each a little-endian `u32` length, then
-/// that many bytes, at most [`MAX_FRAME`].
+/// that many bytes, at most [`MAX_FRAME`](crate::MAX_FRAME).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Framed(Vec<u8>);
@@ -296,7 +295,8 @@ impl Framed
     /// - requires: nothing.
     /// - ensures: on success, the bytes grew by the prefix and the pieces; on
     ///   failure, they are unchanged.
-    /// - fails: [`Oversized`] for pieces longer than [`MAX_FRAME`] together.
+    /// - fails: [`Oversized`] for pieces longer than
+    ///   [`MAX_FRAME`](crate::MAX_FRAME) together.
     /// - panics: none.
     ///
     /// # Errors
@@ -315,12 +315,9 @@ impl Framed
         let length = pieces
             .iter()
             .fold(0_usize, |sum, piece| sum.saturating_add(piece.0.len()));
-        let prefix = u32::try_from(length)
-            .ok()
-            .filter(|&prefix| prefix <= MAX_FRAME)
-            .ok_or_else(|| Oversized(u64::try_from(length).unwrap_or(u64::MAX)))?;
+        let prefix = Prefix::try_from(length)?;
         self.0.reserve(length.saturating_add(PREFIX));
-        self.0.extend_from_slice(&prefix.to_le_bytes());
+        self.0.extend_from_slice(&<[u8; PREFIX]>::from(prefix));
         for piece in pieces {
             self.0.extend_from_slice(piece.0);
         }
@@ -351,24 +348,6 @@ impl AsRef<[u8]> for Framed
     fn as_ref(&self) -> &[u8]
     {
         &self.0
-    }
-}
-
-/// A part longer than [`MAX_FRAME`], by its length in bytes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct Oversized(u64);
-
-impl From<Oversized> for Fault
-{
-    /// The endpoint's refusal of an oversized frame.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(Oversized(length): Oversized) -> Self
-    {
-        Self::Oversized { length }
     }
 }
 
@@ -421,7 +400,7 @@ impl From<Oversized> for Unanswered
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(Oversized(_): Oversized) -> Self
+    fn from(_oversized: Oversized) -> Self
     {
         Self::Oversized
     }
@@ -485,12 +464,9 @@ impl<'bytes> Iterator for Parts<'bytes>
         let framed = self
             .0
             .split_first_chunk::<PREFIX>()
-            .and_then(|(prefix, rest)| {
-                let length = u32::from_le_bytes(*prefix);
-                let length = usize::try_from(length)
-                    .ok()
-                    .filter(|_| length <= MAX_FRAME)?;
-                rest.split_at_checked(length)
+            .and_then(|(&prefix, rest)| {
+                let length = Prefix::try_from(prefix).ok()?;
+                rest.split_at_checked(usize::from(length))
             });
         let Some((part, rest)) = framed
         else {

@@ -28,7 +28,8 @@ use super::Binding;
 use super::Fault;
 use super::Frame;
 use super::Lookup;
-use super::MAX_FRAME;
+use super::PREFIX;
+use super::Prefix;
 use super::StreamId;
 use crate::chunks::CHUNKS_ALPN;
 use crate::chunks::Chunks;
@@ -744,16 +745,11 @@ impl Streams
     ) -> Result<(), Fault>
     {
         let bytes = frame.as_ref();
-        let length = u32::try_from(bytes.len())
-            .ok()
-            .filter(|&length| length <= MAX_FRAME)
-            .ok_or_else(|| Fault::Oversized {
-                length: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
-            })?;
+        let prefix = Prefix::try_from(bytes.len())?;
         let held = self.held(stream)?;
         let failed = |reason: String| Fault::Stream { stream, reason };
         held.send
-            .write_all(&length.to_le_bytes())
+            .write_all(&<[u8; PREFIX]>::from(prefix))
             .await
             .map_err(|unwritten| failed(unwritten.to_string()))?;
         held.send
@@ -784,20 +780,20 @@ impl Streams
             },
         };
         let held = self.held(stream)?;
-        let mut prefix = [0_u8; 4];
+        let mut prefix = [0_u8; PREFIX];
         held.recv.read_exact(&mut prefix).await.map_err(unread)?;
-        let length = u32::from_le_bytes(prefix);
-        if length > MAX_FRAME {
-            if let Some(refused) = self.held.remove(&stream) {
-                refused
-                    .connection
-                    .close(VarInt::from_u32(REFUSED), b"oversized frame");
-            }
-            return Err(Fault::Oversized {
-                length: u64::from(length),
-            });
-        }
-        let mut frame = vec![0_u8; usize::try_from(length).unwrap_or(usize::MAX)];
+        let length = match Prefix::try_from(prefix) {
+            Ok(length) => length,
+            Err(oversized) => {
+                if let Some(refused) = self.held.remove(&stream) {
+                    refused
+                        .connection
+                        .close(VarInt::from_u32(REFUSED), b"oversized frame");
+                }
+                return Err(Fault::from(oversized));
+            },
+        };
+        let mut frame = vec![0_u8; usize::from(length)];
         held.recv.read_exact(&mut frame).await.map_err(unread)?;
         Ok(Frame::from(frame))
     }

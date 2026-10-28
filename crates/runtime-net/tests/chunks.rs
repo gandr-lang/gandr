@@ -1,7 +1,8 @@
 //! The chunk wire on loopback: a holder serves what its run committed while
 //! its owner waits on nothing, a second fetch of an edited value carries only
 //! the chunks the edit added, and an answer that does not verify, does not
-//! frame or does not hold the value whole is refused.
+//! frame, announces a part past the frame limit or does not hold the value
+//! whole is refused.
 
 use core::net::IpAddr;
 use core::net::Ipv4Addr;
@@ -23,6 +24,7 @@ use gandr_runtime_net::CHUNKS_ALPN;
 use gandr_runtime_net::Chunks;
 use gandr_runtime_net::Endpoint;
 use gandr_runtime_net::Fault;
+use gandr_runtime_net::MAX_FRAME;
 use gandr_runtime_net::NodeId;
 use gandr_runtime_net::Peer;
 use gandr_runtime_net::Secret;
@@ -374,4 +376,38 @@ fn a_value_the_holder_lacks_is_refused_by_its_first_chunk()
         "a holder lacking the value answers nothing, and the walk names its root chunk"
     );
     assert_eq!(at_asker.lock().chunk_count(), ChunkCount::from(0_usize));
+}
+
+#[test]
+fn a_part_announced_past_the_frame_limit_does_not_frame()
+{
+    let limit = usize::try_from(MAX_FRAME).expect("the limit fits a usize");
+    let filled = |length: usize| {
+        let prefix = u32::try_from(length).expect("a length a prefix spells");
+        let mut bytes = prefix.to_le_bytes().to_vec();
+        bytes.resize(bytes.len().saturating_add(length), 7_u8);
+        Forged(bytes)
+    };
+    let mut committed = InMemoryChunkStore::new();
+    let mut values = Store::new();
+    let original = list(&mut values, Edited::No);
+    let manifest = commit(&values, original, params(), &mut committed).expect("crosses");
+    let (holder, serving) =
+        forged_holder(Vec::from([filled(limit), filled(limit.saturating_add(1))]));
+    let mut asker = on_loopback(&Chunks::new());
+    let at_limit = asker.fetch(&holder, &manifest, &[]);
+    assert!(
+        matches!(
+            at_limit,
+            Err(Fault::Refused { peer, refusal: ValueError::DigestMismatch { .. } })
+                if peer == holder.id()
+        ),
+        "a part of exactly the limit frames, and its chunk is checked: {at_limit:?}"
+    );
+    assert_eq!(
+        asker.fetch(&holder, &manifest, &[]),
+        Err(Fault::Malformed { peer: holder.id() }),
+        "a part announced one byte past the limit does not frame"
+    );
+    serving.join().expect("the forged holder ends");
 }
