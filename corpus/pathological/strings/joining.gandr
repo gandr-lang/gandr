@@ -1,0 +1,26 @@
+// A law of joining written over `std.string`'s `concat` itself, which the
+// checker refuses until a law may name a definition.
+//
+// A rule names only the operations of its own block. `concat` here is a
+// definition the block does not declare, so the rule is malformed. The module
+// states the same law over joining presented as an operation.
+//
+// The block below names `concat` and `empty` from the import in its rule. The
+// description check refuses it by name.
+//
+// - see: `model/strings/joining.gandr` — the functions, run
+// - see: #525 — admits a law over a definition
+
+// `empty`, `concat`, `isEmpty`.
+import "../../../library/std/src/string.gandr";
+
+/// The empty string's unit law over the definition `concat` is refused.
+@[ refuses("IllFormedDescription") ]
+theory JoinLaws {
+  /// The sort the law ranges over.
+  sort S : Type;
+
+  /// `concat` with the empty string on its left is the string; it names
+  /// a definition the block does not declare.
+  rule unitLeft : concat(empty, s) <=> s;
+}

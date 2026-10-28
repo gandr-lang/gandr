@@ -199,6 +199,8 @@ corpus/ledger/features/spinal-duplication.gandr Tense 230726ff60b0ada4
 corpus/ledger/features/spinal-duplication.gandr Glossary 0f7bf85f8890fdff
 corpus/ledger/features/std-package.gandr Passive 468c83b178103296
 corpus/ledger/features/std-package.gandr Tense 5d49b780190615a2
+corpus/ledger/features/std-string.gandr Tense 240a1f21bd78d871
+corpus/ledger/features/std-string.gandr Tense 3475dfd94a80588d
 corpus/ledger/features/string-model.gandr Tense 4ac425b737975bd5
 corpus/ledger/features/structural-recursion.gandr Tense aca60865a5d6a7ff
 corpus/ledger/features/tactics-over-goals.gandr Passive ef8faf0587205753
