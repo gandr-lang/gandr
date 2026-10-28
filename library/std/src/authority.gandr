@@ -1,0 +1,19 @@
+// `std.authority`: the ambient authority. `std` reaches the host by
+// capability, on `cap-std`'s design (`../README.md`): authority enters a
+// program in one place, as `main`'s parameter, `def main(authority :
+// Authority)`, and never through a global. That is what
+// `cap_std::ambient_authority()` marks in Rust, and `gandr run` hands it to
+// `main` once. Each host module's root capability is attenuated from it: a
+// capability holding more operations stands where one holding fewer is asked,
+// and a holder never reaches an operation its own does not hold. The authority
+// holds the operations of every host module of the map that has landed, and
+// grows by each one that lands.
+
+/// The ambient authority: every host operation a landed module of `std`
+/// reaches, held once, as `main`'s parameter.
+pub type Authority = Cap { print };
+
+/// The standard streams' root capability, opened from `authority`.
+pub def console(authority : Authority) -> Cap { print } {
+  authority
+}

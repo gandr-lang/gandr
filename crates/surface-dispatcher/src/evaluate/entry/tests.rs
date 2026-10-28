@@ -229,6 +229,31 @@ fn an_entry_prints_through_its_console_2279()
     assert_eq!(refusing.asked, 1, "nothing runs past the failed line");
 }
 
+/// An entry handed the ambient authority prints through it, and through a
+/// capability attenuated from it, as through `Console` itself: no handler of
+/// the run introduced the authority, so each exercise is the host's (#2970).
+#[test]
+fn an_entry_prints_through_its_authority_2970()
+{
+    let source = "type Authority = Cap { print } ;\n\
+                  def console(authority : Authority) -> Cap { print } { authority }\n\
+                  def say(c : Cap { print }, line : String) -> [Console] Unit { c.print(line) }\n\
+                  def main(authority : Authority) -> [Console] Unit {\n  \
+                  say(authority, \"hello\") ;\n  say(console(authority), \"world\")\n}\n";
+    let mut ran = program(source);
+    let Maybe::Present(entry) = ran.entry()
+    else {
+        panic!("an entry: {source}");
+    };
+    let mut console = Captured::default();
+    assert_eq!(
+        ran.enter(entry, &[], &mut console, (None, None)),
+        Entered::Exited(ExitStatus(0)),
+        "the unit exits with 0"
+    );
+    assert_eq!(console.lines(), ["hello", "world"], "each line, in order");
+}
+
 /// A console failing every line it is handed, counting them.
 #[repr(transparent)]
 struct Refusing

@@ -248,11 +248,13 @@ impl<'source> Program<'source>
     ///   before any command runs, and [`Unrunnable::UnboundWorld`] naming the
     ///   first world the entry holds a capability for that `worlds`' bindings
     ///   bind to no host. Otherwise the entry is forced, and, when it reads
-    ///   them, applied to [`argument_list`] of `arguments`; each line it prints
-    ///   is handed to `console` in order as it runs, each `Net` operation it
-    ///   performs is served on `net`, or declined without one, and each
-    ///   migration runs where the bindings bind its world, or here without one;
-    ///   a run that performs `Proc.exit` with an integer, or returns an
+    ///   them, applied to [`argument_list`] of `arguments`, or, when it takes
+    ///   the ambient authority, to a fresh object no handler introduced, so an
+    ///   operation exercised through it is offered to the host; each line it
+    ///   prints is handed to `console` in order as it runs, each `Net`
+    ///   operation it performs is served on `net`, or declined without one, and
+    ///   each migration runs where the bindings bind its world, or here without
+    ///   one; a run that performs `Proc.exit` with an integer, or returns an
     ///   integer, is [`Entered::Exited`] with that integer's low byte, one
     ///   returning the unit is [`Entered::Exited`] with zero, and any other end
     ///   is [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
@@ -273,6 +275,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::entry::tests::an_entry_runs_to_its_exit_status_1881`
     /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
     /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
+    /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_authority_2970`
     /// - witness: `tests::run::a_script_pings_over_its_network_3186`
     /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     /// - witness: `tests::run::a_world_bound_to_this_host_runs_here`
@@ -306,6 +309,13 @@ impl<'source> Program<'source>
             Arguments::Read => {
                 let list = argument_list(&mut core, arguments);
                 core.computation_application(forced, list)
+            },
+            Arguments::Authority => {
+                // The authority is a fresh object no handler of the run
+                // introduced, so each operation exercised through it, or
+                // through a capability attenuated from it, is the host's.
+                let authority = core.value_unit();
+                core.computation_application(forced, authority)
             },
         };
         let mut provenance = Provenance::new();

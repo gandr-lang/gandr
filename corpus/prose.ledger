@@ -1183,7 +1183,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Elsewhere.
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EndpointAsValue.txt Procedure a74054817f24d047
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EndpointUsedTwice.txt Procedure b23ad672f1cf33d9
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EntryNamed.txt Procedure ef85c85b9b0f6951
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EntryType.txt Procedure 7bdc37afaa20bf25
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EntryType.txt Procedure c0a4850c91e20323
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/FamilyArgumentClassifier.txt Procedure 8c8c468992dfacac
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/FamilyArity.txt Procedure c2e12c6ef3772c63
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/FootprintsOverlap.txt Procedure 2f00687e68977082

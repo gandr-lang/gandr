@@ -1,10 +1,12 @@
 //! A program's entry: the `main` a source declares at its top level. An entry
 //! is a computation returning the exit code, `U (F^e Integer)`, or the unit,
-//! `U (F^e Unit)`, whose run exits with zero, or a function of the arguments
-//! returning either, `U (List(String) → F^e …)`; the interfaces `e` it may
-//! perform are its own. A `main` at any other type is refused by name where
-//! it is declared, so a program never starts at an entry no run can read an
-//! exit code from.
+//! `U (F^e Unit)`, whose run exits with zero, or a function returning either
+//! of the arguments, `U (List(String) → F^e …)`, or of the ambient authority,
+//! `U (Cap {…} → F^e …)`: the capability the host hands the run once, from
+//! which `std.authority` opens each host module's root capability. The
+//! interfaces `e` it may perform are its own. A `main` at any other type is
+//! refused by name where it is declared, so a program never starts at an
+//! entry no run can read an exit code from.
 
 use alloc::vec::Vec;
 
@@ -33,7 +35,7 @@ quenchant_shape::reason_enum! {
     /// Why a type is no entry's.
     pub mod entry_shape {
         /// The type is not the thunk of a computation returning an integer or
-        /// the unit, directly or after one argument list.
+        /// the unit, directly or after the arguments or the authority.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// Another type.
@@ -51,6 +53,9 @@ pub enum Arguments
     /// The program's arguments, as one `List(String)`, applied after the
     /// force.
     Read,
+    /// The ambient authority, a capability the host holds, applied after the
+    /// force.
+    Authority,
 }
 
 /// The arguments the entry type `declared` takes, when it is an entry's.
@@ -58,22 +63,24 @@ pub enum Arguments
 /// # Specification
 /// - requires: `declared` is a value type of `arena`.
 /// - ensures: [`Arguments::Unread`] for `U (F^e R)`, [`Arguments::Read`] for `U
-///   (List(String) → F^e R)`, written as an arrow or a Pi, each under any row
-///   `e`, where `R` is `Integer` or the unit; the misshapen absence for every
-///   other type, a type `arena` does not hold included.
+///   (List(String) → F^e R)` and [`Arguments::Authority`] for `U (Cap {…} → F^e
+///   R)`, each function written as an arrow or a Pi, each under any row `e`,
+///   where `R` is `Integer` or the unit; the misshapen absence for every other
+///   type, a type `arena` does not hold included.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the two entry types under the empty row and a row of one
-///   interface, each returning an integer and the unit, beside a returner of a
-///   string, a function of an integer and a bare integer.
+/// - hypothesis: L3 — the three entry types under the empty row and a row of
+///   one interface, each returning an integer and the unit, beside a returner
+///   of a string, a function of an integer and a bare integer.
 /// - witness: `lower::entry::tests::an_entry_returns_an_integer_after_its_arguments_1881`
 /// - witness: `lower::entry::tests::an_entry_returns_the_unit_2279`
+/// - witness: `lower::entry::tests::an_entry_takes_the_ambient_authority_2970`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(Arguments::Unread) => matches!(arena.value_type(declared), Some(&ValueType::Thunk(body))
         if matches!(arena.comp_type(body), Some(&CompType::Returner { .. }))),
-    Maybe::Present(Arguments::Read) => matches!(arena.value_type(declared), Some(&ValueType::Thunk(body))
+    Maybe::Present(Arguments::Read | Arguments::Authority) => matches!(arena.value_type(declared), Some(&ValueType::Thunk(body))
         if matches!(arena.comp_type(body), Some(&(CompType::Arrow { .. } | CompType::Pi { .. })))),
     Maybe::Absent(_) => true,
 })]
@@ -97,19 +104,22 @@ pub fn entry_shape(
     if returns_code(body) {
         return Maybe::Present(Arguments::Unread);
     }
-    let reads = match arena.comp_type(body) {
-        Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) => {
-            matches!(arena.value_type(domain), Some(&ValueType::List(element))
-                if arena.value_type(element) == Some(&ValueType::Base(BaseType::String)))
-                && returns_code(codomain)
-        },
-        _ => false,
-    };
-    if reads {
-        Maybe::Present(Arguments::Read)
-    }
+    let Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) =
+        arena.comp_type(body)
     else {
-        misshapen
+        return misshapen;
+    };
+    if !returns_code(codomain) {
+        return misshapen;
+    }
+    match arena.value_type(domain) {
+        Some(&ValueType::List(element))
+            if arena.value_type(element) == Some(&ValueType::Base(BaseType::String)) =>
+        {
+            Maybe::Present(Arguments::Read)
+        },
+        Some(&ValueType::Capability { .. }) => Maybe::Present(Arguments::Authority),
+        _ => misshapen,
     }
 }
 

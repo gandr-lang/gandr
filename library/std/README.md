@@ -1,6 +1,6 @@
 # std
 
-The standard library: the package every gandr program can read, built and checked by the same verbs as any package (`gandr check library/std`). Its first modules are `std.package`, the theories a project's manifest is read from, `std.layout` and `std.boundary`, Rust's default layout and the foreign boundary's function rows, `std.grade`, the grade algebras, and `std.manifold`, the theories a deployment's files are read from. The rest of this page is the map the later modules land from, one unit each (#628).
+The standard library: the package every gandr program can read, built and checked by the same verbs as any package (`gandr check library/std`). Its first modules are `std.package`, the theories a project's manifest is read from, `std.layout` and `std.boundary`, Rust's default layout and the foreign boundary's function rows, `std.grade`, the grade algebras, `std.manifold`, the theories a deployment's files are read from, and `std.authority`, the ambient authority `main` is handed. The rest of this page is the map the later modules land from, one unit each (#628).
 
 ## Host access is by capability
 
@@ -16,7 +16,7 @@ The standard library: the package every gandr program can read, built and checke
 | `std.grade` | `Grade`, an ordered semiring's operations, with its models `Usage`, the grades the tree writes, and `Count` over the prelude's binary `Nat`; `Hom`, a named map between two algebras, with `collapse`; `fits` and `covers`, each order decided by conversion (#3287) | none | none: no host access | landed |
 | `std.manifold` | `Site`, the key one place proves and the sockets it binds, `Manifold`, the program a deployment runs, and `Placement`, a world placed at a site, which a manifold's `placements` lists (#3374) | none; the site and manifold of `corpus/model/worlds/two-processes.gandr` import it | none: no host access; the driver reads the files | landed |
 | `std.nix` | `Nix.Derivation`, `Nix.Attribute` | none | none: a type provider (#2763) | reserved |
-| `std.authority` | the ambient authority, `main`'s parameter, from which each host module's root capability is opened | none | `cap_std::ambient_authority`, `AmbientAuthority` | reserved |
+| `std.authority` | `Authority`, the ambient authority: a capability holding every host operation a landed module reaches, `main`'s parameter, `def main(authority : Authority)`, which `gandr run` hands it once; and `console`, the standard streams' root capability attenuated from it (#2970) | none | `cap_std::ambient_authority`, `AmbientAuthority` | landed |
 | `std.fs` | `Fs` under a directory capability: open, read, write, create and remove beneath it; temporary directories removed with their scope | `corpus/model/builtins/host-modules.gandr`, `corpus/model/control/capability-attenuate.gandr` | `cap_std::fs::Dir`, `cap_tempfile::TempDir`, `cap_primitives::fs::open_dir` (resolution beneath its start); rustix `fs` | reserved |
 | `std.net` | a pool capability of the addresses a program may bind or connect to; streams and datagrams opened within it | none | `cap_std::net::Pool`, `cap_net_ext::PoolExt`; rustix `net` | reserved |
 | `std.time` | a system clock and a monotonic clock, each a capability; instants and durations | `corpus/model/effects/domhringr.gandr` § `Clock` | `cap_std::time::SystemClock`, `MonotonicClock`; `cap_time_ext::MonotonicClockExt` | reserved |
