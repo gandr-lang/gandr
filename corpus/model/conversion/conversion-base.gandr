@@ -1,0 +1,47 @@
+// The conversion subject's shared declarations: products, truncated
+// subtraction and numerals over the data subject's free naturals.
+//
+// Each source of this subject states a closed computation as a path, and the
+// conversion settles the path by running its endpoints. The subject is the
+// benchmark set that measures a compiled conversion tier: the hotpath series'
+// `conversion set` workload.
+//
+// Products recurse on their second argument and add the first at each step.
+// The numerals are values, so an endpoint reads them without running a call.
+//
+// - see: #2282 — the benchmark set these sources form
+
+// The free naturals, their addition and the numerals two and three.
+import "../data/data-base.gandr";
+
+/// Multiplication by recursion on the second argument.
+pub def rec times(n : Nat, m : Nat) -> Nat {
+  case m {
+    Zero => Zero,
+    Succ(p) => plus(times[<](n, p), n)
+  }
+}
+
+/// Truncated subtraction: zero where `m` exceeds `n`.
+pub def rec monus(n : Nat, m : Nat) -> Nat {
+  case m {
+    Zero => n,
+    Succ(p) => case monus[<](n, p) {
+      Zero => Zero,
+      Succ(q) => q
+    }
+  }
+}
+
+/// Four.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+pub def four : Nat = Succ(three);
+
+/// Eight.
+pub def eight : Nat = Succ(Succ(Succ(Succ(four))));
+
+/// Twelve.
+pub def twelve : Nat = Succ(Succ(Succ(Succ(eight))));
+
+/// Sixteen.
+pub def sixteen : Nat = Succ(Succ(Succ(Succ(twelve))));

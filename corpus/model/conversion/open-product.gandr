@@ -1,0 +1,34 @@
+// A product of two sums over free naturals has one normal form, however it sums.
+//
+// Grégoire and Leroy normalise the product of 128 plus `x` and 128 plus `y`.
+// Its free variables leave matches stuck inside the normal form.
+//
+// Each factor runs sixteen successors past a free variable, so the product stops
+// on matches over `x` and `y`. Two definitions hold the products, and the path
+// compares their calls.
+//
+// - see: Grégoire and Leroy, _A compiled implementation of strong reduction_,
+//   ICFP 2002, § 6
+// - see: #3314 — the same products written in the path do not convert
+// - see: #2282 — the benchmark set
+
+// The free naturals and their addition.
+import "../data/data-base.gandr";
+
+// The products and the numerals four, twelve and sixteen.
+import "./conversion-base.gandr";
+
+/// The product of two sums over free naturals.
+def product(x : Nat, y : Nat) -> Nat {
+  times(plus(x, sixteen), plus(y, sixteen))
+}
+
+/// The same product, its right factor summed in two steps.
+def productSplit(x : Nat, y : Nat) -> Nat {
+  times(plus(x, sixteen), plus(plus(y, four), twelve))
+}
+
+/// The two products share one normal form.
+def productsAgree(x : Nat, y : Nat) -> Path(Nat, product(x, y), productSplit(x, y)) {
+  here(product(x, y))
+}

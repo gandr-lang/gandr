@@ -1,0 +1,63 @@
+// The Lucas–Lehmer test shows that thirty-one, two to the fifth less one, is
+// prime.
+//
+// Boespflug, Dénès and Grégoire decide a Mersenne number's primality by the
+// Lucas–Lehmer test. Its squares and remainders allocate large unary naturals.
+//
+// From four, the test squares, subtracts two and takes the remainder three
+// times. At one hundred and twenty-seven the run outlasts the conversion's step
+// budget.
+//
+// - see: Boespflug, Dénès and Grégoire, _Full Reduction at Full Throttle_,
+//   CPP 2011, § 4, Lucas-Lehmer
+// - see: #2282 — the benchmark set
+
+// The free naturals and the numeral two.
+import "../data/data-base.gandr";
+
+// The products, truncated subtraction and the numeral four.
+import "./conversion-base.gandr";
+
+/// Two to the power `p`.
+def rec power(p : Nat) -> Nat {
+  case p {
+    Zero => Succ(Zero),
+    Succ(q) => times(power[<](q), two)
+  }
+}
+
+/// The remainder of `n` by `d + 1`: `r` counts up, and `left` counts the
+/// steps to the next wrap.
+def rec remainder(n : Nat, d : Nat, r : Nat, left : Nat) -> Nat {
+  case left {
+    Zero => case n {
+      Zero => r,
+      Succ(k) => remainder[<](k, d, Zero, d)
+    },
+    Succ(l) => case n {
+      Zero => r,
+      Succ(k) => remainder[<](k, d, Succ(r), l)
+    }
+  }
+}
+
+/// The sequence `k` steps on from `s`, each step `s * s - 2` modulo `d + 1`.
+def rec steps(k : Nat, d : Nat, s : Nat) -> Nat {
+  case k {
+    Zero => s,
+    Succ(j) => steps[<](j, d, remainder(monus(times(s, s), two), d, Zero, d))
+  }
+}
+
+/// Whether `2^p - 1` is prime, for an odd prime `p`.
+def lucasLehmer(p : Nat) -> Bool {
+  case steps(monus(p, two), monus(power(p), two), four) {
+    Zero => true,
+    Succ(_) => false
+  }
+}
+
+/// Thirty-one is a Mersenne prime.
+def thirtyOneIsPrime() -> Path(Bool, lucasLehmer(Succ(four)), true) {
+  here(true)
+}
