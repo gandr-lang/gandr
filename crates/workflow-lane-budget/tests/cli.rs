@@ -20,14 +20,15 @@ use std::process::Command;
 
 /// The report over runs 3 and 2 with Clippy's budget `BUDGET`, standing
 /// `STANDING` and the table's summary `SUMMARY`.
-const REPORT: &str = "Median job time over the last 2 merge-queue and pull-request runs of \
-                          `ci.yml`, against the budgets in `nightly.yml`, each lane held by the \
-                          cone its landing touched.\n\n\
+const REPORT: &str = "This report holds each CI lane's median job time against its budget in \
+                          `nightly.yml`.\n\nThe table holds each lane's median over the last 2 \
+                          merge-queue and pull-request runs of `ci.yml`. The cone a landing \
+                          touches gives each lane its class.\n\n\
                           <details><summary>SUMMARY</summary>\n\n\
                           | lane | class | median | budget | jobs | standing |\n\
                           | --- | --- | ---: | ---: | ---: | --- |\n\
                           | check Clippy wall | surface | 3m 20s | BUDGET | 2 | STANDING |\n\
-                          \nRuns: 3, 2.\n\n</details>\n";
+                          \nThe table reads runs 3, 2.\n\n</details>\n";
 
 /// A fresh scratch directory for the case `$name`, for the fake's log and body.
 macro_rules! scratch {
@@ -267,20 +268,20 @@ fn a_daily_lane_is_sampled_over_the_scheduled_runs()
     // each table reads only its own window.
     assert!(
         stdout.contains(
-            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n\n</details>\n"
+            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nThe table reads runs 3, 2.\n\n</details>\n"
         ),
         "{stdout}"
     );
     assert!(
         stdout.contains(
-            "Median job time over the last 2 scheduled runs of `ci.yml`, for the lanes only the \
-             daily run holds.\n"
+            "The table holds the daily lanes' medians over the last 2 scheduled runs of \
+             `ci.yml`.\n"
         ),
         "{stdout}"
     );
     assert!(
         stdout.contains(
-            "| mutate the night's crate (linux) | daily | 1m 20s | 1m 15s | 2 | **over** |\n\nRuns: 9, 8.\n\n</details>\n"
+            "| mutate the night's crate (linux) | daily | 1m 20s | 1m 15s | 2 | **over** |\n\nThe table reads runs 9, 8.\n\n</details>\n"
         ),
         "{stdout}"
     );
@@ -323,17 +324,17 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
     // reads its own window, the nightly one after the daily one.
     assert!(
         stdout.contains(
-            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n\n</details>\n"
+            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nThe table reads runs 3, 2.\n\n</details>\n"
         ),
         "{stdout}"
     );
     assert!(
         stdout.ends_with(
-            "\nRuns: 9, 8.\n\n</details>\n\nMedian job time over the last 2 scheduled runs of \
-             `nightly.yml`, for its lanes.\n\n<details><summary>1 lane — within: 0 over, 0 \
-             unmeasured</summary>\n\n| lane | class | median | budget | jobs | standing |\n| --- \
-             | --- | ---: | ---: | ---: | --- |\n| check Clippy wall | nightly | 8m 20s | 9m 10s | \
-             2 | within |\n\nRuns: 6, 5.\n\n</details>\n"
+            "\nThe table reads runs 9, 8.\n\n</details>\n\nThe table holds the nightly lanes' \
+             medians over the last 2 scheduled runs of `nightly.yml`.\n\n<details><summary>1 \
+             lane — within: 0 over, 0 unmeasured</summary>\n\n| lane | class | median | budget | \
+             jobs | standing |\n| --- | --- | ---: | ---: | ---: | --- |\n| check Clippy wall | \
+             nightly | 8m 20s | 9m 10s | 2 | within |\n\nThe table reads runs 6, 5.\n\n</details>\n"
         ),
         "{stdout}"
     );
@@ -458,8 +459,8 @@ fn a_summed_budget_tables_every_workflow()
     // median over the two nights.
     assert!(
         stdout.ends_with(
-            "\nSummed job time and wall time over each workflow's last 2 completed runs, \
-             against the summed budgets in `nightly.yml`.\n\n\
+            "\nThe table holds each workflow's summed job time and wall time over its last 2 \
+             completed runs against the summed budgets in `nightly.yml`.\n\n\
              <details><summary>2 workflows — over: 1 over, 0 unmeasured</summary>\n\n\
              | workflow | runs | wall median | wall max | summed median | past budget | past \
              ceiling | standing |\n\
@@ -467,9 +468,11 @@ fn a_summed_budget_tables_every_workflow()
              | CI | 2 | 13m 20s | 15m 0s | 3m 45s | — | — | unbudgeted |\n\
              | Nightly | 2 | 10m 50s | 11m 40s | 9m 15s | 2 past 8m 20s | 1 past 10m 0s | \
              **over** |\n\
-             \n- Nightly run 6: 11m 5s summed, over its 10m 0s ceiling; `check Clippy wall` \
-             took 10m 0s against its median 8m 20s.\n\
-             \nActions cache: 10.0 GiB in 144 caches.\n\n</details>\n\
+             \nThe table gives each run past its ceiling and the job that grew the most in \
+             it.\n\n| workflow | run | summed | ceiling | job | time | median |\n\
+             | --- | ---: | ---: | ---: | --- | ---: | ---: |\n\
+             | Nightly | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |\n\
+             \nThe Actions cache holds 10.0 GiB in 144 caches.\n\n</details>\n\
              \nOpened https://example.invalid/issues/7.\n"
         ),
         "{stdout}"

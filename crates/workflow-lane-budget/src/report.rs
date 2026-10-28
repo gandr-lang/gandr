@@ -593,7 +593,7 @@ fn table(
             row.standing()
         )?;
     }
-    writeln!(f, "\nRuns: {}.\n\n</details>", listed(runs))
+    writeln!(f, "\nThe table reads runs {}.\n\n</details>", listed(runs))
 }
 
 /// The runs a table sampled, as the line after it lists them.
@@ -644,22 +644,22 @@ impl fmt::Display for Report
     {
         writeln!(
             f,
-            "Median job time over the last {} merge-queue and pull-request runs of `ci.yml`, \
-             against the budgets in `nightly.yml`, each lane held by the cone its \
-             landing touched.\n",
+            "This report holds each CI lane's median job time against its budget in \
+             `nightly.yml`.\n\nThe table holds each lane's median over the last {} merge-queue \
+             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
+             class.\n",
             self.runs.len()
         )?;
         table(f, &self.rows, Window::Landing, &self.runs)?;
         for scheduled in &self.scheduled {
-            let held = match scheduled.window {
-                Window::Landing | Window::Scheduled => {
-                    "of `ci.yml`, for the lanes only the daily run holds"
-                },
-                Window::Nightly => "of `nightly.yml`, for its lanes",
+            let (lanes, workflow) = match scheduled.window {
+                Window::Landing | Window::Scheduled => ("daily", "ci.yml"),
+                Window::Nightly => ("nightly", "nightly.yml"),
             };
             writeln!(
                 f,
-                "\nMedian job time over the last {} scheduled runs {held}.\n",
+                "\nThe table holds the {lanes} lanes' medians over the last {} scheduled runs of \
+                 `{workflow}`.\n",
                 scheduled.runs.len()
             )?;
             table(f, &scheduled.rows, scheduled.window, &scheduled.runs)?;
@@ -751,15 +751,16 @@ mod tests
         );
         assert_eq!(
             report.to_string(),
-            "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
-             against the budgets in `nightly.yml`, each lane held by the cone its \
-             landing touched.\n\n\
+            "This report holds each CI lane's median job time against its budget in \
+             `nightly.yml`.\n\nThe table holds each lane's median over the last 2 merge-queue \
+             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
+             class.\n\n\
              <details><summary>2 lanes — within: 0 over, 1 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | check Clippy wall | surface | 3m 20s | 5m 0s | 3 | within |\n\
              | test enforcing targets (macos-arm64) | surface | — | 15m 0s | 0 | unmeasured |\n\
-             \nRuns: 12, 11.\n\n</details>\n"
+             \nThe table reads runs 12, 11.\n\n</details>\n"
         );
         assert_eq!(report.standing(), Standing::Within);
     }
@@ -791,15 +792,16 @@ mod tests
         );
         assert_eq!(
             report.to_string(),
-            "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
-             against the budgets in `nightly.yml`, each lane held by the cone its \
-             landing touched.\n\n\
+            "This report holds each CI lane's median job time against its budget in \
+             `nightly.yml`.\n\nThe table holds each lane's median over the last 2 merge-queue \
+             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
+             class.\n\n\
              <details><summary>2 lanes — within: 0 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | test enforcing targets (linux) | surface | 5m 0s | 6m 0s | 2 | within |\n\
              | test enforcing targets (linux) | deep | 8m 20s | 9m 0s | 2 | within |\n\
-             \nRuns: 12, 11.\n\n</details>\n"
+             \nThe table reads runs 12, 11.\n\n</details>\n"
         );
         assert_eq!(report.standing(), Standing::Within);
     }
@@ -911,21 +913,22 @@ mod tests
         );
         assert_eq!(
             report.to_string(),
-            "Median job time over the last 1 merge-queue and pull-request runs of `ci.yml`, \
-             against the budgets in `nightly.yml`, each lane held by the cone its \
-             landing touched.\n\n\
+            "This report holds each CI lane's median job time against its budget in \
+             `nightly.yml`.\n\nThe table holds each lane's median over the last 1 merge-queue \
+             and pull-request runs of `ci.yml`. The cone a landing touches gives each lane its \
+             class.\n\n\
              <details><summary>1 lane — within: 0 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | check Clippy wall | surface | 3m 20s | 5m 0s | 1 | within |\n\
-             \nRuns: 12.\n\n</details>\n\
-             \nMedian job time over the last 2 scheduled runs of `ci.yml`, for the lanes \
-             only the daily run holds.\n\n\
+             \nThe table reads runs 12.\n\n</details>\n\
+             \nThe table holds the daily lanes' medians over the last 2 scheduled runs of \
+             `ci.yml`.\n\n\
              <details><summary>1 lane — over: 1 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | mutate the night's crate (linux) | daily | 14m 10s | 14m 0s | 2 | **over** |\n\
-             \nRuns: 9, 8.\n\n</details>\n"
+             \nThe table reads runs 9, 8.\n\n</details>\n"
         );
         assert_eq!(report.standing(), Standing::Over);
     }
@@ -973,14 +976,14 @@ mod tests
         assert!(
             text.ends_with(
                 "| mutate the night's crate (linux) | daily | 13m 20s | 14m 0s | 1 | within |\n\
-                 \nRuns: 9.\n\n</details>\n\
-                 \nMedian job time over the last 2 scheduled runs of `nightly.yml`, for its \
-                 lanes.\n\n\
+                 \nThe table reads runs 9.\n\n</details>\n\
+                 \nThe table holds the nightly lanes' medians over the last 2 scheduled runs of \
+                 `nightly.yml`.\n\n\
                  <details><summary>1 lane — over: 1 over, 0 unmeasured</summary>\n\n\
                  | lane | class | median | budget | jobs | standing |\n\
                  | --- | --- | ---: | ---: | ---: | --- |\n\
                  | test every crate with every feature on | nightly | 4m 10s | 4m 0s | 2 | **over** |\n\
-                 \nRuns: 6, 5.\n\n</details>\n"
+                 \nThe table reads runs 6, 5.\n\n</details>\n"
             ),
             "{text}"
         );
