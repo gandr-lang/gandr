@@ -1,0 +1,11 @@
+/// `NotATranslation`: an import read via a name that no flow declared before it, or published by its source, bears.
+@[ refuses("NotATranslation") ]
+theory Replying {
+  oper reply : Integer;
+}
+
+// Neither this source nor the one it imports declares a flow `upgrade`.
+import "../syntax/pub-declaration.gandr" as declared : Replying via upgrade;
+
+@[ refuses("NotATranslation") ]
+def relayed = declared.reply;

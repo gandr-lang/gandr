@@ -37,6 +37,10 @@
 //!
 //! # Example
 //!
+//! The example lowers a module of two declarations, one owing a hole and one
+//! stating the refusal it earns, checks it, settles it on the fixture root and
+//! reads the tally: settled, a ledger of one, unsealed.
+//!
 //! ```
 //! use gandr_core_checker::AbstractType;
 //! use gandr_core_checker::CheckBudget;

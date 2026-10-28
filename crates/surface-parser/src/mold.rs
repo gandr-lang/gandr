@@ -242,6 +242,18 @@
 //! - Reversal: a lexeme whose menu outgrows the array; `candidate_labels`'s
 //!   postcondition bounds each menu at four labels, so such a lexeme fails that
 //!   check before it can lose a label.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the
+//!   directed-univalence design (§ The surface family) — `flow` is reserved as
+//!   the lead of a flow between signatures, and `via` stays contextual.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — `via` stands after an import's signature,
+//!   naming the translation the importer reads through.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — a flow's renaming molds as any
+//!   definition; what it costs is the lowering's to decide.
 
 use alloc::vec::Vec;
 
@@ -895,7 +907,10 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// A world declaration reserves its lead `world`, an item-position lead as
 /// `theory` is, and the mobility mark its lead `mobile`, which opens a module
 /// signature's field where an unreserved word would tie against the value
-/// field's `identifier`.
+/// field's `identifier`. A flow declaration reserves its lead `flow` for the
+/// same reason as `world`; `via`, which names the flow an import reads its
+/// source through, stays contextual, since no identifier stands after an
+/// import's signature.
 ///
 /// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
 /// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
@@ -906,7 +921,7 @@ pub const KEYWORDS: &[&str] = &[
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
     "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
-    "world", "mobile", "inf", "pub",
+    "world", "mobile", "inf", "pub", "flow",
 ];
 
 /// The keywords that open a block's statements: one that no open form

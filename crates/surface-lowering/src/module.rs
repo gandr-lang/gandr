@@ -315,6 +315,8 @@ use crate::import::ImportSignature;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::import::Opens;
+use crate::import::Translation;
+use crate::import::direct;
 use crate::lower::ElidableExit;
 use crate::lower::Fuel;
 use crate::lower::InferredExit;
@@ -379,6 +381,8 @@ use self::foreign::Foreign;
 pub use self::foreign::ForeignInterface;
 pub use self::foreign::ForeignType;
 use self::functor::Applied;
+pub use self::functor::Argument;
+pub use self::functor::BodyScope;
 pub use self::functor::Functor;
 pub use self::functor::FunctorIndex;
 pub use self::functor::Instance;
@@ -387,6 +391,7 @@ pub use self::functor::Matched;
 pub use self::functor::ParameterComponent;
 pub use self::functor::ParameterForm;
 pub use self::functor::Stratum;
+pub use self::functor::TheoryPath;
 use self::functor::WrittenParameter;
 pub use self::functor::parameter;
 pub use self::model::FamilyCheck;
@@ -1845,15 +1850,22 @@ impl<'source> Collected<'source>
     ///   imports; an import whose address did not resolve to a source of the
     ///   unit answers nothing, and neither does a declaration its source keeps
     ///   private. Imports are not re-exported: only the imported source's own
-    ///   declarations answer. Where no import answers, the unit's prelude does,
-    ///   for every source but the prelude itself, with the empty bytes at its
-    ///   start, which no written import covers.
+    ///   declarations answer. An import read through a flow answers with the
+    ///   member its translation binds ([`Self::translated`]). Where no import
+    ///   answers, the unit's prelude does, for every source but the prelude
+    ///   itself, with the empty bytes at its start, which no written import
+    ///   covers.
     /// - provides: the import fallback of every top-level name lookup.
     /// - fails: [`Ambiguity`] for two imports binding one name.
     /// - panics: none.
     ///
     /// # Errors
     /// [`Ambiguity`].
+    ///
+    /// # Clause cost
+    /// - bound: walks the unit's imports once, and an import of `source` read
+    ///   through a flow its instance's exports once: no more steps than the
+    ///   unit has imports and its flows have members.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name one import binds, a name two bind, and a name
@@ -1865,8 +1877,10 @@ impl<'source> Collected<'source>
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
     /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ref ret| match *ret {
-        Ok(Maybe::Present((slot, _))) => self.slot_visibility(slot) == Visibility::Public,
+        Ok(Maybe::Present((slot, _))) => self.slot_visibility(slot) == Visibility::Public
+            || self.translates(slot).0,
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
@@ -1876,12 +1890,92 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(SlotIndex, ByteSpan), imported::Absent>, Ambiguity>
     {
-        self.through_imports(source, name, |target| {
-            self.by_name
-                .get(&(Container::TopLevel(target), name))
-                .copied()
-                .filter(|&slot| self.slot_visibility(slot) == Visibility::Public)
-        })
+        self.through_imports(
+            source,
+            name,
+            |target| {
+                self.by_name
+                    .get(&(Container::TopLevel(target), name))
+                    .copied()
+                    .filter(|&slot| self.slot_visibility(slot) == Visibility::Public)
+            },
+            |translation| match self.translated(translation, name) {
+                Maybe::Present(slot) => Some(slot),
+                Maybe::Absent(_) => None,
+            },
+        )
+    }
+
+    /// The member the translation `translation` binds under `name`: the image
+    /// of its flow's member of that name, or the declaration of the import's
+    /// source that a renaming binds in its place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot of the instance's exported member named `name`, or
+    ///   the argument's member [`Instance::renamed`] keys it to; unbound for a
+    ///   translation with no instance or an instance exporting no such member.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a renaming binds the source's declaration, and any
+    ///   other member its image.
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(slot) => usize::from(slot) < self.slots.len(),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(crate) fn translated(
+        &self,
+        translation: &Translation<'source>,
+        name: SurfaceName<'source>,
+    ) -> Maybe<SlotIndex, imported::Absent>
+    {
+        let Maybe::Present(index) = translation.instance
+        else {
+            return Maybe::Absent(imported::Absent::Unbound);
+        };
+        let found = self.instances.get(usize::from(index)).and_then(|instance| {
+            let structure = self.structures.get(instance.structure.0)?;
+            structure.exports.iter().find_map(|&export| match export {
+                Member::Slot(image)
+                    if self
+                        .slots
+                        .get(image.0)
+                        .is_some_and(|slot| slot.name == name) =>
+                {
+                    Some(instance.renamed.get(&image).copied().unwrap_or(image))
+                },
+                Member::Slot(_) | Member::Module(_) => None,
+            })
+        });
+        found
+            .filter(|&slot| usize::from(slot) < self.slots.len())
+            .map_or(Maybe::Absent(imported::Absent::Unbound), Maybe::Present)
+    }
+
+    /// Whether the slot `slot` is the image of a flow's member an import's
+    /// translation binds: the importer's own declaration, read through the
+    /// import whatever its source keeps private.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn translates(
+        &self,
+        slot: SlotIndex,
+    ) -> Translates
+    {
+        Translates(self.slots.get(slot.0).is_some_and(|entry| {
+            matches!(
+                self.stratum_of(entry.container),
+                Stratum::Instance(index) if self
+                    .instances
+                    .get(usize::from(index))
+                    .is_some_and(|instance| matches!(instance.argument, Argument::Source(_)))
+            )
+        }))
     }
 
     /// The top-level declaration under `name` that a source `source` imports
@@ -2196,16 +2290,21 @@ impl<'source> Collected<'source>
                     Err(_) => true,
                 }
         };
-        self.through_imports(source, name, |target| {
-            self.constructors
-                .get(&(target, name))
-                .copied()
-                .filter(|found| {
-                    prelude != Some(target)
-                        || (found.form != Generators::Presentation && !shadowed())
-                })
-                .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
-        })
+        self.through_imports(
+            source,
+            name,
+            |target| {
+                self.constructors
+                    .get(&(target, name))
+                    .copied()
+                    .filter(|found| {
+                        prelude != Some(target)
+                            || (found.form != Generators::Presentation && !shadowed())
+                    })
+                    .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
+            },
+            |_| None,
+        )
     }
 
     /// The type member `source`'s unqualified imports answer `name` with, and
@@ -2240,13 +2339,18 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(TypeComponent<'source>, ByteSpan), imported::Absent>, Ambiguity>
     {
-        self.through_imports(source, name, |target| {
-            self.type_members_in(Container::TopLevel(target))
-                .filter(|member| member.name == name)
-                .last()
-                .copied()
-                .filter(|member| self.slot_visibility(member.held) == Visibility::Public)
-        })
+        self.through_imports(
+            source,
+            name,
+            |target| {
+                self.type_members_in(Container::TopLevel(target))
+                    .filter(|member| member.name == name)
+                    .last()
+                    .copied()
+                    .filter(|member| self.slot_visibility(member.held) == Visibility::Public)
+            },
+            |_| None,
+        )
     }
 
     /// The module or instance `source`'s unqualified imports answer `name`
@@ -2279,28 +2383,35 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(StructureIndex, ByteSpan), imported::Absent>, Ambiguity>
     {
-        self.through_imports(source, name, |target| {
-            self.modules
-                .get(&(Container::TopLevel(target), name))
-                .copied()
-                .filter(|module| {
-                    self.structures.get(module.0).is_some_and(|entry| {
-                        matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
-                    }) && self.structure_visibility(*module) == Visibility::Public
-                })
-        })
+        self.through_imports(
+            source,
+            name,
+            |target| {
+                self.modules
+                    .get(&(Container::TopLevel(target), name))
+                    .copied()
+                    .filter(|module| {
+                        self.structures.get(module.0).is_some_and(|entry| {
+                            matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
+                        }) && self.structure_visibility(*module) == Visibility::Public
+                    })
+            },
+            |_| None,
+        )
     }
 
     /// What `lookup` answers for `name` in the sources `source` imports
-    /// unqualified, the unit's prelude among them after every written import.
+    /// unqualified, the unit's prelude among them after every written import,
+    /// and what `translated` answers for an import read through a flow.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], `lookup` standing for the table
-    ///   read in each imported source and deciding what it keeps private; an
-    ///   import is read only where it opens `name` ([`ImportDeclaration`]'s
-    ///   opening: every export, or the names its list lists, and of those only
-    ///   the names its signature states when it is written at one).
+    ///   read in each imported source and deciding what it keeps private, and
+    ///   `translated` for the instance an import's translation binds; an import
+    ///   is read only where it opens `name` ([`ImportDeclaration`]'s opening:
+    ///   every export, or the names its list lists, and of those only the names
+    ///   its signature states when it is written at one).
     /// - fails: [`Ambiguity`] for two imports answering two values.
     /// - panics: none.
     ///
@@ -2311,19 +2422,22 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — the entries above.
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
-    fn through_imports<Found, Lookup>(
+    fn through_imports<Found, Lookup, Translated>(
         &self,
         source: SourceIndex,
         name: SurfaceName<'source>,
         lookup: Lookup,
+        translated: Translated,
     ) -> Result<Maybe<(Found, ByteSpan), imported::Absent>, Ambiguity>
     where
         Found: Copy + Eq,
         Lookup: Fn(SourceIndex) -> Option<Found>,
+        Translated: Fn(&crate::import::Translation<'source>) -> Option<Found>,
     {
         let mut answered: Maybe<(Found, ByteSpan), imported::Absent> =
             Maybe::Absent(imported::Absent::Unbound);
@@ -2333,7 +2447,14 @@ impl<'source> Collected<'source>
             else {
                 continue;
             };
-            let Some(found) = lookup(target)
+            let read = match *import.signature() {
+                Maybe::Present(ImportSignature {
+                    via: Maybe::Present(ref translation),
+                    ..
+                }) => translated(translation),
+                Maybe::Present(_) | Maybe::Absent(_) => lookup(target),
+            };
+            let Some(found) = read
             else {
                 continue;
             };
@@ -3672,6 +3793,12 @@ pub enum Visibility
     Private,
 }
 
+/// Whether a slot is the image of a flow's member that an import's
+/// translation binds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Translates(pub bool);
+
 /// A root child that is no declaration, the refusal it raised, the attribute
 /// blocks written before it, the pieces of its line a doubled closer tore from
 /// it and the `;` that ends it, when one does.
@@ -3892,6 +4019,8 @@ pub struct WrittenImport
     /// segments of its path, the theory's name last; empty when none is
     /// written.
     pub signature: Vec<Placed>,
+    /// The flow the signature is read through, `via f`: its name's tile.
+    pub via: Maybe<Placed, direct::Absent>,
     /// The bytes the import covers.
     pub span: ByteSpan,
     /// The bytes between the address's quotes, as written, escapes included;
@@ -3920,14 +4049,15 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - requires: `pieces` is the reading of the import `import`.
-/// - ensures: the import the tiles `import " … " (as name)? (: Path)? (( names
-///   ))? ;` spell, in that order with nothing after them, its address read
-///   between the quotes; or the tiles `import name (. name)* (as name)? (:
-///   Path)? (( names ))? ;`, its address the module path's file, as
-///   [`module_file`] names it, and bound under the path when no alias is
-///   written. `Path` is a type name then any number of dotted names of either
-///   case, each kept in `signature`. `names` is one name or more, separated by
-///   commas, a trailing one admitted, each kept in `listed`.
+/// - ensures: the import the tiles `import " … " (as name)? (: Path (via
+///   name)?)? (( names ))? ;` spell, in that order with nothing after them, its
+///   address read between the quotes; or the tiles `import name (. name)* (as
+///   name)? (: Path (via name)?)? (( names ))? ;`, its address the module
+///   path's file, as [`module_file`] names it, and bound under the path when no
+///   alias is written. `Path` is a type name then any number of dotted names of
+///   either case, each kept in `signature`; the name after `via` is kept in
+///   `via`. `names` is one name or more, separated by commas, a trailing one
+///   admitted, each kept in `listed`.
 /// - provides: the reading the collection and [`written_imports`] share.
 /// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
 ///   inside the import that holds it or else `form`, as
@@ -4012,6 +4142,7 @@ fn read_import<'source>(
         Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
     };
     let mut signature = Vec::new();
+    let mut via = Maybe::Absent(direct::Absent::Unwritten);
     if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
         let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
@@ -4025,6 +4156,12 @@ fn read_import<'source>(
                     Maybe::Present(segment) => signature.push(segment),
                     Maybe::Absent(_) => return Err(out_of_place(&cursor)),
                 },
+            }
+        }
+        if let Maybe::Present(_) = cursor.tile(TileName::VIA) {
+            match cursor.tile(TileName::IDENTIFIER) {
+                Maybe::Present(flow) => via = Maybe::Present(flow),
+                Maybe::Absent(_) => return Err(out_of_place(&cursor)),
             }
         }
     }
@@ -4061,6 +4198,7 @@ fn read_import<'source>(
         alias,
         listed,
         signature,
+        via,
         span: import.span,
         addressed,
         address,
@@ -5557,7 +5695,9 @@ impl<'source> Collector<'_, 'source>
     ///   earlier import, and its alias, when it has one, is bound in its
     ///   source's scope. An address with a scheme is
     ///   [`ImportResolution::Foreign`]; a path is the unit's target for the
-    ///   source's next path import.
+    ///   source's next path import. A signature read `via` a flow keeps the
+    ///   translation [`Self::translate`] builds, its instance's module and
+    ///   slots collected before the import is bound.
     /// - provides: the import half of [`collect_source`].
     /// - fails: [`LoweringRefusal::MalformedForm`] for a repair or a tile out
     ///   of place, and [`LoweringRefusal::DuplicateImportAlias`] for an alias
@@ -5584,8 +5724,8 @@ impl<'source> Collector<'_, 'source>
             self.collected.structures.len(),
         ),
         ensures: |ret| {
-            self.collected.slots.len() == before.1
-                && self.collected.structures.len() == before.2
+            self.collected.slots.len() >= before.1
+                && self.collected.structures.len() >= before.2
                 && self.collected.imports.declarations().len()
                     == before.0.saturating_add(usize::from(ret.is_ok()))
                 && (ret.is_err()
@@ -5644,15 +5784,24 @@ impl<'source> Collector<'_, 'source>
             )
         };
         let declaration = match written.signature.split_last() {
-            Some((&named, prefix)) => declaration.signed(ImportSignature {
-                prefix: prefix
-                    .iter()
-                    .map(|&segment| (segment.span, self.name_of(segment)))
-                    .collect(),
-                named,
-                name: self.name_of(named),
-                stated: Maybe::Absent(crate::import::unread::Absent::Collecting),
-            }),
+            Some((&named, prefix)) => {
+                let via = match written.via {
+                    Maybe::Present(flow) => {
+                        Maybe::Present(self.translate(import, flow, resolution))
+                    },
+                    Maybe::Absent(unwritten) => Maybe::Absent(unwritten),
+                };
+                declaration.signed(ImportSignature {
+                    prefix: prefix
+                        .iter()
+                        .map(|&segment| (segment.span, self.name_of(segment)))
+                        .collect(),
+                    named,
+                    name: self.name_of(named),
+                    stated: Maybe::Absent(crate::import::unread::Absent::Collecting),
+                    via,
+                })
+            },
             None => declaration,
         };
         self.collected.imports.bind(declaration)
@@ -7048,6 +7197,9 @@ impl<'source> Collector<'_, 'source>
             Maybe::Present(repaired) => Header::Unnamed(repaired.refusal(FormName::MODULE)),
             Maybe::Absent(_) => Header::Unnamed(misplaced_in(FormName::MODULE, cursor.here())),
         };
+        if let Maybe::Present(_) = cursor.tile(TileName::FLOW) {
+            return Ok(self.flow_header(form, &mut cursor, pieces));
+        }
         if let Maybe::Absent(_) = cursor.tile(TileName::MODULE) {
             return Ok(unnamed(&cursor));
         }
@@ -7148,6 +7300,7 @@ impl<'source> Collector<'_, 'source>
                 named: parameter_named,
                 components,
                 model,
+                scope: BodyScope::Own,
             })
         }
         else {
@@ -7197,6 +7350,130 @@ impl<'source> Collector<'_, 'source>
             members,
             parameter,
         }))
+    }
+
+    /// Read a flow's header past its `flow` keyword: its name, its domain and
+    /// codomain, and its body's member forms.
+    ///
+    /// A flow `f : V1 ~~> V2 { … }` is read as the functor `f(V1 :
+    /// Model(V1)) : Model(V2) { … }` is: its parameter the domain's model,
+    /// named by the domain, whose members its body reads by name; its result
+    /// ascribed the codomain's model, transparently.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the `flow` keyword of the form
+    ///   `form`, whose reading is `pieces`.
+    /// - ensures: the opened flow when its tiles read `flow name : V1 ⇝ V2 {
+    ///   members }`, its parameter named by `V1`'s last name with the model
+    ///   `V1` derives and [`BodyScope::Domain`], its ascription the model `V2`
+    ///   derives, transparent; a repair no operand carries, a tile out of
+    ///   place, or a signature [`Self::presented_model`] refuses refuses the
+    ///   flow under its name; a flow with no name is unnamed.
+    /// - provides: the flow half of [`Self::header`].
+    /// - fails: never; every fault of the form is yielded.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow whose body reads its domain's members by name
+    ///   checks, and one whose domain names no theory is refused under its
+    ///   name.
+    /// - witness: `tests::modules::functors::a_flow_reads_its_domain_s_members_by_name`
+    /// - witness: `tests::modules::functors::a_flow_from_no_theory_is_refused_under_its_name`
+    #[spec(ensures: |ret| match ret {
+        | Header::Opened(ref opened) => matches!(opened.parameter, Maybe::Present(ref parameter) if matches!(parameter.scope, BodyScope::Domain { .. })) && !opened.sealed.0,
+        | Header::Refused { .. } | Header::Unnamed(_) => true,
+        | Header::Applied(_) => false,
+    })]
+    fn flow_header(
+        &mut self,
+        form: Placed,
+        cursor: &mut Cursor<'_>,
+        pieces: &Pieces,
+    ) -> Header<'source>
+    {
+        let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Header::Unnamed(match pieces.repair {
+                Maybe::Present(repaired) => repaired.refusal(FormName::FLOW),
+                Maybe::Absent(_) => misplaced_in(FormName::FLOW, cursor.here()),
+            });
+        };
+        let name = self.name_of(named);
+        let refused = |refusal| Header::Refused {
+            name,
+            named,
+            refusal,
+        };
+        if let Maybe::Present(repaired) = pieces.repair
+            && !self.carried(pieces).0
+        {
+            return refused(repaired.refusal(FormName::FLOW));
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
+        let (domain, domain_prefix) = match self.theory_path(cursor, FormName::FLOW) {
+            Ok(path) => path,
+            Err(refusal) => return refused(refusal),
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::UNIVERSE_FLOW) {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
+        let (codomain, codomain_prefix) = match self.theory_path(cursor, FormName::FLOW) {
+            Ok(path) => path,
+            Err(refusal) => return refused(refusal),
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
+        let mut members = Vec::new();
+        while let Maybe::Present(Piece::Operand(member)) = cursor.peek() {
+            let _member = cursor.read();
+            members.push(member);
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
+        if let Maybe::Present(_) = cursor.peek() {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
+        let (domain_components, domain_model, domain_used) =
+            match self.presented_model(form, FormName::FLOW, domain, &domain_prefix, &[]) {
+                Ok(read) => read,
+                Err(refusal) => return refused(refusal),
+            };
+        let (components, model, used) =
+            match self.presented_model(form, FormName::FLOW, codomain, &codomain_prefix, &[]) {
+                Ok(read) => read,
+                Err(refusal) => return refused(refusal),
+            };
+        self.collected.declared_uses.push(domain_used);
+        self.collected.declared_uses.push(used);
+
+        Header::Opened(Opened {
+            name,
+            named,
+            ascription: Maybe::Present(components),
+            model: Maybe::Present((model, used.1)),
+            sealed: Sealed(false),
+            members,
+            parameter: Maybe::Present(WrittenParameter {
+                name: self.name_of(domain),
+                named: domain,
+                components: domain_components,
+                model: Maybe::Present(domain_model),
+                scope: BodyScope::Domain {
+                    domain: TheoryPath {
+                        prefix: domain_prefix,
+                        named: domain,
+                    },
+                    codomain: TheoryPath {
+                        prefix: codomain_prefix,
+                        named: codomain,
+                    },
+                },
+            }),
+        })
     }
 
     /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`.

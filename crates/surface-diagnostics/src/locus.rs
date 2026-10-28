@@ -527,6 +527,7 @@ impl Annotations
                 | LoweringRefusal::ImportUnresolved { refused: declared, .. }
                 | LoweringRefusal::ImportCycle { refused: declared, .. }
                 | LoweringRefusal::SignatureMismatch { refused: declared, .. }
+                | LoweringRefusal::NotATranslation { refused: declared, .. }
                 | LoweringRefusal::BareFeedback { rule: declared, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
                 LoweringRefusal::ImportShadows { import, .. } =>
@@ -577,6 +578,9 @@ impl Annotations
                 refused: declared, ..
             }
             | LoweringRefusal::SignatureMismatch {
+                refused: declared, ..
+            }
+            | LoweringRefusal::NotATranslation {
                 refused: declared, ..
             }
             | LoweringRefusal::BareFeedback { rule: declared, .. } => Maybe::Present(Annotation {

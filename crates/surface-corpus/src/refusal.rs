@@ -82,6 +82,15 @@
 //! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the
 //!   effect-modalities design (§ The declaration) — a port at a `Type[-]` sort
 //!   is the component `UnstatedComponent.Computation` names.
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the
+//!   directed-univalence design (§ The surface family) — `NotATranslation`
+//!   names a `via` that rides no flow.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — the importer or its source supplies the
+//!   translation, so a `via` naming none is a malformed source.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — a flow's code is demanded by a
+//!   `via` alone, and `NotATranslation` refuses one that names no flow.
 
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -924,6 +933,8 @@ pub enum RefusalName
     PartialField,
     /// A module binding applying a name that is not a functor.
     NotAFunctor,
+    /// An import read through a name that is no flow.
+    NotATranslation,
     /// A path read off a functor application rather than off its binding.
     ProjectionFromApplication,
     /// A module ascription form the fragment does not read yet.
@@ -1239,7 +1250,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 222_usize] = [
+    pub const VOCABULARY: [Self; 223_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1336,6 +1347,7 @@ impl RefusalName
         Self::UnprovenLaw(LawProof::Missing),
         Self::PartialField,
         Self::NotAFunctor,
+        Self::NotATranslation,
         Self::ProjectionFromApplication,
         Self::UnreadAscription,
         Self::UninterfacedMember,
@@ -1550,6 +1562,7 @@ impl RefusalName
         (Self::PhaseDependence, b"PhaseDependence") | (Self::InertRead, b"InertRead") |
         (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw(_), b"UnprovenLaw") | (Self::PartialField, b"PartialField")
         | (Self::NotAFunctor, b"NotAFunctor")
+        | (Self::NotATranslation, b"NotATranslation")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
         b"UnreadAscription") | (Self::UnstatedComponent(_), b"UnstatedComponent") |
@@ -1900,6 +1913,7 @@ impl RefusalName
             Self::UnprovenLaw(_) => "UnprovenLaw",
             Self::PartialField => "PartialField",
             Self::NotAFunctor => "NotAFunctor",
+            Self::NotATranslation => "NotATranslation",
             Self::ProjectionFromApplication => "ProjectionFromApplication",
             Self::UnreadAscription => "UnreadAscription",
             Self::UnstatedComponent(_) => "UnstatedComponent",
@@ -2578,6 +2592,8 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::PartialField { .. }),
         RefusalName::PartialField) | (Self::Lowering(LoweringRefusal::NotAFunctor { .. }),
         RefusalName::NotAFunctor) |
+        (Self::Lowering(LoweringRefusal::NotATranslation { .. }),
+        RefusalName::NotATranslation) |
         (Self::Lowering(LoweringRefusal::ProjectionFromApplication { .. }),
         RefusalName::ProjectionFromApplication) |
         (Self::Lowering(LoweringRefusal::UnreadAscription {
@@ -2875,7 +2891,8 @@ impl Refusal<'_>
         RefusalName::UnknownMember) | (LoweringRefusal::UnprovenLaw { .. },
         RefusalName::UnprovenLaw(_)) | (LoweringRefusal::PartialField { .. },
         RefusalName::PartialField) | (LoweringRefusal::NotAFunctor { .. },
-        RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
+        RefusalName::NotAFunctor) | (LoweringRefusal::NotATranslation { .. },
+        RefusalName::NotATranslation) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
@@ -2981,6 +2998,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::UnprovenLaw { .. } => RefusalName::UnprovenLaw(LawProof::Missing),
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
+        LoweringRefusal::NotATranslation { .. } => RefusalName::NotATranslation,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
         LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
         LoweringRefusal::UnstatedComponent { fault, .. } => {

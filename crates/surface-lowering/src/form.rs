@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 74_usize] = [
+    pub const ALL: [Self; 75_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -217,6 +217,7 @@ impl FormName
         Self::FORK_SHARED_STATEMENT,
         Self::EXPRESSION_STATEMENT,
         Self::MODULE,
+        Self::FLOW,
         Self::DATA,
         Self::WORLD_DECLARATION,
         Self::DATA_GENERATOR,
@@ -347,6 +348,9 @@ impl FormName
     pub const DATA: Self = Self("data_declaration");
     /// The world declaration `world w ;`.
     pub const WORLD_DECLARATION: Self = Self("world_declaration");
+    /// The flow `flow f : V1 ~~> V2 { … }`, a translation from the models of
+    /// one theory to the models of another, read as a module form.
+    pub const FLOW: Self = Self("flow_declaration");
     /// The derived rule `derive r : l <=> r in T`.
     pub const DERIVE_DECLARATION: Self = Self("derive_declaration");
     /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
@@ -565,6 +569,8 @@ impl TileName
     /// The keyword `include`, opening a module member that takes another
     /// model's members as its own.
     pub const INCLUDE: Self = Self("include");
+    /// The flow keyword `flow`, opening a translation between theories.
+    pub const FLOW: Self = Self("flow");
     /// The interpolation opener `${`.
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `law`, opening a theory's or a module's law member.
@@ -577,6 +583,9 @@ impl TileName
     pub const MINUS: Self = Self("-");
     /// The module keyword `module`.
     pub const MODULE: Self = Self("module");
+    /// The keyword `via` of an import, before the flow it reads its source
+    /// through.
+    pub const VIA: Self = Self("via");
     /// A numeral written as one of a form's own tiles: a universe's level or a
     /// bridge's grade.
     pub const NUMBER: Self = Self("number");
@@ -1134,7 +1143,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 132_usize] = [
+pub const FORMERS: [(&str, Former); 133_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1205,6 +1214,7 @@ pub const FORMERS: [(&str, Former); 132_usize] = [
     ("attribute_block", Former::AttributeBlock),
     ("import_declaration", Former::Import),
     ("module_declaration", Former::Module),
+    ("flow_declaration", Former::Module),
     ("data_declaration", Former::Data),
     ("rec_block", Former::Mutual),
     ("instantiation_expression", Former::Instantiation),

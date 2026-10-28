@@ -61,6 +61,24 @@
 //! - Reversal: a stated interface replaces the inferred one as the source's
 //!   side; the importer's side stays.
 //!
+//! # An import through a flow
+//!
+//! `import "./v2.gandr" as old : Older via downgrade ;` reads its source at
+//! the domain of `flow downgrade : Newer ~~> Older { … }` and binds the
+//! signature's members from the flow's definitions over it. The flow is the
+//! one of that name declared before the import in the importer, or one the
+//! source declares `pub`; the importer's is read first. Collecting the import
+//! applies the flow to the source as a functor to a module: each domain
+//! component is the source's `pub` declaration of its name. A definition that
+//! names a domain member alone, `def answer = reply ;`, is a renaming, and the
+//! import binds the source's own declaration under the member's name, adding
+//! no constant; any other definition is the importer's own declaration.
+//!
+//! The match is the signature match twice. The source answers the domain as
+//! a source answers a signature, refused at the flow's name; the codomain
+//! answers the signature by name and derived type, refused at the signature.
+//! A refused translation declares nothing.
+//!
 //! # Refusals by name
 //!
 //! - `ImportUnresolved` and `ImportCycle`: every declaration of a source whose
@@ -80,6 +98,9 @@
 //!   at another type, or that the match reads no type for (a declaration with
 //!   no signature; a sort, a law or a nested model of the theory) refuses every
 //!   declaration of the importing source at the signature, naming the member.
+//! - `NotATranslation`: an import read via a name that no flow declared before
+//!   it, or published by its source, bears refuses every declaration of the
+//!   importing source at the name.
 //! - `DuplicateImportAlias`: of two imports binding one alias, the second is
 //!   refused, naming the first, rather than silently hiding it. The refusal is
 //!   the import's own: the rest of the source lowers against the first import's
@@ -130,6 +151,8 @@ use quenchant_shape::shape::Maybe;
 
 use crate::error::LoweringRefusal;
 use crate::form::Placed;
+use crate::module::FunctorIndex;
+use crate::module::InstanceIndex;
 use crate::namespace::Binding;
 use crate::namespace::Collision;
 use crate::namespace::EventKind;
@@ -284,6 +307,103 @@ pub struct ImportSignature<'source>
     /// The names the theory's model signature states: none for a theory that
     /// does not resolve or derive.
     pub stated: Maybe<Vec<Name>, unread::Absent>,
+    /// The translation the import's source is read through, `via f`.
+    pub via: Maybe<Translation<'source>, direct::Absent>,
+}
+
+/// The flow an import's source is read through, `import m : S via f ;`.
+///
+/// The flow named where the import stands, and the instance of its template
+/// over the source's top level that the import binds `S`'s members from.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the collection produces it.
+/// - ensures: an instance is present only beside the flow it instantiates, and
+///   a lacking member only beside a flow and no instance.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — the indices are not checked against a collection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an import through a flow binds the flow's members over
+///   its source, and one naming no flow binds none.
+/// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+/// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Translation<'source>
+{
+    /// The flow's name tile.
+    pub named: Placed,
+    /// The flow's name.
+    pub name: SurfaceName<'source>,
+    /// The flow the name resolves to.
+    pub flow: Maybe<FunctorIndex, unflowed::Absent>,
+    /// The flow's instance over the import's source.
+    pub instance: Maybe<InstanceIndex, uninstantiated::Absent>,
+    /// The first member of the flow's domain the source publishes nothing of
+    /// its name for.
+    pub lacking: Maybe<SurfaceName<'source>, lacked::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an import is read through no translation.
+    pub mod direct {
+        /// The reason none is read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `via` follows the import's signature, so its source is read
+            /// as it is.
+            Unwritten,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a `via` resolves to no flow.
+    pub mod unflowed {
+        /// The reason none resolves.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No flow of the name is declared before the import in its
+            /// source, and the imported source publishes none.
+            Undeclared,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a translation holds no instance over its import's source.
+    pub mod uninstantiated {
+        /// The reason none is built.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The `via` resolves to no flow.
+            Unflowed,
+            /// The import's address resolves to no source of the unit.
+            Unimported,
+            /// The source publishes no member of a name the flow's domain
+            /// states.
+            Unmatched,
+            /// The flow's body is not among the collection's modules.
+            Bodiless,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a translation names no member its source lacks.
+    pub mod lacked {
+        /// The reason none is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No flow resolves, or the address resolves to no source, so no
+            /// member is sought.
+            Unsought,
+            /// The source publishes a member of each name the flow's domain
+            /// states.
+            Published,
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {

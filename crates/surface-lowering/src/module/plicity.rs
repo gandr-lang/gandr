@@ -833,7 +833,7 @@ impl<'source> Collector<'_, 'source>
     ///   instance.
     /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
-    fn lone_name(
+    pub(super) fn lone_name(
         &self,
         node: NodeIndex,
         scratch: &mut Pieces,

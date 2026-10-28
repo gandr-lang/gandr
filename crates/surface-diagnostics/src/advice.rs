@@ -18,6 +18,18 @@
 //! it. Reversal: a producer whose refusal alone cannot word the help, because
 //! the advice needs a fact the diagnostic does not hold, moves that name's
 //! help to the producer.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the
+//!   directed-univalence design (§ The surface family) — `NotATranslation`'s
+//!   help declares the flow its `via` names.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
+//!   design (§ The trust story) — that help names who supplies a translation:
+//!   the importer, declaring the flow, or the source, publishing it.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-zero-cost) — a member a flow's codomain lacks
+//!   is one declaration to write, as `SignatureMismatch.Missing`'s help says.
 
 use alloc::format;
 use alloc::string::String;
@@ -34,6 +46,7 @@ use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::WfKind;
@@ -117,6 +130,27 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::RulesUncompleted { .. } => String::from(
             "add a rule that joins the two normal forms, or remove one of the two rules",
         ),
+        LoweringRefusal::NotATranslation { name, .. } => {
+            format!(
+                "declare `flow {name}` before this import, or import a source that publishes it"
+            )
+        },
+        LoweringRefusal::SignatureMismatch {
+            signature,
+            member,
+            fault,
+            ..
+        } => match fault {
+            MatchFault::Missing => format!(
+                "drop `{member}` from `{signature}`, or declare `pub {member}` where the import reads it"
+            ),
+            MatchFault::Sort => {
+                format!("give `{member}` one type in `{signature}` and where the import reads it")
+            },
+            MatchFault::Unstated => format!(
+                "give the source's `{member}` a signature, or state only operations in `{signature}`"
+            ),
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::UnresolvedTypeHead { .. }
@@ -190,7 +224,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. }
         | LoweringRefusal::HostConflict { .. }
-        | LoweringRefusal::SignatureMismatch { .. }
         | LoweringRefusal::Unminted { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
 }
@@ -542,7 +575,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 26] = [
+    const WORDED: [&str; 28] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -569,6 +602,8 @@ mod tests
         "Immobile.Homed",
         "NotOpen.Capture",
         "NotOpen.Homed",
+        "NotATranslation",
+        "SignatureMismatch.Sort",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

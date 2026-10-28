@@ -455,6 +455,13 @@ enum Placed
     /// core term of its own, and the splice, located at the answered term,
     /// answers.
     Tactic,
+    /// A node of a flow's body, `reply` in `flow f : V1 ~~> V2 { def answer =
+    /// reply ; }`: the body is a template, judged only through the instance
+    /// an import mints, a flow its source publishes is applied only in its
+    /// importers, and a renaming's image is the source's declaration itself,
+    /// so no core node of the walked source holds it, and the import
+    /// answers.
+    Template,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
@@ -496,8 +503,16 @@ fn gated(
         })
         .collect();
     // The module names a path can select from: every name along the path of
-    // each module the lowering holds, and of each module an import names,
-    // `text` and `greet` in `import text.greet (greeting);`.
+    // each module the lowering holds, of each module an import names, `text`
+    // and `greet` in `import text.greet (greeting);`, and each alias an import
+    // binds, `newer` in `import "./newer.gandr" as newer;`.
+    let word = |from: usize| {
+        let after = source.get(from ..)?;
+        let end = after
+            .find(|letter: char| !(letter.is_alphanumeric() || letter == '_' || letter == '.'))
+            .unwrap_or(after.len());
+        after.get(.. end)
+    };
     let modules: BTreeSet<&str> = models
         .modules
         .iter()
@@ -505,17 +520,14 @@ fn gated(
         .chain(
             source
                 .match_indices("import ")
-                .filter_map(|(at, _)| {
-                    let after = source.get(at.saturating_add(7) ..)?;
-                    let end = after
-                        .find(|letter: char| {
-                            !(letter.is_alphanumeric() || letter == '_' || letter == '.')
-                        })
-                        .unwrap_or(after.len());
-                    after.get(.. end)
-                })
+                .filter_map(|(at, _)| word(at.saturating_add(7)))
                 .flat_map(|path| path.split('.')),
         )
+        .chain(source.match_indices("import ").filter_map(|(at, _)| {
+            let line = source.get(at ..)?;
+            let line = line.get(.. line.find([';', '\n']).unwrap_or(line.len()))?;
+            word(at.saturating_add(line.find(" as ")?).saturating_add(4))
+        }))
         .filter(|name| !name.is_empty())
         .collect();
     // The stage binders the source declares, `j` in `@[j : Size]`, by name.
@@ -568,6 +580,32 @@ fn gated(
         .filter_map(|(at, _)| {
             let end = source.get(at ..)?.find(';')?;
             Some((at, at.saturating_add(end)))
+        })
+        .collect();
+    // The bytes of each flow's body, its `{` to its `}`.
+    let flows: Vec<(usize, usize)> = source
+        .match_indices("flow ")
+        .filter(|&(at, _)| {
+            source.get(.. at).is_some_and(|before| {
+                before.is_empty() || before.ends_with('\n') || before.ends_with("pub ")
+            })
+        })
+        .filter_map(|(at, _)| {
+            let open = at.saturating_add(source.get(at ..)?.find('{')?);
+            let mut depth = 0_usize;
+            for (offset, letter) in source.get(open ..)?.char_indices() {
+                match letter {
+                    '{' => depth = depth.saturating_add(1),
+                    '}' => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            return Some((open, open.saturating_add(offset)));
+                        }
+                    },
+                    _ => {},
+                }
+            }
+            None
         })
         .collect();
     // The parts of the parenthesised list opening at `open`, each its bytes,
@@ -964,7 +1002,11 @@ fn gated(
                     && rules.iter().any(|&(start, end)| {
                         start <= usize::from(span.start()) && usize::from(span.end()) <= end
                     })));
+        let templated = flows.iter().any(|&(start, end)| {
+            start <= usize::from(span.start()) && usize::from(span.end()) <= end
+        });
         let placed = placed
+            .or_else(|| templated.then_some(Placed::Template))
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
             .or_else(|| qualifier.then_some(Placed::Qualifier))

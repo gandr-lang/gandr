@@ -119,6 +119,16 @@
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in the module that owns it.
 //!
+//! # Specification evidence
+//!
+//! Each nontrivial operation states a contract or an exemption, and an
+//! adequacy claim naming its witnesses. The boundary evidence includes:
+//!
+//! | Surface | Observed boundary |
+//! | ------- | ----------------- |
+//! | Reports (`report`) and exercised rows (`exercised`) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
+//! | Corpus registration (`tests/corpus.rs`) | A directory with a source extension is traversed rather than registered as a source. |
+//!
 //! # Optional tracing
 //!
 //! Enable `tracing` for an INFO span around `dispatch`. It records no argument
