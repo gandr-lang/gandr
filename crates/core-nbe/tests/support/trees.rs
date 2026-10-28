@@ -84,7 +84,7 @@ pub enum Trees
             (Some(a), Some(b)) => match *a {
                 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer | ValueType::Web => (ret == Trees::Same) == (a == b),
                 ValueType::Dialogue(_) | ValueType::Row | ValueType::RowTail(_) |
-                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
+                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Bridge { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,
         },

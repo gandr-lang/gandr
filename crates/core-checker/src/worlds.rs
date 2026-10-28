@@ -1085,6 +1085,7 @@ pub(crate) fn crosses(
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)

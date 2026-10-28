@@ -363,6 +363,11 @@ impl Image
                     ref mut left,
                     ref mut right,
                 }
+                | ValueType::Bridge {
+                    ref mut carrier,
+                    ref mut left,
+                    ref mut right,
+                }
                 | ValueType::Flow {
                     ref mut carrier,
                     source: ref mut left,
@@ -939,6 +944,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 },
                                 ValueType::PathUniverse(..)
                                 | ValueType::Path { .. }
+                                | ValueType::Bridge { .. }
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
                                 | ValueType::Prefix(_)

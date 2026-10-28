@@ -318,9 +318,10 @@
 //! derives and the bridge erases to the path product of one `PathEquiv` per
 //! corolla. The directed family's statements — `sim`, `forward`, `arrow` and
 //! `flowProduct` at `Flow(Type, A, B)` — are the rules of [`crate::flow`],
-//! [`crate::forward`] and [`crate::product`]. The bridge mode, higher fields
-//! and guarded List inhabitants stay at their kernel rule-language
-//! boundaries; function extensionality is the element-identity rule below.
+//! [`crate::forward`] and [`crate::product`]. A bridge `Bridge(A, a, b)` is
+//! read by the bridge fold of [`crate::relatedness`]; higher fields and
+//! guarded List inhabitants stay at their kernel rule-language boundaries;
+//! function extensionality is the element-identity rule below.
 //!
 //! **Choice.** Preserve untrusted native evidence across the export boundary
 //! instead of treating successful frontend checking as certification.
@@ -5045,12 +5046,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         {
             expected = value;
         }
-        // An introduction checked at an identity of the unit type checks at
-        // the unit type, and one at an identity of a lawful atom at the
-        // relation between its endpoints, the atom's identity system,
-        // whether its own rule or its synthesis reads it; at a lawless one
-        // it is refused, the relation being no identity without its law.
-        if matches!(
+        let introduction = matches!(
             *self.value(term)?,
             Value::Tuple(_)
                 | Value::Literal(_)
@@ -5060,10 +5056,50 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Value::Quote(_)
                 | Value::ListNil
                 | Value::ListCons(..)
-        ) && let Some(fibre) = self.identity_fibre(term, expected)?
-        {
+        );
+        // An introduction checked at an identity of the unit type checks at
+        // the unit type, and one at an identity of a lawful atom at the
+        // relation between its endpoints, the atom's identity system,
+        // whether its own rule or its synthesis reads it; at a lawless one
+        // it is refused, the relation being no identity without its law.
+        if introduction && let Some(fibre) = self.identity_fibre(term, expected)? {
             expected = fibre;
             entered = fibre;
+        }
+        // One checked at a bridge checks at the bridge fold's fibre between
+        // its endpoints. `funext` at a bridge between two functions checks at
+        // their identity: on the first-order codes it decides, a bridge between
+        // two inputs is their identity, so the two folds relate the same
+        // functions, and the kernel replays it at the bridge as written.
+        else if let funext = matches!(*self.value(term)?, Value::Funext(..))
+            && (introduction || funext)
+            && let head = self.context.whnf_value_type(expected)?
+            && let ValueTypeView::Bridge {
+                carrier,
+                left,
+                right,
+            } = value_type_view(self.context.arena(), head)?
+        {
+            let read = if funext {
+                let function = self.context.whnf_value_type(carrier)?;
+                if let ValueTypeView::Thunk(_) = value_type_view(self.context.arena(), function)? {
+                    crate::relatedness::Fibre::Read(
+                        self.context
+                            .arena_mut()
+                            .value_type_path(carrier, left, right),
+                    )
+                }
+                else {
+                    crate::relatedness::Fibre::Written
+                }
+            }
+            else {
+                crate::relatedness::fibre(self.context, term, (head, carrier, left, right))?
+            };
+            if let crate::relatedness::Fibre::Read(fibre) = read {
+                expected = fibre;
+                entered = fibre;
+            }
         }
         // A constructor checked at a stage stands above its recursive fields.
         if matches!(*self.value(term)?, Value::Constructor { .. })
@@ -5238,7 +5274,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(codomain),
                 }))
             },
-            Value::Here(point) => match self.path_expected(TermNode::Value(term), expected)? {
+            Value::Here(point) => match self.reflexive_expected(TermNode::Value(term), expected)? {
                 PathReading::Known {
                     carrier,
                     left,
@@ -7031,6 +7067,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
         at: ValueTypeId,
     ) -> Result<Step, CheckRefusal>
     {
+        // A bridge forms as an identity does, unless its carrier reaches a
+        // sealed atom stating no interface: the relation there is the
+        // abstraction's to choose.
+        if let ValueTypeView::Bridge { carrier, .. } = value_type_view(self.context.arena(), at)? {
+            crate::relatedness::require_unsealed(self.context, at, carrier)?;
+        }
         match value_type_view(self.context.arena(), at)? {
             ValueTypeView::Data { .. } => self.native_data(at),
             ValueTypeView::Record(fields) => {
@@ -7047,6 +7089,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(Goal::Form(TypeNode::Computation(input))))
             },
             ValueTypeView::Path {
+                carrier,
+                left,
+                right,
+            }
+            | ValueTypeView::Bridge {
                 carrier,
                 left,
                 right,
@@ -7491,6 +7538,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Unknown => {},
                 ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Bridge { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
@@ -7569,6 +7617,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Bridge { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
@@ -9242,6 +9291,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }
+                    | ValueTypeView::Bridge { .. }
                     | ValueTypeView::Flow { .. }
                     | ValueTypeView::Run(_)
                     | ValueTypeView::Prefix(_)
@@ -9518,6 +9568,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::RepresentationAboveKind { .. }
                     | CheckRefusal::NotAnAbstractType(_)
                     | CheckRefusal::AtomTransport { .. }
+                    | CheckRefusal::BridgeAtSealedType { .. }
+                    | CheckRefusal::OutsideFold { .. }
                     | CheckRefusal::SealSiteRepeated(_)
                     | CheckRefusal::DataArgumentArity(_)
                     | CheckRefusal::UnknownConstructor { .. }
@@ -9923,6 +9975,59 @@ impl<'context, 'arena> Machine<'context, 'arena>
         ))
     }
 
+    /// Read the type a reflexivity `here(a)` is checked at: a bridge at an
+    /// atom stating an interface as the bridge it is, any other as
+    /// [`Self::path_expected`] reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the carrier and both endpoints of a bridge whose carrier's
+    ///   weak head is an atom stating an interface: the interface's
+    ///   reflexivity, checked where the atom was admitted, is the evidence a
+    ///   bridge at the atom from a point to itself has; otherwise
+    ///   [`Self::path_expected`] of `classifier`.
+    /// - provides: what reflexivity is checked against.
+    /// - fails: as [`Self::path_expected`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `here` checks at a bridge at an interfaced atom from
+    ///   a point to itself and is refused at a bridge at the universe by shape,
+    ///   in both checkers.
+    /// - witness: `bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
+    /// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
+        | Ok(PathReading::Known { .. } | PathReading::Unknown(_)) | Err(_) => true,
+    })]
+    fn reflexive_expected(
+        &mut self,
+        at: TermNode,
+        classifier: ValueTypeId,
+    ) -> Result<PathReading, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        if let ValueTypeView::Bridge {
+            carrier,
+            left,
+            right,
+        } = value_type_view(self.context.arena(), head)?
+            && let domain = self.context.whnf_value_type(carrier)?
+            && let ValueTypeView::Abstract(atom) = value_type_view(self.context.arena(), domain)?
+            && self.context.interface_of(atom).is_some()
+        {
+            return Ok(PathReading::Known {
+                carrier,
+                left,
+                right,
+            });
+        }
+        self.path_expected(at, classifier)
+    }
+
     /// Read the element path type `classifier` names at its weak head.
     ///
     /// # Specification
@@ -9969,6 +10074,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Record(_)
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)

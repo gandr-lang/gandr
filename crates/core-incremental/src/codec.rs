@@ -2017,6 +2017,16 @@ where
             write_index(writer, left)?;
             write_index(writer, right)?;
         },
+        ContentNode::BridgeType {
+            carrier,
+            left,
+            right,
+        } => {
+            writer.tag(Tag(0x89));
+            write_index(writer, carrier)?;
+            write_index(writer, left)?;
+            write_index(writer, right)?;
+        },
         ContentNode::Here(point) => {
             writer.tag(Tag(0x46));
             write_index(writer, point)?;
@@ -3887,6 +3897,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                     | ContentNode::PathProduct(..) => tag == 0x43,
                     | ContentNode::Transport(..) => tag == 0x44,
                     | ContentNode::PathType { .. } => tag == 0x45,
+                    | ContentNode::BridgeType { .. } => tag == 0x89,
                     | ContentNode::Here(_) => tag == 0x46,
                     | ContentNode::ElementTransport { .. } => tag == 0x47,
                     | ContentNode::Returned(_) => tag == 0x48,
@@ -4554,6 +4565,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         0x43 => ContentNode::PathProduct(read_index(reader)?, read_index(reader)?),
         0x44 => ContentNode::Transport(read_index(reader)?, read_index(reader)?),
         0x45 => ContentNode::PathType {
+            carrier: read_index(reader)?,
+            left: read_index(reader)?,
+            right: read_index(reader)?,
+        },
+        0x89 => ContentNode::BridgeType {
             carrier: read_index(reader)?,
             left: read_index(reader)?,
             right: read_index(reader)?,
@@ -6762,6 +6778,11 @@ where
             write_site(writer, at)?;
             write_reference(writer, atom)?;
         },
+        Refusal::BridgeAtSealedType { at, ref atom } => {
+            writer.tag(Tag(96));
+            write_site(writer, at)?;
+            write_reference(writer, atom)?;
+        },
         Refusal::SealSiteRepeated(site) => {
             writer.tag(Tag(51));
             writer.count(Count(usize::from(site.sealing())))?;
@@ -6878,6 +6899,11 @@ where
         },
         Refusal::UncertifiedStratum { at, ref code } => {
             writer.tag(Tag(46));
+            write_site(writer, at)?;
+            write_type(writer, code)?;
+        },
+        Refusal::OutsideFold { at, ref code } => {
+            writer.tag(Tag(97));
             write_site(writer, at)?;
             write_type(writer, code)?;
         },
@@ -7453,11 +7479,13 @@ where
                     | Refusal::PointwiseDistinct(_) => 44,
                     | Refusal::EquivUnsupported { .. } => 45,
                     | Refusal::UncertifiedStratum { .. } => 46,
+                    | Refusal::OutsideFold { .. } => 97,
                     | Refusal::RoundTripDistinct(_) => 47,
                     | Refusal::AbstractKindNotUniverse(_) => 48,
                     | Refusal::RepresentationAboveKind { .. } => 49,
                     | Refusal::NotAnAbstractType(_) => 50,
                     | Refusal::AtomTransport { .. } => 85,
+                    | Refusal::BridgeAtSealedType { .. } => 96,
                     | Refusal::SealSiteRepeated(_) => 51,
                     | Refusal::NotOver { .. } => 52,
                     | Refusal::UaUncertified { .. } => 53,
@@ -7561,6 +7589,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         50 => Refusal::NotAnAbstractType(read_reference(reader)?),
         85 => Refusal::AtomTransport {
+            at: read_site(reader)?,
+            atom: read_reference(reader)?,
+        },
+        96 => Refusal::BridgeAtSealedType {
             at: read_site(reader)?,
             atom: read_reference(reader)?,
         },
@@ -7745,6 +7777,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             classifier: read_type(reader)?,
         },
         46 => Refusal::UncertifiedStratum {
+            at: read_site(reader)?,
+            code: read_type(reader)?,
+        },
+        97 => Refusal::OutsideFold {
             at: read_site(reader)?,
             code: read_type(reader)?,
         },
@@ -8160,7 +8196,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) |
+ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
@@ -8538,6 +8574,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::PointwiseDistinct(_)
             | Refusal::EquivUnsupported { .. }
             | Refusal::UncertifiedStratum { .. }
+            | Refusal::OutsideFold { .. }
             | Refusal::RoundTripDistinct(_)
             | Refusal::NotOver { .. }
             | Refusal::UaUncertified { .. }
@@ -8564,6 +8601,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::AbstractKindNotUniverse(_)
             | Refusal::NotAnAbstractType(_)
             | Refusal::AtomTransport { .. }
+            | Refusal::BridgeAtSealedType { .. }
             | Refusal::SealSiteRepeated(_)
             | Refusal::UnenclosedRun { .. }
             | Refusal::ImplicitUnsolved { .. }

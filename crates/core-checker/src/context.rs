@@ -3723,6 +3723,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::RowTail(_)
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
+                | ValueTypeView::Bridge { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
@@ -4036,6 +4037,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     ValueTypeView::Universe { level, .. } => Ok(level.clone()),
                     ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }
+                    | ValueTypeView::Bridge { .. }
                     | ValueTypeView::Flow { .. }
                     | ValueTypeView::Run(_)
                     | ValueTypeView::Prefix(_)

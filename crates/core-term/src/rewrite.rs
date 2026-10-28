@@ -2025,7 +2025,7 @@ ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Path { .. } | ValueType::Flow { .. } => 3,
+ValueType::Path { .. } | ValueType::Bridge { .. } | ValueType::Flow { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::RowTail(_) | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
@@ -2554,6 +2554,11 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             self.tasks.push(open(Node::Value(source), depth));
                         },
                         ValueType::Path {
+                            carrier,
+                            left,
+                            right,
+                        }
+                        | ValueType::Bridge {
                             carrier,
                             left,
                             right,
@@ -4009,7 +4014,7 @@ ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Path { .. } | ValueType::Flow { .. } => 3,
+ValueType::Path { .. } | ValueType::Bridge { .. } | ValueType::Flow { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::RowTail(_) | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
@@ -4125,6 +4130,22 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .value_type_path(rewritten_carrier, rewritten_left, rewritten_right)
+                }
+            },
+            ValueType::Bridge {
+                carrier,
+                left,
+                right,
+            } => {
+                let rewritten_right = Self::value(&mut self.results, right);
+                let rewritten_left = Self::value(&mut self.results, left);
+                let rewritten_carrier = Self::value_type(&mut self.results, carrier);
+                if (rewritten_carrier, rewritten_left, rewritten_right) == (carrier, left, right) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_type_bridge(rewritten_carrier, rewritten_left, rewritten_right)
                 }
             },
             ValueType::Flow {

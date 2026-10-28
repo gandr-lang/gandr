@@ -79,6 +79,10 @@ const LOWERING: Issue = Issue(1788);
 /// ascription: the form a type family member's telescope is checked against.
 const ASCRIPTION: Issue = Issue(1321);
 
+/// The issue writing a bridge type in the surface: until it lands no source
+/// forms one, and it writes the exemplars of the bridge fold's refusals.
+const BRIDGE: Issue = Issue(3427);
+
 /// Why no source reaches an effectful former's refusal: only the kernel's
 /// readmission refuses it, and there the declaration stays on the checker's
 /// side instead of being refused.
@@ -121,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 64_usize] = [
+const OWED: [(&str, Owed); 66_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -183,6 +187,8 @@ const OWED: [(&str, Owed); 64_usize] = [
     ("UnreadAscription", Owed::Unwritten(ASCRIPTION)),
     ("FamilyTelescope", Owed::Unwritten(ASCRIPTION)),
     ("RulesUndecided", Owed::Unwritten(LOWERING)),
+    ("BridgeAtSealedType", Owed::Unwritten(BRIDGE)),
+    ("OutsideFold", Owed::Unwritten(BRIDGE)),
     (
         "Unminted",
         Owed::Unreachable(Reason(

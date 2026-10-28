@@ -1257,6 +1257,8 @@ impl Machine<'_, '_>
             | CheckRefusal::RepresentationAboveKind { .. }
             | CheckRefusal::NotAnAbstractType(_)
             | CheckRefusal::AtomTransport { .. }
+            | CheckRefusal::BridgeAtSealedType { .. }
+            | CheckRefusal::OutsideFold { .. }
             | CheckRefusal::SealSiteRepeated(_)
             | CheckRefusal::DataArgumentArity(_)
             | CheckRefusal::UnknownConstructor { .. }

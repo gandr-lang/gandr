@@ -97,10 +97,10 @@
 //! **Choice.** Preserve native classifiers, maps and candidate evidence as
 //! content instead of caching a certificate verdict. Structural path conversion
 //! may erase evidence, but checkpoint identity must not. **Reversal.**
-//! Persisting the bridge mode, higher fields or guarded List inhabitants
-//! requires its own versioned content vocabulary and validated dependency
-//! support; none is inferred from a native path entry. The directed family
-//! persists under its own tags, below.
+//! Persisting higher fields or guarded List inhabitants requires its own
+//! versioned content vocabulary and validated dependency support; none is
+//! inferred from a native path entry. The directed family and the bridge type
+//! persist under their own tags, below.
 //!
 //! # Native declaration content and support
 //!
@@ -717,6 +717,16 @@ pub enum ContentNode
         source: NodeIndex,
         /// The target endpoint.
         target: NodeIndex,
+    },
+    /// A bridge type over its carrier and two endpoints.
+    BridgeType
+    {
+        /// The carrier.
+        carrier: NodeIndex,
+        /// The left endpoint.
+        left: NodeIndex,
+        /// The right endpoint.
+        right: NodeIndex,
     },
     /// The type of recorded runs of a session code.
     RunType(NodeIndex),
@@ -1341,6 +1351,7 @@ impl ContentNode
         | Self::Capability { .. }
         | Self::PathUniverse(..)
         | Self::PathType { .. }
+        | Self::BridgeType { .. }
         | Self::FlowType { .. }
         | Self::RunType(_)
         | Self::PrefixType(_)
@@ -1463,6 +1474,7 @@ impl ContentNode
             | Self::Capability { .. }
             | Self::PathUniverse(..)
             | Self::PathType { .. }
+            | Self::BridgeType { .. }
             | Self::FlowType { .. }
             | Self::RunType(_)
             | Self::PrefixType(_)
@@ -1571,7 +1583,7 @@ impl ContentNode
             },
             | Self::SessionRelated { source, target, payloads, .. } => actual == Some(&[(source, V), (target, V), (payloads, V)][..]),
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
-            | Self::PathType { carrier, left, right } | Self::FlowType { carrier, source: left, target: right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
+            | Self::PathType { carrier, left, right } | Self::BridgeType { carrier, left, right } | Self::FlowType { carrier, source: left, target: right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
             | Self::ElementTransport { motive, path, value } | Self::Ride { motive, flow: path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
             | Self::Recorded(ref moves) => ret.iter().eq(moves.iter().filter_map(|step| match step.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
             | Self::Dialogue(ref turns) => ret.iter().eq(turns.iter().filter_map(|turn| match turn.movement.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
@@ -1801,6 +1813,11 @@ impl ContentNode
                 left,
                 right,
             }
+            | Self::BridgeType {
+                carrier,
+                left,
+                right,
+            }
             | Self::FlowType {
                 carrier,
                 source: left,
@@ -1980,7 +1997,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
-        Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) |
+        Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -2029,6 +2046,7 @@ impl ContentNode
             | Self::Run(_)
             | Self::RecordUpdate(..)
             | Self::PathType { .. }
+            | Self::BridgeType { .. }
             | Self::FlowType { .. }
             | Self::RunType(_)
             | Self::PrefixType(_)
@@ -4676,6 +4694,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 left: self.discover(ArenaNode::Value(left)),
                 right: self.discover(ArenaNode::Value(right)),
             },
+            ValueType::Bridge {
+                carrier,
+                left,
+                right,
+            } => ContentNode::BridgeType {
+                carrier: self.discover(ArenaNode::ValueType(carrier)),
+                left: self.discover(ArenaNode::Value(left)),
+                right: self.discover(ArenaNode::Value(right)),
+            },
             ValueType::Flow {
                 carrier,
                 source,
@@ -5101,6 +5128,15 @@ where
             left,
             right,
         } => ContentNode::PathType {
+            carrier: image(carrier),
+            left: image(left),
+            right: image(right),
+        },
+        ContentNode::BridgeType {
+            carrier,
+            left,
+            right,
+        } => ContentNode::BridgeType {
             carrier: image(carrier),
             left: image(left),
             right: image(right),
@@ -5895,6 +5931,7 @@ fn mint_node(
         ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         ContentNode::PathUniverse(..)
         | ContentNode::PathType { .. }
+        | ContentNode::BridgeType { .. }
         | ContentNode::FlowType { .. }
         | ContentNode::RunType(_)
         | ContentNode::PrefixType(_)

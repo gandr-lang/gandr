@@ -658,6 +658,8 @@ enum Task
     PathType,
     /// Assemble a directed identity from its carrier and two endpoints.
     FlowType,
+    /// Assemble a bridge type from its carrier and two endpoints.
+    BridgeType,
     /// Assemble a run type over the session code on the stack.
     RunType,
     /// Assemble a prefix type over the session code on the stack.
@@ -2105,7 +2107,7 @@ fn run(
             && entry_comps.checked_sub(1) == Some(machine.comps.len())
             && machine.values.last().is_some_and(|&id| core.value(id).is_some())
             && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
-        | Task::PathType | Task::FlowType => machine.tasks.len() == entry_tasks
+        | Task::PathType | Task::FlowType | Task::BridgeType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(2) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
@@ -2233,7 +2235,7 @@ fn run(
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
             && machine.values.len() == entry_values && machine.comps.len() == entry_comps
-            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => false })
+            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Bridge { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => false })
             && machine.comp_types.len() == entry_comp_types
             && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some()),
         | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
@@ -2689,6 +2691,15 @@ fn step(
             machine
                 .value_types
                 .push(core.value_type_flow(carrier, source, target));
+            Ok(())
+        },
+        Task::BridgeType => {
+            let right = machine.pop_value()?;
+            let left = machine.pop_value()?;
+            let carrier = machine.pop_value_type()?;
+            machine
+                .value_types
+                .push(core.value_type_bridge(carrier, left, right));
             Ok(())
         },
         Task::RunType => {
@@ -3261,6 +3272,9 @@ ValueType::Session(ref session) => machine.value_types.len() == entry_results
 ValueType::Path { carrier, left, right } => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::PathType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
                 if *second == right && *first == left && *child == carrier),
+ValueType::Bridge { carrier, left, right } => machine.value_types.len() == entry_results
+            && matches!(new_tasks, [Task::BridgeType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
+                if *second == right && *first == left && *child == carrier),
 ValueType::Flow { carrier, source, target } => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::FlowType, Task::QuotedCode { code: second, .. }, Task::QuotedCode { code: first, .. }, Task::QuotedValueType { quoted: child, .. }]
                 if *second == target && *first == source && *child == carrier),
@@ -3331,6 +3345,24 @@ fn step_quoted_value_type(
             right,
         } => {
             machine.tasks.push(Task::PathType);
+            machine.tasks.push(Task::QuotedCode {
+                code: right,
+                frame,
+                binders,
+            });
+            machine.tasks.push(Task::QuotedCode {
+                code: left,
+                frame,
+                binders,
+            });
+            machine.tasks.push(at(carrier));
+        },
+        ValueType::Bridge {
+            carrier,
+            left,
+            right,
+        } => {
+            machine.tasks.push(Task::BridgeType);
             machine.tasks.push(Task::QuotedCode {
                 code: right,
                 frame,

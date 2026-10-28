@@ -888,6 +888,10 @@ fn checked(
             "this abstract type's identity attribute names no transport law, so its relation \
              cannot stand for its identity",
         ),
+        CheckRefusal::BridgeAtSealedType { .. } => f.write_str(
+            "this bridge reaches an abstract type with no identity attribute, so it has no \
+             relation to read",
+        ),
         CheckRefusal::SealSiteRepeated(_) => {
             f.write_str("internal error: one abstract component was sealed twice")
         },
@@ -949,6 +953,10 @@ fn checked(
         ),
         CheckRefusal::UncertifiedStratum { .. } => f.write_str(
             "`equiv` needs each list cell's round trip to return the cell, its tail unread",
+        ),
+        CheckRefusal::OutsideFold { .. } => f.write_str(
+            "a bridge is read at units, integers, strings, the universe, pairs, binary sums, \
+             lists, pure functions, abstract types with a relation and closed data types",
         ),
         CheckRefusal::RoundTripDistinct { .. } => {
             f.write_str("`equiv` needs each round trip to return its input")
@@ -1922,6 +1930,10 @@ pub mod tests
                 at: value,
                 atom: ConstantIndex::from(0_usize),
             },
+            CheckRefusal::BridgeAtSealedType {
+                at: value_type,
+                atom: ConstantIndex::from(0_usize),
+            },
             CheckRefusal::SealSiteRepeated(SealSite::new(
                 SealingSite::from(0_usize),
                 ComponentOrdinal::from(0_usize),
@@ -2065,6 +2077,10 @@ pub mod tests
                 classifier: value_type,
             },
             CheckRefusal::UncertifiedStratum {
+                at: value,
+                code: value_type,
+            },
+            CheckRefusal::OutsideFold {
                 at: value,
                 code: value_type,
             },

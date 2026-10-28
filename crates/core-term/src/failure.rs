@@ -83,6 +83,9 @@ impl TrackingIssue
     pub const INDEXED: Self = Self(1314);
     /// Function extensionality past the first-order coverage.
     pub const FUNEXT: Self = Self(1315);
+    /// A bridge at a code the bridge fold has no clause for: a dependent
+    /// arrow, the path universe, a bridge at a bridge.
+    pub const BRIDGE_FOLD: Self = Self(642);
     /// A universe equivalence outside the decided codes.
     pub const EQUIV: Self = Self(1316);
     /// A `forward` outside the decided codes.

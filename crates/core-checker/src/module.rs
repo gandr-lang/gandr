@@ -989,6 +989,7 @@ impl ModuleReport
                     },
                     Some(
                         &(ValueType::Path { carrier: inner, .. }
+                        | ValueType::Bridge { carrier: inner, .. }
                         | ValueType::Flow { carrier: inner, .. }
                         | ValueType::List(inner)
                         | ValueType::Lift { inner, .. }

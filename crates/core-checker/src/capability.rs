@@ -436,6 +436,7 @@ pub fn authorise(
         ValueTypeView::Unknown => Ok(()),
         ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
@@ -706,6 +707,7 @@ fn successors(
             ValueType::List(inner)
             | ValueType::Lift { inner, .. }
             | ValueType::Path { carrier: inner, .. }
+            | ValueType::Bridge { carrier: inner, .. }
             | ValueType::Flow { carrier: inner, .. }
             | ValueType::Staged { base: inner, .. } => pending.push(TypeNode::Value(inner)),
             ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),

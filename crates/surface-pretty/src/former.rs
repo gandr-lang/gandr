@@ -740,6 +740,17 @@ pub enum Former<'source, Node>
         /// The target endpoint.
         right: Node,
     },
+    /// Parametric relatedness `Bridge(A, a, b)`: the carrier and the two
+    /// endpoints.
+    Bridge
+    {
+        /// The carrier, a value type.
+        carrier: Node,
+        /// The left endpoint.
+        left: Node,
+        /// The right endpoint.
+        right: Node,
+    },
     /// A relation between two types written infix, `A ≃ B`, `A ≅ B` or
     /// `A ⇝ B`: the type the relation abbreviates, spelled as written.
     Relation

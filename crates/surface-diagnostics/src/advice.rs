@@ -487,6 +487,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
         | CheckRefusal::AtomTransport { .. }
+        | CheckRefusal::BridgeAtSealedType { .. }
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
@@ -506,6 +507,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::PointwiseDistinct { .. }
         | CheckRefusal::EquivUnsupported { .. }
         | CheckRefusal::UncertifiedStratum { .. }
+        | CheckRefusal::OutsideFold { .. }
         | CheckRefusal::RoundTripDistinct { .. }
         | CheckRefusal::NotOver { .. }
         | CheckRefusal::UaUncertified { .. }

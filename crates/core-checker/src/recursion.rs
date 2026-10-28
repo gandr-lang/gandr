@@ -837,6 +837,7 @@ pub fn constructor_owes(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)

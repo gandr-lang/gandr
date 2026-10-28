@@ -461,6 +461,9 @@ pub fn level_of(
                 | ValueTypeView::Path {
                     carrier: element, ..
                 }
+                | ValueTypeView::Bridge {
+                    carrier: element, ..
+                }
                 | ValueTypeView::Flow {
                     carrier: element, ..
                 } => tasks.push(Task::Enter(TypeNode::Value(element))),

@@ -600,6 +600,8 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
         | CheckRefusal::AtomTransport { .. }
+        | CheckRefusal::BridgeAtSealedType { .. }
+        | CheckRefusal::OutsideFold { .. }
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
@@ -4078,6 +4080,19 @@ enum Family
     Flow,
 }
 
+/// Which former a type frame erases: the three that relate two endpoints of
+/// one carrier, whose kernel formers share their shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Relating
+{
+    /// `Path(A, a, b)`.
+    Path,
+    /// `Flow(A, a, b)`.
+    Flow,
+    /// `Bridge(A, a, b)`.
+    Bridge,
+}
+
 /// A forward flow part-way through erasure: its flow type and translator
 /// crossed, its images crossing in coverage order.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4347,41 +4362,41 @@ enum Frame
         /// The engine's pairs.
         evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
     },
-    /// Await the carrier of an element path or flow type.
+    /// Await the carrier of an element path, flow or bridge type.
     PathCarrier
     {
-        /// The path or flow type.
+        /// The path, flow or bridge type.
         at: ValueTypeId,
         /// The source endpoint.
         left: ValueId,
         /// The target endpoint.
         right: ValueId,
-        /// Which identity the type states.
-        family: Family,
+        /// Which former the type is.
+        former: Relating,
     },
-    /// Await the source endpoint of an element path or flow type.
+    /// Await the source endpoint of an element path, flow or bridge type.
     PathLeft
     {
-        /// The path or flow type.
+        /// The path, flow or bridge type.
         at: ValueTypeId,
         /// The carrier image.
         carrier: gandr_kernel_term::ValueTypeId,
         /// The target endpoint.
         right: ValueId,
-        /// Which identity the type states.
-        family: Family,
+        /// Which former the type is.
+        former: Relating,
     },
-    /// Await the target endpoint of an element path or flow type.
+    /// Await the target endpoint of an element path, flow or bridge type.
     PathRight
     {
-        /// The path or flow type.
+        /// The path, flow or bridge type.
         at: ValueTypeId,
         /// The carrier image.
         carrier: gandr_kernel_term::ValueTypeId,
         /// The source endpoint image.
         left: gandr_kernel_term::ValueId,
-        /// Which identity the type states.
-        family: Family,
+        /// Which former the type is.
+        former: Relating,
     },
     /// Await the point of a reflexivity `here(a)` or a stay `stay(a)`.
     Here
@@ -6988,7 +7003,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         at,
                         left: source,
                         right: target_code,
-                        family: Family::Flow,
+                        former: Relating::Flow,
                     });
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(carrier))));
                 }
@@ -7052,7 +7067,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     left,
                     right,
-                    family: Family::Path,
+                    former: Relating::Path,
+                },
+                CoreNode::Type(TypeNode::Value(carrier)),
+            ),
+            ValueTypeView::Bridge {
+                carrier,
+                left,
+                right,
+            } => (
+                Frame::PathCarrier {
+                    at,
+                    left,
+                    right,
+                    former: Relating::Bridge,
                 },
                 CoreNode::Type(TypeNode::Value(carrier)),
             ),
@@ -7780,7 +7808,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     left,
                     right,
-                    family,
+                    former,
                 },
                 AnyNode::ValueType(carrier),
             ) => {
@@ -7788,7 +7816,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     carrier,
                     right,
-                    family,
+                    former,
                 });
                 self.argument(left)
             },
@@ -7797,7 +7825,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     carrier,
                     right,
-                    family,
+                    former,
                 },
                 AnyNode::Value(left),
             ) => {
@@ -7805,7 +7833,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     carrier,
                     left,
-                    family,
+                    former,
                 });
                 self.argument(right)
             },
@@ -7814,13 +7842,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     carrier,
                     left,
-                    family,
+                    former,
                 },
                 AnyNode::Value(right),
             ) => {
-                let image = match family {
-                    Family::Path => target.value_type_path(carrier, left, right),
-                    Family::Flow => target.value_type_flow(carrier, left, right),
+                let image = match former {
+                    Relating::Path => target.value_type_path(carrier, left, right),
+                    Relating::Flow => target.value_type_flow(carrier, left, right),
+                    Relating::Bridge => target.value_type_bridge(carrier, left, right),
                 };
                 Ok(self.erased_value_type(at, image))
             },

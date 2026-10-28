@@ -356,6 +356,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
@@ -424,6 +425,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
@@ -465,6 +467,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
+        | ValueTypeView::Bridge { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)

@@ -7387,3 +7387,5 @@ fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
         "a path type over swapped calls is apart once filled: {verdicts:?}"
     );
 }
+
+mod bridges;

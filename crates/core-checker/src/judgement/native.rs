@@ -1452,6 +1452,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
