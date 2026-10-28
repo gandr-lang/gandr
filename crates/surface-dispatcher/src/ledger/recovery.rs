@@ -28,6 +28,14 @@
 //! where the source goes wrong by construction, so it is counted well formed
 //! beside the accepted, not filed.
 //!
+//! A mutant that closes a form early is counted apart, as closed early. A
+//! closer doubled, or the closer an opener's deletion leaves, closes a form
+//! legally, and the closer left over has nothing to close; its first error
+//! marks that stray, a span holding exactly one `}`, `)` or `]`. The stray is
+//! the right diagnostic: which closer is the extra one is not in the tree, so
+//! the parse knows something is wrong only there. It is counted by its own
+//! name rather than as well formed, since the source is not.
+//!
 //! A tile's near miss is derived, never listed: the first of its text with the
 //! last character dropped, its last two characters swapped, and its last
 //! character doubled that spells no literal tile of the grammar. A tile none of
@@ -328,6 +336,11 @@ pub struct RecoveryReport
     /// mistake of form is left to mark, so the first refusal is where the
     /// source now goes wrong.
     formed: usize,
+    /// How many mutants closed a form early: an extra closer, or one left
+    /// behind by a deleted opener, closes a form legally and leaves a closer
+    /// with nothing to close, which the first error marks rather than the
+    /// mutation.
+    early: usize,
     /// The mutants whose first error does not mark their mutation, in
     /// exemplar and byte order.
     findings: Vec<RecoveryFinding>,
@@ -353,7 +366,7 @@ impl core::fmt::Display for RecoveryReport
     /// per tile (`—` for a tile with none), then each finding, then one
     /// ``cause: `<name>` <kind>`` line per cause with its count and families,
     /// the largest first, then the count swept, marked where made, accepted,
-    /// well formed and marked elsewhere.
+    /// well formed, closed early and marked elsewhere.
     ///
     /// # Specification
     /// trivial.
@@ -397,14 +410,16 @@ impl core::fmt::Display for RecoveryReport
         let found = self.findings.len();
         write!(
             f,
-            "{} mutants swept: {} marked where they were made, {} accepted, {} well formed, {found} marked elsewhere",
+            "{} mutants swept: {} marked where they were made, {} accepted, {} well formed, {} closed early, {found} marked elsewhere",
             self.swept,
             self.swept
                 .saturating_sub(self.accepted)
                 .saturating_sub(self.formed)
+                .saturating_sub(self.early)
                 .saturating_sub(found),
             self.accepted,
             self.formed,
+            self.early,
         )
     }
 }
@@ -603,10 +618,12 @@ fn mutants(
 ///   accepted when the check reports no error, counted well formed when the
 ///   lowering refused none of its declarations but for an unresolved name, a
 ///   loop's exit outside any loop, an unreachable statement or a descent claim
-///   outside a recursive group, and its first error does not mark the site, and
-///   a finding otherwise when its first error's primary span neither overlaps
-///   nor touches the mutation's site, or the error has none. The scratch
-///   directory the mutants are written under is removed.
+///   outside a recursive group, and its first error does not mark the site,
+///   counted closed early when its first error does not mark the site but marks
+///   a lone closer, exactly one `}`, `)` or `]`, and a finding otherwise when
+///   its first error's primary span neither overlaps nor touches the mutation's
+///   site, or the error has none. The scratch directory the mutants are written
+///   under is removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -623,12 +640,15 @@ fn mutants(
 ///   `rec` deleted or a declaration's keyword name missed, leaving only
 ///   unresolved names, and a `loop`, `break` or `rec` deleted, leaving an exit
 ///   outside any loop, a statement no path reaches or a descent claim outside a
-///   recursive group, are counted well formed, not filed.
+///   recursive group, are counted well formed, not filed; a closer doubled or
+///   an opener deleted, leaving a closer with nothing to close, is counted
+///   closed early, not filed.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
+/// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
 /// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
-#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.findings.len()) <= report.swept))]
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
     directory: &Path,
@@ -747,8 +767,20 @@ pub(super) fn sweep(
         let marked = first
             .span
             .is_some_and(|span| span.start <= mutant.site.end && mutant.site.start <= span.end);
+        // A closer doubled, or one an opener's deletion leaves, closes a form
+        // legally; the closer left over has nothing to close, and the first
+        // error marks it, never the mutation, which the tree does not show.
+        let early = first.span.is_some_and(|span| {
+            matches!(
+                mutant.text.get(span.start .. span.end),
+                Some("}" | ")" | "]")
+            )
+        });
         if !marked && first.formed {
             report.formed = report.formed.saturating_add(1);
+        }
+        else if !marked && early {
+            report.early = report.early.saturating_add(1);
         }
         else if !marked {
             report.findings.push(RecoveryFinding {
@@ -940,6 +972,39 @@ mod tests
             "each tile, written once, is deleted, and missed where it has a miss: {report}"
         );
         assert!(report.findings.is_empty(), "{report}");
+    }
+
+    /// An opener deleted leaves its closer with nothing to close. The first
+    /// error marks that stray, away from the deletion, and the stray is the
+    /// right diagnostic, so the mutant is counted closed early, by its own
+    /// name, and never as well formed or a finding.
+    #[test]
+    fn a_closer_left_with_nothing_to_close_is_closed_early_3063()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-early", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("block.gandr"),
+            "/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer {\n  return (1 + 2)\n}\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| !(finding.tile == "(" && finding.mutation == Mutation::Deleted)),
+            "the deleted `(` leaves its `)` stray, closed early: {report}"
+        );
+        assert_eq!(report.early, 1_usize, "{report}");
+        assert_eq!(
+            report.formed, 0_usize,
+            "a stray closer is no well-formed source: {report}"
+        );
     }
 
     /// #2340: `Integer` deleted from `-> -F +{Integer}` leaves the empty sum,
