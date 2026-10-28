@@ -13,6 +13,12 @@
 //! [`TrustPolicy`] lists verifies over the record. Under
 //! [`TrustPolicy::Recheck`] nothing is keyed and nothing is recalled.
 //!
+//! A rejection, a bypass, a mutual block or an open seal ends the chain. A
+//! refusal is never recorded. [`Environment::handed_on`] hands the chain to a
+//! resumed run without its records.
+//!
+//! [`Environment::handed_on`]: crate::Environment::handed_on
+//!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: §

@@ -37,7 +37,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 ## Expected features
 
 - **The core arena outlives the domain arena.** A domain node names core nodes it does not own: the source term its term face caches, a literal payload, the body a closure suspends. The domain arena cannot check those ids, so the caller runs one domain arena per evaluation over one core arena and never truncates the core arena below a node the domain holds; a violation yields a wrong readback, not a refusal.
-- **Well-scoped input.** Readback splices a source id under open binders on the strength of its term face, which is sound only if that source term is closed. Evaluating a well-scoped term guarantees it. A loose index inside an unevaluated thunk body is never seen — `thunk (λ. return x₁)` keeps its face in the empty environment — and checking closedness at the splice is the traversal the face exists to avoid.
+- **Well-scoped input.** Readback splices a source id under open binders on the strength of its term face, which is sound only if that source term is closed. Evaluating a well-scoped term guarantees it.
 - **Lowering one body.** The definition chain names a body by its canonical subterm-table entry index, which is arena-independent; `LoweredChain::lower` runs the one pass in admission order and asks the caller, once per distinct index, for that body as a closed core value in the arena the run evaluates against. Reading a table entry as a core term is the caller's, because the caller holds the table. A lowering that is not closed surfaces as `EvalFault::UnboundVariable`, inside `ReadbackFault::Eval`, when the body is forced.
 - **A fuel budget.** The caller sizes `Fuel` for the run; exhaustion is `EvalFault::OutOfFuel` or `ReadbackFault::OutOfFuel`, a decline rather than a verdict.
 - **A conversion problem's depth.** `Problem::under` names the first intuitionistic binder level neither side mentions, so the machine's fresh variables start past the binders the caller already opened; a side that mentions a level at or past it compares a caller's variable with the machine's. `Problem::values` and `Problem::computations` start at the floor, for closed sides.
@@ -116,12 +116,13 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Closed-configuration sharing and the certifying path | [`traced`](src/traced.rs) |
 | Live evaluation | [`live`](src/live.rs) |
 | Strict stage normalization | [`stage`](src/stage.rs) |
-| References | [`src/lib.rs`](src/lib.rs), [`policy`](src/policy.rs) |
+| References | [`src/lib.rs`](src/lib.rs), [`policy`](src/policy.rs), [`closure`](src/closure.rs) |
 
 ## References
 
 - `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory` — background: Peter Dybjer, "Program Testing and the Meaning Explanations of Intuitionistic Type Theory", _Epistemology versus Ontology_, 2012 — a judgement tested by running it on generated input, the reading the spinal stance enters on.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — a sharing mechanism enters on a property test against its reference and an informal simulation argument.
+- `Accattoli-2025-back_future_lambda_refreshing_lambdacalculus_21st_century` — exemplar: Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep.
 
 ## License
 
