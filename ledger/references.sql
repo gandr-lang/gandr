@@ -384,7 +384,7 @@ INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runti
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','world','lineage','d227718fbc539a3db230514cb50abf203d886502','2026-10-28','6db0dd5cfa53eba7b76907725b7af86fe7e58687');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-net','chunks','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-net','worlds','lineage','daeb019c78602ef2ece79a9d2b4eddc95b845090','2026-10-28','d4e403dc44a1660c699c0eeccee846f3425d6c63');
-INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-dispatcher','evaluate::worlds','lineage','7ec15442466257abc63258cfc89af1016e1d135c','2026-10-28','c080e0aa52ecb75197d3fec54df7f48d88a66fdc');
+INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-dispatcher','evaluate::worlds','lineage','160a05347739d1395d5d374fbcbd514621bf01e7','2026-10-28','4812f5881deefda41b2e45fb5ecc6fd30646d7dc');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-driver','','background','9ef81b174827f51bc3aad8056c781ee7314e7912','2026-10-28','5444238eed504abcf239d6f8f79836933f78a05f');
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::export','background',NULL,NULL,NULL);

@@ -60,6 +60,11 @@ const HOST_SECRET: &str = "05050505050505050505050505050505050505050505050505050
 /// span many chunks.
 const LISTED: u16 = 300;
 
+/// How long the descent case's first host stays bound after its last
+/// answer: a host whose endpoint is slow to close, which the run's next
+/// migration to the seat must not reach.
+const LINGER: Duration = Duration::from_millis(100);
+
 /// A scratch source file, removed when dropped.
 #[repr(transparent)]
 struct Scratch(PathBuf);
@@ -479,9 +484,19 @@ fn bindings(
     peer: &Peer,
 ) -> WorldBindings
 {
-    WorldBindings::new(vec![
-        WorldBinding::from_str(&format!("{world}={peer}")).expect("the binding reads"),
-    ])
+    WorldBindings::new(vec![binding(world, peer)])
+}
+
+/// The binding of `world` to `peer`.
+///
+/// # Specification
+/// trivial.
+fn binding(
+    world: &WorldName,
+    peer: &Peer,
+) -> WorldBinding
+{
+    WorldBinding::from_str(&format!("{world}={peer}")).expect("the binding reads")
 }
 
 /// What `script` exited with, when its entry exited.
@@ -577,30 +592,42 @@ fn a_world_no_binding_names_is_refused_before_the_run()
     );
 }
 
-/// The lines a host prints hosting two migrations of the source at `path`,
-/// at `socket` under [`HOST_SECRET`], the seat bound to `peer`.
+/// A network bound at `socket` under `secret`, bound again while a host that
+/// just ended there still holds the socket.
 ///
 /// # Specification
 /// trivial.
-fn hosted(
-    path: &Path,
-    (peer, socket): (&Peer, SocketAddr),
-) -> Vec<String>
+fn bound(
+    secret: &Secret,
+    socket: SocketAddr,
+) -> Net
 {
-    // The socket a host that just ended held may still be closing.
-    let mut net = Net::new(
-        Binding::new(Secret::from_str(HOST_SECRET).expect("the secret is hex")).at(socket),
-    );
+    let mut net = Net::new(Binding::new(secret.clone()).at(socket));
     let mut attempts = 0_u32;
     while net.endpoint().is_err() {
         attempts = attempts.saturating_add(1);
         assert!(attempts < 100, "the host binds its socket");
         thread::sleep(Duration::from_millis(50));
     }
+    net
+}
+
+/// The lines a host on `net` prints hosting `migrations` of the source at
+/// `path`, `world` bound to `peer`, the host itself. The host keeps `net`
+/// bound for `linger` after its last answer.
+///
+/// # Specification
+/// trivial.
+fn hosted(
+    path: &Path,
+    (net, world, peer): (Net, &WorldName, &Peer),
+    (migrations, linger): (MigrationCount, Duration),
+) -> Vec<String>
+{
     let mut script = Script::new(path.to_path_buf());
     script.network(net);
-    script.bindings(bindings(&WorldName::from("seat"), peer));
-    script.hosting(MigrationCount::from(2_usize));
+    script.bindings(bindings(world, peer));
+    script.hosting(migrations);
     let mut console = Captured::default();
     let run = script.run(&mut console);
     assert!(
@@ -609,10 +636,11 @@ fn hosted(
             ScriptRun::Source {
                 ran: Ran::Hosted(Hosted::Answered(answered)),
                 ..
-            } if usize::from(answered) == 2
+            } if answered == migrations
         ),
-        "the host answers both migrations: {run:?}"
+        "the host answers each migration: {run:?}"
     );
+    thread::sleep(linger);
     console.lines().to_vec()
 }
 
@@ -640,21 +668,29 @@ fn fetched(lines: &[String]) -> Vec<ChunkCount>
 /// the new host fetches all of it from the runner. The one after reads the
 /// edit: naming the list it holds, the host fetches only the chunks the edit
 /// changed. The run answers as it would in one process.
+///
+/// Between the edit and the read the run migrates to a gate, which opens
+/// only once the second host holds the seat's socket. The first host stays
+/// bound for [`LINGER`] after its last answer, so a run that reached for the
+/// seat before the gate answered would find the host that ended and stop
+/// unreached. The hosts take their turns on a thread of their own, which a
+/// run that stops is not held for.
 #[test]
-fn a_second_migration_of_an_edited_list_fetches_what_changed()
+fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
 {
     let listed = (1 ..= LISTED)
         .map(|element| element.to_string())
         .collect::<Vec<_>>()
         .join(", ");
     let text = format!(
-        "pub world operator;\npub world seat;\n\ndef rec size(xs : List(Integer)) -> Integer {{\n  \
-         case xs {{\n    [] => 0,\n    [x, ..rest] => 1 + size[<](rest)\n  }}\n}}\n\n@[ \
-         entry((operator, seat, seat, seat, seat)) ]\ndef main() -> Integer {{\n  run listed : \
-         List(Integer) at seat <- migrate [seat] {{ (hold [{listed}]) }};\n  leta xs = \
-         listed;\n  run edited : List(Integer) at seat <- migrate [seat] {{ (hold cons(0, xs)) \
-         }};\n  leta ys = edited;\n  run before <- migrate [seat] {{ size(xs) }};\n  run after \
-         <- migrate [seat] {{ size(ys) }};\n  pure (after - before + 41)\n}}\n"
+        "pub world operator;\npub world seat;\npub world gate;\n\ndef rec size(xs : \
+         List(Integer)) -> Integer {{\n  case xs {{\n    [] => 0,\n    [x, ..rest] => 1 + \
+         size[<](rest)\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
+         main() -> Integer {{\n  run listed : List(Integer) at seat <- migrate [seat] {{ (hold \
+         [{listed}]) }};\n  leta xs = listed;\n  run edited : List(Integer) at seat <- migrate \
+         [seat] {{ (hold cons(0, xs)) }};\n  leta ys = edited;\n  run opened <- migrate [gate] \
+         {{ pure 0 }};\n  run before <- migrate [seat] {{ size(xs) }};\n  run after <- migrate \
+         [seat] {{ size(ys) }};\n  pure (after - before + 41 + opened)\n}}\n"
     );
     let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));
     let alone = exited(&mut Script::new(file.0.clone()));
@@ -663,34 +699,58 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed()
         Some(ExitStatus::from(42_u8)),
         "in one process the run answers 42"
     );
-    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-        .and_then(|probe| probe.local_addr())
-        .expect("a free loopback port");
-    let peer = Peer::new(
-        Secret::from_str(HOST_SECRET)
-            .expect("the secret is hex")
-            .node_id(),
-    )
-    .at(socket);
-    let (first, second, status) = thread::scope(|scope| {
-        let first = scope.spawn(|| hosted(&file.0, (&peer, socket)));
-        let running = scope.spawn(|| {
-            let mut script = Script::new(file.0.clone());
-            script.network(Net::new(
-                Binding::new(Secret::generate()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
-            ));
-            script.bindings(bindings(&WorldName::from("seat"), &peer));
-            exited(&mut script)
-        });
-        let first = first.join().expect("the first host ends");
-        let second = hosted(&file.0, (&peer, socket));
-        (first, second, running.join().expect("the run ends"))
+    let free = || {
+        UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("a free loopback port")
+    };
+    let (socket, door) = {
+        let (seat, gate) = (free(), free());
+        (
+            seat.local_addr().expect("the seat's probe has an address"),
+            gate.local_addr().expect("the gate's probe has an address"),
+        )
+    };
+    let host = Secret::from_str(HOST_SECRET).expect("the secret is hex");
+    let peer = Peer::new(host.node_id()).at(socket);
+    let keeper = Secret::generate();
+    let gatekeeper = Peer::new(keeper.node_id()).at(door);
+    let hosts = thread::spawn({
+        let (path, peer, gatekeeper) = (file.0.clone(), peer.clone(), gatekeeper.clone());
+        move || {
+            let (seat, gate) = (WorldName::from("seat"), WorldName::from("gate"));
+            let two = MigrationCount::from(2_usize);
+            thread::scope(|scope| {
+                let first = hosted(&path, (bound(&host, socket), &seat, &peer), (two, LINGER));
+                let net = bound(&host, socket);
+                let (path, seat, peer) = (&path, &seat, &peer);
+                let second =
+                    scope.spawn(move || hosted(path, (net, seat, peer), (two, Duration::ZERO)));
+                hosted(
+                    path,
+                    (bound(&keeper, door), &gate, &gatekeeper),
+                    (MigrationCount::from(1_usize), Duration::ZERO),
+                );
+                (first, second.join().expect("the second host ends"))
+            })
+        }
     });
-    assert_eq!(
-        status,
-        Some(ExitStatus::from(42_u8)),
-        "across hosts the run answers 42"
+    let mut script = Script::new(file.0.clone());
+    script.network(Net::new(
+        Binding::new(Secret::generate()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+    ));
+    script.bindings(WorldBindings::new(vec![
+        binding(&WorldName::from("seat"), &peer),
+        binding(&WorldName::from("gate"), &gatekeeper),
+    ]));
+    let run = script.run(&mut Captured::default());
+    let ScriptRun::Source { ref ran, .. } = run
+    else {
+        panic!("the source runs: {run:?}");
+    };
+    assert!(
+        matches!(ran, Ran::Entered { entered: Entered::Exited(status), .. } if *status == ExitStatus::from(42_u8)),
+        "across hosts the run answers 42: {ran:?}"
     );
+    let (first, second) = hosts.join().expect("the hosts end");
     assert_eq!(
         fetched(&first),
         [ChunkCount::from(0_usize); 2],

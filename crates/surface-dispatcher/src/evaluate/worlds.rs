@@ -297,7 +297,7 @@ pub struct Worlds<'host>
 /// - hypothesis: L3 — four migrations bound to hosting endpoints answer 42
 ///   there, as the same run does in one process, two of them over captures; a
 ///   world bound to this host runs here with no host elsewhere.
-/// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+/// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
 /// - witness: `tests::run::a_world_bound_to_this_host_runs_here`
 pub(super) fn shipped(
     (worlds, names): (Worlds<'_>, &[String]),
@@ -425,7 +425,7 @@ impl Program<'_>
     ///   itself, fetching nothing; the host that takes its place fetches a list
     ///   whole, then only the chunks of its edit, and each prints a line for
     ///   each migration.
-    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed`
+    /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     #[inline]
     pub fn host(
         &self,
