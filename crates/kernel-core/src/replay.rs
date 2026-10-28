@@ -5611,7 +5611,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: `term`'s head is `constant`, defined.
     /// - ensures: a value its δ- or δβ-reduct, as [`Self::unfold_value`] gives
     ///   it; a computation its spine over the body, a ride's body standing as
-    ///   its flow and a path transport's path its δ-reduct; of `term`'s
+    ///   its flow, a path transport's path its δ-reduct and a stuck fixpoint's
+    ///   staged argument its body, past its leading arguments; of `term`'s
     ///   polarity either way.
     /// - provides: the term half of [`Self::unfold`], shared with
     ///   [`Self::normalize_returned`].
@@ -5629,11 +5630,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the trace's named-head unfoldings of
-    ///   [`Self::unfold`], a ride's named flow among them, and a definition at
-    ///   a returned endpoint's head, read at a mode switch.
+    ///   [`Self::unfold`], a ride's named flow among them, a definition at a
+    ///   returned endpoint's head, read at a mode switch, and a constant at a
+    ///   staged fixpoint's gate past its leading argument.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
     /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
     /// - witness: `replay::tests::a_path_transport_unfolds_its_path_where_the_dialogue_names_it`
+    /// - witness: `replay::tests::a_staged_fixpoint_unfolds_the_constant_at_its_staged_argument_3387`
     /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
     #[spec(ensures: |ret| match ret {
         Ok(reduct) => self.unfoldings.unfolding(constant) != Unfoldable::Opaque
@@ -5742,14 +5745,28 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let branches = branches.clone();
                     break self.arena.computation_case(body, &branches);
                 },
-                // A stuck fixpoint's head is its argument: the constant
-                // unfolds in the application directly over the fixpoint.
-                Some(&Computation::Fixpoint { .. }) => {
+                // A stuck fixpoint's head is its staged argument, past its
+                // leading ones, as [`Self::shape`] reads it: the constant
+                // unfolds in the application at that argument, the leading
+                // ones applied beneath it as they stood.
+                Some(&Computation::Fixpoint { evidence, .. }) => {
+                    let staged = match evidence {
+                        FixpointEvidence::Staged { position } => usize::from(position),
+                        FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
+                    };
+                    let mut applied = focus;
+                    for _leading in 0 .. staged {
+                        let Some(Frame::Apply(argument)) = frames.pop()
+                        else {
+                            return Err(unreadable());
+                        };
+                        applied = self.arena.computation_application(applied, argument);
+                    }
                     let Some(Frame::Apply(_)) = frames.pop()
                     else {
                         return Err(unreadable());
                     };
-                    break self.arena.computation_application(focus, body);
+                    break self.arena.computation_application(applied, body);
                 },
                 Some(
                     &(Computation::Lambda(_)
