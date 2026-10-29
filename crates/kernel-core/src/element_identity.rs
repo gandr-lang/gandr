@@ -389,7 +389,6 @@ use crate::rewrite::shift_value;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_computation;
 use crate::rewrite::substitute_outer_value_type;
-use crate::rewrite::substitute_value;
 use crate::rewrite::substitute_value_type;
 use crate::witness::value_type_witness;
 
@@ -2246,7 +2245,7 @@ where
         Some(_) => {},
         None => return Err(KernelError::ArenaFault),
     }
-    if binder_use(arena, table, memo, Family::Type(motive)) == BinderUse::Ignored {
+    if binder_use(arena, Family::Type(motive)) == BinderUse::Ignored {
         return Ok(Reduction::Reduced(arena.computation_return(value)));
     }
     let family = arena
@@ -2333,8 +2332,8 @@ where
         } => {
             let singleton = matches!(arena.value(right), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
                 && matches!(arena.value(value), Some(&Value::Here { .. }))
-                && binder_use(arena, table, memo, Family::Type(domain)) == BinderUse::Ignored
-                && binder_use(arena, table, memo, Family::Value(left)) == BinderUse::Ignored;
+                && binder_use(arena, Family::Type(domain)) == BinderUse::Ignored
+                && binder_use(arena, Family::Value(left)) == BinderUse::Ignored;
             Ok(if singleton {
                 Reduction::Reduced(arena.computation_return(path))
             }
@@ -2414,14 +2413,10 @@ enum Held
 /// - witness: `element_identity::tests::transport_back_along_univalence_applies_the_left_inverse`
 /// - witness: `element_identity::tests::transport_along_then_moves_along_both_paths`
 #[spec(ensures: |ret| ret.is_none() || matches!(arena.value(path), Some(&Value::Returned(_))))]
-fn held<M>(
-    arena: &mut TermArena,
-    table: &mut ContentTable,
-    memo: &mut M,
+fn held(
+    arena: &TermArena,
     path: ValueId,
 ) -> Option<(Held, ValueId, ValueId)>
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let bound = |arena: &TermArena, endpoint| matches!(arena.value(endpoint), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32));
     let mut read = None;
@@ -2453,8 +2448,8 @@ where
         else {
             return None;
         };
-        if binder_use(arena, table, memo, Family::Type(domain)) != BinderUse::Ignored
-            || binder_use(arena, table, memo, Family::Value(fixed)) != BinderUse::Ignored
+        if binder_use(arena, Family::Type(domain)) != BinderUse::Ignored
+            || binder_use(arena, Family::Value(fixed)) != BinderUse::Ignored
         {
             return None;
         }
@@ -2499,7 +2494,7 @@ fn along_held<M>(
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let (shape, along, moved) = held(arena, table, memo, path)?;
+    let (shape, along, moved) = held(arena, path)?;
     match shape {
         Held::Then => {
             let first = arena.computation_path_transport(motive, moved, value);
@@ -2567,7 +2562,7 @@ where
             let force = arena.computation_force(backward);
             Some(arena.computation_application(force, value))
         },
-        _ => match held(arena, table, memo, along)? {
+        _ => match held(arena, along)? {
             (Held::Back, inner, _) => Some(arena.computation_path_transport(motive, inner, value)),
             (Held::Then, ..) => None,
         },
@@ -2625,7 +2620,7 @@ where
     if !matches!(
         arena.value(path),
         Some(&(Value::Univalence(_) | Value::PathEquiv { .. }))
-    ) && held(arena, table, memo, path).is_none()
+    ) && held(arena, path).is_none()
     {
         return None;
     }
@@ -2634,7 +2629,7 @@ where
     let Some(argument) = argument
     else {
         let forced = arena.computation_force(function);
-        let body = if binder_use(arena, table, memo, Family::Type(result)) == BinderUse::Ignored {
+        let body = if binder_use(arena, Family::Type(result)) == BinderUse::Ignored {
             forced
         }
         else {
@@ -2648,7 +2643,7 @@ where
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
     // Under `λa`, the argument moves back along the path as the value the
     // move returns.
-    let moved = if binder_use(arena, table, memo, Family::Type(argument)) == BinderUse::Ignored {
+    let moved = if binder_use(arena, Family::Type(argument)) == BinderUse::Ignored {
         bound
     }
     else {
@@ -2670,7 +2665,7 @@ where
     let function = shift_value(arena, table, memo, function, BinderDepth::default(), one);
     let forced = arena.computation_force(function);
     let applied = arena.computation_application(forced, moved);
-    let body = if binder_use(arena, table, memo, Family::Type(result)) == BinderUse::Ignored {
+    let body = if binder_use(arena, Family::Type(result)) == BinderUse::Ignored {
         applied
     }
     else {
@@ -2866,10 +2861,10 @@ where
         Maybe::Present(Telescope { body, .. }) => body,
         Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
     };
-    if binder_use(arena, table, memo, Family::Type(body)) == BinderUse::Ignored {
+    if binder_use(arena, Family::Type(body)) == BinderUse::Ignored {
         let unit = arena.value_unit();
         let outer = substitute_value_type(arena, table, memo, body, unit);
-        if binder_use(arena, table, memo, Family::Type(outer)) == BinderUse::Ignored {
+        if binder_use(arena, Family::Type(outer)) == BinderUse::Ignored {
             return Ok(Reduction::Reduced(arena.computation_return(value)));
         }
     }
@@ -3260,12 +3255,12 @@ pub(crate) enum BinderUse
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`BinderUse::Ignored`] only when the family provably ignores
-///   variable zero: instantiating it at a variable past the family's reach
-///   leaves no variable at or past that reach. A saturated reach answers
+/// - ensures: [`BinderUse::Ignored`] exactly when the support the family's node
+///   carries from its mint lists its indices and zero is not among them
+///   ([`crate::support::innermost`]); a support reading every binder answers
 ///   [`BinderUse::Read`].
-/// - provides: the constant-motive rule, decided without a dedicated occurrence
-///   walk.
+/// - provides: the constant-motive rule, decided on the carried support with no
+///   instantiation and no walk.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3278,48 +3273,15 @@ pub(crate) enum BinderUse
         Family::Value(value) => u32::from(arena.value_support(value).depth()) == 0,
     },
     ensures: |ret| !closed || ret == BinderUse::Ignored)]
-pub(crate) fn binder_use<M>(
-    arena: &mut TermArena,
-    table: &mut ContentTable,
-    memo: &mut M,
+pub(crate) fn binder_use(
+    arena: &TermArena,
     family: Family,
 ) -> BinderUse
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let before = u32::from(
-        match family {
-            Family::Type(ty) => arena.value_type_support(ty),
-            Family::Value(value) => arena.value_support(value),
-        }
-        .depth(),
-    );
-    if before == 0 {
-        return BinderUse::Ignored;
-    }
-    if before == u32::MAX {
-        return BinderUse::Read;
-    }
-    let fresh = arena.value_variable(DeBruijnIndex::from(before));
-    let after = u32::from(
-        match family {
-            Family::Type(ty) => {
-                let instantiated = substitute_value_type(arena, table, memo, ty, fresh);
-                arena.value_type_support(instantiated)
-            },
-            Family::Value(value) => {
-                let instantiated = substitute_value(arena, table, memo, value, fresh);
-                arena.value_support(instantiated)
-            },
-        }
-        .depth(),
-    );
-    if after > before {
-        BinderUse::Read
-    }
-    else {
-        BinderUse::Ignored
-    }
+    crate::support::innermost(match family {
+        Family::Type(ty) => arena.value_type_support(ty),
+        Family::Value(value) => arena.value_support(value),
+    })
 }
 
 /// A related application as the replay reads it.

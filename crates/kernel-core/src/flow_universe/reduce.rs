@@ -145,7 +145,7 @@ where
         },
         Head::Forward(_) | Head::Function(..) | Head::Product(..) | Head::Other => {},
     }
-    if binder_use(arena, table, memo, Family::Type(motive)) == BinderUse::Ignored {
+    if binder_use(arena, Family::Type(motive)) == BinderUse::Ignored {
         return Ok(Reduction::Reduced(arena.computation_return(value)));
     }
     let family = arena
@@ -251,8 +251,8 @@ where
             target,
         } => {
             let singleton = matches!(arena.value(target), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
-                && binder_use(arena, table, memo, Family::Type(domain)) == BinderUse::Ignored
-                && binder_use(arena, table, memo, Family::Value(source)) == BinderUse::Ignored;
+                && binder_use(arena, Family::Type(domain)) == BinderUse::Ignored
+                && binder_use(arena, Family::Value(source)) == BinderUse::Ignored;
             if !singleton {
                 return Ok(Reduction::Stuck);
             }
@@ -260,7 +260,7 @@ where
         },
         ValueType::FlowUniverse(source, target) => {
             let singleton = matches!(arena.value(target), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
-                && binder_use(arena, table, memo, Family::Value(source)) == BinderUse::Ignored;
+                && binder_use(arena, Family::Value(source)) == BinderUse::Ignored;
             if !singleton {
                 return Ok(Reduction::Stuck);
             }

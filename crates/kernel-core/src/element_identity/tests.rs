@@ -3259,22 +3259,12 @@ fn transport_reads_its_family_s_shape_before_it_reduces()
     let reads = arena.value_type_element(binder, Level::zero());
 
     assert_eq!(
-        super::binder_use(
-            &mut arena,
-            &mut table,
-            &mut memo,
-            super::Family::Value(outer)
-        ),
+        super::binder_use(&arena, super::Family::Value(outer)),
         super::BinderUse::Ignored,
         "a family over an outer variable alone is constant in its binder"
     );
     assert_eq!(
-        super::binder_use(
-            &mut arena,
-            &mut table,
-            &mut memo,
-            super::Family::Value(binder)
-        ),
+        super::binder_use(&arena, super::Family::Value(binder)),
         super::BinderUse::Read,
         "and the binder itself reads it"
     );
