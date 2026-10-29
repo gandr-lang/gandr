@@ -1,0 +1,58 @@
+test: package::a_package_root_walks_each_source_once_3889
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher package::a_package_root_walks_each_source_once_3889
+
+(lldb) target create "target/debug-trace/debug/deps/tests-6fb1a7053e352459"
+Current executable set to 'target/debug-trace/debug/deps/tests-6fb1a7053e352459' (x86_64).
+(lldb) settings set -- target.run-args  "package::a_package_root_walks_each_source_once_3889" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-6fb1a7053e352459`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000005fdd5b8
+(lldb) run
+
+running 1 test
+test package::a_package_root_walks_each_source_once_3889 ... 
+thread 'package::a_package_root_walks_each_source_once_3889' (53755) panicked at crates/surface-dispatcher/tests/package.rs:319:5:
+assertion `left == right` failed: each source once, the sources first, and the root faults nowhere
+  left: ["hello/src/lib.gandr", "hello/src/text/greet.gandr", "hello/src/lib.gandr", "hello/src/text/greet.gandr", "hello/tests/smoke.gandr"]
+ right: ["hello/src/lib.gandr", "hello/src/text/greet.gandr", "hello/tests/smoke.gandr"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 53563 launched: 'target/debug-trace/debug/deps/tests-6fb1a7053e352459' (x86_64)
+Process 53563 stopped
+* thread #2, name = 'package::a_pack', stop reason = breakpoint 1.1
+       frame #0: 0x000055555b5315b8 tests-6fb1a7053e352459`__rustc::rust_panic at panicking.rs:875:25
+(lldb) bt 24
+* thread #2, name = 'package::a_pack', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555b5315b8 tests-6fb1a7053e352459`__rustc::rust_panic at panicking.rs:875:25
+     frame #1: 0x000055555b58ce94 tests-6fb1a7053e352459`std::panicking::panic_with_hook at panicking.rs:839:5
+     frame #2: 0x000055555b530702 tests-6fb1a7053e352459`std::panicking::panic_handler::{closure#0} at panicking.rs:687:13
+     frame #3: 0x000055555b525619 tests-6fb1a7053e352459`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x000055555b53182d tests-6fb1a7053e352459`__rustc::rust_begin_unwind at panicking.rs:678:5
+     frame #5: 0x000055555b56185c tests-6fb1a7053e352459`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x000055555b596b63 tests-6fb1a7053e352459`core::panicking::assert_failed_inner at panicking.rs:434:23
+     frame #7: 0x000055555b56dc8c tests-6fb1a7053e352459`core::panicking::assert_failed::<alloc::vec::Vec<std::path::PathBuf>, alloc::vec::Vec<std::path::PathBuf>>(kind=Eq, left=size=5, right=size=3, args=Some({template:{pointer:"each source once, the sources first, and the root faults nowherefoundflat/lib.gandrflat/inner/lib.gandrflat/inner/deep.gandrloose/alone.gandrhello/src/texthello/srca library outside `src` roots its own directoryflat/innerthe nearest library is the package'sno library above itabsent.gandra path that does not exist is in no packageworkspacetools/lib.gandrpub def members : List(String) = [\"hello\", \"tools\"];the workspace is writtena directory with no workspace above it is in nonetoolsno path at the workspace's root walks its source and each member, in ordersrcno path in the workspace outside every package walks it whole, each path not below the working directory as it standsthe workspace's directory given walks it wholeno path in a member walks that member alonepub def members : List(String) = [\"hello\", \"docs\"];pub def members : String = \"hello\";\"hello\"the workspace is rewrittencyclea/src/lib.gandrb/src/lib.gandrabthe cycle is refused by its pathsthe refusal is namedsrc/lib.gandr\xc07pub def dependencies : List(Depe"...}, args:{pointer:{ty:{0:0}}}})) at panicking.rs:394:5
+     frame #8: 0x0000555556cba88b tests-6fb1a7053e352459`tests::package::a_package_root_walks_each_source_once_3889 at package.rs:319:5
+     frame #9: 0x0000555556ca5687 tests-6fb1a7053e352459`tests::package::a_package_root_walks_each_source_once_3889::{closure#0}((null)={}) at package.rs:301:48
+     frame #10: 0x0000555556d00a86 tests-6fb1a7053e352459`<tests::package::a_package_root_walks_each_source_once_3889::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000555556d6b9cb tests-6fb1a7053e352459`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x0000555556d6b9c9 tests-6fb1a7053e352459`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #13: 0x0000555556d79025 tests-6fb1a7053e352459`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #14: 0x0000555556d79020 tests-6fb1a7053e352459`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x0000555556d79020 tests-6fb1a7053e352459`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #16: 0x0000555556d7900b tests-6fb1a7053e352459`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #17: 0x0000555556d7900b tests-6fb1a7053e352459`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x0000555556d7900b tests-6fb1a7053e352459`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #19: 0x0000555556d78ff6 tests-6fb1a7053e352459`test::run_test::{closure#0} at lib.rs:668:43
+     frame #20: 0x0000555556d73b84 tests-6fb1a7053e352459`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #21: 0x0000555556d73b09 tests-6fb1a7053e352459`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x0000555556d7c162 tests-6fb1a7053e352459`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x0000555556d7c153 tests-6fb1a7053e352459`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit
