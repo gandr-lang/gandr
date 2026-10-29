@@ -100,7 +100,6 @@ use std::thread;
 use std::time::Instant;
 
 use anodized::spec;
-use gandr_surface_dispatcher::Pool;
 use quenchant_shape::shape::Maybe;
 
 use crate::disk::Disk;
@@ -325,7 +324,6 @@ where
     Log: Write + Send + 'static,
 {
     listener.set_nonblocking(true)?;
-    let pool = Arc::clone(workspace.pool());
     let workspace = Arc::new(Mutex::new(workspace));
     let disk = match Disk::new() {
         Ok(disk) => Some(disk),
@@ -343,16 +341,15 @@ where
         stream.set_nonblocking(false)?;
         peers = peers.saturating_add(1);
         let _opened = open.fetch_add(1, Ordering::SeqCst);
-        let (workspace, disk, log, open, pool) = (
+        let (workspace, disk, log, open) = (
             Arc::clone(&workspace),
             Arc::clone(&disk),
             Arc::clone(&log),
             Arc::clone(&open),
-            Arc::clone(&pool),
         );
         let peer = Peer::from(peers);
         drop(thread::spawn(move || {
-            connection(stream, peer, (&workspace, &pool), &disk, &log, lines);
+            connection(stream, peer, &workspace, &disk, &log, lines);
             let _closed = open.fetch_sub(1, Ordering::SeqCst);
         }));
         Ok(())
@@ -411,7 +408,7 @@ where
 fn connection<Log>(
     stream: UnixStream,
     peer: Peer,
-    (workspace, pool): (&Mutex<Workspace>, &Pool),
+    workspace: &Mutex<Workspace>,
     disk: &Mutex<Option<Disk>>,
     log: &Mutex<Log>,
     lines: Option<Face>,
@@ -452,8 +449,11 @@ fn connection<Log>(
     let mut trace = SessionTrace::asked();
     let inbox = Inbox::default();
     let changes = inbox.changes();
-    let mut admissions = Admissions::new(pool, inbox.changes());
-    lock(workspace).hear_edits(peer, inbox.changes());
+    let mut admissions = {
+        let mut held = lock(workspace);
+        held.hear_edits(peer, inbox.changes());
+        Admissions::new(Arc::clone(held.pool()), inbox.changes())
+    };
     if writer.is_ok() {
         let _ended = paced(&mut reading, inbox, |met, deadlines| {
             trace.met(&met, &mut *lock(log));

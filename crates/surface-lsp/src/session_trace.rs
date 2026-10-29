@@ -37,7 +37,6 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use anodized::spec;
-use gandr_surface_dispatcher::Pool;
 use quenchant_shape::shape::Maybe;
 use serde::Serialize;
 use serde_json::Value;
@@ -573,13 +572,13 @@ struct Recorded
 /// Hold a fresh connection to `trace`, a session's recorded trace.
 ///
 /// The connection serves the default workspace, its judgements and admissions
-/// running on `pool`; the replay meets each thing the trace records, in
-/// order, and holds what the connection writes after each to the `wrote`
-/// lines that follow it.
+/// running on that workspace's serial pool; the replay meets each thing the
+/// trace records, in order, and holds what the connection writes after each to
+/// the `wrote` lines that follow it.
 ///
 /// # Specification
-/// - requires: `pool` runs each job where it is submitted, as `Width::SERIAL`
-///   does, for the replay to settle where the trace did.
+/// - requires: nothing; the default workspace's pool runs each job where it is
+///   submitted, so the replay settles where the trace did.
 /// - ensures: `Ok` with the lines met when every message the replay wrote, in
 ///   order, is the one the trace's next `wrote` line holds, a `$/logTrace` held
 ///   to its message alone, and every `wrote` line was written; otherwise the
@@ -602,21 +601,13 @@ struct Recorded
 /// - witness: `tests::replay::a_replay_parting_from_its_trace_names_the_line`
 /// - witness: `tests::replay::a_session_asking_for_a_trace_writes_one_its_replay_holds`
 #[inline]
-pub fn replay<Trace>(
-    trace: Trace,
-    pool: &Pool,
-) -> Result<Replayed, Divergence>
+pub fn replay<Trace>(trace: Trace) -> Result<Replayed, Divergence>
 where
     Trace: BufRead,
 {
     let Recorded { entries, reads } = recorded(trace)?;
     let inbox = Inbox::default();
-    let mut drive = Drive::new(
-        Workspace::default(),
-        pool,
-        inbox.changes(),
-        SessionTrace::never(),
-    );
+    let mut drive = Drive::new(Workspace::default(), inbox.changes(), SessionTrace::never());
     let mut deadlines = Deadlines::default();
     let mut ended = false;
     let mut at = 0_usize;
