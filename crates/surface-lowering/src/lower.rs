@@ -28491,6 +28491,59 @@ mod tests
         );
     }
 
+    /// #3572: a call written as a family's argument, in a type a body quotes,
+    /// is the value it returns, as in a binder's type. No run stands under the
+    /// quote, and the other argument keeps its parameter's index.
+    #[test]
+    fn a_call_a_quoted_family_takes_is_the_value_it_returns_3572()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data Both(a : Type, b : Type) : Type { MkBoth : (x : a, y : b) --> Both(a, b); } \
+                 def same(a : Type) -> -F Type { return a } def pairSame(a : Type) -> -F Type { \
+                 return (Both(same(a), a)) }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let Some(&Value::Thunk(mut under)) = arena.value(body_of(lowered[2]))
+        else {
+            panic!("the body is a thunk");
+        };
+        while let Some(&Computation::Lambda(body)) = arena.computation(under) {
+            under = body;
+        }
+        let Some(&Computation::Return(returned)) = arena.computation(under)
+        else {
+            panic!("the body returns under its parameter");
+        };
+        let arguments = match arena.value(returned) {
+            Some(&Value::Quote(quoted)) => match arena.value_type(quoted) {
+                Some(&ValueType::Data { ref arguments, .. }) => arguments.clone(),
+                other => panic!("a quoted data family: {other:?}"),
+            },
+            other => panic!("a quoted family: {other:?}"),
+        };
+        let [called, passed] = *arguments
+        else {
+            panic!("two arguments");
+        };
+        assert!(
+            matches!(arena.value(called), Some(&Value::Returned(_))),
+            "`same(a)` as `Both`'s argument is the value it returns: {:?}",
+            arena.value(called)
+        );
+        assert_eq!(
+            arena.value(passed).cloned(),
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            }),
+            "`a` as `Both`'s argument stands at its parameter's index"
+        );
+    }
+
     /// #3616: a lambda in the argument of a type-valued call, in a signature's
     /// type, makes the arrow binding each variable it reads dependent, and
     /// reads that variable at its index under the lambda, as a lambda in a
