@@ -1286,6 +1286,35 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
     );
 }
 
+/// #3919: a `cong` over a lambda that states its binder's type faulted
+/// `UnboundIndex` in a type, though the same lambda unstated settles.
+#[test]
+fn a_lambda_cong_maps_with_a_stated_binder_in_a_type_3919()
+{
+    let telescope = "(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
+                     Path(Path(A, x, y), f1, f2), g : Path(A, y, z))";
+    let whisker = "cong(fn (q : Path(A, x, y)) { q then g }, a)";
+    let source = format!(
+        "def statedUnder{telescope} -> Path(Path(A, x, z), f1 then g, f2 then g) {{\n  \
+         {whisker} then here(f2 then g)\n}}\n\
+         def statedEndpoint{telescope} -> Path(Path(Path(A, x, z), f1 then g, f2 then g), \
+         {whisker}, {whisker}) {{\n  here({whisker})\n}}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["statedUnder", "statedEndpoint"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #3786: a transport through a family a parameter names, `P : A => Type`,
 /// was refused in a body and in a type when the motive named `P`, and in a
 /// body when the motive called it, `\a. P(a)`. The named motive moves through

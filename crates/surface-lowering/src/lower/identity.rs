@@ -4308,22 +4308,29 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The type a `cong` by the lambda at `lambda` maps its path's points
     /// into: the path type the lambda's body stands at, read out from under
-    /// the lambda's binder.
+    /// the binders between the body and the lambda.
+    ///
+    /// A parameter written with its type binds its argument again beneath the
+    /// lambda's binder ([`Lowerer::typed_parameter`]), so its body stands one
+    /// binder deeper than an untyped parameter's.
     ///
     /// # Specification
     /// - requires: [`Self::refuse_unsynthesised`] admitted the `cong`, so the
     ///   lambda's body, a synthesised operation, is minted before it.
     /// - ensures: `Path(A, a, b)` where the body stands at `Path(A, a, b)`
-    ///   under the lambda's binder and none of `A`, `a` and `b` names it,
-    ///   lowered out from under it.
+    ///   under the lambda's binder, and under a typed parameter's bind too, and
+    ///   none of `A`, `a` and `b` names them, lowered out from under them.
     /// - fails: the unminted absence when the body's path type is not recorded
-    ///   or names the binder; the body's own absence.
+    ///   or names a binder; the body's own absence.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda whose body composes its binder with a
-    ///   parameter maps into the composite's path type.
+    ///   parameter maps into the composite's path type, its parameter written
+    ///   with its type or without; strengthening past one binder for a typed
+    ///   parameter leaves every index one too high.
     /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
+    /// - witness: `lower::identity::tests::a_lambda_cong_maps_with_a_stated_binder_in_a_type_3919`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(codomain) => matches!(sink.arena.value_type(codomain), Some(&ValueType::Path { .. })),
         | Maybe::Absent(_) => true,
@@ -4334,9 +4341,15 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
-        let Some(&Plan::Lambda(Block { last, .. }, _)) = self.plans.get(lambda)
+        let Some(&Plan::Lambda(Block { last, .. }, binder)) = self.plans.get(lambda)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let binders = if self.typed_parameters.contains_key(&binder) {
+            Binders::from(2_u32)
+        }
+        else {
+            Binders::ONE
         };
         let body = match self.computation_at(last) {
             Maybe::Present(body) => body,
@@ -4351,7 +4364,7 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(lowered::Absent::Unminted);
         };
         let under = sink.arena.value_type_path(carrier, left, right);
-        match gandr_core_term::strengthen_value_type(sink.arena, under, Binders::ONE) {
+        match gandr_core_term::strengthen_value_type(sink.arena, under, binders) {
             Maybe::Present(outside) => Maybe::Present(outside.settle(sink.arena)),
             Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
