@@ -1787,12 +1787,14 @@ echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their r
 # truncated ones, and the variant or raw tag `variants.py` picks. Each case in
 # `.config/debug/extents.json` holds a process's memory regions, an extent a
 # formatter reads, and whether `extents.py` finds it in readable memory
-# (#3823). On a stub macOS, `.config/debug/lldb.bash` refuses with the install
-# line when Homebrew's `lldb` is absent, and runs its `lldb` on the arguments
-# when present, bounded to 8 GiB by a scope's `MemoryMax` or by `ulimit -v`
-# (#3823).
+# (#3823). Each case in `.config/debug/depths.json` holds a nested value, a
+# depth limit, and the summary `depths.py` prints with each aggregate below
+# the limit elided (#3809). On a stub macOS, `.config/debug/lldb.bash` refuses
+# with the install line when Homebrew's `lldb` is absent, and runs its `lldb`
+# on the arguments when present, bounded to 8 GiB by a scope's `MemoryMax` or
+# by `ulimit -v` (#3823).
 ["check:debug"]
-description = "The lldb formatters pick each recorded enum's variant or raw tag and read each recorded extent only inside memory, and lldb.bash refuses Xcode's lldb on macOS and bounds the one it runs"
+description = "The lldb formatters pick each recorded enum's variant or raw tag, read each recorded extent only inside memory and cut each recorded summary at its depth, and lldb.bash refuses Xcode's lldb on macOS and bounds the one it runs"
 tools.jq = "1.8.1"
 tools.python = "3.14.9"
 run = '''
@@ -1800,6 +1802,7 @@ run = '''
 set -euo pipefail
 python .config/debug/variants.py .config/debug/variants.json
 python .config/debug/extents.py .config/debug/extents.json
+python .config/debug/depths.py .config/debug/depths.json
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 mkdir -p "$scratch/bin" "$scratch/keg/bin"
@@ -1826,7 +1829,7 @@ if [[ ${ran%%$'\n'*} != '--batch -- program' ]] || ! grep -qx -e 8388608 -e 8589
   failed=1
 fi
 (( failed == 0 )) || exit 1
-echo "debug check OK: $(jq length .config/debug/variants.json) enums their variant, $(jq length .config/debug/extents.json) extents their reading, and lldb.bash its two macOS cases"
+echo "debug check OK: $(jq length .config/debug/variants.json) enums their variant, $(jq length .config/debug/extents.json) extents their reading, $(jq length .config/debug/depths.json) summaries their depth, and lldb.bash its two macOS cases"
 '''
 
 # Every `Where` of a body's `## Refactoring` names something the workspace
