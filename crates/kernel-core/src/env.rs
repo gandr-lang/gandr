@@ -2519,11 +2519,11 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a plain definition reads alike under either admission
-    ///   order, an axiom keeps its position, and two definitions of one type
-    ///   and body keep two names.
+    ///   order, an axiom keeps its position, and definitions of one type and
+    ///   body keep a name each.
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
     /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
-    /// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+    /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
     #[spec(ensures: |ret| match ret {
         ConstantName::Definition { declared, body, .. } => self.manifest.is_empty()
             && *declaration.content() == DeclarationContent::Def { declared, body },
