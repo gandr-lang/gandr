@@ -48,7 +48,7 @@ def rec unused(x : Bool) -> Bool {
 /// function calling `g` and dropping what it returns is `f`.
 def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   a => b,
-  thunk { fn (x) { run v <- g(x); f(x) } },
+  fn (x) { run v <- g(x); f(x) },
   f
 ) {
   here(f)
@@ -57,7 +57,7 @@ def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
 /// Two unread calls in a row are dropped one after the other.
 def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> Path(
   a => b,
-  thunk { fn (x) { run v <- g(x); run w <- h(x); f(x) } },
+  fn (x) { run v <- g(x); run w <- h(x); f(x) },
   f
 ) {
   here(f)
@@ -73,7 +73,7 @@ def apply(a : Type, b : Type, h : a => b, x : a) -> b {
 /// reading does not do under a binder.
 def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   a => b,
-  thunk { fn (x) { run v <- g(x); apply(a, b, f, x) } },
+  fn (x) { run v <- g(x); apply(a, b, f, x) },
   f
 ) {
   here(f)

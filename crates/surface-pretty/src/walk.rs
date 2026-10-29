@@ -1055,11 +1055,13 @@ where
 ///   type nothing states, and a bind's rest and the branches of a case what its
 ///   own position admits; a data case's motive is a type under one binder where
 ///   `written` writes it; a thunk's body is a child only where bodies are
-///   spelled; a family's arguments, a codata family's included, admit values
-///   their parameters state the type of, and a constructor's classifier is a
-///   child only where bodies are spelled and its position states no type; a
-///   model type's children are the carriers of the sorts it fixes, each a type,
-///   none for a bare one; a scope a model answers has its subject and its
+///   spelled, and there a thunk over a lambda standing as a path type's
+///   endpoint or as reflexivity's or a stay's point is its lambda, whose type
+///   nothing states; a family's arguments, a codata family's included, admit
+///   values their parameters state the type of, and a constructor's classifier
+///   is a child only where bodies are spelled and its position states no type;
+///   a model type's children are the carriers of the sorts it fixes, each a
+///   type, none for a bare one; a scope a model answers has its subject and its
 ///   manifest's carriers alone, no return or operation clause; every leaf
 ///   former has none.
 /// - provides: the one table of child positions the scan and the walk share.
@@ -1078,6 +1080,7 @@ where
 /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
 /// - witness: `tests::goldens::a_recorded_run_without_payloads_spells_its_moves_1871`
+/// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
@@ -1155,6 +1158,20 @@ where
     let comp_type = |node| Slot::of(node, Admits::CompType, Binds::NONE);
     let continues = |node| Slot::of(node, Admits::Computation(Tail::Continues), Binds::NONE);
     let ends = |node, binds| Slot::of(node, Admits::Computation(Tail::Ends), binds);
+    // A lambda standing as an endpoint or a point is the thunk the lowering
+    // mints over it, so the thunk is left out where bodies are spelled
+    // (#3767).
+    let endpoint = |node| {
+        if bodies == Bodies::Spelled
+            && let Former::Thunk(body) = source.read(node)
+            && matches!(source.read(body), Former::Lambda(_))
+        {
+            Slot::of(body, Admits::Computation(Tail::Unstated), Binds::NONE)
+        }
+        else {
+            value(node)
+        }
+    };
     let components =
         |arity: crate::former::Arity, admits: Admits, binds: Binds, label: Option<Label>| {
             (0_usize .. usize::from(arity))
@@ -1282,12 +1299,13 @@ where
             carrier,
             left,
             right,
-        } => Vec::from([value_type(carrier), value(left), value(right)]),
+        } => Vec::from([value_type(carrier), endpoint(left), endpoint(right)]),
         Former::Relation {
             relation: Relation::Flow,
             left,
             right,
-        } => Vec::from([value(left), value(right)]),
+        } => Vec::from([endpoint(left), endpoint(right)]),
+        Former::Here(child) | Former::Stay(child) => Vec::from([endpoint(child)]),
         Former::Relation {
             relation: Relation::Isomorphism | Relation::Equivalence,
             left,
@@ -1323,9 +1341,7 @@ where
         Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
-        | Former::Here(child)
         | Former::Univalence(child)
-        | Former::Stay(child)
         | Former::Back(child)
         | Former::Forward(child)
         | Former::RunType(child)
