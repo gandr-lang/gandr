@@ -1136,6 +1136,43 @@ pub fn candidate_labels<'text>(
     labels
 }
 
+/// Return whether some fresh-slot reading of `token` opens an item-position
+/// declaration under `pbg`.
+///
+/// The token's labels are resolved once, by number, and each label's fresh
+/// menu is read for a mold [`declaration_head`] accepts.
+///
+/// # Specification
+/// - requires: the token bounds identify its exact source fragment.
+/// - ensures: true exactly when one of the token's candidate labels has a
+///   fresh-slot mold that [`declaration_head`] accepts.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declaration keywords, an attribute opener, an identifier
+///   and a terminator distinguish heads from the rest; reading the declared
+///   menu instead of the fresh one, or one label of several, moves a predicted
+///   boundary.
+/// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+#[spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
+#[inline]
+#[must_use]
+pub fn heads_declaration(
+    pbg: &Pbg,
+    token: Token,
+    source: &SourceFragment<'_>,
+) -> DeclarationStart
+{
+    let slice = token.text(source);
+    let text = TokenText::from(AsRef::<str>::as_ref(&slice));
+    let labels = LabelIds::resolve(pbg, &candidate_labels(token.lexeme, text));
+    DeclarationStart::from(labels.as_slice().iter().any(|&label| {
+        pbg.label_fresh_candidates(label)
+            .iter()
+            .any(|&mold| bool::from(declaration_head(pbg, mold)))
+    }))
+}
+
 /// The reserved uppercase words (the tree-sitter grammar's `KW` / primitive
 /// type names).
 ///
@@ -2038,7 +2075,9 @@ impl<'pbg> Molder<'pbg>
             if matches!(token.lexeme, Lexeme::Space) {
                 continue;
             }
-            if depth == 0 && after_terminator && bool::from(self.heads_declaration(token, &source))
+            if depth == 0
+                && after_terminator
+                && bool::from(heads_declaration(self.pbg, token, &source))
             {
                 runs.push(TokenRun::new(
                     TokenIndex::from(start),
@@ -2060,40 +2099,6 @@ impl<'pbg> Molder<'pbg>
             TokenIndex::from(tokens.len()),
         ));
         runs
-    }
-
-    /// Return whether some fresh-slot reading of `token` opens an
-    /// item-position declaration.
-    ///
-    /// # Specification
-    /// - requires: the token bounds identify its exact source fragment.
-    /// - ensures: true exactly when one of the token's candidate labels has a
-    ///   fresh-slot mold that [`declaration_head`] accepts.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — declaration keywords, an attribute opener, an
-    ///   identifier and a terminator distinguish heads from the rest; reading
-    ///   the declared menu instead of the fresh one, or one label of several,
-    ///   moves a predicted boundary.
-    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
-    #[spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
-    fn heads_declaration<'src>(
-        &self,
-        token: Token,
-        source: &'src SourceFragment<'src>,
-    ) -> DeclarationStart
-    {
-        let slice = token.text(source);
-        let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
-        let heads = labels.as_slice().iter().any(|&label| {
-            self.pbg
-                .label_fresh_candidates(label)
-                .iter()
-                .any(|&mold| bool::from(declaration_head(self.pbg, mold)))
-        });
-        DeclarationStart::from(heads)
     }
 
     /// Mold `run` of `tokens` into a fresh form unit.

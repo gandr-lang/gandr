@@ -12,16 +12,13 @@
 //! without forgetting accepted declarations.
 
 use anodized::spec;
-use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::CompletionStatus;
 use gandr_surface_parser::DeclarationStart;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::MeldState;
 use gandr_surface_parser::Molder;
-use gandr_surface_parser::TokenText;
-use gandr_surface_parser::candidate_labels;
-use gandr_surface_parser::declaration_head;
+use gandr_surface_parser::heads_declaration;
 use gandr_surface_parser::label;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -67,16 +64,14 @@ pub fn completeness(
     state.expected().is_complete()
 }
 
-/// Whether `buffer`'s first significant token opens a declaration: whether the
-/// parser's own declaration-head predicate accepts any mold the token's fresh
-/// candidates carry.
+/// Whether `buffer`'s first significant token opens a declaration, as the
+/// parser's [`heads_declaration`] reads that token.
 ///
 /// # Specification
 /// - requires: nothing; any text is admissible.
-/// - ensures: true exactly when the buffer's first non-space token has a
-///   candidate label whose fresh molds include one the parser's
-///   declaration-head predicate accepts; false for an empty buffer and for a
-///   buffer whose first token is no declaration head.
+/// - ensures: true exactly when [`heads_declaration`] accepts the buffer's
+///   first non-space token; false for an empty buffer and for a buffer whose
+///   first token is no declaration head.
 /// - provides: the gate that reads a complete buffer as an expression or a type
 ///   rather than as declarations.
 /// - fails: never.
@@ -104,16 +99,5 @@ pub fn first_token_is_declaration(
     else {
         return DeclarationStart::from(false);
     };
-    let slice = token.text(&source);
-    let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-    DeclarationStart::from(candidate_labels(token.lexeme, text).iter().any(|&label| {
-        grammar
-            .tile_label(LabelText(<&str>::from(label)))
-            .is_some_and(|label| {
-                grammar
-                    .fresh_candidates(label)
-                    .iter()
-                    .any(|&mold| bool::from(declaration_head(grammar, mold)))
-            })
-    }))
+    heads_declaration(grammar, *token, &source)
 }
