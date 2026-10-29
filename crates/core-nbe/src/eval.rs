@@ -6491,7 +6491,7 @@ fn step_path_transport(
     // operand holds the transport on its own spine and a conversion meets its
     // call first. Otherwise a stuck path holds the transport on its spine, and
     // a canonical path waits on a stuck operand, which holds it on its own.
-    let operand = match held_endpoint(domain, value)? {
+    let operand = match held_endpoint(domain, value).map_err(EvalFault::Domain)? {
         Some(_) => domain.value(value).copied(),
         None => None,
     };
@@ -8872,7 +8872,7 @@ pub fn run_held(
     value: DomainValueId,
 ) -> Result<(Option<DomainValueId>, Fuel), EvalFault>
 {
-    let Some(computation) = held_endpoint(domain, value)?
+    let Some(computation) = held_endpoint(domain, value).map_err(EvalFault::Domain)?
     else {
         return Ok((None, fuel));
     };
@@ -8881,7 +8881,10 @@ pub fn run_held(
     machine.tasks.push(Task::Returned);
     run(core, domain, &mut machine)?;
     let read = machine.pop_value()?;
-    let read = if held_endpoint(domain, read)?.is_some() {
+    let read = if held_endpoint(domain, read)
+        .map_err(EvalFault::Domain)?
+        .is_some()
+    {
         None
     }
     else {
@@ -8897,10 +8900,12 @@ pub fn run_held(
 /// - requires: nothing; a dangling id is refused.
 /// - ensures: `Some(computation)` exactly when `value` is such a neutral over
 ///   `computation`; `None` for any other value.
-/// - provides: the test [`run_held`], a held operand's run
-///   ([`words::appended`]) and a transport held on its operand
-///   ([`step_path_transport`]) share.
-/// - fails: [`EvalFault::Domain`] for a value or neutral the arena does not
+/// - provides: the one reading of a held endpoint, which [`run_held`], a held
+///   operand's run ([`words::appended`]), a transport held on its operand
+///   ([`step_path_transport`]) and the conversion's
+///   [`crate::rules::Step::Returned`] and [`crate::rules::Step::Unreturn`]
+///   share.
+/// - fails: [`DomainFault::Dangling`] for a value or neutral the arena does not
 ///   hold.
 /// - panics: none.
 ///
@@ -8908,22 +8913,34 @@ pub fn run_held(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`run_held`].
+/// - hypothesis: L3 — an endpoint applied further reads as no computation, and
+///   two endpoints over transports whose motives close over different
+///   environments read as their computations and convert. Reading a neutral
+///   with a spine as its head's computation drops the spine.
 /// - witness: `presented::tests::a_held_call_under_a_presented_constructor_reads_as_what_it_returns`
 /// - witness: `eval::tests::a_held_endpoint_is_read_only_at_its_spine_root`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |held| held.is_none_or(|computation| domain.computation(computation).is_some())))]
+/// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
+#[spec(ensures: |ret| match domain.value(value) {
+    | None => ret == Err(DomainFault::Dangling),
+    | Some(&DomainValue::Neutral { neutral, .. }) => match domain.neutral(neutral) {
+        | None => ret == Err(DomainFault::Dangling),
+        | Some(node) => match node.head() {
+            | NeutralHead::Returned(computation) if node.spine().is_empty() => ret == Ok(Some(computation)),
+            | _ => ret == Ok(None),
+        },
+    },
+    | Some(_) => ret == Ok(None),
+})]
 pub fn held_endpoint(
     domain: &DomainArena,
     value: DomainValueId,
-) -> Result<Option<DomainCompId>, EvalFault>
+) -> Result<Option<DomainCompId>, DomainFault>
 {
-    let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(value)
+    let DomainValue::Neutral { neutral, .. } = *domain.value(value).ok_or(DomainFault::Dangling)?
     else {
         return Ok(None);
     };
-    let node = domain
-        .neutral(neutral)
-        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let node = domain.neutral(neutral).ok_or(DomainFault::Dangling)?;
     Ok(match node.head() {
         NeutralHead::Returned(computation) if node.spine().is_empty() => Some(computation),
         NeutralHead::Variable { .. }

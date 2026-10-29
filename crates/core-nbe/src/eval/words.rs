@@ -1357,7 +1357,8 @@ pub(super) fn appended(
             // what it returns, as the kernel runs a returned operand first:
             // its computation runs on through its definitions, and what it
             // returns moves along the path ([`ran`]).
-            let Some(computation) = super::held_endpoint(domain, value)?
+            let Some(computation) =
+                super::held_endpoint(domain, value).map_err(EvalFault::Domain)?
             else {
                 return Ok(Moved::Unmoved);
             };
@@ -1407,7 +1408,10 @@ pub(super) fn ran(
     read: DomainValueId,
 ) -> Result<(), EvalFault>
 {
-    if super::held_endpoint(domain, read)?.is_none() {
+    if super::held_endpoint(domain, read)
+        .map_err(EvalFault::Domain)?
+        .is_none()
+    {
         machine.tasks.push(Task::PathTransport(motive));
         machine.values.extend([path, read]);
         return Ok(());
