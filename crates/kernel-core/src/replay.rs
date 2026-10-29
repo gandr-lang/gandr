@@ -3079,8 +3079,6 @@ where
             );
             if crate::element_identity::binder_use(
                 self.arena,
-                &mut self.table,
-                &mut self.memo,
                 crate::element_identity::Family::Type(probe),
             ) == crate::element_identity::BinderUse::Read
             {
@@ -3202,7 +3200,7 @@ where
             return Linked::Other;
         };
         let ignored = |run: &mut Self, family| {
-            crate::element_identity::binder_use(run.arena, &mut run.table, &mut run.memo, family)
+            crate::element_identity::binder_use(run.arena, family)
                 == crate::element_identity::BinderUse::Ignored
         };
         if ignored(self, crate::element_identity::Family::Type(domain))
@@ -7682,12 +7680,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         term: crate::element_identity::ElementTransport,
     ) -> Result<crate::element_identity::ElementTransport, Stop>
     {
-        let Some(held) = crate::words::held_operand(
-            self.arena,
-            (&mut self.table, &mut self.memo),
-            self.evaluator,
-            term,
-        )
+        let Some(held) = crate::words::held_operand(self.arena, self.evaluator, term)
         else {
             return Ok(term);
         };
@@ -7787,12 +7780,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 &Frozen::default(),
                 ConversionSide::Left,
             )
-            && let crate::path_universe::Reduction::Reduced(reduct) = crate::words::appended(
-                self.arena,
-                (&mut self.table, &mut self.memo),
-                self.evaluator,
-                term,
-            )
+            && let crate::path_universe::Reduction::Reduced(reduct) =
+                crate::words::appended(self.arena, self.evaluator, term)
         {
             return Ok(crate::path_universe::Reduction::Reduced(reduct));
         }

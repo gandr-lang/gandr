@@ -535,23 +535,19 @@ fn concatenated(
     Some(Action::Through(ref read)) => !read.leaves.is_empty(),
     Some(Action::Fixed) | None => arena.value(endpoint).is_some(),
 })]
-fn action<M>(
-    arena: &mut TermArena,
-    table: &mut ContentTable,
-    memo: &mut M,
+fn action(
+    arena: &TermArena,
     endpoint: ValueId,
 ) -> Option<Action>
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     if matches!(arena.value(endpoint), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
     {
         return Some(Action::Moving);
     }
-    if binder_use(arena, table, memo, Family::Value(endpoint)) == BinderUse::Ignored {
+    if binder_use(arena, Family::Value(endpoint)) == BinderUse::Ignored {
         return Some(Action::Fixed);
     }
-    routes(arena, table, memo, endpoint).map(Action::Through)
+    routes(arena, endpoint).map(Action::Through)
 }
 
 /// The calls an endpoint runs the family's binder through, and a route per
@@ -582,14 +578,10 @@ where
 /// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|read| !read.leaves.is_empty()
     && read.leaves.iter().all(|&(node, position)| read.nodes.get(node).is_some_and(|node| position < node.arguments.len()))))]
-fn routes<M>(
-    arena: &mut TermArena,
-    table: &mut ContentTable,
-    memo: &mut M,
+fn routes(
+    arena: &TermArena,
     endpoint: ValueId,
 ) -> Option<Routes>
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let Some(&Value::Returned(call)) = arena.value(endpoint)
     else {
@@ -631,7 +623,7 @@ where
         // The arguments last first, so the leftmost is read first.
         let mut moves = false;
         for (position, &argument) in arguments.iter().enumerate().rev() {
-            if binder_use(arena, table, memo, Family::Value(argument)) == BinderUse::Ignored {
+            if binder_use(arena, Family::Value(argument)) == BinderUse::Ignored {
                 continue;
             }
             moves = true;
@@ -1076,7 +1068,7 @@ where
     {
         return Some(arena.computation_return(letter));
     }
-    if binder_use(arena, table, memo, Family::Value(answer)) == BinderUse::Ignored {
+    if binder_use(arena, Family::Value(answer)) == BinderUse::Ignored {
         return Some(arena.computation_return(rest));
     }
     None
@@ -1368,7 +1360,7 @@ where
     // to, as the evaluator's append reads it before a held path would run:
     // `tr(P, q, ε) ⇝ return q`.
     if head(arena, presentations, value) == Head::Empty
-        && let Reduction::Reduced(reduct) = appended(arena, (table, memo), unfoldings, term)
+        && let Reduction::Reduced(reduct) = appended(arena, unfoldings, term)
     {
         return Reduction::Reduced(reduct);
     }
@@ -1396,7 +1388,7 @@ where
     let (tag, words, rest) = match head(arena, presentations, path) {
         Head::Empty => (FreeCells::nil(), None, path),
         Head::Letter { tag, words, rest } => (tag, Some(words), rest),
-        Head::Other => return appended(arena, (table, memo), unfoldings, term),
+        Head::Other => return appended(arena, unfoldings, term),
     };
     if words.is_some() && head(arena, presentations, rest) != Head::Empty {
         let Some(&Value::Constructor { datatype, .. }) = arena.value(path)
@@ -1430,13 +1422,10 @@ where
     else {
         return Reduction::Stuck;
     };
-    if binder_use(arena, table, memo, Family::Type(carrier)) != BinderUse::Ignored {
+    if binder_use(arena, Family::Type(carrier)) != BinderUse::Ignored {
         return Reduction::Stuck;
     }
-    let (Some(left_action), Some(right_action)) = (
-        action(arena, table, memo, left),
-        action(arena, table, memo, right),
-    )
+    let (Some(left_action), Some(right_action)) = (action(arena, left), action(arena, right))
     else {
         return Reduction::Stuck;
     };
@@ -1456,7 +1445,7 @@ where
             .and_then(|before| concatenated(arena, presentations, (before, right_image)));
         return match spliced {
             Some(moved) => Reduction::Reduced(arena.computation_return(moved)),
-            None => appended(arena, (table, memo), unfoldings, term),
+            None => appended(arena, unfoldings, term),
         };
     }
     let Some(at) = point(arena, presentations, words)
@@ -1580,21 +1569,18 @@ where
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 })]
-pub fn appended<M>(
+pub fn appended(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
     unfoldings: &Unfoldings,
     term: ElementTransport,
 ) -> Reduction
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let ElementTransport {
         motive,
         path,
         value,
     } = term;
-    if singleton(arena, (table, memo), motive).is_none() {
+    if singleton(arena, motive).is_none() {
         return Reduction::Stuck;
     }
     match head(arena, unfoldings.presentations(), value) {
@@ -1638,13 +1624,10 @@ where
 /// - hypothesis: L3 — as [`appended`], whose rows fire only in this family.
 /// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
 #[spec(ensures: |ret| ret.is_none_or(|left| arena.value(left).is_some()))]
-fn singleton<M>(
-    arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+fn singleton(
+    arena: &TermArena,
     motive: ValueTypeId,
 ) -> Option<ValueId>
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let Some(&ValueType::Path {
         domain: carrier,
@@ -1654,13 +1637,10 @@ where
     else {
         return None;
     };
-    if binder_use(arena, table, memo, Family::Type(carrier)) != BinderUse::Ignored {
+    if binder_use(arena, Family::Type(carrier)) != BinderUse::Ignored {
         return None;
     }
-    let (Some(Action::Fixed), Some(Action::Moving)) = (
-        action(arena, table, memo, left),
-        action(arena, table, memo, right),
-    )
+    let (Some(Action::Fixed), Some(Action::Moving)) = (action(arena, left), action(arena, right))
     else {
         return None;
     };
@@ -1687,14 +1667,11 @@ where
 ///   held, the replay would refuse what the checker accepted.
 /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| ret.is_none_or(|held| arena.computation(held).is_some()))]
-pub fn held_operand<M>(
-    arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+pub fn held_operand(
+    arena: &TermArena,
     unfoldings: &Unfoldings,
     term: ElementTransport,
 ) -> Option<ComputationId>
-where
-    M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let Some(&Value::Returned(operand)) = arena.value(term.value)
     else {
@@ -1705,5 +1682,5 @@ where
     {
         return None;
     }
-    singleton(arena, (table, memo), term.motive).map(|_left| operand)
+    singleton(arena, term.motive).map(|_left| operand)
 }

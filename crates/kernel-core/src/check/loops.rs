@@ -86,7 +86,6 @@ use crate::replay::ReplayDecline;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
-use crate::rewrite::substitute_comp_type;
 use crate::rewrite::substitute_computation_at;
 use crate::rewrite::substitute_value_type;
 
@@ -677,38 +676,23 @@ fn presented_set(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`BinderUse::Ignored`] only when instantiating `motive` at a
-///   variable past its reach leaves no variable at or past that reach, as
+/// - ensures: [`BinderUse::Ignored`] exactly when the support `motive` carries
+///   lists its indices and zero is not among them, as
 ///   [`crate::element_identity::binder_use`] decides for a value type; a
-///   saturated reach answers [`BinderUse::Read`].
+///   support reading every binder answers [`BinderUse::Read`].
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the decision is the reach the instantiation leaves, so
-///   a predicate would instantiate the motive again.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the collapse's motive `F Circle` ignores its binder and
 ///   owes no loop, while `F Path(Circle, x, x)` reads it and owes one.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+#[spec(captures: closed = u32::from(arena.comp_type_support(motive).depth()) == 0,
+    ensures: |ret| !closed || ret == BinderUse::Ignored)]
 fn binder_use(
-    arena: &mut TermArena,
+    arena: &TermArena,
     motive: CompTypeId,
 ) -> BinderUse
 {
-    let before = u32::from(arena.comp_type_support(motive).depth());
-    if before == 0 {
-        return BinderUse::Ignored;
-    }
-    if before == u32::MAX {
-        return BinderUse::Read;
-    }
-    let fresh = arena.value_variable(DeBruijnIndex::from(before));
-    let mut table = ContentTable::default();
-    let instantiated = substitute_comp_type(arena, &mut table, &mut NullMemo, motive, fresh);
-    if u32::from(arena.comp_type_support(instantiated).depth()) <= before {
-        BinderUse::Ignored
-    }
-    else {
-        BinderUse::Read
-    }
+    crate::support::innermost(arena.comp_type_support(motive))
 }
