@@ -244,6 +244,9 @@ stack_link() {
 # for this process (`gandr-scratch-<pid>.`), and the caller's exit trap runs
 # `drop_scratch`, so a failure anywhere removes it; a scratch a hard kill
 # leaves, its process gone, is `wt:sweep`'s.
+# Every commit a replay writes is signed (`--gpg-sign`, #3745): a seat signs
+# its commits with `-S`, not by configuration, so a rebase without the flag
+# writes unsigned commits that the repository's rule refuses to queue.
 restack() {
   local stack=$1 heads head below fork merged held top scratch status=0 moved=() pushes=() leases=() old new
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
@@ -273,7 +276,7 @@ restack() {
         else
           echo "$head: $(git -C "$scratch" rev-list --count "$held..$new") commits replayed from $below's earlier head ${held::12} onto its current one"
           git -C "$scratch" checkout --quiet --detach "$new"
-          if ! git -C "$scratch" rebase --quiet --onto "pr-stack/$below" "$held" > /dev/null; then
+          if ! git -C "$scratch" rebase --quiet --gpg-sign --onto "pr-stack/$below" "$held" > /dev/null; then
             echo "the replay of $head onto $below conflicts ($(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)); rebase $head onto $below by hand and land again" >&2
             git -C "$scratch" rebase --abort || true
             status=1
@@ -288,7 +291,7 @@ restack() {
     below=$head
   done
   git -C "$scratch" checkout --quiet --detach "$top"
-  if (( status == 0 )) && ! git -C "$scratch" rebase --quiet --update-refs --onto "origin/$trunk" "$fork" > /dev/null; then
+  if (( status == 0 )) && ! git -C "$scratch" rebase --quiet --gpg-sign --update-refs --onto "origin/$trunk" "$fork" > /dev/null; then
     local stopped conflicted=${heads[-1]} files
     stopped=$(git -C "$scratch" rev-parse --verify --quiet REBASE_HEAD) || stopped=
     for head in "${heads[@]}"; do
