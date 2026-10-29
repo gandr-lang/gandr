@@ -1173,6 +1173,14 @@ pub enum CheckRefusal
         /// The binder, by its position in the signature.
         binder: gandr_kernel_term::StageBinder,
     },
+    /// A transport moves a variable at a stage along a path whose carrier is
+    /// not a set, so the stage cannot cross: the kernel's
+    /// `KernelError::StageNotCarried` states the reason and a counterexample.
+    StageNotCarried
+    {
+        /// The transport.
+        at: ComputationId,
+    },
     /// A session action the session type of its endpoint does not admit.
     SessionMismatch
     {
@@ -1519,7 +1527,7 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::StageNotCarried { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
         | Self::TacticRefused { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } | Self::FootprintsOverlap { .. }
@@ -1581,6 +1589,7 @@ impl CheckRefusal
             | Self::CrossBlockReference { .. }
             | Self::StageNotBelow { .. }
             | Self::StagesDisagree { .. }
+            | Self::StageNotCarried { .. }
             | Self::UnenclosedRun { .. }
             | Self::ImplicitUnsolved { .. }
             | Self::ModelUnanswered { .. }
@@ -1832,6 +1841,7 @@ impl CheckRefusal
             | Self::CrossBlockReference { .. }
             | Self::StageNotBelow { .. }
             | Self::StagesDisagree { .. }
+            | Self::StageNotCarried { .. }
             | Self::UnenclosedRun { .. }
             | Self::ImplicitUnsolved { .. }
             | Self::ModelUnanswered { .. }

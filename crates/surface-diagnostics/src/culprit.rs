@@ -428,6 +428,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::CrossBlockReference { .. } => "names a later declaration",
         CheckRefusal::StageNotBelow { .. } => "not below the stage its recursion wants",
         CheckRefusal::StagesDisagree { .. } => "a stage the call's earlier arguments exclude",
+        CheckRefusal::StageNotCarried { .. } => "a path whose type is not a set",
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => "an action the endpoint's state does not admit",
             ProtocolDefect::Label => "a label the endpoint's state does not offer",

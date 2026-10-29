@@ -1,0 +1,22 @@
+error[StageNotCarried]: the transport moves a value of the recursion along a path whose type is not a set, so the value loses its stage
+   ╭▸ corpus/ledger/diagnostics/StageNotCarried.gandr:16:34
+   │
+13 │    def rec alongLoop(n : Nat, q : Path(Circle, Base, Base)) -> Nat {
+   │    │                 ┬        ─ checked against `Path(Circle, Base, Base) -> -F Nat`; while checking the body of this function; binds q : Path(Circle, Base, Base)
+   │    │                 │
+   │ ┌──┘                 checked against `Nat -> Path(Circle, Base, Base) -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ │
+14 │ │┌   case n {
+15 │ ││     Zero => Zero,
+16 │ ││     Succ(m) => Succ(alongLoop[<](transport(\x. Nat, q, m), q))
+   │ ││                ┬────┬────────────┯━━━━━━━━━━━━━━━━━━━━━━━─────
+   │ ││                │    │            │
+   │ ││                │    │            a path whose type is not a set
+   │ ││                │    checked against `Nat`; while checking the argument of this application
+   │ ││                checked against `-F Nat`; while finishing the type of this
+17 │ ││   }
+   │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds m : Nat
+18 │ │  }
+   │ └──┘ checked against `(Nat, Path(Circle, Base, Base)) => Nat`; while checking the body of this function; binds alongLoop : (Nat, Path(Circle, Base, Base)) => Nat
+   │
+   ╰ note: `alongLoop` is refused with StageNotCarried, as its expectation states

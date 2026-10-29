@@ -19,8 +19,11 @@
 //! it unchanged. A typed run keeps each typing inside the refined term as its
 //! written term's, read in the written context ([`Written`]).
 //!
-//! A binder of a recursion's staged argument is not generalised. The bridge
-//! crosses no staged type, so no transport's motive names one (#3631).
+//! A binder of a recursion's staged argument moves by its own transport inside
+//! the thunk. No motive names its stage. That transport keeps the stage only
+//! along a path in a set ([`crate::recursion::carried_stage`]). Along another
+//! path, the arm keeps the staged binder as written ([`moving`]). A case on a
+//! variable keeps a staged binder as written too.
 //!
 //! # References
 //!
@@ -86,8 +89,8 @@ pub struct Refined
     /// Each written node the refinement rewrote, beside its rewrite, in the
     /// order the refinement made them.
     pub carried: Vec<Carried>,
-    /// Each lambda the refinement minted for a generalised binder, beside the
-    /// place of the binder it stands for.
+    /// Each lambda or bind the refinement minted for a generalised binder,
+    /// beside the place of the binder it stands for.
     pub generalising: Vec<(ComputationId, BinderDepth)>,
     /// Each other node the refinement minted, which stands for no written
     /// node: a thunk, a transport, a bind, a force, an application, a
@@ -108,8 +111,8 @@ pub enum Standing
 }
 
 /// What reads a refined term back as written: the written node of each
-/// rewrite, the binder each generalising lambda stands for, and each such
-/// binder open now.
+/// rewrite, the binder each generalising lambda or bind stands for, and each
+/// such binder open now.
 ///
 /// A refined term binds a copy of each generalised binder, so a term inside it
 /// is judged under more binders than its written context holds. A typing read
@@ -123,8 +126,8 @@ pub struct Written
     /// Each computation a refinement rewrote, beside the written computation
     /// it stands for.
     computations: BTreeMap<ComputationId, ComputationId>,
-    /// Each lambda a refinement minted for a generalised binder, beside the
-    /// place of the binder it stands for.
+    /// Each lambda or bind a refinement minted for a generalised binder, beside
+    /// the place of the binder it stands for.
     generalising: BTreeMap<ComputationId, BinderDepth>,
     /// Each other node a refinement minted.
     minted: alloc::collections::BTreeSet<TermNode>,
@@ -253,28 +256,28 @@ impl Written
         self.computations.get(&at).copied().unwrap_or(at)
     }
 
-    /// Open the binder of `lambda` at `place`.
+    /// Open the binder of the lambda or bind `minted` at `place`.
     ///
     /// # Specification
     /// - requires: `place` is the depth of the context the binder extends.
-    /// - ensures: no binder at or past `place` stands open. When `lambda` is a
-    ///   generalising lambda, its binder stands at `place` for the binder it
-    ///   copies.
+    /// - ensures: no binder at or past `place` stands open. When `minted` is a
+    ///   generalising lambda or bind, its binder stands at `place` for the
+    ///   binder it copies.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record`].
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: self.standing.last().is_none_or(|&(open, _)| open <= place)
-        && (self.generalising.contains_key(&lambda) == self.standing.last().is_some_and(|&(open, _)| open == place)))]
+        && (self.generalising.contains_key(&minted) == self.standing.last().is_some_and(|&(open, _)| open == place)))]
     pub fn open(
         &mut self,
-        lambda: ComputationId,
+        minted: ComputationId,
         place: BinderDepth,
     )
     {
         self.close(place);
-        if let Some(&stands_for) = self.generalising.get(&lambda) {
+        if let Some(&stands_for) = self.generalising.get(&minted) {
             self.standing.push((place, stands_for));
         }
     }
@@ -452,18 +455,29 @@ struct Solved
 {
     /// The depth of the context the step was taken in.
     depth: BinderDepth,
+    /// The depth the thunk is formed at: past the equation's reversal when one
+    /// is bound, the step's depth otherwise.
+    base: BinderDepth,
     /// The side the variable stood on.
     side: Side,
     /// The equation's place.
     equation: BinderDepth,
     /// The variable's place.
     variable: BinderDepth,
+    /// The other side, read in the context before the equation.
+    solution: ValueId,
     /// The equation's carrier, read in the context before the equation.
     carrier: ValueTypeId,
-    /// The transport's motive, under one binder past the step's base.
+    /// The transport's motive, under one binder past the base.
     motive: ValueTypeId,
-    /// The places of the binders the thunk abstracts, ascending.
+    /// The places of the binders the thunk abstracts or binds, ascending.
     generalised: Vec<BinderDepth>,
+    /// The places among `generalised` whose types are staged, ascending: the
+    /// thunk binds each to its transport from the variable to the solution.
+    staged: Vec<BinderDepth>,
+    /// Each staged binder's family, its type's base, under one binder past
+    /// the depth its transport stands at.
+    forward: Vec<ValueTypeId>,
 }
 
 /// The arm `arm` of an indexed family's case, refined by the index equations
@@ -478,11 +492,13 @@ struct Solved
 ///   goal or a binder the body reads names the variable. The refined arm binds
 ///   what `arm` binds. Its body transports a thunk of the body, the variable
 ///   replaced by the other side, along the equation, and applies it to the
-///   binders it abstracts. The step repeats for the equations left. The refined
-///   arm carries each written lambda to its copy, and names each lambda of a
-///   thunk beside the binder it stands for. [`unrefined::Absent::Unsolved`]
-///   when no equation qualifies, and [`unrefined::Absent::Unshaped`] for a
-///   family indexed by nothing or an arm or a type of another form.
+///   binders it abstracts. Inside the thunk, each staged binder among them is
+///   bound to its own transport, over a set alone ([`moving`]). The step
+///   repeats for the equations left. The refined arm carries each written
+///   lambda to its copy, and names each lambda or bind of a thunk beside the
+///   binder it stands for. [`unrefined::Absent::Unsolved`] when no equation
+///   qualifies, and [`unrefined::Absent::Unshaped`] for a family indexed by
+///   nothing or an arm or a type of another form.
 /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold,
 ///   and [`CheckRefusal::MachineInvariant`] for a binder count past any index.
 /// - panics: none.
@@ -555,7 +571,7 @@ pub fn refined_arm(
             .collect(),
     };
     let (mut steps, mut carried) = (Vec::new(), Vec::new());
-    while let Maybe::Present((solved, next)) = step(context.arena_mut(), &problem, &mut carried)? {
+    while let Maybe::Present((solved, next)) = step(context, &problem, &mut carried)? {
         steps.push(solved);
         problem = next;
     }
@@ -594,9 +610,9 @@ pub fn refined_arm(
 ///   reading it for `D`, applied to `D`. The refined case carries each arm's
 ///   written lambda to its copy, and names each lambda that binds `d′` beside
 ///   the binder it stands for. [`unrefined::Absent::Unsolved`] when no arm
-///   reads such a binder, and [`unrefined::Absent::Unshaped`] for any other
-///   term, a scrutinee that is no variable an open binder holds, or an arm of
-///   another form.
+///   reads such a binder or one such binder is staged, and
+///   [`unrefined::Absent::Unshaped`] for any other term, a scrutinee that is no
+///   variable an open binder holds, or an arm of another form.
 /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold,
 ///   and [`CheckRefusal::MachineInvariant`] for a binder count past any index.
 /// - panics: none.
@@ -795,8 +811,9 @@ fn open_binders(context: &CheckingContext<'_>) -> Result<Vec<ValueTypeId>, Check
 /// - ensures: the first unsolved equation whose right side, else left side, is
 ///   a variable free nowhere in the other side, which the body does not name,
 ///   and whose variable the goal or an abstracted binder needs, solved; the
-///   problem inside the thunk past it. [`unrefined::Absent::Unsolved`] when no
-///   equation qualifies.
+///   problem inside the thunk past it. A staged binder among those abstracted
+///   moves along the equation as [`moving`] allows, else the equation is left.
+///   [`unrefined::Absent::Unsolved`] when no equation qualifies.
 /// - fails: as [`refined_arm`].
 /// - panics: none.
 ///
@@ -805,14 +822,16 @@ fn open_binders(context: &CheckingContext<'_>) -> Result<Vec<ValueTypeId>, Check
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an arm whose goal reads the scrutinee's index and an arm
-///   that reads a binder at that index each take one step.
+///   that reads a binder at that index each take one step; an arm whose staged
+///   field reads the solved variable takes one step on either side.
 /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
     | Maybe::Present((ref solved, _)) => problem.equations.contains(&solved.equation) && solved.variable < solved.equation,
     | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
 }))]
 fn step(
-    arena: &mut CoreArena,
+    context: &mut CheckingContext<'_>,
     problem: &Problem,
     carried: &mut Vec<Carried>,
 ) -> Result<Maybe<(Solved, Problem), unrefined::Absent>, CheckRefusal>
@@ -821,6 +840,7 @@ fn step(
     let body = CoreNode::Term(TermNode::Computation(problem.body));
     let goal = CoreNode::Type(TypeNode::Computation(problem.goal));
     for &equation in &problem.equations {
+        let arena = context.arena();
         if reads(arena, body, index_at(depth, equation)?)? == Reading::Reads {
             continue;
         }
@@ -864,28 +884,123 @@ fn step(
         if reads_any(arena, &problem.binders, &generalised, equation)? == Reading::Reads {
             continue;
         }
-        // A stage is the kernel's own: no motive it forms names one.
-        if staging(arena, &problem.binders, &generalised)? == Staging::Staged {
+        generalised.sort_unstable();
+        let mut staged = Vec::new();
+        for &place in &generalised {
+            if staging(arena, &problem.binders, &[place])? == Staging::Staged {
+                staged.push(place);
+            }
+        }
+        if moving(context, problem, carrier, (&generalised, &staged))? == Moving::Stays {
             continue;
         }
-        generalised.sort_unstable();
-        let base = match side {
-            Side::Scrutinee => depth,
-            Side::Stated => depth_past(depth, 1)?,
+        let arena = context.arena_mut();
+        // A reversal of the equation stands at the step's depth when the
+        // thunk's path or a staged binder's path runs against it.
+        let base = if side == Side::Stated || !staged.is_empty() {
+            depth_past(depth, 1)?
+        }
+        else {
+            depth
         };
+        let unstaged: Vec<BinderDepth> = generalised
+            .iter()
+            .copied()
+            .filter(|place| staged.binary_search(place).is_err())
+            .collect();
+        let mut forward = Vec::with_capacity(staged.len());
+        for (position, &place) in generalised.iter().enumerate() {
+            if staged.binary_search(&place).is_ok() {
+                let at = depth_past(base, position)?;
+                forward.push(family(arena, &problem.binders, (place, at), variable)?);
+            }
+        }
         let solved = Solved {
             depth,
+            base,
             side,
             equation,
             variable,
+            solution,
             carrier,
-            motive: motive(arena, problem, (base, variable), &generalised)?,
+            motive: motive(arena, problem, (base, variable), &unstaged)?,
             generalised,
+            staged,
+            forward,
         };
-        let next = inside(arena, problem, &solved, (solution, equation), carried)?;
+        let next = inside(arena, problem, &solved, carried)?;
         return Ok(Maybe::Present((solved, next)));
     }
     Ok(Maybe::Absent(unrefined::Absent::Unsolved))
+}
+
+/// Whether the staged binders of a step move along its equation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Moving
+{
+    /// Each moves: the thunk binds it to its transport, which keeps its stage.
+    Moves,
+    /// One stays: the arm is checked as written.
+    Stays,
+}
+
+/// Whether the staged binders `staged` among `generalised` move along an
+/// equation whose carrier is `carrier`.
+///
+/// A staged binder moves by its own transport. That transport keeps the stage
+/// only across a set ([`crate::recursion::carried_stage`]). So the binder moves
+/// alone. No motive names it. Its type names no other binder that moves.
+///
+/// # Specification
+/// - requires: `staged` holds the places among `generalised` whose types are
+///   staged, both ascending.
+/// - ensures: [`Moving::Moves`] when `staged` is empty, or when `carrier` is a
+///   set as [`crate::respect::sethood`] reads it and each staged binder's type
+///   names no earlier place of `generalised`, and neither the goal nor the type
+///   of a place of `generalised` names it; [`Moving::Stays`] otherwise.
+/// - fails: as [`reads`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a staged field over a set moves and its arm checks; a
+///   staged binder over the circle stays, and its arm checks as written.
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
+/// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
+#[spec(ensures: |ret| !staged.is_empty() || ret == Ok(Moving::Moves))]
+fn moving(
+    context: &mut CheckingContext<'_>,
+    problem: &Problem,
+    carrier: ValueTypeId,
+    (generalised, staged): (&[BinderDepth], &[BinderDepth]),
+) -> Result<Moving, CheckRefusal>
+{
+    if staged.is_empty() {
+        return Ok(Moving::Moves);
+    }
+    let depth = BinderDepth::from(problem.binders.len());
+    let goal = CoreNode::Type(TypeNode::Computation(problem.goal));
+    let arena = context.arena();
+    for &place in staged {
+        if reads(arena, goal, index_at(depth, place)?)? == Reading::Reads
+            || reads_any(arena, &problem.binders, generalised, place)? == Reading::Reads
+        {
+            return Ok(Moving::Stays);
+        }
+        for &earlier in generalised.iter().take_while(|&&earlier| earlier < place) {
+            if reads_any(arena, &problem.binders, &[place], earlier)? == Reading::Reads {
+                return Ok(Moving::Stays);
+            }
+        }
+    }
+    if crate::respect::sethood(context, carrier) == crate::respect::Sethood::Set {
+        Ok(Moving::Moves)
+    }
+    else {
+        Ok(Moving::Stays)
+    }
 }
 
 /// An index equation read as a solution.
@@ -1179,10 +1294,10 @@ fn abstracted(
 /// the solution, and the body and goal with the variable replaced by it.
 ///
 /// # Specification
-/// - requires: `solved` is a step of `problem`, `solution` read in the context
-///   before `equation`.
+/// - requires: `solved` is a step of `problem`.
 /// - ensures: a problem whose equations are `problem`'s but the one solved and
-///   those abstracted. `carried` gains each body node the rewrite changed.
+///   those abstracted, its binders past the equation's reversal when one is
+///   bound. `carried` gains each body node the rewrite changed.
 /// - fails: as [`refined_arm`].
 /// - panics: none.
 ///
@@ -1197,19 +1312,17 @@ fn inside(
     arena: &mut CoreArena,
     problem: &Problem,
     solved: &Solved,
-    (solution, equation): (ValueId, BinderDepth),
     carried: &mut Vec<Carried>,
 ) -> Result<Problem, CheckRefusal>
 {
-    let depth = solved.depth;
+    let (depth, solution, equation) = (solved.depth, solved.solution, solved.equation);
     let mut binders = problem.binders.clone();
-    if solved.side == Side::Stated {
+    if solved.base != depth {
         let carrier = carried_value_type(arena, solved.carrier, (equation, depth), &[])?;
-        let left = carried_value(arena, solution, (equation, depth), &[])?;
-        let right = variable_at(arena, depth, solved.variable)?;
-        binders.push(arena.value_type_path(carrier, left, right));
+        let (left, right) = sides(arena, solved, depth)?;
+        binders.push(arena.value_type_path(carrier, right, left));
     }
-    let base = BinderDepth::from(binders.len());
+    let base = solved.base;
     for (position, &place) in solved.generalised.iter().enumerate() {
         let at = depth_past(base, position)?;
         binders.push(solved_binder(
@@ -1280,10 +1393,7 @@ fn solved_binder(
         .binders
         .get(usize::from(place))
         .ok_or(CheckRefusal::MachineInvariant)?;
-    let base = match solved.side {
-        Side::Scrutinee => solved.depth,
-        Side::Stated => depth_past(solved.depth, 1)?,
-    };
+    let base = solved.base;
     let mut replaced = Vec::with_capacity(solved.generalised.len().saturating_add(1));
     replaced.push(Replaced {
         place: solved.variable,
@@ -1301,16 +1411,108 @@ fn solved_binder(
     carried_value_type(arena, ty, (place, at), &replaced)
 }
 
+/// The family a staged binder at `place` moves along: its type's base, read
+/// under one binder past `at`, with `variable` read as that binder.
+///
+/// # Specification
+/// - requires: `at` is past `variable`, and the type reads no binder that the
+///   step abstracts.
+/// - ensures: the base of the binder's type with the variable abstracted.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a staged binder moves along its family on either side,
+///   and the arm checks in both checkers.
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
+#[spec(
+    requires: variable < at,
+    ensures: |ret| ret.as_ref().map_or(true, |&ty| !matches!(arena.value_type(ty), Some(&ValueType::Staged { .. }))),
+)]
+fn family(
+    arena: &mut CoreArena,
+    binders: &[ValueTypeId],
+    (place, at): (BinderDepth, BinderDepth),
+    variable: BinderDepth,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let &ty = binders
+        .get(usize::from(place))
+        .ok_or(CheckRefusal::MachineInvariant)?;
+    let ty = match arena.value_type(ty) {
+        Some(&ValueType::Staged { base, .. }) => base,
+        Some(_) => ty,
+        None => {
+            return Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Type(TypeNode::Value(ty)),
+            });
+        },
+    };
+    let under = depth_past(at, 1)?;
+    let replaced = [Replaced {
+        place: variable,
+        by: variable_at(arena, under, at)?,
+    }];
+    carried_value_type(arena, ty, (place, under), &replaced)
+}
+
+/// The equation's two sides, read at depth `at`: the variable and the
+/// solution, in the order the equation states them.
+///
+/// # Specification
+/// - requires: `at` is at or past the step's depth.
+/// - ensures: `(left, right)` of the equation's path type, each read at `at`.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each side's reversal types the binder its staged field
+///   moves along, and the arm checks.
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
+#[spec(
+    requires: solved.depth <= at,
+    ensures: |ret| ret.as_ref().map_or(true, |&(left, right)| matches!(
+        arena.value(if solved.side == Side::Stated { left } else { right }),
+        Some(&Value::Variable { .. })
+    )),
+)]
+fn sides(
+    arena: &mut CoreArena,
+    solved: &Solved,
+    at: BinderDepth,
+) -> Result<(ValueId, ValueId), CheckRefusal>
+{
+    let variable = variable_at(arena, at, solved.variable)?;
+    let solution = carried_value(arena, solved.solution, (solved.equation, at), &[])?;
+    Ok(match solved.side {
+        Side::Stated => (variable, solution),
+        Side::Scrutinee => (solution, variable),
+    })
+}
+
 /// The refinement `solved` writes around `inner`, the body inside its thunk:
 /// the transport of the thunk along the equation, forced and applied to the
 /// binders it abstracts, read at the step's depth.
 ///
+/// The thunk's path runs from the solution to the variable, and a staged
+/// binder's path from the variable to the solution. Where one of them runs
+/// against the equation, the reversal of the equation is bound first: `here`
+/// at the left side, carried along the equation in the family `λz. Path(I, z,
+/// left)`.
+///
 /// # Specification
 /// - requires: `inner` is read inside the thunk of `solved`.
 /// - ensures: a bind of the transport, past the reversal of the equation when
-///   the variable stood on the stated side. Each lambda of the thunk joins
-///   `generalising` beside the place of the binder it stands for, and each
-///   other node it mints joins `minted`.
+///   `solved` binds one. Inside the thunk, each staged binder is bound to its
+///   transport and each other abstracted binder by a lambda. Each such lambda
+///   and bind joins `generalising` beside the place of the binder it stands
+///   for, and each other node it mints joins `minted`.
 /// - fails: as [`refined_arm`].
 /// - panics: none.
 ///
@@ -1319,8 +1521,10 @@ fn solved_binder(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the transported thunk, applied to the binders it
-///   abstracts, checks in both checkers.
+///   abstracts, checks in both checkers, with a staged field moved inside it on
+///   either side.
 /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
 #[spec(
     captures: before = generalising.len(),
     ensures: |ret| ret.as_ref().map_or(true, |&refined| matches!(arena.computation(refined), Some(&Computation::Bind(..)))
@@ -1334,20 +1538,35 @@ fn wrapped(
     (generalising, minted): (&mut Vec<(ComputationId, BinderDepth)>, &mut Vec<TermNode>),
 ) -> Result<ComputationId, CheckRefusal>
 {
-    let depth = solved.depth;
-    let (base, path) = match solved.side {
-        Side::Scrutinee => (depth, variable_at(arena, depth, solved.equation)?),
-        Side::Stated => {
-            let base = depth_past(depth, 1)?;
-            (base, variable_at(arena, base, depth)?)
-        },
+    let (depth, base) = (solved.depth, solved.base);
+    // The places of the thunk's path and of a staged binder's path.
+    let (thunk_path, staged_path) = match solved.side {
+        Side::Stated => (depth, solved.equation),
+        Side::Scrutinee => (solved.equation, depth),
     };
     let mut abstraction = inner;
-    for &place in solved.generalised.iter().rev() {
-        abstraction = arena.computation_lambda(abstraction);
+    let mut families = solved.forward.iter().rev();
+    for (position, &place) in solved.generalised.iter().enumerate().rev() {
+        if solved.staged.binary_search(&place).is_ok() {
+            let &family = families.next().ok_or(CheckRefusal::MachineInvariant)?;
+            let at = depth_past(base, position)?;
+            let along = variable_at(arena, at, staged_path)?;
+            let value = variable_at(arena, at, place)?;
+            let moved = arena.computation_path_transport(family, along, value);
+            abstraction = arena.computation_bind(moved, abstraction);
+            minted.extend([
+                TermNode::Value(along),
+                TermNode::Value(value),
+                TermNode::Computation(moved),
+            ]);
+        }
+        else {
+            abstraction = arena.computation_lambda(abstraction);
+        }
         generalising.push((abstraction, place));
     }
     let thunk = arena.value_thunk(abstraction);
+    let path = variable_at(arena, base, thunk_path)?;
     let transport = arena.computation_path_transport(solved.motive, path, thunk);
     let beneath = depth_past(base, 1)?;
     let transported = variable_at(arena, beneath, base)?;
@@ -1360,27 +1579,28 @@ fn wrapped(
         TermNode::Computation(applied),
     ]);
     for &place in &solved.generalised {
+        if solved.staged.binary_search(&place).is_ok() {
+            continue;
+        }
         let argument = variable_at(arena, beneath, place)?;
         applied = arena.computation_application(applied, argument);
         minted.extend([TermNode::Value(argument), TermNode::Computation(applied)]);
     }
     let mut refined = arena.computation_bind(transport, applied);
     minted.push(TermNode::Computation(refined));
-    if solved.side == Side::Stated {
-        // `e : Path(I, x, s)` reversed: `here(x)` carried along `e` in the
-        // family `λz. Path(I, z, x)`.
+    if base != depth {
         let past = depth_past(depth, 1)?;
         let carrier = carried_value_type(arena, solved.carrier, (solved.equation, past), &[])?;
         let moving = variable_at(arena, past, depth)?;
-        let fixed = variable_at(arena, past, solved.variable)?;
+        let (fixed, _) = sides(arena, solved, past)?;
         let family = arena.value_type_path(carrier, moving, fixed);
-        let point = variable_at(arena, depth, solved.variable)?;
-        let reflexivity = arena.value_here(point);
+        let (left, _) = sides(arena, solved, depth)?;
+        let reflexivity = arena.value_here(left);
         let equation = variable_at(arena, depth, solved.equation)?;
         let reversed = arena.computation_path_transport(family, equation, reflexivity);
         refined = arena.computation_bind(reversed, refined);
         minted.extend([
-            TermNode::Value(point),
+            TermNode::Value(left),
             TermNode::Value(reflexivity),
             TermNode::Value(equation),
             TermNode::Computation(reversed),
@@ -1414,9 +1634,10 @@ enum Staging
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the witness reads the unstaged answer alone. The corpus's
-///   `zip` reads the staged answer, outside the crate.
+/// - hypothesis: L3 — the first witness reads the unstaged answer, and the
+///   second reads the staged answer at each side.
 /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
 #[spec(ensures: |ret| !places.is_empty() || ret == Ok(Staging::Unstaged))]
 fn staging(
     arena: &CoreArena,

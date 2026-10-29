@@ -3,14 +3,12 @@
 // A case on a vector binds each arm's index equation, prunes an arm whose ends
 // are apart, and solves an equation with a variable side. An equation between
 // two applications of one constructor stays unsolved. A binder of a
-// recursion's stage is not generalised.
+// recursion's stage moves along its equation and keeps its stage.
 //
 // The checker refuses each declaration below by the name its attribute
 // states. Each turns to `checks` as its rung lands, and the source then moves
 // to the model root.
 //
-// - see: #3631 — not implemented: a transport's motive that names a
-//   recursion's stage, for `zip`
 // - see: #3515 — not implemented: injectivity, for `tail` and `zip`
 // - see: #3516 — not implemented: an implicit under a constructor, for
 //   `firstOfPair`
@@ -45,9 +43,9 @@ def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
 @[ refuses("TypeMismatch") ]
 def firstOfPair() -> Integer { head(pair()) }
 
-/// Pairs two vectors of one length. Its `VNil` arm solves `n` as zero, but `ys`
-/// stands a stage below and keeps `n`, so the inner case cannot leave out `VCons`.
-@[ refuses("NotApart") ]
+/// Pairs two vectors of one length. The solver does not take apart the inner
+/// arm's path between two `Succ`s.
+@[ refuses("TypeMismatch") ]
 def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) {
   case xs {
     VNil => case ys { VNil => VNil },

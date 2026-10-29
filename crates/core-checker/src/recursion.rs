@@ -28,6 +28,9 @@
 //!   later variable argument whose parameter's type holds it, so the call's
 //!   codomain carries the stage while the term keeps the code it was written
 //!   with.
+//! - **A transport keeps a variable's stage across a set.** [`carried_stage`]
+//!   returns a transported variable at its stage when the path's carrier is a
+//!   set, and refuses the transport by name along any other path.
 
 use alloc::vec::Vec;
 
@@ -1205,6 +1208,60 @@ fn held_at(
             .map_or(Maybe::Absent(Unstaged::Plain), Maybe::Present),
         (Some(_) | None, Some(_) | None) => Maybe::Absent(Unstaged::Plain),
     }
+}
+
+/// The type the transport `at` of `value` returns at: `target`, at the stage
+/// of the variable `value` when the context binds it at a stage.
+///
+/// A transport along a path in a set runs as the identity, so the value keeps
+/// its stage. Along any other path it may run an equivalence that grows the
+/// value, so it carries no stage: `KernelError::StageNotCarried` states the
+/// counterexample.
+///
+/// # Specification
+/// - requires: `carrier` is the path's carrier and `target` the motive at the
+///   path's target, both read in the binders open now.
+/// - ensures: `target` at the variable's stage when `value` is a variable the
+///   context binds at a stage and `carrier` is a set as
+///   [`crate::respect::sethood`] reads it; `target` itself when `value` is no
+///   variable at a stage.
+/// - fails: [`CheckRefusal::StageNotCarried`] at `at` when `value` is a
+///   variable at a stage and `carrier` is not a set.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a staged field moved along a path in a set keeps its
+///   stage, and its recursive call checks; along the circle's paths the
+///   transport is refused by name.
+/// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
+/// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| ty == target || matches!(context.arena().value_type(ty), Some(&ValueType::Staged { .. }))))]
+pub fn carried_stage(
+    context: &mut CheckingContext<'_>,
+    at: ComputationId,
+    value: ValueId,
+    (carrier, target): (ValueTypeId, ValueTypeId),
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let Some(&Value::Variable {
+        zone: Zone::Intuitionistic,
+        index,
+    }) = context.arena().value(value)
+    else {
+        return Ok(target);
+    };
+    let bound = context.hypothesis(index)?;
+    let Some(&ValueType::Staged { stage, .. }) = context.arena().value_type(bound)
+    else {
+        return Ok(target);
+    };
+    if crate::respect::sethood(context, carrier) != crate::respect::Sethood::Set {
+        return Err(CheckRefusal::StageNotCarried { at });
+    }
+    Ok(context.arena_mut().value_type_staged(target, stage))
 }
 
 #[cfg(test)]

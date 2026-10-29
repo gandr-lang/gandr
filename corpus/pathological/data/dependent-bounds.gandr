@@ -1,8 +1,9 @@
 // Bounded naturals as they should read, and what refuses each program.
 //
 // `Fin(n)` holds the naturals below `n`. A case on one binds each arm's index
-// equation and prunes an arm only where its ends are apart. It neither refines
-// by the equation nor prunes a match of no arms.
+// equation. It solves an equation with a variable side and prunes an arm whose
+// ends are apart. It prunes no match of no arms. An equation between two
+// successors stays unsolved.
 //
 // The checker refuses each declaration below by the name its attribute
 // states. Each turns to `checks` as its rung lands, and the source then moves
@@ -10,7 +11,6 @@
 //
 // - see: #3484 — not implemented: the empty match at an indexed family, for
 //   `absurdFin`
-// - see: #3483 — not implemented: refinement by solution, for `lookup`
 // - see: #3515 — not implemented: injectivity, for `lookup`
 // - see: #3481 — the spike that wrote these programs
 
@@ -43,9 +43,9 @@ def rec toNat(n : Nat, i : Fin(n)) -> Nat {
   }
 }
 
-/// The element at a bound below the vector's length. The `FZero` arm leaves
-/// `v` at `n`, which `VNil`'s zero is not apart from.
-@[ refuses("NotApart") ]
+/// The element at a bound below the vector's length. The solver does not take
+/// apart the inner `FSucc` arm's path between two successors.
+@[ refuses("TypeMismatch") ]
 def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a {
   case i {
     FZero(m) => case v { VCons(_, h, _) => h },

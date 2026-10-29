@@ -3602,11 +3602,11 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.readings.standing(at)
     }
 
-    /// Open the binder of the lambda `at`, which the binders' innermost is:
-    /// a generalising lambda's binder stands for the binder it copies.
+    /// Open the binder of the lambda or bind `at`, which the binders' innermost
+    /// is: a generalising one's binder stands for the binder it copies.
     ///
     /// # Specification
-    /// - requires: the lambda's binder is the innermost open.
+    /// - requires: the binder of `at` is the innermost open.
     /// - ensures: as [`crate::solution::Written::open`] at the binder's place.
     /// - panics: none.
     /// - executable: none — the record's open copies have no observer short of
@@ -3615,7 +3615,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::solution::Written::open`].
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
-    pub(crate) fn open_lambda(
+    pub(crate) fn open_copy(
         &mut self,
         at: ComputationId,
     )
@@ -3631,7 +3631,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - requires: nothing.
     /// - ensures: as [`crate::solution::Written::close`] at the depth now.
     /// - panics: none.
-    /// - executable: none — as [`CheckingContext::open_lambda`].
+    /// - executable: none — as [`CheckingContext::open_copy`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::solution::Written::close`].

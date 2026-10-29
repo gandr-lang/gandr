@@ -803,6 +803,13 @@ pub enum Refusal
         /// The binder, by its position in the signature.
         binder: gandr_kernel_term::StageBinder,
     },
+    /// A transport moves a variable at a stage along a path whose carrier is
+    /// not a set.
+    StageNotCarried
+    {
+        /// The transport.
+        at: Site,
+    },
     /// Two accumulated rows assign different operation types to one interface.
     EffectSignatureConflict
     {
@@ -1597,6 +1604,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::CrossBlockReference { site, index } = matched_left_value && let Refusal::CrossBlockReference { site: projected, index: ref returned } = *matched_right_value { site == projected && *returned == self.layout.resolve(index) }
  else if let CheckRefusal::StageNotBelow { at, found, bound } = matched_left_value && let Refusal::StageNotBelow { at: projected, found: stood, bound: wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stood == found && wanted == bound }
  else if let CheckRefusal::StagesDisagree { at, binder } = matched_left_value && let Refusal::StagesDisagree { at: projected, binder: named } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && named == binder }
+ else if let CheckRefusal::StageNotCarried { at } = matched_left_value && let Refusal::StageNotCarried { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::ImplicitUnsolved { at, reason } = matched_left_value && let Refusal::ImplicitUnsolved { at: projected, reason: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == reason }
  else if let CheckRefusal::ModelUnanswered { at, .. } = matched_left_value && let Refusal::ModelUnanswered { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -1931,6 +1939,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::StagesDisagree { at, binder } => Refusal::StagesDisagree {
                 at: self.site(ArenaNode::Value(at)),
                 binder,
+            },
+            CheckRefusal::StageNotCarried { at } => Refusal::StageNotCarried {
+                at: self.site(ArenaNode::Computation(at)),
             },
             CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
                 at: self.site(ArenaNode::Value(at)),

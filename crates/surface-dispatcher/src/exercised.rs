@@ -528,7 +528,7 @@ fn bridged(
             CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(thunk) }
                 if matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk)
                 => Some(Row::NonSynthesisableDefinition),
-            CheckRefusal::StagesDisagree { .. } | CheckRefusal::ImplicitUnsolved { .. } |
+            CheckRefusal::StagesDisagree { .. } | CheckRefusal::StageNotCarried { .. } | CheckRefusal::ImplicitUnsolved { .. } |
             CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } |
             CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } |
             CheckRefusal::AtomTransport { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
@@ -673,6 +673,7 @@ fn checking_row(
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StageNotBelow { .. }
         | CheckRefusal::StagesDisagree { .. }
+        | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Access { .. }

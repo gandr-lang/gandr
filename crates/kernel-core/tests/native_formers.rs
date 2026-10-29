@@ -2732,3 +2732,93 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
         "`spin(Sc(n))` reads as the loop before the call `spin(n)` its source wrote"
     );
 }
+
+/// The carrier a recursion's field is moved along.
+#[derive(Clone, Copy, Debug)]
+enum Along
+{
+    /// `Path(N, Z, Z)`: the naturals, a set.
+    Naturals,
+    /// `Path(S, Base, Base)`: the one-loop circle, no set.
+    Circle,
+}
+
+/// Admit `fix f. λn. λq. case n { Z ⇒ return Z; S(m) ⇒ f(transport(N, q,
+/// m))(q) }` at `N → P → F N`, where `P` is the path type `along` names.
+///
+/// # Specification
+/// trivial.
+fn moved_along(
+    environment: &mut Environment,
+    naturals: ConstantIndex,
+    along: Along,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat = arena.value_type_data(naturals, vec![]);
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let path = match along {
+        Along::Naturals => arena.value_type_path(nat, zero, zero),
+        Along::Circle => {
+            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let point = build(arena, Built::Point);
+            arena.value_type_path(carrier, point, point)
+        },
+    };
+    let answer = arena.comp_type_returner(nat);
+    let returned = arena.computation_return(zero);
+    // Under the field: `m` 0, `q` 1, `n` 2, `f` 3.
+    let q = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let m = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let moved = arena.computation_path_transport(nat, q, m);
+    // Past the moved field: `m′` 0, `q` 2, `f` 4.
+    let recursive = arena.value_variable(DeBruijnIndex::from(4_u32));
+    let forced = arena.computation_force(recursive);
+    let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let called = arena.computation_application(forced, field);
+    let q = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let called = arena.computation_application(called, q);
+    let descending = arena.computation_bind(moved, called);
+    let descending = arena.computation_lambda(descending);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let case = arena.computation_data_case(scrutinee, answer, vec![returned, descending]);
+    let body = arena.computation_lambda(case);
+    let body = arena.computation_lambda(body);
+    let fixpoint =
+        arena.computation_fixpoint(body, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+    let value = arena.value_thunk(fixpoint);
+    let arrow = arena.comp_type_arrow(path, answer);
+    let arrow = arena.comp_type_arrow(nat, arrow);
+    let declared = arena.value_type_thunk(arrow);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+#[test]
+fn a_stage_is_carried_across_a_set_and_not_along_a_loop_3631()
+{
+    let mut environment = one_loop();
+    let naturals = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(naturals, vec![]);
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        vec![],
+        vec![vec![], vec![own]],
+        kind,
+    );
+    let _naturals = environment.add_decl(staged).expect("the naturals admit");
+    assert_eq!(
+        moved_along(&mut environment, naturals, Along::Naturals).map(|_admitted| ()),
+        Ok(()),
+        "a field moved along a path in a set keeps its stage, and the call descends on it"
+    );
+    assert_eq!(
+        moved_along(&mut environment, naturals, Along::Circle).map(|_admitted| ()),
+        Err(KernelError::StageNotCarried),
+        "a field moved along a path in the circle carries no stage, by name"
+    );
+}

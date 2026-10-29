@@ -647,6 +647,21 @@ pub enum KernelError
     /// structural fixpoint and a case under it; a declaration never writes
     /// one.
     StagePresented,
+    /// A transport moves a value at a stage along a path whose carrier is not
+    /// a set: a parameterless data type with no cells and no loop, through
+    /// every field.
+    ///
+    /// **Reason.** A transport keeps the value's stage only where it cannot
+    /// grow the value. Along a path in a set, every closed path is reflexive,
+    /// so the transport runs as the identity. Along a path of a loop, it runs
+    /// the equivalence the motive's family assigns to the loop.
+    ///
+    /// **Counterexample.** Let `F(Base)` be `List(Nat)`, and let `F` take the
+    /// circle's loop to the equivalence that swaps `[]` and `[0]`. A
+    /// recursion on `[0]` reaches its tail `[]`, below the stage. Carried
+    /// along the loop, the tail is `[0]` again, at the same stage. The call
+    /// at it descends to itself, and the recursion does not end.
+    StageNotCarried,
     /// A stage signature's mark does not reach a data type the stage order
     /// places, names a binder the signature does not bind, or a bound names
     /// no earlier binder.
@@ -980,6 +995,9 @@ impl core::fmt::Display for KernelError
                  together",
             ),
             Self::StagePresented => f.write_str("a presented type named a stage"),
+            Self::StageNotCarried => f.write_str(
+                "a transport moved a value at a stage along a path whose carrier is not a set",
+            ),
             Self::StageUnplaced => {
                 f.write_str("a stage signature marked an occurrence that is no data type")
             },
@@ -1333,6 +1351,7 @@ mod tests
                 second: stage,
             },
             KernelError::StagePresented,
+            KernelError::StageNotCarried,
             KernelError::StageUnplaced,
             KernelError::AbsentRecordField {
                 label: FieldLabel::from(String::from("a")),
