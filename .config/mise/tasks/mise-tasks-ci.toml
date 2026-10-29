@@ -2840,7 +2840,10 @@ fi
 # as it does over a pull request queued on its own (#1353), the pull request
 # waits unlinked on the top, and GitHub moves it to main when the queued one
 # merges. The task prints which path it took. With nothing open it opens
-# against main.
+# against main. The top is read again once the obligations are measured: a
+# new top stacked above the measured one that changes none of the branch's
+# paths takes the branch without a new measurement, and any other move is
+# refused (`restack_moved`, `moved.jq`, #3849).
 #
 # Every new pull request targets the top of the latest stack, queued or not
 # (#1983): a top not landing is read first, and with every open pull request
@@ -3040,6 +3043,11 @@ if [[ -n "$findings" ]]; then
   echo "$findings" >&2
   if grep -qv '^note: ' <<< "$findings"; then exit 2; fi
 fi
+# The title and the body name nothing private and keep the body rules before
+# anything is built (#3849), so a long sentence costs no measurement; they
+# are read again as posted, once the re-verification is written.
+mise run --quiet body:check --title "${usage_title:?}" "$body"
+mise run --quiet body:prose "$body"
 # The features ledger rows the body names against those the change touches
 # (#2525), as notes: `pr:land` refuses them once the number is known.
 if ! ledger=$(mise run --quiet ledger:patched "$body" "$from" 2> /dev/null); then
@@ -3111,20 +3119,22 @@ if git diff --no-renames --name-only "$measured" HEAD \
   mise run ci:recovery \
     || { echo "a recovery record the change reaches is stale; re-record with \`mise run corpus:goldens\`, commit, and run \`pr:open\` again" >&2; exit 1; }
 fi
+# A top that moved while the obligations were measured is restacked onto
+# when it stands above the measured fork and shares no path with the change,
+# and refused otherwise (#3849, `restack_moved`).
+if [[ -z "$unblocks" ]]; then
+  restack_moved "$own" "$top" "$measured" || exit 2
+  top=$stacked_top
+  if [[ "$top" != null ]]; then
+    base=$(jq -r .head <<< "$top")
+    top_number=$(jq -r .number <<< "$top")
+  fi
+fi
 # A second bottom is refused unless it unblocks the open stack: with any other
 # pull request open and not landing, the base is a branch of the stack.
 if [[ -z "$unblocks" && "$base" == "$trunk" && $(landable_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
   echo "$own would open a second bottom on $trunk while another pull request is open; run \`pr:open\` again to stack it on the top" >&2
   exit 2
-fi
-if [[ -z "$unblocks" ]]; then
-  now=$(await_top "$own")
-  if [[ "$base" != "$trunk" ]]; then git fetch --quiet origin "$base"; fi
-  if [[ $(jq -r '.number // empty' <<< "$now") != $(jq -r '.number // empty' <<< "$top") ]] \
-    || { [[ "$base" != "$trunk" ]] && ! git merge-base --is-ancestor "origin/$base" HEAD; }; then
-    echo "the stack top moved from #$(jq -r '.number // "none"' <<< "$top") to #$(jq -r '.number // "none"' <<< "$now"), or was restacked, while the obligations were measured; run \`pr:open\` again" >&2
-    exit 2
-  fi
 fi
 # The title and the body, as they will be posted, name nothing private
 # (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
