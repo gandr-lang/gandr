@@ -354,7 +354,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','surface-corpus','refusal','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','surface-diagnostics','culprit','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','surface-dispatcher','exercised','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','core-fork','','lineage','aebaec88a4d60de4b77c289ba40d31f4a7bf566a','2026-10-28','c4bafabb2fb39fdec733d7eced0bf884c8078886');
+INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','core-fork','','lineage','7a487875c5666bde65446be6cf72bbf85afa6fa1','2026-10-29','28bc2be52908856bcdf5d94c46867ad301f0396f');
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','runtime-emitter','cut','lineage','ac6d1b53b231cccc887d0b195e7f255cdf667edf','2026-10-28','8c0ddceb9278293a29de4c7c91a7949657d66b3d');
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','runtime-emitter','run','lineage','b8599ac5de3fe16adc880c95313461946ef27436','2026-10-28','cb0287c16655dee00f9c1654e845d8e2025ab1c4');
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','surface-dispatcher','evaluate','background',NULL,NULL,NULL);

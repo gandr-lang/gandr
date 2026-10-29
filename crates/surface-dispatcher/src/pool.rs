@@ -52,6 +52,8 @@
 //! pool's threads keep the host's default. The choice reverses on a
 //! measurement that shows a class pays on a verb.
 
+mod spawning;
+
 use alloc::sync::Arc;
 use core::fmt;
 use core::num::NonZeroUsize;
@@ -60,9 +62,11 @@ use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_fork::Fork;
+use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
 use quenchant_shape::shape::Maybe;
 
+use self::spawning::Spawning;
 use crate::width::Threads;
 use crate::width::Width;
 
@@ -396,6 +400,39 @@ impl Fork for Pool
             Ok(Forked::Serial) | Err(_) => Serial.join(left, right),
         }
     }
+
+    /// Run `body` in a scope on the pool's threads, or in the serial scope
+    /// when the pool has one thread or the host refused it.
+    ///
+    /// # Specification
+    /// - ensures: as [`Fork::scope`]. At two threads or more, `body` runs on a
+    ///   pool worker in a scope that [`Pooled`] opens, and every job on any
+    ///   worker of the pool; otherwise each job runs at its wait on the calling
+    ///   thread.
+    /// - panics: a panic of `body`, or of a spawned job, at the end of the
+    ///   scope.
+    /// - executable: none — the schedule is the pool's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nested spawn tree on a serial pool, on two threads
+    ///   and on four sums its leaves; a wait that would block its worker leaves
+    ///   a job that its own job waits for unrun.
+    /// - witness: `pool::tests::nested_spawns_sum_the_leaves_at_every_width`
+    /// - witness: `pool::tests::a_wait_runs_its_job_here_or_helps_until_it_ends`
+    #[inline]
+    fn scope<'scope, Body>(
+        &self,
+        body: Body,
+    ) -> Body::Output
+    where
+        Body: Scoped<'scope> + Send,
+        Body::Output: Send,
+    {
+        match self.forked() {
+            Ok(Forked::Pooled(threads, fork)) => threads.install(move || fork.scope(body)),
+            Ok(Forked::Serial) | Err(_) => Serial.scope(body),
+        }
+    }
 }
 
 /// Where a staged check's jobs run.
@@ -415,7 +452,8 @@ pub enum Forked<'pool>
 /// # Specification
 /// - provides: a [`Fork`] whose every task makes its worker state once, on its
 ///   first item, so a stage clones no more snapshots than it has workers with
-///   work; halves join through `rayon::join`.
+///   work; halves join through `rayon::join`, and a scope's jobs spawn on the
+///   pool through `rayon::in_place_scope`.
 /// - panics: none of its own; a job's panic resumes at the fork.
 /// - executable: none — the schedule is the pool's.
 ///
@@ -517,6 +555,38 @@ impl Fork for Pooled
     {
         rayon::join(left, right)
     }
+
+    /// Run `body` in a `rayon` scope opened on the calling worker, handing it
+    /// the pooled spawner.
+    ///
+    /// # Specification
+    /// - ensures: as [`Fork::scope`]; the scope ends once every job it spawned
+    ///   has ended or was dropped unrun.
+    /// - panics: a panic of `body`, or of a spawned job, at the end of the
+    ///   scope.
+    /// - executable: none — the schedule is the pool's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pool`]'s scope.
+    /// - witness: `pool::tests::nested_spawns_sum_the_leaves_at_every_width`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "pool: `Fork::scope` on the driver's pool, which its caller installs before it forks"
+        )
+    )]
+    #[inline]
+    fn scope<'scope, Body>(
+        &self,
+        body: Body,
+    ) -> Body::Output
+    where
+        Body: Scoped<'scope> + Send,
+        Body::Output: Send,
+    {
+        rayon::in_place_scope(|scope| body.run(&Spawning::new(scope)))
+    }
 }
 
 /// Why the driver's pool could not start.
@@ -547,14 +617,22 @@ impl core::error::Error for PoolFault
 #[cfg(test)]
 mod tests
 {
+    use core::hint;
     use core::num::NonZeroUsize;
+    use core::panic::AssertUnwindSafe;
+    use core::sync::atomic::AtomicBool;
     use core::sync::atomic::AtomicUsize;
     use core::sync::atomic::Ordering;
     use core::time::Duration;
     use std::sync::Condvar;
     use std::sync::Mutex;
+    use std::thread::ThreadId;
+    use std::time::Instant;
 
     use gandr_core_fork::Fork as _;
+    use gandr_core_fork::Scoped;
+    use gandr_core_fork::Spawn;
+    use gandr_core_fork::Unwound;
     use quenchant_shape::shape::Maybe;
 
     use super::Forked;
@@ -562,6 +640,296 @@ mod tests
     use super::alone;
     use crate::width::Threads;
     use crate::width::Width;
+
+    /// A job that ignores its spawner: a closure, run once.
+    #[repr(transparent)]
+    struct Job<Run>(Run);
+
+    impl<'scope, Run, Output> Scoped<'scope> for Job<Run>
+    where
+        Run: FnOnce() -> Output,
+    {
+        type Output = Output;
+
+        /// Run the closure.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run<Spawner>(
+            self,
+            _spawner: &Spawner,
+        ) -> Output
+        where
+            Spawner: Spawn<'scope>,
+        {
+            (self.0)()
+        }
+    }
+
+    /// The sum of a spawn tree's leaves.
+    #[derive(Debug, Eq, PartialEq)]
+    #[repr(transparent)]
+    struct Sum(u64);
+
+    /// A leaf of a spawn tree: its own value.
+    #[repr(transparent)]
+    struct Leaf(u64);
+
+    impl<'scope> Scoped<'scope> for Leaf
+    {
+        type Output = Sum;
+
+        /// The leaf's value.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run<Spawner>(
+            self,
+            _spawner: &Spawner,
+        ) -> Sum
+        where
+            Spawner: Spawn<'scope>,
+        {
+            Sum(self.0)
+        }
+    }
+
+    /// A node of a spawn tree: two subtrees, each spawned before either is
+    /// waited for.
+    struct Pair<Tree>(Tree, Tree);
+
+    impl<'scope, Tree> Scoped<'scope> for Pair<Tree>
+    where
+        Tree: Scoped<'scope, Output = Sum> + Send + 'scope,
+    {
+        type Output = Sum;
+
+        /// Spawn both subtrees, wait for the right one and then the left one,
+        /// and add their sums.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run<Spawner>(
+            self,
+            spawner: &Spawner,
+        ) -> Sum
+        where
+            Spawner: Spawn<'scope>,
+        {
+            let Self(left, right) = self;
+            let left = spawner.spawn(left);
+            let Sum(right) = spawner.wait(spawner.spawn(right)).unwrap();
+            let Sum(left) = spawner.wait(left).unwrap();
+            Sum(left.checked_add(right).unwrap())
+        }
+    }
+
+    /// The flags that a scope's jobs raise for one another.
+    #[derive(Default)]
+    struct Flags
+    {
+        /// The first long job has started.
+        started: AtomicBool,
+        /// The job spawned after the first long job has run.
+        released: AtomicBool,
+        /// The second long job has started.
+        occupied: AtomicBool,
+        /// The body has let the second long job end.
+        freed: AtomicBool,
+        /// How many of the two untaken jobs have run.
+        turns: AtomicUsize,
+        /// How many times the job whose handle was dropped ran.
+        dropped: AtomicUsize,
+    }
+
+    /// What the waiting witness saw.
+    #[derive(Debug)]
+    struct Seen
+    {
+        /// The worker the body ran on.
+        worker: ThreadId,
+        /// The first long job saw its release.
+        released: bool,
+        /// The worker the release ran on.
+        release_ran_on: ThreadId,
+        /// The older untaken job's turn among the two, and its worker.
+        older: (usize, ThreadId),
+        /// The second long job saw its freeing.
+        freed: bool,
+    }
+
+    /// The body of the waiting witness, on a pool of two threads.
+    #[repr(transparent)]
+    struct Waits<'flags>(&'flags Flags);
+
+    impl<'scope, 'flags: 'scope> Scoped<'scope> for Waits<'flags>
+    {
+        type Output = Seen;
+
+        /// Wait for a job that waits for a later spawn, for the older of two
+        /// jobs that no worker took, and for a long job, and drop a handle
+        /// unwaited. Answer what each wait saw.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run<Spawner>(
+            self,
+            spawner: &Spawner,
+        ) -> Seen
+        where
+            Spawner: Spawn<'scope>,
+        {
+            let flags = self.0;
+            let raised = |flag: &AtomicBool| {
+                let deadline = Instant::now().checked_add(Duration::from_secs(10)).unwrap();
+                while !flag.load(Ordering::Acquire) {
+                    if Instant::now() > deadline {
+                        return false;
+                    }
+                    hint::spin_loop();
+                }
+                true
+            };
+            let worker = std::thread::current().id();
+            let first = spawner.spawn(Job(move || {
+                flags.started.store(true, Ordering::Release);
+                raised(&flags.released)
+            }));
+            assert!(raised(&flags.started), "the other worker takes the job");
+            let release = spawner.spawn(Job(move || {
+                flags.released.store(true, Ordering::Release);
+                std::thread::current().id()
+            }));
+            let released = spawner.wait(first).unwrap();
+            let release_ran_on = spawner.wait(release).unwrap();
+            let second = spawner.spawn(Job(move || {
+                flags.occupied.store(true, Ordering::Release);
+                raised(&flags.freed)
+            }));
+            assert!(raised(&flags.occupied), "the other worker takes the job");
+            let untaken = || {
+                Job(move || {
+                    (
+                        flags.turns.fetch_add(1, Ordering::Relaxed),
+                        std::thread::current().id(),
+                    )
+                })
+            };
+            let (older, newer) = (spawner.spawn(untaken()), spawner.spawn(untaken()));
+            let older = spawner.wait(older).unwrap();
+            spawner.wait(newer).unwrap();
+            drop(spawner.spawn(Job(move || {
+                flags.dropped.fetch_add(1, Ordering::Relaxed);
+            })));
+            flags.freed.store(true, Ordering::Release);
+            let freed = spawner.wait(second).unwrap();
+            Seen {
+                worker,
+                released,
+                release_ran_on,
+                older,
+                freed,
+            }
+        }
+    }
+
+    /// The body of the unwinding witness, on a pool of two threads.
+    #[repr(transparent)]
+    struct Unwinds<'flags>(&'flags Flags);
+
+    impl<'scope, 'flags: 'scope> Scoped<'scope> for Unwinds<'flags>
+    {
+        type Output = ();
+
+        /// Wait for a job that panics on the other worker, and record in
+        /// `released` whether the wait answered [`Unwound`].
+        ///
+        /// # Specification
+        /// trivial.
+        fn run<Spawner>(
+            self,
+            spawner: &Spawner,
+        ) where
+            Spawner: Spawn<'scope>,
+        {
+            let flags = self.0;
+            let panics = spawner.spawn(Job(move || {
+                flags.started.store(true, Ordering::Release);
+                panic!("the job panics on another worker");
+            }));
+            while !flags.started.load(Ordering::Acquire) {
+                hint::spin_loop();
+            }
+            flags
+                .released
+                .store(spawner.wait(panics) == Err(Unwound), Ordering::Release);
+        }
+    }
+
+    #[test]
+    fn nested_spawns_sum_the_leaves_at_every_width()
+    {
+        let leaf = |first: u64, offset: u64| Leaf(first.checked_add(offset).unwrap());
+        let pair = |first: u64| Pair(leaf(first, 0), leaf(first, 1));
+        let quad = |first: u64| Pair(pair(first), pair(first.checked_add(2).unwrap()));
+        let octet = |first: u64| Pair(quad(first), quad(first.checked_add(4).unwrap()));
+        for threads in [1_usize, 2, 4] {
+            let pool = Pool::new(Width::Threads(Threads::from(
+                NonZeroUsize::new(threads).unwrap(),
+            )));
+            assert_eq!(
+                pool.scope(Pair(octet(1), octet(9))),
+                Sum(136),
+                "the leaves 1 to 16 sum at {threads} threads"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wait_runs_its_job_here_or_helps_until_it_ends()
+    {
+        let flags = Flags::default();
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::MIN.saturating_add(1),
+        )));
+        let seen = pool.scope(Waits(&flags));
+        assert!(seen.released, "the first long job sees its release");
+        assert_eq!(
+            seen.release_ran_on, seen.worker,
+            "the release runs on the worker that waits and helps"
+        );
+        assert_eq!(
+            seen.older,
+            (0, seen.worker),
+            "the older untaken job runs first, at its wait"
+        );
+        assert!(seen.freed, "the second long job sees its freeing");
+        assert_eq!(
+            flags.dropped.load(Ordering::Relaxed),
+            0,
+            "a job whose handle was dropped untaken never runs"
+        );
+    }
+
+    #[test]
+    fn a_job_that_panics_elsewhere_ends_its_wait()
+    {
+        let flags = Flags::default();
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::MIN.saturating_add(1),
+        )));
+        let unwound = std::panic::catch_unwind(AssertUnwindSafe(|| pool.scope(Unwinds(&flags))));
+        assert!(
+            flags.released.load(Ordering::Acquire),
+            "the wait answers that the job unwound"
+        );
+        let payload = unwound.expect_err("the scope resumes the job's panic");
+        assert_eq!(
+            payload.downcast_ref::<&str>(),
+            Some(&"the job panics on another worker"),
+            "the panic is the job's own"
+        );
+    }
 
     #[test]
     fn a_serial_pool_starts_no_thread()
