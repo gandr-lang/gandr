@@ -1,0 +1,23 @@
+# Debugger tasks: lldb sessions on gandr binaries.
+
+# `debug:lldb <program> [args]...` runs lldb on a program with the checkout's
+# Rust formatters (#3760). `.config/debug/lldbinit` loads rustc's formatters
+# from the pinned toolchain and corrects them, so a sum-type enum such as
+# `Computation` prints its true variant, by value or behind a reference
+# (`.config/debug/rust_formatters.py`). Every lldb session on a gandr binary
+# sources that file. A DAP client such as `lldb-dap` sources it by its launch
+# argument `initCommands: ["command source .config/debug/lldbinit"]`, the
+# adapter started in the checkout. An open session sources it by
+# `command source .config/debug/lldbinit`.
+["debug:lldb"]
+description = "Run lldb on a program with the checkout's Rust formatters"
+usage = '''
+arg "<program>" help="the program to debug"
+arg "[args]..." help="the program's arguments, split at spaces" var=#true
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+read -ra arguments <<< "${usage_args:-}"
+exec lldb --source "$(git rev-parse --show-toplevel)/.config/debug/lldbinit" -- "$usage_program" "${arguments[@]}"
+'''
