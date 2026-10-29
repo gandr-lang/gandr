@@ -1833,6 +1833,36 @@ struct Piece
     doc: Doc,
     /// How loosely it binds.
     binding: Binding,
+    /// The fields it spells, where it is a link of a dependent record whose
+    /// first field's label it writes as the source does.
+    fields: Option<Fields>,
+}
+
+/// The fields a link of a dependent record spells, `l : A, …` without the
+/// braces. The link around it writes them in its own braces, so the record
+/// prints whole, as its source writes it (#3934).
+#[derive(Clone, Copy, Debug)]
+struct Fields
+{
+    /// The fields' document.
+    doc: Doc,
+    /// Whether a dependent pair is among the links they spell. Braced alone,
+    /// such fields read back as the links again; a run of products alone
+    /// reads back as a record.
+    dependent: bool,
+}
+
+/// The labels the source writes for a link of a dependent record, which the
+/// link's join reads.
+#[derive(Clone, Debug, Default)]
+struct RecordLink
+{
+    /// The label of the field the link holds first: a dependent pair's
+    /// binder, or a product's first component.
+    first: Option<BinderName>,
+    /// The label of its second component: the record's last field, at the
+    /// innermost link alone. Every other link holds the next link there.
+    second: Option<BinderName>,
 }
 
 /// The argument a redex's binder stands for: its piece, and the binders its
@@ -2250,6 +2280,25 @@ where
     matches!(past_return(source, node), Former::TupleProjection(..)).then_some(Notation::Positional)
 }
 
+/// The labels the source writes for `node`, a link of a dependent record:
+/// its first field's and, at the innermost link, its last field's.
+///
+/// # Specification
+/// trivial.
+fn record_link<S>(
+    source: &S,
+    node: S::Node,
+) -> RecordLink
+where
+    S: Source + ?Sized,
+{
+    let owned = |name: Name<'_>| BinderName(String::from(name.as_ref()));
+    RecordLink {
+        first: source.written_binder(node).map(owned),
+        second: source.second_label(node).map(owned),
+    }
+}
+
 /// The former `node` reads as, past the return a computation stands in where
 /// a value is read.
 ///
@@ -2586,8 +2635,13 @@ enum Join
     /// walk spelled every node so far and no occurrence named its binder.
     Pi,
     /// A dependent pair type over its two factors, its first label named as
-    /// a dependent arrow's binder is and its second by the next name.
+    /// a dependent arrow's binder is and its second by the next name; a link
+    /// of a dependent record writes the next link's fields in its braces.
     Sigma,
+    /// A product a dependent record nests over a field and the fields after
+    /// it, its labels as written: the fields alone where the record spells
+    /// them whole, else the product.
+    RecordProduct,
     /// A static abstraction over its body, its binder named as a dependent
     /// arrow's is.
     StaticLambda,
@@ -5313,9 +5367,11 @@ struct Walk<'walk, 'names>
     /// The spellings of the session types whose payloads are being walked,
     /// innermost last; each join takes its own.
     protocols: Vec<Vec<Segment>>,
-    /// The second label each dependent pair whose children are being walked
-    /// is written with, innermost last; each join takes its own.
-    seconds: Vec<Option<BinderName>>,
+    /// The labels each link of a dependent record whose children are being
+    /// walked is written with, innermost last; each join takes its own.
+    links: Vec<RecordLink>,
+    /// The fields the join being closed spells, which its piece takes.
+    fields: Option<Fields>,
     /// The parts of the formers spelled by parts whose children are being
     /// walked, innermost last; each join takes its own.
     forms: Vec<Vec<Part>>,
@@ -5441,6 +5497,7 @@ impl Walk<'_, '_>
         self.pieces.push(Piece {
             doc,
             binding: Binding::Atom,
+            fields: None,
         });
         Ok(())
     }
@@ -5574,6 +5631,7 @@ impl Walk<'_, '_>
             else {
                 Binding::Atom
             },
+            fields: None,
         });
         Ok(())
     }
@@ -5857,6 +5915,7 @@ impl Walk<'_, '_>
         self.pieces.push(Piece {
             doc,
             binding: Binding::Atom,
+            fields: None,
         });
         Ok(())
     }
@@ -6723,6 +6782,7 @@ impl Walk<'_, '_>
             entries.push(Piece {
                 doc,
                 binding: domain.binding,
+                fields: None,
             });
         }
         entries.reverse();
@@ -8087,6 +8147,14 @@ impl Walk<'_, '_>
                 Production("call_expression"),
                 Join::Bracket(Bracket::PathProduct),
             )),
+            // A product a dependent record nests, whose first field's label
+            // the source writes, is a link of that record (#3934).
+            Former::Product(arity)
+                if usize::from(arity) == 2_usize && source.written_binder(node).is_some() =>
+            {
+                self.links.push(record_link(source, node));
+                Some(writes(Production("telescope_type"), Join::RecordProduct))
+            },
             Former::Product(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
                 Some(writes(Production("product_type"), Join::Infix {
                     infix: Infix::Product,
@@ -8182,11 +8250,7 @@ impl Walk<'_, '_>
                 writes(Production("parenthesized_type"), Join::Pi),
             )),
             Former::Sigma { .. } => {
-                self.seconds.push(
-                    source
-                        .second_label(node)
-                        .map(|name| BinderName(String::from(name.as_ref()))),
-                );
+                self.links.push(record_link(source, node));
                 Some(writes(Production("telescope_type"), Join::Sigma))
             },
             Former::StaticLambda(_) => {
@@ -9369,11 +9433,11 @@ impl Walk<'_, '_>
             .nth(unnamed)
     }
 
-    /// The second label `written` a dependent pair writes beside its binder,
-    /// whose join is being closed, where it labels freely: a name the walk's
-    /// spelling writes, the term mentions nowhere else, and neither the pair's
-    /// binder nor a binder around it holds, as [`Self::bind`] reads a written
-    /// binder; none otherwise.
+    /// A label `written` a link of a dependent record writes, whose join is
+    /// being closed, where it labels freely: a name the walk's spelling
+    /// writes, the term mentions nowhere else, and no binder around the link
+    /// holds, nor the name at the position past them, a pair's own binder,
+    /// as [`Self::bind`] reads a written binder; none otherwise.
     ///
     /// # Specification
     /// trivial.
@@ -9393,6 +9457,60 @@ impl Walk<'_, '_>
                 && !self.binders.mentioned.contains(name.0.as_str())
                 && !held.iter().flatten().any(|other| other.0 == name.0)
         })
+    }
+
+    /// The product of `first` and `second`: `A * B` sugared, each operand
+    /// tighter than the chain, and `#{A, B}` explicit.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    fn pair_product(
+        &mut self,
+        first: Piece,
+        second: Piece,
+    ) -> Result<(Doc, Binding), PresentationError>
+    {
+        if self.form == Form::Sugared {
+            let first = self.bare_up_to(first, Infix::Product.operand())?;
+            let second = self.bare_up_to(second, Infix::Product.operand())?;
+            let symbol = self.leaf(Infix::Product.symbol())?;
+            let head = self.builder.concat(first, symbol)?;
+            let head = self.space_or_break(head)?;
+            Ok((self.builder.concat(head, second)?, Infix::Product.binding()))
+        }
+        else {
+            let opener = self.leaf(Brace::Hash.opener())?;
+            let comma = self.leaf(Glyphs(","))?;
+            let comma = self.space_or_break(comma)?;
+            let inner = self
+                .builder
+                .concat_all(&[opener, first.doc, comma, second.doc])?;
+            let inner = self.none_or_break(inner)?;
+            let close = self.leaf(Glyphs("}"))?;
+            Ok((self.builder.concat(inner, close)?, Binding::Atom))
+        }
+    }
+
+    /// A dependent record's `fields` in its braces, `#{l : A, …}`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    fn braced_fields(
+        &mut self,
+        fields: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let open = self.leaf(Glyphs("#{"))?;
+        let inner = self.builder.concat(open, fields)?;
+        let inner = self.none_or_break(inner)?;
+        let close = self.leaf(Glyphs("}"))?;
+        self.builder.concat(inner, close)
     }
 
     /// Open a binder in `zone`, named as the source writes it for `opener`
@@ -10934,7 +11052,7 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
@@ -10946,6 +11064,10 @@ impl Walk<'_, '_>
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
+                    // A record's product link is braced where its fields hold
+                    // a dependent pair, and the product otherwise.
+                    Join::RecordProduct if piece.binding == Binding::Atom => Binding::Atom,
+                    Join::RecordProduct => Infix::Product.binding(),
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
@@ -11177,59 +11299,102 @@ impl Walk<'_, '_>
                 if self.fidelity == Fidelity::Faithful
                     && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
             {
-                let _labelled = self.seconds.pop();
+                let _link = self.links.pop();
                 let second = self.pop()?;
                 let first = self.pop()?;
-                if self.form == Form::Sugared {
-                    let first = self.bare_up_to(first, Binding::Prefix)?;
-                    let second = self.bare_up_to(second, Binding::Prefix)?;
-                    let symbol = self.leaf(Infix::Product.symbol())?;
-                    let head = self.builder.concat(first, symbol)?;
-                    let head = self.space_or_break(head)?;
-                    (self.builder.concat(head, second)?, Binding::Product)
-                }
-                else {
-                    let opener = self.leaf(Brace::Hash.opener())?;
-                    let comma = self.leaf(Glyphs(","))?;
-                    let comma = self.space_or_break(comma)?;
-                    let inner = self
-                        .builder
-                        .concat_all(&[opener, first.doc, comma, second.doc])?;
-                    let inner = self.none_or_break(inner)?;
-                    let close = self.leaf(Glyphs("}"))?;
-                    (self.builder.concat(inner, close)?, Binding::Atom)
-                }
+                self.pair_product(first, second)?
             },
             Join::Sigma => {
-                let written = self.seconds.pop().flatten();
+                let link = self.links.pop().unwrap_or_default();
                 let second = self.pop()?;
                 let first = self.pop()?;
+                // The binder spelled as the source writes it: a link around
+                // the pair then writes the pair's fields among its own.
+                let as_written = link.first.as_ref().is_some_and(|written| {
+                    matches!(self.names.get(self.opened.len()), Some(&Some(ref name)) if name == written)
+                });
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let label = if let Some(name) = self.free_label(written) {
-                    self.leaf(Glyphs(name.0.as_str()))?
-                }
-                else {
-                    // Unrecorded, the label is the first generated name no
-                    // binder around the pair, nor the pair's own, holds: the
-                    // position past the pair's binder opens none, so what a
-                    // binder inside the pair last left there names nothing
-                    // here (#3278).
-                    self.names
-                        .truncate(self.opened.len().saturating_add(1_usize));
-                    self.binder(OpenBinders(1_usize))?
-                };
-                let open = self.leaf(Glyphs("#{"))?;
                 let colon = self.leaf(Glyphs(" : "))?;
                 let comma = self.leaf(Glyphs(","))?;
                 let head = self
                     .builder
-                    .concat_all(&[open, binder, colon, first.doc, comma])?;
+                    .concat_all(&[binder, colon, first.doc, comma])?;
                 let head = self.space_or_break(head)?;
-                let colon = self.leaf(Glyphs(" : "))?;
-                let inner = self.builder.concat_all(&[head, label, colon, second.doc])?;
-                let inner = self.none_or_break(inner)?;
-                let close = self.leaf(Glyphs("}"))?;
-                (self.builder.concat(inner, close)?, Binding::Atom)
+                let rest = match second.fields {
+                    // A link whose second component is the record's next link
+                    // writes that link's fields after its own (#3934).
+                    Some(fields) if link.first.is_some() && link.second.is_none() => fields.doc,
+                    Some(_) | None => {
+                        let label = if let Some(name) = self.free_label(link.second) {
+                            self.leaf(Glyphs(name.0.as_str()))?
+                        }
+                        else {
+                            // Unrecorded, the label is the first generated
+                            // name no binder around the pair, nor the pair's
+                            // own, holds: the position past the pair's binder
+                            // opens none, so what a binder inside the pair last
+                            // left there names nothing here (#3278).
+                            self.names
+                                .truncate(self.opened.len().saturating_add(1_usize));
+                            self.binder(OpenBinders(1_usize))?
+                        };
+                        let colon = self.leaf(Glyphs(" : "))?;
+                        self.builder.concat_all(&[label, colon, second.doc])?
+                    },
+                };
+                let fields = self.builder.concat(head, rest)?;
+                let doc = self.braced_fields(fields)?;
+                if as_written {
+                    self.fields = Some(Fields {
+                        doc: fields,
+                        dependent: true,
+                    });
+                }
+                (doc, Binding::Atom)
+            },
+            Join::RecordProduct => {
+                let link = self.links.pop().unwrap_or_default();
+                let second = self.pop()?;
+                let first = self.pop()?;
+                let rest = match second.fields {
+                    Some(fields) if link.second.is_none() => Some(fields),
+                    Some(_) | None => match self.free_label(link.second) {
+                        Some(name) => {
+                            let label = self.leaf(Glyphs(name.0.as_str()))?;
+                            let colon = self.leaf(Glyphs(" : "))?;
+                            Some(Fields {
+                                doc: self.builder.concat_all(&[label, colon, second.doc])?,
+                                dependent: false,
+                            })
+                        },
+                        None => None,
+                    },
+                };
+                let fields = match (self.free_label(link.first), rest) {
+                    (Some(name), Some(rest)) => {
+                        let label = self.leaf(Glyphs(name.0.as_str()))?;
+                        let colon = self.leaf(Glyphs(" : "))?;
+                        let comma = self.leaf(Glyphs(","))?;
+                        let head = self.builder.concat_all(&[label, colon, first.doc, comma])?;
+                        let head = self.space_or_break(head)?;
+                        Some(Fields {
+                            doc: self.builder.concat(head, rest.doc)?,
+                            dependent: rest.dependent,
+                        })
+                    },
+                    (Some(_) | None, _) => None,
+                };
+                // Fields holding a dependent pair read back braced as the
+                // links they spell; a product of fields alone braced would read
+                // back as a record, so it is written as the product.
+                let spelled = match fields {
+                    Some(fields) if fields.dependent => {
+                        (self.braced_fields(fields.doc)?, Binding::Atom)
+                    },
+                    Some(_) | None => self.pair_product(first, second)?,
+                };
+                self.fields = fields;
+                spelled
             },
             Join::StaticLambda => {
                 let body = self.pop()?;
@@ -11445,7 +11610,12 @@ impl Walk<'_, '_>
                 (self.builder.concat_all(&current)?, binding)
             },
         };
-        self.pieces.push(Piece { doc, binding });
+        let fields = self.fields.take();
+        self.pieces.push(Piece {
+            doc,
+            binding,
+            fields,
+        });
         Ok(())
     }
 }
@@ -11526,7 +11696,8 @@ where
         wildcards: Wildcards::Unwritten,
         bodies,
         protocols: Vec::new(),
-        seconds: Vec::new(),
+        links: Vec::new(),
+        fields: None,
         forms: Vec::new(),
         form: style.form,
         crossed: false,
@@ -11990,7 +12161,8 @@ mod tests
             wildcards: super::Wildcards::Unwritten,
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
-            seconds: super::Vec::new(),
+            links: super::Vec::new(),
+            fields: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             crossed: false,
@@ -12084,7 +12256,8 @@ mod tests
             wildcards: super::Wildcards::Unwritten,
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
-            seconds: super::Vec::new(),
+            links: super::Vec::new(),
+            fields: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             crossed: false,

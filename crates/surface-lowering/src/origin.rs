@@ -702,14 +702,17 @@ pub struct OriginTable
     /// telescope entry's. The core carries no name; the printer reads it
     /// here.
     arrows: Vec<(CompTypeId, Origin)>,
-    /// The name each dependent pair a dependent record's field opens binds,
-    /// by the pair, ascending by id: where the field's label is written. A
-    /// later field reads the earlier one through that binder, and the
-    /// context it is spelled in names it here (#728).
+    /// The label of each link a dependent record nests, by the link,
+    /// ascending by id: where the label of the field it holds first is
+    /// written. A dependent pair binds that name: a later field reads the
+    /// earlier one through the binder, and the context it is spelled in names
+    /// it here (#728). A product of a field and the fields after it binds
+    /// none, and the printer writes the field's label (#3934).
     pairs: Vec<(ValueTypeId, Origin)>,
-    /// The label each such pair's second component is written with, by the
-    /// pair, ascending by id: the field written after the one the pair binds,
-    /// where that field is the record's last or itself opens a pair.
+    /// The label each such link's second component is written with, by the
+    /// link, ascending by id: the record's last field, held by its innermost
+    /// link. Every other link holds the next link there, which names its own
+    /// first field (#3934).
     seconds: Vec<(ValueTypeId, Origin)>,
     /// Each variable written in the source, with its binder's span, ascending
     /// by id.
@@ -930,8 +933,8 @@ impl OriginTable
         record(&mut self.arrows, id, binder);
     }
 
-    /// Record where the label a freshly minted dependent pair binds is
-    /// written.
+    /// Record where the label of the field a freshly minted link of a
+    /// dependent record holds first is written.
     ///
     /// # Specification
     /// trivial.
@@ -945,8 +948,8 @@ impl OriginTable
         record(&mut self.pairs, id, label);
     }
 
-    /// Record where the label of a freshly minted dependent pair's second
-    /// component is written.
+    /// Record where the label of a freshly minted link's second component,
+    /// the record's last field, is written.
     ///
     /// # Specification
     /// trivial.
@@ -1508,8 +1511,8 @@ impl OriginTable
         &self.arrows
     }
 
-    /// Each dependent pair a dependent record's field opens with where the
-    /// field's label is written, ascending by id.
+    /// Each link a dependent record nests with where the label of the field
+    /// it holds first is written, ascending by id.
     ///
     /// # Specification
     /// trivial.
@@ -1520,8 +1523,8 @@ impl OriginTable
         &self.pairs
     }
 
-    /// Each dependent pair with where its second component's label is
-    /// written, ascending by id.
+    /// Each link with where its second component's label is written,
+    /// ascending by id.
     ///
     /// # Specification
     /// trivial.

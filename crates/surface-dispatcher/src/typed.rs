@@ -7785,11 +7785,11 @@ mod tests
             answer(&table, source, SourceText::from("#{x, y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{x : Integer, y : #{y : Integer, q : Path(Integer, x, y)}}"),
+                ty: String::from("#{x : Integer, y : Integer, q : Path(Integer, x, y)}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
-            "a record of three answers as itself, not as the pair the lowering nests at its \
-             span"
+            "a record of three answers as itself, its labels as written, not as the pair the \
+             lowering nests at its span (#3934)"
         );
     }
 
@@ -8735,7 +8735,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let record = "#{x : b, y : #{y : b, p : Path(b, x, y)}}";
+        let record = "#{x : b, y : b, p : Path(b, x, y)}";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == record),
             "the record prints with its labels: {reads:?}"
@@ -8750,6 +8750,41 @@ mod tests
             }),
             "every printed type that lowers again reprints as itself: {reads:?}"
         );
+    }
+
+    /// #3934: a dependent record whose fields lower to a product as well as
+    /// to dependent pairs prints whole, each field under its written label,
+    /// where the product ends the record and where it starts it. Each type
+    /// spelling such a record reads back to its certificate and reprints as
+    /// itself.
+    #[test]
+    fn a_record_s_product_fields_print_with_their_labels_3934()
+    {
+        let source = SourceText::from(
+            "def held(\n  b : Type,\n  s : #{ x : b, y : b, z : b, f : Path(b, x, y), g : Path(b, \
+             y, z) },\n  t : #{ n : Integer, a : Type, v : a }\n) -> -F Integer {\n  return 0\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<super::ReadBack> =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        for record in [
+            "#{x : b, y : b, z : b, f : Path(b, x, y), g : Path(b, y, z)}",
+            "#{n : Integer, a : Type, v : a}",
+        ] {
+            let spelling: Vec<&super::ReadBack> = reads
+                .iter()
+                .filter(|back| back.spelled.contains(record))
+                .collect();
+            assert!(
+                spelling.iter().any(|back| back.spelled == record),
+                "the record prints with its labels: {reads:?}"
+            );
+            assert!(
+                spelling.iter().all(|back| back.trip == RoundTrip::Equal
+                    && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
+                "each type spelling the record reads back and reprints as itself: {spelling:?}"
+            );
+        }
     }
 
     /// #3801: a `cong` over an annotated thunk prints a type whose thunk

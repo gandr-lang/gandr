@@ -3710,10 +3710,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   last entry's type wrapped, innermost first, by one link per binder:
     ///   `Σ` over its entry's type when the entries name the binder, the eager
     ///   product of two otherwise; every node with the written origin, and each
-    ///   `Σ` with where its label is written, the name its binder takes (#728),
-    ///   and, where its second component is the last entry or another `Σ`,
-    ///   where that entry's label is written (#1613); nothing when a type did
-    ///   not lower.
+    ///   link with where its entry's label is written, the name a `Σ`'s binder
+    ///   takes (#728). The innermost link alone records where its second
+    ///   component's label is written, the last entry's (#1613): every other
+    ///   link's second component is the next link, which records its own
+    ///   (#3934). Nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3722,7 +3723,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   and one of three whose middle label nothing names.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
-    /// - witness: `lower::arity::tests::each_dependent_pair_keeps_both_labels_1613`
+    /// - witness: `lower::arity::tests::each_record_link_keeps_its_labels_3934`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_labelled_type(
         &self,
@@ -3741,8 +3742,9 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(nested) => nested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        // The label the next link out reads as its second component's: the
-        // last entry's, then each pair's own, while the links are pairs.
+        // The last entry's label, which the innermost link holds as its
+        // second component. Every link further out holds the next link
+        // there, whose own first label names it, so it records none.
         let mut second = labelled.map(|label| self.origin_at(label));
         for parameter in written.iter().rev() {
             let Maybe::Present(declared) = parameter.declared
@@ -3753,22 +3755,18 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(first) => first,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
-            let own = self.origin_at(parameter.binder);
             nested = if bool::from(self.names_own_binder(last, parameter.frame)) {
-                let id = sink.arena.value_type_sigma(first, nested);
-                if let Maybe::Present(label) = own {
-                    sink.origins.record_pair(id, label);
-                }
-                if let Some(Maybe::Present(label)) = second {
-                    sink.origins.record_second(id, label);
-                }
-                second = Some(own);
-                id
+                sink.arena.value_type_sigma(first, nested)
             }
             else {
-                second = None;
                 sink.arena.value_type_product(&[first, nested])
             };
+            if let Maybe::Present(label) = self.origin_at(parameter.binder) {
+                sink.origins.record_pair(nested, label);
+            }
+            if let Some(Maybe::Present(label)) = second.take() {
+                sink.origins.record_second(nested, label);
+            }
             sink.origins.record_value_type(nested, origin);
         }
 

@@ -1676,15 +1676,17 @@ pub trait Source
 
     /// The name the source writes for the one binder `node` opens, when
     /// `node` is a dependent arrow or a dependent pair whose binder the source
-    /// names: the core carries no name, so a source that keeps one beside the
-    /// node answers it here.
+    /// names, or the label of the field a product a dependent record nests
+    /// holds first (#3934): the core carries no name, so a source that keeps
+    /// one beside the node answers it here.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the written name, or none; the default names nothing, so
     ///   every binder takes a generated name.
     /// - provides: the name a printed declared type spells its parameters by,
-    ///   and a dependent record its first label by, as the source writes them.
+    ///   and a dependent record each field's label by, as the source writes
+    ///   them.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1708,8 +1710,9 @@ pub trait Source
     }
 
     /// The label the source writes for the second component of `node`, when
-    /// `node` is a dependent pair a dependent record's fields lower to: the
-    /// field written after the one the pair binds.
+    /// `node` is the innermost link a dependent record's fields lower to, a
+    /// dependent pair or a product: the record's last field. Every other link
+    /// holds the next link there, which names its own first field (#3934).
     ///
     /// # Specification
     /// - requires: nothing.
