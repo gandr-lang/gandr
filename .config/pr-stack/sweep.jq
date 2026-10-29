@@ -2,7 +2,9 @@
 # removed when its branch has landed, mechanically, never because a seat
 # remembered to. The sweep makes no safety check of its own: `wt remove`
 # refuses a dirty or otherwise unsafe tree, and the sweep reports the refusal
-# and keeps the tree. The one predicate it keeps is the landing itself.
+# and keeps the tree. The predicates it keeps are the landing itself and a
+# live `pr:watch` inside the tree, which runs its merge steps there after
+# the landing (#3798).
 #
 # Input: an array of worktrees, each an object with
 #   path      the worktree's path;
@@ -20,7 +22,9 @@
 #             `{holder, alive, young}`, `holder` the pid named in a
 #             `gandr-scratch-<pid>.` directory (null for an unnamed one),
 #             `alive` whether that process runs, `young` whether its index
-#             changed within 4 hours.
+#             changed within 4 hours;
+#   watched   null, or the pid of a live `pr:watch` whose mark
+#             (`gandr-watch-<pid>`) the worktree's git directory holds.
 #
 # Output: an array of `{path, branch, action, reason}`, one per worktree:
 #   remove   `wt remove --foreground`, the branch deleted as merged;
@@ -31,6 +35,7 @@ map(
   {path, branch} + (
     if .primary then {action: "keep", reason: "the primary worktree"}
     elif .cwd then {action: "keep", reason: "the caller's own worktree"}
+    elif .watched != null then {action: "keep", reason: "held by live pr:watch \(.watched)"}
     elif .scratch != null then
       if .scratch.holder != null then
         if .scratch.alive then {action: "keep", reason: "scratch held by live process \(.scratch.holder)"}
