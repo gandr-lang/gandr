@@ -1242,6 +1242,32 @@ fn a_mutual_blocks_recursive_functions_share_one_fixpoint()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3722: the members of a mutual block each take a parameter after the one
+/// they descend on. A call through a sibling stages the caller's matched
+/// parameter as a call through itself does, and the joint passes the later
+/// parameter on: `size` passes `k` unchanged, and `sizes` passes it an
+/// accumulated count.
+#[test]
+fn a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}rec {{\n  data Rose : Type {{ Node : (kids : Forest) --> Rose; }}\n  data Forest : Type {{ Empty : Forest; More : (head : Rose, tail : Forest) --> Forest; }}\n  def rec size(t : Rose, k : Nat) -> -F Nat {{ case t {{ Node(kids) => {{ run s <- sizes[<](kids, k); return Succ(s) }} }} }}\n  def rec sizes(ts : Forest, k : Nat) -> -F Nat {{ case ts {{ Empty => return k, More(t, rest) => {{ run a <- size[<](t, k); sizes[<](rest, a) }} }} }}\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["size", "sizes"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A member of a mutual block whose sibling the lowering refused calls the
 /// sibling's declaration, so the checker meets a constant it has no type for
 /// rather than an injection into a joint that never formed (#2340): refused

@@ -9911,7 +9911,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                 }
                 let own = self.name_at(own);
-                Some(self.staged_by_body(own, &names, &roots)?)
+                let joint = match self.collected.owner_of(site.at.node) {
+                    Maybe::Present(owner) => self.joint(owner),
+                    Maybe::Absent(_) => native::Joint::alone(),
+                };
+                Some(self.staged_by_body(own, &joint, &names, &roots)?)
             },
             _ => None,
         };
@@ -17409,14 +17413,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   an implicit is the hole nominated for it ([`Self::nominated`]), and
     ///   one it omits for an instance the variable of the instance resolved for
     ///   it ([`Self::instanced`]), each marked as an implicit's insertion; a
-    ///   call through a joint fixpoint passes its argument injected at the
-    ///   called member's summand, the injection marked as the fixpoint's
-    ///   insertion; a standing supply passing `k` explicit parameters as the
-    ///   variables of the lambdas it opens ([`Self::abstracted`]) mints `λ … λ.
-    ///   app(…)`, `k` lambdas marked as an implicit's insertion over the
-    ///   application of the head and every other argument raised past them; a
-    ///   call of no arguments is its head's own computation; nothing is minted
-    ///   when the head or a written argument did not lower.
+    ///   call through a joint fixpoint passes its first argument injected at
+    ///   the called member's summand, the injection marked as the fixpoint's
+    ///   insertion, and its later arguments as written; a standing supply
+    ///   passing `k` explicit parameters as the variables of the lambdas it
+    ///   opens ([`Self::abstracted`]) mints `λ … λ. app(…)`, `k` lambdas marked
+    ///   as an implicit's insertion over the application of the head and every
+    ///   other argument raised past them; a call of no arguments is its head's
+    ///   own computation; nothing is minted when the head or a written argument
+    ///   did not lower.
     /// - provides: the curried elimination of a lambda.
     /// - fails: never.
     /// - panics: none.
@@ -17427,6 +17432,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   origins.
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
@@ -17563,7 +17569,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     None => return Maybe::Absent(lowered::Absent::Unminted),
                 }
             };
-            if let Some(&summand) = self.injected.get(&head) {
+            // A call through a joint injects the argument its member stages,
+            // the first; the later ones pass as written.
+            if position == arguments.start
+                && let Some(&summand) = self.injected.get(&head)
+            {
                 let injected = sink.arena.value_injection(summand, passed);
                 sink.origins
                     .record_value(injected, origin.inserted(Insertion::Fixpoint));
