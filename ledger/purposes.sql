@@ -649,6 +649,11 @@ INSERT INTO purpose VALUES('core-term','arena::ComputationId','struct','The aren
 INSERT INTO purpose VALUES('core-term','arena::CoreArena','struct','The append-only arena owning every core term and type node of one run, addressed by four typed ids and carrying each node''s support beside it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueId','struct','The arena-relative allocation index of a Value node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueTypeId','struct','The arena-relative allocation index of a ValueType node, valid while its node remains live.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','children::Visit','trait','What a walk does with each child of a core node, one method per family, each handed the binders of each zone the former opens over that child.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','children::of_comp_type','function','Hands each child of a computation type to a visit, in order, with the binders its former opens over it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','children::of_computation','function','Hands each child of a computation to a visit, in order, with the binders of each zone its former opens over it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','children::of_value','function','Hands each child of a value to a visit, in order, with the binders its former opens over it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','children::of_value_type','function','Hands each child of a value type to a visit, in order, with the binders its former opens over it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','classifier::Classifier','struct','The universe a type inhabits: its ground sort and its level, the answer formation gives for a formed type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','classifier::Sort','enum','The sort a universe node is indexed by: a ground sort, or a parameter of the declaration that has no ground reading yet.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','classifier::SortParameter','struct','The position of a sort binder in its declaration''s prenex sort telescope.',NULL,'fits','sound',NULL);
