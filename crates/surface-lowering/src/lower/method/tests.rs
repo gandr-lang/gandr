@@ -198,6 +198,30 @@ fn a_mode_word_off_a_receiver_is_refused()
 }
 
 #[test]
+fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
+{
+    // `x wit` for `x with`: a type variable beside a type reads as a moded
+    // type, so the refusal marks the pair, the misspelt word among it.
+    let source = "def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
+                  def misspelt(x : Type) -> -F Type { return type(x wit) }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (name, moded) in [("nested", "m Integer"), ("misspelt", "x wit")] {
+        let start = source.find(moded).unwrap_or_default();
+        let end = start.saturating_add(moded.len());
+        let refused = refusal_of(&module, SurfaceName::from(name));
+        assert!(
+            matches!(
+                refused,
+                LoweringRefusal::StrayReceiverMode { span, .. }
+                    if usize::from(span.start()) == start && usize::from(span.end()) == end
+            ),
+            "`{name}` is refused over `{moded}`, at {start}..{end}: {refused:?}"
+        );
+    }
+}
+
+#[test]
 fn a_receiver_is_a_typed_first_self()
 {
     let source = "module M {\n\
