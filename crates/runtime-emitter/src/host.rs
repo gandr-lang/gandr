@@ -64,6 +64,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map::Entry;
 
+use gandr_core_sequent::Accumulation;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
@@ -74,6 +75,7 @@ use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
 use gandr_core_session::DialogueWeb;
 use gandr_core_session::Facing;
+use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
@@ -89,10 +91,14 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
+use gandr_runtime_stencils::ACCUMULATED_APPLIED;
+use gandr_runtime_stencils::ACCUMULATED_FORCED;
+use gandr_runtime_stencils::ACCUMULATOR_FREE;
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::COUNT_ONE;
 use gandr_runtime_stencils::Family;
+use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::RELEASE;
@@ -1938,16 +1944,19 @@ impl Laying<'_>
     ///   its new row in the run's literal table, a tuple, an injection or a
     ///   datatype's constructor over its fields, any other head as a head
     ///   object naming its row in the run's head table, which it joins when the
-    ///   function's lacks it, an opaque constant as an opaque object, and a
-    ///   thunk, a fixpoint or a closure as a closure at the function's site for
-    ///   its code, of the flavour that site allocates, its captures its fields.
+    ///   function's lacks it, an opaque constant as an opaque object, a thunk,
+    ///   a fixpoint or a closure as a closure at the function's site for its
+    ///   code, of the flavour that site allocates, its captures its fields, and
+    ///   a free value or an accumulator as an object closure whose code is the
+    ///   function's accumulate entry, its head and argument its fields.
     /// - executable: none — the objects are memory no predicate reads.
     ///
     /// # Errors
     /// [`Unlaid::Value`] naming a value the store does not hold, or code, a
     /// capability, a stack, or a thunk, a fixpoint or a closure whose code has
     /// no site or whose captures its site does not take, that the run did not
-    /// move out; [`Unlaid::Run`] past the heap's limit.
+    /// move out, or a free value or an accumulator in a function with no
+    /// accumulate entry; [`Unlaid::Run`] past the heap's limit.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — replies of an integer, the unit, the payload itself,
@@ -1961,7 +1970,8 @@ impl Laying<'_>
     ///   sites for their code. Two holders count alike whichever is counted,
     ///   and an owner too many shows in no answer, so the counts of a value
     ///   under three holders, two roots and a field, and of values under one
-    ///   are read where they are laid.
+    ///   are read where they are laid. The free values an open run binds are
+    ///   laid as accumulators whose spines a force and an application grow.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
@@ -1972,6 +1982,7 @@ impl Laying<'_>
     /// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`
     /// - witness: `tests::cut::a_writer_over_a_captured_function_answers_as_its_sequential_schedule`
     /// - witness: `host::tests::a_laying_counts_one_owner_per_holder`
+    /// - witness: `tests::accumulate::a_free_function_applied_reads_back_as_its_spine_3557`
     fn laid(
         &mut self,
         runtime: &mut Runtime,
@@ -2001,11 +2012,16 @@ impl Laying<'_>
                     | HeapValue::Closure { environment, .. } => {
                         Cow::Owned(store.bound_values(environment).collect())
                     },
+                    HeapValue::Accumulated { of, by } => match by {
+                        Accumulation::Forced => Cow::Owned(Vec::from([of])),
+                        Accumulation::Applied(argument) => Cow::Owned(Vec::from([of, argument])),
+                    },
                     HeapValue::Literal(_)
                     | HeapValue::Stack { .. }
                     | HeapValue::Opaque(_)
                     | HeapValue::Code(_)
-                    | HeapValue::Capability => Cow::Borrowed(&[]),
+                    | HeapValue::Capability
+                    | HeapValue::Free { .. } => Cow::Borrowed(&[]),
                 };
                 if !entered {
                     pending.push((id, true));
@@ -2167,6 +2183,46 @@ impl Laying<'_>
                         .and_then(|field| words.get_mut(field))
                         .ok_or(Unlaid::Value(id))?;
                     *field = *laid.get(capture).ok_or(Unlaid::Value(*capture))?;
+                }
+                words
+            },
+            HeapValue::Free { zone, index } => {
+                let position = usize::try_from(u32::from(index))
+                    .ok()
+                    .and_then(|index| index.checked_mul(2))
+                    .and_then(|doubled| doubled.checked_add(ACCUMULATOR_FREE))
+                    .and_then(|free| free.checked_add(usize::from(zone == Zone::Linear)))
+                    .ok_or(Unlaid::Value(id))?;
+                Vec::from([
+                    Header::new(
+                        Kind::Closure,
+                        Tag::from(Flavour::Object),
+                        Arity::try_from(0_usize).map_err(width)?,
+                        Family::try_from(position).map_err(width)?,
+                    )
+                    .word(),
+                    self.sites.accumulate().ok_or(Unlaid::Value(id))?,
+                ])
+            },
+            HeapValue::Accumulated { of, by } => {
+                let (position, argument) = match by {
+                    Accumulation::Forced => (ACCUMULATED_FORCED, None),
+                    Accumulation::Applied(argument) => (ACCUMULATED_APPLIED, Some(argument)),
+                };
+                let mut words = Vec::with_capacity(4);
+                words.push(
+                    Header::new(
+                        Kind::Closure,
+                        Tag::from(Flavour::Object),
+                        Arity::try_from(usize::from(argument.is_some()).saturating_add(1))
+                            .map_err(width)?,
+                        Family::try_from(position).map_err(width)?,
+                    )
+                    .word(),
+                );
+                words.push(self.sites.accumulate().ok_or(Unlaid::Value(id))?);
+                for held in core::iter::once(of).chain(argument) {
+                    words.push(*laid.get(&held).ok_or(Unlaid::Value(held))?);
                 }
                 words
             },

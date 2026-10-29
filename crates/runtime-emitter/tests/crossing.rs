@@ -14,12 +14,14 @@ use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::Store;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FieldLabel;
+use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_strata::LevelVarIndex;
 use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Float64Literal;
@@ -502,6 +504,13 @@ fn a_value_that_does_not_cross_is_refused_by_name_and_writes_nothing()
         ),
         (HeapValue::Code(code), Uncrossable::Code),
         (HeapValue::Capability, Uncrossable::Capability),
+        (
+            HeapValue::Free {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            },
+            Uncrossable::Accumulator,
+        ),
         (
             HeapValue::Constructed {
                 tag: Head::Recorded(Arc::from([])),

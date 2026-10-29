@@ -174,6 +174,9 @@ pub enum Uncrossable
     Code,
     /// A capability: authority, never data.
     Capability,
+    /// An accumulator: a variable of the run's context, which the checker's
+    /// context does not bind.
+    Accumulator,
     /// A recorded run.
     Recorded,
     /// A dialogue.
@@ -560,6 +563,9 @@ impl<'store> Node<'store>
                 HeapValue::Opaque(_) => return Err(refused(Uncrossable::Opaque)),
                 HeapValue::Code(_) => return Err(refused(Uncrossable::Code)),
                 HeapValue::Capability => return Err(refused(Uncrossable::Capability)),
+                HeapValue::Free { .. } | HeapValue::Accumulated { .. } => {
+                    return Err(refused(Uncrossable::Accumulator));
+                },
             },
         )
     }

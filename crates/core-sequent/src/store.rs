@@ -40,6 +40,10 @@
 //! - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled
 //!   runtime programme, § runtime-question-what-runtime-means: the runtime's
 //!   representation, which this store and the emitter's regions state.
+//! - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: chapter 10's
+//!   `ACCU` (Figure 10.2), an accumulator for a free variable: a free value,
+//!   [`HeapValue::Free`], and a force or an application that grew one,
+//!   [`HeapValue::Accumulated`].
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -47,9 +51,11 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
 use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Family;
 use gandr_kernel_term::Literal;
 
@@ -129,6 +135,37 @@ pub enum HeapValue
     Code(gandr_core_term::ValueId),
     /// A capability a handler introduced: its address is its identity.
     Capability,
+    /// A variable of the context a run's root stands in, held free: an
+    /// accumulator no observation has grown yet.
+    Free
+    {
+        /// The variable's zone.
+        zone: Zone,
+        /// The variable, as that context names it.
+        index: DeBruijnIndex,
+    },
+    /// An accumulator grown by one observation: the stuck observation of
+    /// `of`, which a run carries as a value.
+    Accumulated
+    {
+        /// The accumulator observed.
+        of: HeapValueId,
+        /// The observation.
+        by: Accumulation,
+    },
+}
+
+/// The observation that grew an accumulator.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Accumulation
+{
+    /// A force.
+    Forced,
+    /// An application to the argument.
+    Applied(HeapValueId),
 }
 
 /// A bind frame's command and the environment it runs under.
@@ -549,10 +586,15 @@ impl Store
                 }
                 reached
             },
+            HeapValue::Accumulated { of, by } => match by {
+                Accumulation::Forced => Vec::from([of]),
+                Accumulation::Applied(argument) => Vec::from([of, argument]),
+            },
             HeapValue::Literal(_)
             | HeapValue::Opaque(_)
             | HeapValue::Code(_)
-            | HeapValue::Capability => Vec::new(),
+            | HeapValue::Capability
+            | HeapValue::Free { .. } => Vec::new(),
         }
     }
 
@@ -635,6 +677,14 @@ impl Store
             HeapValue::Opaque(constant) => HeapValue::Opaque(constant),
             HeapValue::Code(code) => HeapValue::Code(code),
             HeapValue::Capability => return Err(CopyRefusal::Capability(id)),
+            HeapValue::Free { zone, index } => HeapValue::Free { zone, index },
+            HeapValue::Accumulated { of, by } => HeapValue::Accumulated {
+                of: at(of)?,
+                by: match by {
+                    Accumulation::Forced => Accumulation::Forced,
+                    Accumulation::Applied(argument) => Accumulation::Applied(at(argument)?),
+                },
+            },
         })
     }
 

@@ -82,6 +82,9 @@
 //!   representation's specification, and `storage-conjecture-exclusivity`.
 //! - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled
 //!   runtime's representation question (§ runtime-question-what-runtime-means).
+//! - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: chapter 10's
+//!   `ACCU` (Figure 10.2): [`evaluate_open`] binds each free variable to an
+//!   accumulator, and the answer reads back as the neutral its spine spells.
 
 #[cfg(gandr_patcher)]
 use alloc::sync::Arc;
@@ -92,10 +95,13 @@ use gandr_core_sequent::CommandId;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::Environment;
+use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
+use gandr_core_sequent::Suspension;
+use gandr_core_term::Zone;
 use gandr_core_term::world::Unmigrated;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -118,6 +124,7 @@ use crate::host::Unlaid;
 use crate::lower::Form;
 use crate::lower::Lowered;
 use crate::lower::lower;
+use crate::lower::lower_open;
 use crate::lower::lower_suspended;
 use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
@@ -839,6 +846,115 @@ fn closed(
     if captured.len() != lowered.captures.len() {
         return Err(Declined::Environment);
     }
+    Ok((lowered, captured))
+}
+
+/// Run `root`, a command delivering to `★`, open under the process's policy.
+///
+/// Each free variable `root` names is bound to an accumulator, and the
+/// outcome moves into `inputs`' store.
+///
+/// The tier's run of an open side of a conversion: an observation of a free
+/// variable answers the spine it grows, which the readback reads as the
+/// neutral it spells.
+///
+/// # Specification
+/// - requires: every constant `root` reaches is defined in `definitions`.
+/// - ensures: as [`evaluate`] for [`lower_open`]'s function, each capture a
+///   value `inputs`' store binds as [`HeapValue::Free`] naming the capture's
+///   index.
+/// - executable: none — as [`evaluate`].
+///
+/// # Errors
+/// As [`evaluate`]; [`Form::Unbound`] for a linear free variable, and
+/// [`Declined::Transfer`] for a store that cannot hold an accumulator.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a free function forced and applied runs on both tiers
+///   over accumulators and reads back as its spine; two free variables keep
+///   their names; a linear free variable declines.
+/// - witness: `tests::accumulate::a_free_function_applied_reads_back_as_its_spine_3557`
+/// - witness: `tests::accumulate::two_free_variables_keep_their_names_3557`
+/// - witness: `tests::accumulate::a_linear_free_variable_declines_3557`
+#[inline]
+pub fn evaluate_open(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+    fuel: Fuel,
+    inputs: RunInputs<'_, '_>,
+) -> Result<Outcome, Declined>
+{
+    let (lowered, captured) = open(arena, definitions, root, &mut *inputs.store)?;
+    by_policy(
+        &lowered,
+        (arena, definitions),
+        fuel,
+        inputs.closed_over(&captured),
+    )?
+    .hostless()
+}
+
+/// As [`evaluate_open`], on `tier`.
+///
+/// # Specification
+/// - requires: as [`evaluate_open`].
+/// - ensures: as [`evaluate_open`], on `tier`.
+/// - executable: none — as [`evaluate`].
+///
+/// # Errors
+/// As [`evaluate_open`] and [`evaluate_on`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`evaluate_open`], on the tier given.
+/// - witness: `tests::accumulate::a_free_function_applied_reads_back_as_its_spine_3557`
+#[inline]
+pub fn evaluate_open_on(
+    tier: Tier,
+    (arena, definitions): (&CommandArena, &Definitions),
+    root: CommandId,
+    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+) -> Result<Outcome, Declined>
+{
+    let (lowered, captured) = open(arena, definitions, root, &mut *inputs.store)?;
+    on_tier(
+        tier,
+        &lowered,
+        (arena, definitions),
+        fuel,
+        inputs.closed_over(&captured),
+    )?
+    .hostless()
+}
+
+/// `root` lowered open, beside one accumulator per capture, each a value
+/// `store` binds as [`HeapValue::Free`] naming the capture's index.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The lowering's refusal, and [`Declined::Transfer`] for a store that cannot
+/// hold an accumulator.
+fn open(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+    store: &mut Store,
+) -> Result<(Lowered, Vec<HeapValueId>), Declined>
+{
+    let lowered = lower_open(arena, definitions, root)?;
+    let captured = arena
+        .captures(Suspension::Thunk(root))
+        .ok_or(Form::Dangling)?
+        .map(|index| {
+            store.allocate(HeapValue::Free {
+                zone: Zone::Intuitionistic,
+                index,
+            })
+        })
+        .collect::<Result<Vec<HeapValueId>, _>>()
+        .map_err(TransferRefusal::from)?;
     Ok((lowered, captured))
 }
 

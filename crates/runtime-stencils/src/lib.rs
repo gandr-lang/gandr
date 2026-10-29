@@ -184,6 +184,9 @@ pub use crate::executor::Symbol;
 pub use crate::executor::enter;
 #[cfg(not(gandr_stencil_object))]
 pub use crate::executor::execute;
+pub use crate::layout::ACCUMULATED_APPLIED;
+pub use crate::layout::ACCUMULATED_FORCED;
+pub use crate::layout::ACCUMULATOR_FREE;
 pub use crate::layout::Arity;
 pub use crate::layout::COUNT_IMMORTAL;
 pub use crate::layout::COUNT_ONE;

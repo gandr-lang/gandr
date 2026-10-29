@@ -372,8 +372,8 @@ pub struct Program
     arena: CoreArena,
     /// The items and their references.
     layout: Layout,
-    /// What makes the tier each pass's context decides closed endpoint pairs
-    /// on, when the front end supplies one.
+    /// What makes the tier each pass's context decides endpoint pairs on,
+    /// when the front end supplies one.
     tier: Option<gandr_core_checker::tier::MakeTier>,
 }
 
@@ -520,8 +520,8 @@ impl Program
     /// # Specification
     /// - requires: nothing.
     /// - ensures: every later pass's context is handed a tier `make` made
-    ///   ([`gandr_core_checker::CheckingContext::decide_closed_on`]); the last
-    ///   maker handed is the one kept.
+    ///   ([`gandr_core_checker::CheckingContext::decide_endpoints_on`]); the
+    ///   last maker handed is the one kept.
     /// - provides: the front end's hand-in of its tier to the incremental
     ///   checker, whose passes make their own contexts.
     /// - panics: none.
@@ -533,7 +533,7 @@ impl Program
     ///   program handed none refuses it on both.
     /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
     #[inline]
-    pub fn decide_closed_on(
+    pub fn decide_endpoints_on(
         &mut self,
         make: gandr_core_checker::tier::MakeTier,
     )

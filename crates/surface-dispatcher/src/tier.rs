@@ -1,22 +1,23 @@
-//! The emitter as the checker's tier for closed endpoint pairs.
+//! The emitter as the checker's tier for endpoint pairs.
 //!
 //! Each side of a pair is focused into the command IL beside the
-//! definitions admitted so far, run under the process's policy within
-//! [`TIER_FUEL`] jumps, and read back; the pair meets when the two readings
-//! are one term, compared as the graphs they are shared as in time linear in
-//! the nodes they reach. The focused definitions persist across the pairs one
-//! context offers, each later admission focused once when a pair first needs
-//! it.
+//! definitions admitted so far, run open under the process's policy within
+//! [`TIER_FUEL`] jumps, each variable of the context bound to an accumulator,
+//! and read back; the pair meets when the two readings are one term, compared
+//! as the graphs they are shared as in time linear in the nodes they reach. A
+//! variable a side observes reads back as the neutral its observations spell.
+//! The focused definitions persist across the pairs one context offers, each
+//! later admission focused once when a pair first needs it.
 //!
 //! # References
 //!
 //! - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check
-//!   that [`ClosedTier::meet`] decides a pair's readings by.
+//!   that [`EndpointTier::meet`] decides a pair's readings by.
 
 use alloc::boxed::Box;
 
 use gandr_core_checker::CodeDefinitions;
-use gandr_core_checker::tier::ClosedTier;
+use gandr_core_checker::tier::EndpointTier;
 use gandr_core_checker::tier::Meeting;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::Definition;
@@ -39,7 +40,7 @@ use gandr_core_term::equal_shared_certificate_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::RunInputs;
-use gandr_runtime_emitter::evaluate;
+use gandr_runtime_emitter::evaluate_open;
 
 /// The jumps each side's run may take before the tier leaves the pair to the
 /// machine. The machine has a step budget a run past it declines on, and the
@@ -70,7 +71,7 @@ impl Emitted
     ///
     /// # Specification
     /// trivial.
-    pub fn boxed() -> Box<dyn ClosedTier>
+    pub fn boxed() -> Box<dyn EndpointTier>
     {
         Box::new(Self::default())
     }
@@ -131,9 +132,10 @@ impl Emitted
             })
     }
 
-    /// Run `side` to its value and read it back into `read`: a returned
-    /// computation runs as itself, any other value as its own return. `None`
-    /// when it does not focus, steps a native operation, does not halt within
+    /// Run `side` open to its value and read it back into `read`: a returned
+    /// computation runs as itself, any other value as its own return, each
+    /// variable it names an accumulator. `None` when it does not focus, steps
+    /// a native operation, names a linear variable, does not halt within
     /// [`TIER_FUEL`], or does not read back.
     ///
     /// # Specification
@@ -169,7 +171,7 @@ impl Emitted
             return None;
         }
         let mut store = Store::new();
-        let Outcome::Halted(value) = evaluate(
+        let Outcome::Halted(value) = evaluate_open(
             &self.commands,
             &self.definitions,
             root,
@@ -184,12 +186,12 @@ impl Emitted
     }
 }
 
-impl ClosedTier for Emitted
+impl EndpointTier for Emitted
 {
     /// Run both sides on the emitter and compare their readings.
     ///
     /// # Specification
-    /// - requires: as [`ClosedTier::meet`].
+    /// - requires: as [`EndpointTier::meet`].
     /// - ensures: [`Meeting::Met`] exactly when both sides run within
     ///   [`TIER_FUEL`], stepping no native operation, to values that read back
     ///   as one term.
@@ -199,9 +201,12 @@ impl ClosedTier for Emitted
     /// # Adequacy
     /// - hypothesis: L3 — a closed pair whose sides compute one value meets,
     ///   one whose sides compute two does not, one past the fuel does not, and
-    ///   one whose run steps a native operation does not.
+    ///   one whose run steps a native operation does not; an open pair whose
+    ///   sides apply a free function as often meets, and one whose sides apply
+    ///   it a different number of times does not.
     /// - witness: `tier::tests::the_emitter_meets_a_pair_computing_one_value_2282`
     /// - witness: `tier::tests::a_pair_stepping_a_native_operation_is_the_machine_s_2282`
+    /// - witness: `tier::tests::an_open_pair_meets_when_its_spines_are_one_3557`
     fn meet(
         &mut self,
         core: &CoreArena,

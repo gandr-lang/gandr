@@ -3844,7 +3844,7 @@ pub fn checking_context<'arena>(
         },
         Opening::Resumed(checkpoint) => CheckingContext::resume(arena, checkpoint.clone()),
     };
-    context.decide_closed_on(crate::tier::Emitted::boxed());
+    context.decide_endpoints_on(crate::tier::Emitted::boxed());
     context.keep_pattern_holes(holes);
     context.keep_reducts(module.reducts());
     context.keep_reducts(module.forgets());
@@ -4168,7 +4168,7 @@ pub fn item_program(
         .map(|(key, declaration)| gandr_core_incremental::Item::new(key, declaration))
         .collect();
     let mut program = gandr_core_incremental::Program::new(arena, items)?;
-    program.decide_closed_on(crate::tier::Emitted::boxed);
+    program.decide_endpoints_on(crate::tier::Emitted::boxed);
     Ok(program)
 }
 

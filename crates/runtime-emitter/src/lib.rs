@@ -207,6 +207,7 @@ pub use crate::lower::Lowered;
 pub use crate::lower::OwnerRun;
 pub use crate::lower::Window;
 pub use crate::lower::lower;
+pub use crate::lower::lower_open;
 pub use crate::lower::lower_suspended;
 pub use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
@@ -220,6 +221,8 @@ pub use crate::run::evaluate;
 pub use crate::run::evaluate_closed_on;
 pub use crate::run::evaluate_on;
 pub use crate::run::evaluate_on_with_host;
+pub use crate::run::evaluate_open;
+pub use crate::run::evaluate_open_on;
 pub use crate::run::evaluate_unfused_on;
 pub use crate::run::evaluate_with_host;
 pub use crate::seam::HostHandler;

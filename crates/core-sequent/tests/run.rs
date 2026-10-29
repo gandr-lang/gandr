@@ -11,6 +11,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use gandr_core_sequent::Accumulation;
 use gandr_core_sequent::CheckRefusal;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -151,13 +152,18 @@ fn named(
             | &HeapValue::Fixpoint { environment, .. }
             | &HeapValue::Closure { environment, .. },
         ) => store.bound_values(environment).collect(),
+        Some(&HeapValue::Accumulated { of, by }) => match by {
+            Accumulation::Forced => Vec::from([of]),
+            Accumulation::Applied(argument) => Vec::from([of, argument]),
+        },
         None
         | Some(
             &HeapValue::Literal(_)
             | &HeapValue::Opaque(_)
             | &HeapValue::Code(_)
             | &HeapValue::Capability
-            | &HeapValue::Stack { .. },
+            | &HeapValue::Stack { .. }
+            | &HeapValue::Free { .. },
         ) => Vec::new(),
     }
 }
@@ -200,11 +206,18 @@ fn spelled_from(
             producer,
             environment,
         }) => format!("closure {producer:?} [{}]", bound(environment)),
+        Some(&HeapValue::Accumulated { of, by }) => match by {
+            Accumulation::Forced => format!("forced({})", child(of)),
+            Accumulation::Applied(argument) => {
+                format!("applied({}, {})", child(of), child(argument))
+            },
+        },
         Some(
             held @ (&HeapValue::Opaque(_)
             | &HeapValue::Code(_)
             | &HeapValue::Capability
-            | &HeapValue::Stack { .. }),
+            | &HeapValue::Stack { .. }
+            | &HeapValue::Free { .. }),
         ) => {
             format!("{held:?}")
         },

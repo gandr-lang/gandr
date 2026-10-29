@@ -146,6 +146,8 @@ stencils! {
     Arm => stencil_arm,
     /// `stencil_unobserved`.
     Unobserved => stencil_unobserved,
+    /// `stencil_accumulate`: every accumulator's code.
+    Accumulate => stencil_accumulate,
     /// `stencil_captured`.
     Captured => stencil_captured,
     /// `stencil_run_capture`.

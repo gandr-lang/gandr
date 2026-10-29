@@ -3038,7 +3038,7 @@ fn reflexivity_checks_by_endpoint_conversion()
 /// trivial.
 struct Agreeing;
 
-impl crate::tier::ClosedTier for Agreeing
+impl crate::tier::EndpointTier for Agreeing
 {
     /// Every pair meets.
     ///
@@ -3055,8 +3055,11 @@ impl crate::tier::ClosedTier for Agreeing
     }
 }
 
+/// A context handed a tier offers it every endpoint pair: `here(5)` against
+/// `id 5` and `here(y)` against `id y` each carry `Evaluate`, and with no tier
+/// the machine relates both.
 #[test]
-fn a_closed_pair_the_tier_meets_carries_its_evaluation_2282()
+fn a_pair_the_tier_meets_carries_its_evaluation_3557()
 {
     // def id : U (Integer -> F Integer) = thunk { \x. return x } ;
     let mut arena = CoreArena::new();
@@ -3091,7 +3094,7 @@ fn a_closed_pair_the_tier_meets_carries_its_evaluation_2282()
     let [tiered, untiered] = [true, false].map(|handed| {
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         if handed {
-            context.decide_closed_on(alloc::boxed::Box::new(Agreeing));
+            context.decide_endpoints_on(alloc::boxed::Box::new(Agreeing));
         }
         seed(&mut context, &[thunk_arrow]);
         let declared = form_value_type(&mut context, thunk_arrow).unwrap();
@@ -3112,15 +3115,13 @@ fn a_closed_pair_the_tier_meets_carries_its_evaluation_2282()
     let [ref closed_tiered, ref open_tiered] = tiered;
     let [ref closed_untiered, ref open_untiered] = untiered;
     assert_eq!(closed_tiered, &evaluated, "the tier meets the closed pair");
-    assert!(
-        !closed_untiered.is_empty() && closed_untiered != &evaluated,
-        "with no tier the machine relates it: {closed_untiered:?}"
-    );
-    assert_eq!(
-        open_tiered, open_untiered,
-        "an open pair is never offered to the tier"
-    );
-    assert_ne!(open_untiered, &evaluated);
+    assert_eq!(open_tiered, &evaluated, "the tier meets the open pair");
+    for untiered in [closed_untiered, open_untiered] {
+        assert!(
+            !untiered.is_empty() && untiered != &evaluated,
+            "with no tier the machine relates it: {untiered:?}"
+        );
+    }
 }
 
 /// A point the normaliser cannot run meets its endpoints by syntax alone:

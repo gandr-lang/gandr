@@ -334,7 +334,6 @@ use gandr_kernel_term::HigherLayer;
 use gandr_kernel_term::HigherProgram;
 use gandr_kernel_term::LayerPosition;
 use gandr_kernel_term::QuantifiedStep;
-use gandr_kernel_term::Reads;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -381,10 +380,7 @@ use crate::path_universe::anchor;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
-use crate::replay::ReplayDecline;
-use crate::replay::ReplayRefusal;
 use crate::replay::ReplaySides;
-use crate::replay::TracePosition;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::RewriteOutcome;
@@ -864,15 +860,15 @@ pub(crate) fn law_type(
 ///   [`crate::conv::convert_values`] relates the point to it, or that side's
 ///   dialogue in `dialogues` derives their convertibility under `unfoldings`
 ///   and within [`ReplayBudget::DEFAULT`]. A dialogue of the one decision
-///   `Evaluate` derives it when the point and the endpoint are both closed and
-///   [`crate::replay::convert_unfolding`] converts them; over a side that reads
-///   a binder it is refused as inapplicable at its first decision. Any other
-///   dialogue derives it when it replays. `arena` holds what it held on entry.
+///   `Evaluate` derives it when [`crate::replay::convert_unfolding`] converts
+///   the point and the endpoint, closed or open over the point's context. Any
+///   other dialogue derives it when it replays. `arena` holds what it held on
+///   entry.
 /// - provides: the `here` rule's endpoint check. In a replayed dialogue a
 ///   constant unfolds only where the dialogue names it, at the head and side it
 ///   names, so a δ-step under a binder is a recorded step and never the
-///   kernel's own search. Only a closed pair is evaluated, so the kernel's own
-///   δ-steps there run under no binder of the point's context.
+///   kernel's own search. An evaluated pair is the kernel's own search, bound
+///   by the replay's budget, each variable of the context standing for itself.
 /// - fails: [`IdentityError::EndpointsDiffer`] at the first endpoint neither
 ///   relates, naming that side and its verdict.
 /// - panics: none.
@@ -885,12 +881,12 @@ pub(crate) fn law_type(
 ///   an endpoint unfolding a definition under a thunk is admitted by the
 ///   dialogue that names the unfolding, and refused by name when the dialogue
 ///   names the wrong constant, the wrong side, or fewer unfoldings than the
-///   endpoint needs. A closed pair evaluating to one value is admitted by
-///   `Evaluate`, and refused when it evaluates apart or a side reads a binder.
+///   endpoint needs. A pair evaluating to one value is admitted by `Evaluate`,
+///   closed or under a binder it reads, and refused when it evaluates apart.
 /// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
 /// - witness: `element_identity::tests::an_endpoint_unfolding_under_a_thunk_replays_its_dialogue`
 /// - witness: `element_identity::tests::a_dialogue_naming_the_wrong_unfolding_is_refused_by_name`
-/// - witness: `element_identity::tests::a_closed_pair_is_converted_by_the_kernel_s_own_evaluation_2282`
+/// - witness: `element_identity::tests::a_pair_is_converted_by_the_kernel_s_own_evaluation_3557`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before && ret.as_ref().err().is_none_or(|error| matches!(
@@ -917,21 +913,12 @@ pub(crate) fn reflexive_endpoints(
             continue;
         }
         let verdict = if let &[ConversionDecision::Evaluate] = dialogue.as_slice() {
-            let closed =
-                |arena: &TermArena, value: ValueId| *arena.value_support(value) == Reads::closed();
-            if closed(arena, point) && closed(arena, endpoint) {
-                crate::replay::convert_unfolding(
-                    arena,
-                    unfoldings,
-                    ReplaySides::Values(point, endpoint),
-                    ReplayBudget::DEFAULT,
-                )
-            }
-            else {
-                KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
-                    at: TracePosition::default(),
-                }))
-            }
+            crate::replay::convert_unfolding(
+                arena,
+                unfoldings,
+                ReplaySides::Values(point, endpoint),
+                ReplayBudget::DEFAULT,
+            )
         }
         else {
             crate::replay::replay(

@@ -1368,10 +1368,13 @@ pub struct Lowered
     pub fused: Vec<Fused>,
     /// Every closure site, in creation order.
     pub sites: Vec<Site>,
-    /// The entry window's slots holding the captures of a suspended root
-    /// ([`lower_suspended`]), innermost first, as the store environment it
-    /// runs under binds them; none for a closed command.
+    /// The entry window's slots holding the captures of a suspended or open
+    /// root ([`lower_suspended`], [`lower_open`]), innermost first, as the
+    /// store environment it runs under binds them; none for a closed command.
     pub captures: Vec<Slot>,
+    /// The entry every accumulator of an open root ([`lower_open`]) holds as
+    /// its code, which runs `stencil_accumulate`; none for any other root.
+    pub accumulate: Option<Label>,
     /// The body of each thunk a spawn of [`CELL`] suspends, in the order the
     /// lowering meets them, each once: the writers a scheduled run starts.
     pub spawned: Vec<CommandId>,
@@ -3489,7 +3492,30 @@ impl Lowering<'_>
         body: CommandId,
     ) -> Result<Vec<Slot>, Form>
     {
-        let node = NodeAddress::Command(body);
+        let (base, captures) = self.opened(body)?;
+        let (inner, alpha) = self.bind(base, Binding::Covariable);
+        self.emit(StencilId::AliasTop, alpha.operand(), Operand::Unused);
+        self.tasks.push(Task::Command(body, inner));
+        Ok(captures)
+    }
+
+    /// Open `command` at the entry over the producer bindings its support
+    /// selects in the entry window's first slots, as a closure body's base
+    /// scope holds its captures. Answers the scope and the captures' slots,
+    /// innermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] for a command the arena does not hold;
+    /// [`Form::Unbound`] for a linear variable it names.
+    fn opened(
+        &mut self,
+        command: CommandId,
+    ) -> Result<(Scope, Vec<Slot>), Form>
+    {
+        let node = NodeAddress::Command(command);
         let support = self.arena.node_scope(node).ok_or(Form::Dangling)?;
         let binders = support
             .producers()
@@ -3497,19 +3523,18 @@ impl Lowering<'_>
             .map(|index| u32::from(index).saturating_add(1))
             .max()
             .unwrap_or_default();
-        // The scope the body would be created in: one producer binder per
+        // The scope the command would be created in: one producer binder per
         // index up to the outermost it names, which `enclose` keeps where the
-        // body captures it.
+        // command captures it.
         let mut creator = Scope::Empty;
         for _ in 0 .. binders {
             creator = self.scopes.bind(creator, Binding::Producer).0;
         }
         let (base, _) = self.enclosed(creator, node, Crossed::NONE)?;
-        let captures = self.captured(Suspension::Thunk(body), base)?;
-        let (inner, alpha) = self.bind(base, Binding::Covariable);
-        self.emit(StencilId::AliasTop, alpha.operand(), Operand::Unused);
-        self.tasks.push(Task::Command(body, inner));
-        Ok(captures)
+        // The window holds the captures even when the command binds nothing.
+        self.window = self.window.max(self.scopes.depth(base).0);
+        let captures = self.captured(Suspension::Thunk(command), base)?;
+        Ok((base, captures))
     }
 
     /// Run one task.
@@ -4797,6 +4822,37 @@ pub fn lower_suspended(
     })?))
 }
 
+/// Lower `root`, a command delivering to `★`, open over its free variables.
+///
+/// The entry binds the producer bindings its support selects, each an
+/// accumulator when the code runs, and the adjacent pairs are fused. Only this
+/// lowering emits [`Lowered::accumulate`], the code every accumulator holds.
+///
+/// # Specification
+/// - ensures: as [`lower_suspended`], the entry opening `root` over a window
+///   whose first slots, [`Lowered::captures`], hold the bindings its support
+///   selects, innermost first, and `★` the halt frame, as [`lower`] runs it.
+/// - executable: none — as [`lower`].
+///
+/// # Errors
+/// As [`lower_suspended`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — a free function forced and applied runs on both tiers
+///   over accumulators and reads back as its spine; a capture slot swapped
+///   changes which variable heads it.
+/// - witness: `tests::accumulate::a_free_function_applied_reads_back_as_its_spine_3557`
+/// - witness: `tests::accumulate::two_free_variables_keep_their_names_3557`
+#[inline]
+pub fn lower_open(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> Result<Lowered, Form>
+{
+    Ok(fused(lowered(arena, definitions, Root::Open(root))?))
+}
+
 /// A scheduled run's code, lowered once for the run: the root's function, and
 /// each writer's.
 ///
@@ -4973,6 +5029,9 @@ enum Root<'held>
 {
     /// A closed command, delivering to `★`.
     Closed(CommandId),
+    /// A command delivering to `★`, over the producer bindings its support
+    /// selects.
+    Open(CommandId),
     /// A command binding one covariable, over the producer bindings its
     /// support selects.
     Suspended
@@ -5009,7 +5068,7 @@ fn lowered(
 ) -> Result<Lowered, Form>
 {
     let (command, held) = match root {
-        Root::Closed(command) => (command, &[][..]),
+        Root::Closed(command) | Root::Open(command) => (command, &[][..]),
         Root::Suspended { body, held } => (body, held),
     };
     let survey = survey(arena, definitions, command, held)?;
@@ -5057,10 +5116,22 @@ fn lowered(
         rejoins: BTreeSet::new(),
         spawned: Vec::new(),
     };
+    let mut accumulate = None;
     let captures = match root {
         Root::Closed(command) => {
             lowering.tasks.push(Task::Command(command, Scope::Empty));
             Vec::new()
+        },
+        Root::Open(command) => {
+            let (base, captures) = lowering.opened(command)?;
+            let entry = lowering.function.label();
+            lowering.blocks.push((
+                entry,
+                Task::Emit(StencilId::Accumulate, Operand::Unused, Operand::Unused),
+            ));
+            accumulate = Some(entry);
+            lowering.tasks.push(Task::Command(command, base));
+            captures
         },
         Root::Suspended { body, .. } => {
             let captures = lowering.suspended(body)?;
@@ -5145,6 +5216,7 @@ fn lowered(
         fused: Vec::new(),
         sites: lowering.sites,
         captures,
+        accumulate,
         spawned: lowering.spawned,
         cells: lowering.cells,
         bounds: lowering.bounds,

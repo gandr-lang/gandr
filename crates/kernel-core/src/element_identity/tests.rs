@@ -2380,8 +2380,12 @@ fn a_dialogue_naming_the_wrong_unfolding_is_refused_by_name()
     );
 }
 
+/// `Evaluate` admits a pair the kernel's own evaluation meets and refuses one
+/// it leaves apart, closed or under a binder it reads: `here(false)` against
+/// `not true`, `here(true)` against it, and under `λx`, `here(x)` against
+/// `identity x` and against `not x`.
 #[test]
-fn a_closed_pair_is_converted_by_the_kernel_s_own_evaluation_2282()
+fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
 {
     let evaluate = || {
         Arc::new(EndpointDialogues {
@@ -2423,30 +2427,31 @@ fn a_closed_pair_is_converted_by_the_kernel_s_own_evaluation_2282()
         ),
         "`not true` evaluates apart from `true`"
     );
-    // Under `λx`, `here(x)` at `Path(Bool, x, ⟨identity x⟩)`: the evaluation
-    // would meet the pair, but it reads the binder, so the decision does not
-    // apply.
-    let mut staging = environment.stage();
-    let arena = staging.arena();
-    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let endpoint = applied(arena, identity, &[bound]);
-    let path = arena.value_type_path(boolean.ty, bound, endpoint);
-    let returns = arena.comp_type_returner(path);
-    let family = arena.comp_type_pi(boolean.ty, returns);
-    let declared = arena.value_type_thunk(family);
-    let here = arena.value_here_relating(bound, evaluate());
-    let body = arena.computation_return(here);
-    let body = arena.computation_lambda(body);
-    let body = arena.value_thunk(body);
-    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
-    assert_eq!(
-        endpoint_refusal(&environment.add_decl(declaration)),
-        Some((
-            EndpointSide::Right,
-            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
-                at: TracePosition::default(),
-            })),
-        ))
+    // Under `λx`, `here(x)` at `Path(Bool, x, ⟨head x⟩)`: the evaluation
+    // reads the binder, which stands for itself.
+    let open = |environment: &mut Environment, head: ConstantIndex| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let endpoint = applied(arena, head, &[bound]);
+        let path = arena.value_type_path(boolean.ty, bound, endpoint);
+        let returns = arena.comp_type_returner(path);
+        let family = arena.comp_type_pi(boolean.ty, returns);
+        let declared = arena.value_type_thunk(family);
+        let here = arena.value_here_relating(bound, evaluate());
+        let body = arena.computation_return(here);
+        let body = arena.computation_lambda(body);
+        let body = arena.value_thunk(body);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(declaration)
+    };
+    open(&mut environment, identity).expect("`identity x` evaluates to `x`");
+    assert!(
+        matches!(
+            endpoint_refusal(&open(&mut environment, not)),
+            Some((EndpointSide::Right, KernelVerdict::Declined(_)))
+        ),
+        "`not x` evaluates apart from `x`"
     );
 }
 

@@ -26,7 +26,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `SequentWatermark` with `CommandArena::watermark` and `CommandArena::truncate_to`: the rollback a refused build takes.
 - `ConstructorTag` and `DestructorTag` with their declared `ProducerArity`, `ConsumerArity` and, for a destructor, the polarity it observes.
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
-- `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack innermost frame first with closed bind frames, and the full-family refusal.
+- `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily`, `Accumulation` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack innermost frame first with closed bind frames, and the full-family refusal.
 - `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first. `Store::copy` (`CopyRefusal`) copies a value into another store, code and sharing kept.
 - `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. A writer the caller names in `Writers` is focused apart from its binder, which carries an `Independence` mark (`MarkRefusal`). `spawn_independent` (`ScheduleRefusal`) spawns each marked writer and reads it before its binder's first use. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
@@ -37,7 +37,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `ProducerNode::Closure`, `convert_step`, `convert`, `convert_all`, `beta` and `enter_all` with `ClosureRefusal`: abstract closures over an environment of values, converted one captured variable at a time and entered against a frame, directly or at the end of a bind chain.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices.
 - `Definitions`, `Definition`, `Outcome` and `Stuck`: the constants a run unfolds by position, transparent or opaque, and how a run ended — halted with a value, or stuck at the command or value it names.
-- `read_back_terminal` and `read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, and each value closed over its captured environment.
+- `read_back_terminal` and `read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, each value closed over its captured environment, an accumulator as its neutral.
 - `stats`, `Stats`, `origin_histogram` and `dump`: an arena's population, its commands counted by the core former each came from, and a root's rendering with both.
 - `reify_command` with `ConstructorResolver` and `ReifyRefusal`: a ground cell pattern reified node for node, a return-side frame as its `μ̃` definiens, a metavariable, an unresolved symbol, an arity mismatch and an operation frame refused with the arena at its mark.
 
@@ -134,10 +134,11 @@ Running a command is `gandr-runtime-emitter`'s: `src/lower.rs` states the linear
 - `Sullivan-2023-closure_conversion_little_pieces` — lineage: Sullivan, Downen and Ariola, "Closure Conversion in Little Pieces", PPDP 2023, `doi:10.1145/3610612.3610622` — conversion as equalities local to the IL.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 4) — abstract closures in the sequent IL.
 - `vault:01a183de-4e71-7f03-aa71-7821123f3c40` — exemplar: Espírito Santo, Kesner and Peyrot, the distant β of λJn (2024) — a closure at the end of a bind chain enters at the hole, and the frame's continuation stays outside the chain.
-- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey et al., PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — the store as the LAM the runtime's value representation is specified against.
 - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime programme — the representation this store states.
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut whose writer performs no operation is independent, so focus records each bind's writer and the arena marks its binder.
+- `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` (ch. 10) — a free variable's value and the spine it grew.
 
 ## License
 
