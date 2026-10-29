@@ -43,6 +43,10 @@
 //! - [`world`] holds the located vocabulary: the handle type `A at w`, the
 //!   capability `cap_w` a migration spends, and the computations `hold`, `leta`
 //!   and `migrate [w]`, one former each beside the rest of the core.
+//! - [`children`] states each former's scoping once: a node's children in
+//!   order, each with the binders of each zone it stands under. The arena folds
+//!   a node's support over them at its mint, and a walk that descends a term
+//!   reads them there.
 //! - [`support`] is the co-de Bruijn carrier: a two-zone selection
 //!   [`support::Thinning`] selects a node's support from its scope, every arena
 //!   node carries its support from the moment it is minted, a
@@ -201,6 +205,7 @@
 extern crate alloc;
 
 mod arena;
+pub mod children;
 mod classifier;
 mod context;
 pub mod control;
