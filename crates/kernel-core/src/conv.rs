@@ -464,9 +464,10 @@ pub(crate) fn convert_values(
 
 /// Compare `goal` structurally, setting aside into `pending` every value pair
 /// one of whose sides is a returned endpoint or a constructor of a type
-/// `presentations` presents, every value type decoded from a returned code
-/// against a value type of another former, and the codomains of every
-/// dependent arrow met against a plain one.
+/// `presentations` presents, every pair of thunks either of whose
+/// computations forces a thunk literal at its head, every value type decoded
+/// from a returned code against a value type of another former, and the
+/// codomains of every dependent arrow met against a plain one.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -477,9 +478,10 @@ pub(crate) fn convert_values(
 ///   whatever was set aside before the separating pair.
 /// - provides: where the checker's endpoint reading looks: the type
 ///   conversion's own structural walk, finding the returned endpoints, the
-///   decodes of returned codes, the presented terms and the dependent arrows
-///   met against plain ones that it would otherwise compare by syntax. Each is
-///   then read by [`crate::replay::read_endpoints`], never compared here.
+///   decodes of returned codes, the presented terms, the thunks holding a
+///   β-redex and the dependent arrows met against plain ones that it would
+///   otherwise compare by syntax. Each is then read by
+///   [`crate::replay::read_endpoints`], never compared here.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -489,16 +491,20 @@ pub(crate) fn convert_values(
 ///   structure leaves open; a circle word is set aside for its normal form; a
 ///   decode of a returned code is set aside against a type of another former,
 ///   and against a decode compares its code; a dependent arrow against a plain
-///   one sets its codomains aside while its domains still separate.
+///   one sets its codomains aside while its domains still separate; a thunk
+///   pair forcing a thunk literal is set aside, and one forcing none separates
+///   in place.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
 /// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 /// - witness: `conv::tests::a_presented_constructor_is_set_aside_on_either_side`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `conv::tests::a_thunk_pair_forcing_a_thunk_is_set_aside_3733`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
     && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
-        SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. })))),
+        SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. }))))
+            || [left, right].iter().all(|&side| matches!(arena.value(side), Some(&Value::Thunk(_)))),
         SetAside::Decoded { code, other } => matches!(arena.value(code), Some(&Value::Returned(_)))
             && !matches!(arena.value_type(other), Some(&ValueType::Element { .. }) | None),
         SetAside::Codomains(Codomains { dependent, plain }) => arena.comp_type(dependent).is_some() && arena.comp_type(plain).is_some(),
@@ -528,10 +534,10 @@ pub(crate) fn pending_endpoints(
 ///   [`convertible_value_types`] would; a set-aside pair is neither compared
 ///   nor descended into. On [`Convertibility::Distinct`] `pending` holds
 ///   whatever was set aside before the separating pair.
-/// - provides: where a definition's relations are read: the same walk as
-///   [`pending_endpoints`], leaving to the caller every endpoint pair a path
-///   type carries, which is where the producer's conversion recorded its
-///   dialogues.
+/// - provides: where a definition's relations are read: the walk of
+///   [`pending_endpoints`], but with a thunk pair compared in place, leaving to
+///   the caller every endpoint pair a path type carries, which is where the
+///   producer's conversion recorded its dialogues.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -755,16 +761,18 @@ pub(crate) fn case_branch_mismatch(
 ///   has readable roots and either equal ids or matching structure, with
 ///   canonical level equality and nominal atom equality. Under
 ///   [`Endpoints::Deferred`] a value pair with a returned endpoint, or with a
-///   constructor of a presented type, on either side, and a value type decoded
-///   from a returned code against a value type of another former, are appended
-///   to the list unexamined and close, and a type of words converts with the
-///   path type at the point its cells loop at
+///   constructor of a presented type, on either side, a pair of thunks either
+///   of whose computations forces a thunk literal at its head, and a value type
+///   decoded from a returned code against a value type of another former, are
+///   appended to the list unexamined and close, and a type of words converts
+///   with the path type at the point its cells loop at
 ///   ([`crate::presented::Presentations::words`]); under [`Endpoints::Related`]
-///   so does each, and every pair of path endpoints is appended too. Under
-///   every mode but [`Endpoints::Structural`] a dependent arrow against a plain
-///   one compares its domains and appends its codomains, unexamined, as a
-///   [`Codomains`]; under [`Endpoints::Structural`] it is apart. The iterative
-///   heap stack does not impose a host-stack depth limit.
+///   so does each but the thunk pair, which it walks, and every pair of path
+///   endpoints is appended too. Under every mode but [`Endpoints::Structural`]
+///   a dependent arrow against a plain one compares its domains and appends its
+///   codomains, unexamined, as a [`Codomains`]; under [`Endpoints::Structural`]
+///   it is apart. The iterative heap stack does not impose a host-stack depth
+///   limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
 ///   separation; the graph judgement and termination argument are not replayed
@@ -802,11 +810,14 @@ pub(crate) fn case_branch_mismatch(
 /// - hypothesis: L1/L2/L3 — root readability, identity and head separation are
 ///   executable. Finite former and truncation witnesses separate the structural
 ///   arms and all four identity paths. A shared composite at depth 30 exercises
-///   bounded expansion rather than proving the asymptotic claim by timing.
+///   bounded expansion rather than proving the asymptotic claim by timing. A
+///   thunk pair forcing a thunk literal at its head is set aside, and one that
+///   forces none is walked.
 /// - witness: `conv::tests::structurally_equal_types_at_distinct_ids_convert`
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
 /// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
+/// - witness: `conv::tests::a_thunk_pair_forcing_a_thunk_is_set_aside_3733`
 #[spec(captures: [deferring = matches!(endpoints, Endpoints::Deferred { .. } | Endpoints::Related { .. }), weakening = !matches!(endpoints, Endpoints::Structural)], ensures: |ret| match initial {
     ConversionGoal::ValueType(left, right) => match (arena.value_type(left), arena.value_type(right)) {
     (Some(one), Some(other)) => if left == right {
@@ -1389,10 +1400,35 @@ fn converge(
                     | Value::QuoteComputation(_)
                     | Value::StaticApplication(..) => false,
                 };
+                // A thunk whose computation forces a thunk literal at its head,
+                // under its lambdas, applications and binds, holds a β-redex
+                // the walk cannot read: a δ-step through a recursion under
+                // parameters leaves one at each recursive call. Only a
+                // deferring walk sets the pair aside. A related walk reads the
+                // path endpoints inside the two thunks instead.
+                let holds_redex = |value: &Value| {
+                    let &Value::Thunk(mut head) = value
+                    else {
+                        return false;
+                    };
+                    while let Some(
+                        &(Computation::Lambda(inner)
+                        | Computation::Application(inner, _)
+                        | Computation::Bind(inner, _)),
+                    ) = arena.computation(head)
+                    {
+                        head = inner;
+                    }
+                    matches!(arena.computation(head), Some(&Computation::Force(forced))
+                        if matches!(arena.value(forced), Some(&Value::Thunk(_))))
+                };
                 let set_aside = matches!(*left, Value::Returned(_))
                     || matches!(*right, Value::Returned(_))
                     || presented(left)
-                    || presented(right);
+                    || presented(right)
+                    || matches!(endpoints, Endpoints::Deferred { .. })
+                        && matches!((left, right), (&Value::Thunk(_), &Value::Thunk(_)))
+                        && (holds_redex(left) || holds_redex(right));
                 if let Endpoints::Deferred {
                     ref mut pending, ..
                 }

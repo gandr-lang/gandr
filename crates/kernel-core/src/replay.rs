@@ -1594,9 +1594,9 @@ pub(crate) enum StuckEndpoints
 /// are read: each side of a value pair normalized as
 /// [`Replay::normalize_returned`] gives it and the normal forms converted by
 /// [`convert_values`], the kernel's one conversion; two normal forms that are
-/// both stuck endpoints compared by the structural walk over their
-/// computations, whose own set-aside pairs — the endpoints the stuck heads
-/// carry, which the evaluator does not run — are read in turn (#698); a
+/// both stuck endpoints, or both thunks, compared by the structural walk over
+/// their computations, whose own set-aside pairs — the endpoints the stuck
+/// heads carry, which the evaluator does not run — are read in turn (#698); a
 /// decode's code normalized to the quote it returns, and the type it quotes
 /// compared with the other side by the same walk; a dependent arrow's codomain
 /// compared by that walk with a plain arrow's weakened past the dependent
@@ -1609,16 +1609,16 @@ pub(crate) enum StuckEndpoints
 ///   every value pair's normal forms convert under [`convert_values`] — or,
 ///   when both are quotes, their quoted types converge under the walk with
 ///   every pair it sets aside read the same way, or, when both are stuck
-///   endpoints, their computations converge the same way, or, under
-///   [`StuckEndpoints::Unfolding`], they convert under [`convert_unfolding`]
-///   within `budget`, every quote pair it owes read the same way — and every
-///   decode's code normalizes to a quote whose quoted type converges with the
-///   other side the same way, and every dependent codomain converges the same
-///   way with its plain codomain weakened by one binder. A normalization that
-///   stops short of a value — budget, a partial fixpoint, an unreadable node —
-///   leaves its pair apart, and so does a decode whose code reads to no quote
-///   and a pair whose normal forms do not convert. `arena` holds what it held
-///   on entry.
+///   endpoints or both thunks, their computations converge the same way, or,
+///   under [`StuckEndpoints::Unfolding`], two stuck endpoints or two thunks
+///   convert under [`convert_unfolding`] within `budget`, every quote pair it
+///   owes read the same way — and every decode's code normalizes to a quote
+///   whose quoted type converges with the other side the same way, and every
+///   dependent codomain converges the same way with its plain codomain weakened
+///   by one binder. A normalization that stops short of a value — budget, a
+///   partial fixpoint, an unreadable node — leaves its pair apart, and so does
+///   a decode whose code reads to no quote and a pair whose normal forms do not
+///   convert. `arena` holds what it held on entry.
 /// - provides: the checker's reading of a returned endpoint, and of the type a
 ///   returned code denotes, at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
@@ -1648,7 +1648,10 @@ pub(crate) enum StuckEndpoints
 ///   call one side holds and the other runs convert, and they stay apart under
 ///   [`StuckEndpoints::Structural`]. Two whose arms differ by a call returning
 ///   a record code over another call and the record its run reaches convert
-///   too, and stay apart when the record's field reads to another type.
+///   too, and stay apart when the record's field reads to another type. A thunk
+///   a δ-step leaves over a recursion under parameters converts with the thunk
+///   over the call its source wrote, and stays apart from one over the
+///   parameters swapped.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
@@ -1656,6 +1659,7 @@ pub(crate) enum StuckEndpoints
 /// - witness: `replay::tests::endpoints_a_stuck_endpoint_carries_are_read_in_turn_698`
 /// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
 /// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
+/// - witness: `replay::tests::a_recursion_under_its_parameters_reads_as_its_call_3733`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
@@ -1704,11 +1708,14 @@ pub(crate) fn read_endpoints(
                 // two stuck endpoints that differ by a definition a stuck arm
                 // calls, held on one side and run on the other, convert by the
                 // kernel's δ-steps (#2831). A quote pair the δ-steps reach and
-                // owe is read on this worklist in turn (#3045).
+                // owe is read on this worklist in turn (#3045). Two thunks the
+                // walk set aside for a forced thunk convert by the same
+                // reduction.
                 if stuck == StuckEndpoints::Unfolding
                     && matches!(
                         (run.arena.value(left_normal), run.arena.value(right_normal)),
                         (Some(&Value::Returned(_)), Some(&Value::Returned(_)))
+                            | (Some(&Value::Thunk(_)), Some(&Value::Thunk(_)))
                     )
                 {
                     let mark = run.arena.watermark();
@@ -1741,7 +1748,8 @@ pub(crate) fn read_endpoints(
                     // The evaluator stops at a stuck head and leaves the
                     // endpoints its arguments carry unrun: compare the heads by
                     // structure and read those endpoints in turn.
-                    (Some(&Value::Returned(one)), Some(&Value::Returned(other))) => {
+                    (Some(&Value::Returned(one)), Some(&Value::Returned(other)))
+                    | (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) => {
                         ConversionGoal::Computation(one, other)
                     },
                     _ => {
@@ -5036,8 +5044,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// the presentations ([`Self::present`]), as a goal's root reads before
     /// its shape; no definition unfolds, as no decision names one. A pair that
     /// read to something is walked again, its own set-aside pairs read in
-    /// turn; a pair neither side of which reads to anything compares by
-    /// [`equal_weakened`].
+    /// turn; two thunks neither of which reads to anything walk their
+    /// computations the same way; any other pair neither side of which reads
+    /// to anything compares by [`equal_weakened`].
     ///
     /// # Specification
     /// - requires: every pair's values live in the arena.
@@ -5057,7 +5066,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - measure: the budget left: a side reads one step of its chain per
     ///   charge, its rewriting charges every node it compares or copies, and a
     ///   pair returns to the worklist only after one of its sides read to
-    ///   something — a normal form reads to itself.
+    ///   something — a normal form reads to itself — and a thunk pair's walk
+    ///   adds only pairs inside its two computations.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call over an endpoint returning the other side's
@@ -5105,16 +5115,27 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 *side = normal;
             }
             let [one, other] = read;
-            let walked = if (one, other) == (left, right) {
-                equal_weakened(self.arena, ConversionGoal::Value(one, other))
-            }
-            else {
-                pending_endpoints(
+            let unread = (one, other) == (left, right);
+            let walked = match (self.arena.value(one), self.arena.value(other)) {
+                // The walk sets a thunk pair aside for the redex one of its
+                // computations forces, which this reading does not contract:
+                // walk the two computations, their own set-aside pairs read
+                // in turn.
+                (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) if unread => {
+                    pending_endpoints(
+                        self.arena,
+                        self.unfoldings.presentations(),
+                        ConversionGoal::Computation(one, other),
+                        &mut pending,
+                    )
+                },
+                _ if unread => equal_weakened(self.arena, ConversionGoal::Value(one, other)),
+                _ => pending_endpoints(
                     self.arena,
                     self.unfoldings.presentations(),
                     ConversionGoal::Value(one, other),
                     &mut pending,
-                )
+                ),
             };
             if walked == Convertibility::Distinct {
                 return Ok(Convertibility::Distinct);

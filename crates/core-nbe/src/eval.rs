@@ -964,41 +964,68 @@ impl<'run> Definitions<'run>
         Self { recursion, ..self }
     }
 
-    /// The definition whose own recursion the fixpoint `source` is, closed
-    /// over nothing, when this run refolds recursion.
+    /// The definition whose own recursion the fixpoint `source` is, under
+    /// `environment`, when this run refolds recursion.
     ///
     /// # Specification
-    /// - requires: nothing — any computation id is admissible input.
+    /// - requires: nothing — any computation id and any environment are
+    ///   admissible input.
     /// - ensures: under [`Recursion::Refolded`], the first constant in
-    ///   admission order whose body this scope reads as manifest and which
-    ///   suspends `source`; `None` under [`Recursion::Unrolled`] and for a
-    ///   fixpoint no definition suspends.
-    /// - provides: the name a readback gives a definition's recursion.
+    ///   admission order whose body this scope reads as manifest and is a thunk
+    ///   of `n` lambdas over `source`, where `environment` binds `n`
+    ///   intuitionistic values and no linear one; `None` under
+    ///   [`Recursion::Unrolled`] and for a fixpoint no definition suspends so.
+    /// - provides: the name a readback gives a definition's recursion. A
+    ///   definition's body is closed, so the fixpoint under those `n` values is
+    ///   the definition applied to them, by β: a uniform parameter bound ahead
+    ///   of the fixpoint is one of them.
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Termination
+    /// - reason: the `while let` loop descends a body's lambda chain, not
+    ///   recursion.
+    /// - measure: the lambdas left above `source`.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::reading_recursion`].
+    /// - hypothesis: L3 — as [`Self::reading_recursion`], and a recursion bound
+    ///   under a parameter ahead of the fixpoint names that parameter.
     /// - witness: `readback::tests::a_definition_s_own_recursion_reads_back_as_the_definition`
+    /// - witness: `readback::tests::a_recursion_under_a_uniform_parameter_reads_back_as_the_definition_applied`
     #[inline]
     #[spec(ensures: |ret| self.recursion == Recursion::Refolded || ret.is_none())]
     pub(crate) fn recursion_of(
         &self,
         core: &CoreArena,
         source: ComputationId,
+        environment: &Environment,
     ) -> Option<ConstantIndex>
     {
-        if self.recursion == Recursion::Unrolled {
+        if self.recursion == Recursion::Unrolled
+            || environment.depth(Zone::Linear) != EnvironmentDepth::from(0_usize)
+        {
             return None;
         }
+        let parameters = environment.depth(Zone::Intuitionistic);
         self.chain
             .chain()
             .entries()
             .iter()
             .map(DefinitionEntry::constant)
             .find(|&constant| {
-                self.definition(constant)
-                    .is_some_and(|body| core.value(body) == Some(&Value::Thunk(source)))
+                let Some(&Value::Thunk(mut body)) =
+                    self.definition(constant).and_then(|body| core.value(body))
+                else {
+                    return false;
+                };
+                let mut bound = 0_usize;
+                while body != source
+                    && let Some(&Computation::Lambda(inner)) = core.computation(body)
+                {
+                    body = inner;
+                    bound = bound.saturating_add(1_usize);
+                }
+                body == source && EnvironmentDepth::from(bound) == parameters
             })
     }
 

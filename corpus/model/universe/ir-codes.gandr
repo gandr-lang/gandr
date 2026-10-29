@@ -50,3 +50,25 @@ pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
     ))
   }
 }
+
+/// Accepts the arguments of any code.
+@[ checks ]
+pub def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> Unit {
+  return unit
+}
+
+/// Opens the arguments of a sigma code. The rest has the arguments of the
+/// code that the first field picks.
+@[ checks ]
+pub def rest(
+  d : Type,
+  a : Type,
+  f : +U (a -> -F IR(d)),
+  x : Type,
+  t : +U (x -> -F d),
+  v : args(d, (SigmaC(a, f) : IR(d)), x, t)
+) -> Unit {
+  case v {
+    MkSig(y, r) => keep(d, f(y), x, t, r)
+  }
+}

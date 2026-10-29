@@ -3714,6 +3714,81 @@ fn a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831()
     );
 }
 
+/// A definition whose parameters stand ahead of its fixpoint reads its own
+/// call under a binder as the call its source wrote, its parameters applied
+/// outermost first (#3733). `c`, constant 1, is `thunk { λd. λe. fix f. λn.
+/// case n { Z ⇒ return (d, e); S(m) ⇒ return thunk { λz. f(m) } } }` over
+/// the naturals at constant 0. A step's own reading runs `c(d, e, S(m))` to
+/// the thunk over `c(d, e, m)`, and that thunk stays apart from the one over
+/// `c(e, d, m)`.
+#[test]
+fn a_recursion_under_its_parameters_reads_as_its_call_3733()
+{
+    let mut arena = TermArena::new();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let unit_type = arena.value_type_unit();
+    let motive = arena.comp_type_returner(unit_type);
+    // Under `n`, `f`, `e` and `d`: `d` is 3 and `e` is 2.
+    let d = arena.value_variable(DeBruijnIndex::from(3_u32));
+    let e = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let parameters = arena.value_tuple(&[d, e]);
+    let on_zero = arena.computation_return(parameters);
+    // Under `z`, `m`, `n`, `f`, `e` and `d`: `f` is 3 and `m` is 1.
+    let recursive = arena.value_variable(DeBruijnIndex::from(3_u32));
+    let forced = arena.computation_force(recursive);
+    let m = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let recurse = arena.computation_application(forced, m);
+    let under = arena.computation_lambda(recurse);
+    let suspended = arena.value_thunk(under);
+    let on_successor = arena.computation_return(suspended);
+    let on_successor = arena.computation_lambda(on_successor);
+    let n = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let cases = arena.computation_data_case(n, motive, alloc::vec![on_zero, on_successor]);
+    let body = arena.computation_lambda(cases);
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let under_e = arena.computation_lambda(fixpoint);
+    let under_d = arena.computation_lambda(under_e);
+    let defined = arena.value_thunk(under_d);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(defined)]);
+    // `c(x, y, w)` for the variables at `x`, `y` and `w`.
+    let call = |arena: &mut TermArena, [x, y]: [u32; 2], w: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(1_usize));
+        let mut called = arena.computation_force(head);
+        for index in [x, y] {
+            let parameter = arena.value_variable(DeBruijnIndex::from(index));
+            called = arena.computation_application(called, parameter);
+        }
+        arena.computation_application(called, w)
+    };
+    // `⟨c(d, e, S(m))⟩` for the free `d` 2, `e` 1 and `m` 0.
+    let m = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![m]);
+    let run = call(&mut arena, [2, 1], successor);
+    let run = arena.value_returned(run);
+    // `thunk { λz. c(x, y, m) }`, the free variables one binder deeper.
+    let refolded = |arena: &mut TermArena, parameters: [u32; 2]| {
+        let m = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let called = call(arena, parameters, m);
+        let under = arena.computation_lambda(called);
+        arena.value_thunk(under)
+    };
+    let written = refolded(&mut arena, [3, 2]);
+    let swapped = refolded(&mut arena, [2, 3]);
+
+    assert_eq!(
+        super::read_step(&mut arena, &unfoldings, run, written, ReplayBudget::DEFAULT),
+        KernelVerdict::Convertible,
+        "the recursion reads as the call `c(d, e, m)` its source wrote"
+    );
+    assert_eq!(
+        super::read_step(&mut arena, &unfoldings, run, swapped, ReplayBudget::DEFAULT),
+        KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Contradicted {
+            at: TracePosition::default(),
+        })),
+        "the parameters apply outermost first"
+    );
+}
+
 /// A step's own reading converts two endpoints stuck on a variable whose arms
 /// differ by a definition one side holds and the other runs, when what it
 /// runs to is a record type over a call: the held arm's δ-step returns

@@ -1131,11 +1131,12 @@ fn endpoints_agree(
 ///   sort and level, and rigid decodes the same level and the same code: two
 ///   codes agree when, each reduced at its head, either is a hole or a mark, or
 ///   they are the same variable or constant, quotes of agreeing types, static
-///   applications of agreeing heads to agreeing arguments, or static lambdas
-///   over agreeing bodies; two data indices agree when either root is a hole or
-///   a mark the solver does not refute against the other side, or they are
-///   equal as syntax, or either root is a call and they convert as endpoints,
-///   and two endpoints by the same rule or when they convert as endpoints;
+///   applications of agreeing heads to agreeing arguments, static lambdas over
+///   agreeing bodies, or returned codes equal as syntax or that convert as
+///   endpoints; two data indices agree when either root is a hole or a mark the
+///   solver does not refute against the other side, or they are equal as
+///   syntax, or either root is a call and they convert as endpoints, and two
+///   endpoints by the same rule or when they convert as endpoints;
 ///   [`Agreement::Apart`] at the first rigid disagreement. Inside the
 ///   elaboration run a bare owed flex–rigid equation is accumulated instead:
 ///   agreement is then conditional on those residuals, and a later rigid
@@ -1172,8 +1173,10 @@ fn endpoints_agree(
 ///   plain one whose codomain ignores the binder, names it, or reads the
 ///   ambient context past it, a family argument written as a call against the
 ///   value it returns and against another value, a family argument that reduces
-///   but is no call against its value, and a dangling id; the fast path is
-///   pinned against the structural decision by property.
+///   but is no call against its value, a code a family literal returns at a
+///   variable against the call its body makes and against another call, and a
+///   dangling id; the fast path is pinned against the structural decision by
+///   property.
 /// - witness: `conversion::tests::one_id_converts_without_being_read`
 /// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
 /// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
@@ -1196,6 +1199,7 @@ fn endpoints_agree(
 /// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
 /// - witness: `tests::native_formers::a_family_argument_written_as_a_call_converts_with_its_value_3579`
 /// - witness: `tests::native_formers::term_indices_are_structural_in_both_checkers`
+/// - witness: `tests::native_formers::a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -2087,11 +2091,17 @@ fn convert(
                                     true
                                 }
                             }
+                            // Two returned codes agree as syntax, or as
+                            // endpoints when their syntax differs. The kernel
+                            // reads them by reduction, so a code a family
+                            // literal returns meets the call its body makes.
                             else if let Value::Returned(_) = *matched_left_value
                                 && let Value::Returned(_) = *matched_right_value
                             {
                                 equal_certificate_syntax(context.arena(), left, right)
                                     == CertificateEquality::Equal
+                                    || endpoints_agree(context, left, right)?
+                                        == Agreement::Convertible
                             }
                             else if let Value::Recorded(ref left_moves) = *matched_left_value
                                 && let Value::Recorded(ref right_moves) = *matched_right_value

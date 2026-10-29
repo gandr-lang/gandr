@@ -2409,6 +2409,120 @@ fn a_constructor_annotated_at_a_call_meets_its_stated_index_3627()
     );
 }
 
+/// A code a family literal returns at `y` meets the call the literal's body
+/// makes, in both checkers (#3733). `pick`, constant 0, cases on a boolean
+/// and returns the code of `Unit` or of `Integer`. `keep`, constant 1, takes
+/// `b` and a value of `El(⟨pick(b)⟩)`. `pass`, constant 2, takes `b`, `y` and
+/// a value of `El(⟨(thunk { fn (z) { pick(b) } })(y)⟩)`, and gives that value
+/// to `keep`. `swap`, constant 3, writes `pick(y)` in the literal, so its
+/// value has another type.
+#[test]
+fn a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733()
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let boolean = arena.value_type_sum(&[unit_type, unit_type]);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let [pick, keep] = [0_usize, 1].map(|at| arena.value_constant(ConstantIndex::from(at)));
+    // `fn (b) { case b { inl _ => return 'Unit, inr _ => return 'Integer } }`.
+    let [on_left, on_right] = [unit_type, integer].map(|picked| {
+        let code = arena.value_quote(picked);
+        arena.computation_return(code)
+    });
+    let scrutinee = variable(&mut arena, 0);
+    let picked = arena.computation_case(scrutinee, &[on_left, on_right]);
+    let picked = arena.computation_lambda(picked);
+    let picked = arena.value_thunk(picked);
+    let returns_kind = arena.comp_type_returner(kind);
+    let pick_type = arena.comp_type_arrow(boolean, returns_kind);
+    let pick_type = arena.value_type_thunk(pick_type);
+    let returns_unit = arena.comp_type_returner(unit_type);
+    // `pick(index)`'s decode, as a code returned by the call.
+    let decoded = |arena: &mut CoreArena, index: u32| {
+        let argument = variable(arena, index);
+        let forced = arena.computation_force(pick);
+        let call = arena.computation_application(forced, argument);
+        let call = arena.value_returned(call);
+        arena.value_type_element(call, Level::zero())
+    };
+    // `keep : (b : Bool) -> El(⟨pick(b)⟩) -> -F Unit`, returning `unit`.
+    let kept = decoded(&mut arena, 0);
+    let keep_type = arena.comp_type_arrow(kept, returns_unit);
+    let keep_type = arena.comp_type_pi(boolean, keep_type);
+    let keep_type = arena.value_type_thunk(keep_type);
+    let keep_body = arena.computation_return(unit);
+    let keep_body = arena.computation_lambda(keep_body);
+    let keep_body = arena.computation_lambda(keep_body);
+    let keep_body = arena.value_thunk(keep_body);
+    // Under `b` and `y`, the family literal over `pick(at)` applied at `y`:
+    // inside the literal `z` is 0, `y` 1 and `b` 2.
+    let through = |arena: &mut CoreArena, at: u32| {
+        let argument = variable(arena, at);
+        let forced = arena.computation_force(pick);
+        let call = arena.computation_application(forced, argument);
+        let literal = arena.computation_lambda(call);
+        let literal = arena.value_thunk(literal);
+        let literal = arena.value_ascribe(literal, pick_type);
+        let literal = arena.computation_force(literal);
+        let y = variable(arena, 0);
+        let applied = arena.computation_application(literal, y);
+        let code = arena.value_returned(applied);
+        let decoded = arena.value_type_element(code, Level::zero());
+        let passed = arena.comp_type_arrow(decoded, returns_unit);
+        let passed = arena.comp_type_pi(boolean, passed);
+        let passed = arena.comp_type_pi(boolean, passed);
+        arena.value_type_thunk(passed)
+    };
+    let [pass_type, swap_type] = [2, 1].map(|at| through(&mut arena, at));
+    // `fn (b, y, w) { keep(b, w) }`: under `b`, `y` and `w`, `b` is 2.
+    let b = variable(&mut arena, 2);
+    let w = variable(&mut arena, 0);
+    let forced = arena.computation_force(keep);
+    let handed = arena.computation_application(forced, b);
+    let handed = arena.computation_application(handed, w);
+    let handed = arena.computation_lambda(handed);
+    let handed = arena.computation_lambda(handed);
+    let handed = arena.computation_lambda(handed);
+    let handed = arena.value_thunk(handed);
+    let (report, crossed) = run(&mut arena, &[
+        definition(ConstantIndex::from(0_usize), pick_type, picked),
+        definition(ConstantIndex::from(1_usize), keep_type, keep_body),
+        definition(ConstantIndex::from(2_usize), pass_type, handed),
+        definition(ConstantIndex::from(3_usize), swap_type, handed),
+    ]);
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "the literal's code meets the call it makes: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+        "the kernel admits it: {:?}",
+        crossed.readmitted()[2].outcome()
+    );
+    assert!(
+        matches!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "a literal calling `pick(y)` is apart from `pick(b)`: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(
+            crossed.readmitted()[3].outcome(),
+            Outcome::Marked(CheckRefusal::TypeMismatch(_))
+        ),
+        "{:?}",
+        crossed.readmitted()[3].outcome()
+    );
+}
+
 #[test]
 fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
 {
