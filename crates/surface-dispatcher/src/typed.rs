@@ -8794,6 +8794,54 @@ mod tests
         );
     }
 
+    /// #3933: a delta code's rest has the type the checker computes by
+    /// unfolding `args`, whose body writes a thunk where `f` reads its
+    /// argument. The printer spelled that thunk a bare `fn`, which reprinted
+    /// as `thunk { fn … }`; it reprints as printed.
+    #[test]
+    fn a_thunk_a_computed_type_writes_reprints_as_printed_3933()
+    {
+        let source = SourceText::from(
+            "data Sig(a : Type, b : +U (a -> -F Type)) : Type {\n  MkSig : (x : a, y : b(x)) --> \
+             Sig(a, b);\n}\ndata IR(d : Type) : Type[+, 1] {\n  Iota : (e : d) --> IR(d);\n  \
+             DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d);\n}\ndef rec \
+             args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {\n  case c {\n    \
+             Iota(e) => return Unit,\n    DeltaC(a, f) => return (Sig(\n      +U (a -> -F x),\n      \
+             thunk { fn (h) { args[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t) } }\n    ))\n  }\n}\n\
+             def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> \
+             Unit {\n  return unit\n}\ndef delta(\n  d : Type,\n  a : Type,\n  f : +U (+U (a -> -F d) \
+             -> -F IR(d)),\n  x : Type,\n  t : +U (x -> -F d),\n  v : args(d, (DeltaC(a, f) : \
+             IR(d)), x, t)\n) -> Unit {\n  case v {\n    MkSig(h, r) => keep(d, f(thunk { fn (z) { \
+             t(h(z)) } }), x, t, r)\n  }\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.reprinted))
+            .collect();
+        assert!(
+            reads
+                .iter()
+                .any(|&(ref spelled, _)| spelled.starts_with("args(d, f(")),
+            "a printed type is the rest's computed type: {reads:?}"
+        );
+        let moved: Vec<_> = reads
+            .iter()
+            .filter(|&&(ref spelled, ref again)| match *again {
+                Maybe::Present(ref again) => again != spelled,
+                Maybe::Absent(super::reprinted::Absent::Unspelled) => true,
+                Maybe::Absent(
+                    super::reprinted::Absent::Unlowered | super::reprinted::Absent::Unrun,
+                ) => false,
+            })
+            .collect();
+        assert!(
+            moved.is_empty(),
+            "every printed type that lowers again reprints as itself: {moved:#?}"
+        );
+    }
+
     /// #3010: a record whose last field is a record sharing a label with an
     /// earlier field, read back, reprints with the labels it was written and
     /// printed with.

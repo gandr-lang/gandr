@@ -5166,6 +5166,44 @@ fn a_thunk_the_checker_inserts_is_left_out_1457()
     );
 }
 
+/// #3933: a call written where a type is read leaves out its argument's
+/// thunk over a function, which the lowering thunks again, and keeps the one
+/// over a call, which no checker inserts there.
+#[test]
+fn a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933()
+{
+    let names = [Name::from("kept"), Name::from("twice")];
+    let mut core = CoreArena::new();
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    let kept = core.computation_force(kept);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(bound);
+    let function = core.computation_lambda(returned);
+    let function = core.value_thunk(function);
+    let over_function = core.computation_application(kept, function);
+    let over_function = core.value_returned(over_function);
+    let over_function = core.value_type_element(over_function, Level::zero());
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let twice = core.value_constant(ConstantIndex::from(1_usize));
+    let twice = core.computation_force(twice);
+    let doubled = core.computation_application(twice, one);
+    let doubled = core.value_thunk(doubled);
+    let over_call = core.computation_application(kept, doubled);
+    let over_call = core.value_returned(over_call);
+    let over_call = core.value_type_element(over_call, Level::zero());
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(over_function))),
+        faithful(Written("kept(fn (a) { a })")),
+        "an argument's thunk over a function is left out where a type is read"
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(over_call))),
+        faithful(Written("kept(thunk { twice(1) })")),
+        "an argument's thunk over a call is kept where a type is read"
+    );
+}
+
 /// A lambda ascribed a type is written without the thunk the checker
 /// inserts over it, as the formatter writes it, while an ascribed thunk over
 /// a call keeps its braces (#3872).

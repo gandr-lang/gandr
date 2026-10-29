@@ -54,7 +54,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ ││                │                          checked against `Mu(d, c) => d`; while checking the body of this thunk
    │ ││                checked against `-F d`; while checking the argument of this application
 55 │ ││     }
-   │ │└─────┘ checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), thunk { fn (a) { decodeMu(d, c, a) } })
+   │ │└─────┘ checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fn (a) { decodeMu(d, c, a) })
 56 │ │    }
    │ └────┘ checked against `(d : Type, c : IR(d), Mu(d, c)) => d`; while checking the body of this function; binds decodeMu : Mu(d, c) => d
    │
