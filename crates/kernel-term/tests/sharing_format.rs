@@ -2201,7 +2201,8 @@ fn the_empty_sequence_encodes_to_a_bare_header()
 
 /// The decoder reports each segment's end where the hand-built bytes put
 /// it: the header's after the declaration count, and each declaration's
-/// after its last slot, sharing across the segments notwithstanding.
+/// after its last slot, sharing across the segments notwithstanding. Each
+/// declaration's span starts where the segment before it ends.
 #[test]
 fn each_segment_ends_where_its_bytes_end()
 {
@@ -2215,6 +2216,14 @@ fn each_segment_ends_where_its_bytes_end()
     assert!(
         empty.segments().declaration_ends().is_empty(),
         "a bare header has no declaration segment"
+    );
+    assert_eq!(
+        (None, 0),
+        (
+            empty.segments().declaration_segment(ConstantIndex::from(0)),
+            empty.segments().declaration_segments().count()
+        ),
+        "a bare header spans no declaration segment"
     );
 
     // The axiom's declared type is the definition's entry zero, so its own
@@ -2238,6 +2247,30 @@ fn each_segment_ends_where_its_bytes_end()
         [ByteOffset::from(first_end), ByteOffset::from(second_end)].as_slice(),
         artifact.segments().declaration_ends(),
         "each declaration ends after its own last slot"
+    );
+    let first = ByteOffset::from(header.0.len()) .. ByteOffset::from(first_end);
+    let second = ByteOffset::from(first_end) .. ByteOffset::from(second_end);
+    assert!(
+        artifact
+            .segments()
+            .declaration_segments()
+            .eq([first.clone(), second.clone()]),
+        "the first span starts at the header's end, and the second at the first's end"
+    );
+    assert_eq!(
+        [
+            artifact
+                .segments()
+                .declaration_segment(ConstantIndex::from(0)),
+            artifact
+                .segments()
+                .declaration_segment(ConstantIndex::from(1)),
+            artifact
+                .segments()
+                .declaration_segment(ConstantIndex::from(2)),
+        ],
+        [Some(first), Some(second), None],
+        "a position answers its own span, and none past the last declaration"
     );
     assert_eq!(
         bytes.0.len(),

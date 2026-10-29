@@ -2622,14 +2622,16 @@ pub mod tests
         let segments = |image: &[u8]| -> Vec<Vec<u8>> {
             let decoded =
                 gandr_kernel_term::decode(image.into()).expect("the kernel's export decodes");
-            let mut start = usize::from(decoded.segments().header_end());
-            let mut cut = Vec::new();
-            for &end in decoded.segments().declaration_ends() {
-                let end = usize::from(end);
-                cut.push(image.get(start .. end).unwrap_or_default().to_vec());
-                start = end;
-            }
-            cut
+            decoded
+                .segments()
+                .declaration_segments()
+                .map(|span| {
+                    image
+                        .get(usize::from(span.start) .. usize::from(span.end))
+                        .unwrap_or_default()
+                        .to_vec()
+                })
+                .collect()
         };
         let base = "@[ checks ]\npub data Point : Type {\n  Here : Point;\n}\n\n@[ checks ]\npub \
                     def here : Point ;\ndef here = Here ;\n";

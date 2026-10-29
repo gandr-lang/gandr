@@ -441,6 +441,74 @@ impl SegmentLayout
     {
         &self.declaration_ends
     }
+
+    /// The bytes the declaration segment at `position` spans: from the end of
+    /// the segment before it, or the header's end for the first, to its own
+    /// end.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` when no declaration sits at `position`. Otherwise the
+    ///   span ends at the declaration's end and starts at the previous
+    ///   declaration's end, or at the header's end at position zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a hand-built two-declaration artifact and a bare
+    ///   header. The first span starts at the header's end and the second at
+    ///   the first's end, which separates a span shifted by one segment. The
+    ///   position past the last declaration answers `None`.
+    /// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+    #[spec(ensures: |ret| {
+        let index = usize::from(position);
+        ret.as_ref().map_or(index >= self.declaration_ends.len(), |span| {
+            self.declaration_ends.get(index) == Some(&span.end)
+                && index.checked_sub(1).map_or_else(
+                    || span.start == self.header_end,
+                    |before| self.declaration_ends.get(before) == Some(&span.start),
+                )
+        })
+    })]
+    #[inline]
+    #[must_use]
+    pub fn declaration_segment(
+        &self,
+        position: ConstantIndex,
+    ) -> Option<core::ops::Range<ByteOffset>>
+    {
+        let index = usize::from(position);
+        let end = *self.declaration_ends.get(index)?;
+        let start = match index.checked_sub(1) {
+            Some(before) => *self.declaration_ends.get(before)?,
+            None => self.header_end,
+        };
+        Some(start .. end)
+    }
+
+    /// Each declaration segment's span, in admission order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one span per declaration, each the span
+    ///   [`declaration_segment`](Self::declaration_segment) answers at its
+    ///   position.
+    /// - panics: none.
+    /// - executable: none — the spans are a law of the iterator's consumption;
+    ///   checking the opaque iterator here would consume it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`declaration_segment`](Self::declaration_segment). The two spans come
+    ///   in admission order, and the bare header yields none.
+    /// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+    #[inline]
+    pub fn declaration_segments(&self) -> impl Iterator<Item = core::ops::Range<ByteOffset>> + '_
+    {
+        core::iter::once(self.header_end)
+            .chain(self.declaration_ends.iter().copied())
+            .zip(&self.declaration_ends)
+            .map(|(start, &end)| start .. end)
+    }
 }
 
 /// A fully decoded artifact.
@@ -596,10 +664,7 @@ impl DecodedArtifact
         && artifact.metrics.max_declaration_expanded_work() <= MAX_EXPANDED_TERM_WORK
         && artifact.metrics.artifact_expanded_work() <= MAX_ARTIFACT_EXPANDED_WORK
         && artifact.segments.declaration_ends.len() == artifact.declarations.len()
-        && core::iter::once(artifact.segments.header_end)
-            .chain(artifact.segments.declaration_ends.iter().copied())
-            .zip(artifact.segments.declaration_ends.iter().copied())
-            .all(|(start, end)| start < end)
+        && artifact.segments.declaration_segments().all(|span| span.start < span.end)
         && artifact.segments.declaration_ends.last().copied()
             .unwrap_or(artifact.segments.header_end) == image.length()))]
 pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
