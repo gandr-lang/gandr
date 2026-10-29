@@ -2008,18 +2008,43 @@ run = [
 # the user's cache, on a scratch copy of a corpus source: the extension
 # activates, a definition is typed, and its hover is answered once, in the
 # server's HTML. It reads the bundle and the compiled scene `check:extension`
-# leaves, and serves them with the driver `check:corpus-format` builds. Hosted
-# CI does not run it: the CI image carries no Electron runtime libraries. A
+# leaves, and serves them with the driver `check:corpus-format` builds. A
 # host that hangs is ended at three minutes.
+#
+# The smoke runs only on Linux in GitHub Actions (#3696), as
+# `.config/vscode-smoke/admits.bash` decides. Chromium honours
+# `--ozone-platform=headless` on Linux alone, so on macOS the editor opens a
+# window and takes the seated user's focus. The rule reads
+# `GITHUB_ACTIONS=true`, which the hosted runner and `act` set, not `CI`,
+# which a seat's own shell may set. Anywhere else the task exits 0 at once
+# and names this issue, before any build or launch, and no override runs it
+# by hand. So `check:extension` runs after the guard, not as a dependency.
+# The test is the extension's only surface check. Hosted CI does not run it
+# yet: the CI image carries no Electron runtime libraries.
 ["check:vscode-smoke"]
-description = "A real VS Code opens a corpus source with the extension, types and hovers"
-depends = ["check:extension"]
+description = "A real VS Code opens a corpus source with the extension, types and hovers, on Linux in GitHub Actions only"
 dir = "contrib/gandr-vscode"
 env.PATH = "{{ config_root }}/target/debug:{{ env.PATH }}"
-run = [
-  "{{ config_root }}/.config/mise/scope cargo build --locked --quiet --profile test --package gandr-lang --bin gandr",
-  "timeout --kill-after=10 180 node dist/src/smoke/run.js",
-]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if ! "{{ config_root }}/.config/vscode-smoke/admits.bash"; then
+  echo 'vscode smoke skipped: it runs only on Linux in GitHub Actions, so no workstation opens an editor window (#3696)'
+  exit 0
+fi
+mise run check:extension
+"{{ config_root }}/.config/mise/scope" cargo build --locked --quiet --profile test --package gandr-lang --bin gandr
+timeout --kill-after=10 180 node dist/src/smoke/run.js
+'''
+
+# Where `check:vscode-smoke` may start an editor (#3696):
+# `.config/vscode-smoke/cases.bash` runs `admits.bash` over each case of
+# `.config/vscode-smoke/cases.json`, a kernel and the variables beside
+# `PATH`, and compares its answer with the case's.
+["check:vscode-smoke-admits"]
+description = "The vscode smoke starts an editor only on Linux in GitHub Actions"
+tools.jq = "1.8.1"
+run = ".config/vscode-smoke/cases.bash"
 
 # The input method's command table is generated from three pinned sources the
 # generator reads by digest (`contrib/gandr-vscode/scripts/input-table.mts`):

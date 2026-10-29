@@ -127,13 +127,8 @@ The commands are Agda's input method and the TeX names it inherits, read from pu
 
 ## Develop the extension
 
-`mise exec -- aube run watch` recompiles on every change into `dist/src`. To run the extension without installing it, bundle once and start an Extension Development Host:
-
-```sh
-mise exec -- aube run vscode:prepublish
-code --extensionDevelopmentPath="$PWD"
-```
+`mise exec -- aube run watch` recompiles on every change into `dist/src`.
 
 Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`. `mise run check:extension` from the repository root type-checks, lints, compiles, runs the `node:test` suites under `src/`, bundles, and packages the extension; a deprecation fails that gate.
 
-`mise run check:vscode-smoke` runs the end-to-end smoke after that gate. VS Code at the manifest's floor, downloaded once into `~/.cache/gandr/vscode`, starts without a display on a scratch copy of `corpus/model/basics/definitions.gandr` with this extension alone, served by the `gandr` the workspace builds. The scene in `src/smoke/scene.ts` activates the extension, types a definition, and holds its hover to exactly one answer in the server's HTML. The local gate runs it; hosted CI does not, as its image carries no Electron runtime.
+`mise run check:vscode-smoke` runs the end-to-end smoke after that gate, and it is the extension's only surface check. VS Code at the manifest's floor, downloaded once into `~/.cache/gandr/vscode`, starts without a display on a scratch copy of `corpus/model/basics/definitions.gandr` with this extension alone, served by the `gandr` the workspace builds. The scene in `src/smoke/scene.ts` activates the extension, types a definition, and holds its hover to exactly one answer in the server's HTML. The smoke runs only on Linux in GitHub Actions, where the editor starts headless. Anywhere else the task exits at once and names #3696, so no workstation opens an editor window. Hosted CI does not run it yet, as its image carries no Electron runtime.
