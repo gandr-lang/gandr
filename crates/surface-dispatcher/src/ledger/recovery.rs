@@ -23,10 +23,11 @@
 //! call is unresolved. So is a source whose lowering refuses a form only for
 //! what it means where it stands (#3332): `loop` deleted leaves its `break`
 //! outside any loop, `break` deleted leaves the statement after an endless
-//! loop unreached, and `rec` deleted leaves a descent claim outside a
-//! recursive group. With no mistake of form left, the first refusal is
-//! where the source goes wrong by construction, so it is counted well formed
-//! beside the accepted, not filed.
+//! loop unreached, `rec` deleted leaves a descent claim outside a recursive
+//! group, and `thunk` deleted leaves its `return` where no body passes
+//! (#3496). With no mistake of form left, the first refusal is where the
+//! source goes wrong by construction, so it is counted well formed beside the
+//! accepted, not filed.
 //!
 //! A mutant that closes a form early is counted apart, as closed early. A
 //! closer doubled, or the closer an opener's deletion leaves, closes a form
@@ -617,13 +618,13 @@ fn mutants(
 ///   checked as `check` checks a source under a `ledger` directory; a mutant is
 ///   accepted when the check reports no error, counted well formed when the
 ///   lowering refused none of its declarations but for an unresolved name, a
-///   loop's exit outside any loop, an unreachable statement or a descent claim
-///   outside a recursive group, and its first error does not mark the site,
-///   counted closed early when its first error does not mark the site but marks
-///   a lone closer, exactly one `}`, `)` or `]`, and a finding otherwise when
-///   its first error's primary span neither overlaps nor touches the mutation's
-///   site, or the error has none. The scratch directory the mutants are written
-///   under is removed.
+///   loop's exit outside any loop, an unreachable statement, a descent claim
+///   outside a recursive group or an exit where no body passes, and its first
+///   error does not mark the site, counted closed early when its first error
+///   does not mark the site but marks a lone closer, exactly one `}`, `)` or
+///   `]`, and a finding otherwise when its first error's primary span neither
+///   overlaps nor touches the mutation's site, or the error has none. The
+///   scratch directory the mutants are written under is removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -638,11 +639,11 @@ fn mutants(
 ///   mutant counted and each first error read against its site; a deletion
 ///   leaving another well-formed declaration whose body the checker refuses, a
 ///   `rec` deleted or a declaration's keyword name missed, leaving only
-///   unresolved names, and a `loop`, `break` or `rec` deleted, leaving an exit
-///   outside any loop, a statement no path reaches or a descent claim outside a
-///   recursive group, are counted well formed, not filed; a closer doubled or
-///   an opener deleted, leaving a closer with nothing to close, is counted
-///   closed early, not filed.
+///   unresolved names, and a `loop`, `break`, `rec` or `thunk` deleted, leaving
+///   an exit outside any loop, a statement no path reaches, a descent claim
+///   outside a recursive group or a `return` where no body passes, are counted
+///   well formed, not filed; a closer doubled or an opener deleted, leaving a
+///   closer with nothing to close, is counted closed early, not filed.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
@@ -698,9 +699,10 @@ pub(super) fn sweep(
                 // Well formed: the lowering read the source and refused no
                 // declaration of it but for what a well-formed form means
                 // where it stands — a name no declaration answers, a loop's
-                // exit outside any loop, a statement no path reaches, or a
-                // descent claim outside a recursive group — so what the check
-                // reports is a meaning, not a form.
+                // exit outside any loop, a statement no path reaches, a
+                // descent claim outside a recursive group, or an exit where no
+                // body passes — so what the check reports is a meaning, not a
+                // form.
                 let formed = matches!(
                     *composed,
                     Composed::Settled {
@@ -718,7 +720,9 @@ pub(super) fn sweep(
                                             | LoweringRefusal::OutsideLoop { .. }
                                             | LoweringRefusal::Unreachable { .. }
                                             | LoweringRefusal::OutOfFragment {
-                                                boundary: FragmentBoundary::ForeignClaim,
+                                                boundary:
+                                                    FragmentBoundary::ForeignClaim
+                                                    | FragmentBoundary::NotInTail,
                                                 ..
                                             }
                                     )
@@ -1153,9 +1157,10 @@ mod tests
 
     /// #3332: `loop` deleted leaves its `break` outside any loop, `break`
     /// deleted or missed leaves the loop endless and the statement after it
-    /// unreached, and `rec` deleted leaves a descent claim outside a recursive
-    /// group. Each form left is well formed and refused for what it means where
-    /// it stands, so each mutant is counted well formed and not filed.
+    /// unreached, `rec` deleted leaves a descent claim outside a recursive
+    /// group, and `thunk` deleted leaves its `return` where no body passes
+    /// (#3496). Each form left is well formed and refused for what it means
+    /// where it stands, so each mutant is counted well formed and not filed.
     #[test]
     fn a_deleted_licence_leaves_a_well_formed_source_3332()
     {
@@ -1177,6 +1182,10 @@ mod tests
             (
                 "rec-block.gandr",
                 include_str!("../../../../corpus/ledger/syntax/rec-block.gandr"),
+            ),
+            (
+                "parenthesized-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/parenthesized-type.gandr"),
             ),
         ] {
             std::fs::write(folder.join(name), text).expect("the exemplar is written");
@@ -1206,6 +1215,7 @@ mod tests
             ),
             ("rec-block.gandr", 174, "rec", Mutation::Deleted),
             ("rec-block.gandr", 302, "rec", Mutation::Deleted),
+            ("parenthesized-type.gandr", 102, "thunk", Mutation::Deleted),
         ];
         for &(exemplar, at, tile, ref mutation) in &licensed {
             assert!(
