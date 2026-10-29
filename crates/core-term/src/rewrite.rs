@@ -508,6 +508,9 @@ enum Task
     /// Answer an instantiated decode by its call, raised, bound ahead of its
     /// code's body, rotated: the two results on top of the stack.
     BindAhead(Node, Binders, Rewrite),
+    /// Answer an instantiated decode of the binder itself by its call,
+    /// raised, returned: the result on top of the stack (#3937).
+    ReturnAhead(Node, Binders, Rewrite),
 }
 
 /// What one variable occurrence rewrites to.
@@ -690,6 +693,7 @@ impl<'arena> Engine<'arena>
                 },
                 Task::Hoist(region, depth) => self.hoist(region, depth),
                 Task::BindAhead(node, depth, step) => self.bind_ahead(node, depth, step),
+                Task::ReturnAhead(node, depth, step) => self.return_ahead(node, depth, step),
             }
         }
         self.results.pop().unwrap_or(subject)
@@ -1072,7 +1076,8 @@ impl<'arena> Engine<'arena>
 
     /// Close an instantiation's node: a decode whose code is a returned call
     /// reading the binder schedules the call bound ahead of that code's body,
-    /// `El ⟨c ← call; body[c / x]⟩`, and answers nothing yet.
+    /// `El ⟨c ← call; body[c / x]⟩`, and a decode of the binder itself, `El
+    /// x`, the call returned, `El ⟨call⟩`; each answers nothing yet.
     ///
     /// # Specification
     /// - requires: `node`'s close is due under [`Rewrite::Instantiate`] at
@@ -1083,23 +1088,28 @@ impl<'arena> Engine<'arena>
     ///   computation that reads the binder drops its code's result and
     ///   schedules [`Task::BindAhead`] over that computation rotated at `depth`
     ///   ([`Rewrite::Rotate`]) and `call` raised by `depth`, answering
-    ///   [`Maybe::Present`]; any other node answers absent, its children's
-    ///   results left for the ordinary close.
+    ///   [`Maybe::Present`]. A decode whose code is the binder drops its code's
+    ///   result and schedules [`Task::ReturnAhead`] over `call` raised by
+    ///   `depth`, answering [`Maybe::Present`] (#3937). Any other node answers
+    ///   absent, its children's results left for the ordinary close.
     /// - provides: the one point an instantiation at a call differs from a
     ///   substitution of its value. Only a decode's code binds, because only a
     ///   call a type decodes runs its call arguments first in the lowering
     ///   (`mint_called`); a returned code elsewhere, a path endpoint say, holds
-    ///   its calls in place and is substituted as written.
+    ///   its calls in place and is substituted as written. A decode of the
+    ///   binder reads the call's returned code, as a type written with the call
+    ///   reads it.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a decode reading the binder at depth zero and under
-    ///   an inner binder, a decode that does not read it, and an endpoint
-    ///   reading it separate the bind, the rotation and the plain substitution.
+    ///   an inner binder, a decode that does not read it, an endpoint reading
+    ///   it, and a decode of the binder itself separate the bind, the rotation,
+    ///   the plain substitution and the returned call.
     /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
     #[spec(captures: pending = self.tasks.len(),
-        ensures: |ret| matches!(ret, Maybe::Absent(())) || self.tasks.len() == pending.saturating_add(3))]
+        ensures: |ret| matches!(ret, Maybe::Absent(())) || self.tasks.len() == pending.saturating_add(2) || self.tasks.len() == pending.saturating_add(3))]
     fn close_reading(
         &mut self,
         node: Node,
@@ -1131,23 +1141,31 @@ impl<'arena> Engine<'arena>
         if !self.reads.contains(&(Node::Value(code), depth)) {
             return Maybe::Absent(());
         }
-        let Some(&Value::Returned(body)) = self.arena.value(code)
-        else {
-            return Maybe::Absent(());
-        };
-        let _substituted = self.results.pop();
-        self.tasks.push(Task::BindAhead(node, depth, rewrite));
-        self.tasks.push(Task::Open(
-            Node::Computation(body),
-            Binders::NONE,
-            Rewrite::Rotate(depth),
-        ));
-        self.tasks.push(Task::Open(
+        let raised = Task::Open(
             Node::Computation(call),
             Binders::NONE,
             Rewrite::Relocate(Offset::raise(depth)),
-        ));
-        Maybe::Present(())
+        );
+        match self.arena.value(code) {
+            Some(&Value::Returned(body)) => {
+                let _substituted = self.results.pop();
+                self.tasks.push(Task::BindAhead(node, depth, rewrite));
+                self.tasks.push(Task::Open(
+                    Node::Computation(body),
+                    Binders::NONE,
+                    Rewrite::Rotate(depth),
+                ));
+                self.tasks.push(raised);
+                Maybe::Present(())
+            },
+            Some(&Value::Variable { index, .. }) if u32::from(index) == depth.0 => {
+                let _substituted = self.results.pop();
+                self.tasks.push(Task::ReturnAhead(node, depth, rewrite));
+                self.tasks.push(raised);
+                Maybe::Present(())
+            },
+            _ => Maybe::Absent(()),
+        }
     }
 
     /// Bind the raised call ahead of the rotated body on top of the result
@@ -1186,6 +1204,68 @@ impl<'arena> Engine<'arena>
             },
             _ => Maybe::Absent(()),
         };
+        self.answer_decode(node, depth, rewrite, code);
+    }
+
+    /// Answer the decode `node` at the raised call on top of the result
+    /// stack, returned (#3937).
+    ///
+    /// # Specification
+    /// - requires: the raised call on top of the result stack, as
+    ///   [`Self::close_reading`] scheduled it.
+    /// - ensures: it is popped; the decode of the call returned, at `node`'s
+    ///   level, pushed and recorded as `node`'s answer at `depth` under
+    ///   `rewrite`.
+    /// - provides: the close of a decode of the binder an instantiation at a
+    ///   call reaches.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type parameter decoded at a call argument reads the
+    ///   call's returned code, as a type written with the call does.
+    /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    #[spec(captures: ready = self.results.len(),
+        ensures: self.results.len() == ready
+            && self.memo.get(&(node, depth, rewrite)) == self.results.last())]
+    fn return_ahead(
+        &mut self,
+        node: Node,
+        depth: Binders,
+        rewrite: Rewrite,
+    )
+    {
+        let code = match self.results.pop() {
+            Some(Node::Computation(call)) => Maybe::Present(self.arena.value_returned(call)),
+            _ => Maybe::Absent(()),
+        };
+        self.answer_decode(node, depth, rewrite, code);
+    }
+
+    /// Push and record the decode `node` at `code`, at `node`'s level, as
+    /// `node`'s answer at `depth` under `rewrite`; `node` itself when no code
+    /// is read.
+    ///
+    /// # Specification
+    /// - ensures: one result pushed, and the memo holds it for `(node, depth,
+    ///   rewrite)`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bind_ahead`] and [`Self::return_ahead`].
+    /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    #[spec(captures: ready = self.results.len(),
+        ensures: self.results.len() == ready.saturating_add(1)
+            && self.memo.get(&(node, depth, rewrite)) == self.results.last())]
+    fn answer_decode(
+        &mut self,
+        node: Node,
+        depth: Binders,
+        rewrite: Rewrite,
+        code: Maybe<ValueId, ()>,
+    )
+    {
         let answer = match (node, code) {
             (Node::ValueType(id), Maybe::Present(code)) => match self.arena.value_type(id) {
                 Some(&ValueType::Element { ref target, .. }) => {
@@ -5129,16 +5209,18 @@ pub fn instantiate_comp_type(
 /// The lowering binds a call a type decodes ahead of the call it stands in,
 /// `c ← g(x); f(c)` (`mint_called`), so a type written `f(g(x))` decodes that
 /// bind. An instantiation at the same call binds it the same way: each decode
-/// whose returned code reads the binder becomes `El ⟨c ← call; body[c / x]⟩`,
-/// and everywhere else the call stands for its value, `argument` — in a path
-/// endpoint, say, where the lowering holds a call in place. The type-position
-/// form of a call argument is therefore one form, and conversion compares it
-/// as syntax (#720). Alternatives: reading `⟨c ← M; N⟩` as `N[⟨M⟩]` in the
-/// conversion, a kernel conversion extension with a soundness argument of
-/// its own; and lowering the call in place, which loses the bound variable
-/// standing below the stage. Reversal: a type repeating one call argument
-/// mints one bind per decode that reads it, so a measured cost from sharing
-/// lost between those binds would hold the call once, outside them.
+/// whose returned code reads the binder becomes `El ⟨c ← call; body[c / x]⟩`;
+/// a decode of the binder itself, `El x`, becomes `El ⟨call⟩`, as a type
+/// written `g(x)` decodes it (#3937); and everywhere else the call stands for
+/// its value, `argument` — in a path endpoint, say, where the lowering holds a
+/// call in place. The type-position form of a call argument is therefore one
+/// form, and conversion compares it as syntax (#720). Alternatives: reading
+/// `⟨c ← M; N⟩` as `N[⟨M⟩]` in the conversion, a kernel conversion extension
+/// with a soundness argument of its own; and lowering the call in place, which
+/// loses the bound variable standing below the stage. Reversal: a type
+/// repeating one call argument mints one bind per decode that reads it, so a
+/// measured cost from sharing lost between those binds would hold the call
+/// once, outside them.
 ///
 /// # Specification
 /// - requires: as [`instantiate_comp_type`]; `argument` stands for the value
@@ -5146,15 +5228,17 @@ pub fn instantiate_comp_type(
 /// - ensures: as [`instantiate_comp_type`] at `argument`, except that every
 ///   decode whose returned code reads the binder decodes a returned bind of
 ///   `call`, raised past the binders between, into that code's computation with
-///   the binder read as the bind's variable.
+///   the binder read as the bind's variable, and every decode of the binder
+///   itself decodes `call` raised past the binders between, returned.
 /// - provides: the result type of applying a dependent arrow to a call.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a decode reading the binder at depth zero and under an
-///   inner binder, a decode that does not read it, and a path endpoint reading
-///   it separate the bind, the rotation and the plain substitution.
+///   inner binder, a decode that does not read it, a decode of the binder
+///   itself and a path endpoint reading it separate the bind, the rotation, the
+///   returned call and the plain substitution.
 /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
 #[spec(ensures: |ret| ret == codomain || arena.comp_type(ret).is_some())]
 #[inline]

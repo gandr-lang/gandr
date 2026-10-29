@@ -7787,7 +7787,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   argument crossed the value bridge with a lift, so the codomain reads
     ///   the code at the universe the domain names. An argument written as a
     ///   call, nested or returned, is instantiated with the call bound ahead of
-    ///   each decode whose returned code reads it
+    ///   each decode whose returned code reads it, and returned at each decode
+    ///   of the binder itself
     ///   ([`gandr_core_term::instantiate_comp_type_at_call`]).
     /// - fails: the staged instantiation's refusal.
     /// - panics: none.

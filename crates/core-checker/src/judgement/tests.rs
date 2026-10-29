@@ -2725,6 +2725,61 @@ fn a_family_at_a_call_argument_converts_with_the_type_written_with_it_720()
     );
 }
 
+/// #3937: a call passed for a type parameter `B` left a later domain `El B`
+/// decoding the nested call, `El(Nested(tm(0)))`, where the argument's type is
+/// written `El⟨tm(0)⟩`, so the two were apart. The decode of the binder reads
+/// the call returned, as a type written with the call does.
+#[test]
+fn a_decoded_type_parameter_at_a_call_converts_with_the_type_written_with_it_3937()
+{
+    // def tm : U (Integer -> F Type) ;
+    // def pt : U ((a : Integer) -> F El⟨tm(a)⟩) ;
+    // def idAt : U ((B : Type) -> El B -> F Unit) ;
+    // idAt(tm(0), pt(0)) : F Unit
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let returns_small = arena.comp_type_returner(small);
+    let family = arena.comp_type_arrow(integer, returns_small);
+    let family = arena.value_type_thunk(family);
+    let at = |arena: &mut CoreArena, constant: usize, argument: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let a = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let read = at(&mut arena, 0, a);
+    let code = arena.value_returned(read);
+    let decoded = arena.value_type_element(code, Level::zero());
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let point = arena.comp_type_pi(integer, returns_decoded);
+    let point = arena.value_type_thunk(point);
+    let b = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(b, Level::zero());
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let consumer = arena.comp_type_arrow(decoded, returns_unit);
+    let consumer = arena.comp_type_pi(small, consumer);
+    let consumer = arena.value_type_thunk(consumer);
+    let zero = arena.value_literal(integer_literal());
+    let typed = at(&mut arena, 0, zero);
+    let typed = arena.value_nested(typed);
+    let zero = arena.value_literal(integer_literal());
+    let pointed = at(&mut arena, 1, zero);
+    let pointed = arena.value_nested(pointed);
+    let first = at(&mut arena, 2, typed);
+    let applied = arena.computation_application(first, pointed);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[family, point, consumer]);
+    let expected = form_comp_type(&mut context, returns_unit).unwrap();
+    let verdict = check_comp(&mut context, applied, expected);
+    assert!(
+        verdict.is_ok(),
+        "`idAt`'s second domain at the call `tm(0)` is `El⟨tm(0)⟩`, as `pt(0)`'s type is \
+         written: {verdict:?}"
+    );
+}
+
 #[test]
 fn a_hole_synthesises_the_unknown_type_and_checks_against_any()
 {
