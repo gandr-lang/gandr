@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use anodized::spec;
-use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
+use gandr_workflow_github::READ_PAUSE;
 
 use crate::error::TimingError;
 use crate::report::History;
@@ -170,7 +170,7 @@ pub fn recent_runs(
         ])
         .args(["--limit", &limit.0.to_string()])
         .args(["--json", "databaseId", "--jq", ".[].databaseId"]);
-    let listing = gandr_workflow_github::run(&mut command, Feed::Nothing)?;
+    let listing = gandr_workflow_github::read(&mut command, READ_PAUSE)?;
     let mut runs = Vec::new();
     for line in listing.lines().take(limit.into()) {
         let id = line.trim().parse::<u64>().map_err(|error| {
@@ -249,7 +249,7 @@ pub fn download(
         .args(["run", "download", &run.to_string(), "--repo", &repository.0])
         .args(["--pattern", "junit-*", "--dir"])
         .arg(&scratch);
-    gandr_workflow_github::run(&mut command, Feed::Nothing)?;
+    gandr_workflow_github::read(&mut command, READ_PAUSE)?;
     std::fs::rename(&scratch, &destination).map_err(io(&destination))?;
     Ok(Stored::Fetched)
 }

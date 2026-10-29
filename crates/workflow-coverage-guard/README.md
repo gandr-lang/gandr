@@ -37,7 +37,7 @@ cargo nextest run -p gandr-workflow-coverage-guard
 
 ## Dependencies
 
-`gandr-workflow-github` runs every `gh` invocation and names the one that failed. `serde` and `serde_json` read Codecov's answers and `gh`'s issue listing, with the features the root `Cargo.toml` records.
+`gandr-workflow-github` runs every `gh` invocation and names the one that failed. Its `read` runs the issue listing again past a transient server error; a write runs once. `serde` and `serde_json` read Codecov's answers and `gh`'s issue listing, with the features the root `Cargo.toml` records.
 
 ## License
 

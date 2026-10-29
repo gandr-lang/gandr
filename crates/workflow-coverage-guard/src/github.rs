@@ -7,6 +7,8 @@ use std::process::Command;
 use gandr_workflow_github::Body;
 use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
+use gandr_workflow_github::READ_PAUSE;
+use gandr_workflow_github::read;
 use gandr_workflow_github::run;
 use serde::Deserialize;
 
@@ -136,7 +138,7 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
         "--json",
         "number,title",
     ]);
-    let listing = run(&mut list, Feed::Nothing)?;
+    let listing = read(&mut list, READ_PAUSE)?;
     let issues: Vec<Listed> = serde_json::from_str(&listing)
         .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
     if let Some(issue) = issues

@@ -13,6 +13,7 @@ use std::process::Command;
 use gandr_workflow_github::Body;
 use gandr_workflow_github::Feed;
 use gandr_workflow_github::GitHubError;
+use gandr_workflow_github::READ_PAUSE;
 use gandr_workflow_github::run;
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
@@ -172,7 +173,7 @@ pub fn checks(
         "--jq",
         ".check_runs[] | {name, status, conclusion, html_url, summary: (.output.summary // \"\")}",
     ]);
-    let listing = run(&mut query, Feed::Nothing)?;
+    let listing = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
     let mut concluded = Vec::new();
     for line in listing.lines().filter(|line| !line.trim().is_empty()) {
         let listed: Listed = serde_json::from_str(line)
@@ -222,7 +223,7 @@ pub fn pull(
     let listed: Vec<ListedPull> = match number {
         Maybe::Present(number) => {
             query.args(["api", &number.api_path(repository)]);
-            let answer = run(&mut query, Feed::Nothing)?;
+            let answer = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
             vec![
                 serde_json::from_str(&answer)
                     .map_err(|error| GitHubError::unread(&query, error.to_string()))?,
@@ -230,7 +231,7 @@ pub fn pull(
         },
         Maybe::Absent(_) => {
             query.args(["api", &format!("repos/{repository}/commits/{sha}/pulls")]);
-            let answer = run(&mut query, Feed::Nothing)?;
+            let answer = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
             serde_json::from_str(&answer)
                 .map_err(|error| GitHubError::unread(&query, error.to_string()))?
         },
@@ -410,7 +411,7 @@ fn kept(
             "[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | \
              .workflow_run.id // empty",
         ]);
-        let listed = run(&mut query, Feed::Nothing)?;
+        let listed = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
         let id = listed.trim();
         if id.is_empty() {
             return Ok(Maybe::Absent(Unkept));
@@ -428,7 +429,7 @@ fn kept(
                 "-D",
             ])
             .arg(&dir);
-        run(&mut download, Feed::Nothing)?;
+        gandr_workflow_github::read(&mut download, READ_PAUSE)?;
     }
     let path = dir.join(format!("{benchmark}.json"));
     let Maybe::Present(text) = text_at(&path)?
@@ -554,7 +555,7 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
         "--json",
         "number,title,state,body",
     ]);
-    let listing = run(&mut list, Feed::Nothing)?;
+    let listing = gandr_workflow_github::read(&mut list, READ_PAUSE)?;
     let issues: Vec<ListedIssue> = serde_json::from_str(&listing)
         .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
     let subject = report.subject();
@@ -827,7 +828,7 @@ fn marked_comment(
         "--jq",
         ".[] | {id, html_url, body}",
     ]);
-    let listing = run(&mut list, Feed::Nothing)?;
+    let listing = gandr_workflow_github::read(&mut list, READ_PAUSE)?;
     for line in listing.lines().filter(|line| !line.trim().is_empty()) {
         let comment: ListedComment = serde_json::from_str(line)
             .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
