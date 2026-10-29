@@ -160,6 +160,8 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -344,6 +346,9 @@ enum Atom
     Lift(ValueId, Place),
     /// A static application, by its operator and its argument.
     Applied(Node, Node),
+    /// A pure call written where a code is read, by its computation at its
+    /// place: it compares by its function and its argument.
+    Called(ComputationId, Place),
     /// A static lambda, by the lambda node itself, at its place.
     Operator(ValueId, Place),
     /// A structural ordinary value used as a nominal argument.
@@ -640,7 +645,8 @@ impl<'run> Walk<'run>
     ///   binder, a free one through its closure's environment, a constant with
     ///   its rigidity, a quote, a lift or a static lambda at its place, a
     ///   static application — written, or the last of a held neutral's static
-    ///   spine — as its operator and argument, and everything else as itself.
+    ///   spine — as its operator and argument, a written pure call as its
+    ///   computation at its place, and everything else as itself.
     /// - provides: the one resolution both passes read codes through.
     /// - fails: [`ConversionFault::Domain`] when a closure or a held value does
     ///   not resolve, and [`ConversionFault::MachineInvariant`] when a variable
@@ -691,8 +697,9 @@ Value::QuoteComputation(quoted) => ret == Ok(Atom::QuoteComputation(quoted, plac
 Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
+Value::Returned(computation) => ret == Ok(Atom::Called(computation, place)),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
-Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
+Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
@@ -768,6 +775,9 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                             Node::Code(argument, place),
                         ));
                     },
+                    Value::Returned(computation) => {
+                        return Ok(Atom::Called(computation, place));
+                    },
                     Value::PathRefl(_)
                     | Value::Here(_)
                     | Value::Univalence(..)
@@ -783,7 +793,6 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | Value::Funext(..)
                     | Value::Equiv(..)
                     | Value::Ua { .. }
-                    | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
                     | Value::RecordUpdate { .. }
@@ -1059,6 +1068,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
             Ok((one, other)) => match (one, other) {
                 (Atom::Quote(..), Atom::Quote(..)) | (Atom::QuoteComputation(..), Atom::QuoteComputation(..))
                 | (Atom::Lift(..), Atom::Lift(..)) | (Atom::Applied(..), Atom::Applied(..))
+                | (Atom::Called(..), Atom::Called(..))
                 | (Atom::Operator(..),Atom::Operator(..)) | (Atom::FirstOrder(_),Atom::FirstOrder(_)) =>
                     matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant))
                         && (left != right || ret.is_err() || ret == Ok(Alike::Same)),
@@ -2014,7 +2024,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     #[spec(ensures: |ret| match self.closure_atom(closure) {
         Err(fault) => ret == Err(fault),
         Ok(Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid)) => ret == Ok(Rigidity::Rigid),
-        Ok(Atom::Constant(_, Rigidity::Flexible) | Atom::Operator(..) | Atom::Other(_)) => ret == Ok(Rigidity::Flexible),
+        Ok(Atom::Constant(_, Rigidity::Flexible) | Atom::Called(..) | Atom::Operator(..) | Atom::Other(_)) => ret == Ok(Rigidity::Flexible),
         Ok(Atom::Quote(id, _)) => match self.core.value_type(id) {
             None => ret == Err(ConversionFault::MachineInvariant),
             Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer | ValueType::Web)) => ret == Ok(Rigidity::Rigid),
@@ -2284,15 +2294,19 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// # Specification
     /// - requires: roots belong to the held arenas.
     /// - ensures: equal live roots compare reflexively; every queued child must
-    ///   also agree.
+    ///   also agree. Two written pure calls agree when their functions and
+    ///   their arguments do, each read through its own side's closure.
     /// - fails: a dangling child or malformed source.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nominal identities and unequal ordinary arguments
-    ///   separate.
+    ///   separate. Two lowerings of one call of a variable agree, at one depth
+    ///   or two, and a call of another variable does not; comparing calls by
+    ///   their nodes changes the first answer.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
     /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
+    /// - witness: `code::tests::motives_calling_one_variable_family_are_alike_3802`
     #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
     fn equal_atoms(
         &mut self,
@@ -2360,6 +2374,38 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         let other = self.atom(Node::Code(right_body, other_inside))?;
                         atoms.push((one, other));
                     },
+                    (Atom::Called(first, here), Atom::Called(second, there)) => {
+                        let (Some(call), Some(other_call)) =
+                            (self.core.computation(first), self.core.computation(second))
+                        else {
+                            return Err(ConversionFault::MachineInvariant);
+                        };
+                        if let (
+                            &Computation::Application(function, argument),
+                            &Computation::Application(other_function, other_argument),
+                        ) = (call, other_call)
+                        {
+                            let one = self.atom(Node::Code(argument, here))?;
+                            let other = self.atom(Node::Code(other_argument, there))?;
+                            atoms.push((one, other));
+                            atoms.push((
+                                Atom::Called(function, here),
+                                Atom::Called(other_function, there),
+                            ));
+                        }
+                        else if let (
+                            &Computation::Force(value),
+                            &Computation::Force(other_value),
+                        ) = (call, other_call)
+                        {
+                            let one = self.atom(Node::Code(value, here))?;
+                            let other = self.atom(Node::Code(other_value, there))?;
+                            atoms.push((one, other));
+                        }
+                        else if (first, here) != (second, there) {
+                            return Ok(Alike::Different);
+                        }
+                    },
                     (Atom::Local(first), Atom::Local(second)) if first == second => {},
                     (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
                         if (zone, first) == (other_zone, second) => {},
@@ -2374,6 +2420,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | Atom::QuoteComputation(..)
                         | Atom::Lift(..)
                         | Atom::Applied(..)
+                        | Atom::Called(..)
                         | Atom::Operator(..)
                         | Atom::Other(_),
                         _,
@@ -2400,9 +2447,12 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — nominal arguments contribute their own rigidity.
+    /// - hypothesis: L3 — nominal arguments contribute their own rigidity. A
+    ///   written pure call stays flexible, so a call of another variable is
+    ///   undecided, never apart; reading it as rigid changes that answer.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
-    #[spec(ensures: |ret| !matches!(root,Atom::Other(_) | Atom::Operator(..) | Atom::Constant(_,Rigidity::Flexible)) || ret == Ok(Rigidity::Flexible))]
+    /// - witness: `code::tests::motives_calling_one_variable_family_are_alike_3802`
+    #[spec(ensures: |ret| !matches!(root,Atom::Other(_) | Atom::Called(..) | Atom::Operator(..) | Atom::Constant(_,Rigidity::Flexible)) || ret == Ok(Rigidity::Flexible))]
     fn rigidity_atom(
         &mut self,
         root: Atom,
@@ -2435,7 +2485,10 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         },
                     },
                     Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid) => {},
-                    Atom::Constant(_, Rigidity::Flexible) | Atom::Operator(..) | Atom::Other(_) => {
+                    Atom::Constant(_, Rigidity::Flexible)
+                    | Atom::Called(..)
+                    | Atom::Operator(..)
+                    | Atom::Other(_) => {
                         return Ok(Rigidity::Flexible);
                     },
                     Atom::Applied(head, argument) => {
