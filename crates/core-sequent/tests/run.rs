@@ -367,8 +367,14 @@ fn native_arithmetic_and_partial_application()
     let first = integer(&mut core, Digits("19"));
     let partial = core.computation_application(forced, first);
     let mut arena = CommandArena::new();
-    let command = focus_computation(&core, partial, &mut arena, &mut Provenance::new())
-        .expect("a closed term focuses");
+    let command = focus_computation(
+        &core,
+        partial,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
     let partial =
         read_back_terminal(&arena, &store, value, &mut core).expect("a function reads back");
@@ -475,15 +481,28 @@ fn a_forced_prelude_name_resolves_to_its_builtin()
     let thunk = primitive.thunk(&mut core);
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let binding = focus_value(&core, thunk, &mut arena, &mut provenance).expect("a thunk focuses");
+    let binding = focus_value(
+        &core,
+        thunk,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a thunk focuses");
     let mut definitions = Definitions::new();
     let constant = definitions.push(Definition::Transparent(binding));
     let reference = core.value_constant(constant);
     let forced = core.computation_force(reference);
     let argument = integer(&mut core, Digits("5"));
     let term = core.computation_application(forced, argument);
-    let root =
-        focus_computation(&core, term, &mut arena, &mut provenance).expect("a closed term focuses");
+    let root = focus_computation(
+        &core,
+        term,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let (store, value) = halted(&arena, &definitions, root);
     let read = read_back_terminal(&arena, &store, value, &mut core).expect("the answer reads back");
     assert_eq!(shown(&core, read), "⟨5 |+ ★⟩");
@@ -515,8 +534,14 @@ fn shown(
 ) -> String
 {
     let mut arena = CommandArena::new();
-    let command = focus_computation(core, computation, &mut arena, &mut Provenance::new())
-        .expect("a read-back term focuses");
+    let command = focus_computation(
+        core,
+        computation,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a read-back term focuses");
     render_command(&arena, command)
 }
 
@@ -531,8 +556,14 @@ fn evaluated(
 ) -> String
 {
     let mut arena = CommandArena::new();
-    let command = focus_computation(core, computation, &mut arena, &mut Provenance::new())
-        .expect("a closed term focuses");
+    let command = focus_computation(
+        core,
+        computation,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
     let back = read_back_terminal(&arena, &store, value, core).expect("the terminal reads back");
     shown(core, back)
@@ -563,8 +594,14 @@ fn assert_control(
 )
 {
     let mut arena = CommandArena::new();
-    let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
-        .expect("control focuses");
+    let root = focus_computation(
+        core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("control focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
     let Ran { outcome, store } = ran(&arena, &Definitions::new(), root, budget())
         .unwrap_or_else(|declined| panic!("the run declined: {declined}"));
@@ -1344,8 +1381,14 @@ fn a_captured_stack_in_an_answer_declines_its_move()
     let shifted = core.computation_shift(returned);
     let program = core.computation_reset(shifted);
     let mut arena = CommandArena::new();
-    let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("control focuses");
+    let root = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("control focuses");
     assert!(matches!(
         ran(&arena, &Definitions::new(), root, budget()),
         Err(Declined::Transfer(TransferRefusal::HostObject(_)))
@@ -1380,8 +1423,14 @@ fn native_list_fold_preserves_order_and_outer_scope()
     let program = source.computation_application(lambda, eleven);
     let mut focused = CommandArena::new();
     let mut provenance = Provenance::new();
-    let root =
-        focus_computation(&source, program, &mut focused, &mut provenance).expect("fold focuses");
+    let root = focus_computation(
+        &source,
+        program,
+        &mut focused,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("fold focuses");
     let mut target = CoreArena::new();
     let _unrelated = target.value_type_unit();
     let decoded =
@@ -1414,8 +1463,14 @@ fn native_list_fold_preserves_order_and_outer_scope()
     );
     for (mut core, program) in [(source, program), (target, decoded)] {
         let mut arena = CommandArena::new();
-        let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-            .expect("closed fold");
+        let root = focus_computation(
+            &core,
+            program,
+            &mut arena,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("closed fold");
         let (store, value) = halted(&arena, &Definitions::new(), root);
         let back =
             read_back_terminal(&arena, &store, value, &mut core).expect("native list readback");
@@ -1579,8 +1634,14 @@ fn data_case_on_non_ctor_is_stuck()
             [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
         );
         let mut arena = CommandArena::new();
-        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-            .expect("a closed term focuses");
+        let command = focus_computation(
+            &core,
+            program,
+            &mut arena,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("a closed term focuses");
         let (_, stuck) = stuck(&arena, &Definitions::new(), command);
         assert!(
             matches!(stuck, Stuck::Unmatched { .. }),
@@ -1666,8 +1727,14 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
     ];
     for program in unmatched {
         let mut arena = CommandArena::new();
-        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-            .expect("a closed projection focuses");
+        let command = focus_computation(
+            &core,
+            program,
+            &mut arena,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("a closed projection focuses");
         let (_, stuck) = stuck(&arena, &Definitions::new(), command);
         assert!(
             matches!(stuck, Stuck::Unmatched { arms, .. }
@@ -1678,7 +1745,14 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
 
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let held = focus_value(&core, quadruple, &mut arena, &mut provenance).expect("a tuple focuses");
+    let held = focus_value(
+        &core,
+        quadruple,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a tuple focuses");
     let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
     let named = arena
         .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
@@ -1793,8 +1867,14 @@ fn a_loop_holds_no_frame_across_its_iterations()
         (calling, "a tail call inside a loop", Status::FuelExhausted),
     ] {
         let mut arena = CommandArena::new();
-        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-            .expect("a closed term focuses");
+        let command = focus_computation(
+            &core,
+            program,
+            &mut arena,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("a closed term focuses");
         let run = ran(
             &arena,
             &Definitions::new(),
@@ -1847,11 +1927,24 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
     let mut definitions = Definitions::new();
-    let body = focus_value(&core, suspended, &mut arena, &mut provenance).expect("a thunk focuses");
+    let body = focus_value(
+        &core,
+        suspended,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a thunk focuses");
     definitions.push(Definition::Transparent(body));
     definitions.push(Definition::Opaque);
-    let loops =
-        focus_value(&core, cyclic, &mut arena, &mut provenance).expect("a constant focuses");
+    let loops = focus_value(
+        &core,
+        cyclic,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a constant focuses");
     definitions.push(Definition::Transparent(loops));
 
     let forced = core.computation_force(first);
@@ -1860,14 +1953,32 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
     let returned = core.computation_return(pair);
     let tail = core.computation_bind(again, returned);
     let program = core.computation_bind(forced, tail);
-    let command = focus_computation(&core, program, &mut arena, &mut provenance)
-        .expect("a closed term focuses");
+    let command = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let looping_return = core.computation_return(cyclic);
-    let looping =
-        focus_computation(&core, looping_return, &mut arena, &mut provenance).expect("focuses");
+    let looping = focus_computation(
+        &core,
+        looping_return,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("focuses");
     let undefined_return = core.computation_return(undefined);
-    let missing =
-        focus_computation(&core, undefined_return, &mut arena, &mut provenance).expect("focuses");
+    let missing = focus_computation(
+        &core,
+        undefined_return,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("focuses");
 
     let (store, value) = halted(&arena, &definitions, command);
     let back =
@@ -1905,8 +2016,14 @@ fn the_step_budget_bounds_a_run()
     let forced = core.computation_force(bound);
     let program = core.computation_bind(returned, forced);
     let mut arena = CommandArena::new();
-    let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("a closed term focuses");
+    let command = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let definitions = Definitions::new();
     let run = |jumps| ran(&arena, &definitions, command, Fuel::from(jumps));
     let least = (0_usize ..= 64_usize)
@@ -1969,8 +2086,14 @@ fn a_thunk_reads_back_closed_over_its_environment()
     );
 
     let mut arena = CommandArena::new();
-    let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("a closed term focuses");
+    let command = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
     let read = read_back_value(&arena, &store, value, &mut core).expect("a thunk is a value");
     let wrapped = core.computation_return(read);
@@ -2008,8 +2131,14 @@ fn a_captured_environment_holds_exactly_its_support()
         program = core.computation_bind(head, program);
     }
     let mut arena = CommandArena::new();
-    let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("a closed term focuses");
+    let command = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a closed term focuses");
     let (store, value) = halted(&arena, &Definitions::new(), command);
     let Some(&HeapValue::Thunk { environment, .. }) = store.value(value)
     else {
@@ -2352,8 +2481,22 @@ fn pattern_fields_bind_last_innermost()
     let last_source = integer(&mut core, Digits("3"));
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let first = focus_value(&core, first_source, &mut arena, &mut provenance).expect("literal");
-    let last = focus_value(&core, last_source, &mut arena, &mut provenance).expect("literal");
+    let first = focus_value(
+        &core,
+        first_source,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("literal");
+    let last = focus_value(
+        &core,
+        last_source,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("literal");
     let outer = arena
         .mint_producer(ProducerNode::Variable {
             zone: Zone::Intuitionistic,
@@ -2927,7 +3070,8 @@ fn a_run_moves_its_payloads_along_a_path()
                 &core,
                 transport,
                 &mut CommandArena::new(),
-                &mut Provenance::new()
+                &mut Provenance::new(),
+                &gandr_core_sequent::Writers::NONE
             ),
             Err(FocusRefusal::ElementTransport(transport, head)),
             "the transport is refused by {head}"
@@ -3274,7 +3418,13 @@ fn a_transport_no_row_reads_is_refused_by_its_head()
         let mut arena = CommandArena::new();
         let mark = arena.watermark();
         assert_eq!(
-            focus_computation(&core, transport, &mut arena, &mut Provenance::new()),
+            focus_computation(
+                &core,
+                transport,
+                &mut arena,
+                &mut Provenance::new(),
+                &gandr_core_sequent::Writers::NONE
+            ),
             Err(FocusRefusal::ElementTransport(transport, head)),
             "the transport is refused by {head}"
         );

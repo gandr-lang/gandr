@@ -440,8 +440,14 @@ fn assert_host(
 )
 {
     let mut arena = CommandArena::new();
-    let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
-        .expect("the program focuses");
+    let root = focus_computation(
+        core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("the program focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
     let definitions = Definitions::new();
     for entry in tiers().iter().copied().map(Some).chain([None]) {
@@ -855,8 +861,14 @@ fn a_host_abort_never_resumes_and_a_missing_reply_declines()
     let unreachable = core.computation_perform(host.env, "path".into(), unit);
     let program = core.computation_bind(exit, unreachable);
     let mut arena = CommandArena::new();
-    let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("the exit sequence focuses");
+    let root = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("the exit sequence focuses");
     let definitions = Definitions::new();
     let mut foreign = Store::new();
     let unit_value = || HeapValue::Constructed {
@@ -1060,8 +1072,14 @@ fn a_host_built_reply_the_run_cannot_hold_declines()
     .expect("one operation");
     let program = core.computation_perform(signature, "ask".into(), unit);
     let mut arena = CommandArena::new();
-    let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("the program focuses");
+    let root = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("the program focuses");
     let definitions = Definitions::new();
     for built in [Built::Capability, Built::Code] {
         for entry in tiers().iter().copied().map(Some).chain([None]) {

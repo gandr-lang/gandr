@@ -34,7 +34,7 @@ INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theo
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','634ae395d0534417c8023c9f93040d820ffb67c5','2026-10-27','d786c92d3333a1dd363533c102248f3d77349518');
 INSERT INTO reference VALUES('Pruiksma-2022-back_futures','runtime-emitter','cut','background','ac6d1b53b231cccc887d0b195e7f255cdf667edf','2026-10-28','8c0ddceb9278293a29de4c7c91a7949657d66b3d');
 INSERT INTO reference VALUES('Racordon-2020-formal_definition_swifts_value_semantics','runtime-emitter','run','background','b8599ac5de3fe16adc880c95313461946ef27436','2026-10-28','cb0287c16655dee00f9c1654e845d8e2025ab1c4');
-INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-sequent','','background','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-sequent','','background','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','memory','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','1b6091fc402781549385efd19a99c87b29c0fe2d');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-term','world','background','775f54d99d0fd78230b9e5afa51d674039fd0fd5','2026-10-27','1ed0fa5ee5623d4bb42b3ae9c5791ccaf6a2e722');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','runtime-emitter','','background','ac6d1b53b231cccc887d0b195e7f255cdf667edf','2026-10-28','6f7e45b763167313cef61c0b3781ec7bc21928e6');
@@ -111,7 +111,7 @@ INSERT INTO reference VALUES('arXiv:2508.16848','surface-syntax','','background'
 INSERT INTO reference VALUES('arXiv:2508.16848','theory-graphs','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2512.07511','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2512.09464','kernel-core','identity_recursion','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2601.08071','core-sequent','','background','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('arXiv:2601.08071','core-sequent','','background','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('arXiv:2601.08071','runtime-stencils','','background','66cbc25bfce14f56fb70ecba36ab78d735b45ea7','2026-10-26','24b6c43aecf1cda8f417f5238cc1b69900e9febb');
 INSERT INTO reference VALUES('arXiv:2603.24468','theory-nominal-automata','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09383','core-checker','capability','background',NULL,NULL,NULL);
@@ -123,7 +123,7 @@ INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','solu
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-48184-2_32','storage-values','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-48959-2_17','core-checker','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1007/3-540-48959-2_17','core-sequent','','background','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('doi:10.1007/3-540-48959-2_17','core-sequent','','background','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('doi:10.1007/3-540-48959-2_17','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-52335-9_47','kernel-core','check::occurrence','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-52335-9_47','surface-lowering','','background',NULL,NULL,NULL);
@@ -179,7 +179,7 @@ INSERT INTO reference VALUES('doi:10.1017/s0956796807006223','core-term','','bac
 INSERT INTO reference VALUES('doi:10.1017/s0956796814000264','core-checker','seal','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1017/s0956796814000264','surface-lowering','module::functor','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1017/s0956796814000264','surface-lowering','module::sealing','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1017/s0956796818000023','core-sequent','','background','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('doi:10.1017/s0956796818000023','core-sequent','','background','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('doi:10.1017/s0956796818000023','runtime-stencils','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1017/s0956796818000023','theory-computads','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1017/s095679681800014x','core-unify','','background',NULL,NULL,NULL);
@@ -243,7 +243,7 @@ INSERT INTO reference VALUES('doi:10.1145/3371126','surface-lowering','','backgr
 INSERT INTO reference VALUES('doi:10.1145/3450952','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3485513','runtime-emitter','','background','ac6d1b53b231cccc887d0b195e7f255cdf667edf','2026-10-28','6f7e45b763167313cef61c0b3781ec7bc21928e6');
 INSERT INTO reference VALUES('doi:10.1145/3485513','runtime-stencils','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/351240.351262','core-sequent','','background','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('doi:10.1145/351240.351262','core-sequent','','background','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-computads','','background',NULL,NULL,NULL);
@@ -266,7 +266,7 @@ INSERT INTO reference VALUES('doi:10.1145/3632910','core-term','hole','backgroun
 INSERT INTO reference VALUES('doi:10.1145/3632910','surface-render-remote','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3632920','kernel-core','identity_recursion','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3632920','theory-shapes','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1145/3674639','core-sequent','','background','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('doi:10.1145/3674639','core-sequent','','background','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('doi:10.1145/3674639','runtime-stencils','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/368996.369025','theory-graphs','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3704912','core-checker','','background',NULL,NULL,NULL);
@@ -355,7 +355,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','surfa
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','surface-diagnostics','culprit','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','surface-dispatcher','exercised','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','core-fork','','lineage','7a487875c5666bde65446be6cf72bbf85afa6fa1','2026-10-29','28bc2be52908856bcdf5d94c46867ad301f0396f');
-INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','core-sequent','','lineage','35d57bfd2af9bbbd307dffbf9395b79a3ad0640a','2026-10-29','1f4763e222d4178b069da1128dccdd1749b9ebc2');
+INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','core-sequent','','lineage','3d598697ca1a1dae65c86e9913bcac5091c5549d','2026-10-29','7a66af62163569d4b939d437ac4fe9229efc4d3b');
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','runtime-emitter','cut','lineage','ac6d1b53b231cccc887d0b195e7f255cdf667edf','2026-10-28','8c0ddceb9278293a29de4c7c91a7949657d66b3d');
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','runtime-emitter','run','lineage','b8599ac5de3fe16adc880c95313461946ef27436','2026-10-28','cb0287c16655dee00f9c1654e845d8e2025ab1c4');
 INSERT INTO reference VALUES('vault:01a178aa-6b8e-7d60-a533-ec9379c0462a','surface-dispatcher','evaluate','background',NULL,NULL,NULL);

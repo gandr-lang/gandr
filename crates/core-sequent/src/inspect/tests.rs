@@ -14,8 +14,14 @@ fn stats_and_dump_report_a_terminal_cut()
     let returned = core.computation_return(unit);
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let root = focus_computation(&core, returned, &mut arena, &mut provenance)
-        .expect("a closed term focuses");
+    let root = focus_computation(
+        &core,
+        returned,
+        &mut arena,
+        &mut provenance,
+        &crate::Writers::NONE,
+    )
+    .expect("a closed term focuses");
 
     let population = stats(&arena);
     assert_eq!(NodeCount::from(1_usize), population.commands, "one command");
@@ -142,8 +148,22 @@ fn histograms_count_repeated_origins_without_inventing_categories()
     let thunk = core.value_thunk(returned);
     let forced = core.computation_force(thunk);
     let mut arena = CommandArena::new();
-    focus_computation(&core, returned, &mut arena, &mut provenance).expect("closed return");
-    let root = focus_computation(&core, forced, &mut arena, &mut provenance).expect("closed force");
+    focus_computation(
+        &core,
+        returned,
+        &mut arena,
+        &mut provenance,
+        &crate::Writers::NONE,
+    )
+    .expect("closed return");
+    let root = focus_computation(
+        &core,
+        forced,
+        &mut arena,
+        &mut provenance,
+        &crate::Writers::NONE,
+    )
+    .expect("closed force");
     assert_eq!(
         BTreeMap::from([
             (FocusOrigin::Return, NodeCount::from(2_usize)),
@@ -227,13 +247,25 @@ fn dumps_name_every_origin()
     ]
     .into_iter()
     .map(|computation| {
-        let root = focus_computation(&core, computation, &mut arena, &mut provenance)
-            .expect("each former focuses");
+        let root = focus_computation(
+            &core,
+            computation,
+            &mut arena,
+            &mut provenance,
+            &crate::Writers::NONE,
+        )
+        .expect("each former focuses");
         dump(&arena, &provenance, root)
     })
     .collect();
-    let top = crate::focus::focus_top_value(&core, unit, &mut arena, &mut provenance)
-        .expect("a closed value focuses");
+    let top = crate::focus::focus_top_value(
+        &core,
+        unit,
+        &mut arena,
+        &mut provenance,
+        &crate::Writers::NONE,
+    )
+    .expect("a closed value focuses");
     heads.push(dump(&arena, &provenance, top));
     let heads: alloc::vec::Vec<&str> = heads
         .iter()

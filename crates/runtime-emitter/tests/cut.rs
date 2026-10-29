@@ -1,7 +1,8 @@
 //! A cut forked: its writer run closed over its own store and its reader run
 //! with a host, joined on a fork, the reader reading the writer's answer
 //! through the cell, on each tier, on the serial fork and on a fork that
-//! starts the reader first.
+//! starts the reader first. A writer focus names apart runs on the sequential
+//! schedule to its fused bind's answer.
 
 use core::convert::Infallible;
 use core::fmt;
@@ -22,9 +23,11 @@ use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Provenance;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
+use gandr_core_sequent::Writers;
 use gandr_core_sequent::check_command;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::read_back_value;
+use gandr_core_sequent::render_command;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -144,7 +147,7 @@ fn focused(
     arena: &mut CommandArena,
 ) -> CommandId
 {
-    let root = focus_computation(core, program, arena, &mut Provenance::new())
+    let root = focus_computation(core, program, arena, &mut Provenance::new(), &Writers::NONE)
         .expect("the program focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(arena, root));
     root
@@ -436,6 +439,66 @@ fn a_read_answers_what_its_writer_halts_with()
             "the reader answers seven beside the writer's pair, {fork}"
         );
     });
+}
+
+/// The program `x ← return 5; y ← return (x, 9); return (y, x)`, focused with
+/// its writers fused and with both named, answers `((5, 9), 5)` on each tier.
+/// A run that ignores the marks answers as the sequential schedule, and the
+/// named second writer reads the outer binder from under its own `μα`.
+#[test]
+fn a_named_writer_runs_as_its_fused_bind()
+{
+    let mut core = CoreArena::new();
+    let (five, nine) = (
+        integer(&mut core, Digits("5")),
+        integer(&mut core, Digits("9")),
+    );
+    let first = core.computation_return(five);
+    let outer = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let pair = core.value_tuple(&[outer, nine]);
+    let second = core.computation_return(pair);
+    let fields = [
+        core.value_variable(Zone::Intuitionistic, 0_u32.into()),
+        core.value_variable(Zone::Intuitionistic, 1_u32.into()),
+    ];
+    let answered = core.value_tuple(&fields);
+    let tail = core.computation_return(answered);
+    let inner = core.computation_bind(second, tail);
+    let program = core.computation_bind(first, inner);
+    let written = core.value_tuple(&[five, nine]);
+    let expected = core.value_tuple(&[written, five]);
+    let mut run = |writers: &Writers| {
+        let mut arena = CommandArena::new();
+        let root = focus_computation(&core, program, &mut arena, &mut Provenance::new(), writers)
+            .expect("the program focuses");
+        assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
+        for &tier in tiers() {
+            let mut store = Store::new();
+            let outcome = evaluate_on(
+                tier,
+                &arena,
+                &Definitions::new(),
+                root,
+                budget(),
+                RunInputs::new(&mut store),
+            );
+            let Ok(Outcome::Halted(value)) = outcome
+            else {
+                panic!("the program halts on {tier:?}: {outcome:?}");
+            };
+            let actual =
+                read_back_value(&arena, &store, value, &mut core).expect("the answer reads back");
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, actual, expected),
+                "the program answers `((5, 9), 5)` on {tier:?}"
+            );
+        }
+        render_command(&arena, root)
+    };
+    let fused = run(&Writers::NONE);
+    let named = run(&[first, second].into_iter().collect());
+    assert_ne!(fused, named, "the named writers focus apart");
 }
 
 /// A writer stuck at an operation it has no host for ends with no answer, and

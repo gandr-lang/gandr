@@ -218,6 +218,7 @@ use crate::il::ConsumerNode;
 use crate::il::CopatternArm;
 use crate::il::CovariableIndex;
 use crate::il::DestructorTag;
+use crate::il::Independence;
 use crate::il::Introduces;
 use crate::il::MintRefusal;
 use crate::il::PatternArm;
@@ -266,7 +267,8 @@ pub enum FocusOrigin
     /// its fields.
     Projection,
     /// `x ← M; N`: the cut naming the continuation a bind passes under its
-    /// binder.
+    /// binder, or the cut of an independent bind's writer `μα.𝓕⟦M⟧α` against
+    /// its binder.
     Bind,
     /// A declaration's value, cut against `★`.
     TopValue,
@@ -282,8 +284,7 @@ pub enum FocusOrigin
 /// The provenance table of a focusing.
 ///
 /// It holds the [`FocusOrigin`] of every command focusing created, in creation
-/// order, the core action each session command was focused from, and the core
-/// computation each bind's binder binds.
+/// order, and the core action each session command was focused from.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Provenance
 {
@@ -292,9 +293,6 @@ pub struct Provenance
     /// Each session command with the core action it was focused from, in
     /// increasing command address.
     sessions: Vec<(CommandId, ComputationId)>,
-    /// Each bind's binder `μ̃x.c` with the core computation it binds, in
-    /// minting order, each beside the number of commands recorded before it.
-    binds: Vec<(NodeCount, ConsumerId, ComputationId)>,
 }
 
 impl Provenance
@@ -367,36 +365,6 @@ impl Provenance
         self.sessions.iter().copied()
     }
 
-    /// Every bind's binder `μ̃x.c` with the core computation it binds, its
-    /// writer, in minting order: a schedule reads the writer's type by it.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one entry for each bind `x ← M; N` of the caller's core arena
-    ///   that a kept translation focused: the binder it minted beside `M`. A
-    ///   bind of an identity combinator has no entry, because its `M` names a
-    ///   node of the combinator's own arena. A refused translation leaves no
-    ///   entry.
-    /// - provides: the crossing a writer's type takes from the core term to its
-    ///   binder.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the clause is about every translation recorded into
-    ///   the table before the call, which the call does not see; the witness
-    ///   focuses each case and reads the table.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — nested binds separate the two binders and their
-    ///   writers, a program that prepares an identity combinator separates the
-    ///   caller's binds from the combinator's, and a refusal after a kept bind
-    ///   separates a stale entry from a kept one.
-    /// - witness: `focus::tests::each_bind_records_its_binder_beside_its_writer`
-    #[inline]
-    pub fn binds(&self) -> impl Iterator<Item = (ConsumerId, ComputationId)>
-    {
-        self.binds.iter().map(|&(_, binder, head)| (binder, head))
-    }
-
     /// The number of recorded commands.
     ///
     /// # Specification
@@ -449,26 +417,8 @@ impl Provenance
         self.sessions.push((command, source));
     }
 
-    /// Record the binder `μ̃x.c` a bind minted beside the core computation
-    /// `head` it binds.
-    ///
-    /// # Specification
-    /// trivial.
-    fn record_bind(
-        &mut self,
-        binder: ConsumerId,
-        head: ComputationId,
-    )
-    {
-        self.binds
-            .push((NodeCount::from(self.origins.len()), binder, head));
-    }
-
-    /// Truncate the table to an earlier length, the session commands and the
-    /// binds past it with it.
-    ///
-    /// A bind follows the record of its body's command, so a bind recorded
-    /// after the length has more commands recorded before it than the length.
+    /// Truncate the table to an earlier length, the session commands past it
+    /// with it.
     ///
     /// # Specification
     /// trivial.
@@ -483,11 +433,57 @@ impl Provenance
                 .partition_point(|&(command, _)| command < first);
             self.sessions.truncate(kept);
         }
-        let kept = self
-            .binds
-            .partition_point(|&(before, ..)| usize::from(before) <= usize::from(length));
-        self.binds.truncate(kept);
         self.origins.truncate(usize::from(length));
+    }
+}
+
+/// The writers of the binds a caller judges independent.
+///
+/// Each writer is a core computation that the caller's checker types as a
+/// returner with the closed empty row, so it performs no operation. Focus
+/// focuses such a writer apart from its binder, as `⟨μα.𝓕⟦M⟧α |+ μ̃x.c⟩`, and
+/// marks the binder independent.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Writers(BTreeSet<ComputationId>);
+
+impl Writers
+{
+    /// No writer: every bind keeps its writer fused with its binder.
+    pub const NONE: Self = Self(BTreeSet::new());
+
+    /// Whether the binds of `writer` are independent.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn independence(
+        &self,
+        writer: ComputationId,
+    ) -> Independence
+    {
+        if self.0.contains(&writer) {
+            Independence::Independent
+        }
+        else {
+            Independence::Sequential
+        }
+    }
+}
+
+impl FromIterator<ComputationId> for Writers
+{
+    /// The writers `iter` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_iter<Names>(iter: Names) -> Self
+    where
+        Names: IntoIterator<Item = ComputationId>,
+    {
+        Self(iter.into_iter().collect())
     }
 }
 
@@ -593,7 +589,10 @@ impl From<MintRefusal> for FocusRefusal
 /// - requires: `computation` is a closed term of `core`, or one whose free
 ///   variables the caller binds.
 /// - ensures: on success the command `𝓕⟦computation⟧★`, every command it
-///   created recorded in `provenance`; equal inputs mint identical nodes.
+///   created recorded in `provenance`; equal inputs mint identical nodes. A
+///   bind `x ← M; N` whose `M` `writers` holds focuses as `⟨μα.𝓕⟦M⟧α |+ μ̃x.c⟩`,
+///   its binder marked independent, and every other binder reads
+///   [`Independence::Sequential`].
 /// - provides: the entry of a computation into the IL.
 /// - fails: [`FocusRefusal`] at the first dangling core id, code or refused
 ///   mint; `arena` and `provenance` are then exactly as they were on entry.
@@ -607,7 +606,9 @@ impl From<MintRefusal> for FocusRefusal
 ///   computations with their input, detecting wrong formers, child order and
 ///   binder shifts within the bounded generator. L3 — hand-built former cases
 ///   and exact refusal/rollback observations cover the directed residue;
-///   equal-input arena comparison observes deterministic minting only.
+///   equal-input arena comparison observes deterministic minting only. Nested
+///   binds with one writer held separate a named writer and its mark from a
+///   fused bind, and a decoder reads both back to the same bind.
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
@@ -616,6 +617,7 @@ impl From<MintRefusal> for FocusRefusal
 /// - witness: `focus::tests::a_static_code_is_refused_by_name`
 /// - witness: `focus::tests::focusing_mints_no_name`
 /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+/// - witness: `focus::tests::an_independent_bind_names_its_writer_and_marks_its_binder`
 #[inline]
 #[spec(
     captures: [mark = arena.watermark(), recorded = provenance.len()],
@@ -629,13 +631,13 @@ pub fn focus_computation(
     computation: ComputationId,
     arena: &mut CommandArena,
     provenance: &mut Provenance,
+    writers: &Writers,
 ) -> Result<CommandId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            arena,
-            provenance,
+            (arena, provenance, writers),
             (
                 |run: &mut Focusing<'_>| {
                     let top = run.arena.mint_consumer(ConsumerNode::Top)?;
@@ -682,13 +684,13 @@ pub fn focus_value(
     value: ValueId,
     arena: &mut CommandArena,
     provenance: &mut Provenance,
+    writers: &Writers,
 ) -> Result<ProducerId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            arena,
-            provenance,
+            (arena, provenance, writers),
             (
                 |run: &mut Focusing<'_>| {
                     run.tasks.push(Task::Value(value));
@@ -737,17 +739,17 @@ pub fn focus_definition(
     value: ValueId,
     arena: &mut CommandArena,
     provenance: &mut Provenance,
+    writers: &Writers,
 ) -> Result<ProducerId, FocusRefusal>
 {
     let Some(&Value::Returned(computation)) = core.value(value)
     else {
-        return focus_value(core, value, arena, provenance);
+        return focus_value(core, value, arena, provenance, writers);
     };
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            arena,
-            provenance,
+            (arena, provenance, writers),
             (
                 |run: &mut Focusing<'_>| {
                     let continuation = run.innermost_covariable()?;
@@ -797,13 +799,13 @@ pub fn focus_top_value(
     value: ValueId,
     arena: &mut CommandArena,
     provenance: &mut Provenance,
+    writers: &Writers,
 ) -> Result<CommandId, FocusRefusal>
 {
     transactional(arena, provenance, |arena, provenance| {
         with_combinators(
             core,
-            arena,
-            provenance,
+            (arena, provenance, writers),
             (
                 |run: &mut Focusing<'_>| {
                     let top = run.arena.mint_consumer(ConsumerNode::Top)?;
@@ -875,7 +877,9 @@ where
 ///   rides and transports apply; when it met none its result is the answer.
 ///   Otherwise the arena and provenance return to their marks, each wanted
 ///   combinator is built closed in a scratch arena and focused by a run of its
-///   own, and a second run with those producers prepared gives the answer.
+///   own, and a second run with those producers prepared gives the answer. A
+///   combinator's run marks no binder, because its writers would name nodes of
+///   the scratch arena, which `writers` does not name.
 /// - provides: closed combinators without a run nested in a run, and with no
 ///   cost to a term that holds no identity.
 /// - fails: `seed`'s, a run's or `finish`'s refusal;
@@ -896,8 +900,7 @@ where
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 fn with_combinators<Answer, Seed, Finish>(
     core: &CoreArena,
-    arena: &mut CommandArena,
-    provenance: &mut Provenance,
+    (arena, provenance, writers): (&mut CommandArena, &mut Provenance, &Writers),
     (seed, finish): (Seed, Finish),
 ) -> Result<Answer, FocusRefusal>
 where
@@ -907,7 +910,7 @@ where
     let arena_mark = arena.watermark();
     let provenance_mark = provenance.len();
     let wanted = {
-        let mut run = Focusing::new(core, arena, provenance);
+        let mut run = Focusing::new(core, (arena, provenance), writers);
         seed(&mut run)?;
         run.drive()?;
         if run.wanted.is_empty() {
@@ -920,12 +923,12 @@ where
     let mut prepared = BTreeMap::new();
     let mut scratch = CoreArena::new();
     let empty = scratch.watermark();
+    let none = Writers::NONE;
     for combinator in wanted {
         let mut cases = crate::identity::RunCases::new();
         let root = crate::identity::build(core, combinator, (&mut scratch, &mut cases))?;
-        let mut closed = Focusing::new(&scratch, arena, provenance);
+        let mut closed = Focusing::new(&scratch, (arena, provenance), &none);
         closed.run_cases = cases;
-        closed.heads = Heads::Scratch;
         closed.tasks.push(Task::Value(root));
         closed.drive()?;
         if !closed.wanted.is_empty() {
@@ -934,7 +937,7 @@ where
         let _replaced = prepared.insert(combinator, closed.single_producer()?);
         scratch.truncate_to(empty);
     }
-    let mut run = Focusing::new(core, arena, provenance);
+    let mut run = Focusing::new(core, (arena, provenance), writers);
     run.prepared = prepared;
     seed(&mut run)?;
     run.drive()?;
@@ -1137,17 +1140,6 @@ enum Visit
     Leave,
 }
 
-/// The arena a run's binds name their writers in.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Heads
-{
-    /// The caller's arena: each bind records its writer.
-    Caller,
-    /// An identity combinator's scratch arena, whose nodes the caller does
-    /// not hold: no bind records its writer.
-    Scratch,
-}
-
 /// The state of one translation.
 struct Focusing<'run>
 {
@@ -1172,8 +1164,8 @@ struct Focusing<'run>
     run_cases: crate::identity::RunCases,
     /// Whether each former met holds a returned value, decided once.
     returning: BTreeMap<ValueId, Holding>,
-    /// The arena the run's binds name their writers in.
-    heads: Heads,
+    /// The writers whose binds the run focuses apart and marks independent.
+    writers: &'run Writers,
 }
 
 impl<'run> Focusing<'run>
@@ -1184,8 +1176,8 @@ impl<'run> Focusing<'run>
     /// trivial.
     fn new(
         core: &'run CoreArena,
-        arena: &'run mut CommandArena,
-        provenance: &'run mut Provenance,
+        (arena, provenance): (&'run mut CommandArena, &'run mut Provenance),
+        writers: &'run Writers,
     ) -> Self
     {
         Self {
@@ -1199,7 +1191,7 @@ impl<'run> Focusing<'run>
             wanted: BTreeSet::new(),
             run_cases: crate::identity::RunCases::new(),
             returning: BTreeMap::new(),
-            heads: Heads::Caller,
+            writers,
         }
     }
 
@@ -1507,12 +1499,18 @@ impl<'run> Focusing<'run>
             Task::Bind { head } => {
                 let body = self.pop_command()?;
                 let binder = self.arena.mint_consumer(ConsumerNode::MuTilde { body })?;
-                if self.heads == Heads::Caller {
-                    self.provenance.record_bind(binder, head);
-                }
+                let continuation = match self.writers.independence(head) {
+                    Independence::Sequential => binder,
+                    Independence::Independent => {
+                        self.arena
+                            .mark_independent(binder)
+                            .map_err(|_fresh| FocusRefusal::TranslationInvariant)?;
+                        self.share_or_name(FocusOrigin::Bind, binder)?
+                    },
+                };
                 self.tasks.push(Task::Computation {
                     computation: head,
-                    continuation: binder,
+                    continuation,
                 });
                 Ok(())
             },

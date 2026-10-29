@@ -325,8 +325,14 @@ fn closing_fold_annotations_substitutes_captured_codes()
     let fold = source.computation_list_fold(element, result, nil, on_nil, on_cons);
     let mut arena = CommandArena::new();
     let mut provenance = crate::focus::Provenance::new();
-    let root = crate::focus::focus_computation(&source, fold, &mut arena, &mut provenance)
-        .expect("open annotation focuses");
+    let root = crate::focus::focus_computation(
+        &source,
+        fold,
+        &mut arena,
+        &mut provenance,
+        &crate::Writers::NONE,
+    )
+    .expect("open annotation focuses");
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
     let code = core.value_quote(unit);

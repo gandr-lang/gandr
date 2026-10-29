@@ -20,12 +20,12 @@
 //!   drops.
 //! - [`focus_computation`], [`focus_value`], [`focus_top_value`] and
 //!   [`focus_definition`] translate core terms into the IL, recording each
-//!   created command's [`FocusOrigin`] in a [`Provenance`] table, and each
-//!   bind's binder beside the core computation it binds
-//!   ([`Provenance::binds`]), which a schedule reads the writer's type by. A
-//!   bind inside an identity combinator's build records nothing, because its
-//!   writer names a node of the combinator's own arena. [`unfocus_command`] and
-//!   [`unfocus_value`] read the IL back, their left inverse.
+//!   created command's [`FocusOrigin`] in a [`Provenance`] table. A bind whose
+//!   writer the caller names in [`Writers`] focuses as `⟨μα.𝓕⟦M⟧α |+ μ̃x.c⟩`,
+//!   its binder marked. A bind inside an identity combinator's build is never
+//!   marked, because its writer names a node of the combinator's own arena.
+//!   [`unfocus_command`] and [`unfocus_value`] read the IL back, their left
+//!   inverse.
 //! - [`check_command`] is the typed-IL check: reference integrity, arity,
 //!   focus, polarity and second-class closures, answering a command's
 //!   [`FreeSet`].
@@ -115,8 +115,8 @@
 //!   location.
 //! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design
 //!   (§ futures-in-gandr item 1): a cut whose writer performs no operation is
-//!   independent, so focus records each bind's writer and the arena marks the
-//!   bind's binder.
+//!   independent, so focus reads the caller's writers, focuses each such writer
+//!   apart and marks its binder.
 
 // Module documentation that predates the shape lint: 17 headings outside the
 // vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with
@@ -171,6 +171,7 @@ pub use crate::definitions::Definitions;
 pub use crate::focus::FocusOrigin;
 pub use crate::focus::FocusRefusal;
 pub use crate::focus::Provenance;
+pub use crate::focus::Writers;
 pub use crate::focus::focus_computation;
 pub use crate::focus::focus_definition;
 pub use crate::focus::focus_top_value;

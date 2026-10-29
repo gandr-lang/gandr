@@ -983,7 +983,13 @@ impl<'source> Program<'source>
             let (definition, slot) = match (verdict, body) {
                 (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
                 (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
-                    match focus_definition(core, body, &mut arena, &mut provenance) {
+                    match focus_definition(
+                        core,
+                        body,
+                        &mut arena,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    ) {
                         Ok(producer) => (
                             Definition::Transparent(producer),
                             Slot::Defined(references(core, body)),
@@ -999,17 +1005,22 @@ impl<'source> Program<'source>
                 },
                 (Some(Verdict::Refused(_)), _) => match lowered.outcome() {
                     DeclarationOutcome::Completed { body, .. }
-                    | DeclarationOutcome::Bodied { body } => {
-                        focus_definition(core, body, &mut arena, &mut provenance).map_or(
-                            (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
-                            |producer| {
-                                (
-                                    Definition::Transparent(producer),
-                                    Slot::Refused(references(core, body)),
-                                )
-                            },
-                        )
-                    },
+                    | DeclarationOutcome::Bodied { body } => focus_definition(
+                        core,
+                        body,
+                        &mut arena,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    )
+                    .map_or(
+                        (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
+                        |producer| {
+                            (
+                                Definition::Transparent(producer),
+                                Slot::Refused(references(core, body)),
+                            )
+                        },
+                    ),
                     DeclarationOutcome::Uncompleted { .. }
                     | DeclarationOutcome::Data(_)
                     | DeclarationOutcome::Codata(_)
@@ -1886,8 +1897,14 @@ impl<'source> Program<'source>
             into.computation_application(applied, argument)
         });
         let mut provenance = Provenance::new();
-        focus_computation(into, root, &mut self.arena, &mut provenance)
-            .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
+        focus_computation(
+            into,
+            root,
+            &mut self.arena,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
     }
 
     /// Run `command` into `store` under the process's policy, each operation
@@ -2356,13 +2373,31 @@ impl<'source> Program<'source>
                 let returned = core.computation_return(value);
                 let forced = core.computation_force(value);
                 Ok((
-                    focus_computation(&core, returned, &mut self.arena, &mut provenance)?,
-                    focus_computation(&core, forced, &mut self.arena, &mut provenance)?,
+                    focus_computation(
+                        &core,
+                        returned,
+                        &mut self.arena,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    )?,
+                    focus_computation(
+                        &core,
+                        forced,
+                        &mut self.arena,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    )?,
                 ))
             },
             Reach::Web => {
                 let decomposed = core.computation_decompose(value);
-                let web = focus_computation(&core, decomposed, &mut self.arena, &mut provenance)?;
+                let web = focus_computation(
+                    &core,
+                    decomposed,
+                    &mut self.arena,
+                    &mut provenance,
+                    &gandr_core_sequent::Writers::NONE,
+                )?;
                 Ok((web, web))
             },
         }
@@ -4171,9 +4206,14 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         let returned = core.computation_return(outer);
         let mut commands = gandr_core_sequent::CommandArena::default();
         let mut provenance = gandr_core_sequent::Provenance::new();
-        let command =
-            gandr_core_sequent::focus_computation(&core, returned, &mut commands, &mut provenance)
-                .expect("the constructed terminal focuses");
+        let command = gandr_core_sequent::focus_computation(
+            &core,
+            returned,
+            &mut commands,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the constructed terminal focuses");
         let mut store = Store::new();
         let outcome = gandr_runtime_emitter::evaluate_on(
             Tier::Executor,
@@ -4865,6 +4905,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             writer,
             &mut program.arena,
             &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
         )
         .expect("the writer focuses");
         let reader = gandr_core_sequent::focus_computation(
@@ -4872,6 +4913,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             reader,
             &mut program.arena,
             &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
         )
         .expect("the reader focuses");
         let program = &program;

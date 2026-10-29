@@ -197,8 +197,14 @@ fn on_tiers(
 {
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let command = focus_computation(core, root, &mut arena, &mut provenance)
-        .expect("focusing is total on the pure fragment");
+    let command = focus_computation(
+        core,
+        root,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("focusing is total on the pure fragment");
     run_on_tiers(&arena, command)
 }
 

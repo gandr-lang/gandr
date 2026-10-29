@@ -55,8 +55,14 @@ fn focused(
         return Err(TestCaseError::fail("the strategy yields computations"));
     };
     let mut provenance = Provenance::new();
-    focus_computation(&generated.core, root, arena, &mut provenance)
-        .map_err(|refusal| TestCaseError::fail(alloc::format!("focusing refused: {refusal:?}")))
+    focus_computation(
+        &generated.core,
+        root,
+        arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .map_err(|refusal| TestCaseError::fail(alloc::format!("focusing refused: {refusal:?}")))
 }
 
 proptest! {
