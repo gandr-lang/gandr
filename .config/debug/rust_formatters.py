@@ -2,8 +2,8 @@
 
 `.config/debug/lldbinit` imports this module. It loads rustc's own formatters
 from the pinned toolchain's `lib/rustlib/etc`, then corrects the defects that
-make a sum-type enum print the wrong variant, and the one that lets a length
-take lldb's memory:
+make a sum-type enum print the wrong variant, the one that lets a length take
+lldb's memory, and the one that lets a summary recurse without end:
 
 - lldb places an enum's `$discr$` member at offset 0, its byte offset kept as a
   bit-field width. Where the tag sits past offset 0, the formatters read the
@@ -25,6 +25,11 @@ take lldb's memory:
   mask gives only where it lies in the process's readable memory
   (`extents.py`). Past it, the value has no children, and its summary names
   the raw field.
+- rustc's summary of a struct or a tuple summarises every field, to any
+  depth. A receiver such as the lowering's `Lowerer` nests past Python's
+  recursion limit, so a backtrace prints thousands of tracebacks or never
+  returns (#3809). The correction cuts both summaries at lldb's
+  `target.max-children-depth` (`depths.py`).
 """
 
 import functools
@@ -36,6 +41,7 @@ from typing import Callable, Optional, Tuple
 import lldb
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import depths  # noqa: E402
 from extents import Region, covered  # noqa: E402
 from variants import pick  # noqa: E402
 
@@ -136,6 +142,12 @@ def refusing_update(update: Callable[[object], None]) -> Callable[[object], None
 def is_sum_enum(sbtype: lldb.SBType, _dict) -> bool:
     """A sum-type enum as lldb lays it out: one `$variants$` member."""
     return sbtype.GetNumberOfFields() == 1 and sbtype.GetFieldAtIndex(0).GetName() == VARIANTS
+
+
+def children_depth(valobj: lldb.SBValue) -> int:
+    """lldb's `target.max-children-depth`, the depth past which it elides children."""
+    setting = valobj.GetTarget().GetDebugger().GetSetting("target.max-children-depth")
+    return setting.GetUnsignedIntegerValue()
 
 
 def region_at(process: lldb.SBProcess) -> Callable[[int], Optional[Region]]:
@@ -304,3 +316,8 @@ def __lldb_init_module(debugger: lldb.SBDebugger, _dict) -> None:
     providers.read_string = bounded_read_string(providers.read_string)
     for name, provider in bounded_providers(providers).items():
         setattr(lookup, name, provider)
+    depth = depths.Depth()
+    for name, elided in (("StructSummaryProvider", "{…}"), ("TupleSummaryProvider", "(…)")):
+        cut = depths.bounded(getattr(providers, name), elided, depth, children_depth)
+        setattr(providers, name, cut)
+        setattr(lookup, name, cut)
