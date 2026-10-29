@@ -1,0 +1,77 @@
+test: editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974 --break hovered_sources
+
+(lldb) target create "target/debug-trace/debug/deps/tests-aa41131b39baf702"
+Current executable set to 'target/debug-trace/debug/deps/tests-aa41131b39baf702' (x86_64).
+(lldb) settings set -- target.run-args  "editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex hovered_sources
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-aa41131b39baf702`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000004c87ed8
+(lldb) run
+
+running 1 test
+test editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 282629 launched: 'target/debug-trace/debug/deps/tests-aa41131b39baf702' (x86_64)
+Process 282629 stopped
+* thread #2, name = 'editor::scenari', stop reason = breakpoint 1.3
+       frame #0: 0x000055555650c03b tests-aa41131b39baf702`tests::editor::scenarios::sweeps::hovered_sources(sweep={coverage:Full, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:""}}, rotation:Night({0:20755})}) at scenarios.rs:1906:5
+   1903	    /// - hypothesis: L3 — a nightly sweep and a whole one; hovering the whole
+   1904	    ///   corpus nightly, as the sweep once did, changes the drawn count.
+   1905	    /// - witness: `tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974`
+-> 1906	    #[spec(ensures: |ret| (ret.0 == Drawn::Whole) == (sweep.rotation() == Rotation::Whole
+    	    ^
+   1907	        && sweep.coverage() == gandr_workflow_sweep::Coverage::Full))]
+   1908	    fn hovered_sources(sweep: &Sweep) -> (Drawn, Vec<Source>)
+   1909	    {
+(lldb) bt 24
+* thread #2, name = 'editor::scenari', stop reason = breakpoint 1.3
+   * frame #0: 0x000055555650c03b tests-aa41131b39baf702`tests::editor::scenarios::sweeps::hovered_sources(sweep={coverage:Full, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:""}}, rotation:Night({0:20755})}) at scenarios.rs:1906:5
+     frame #1: 0x000055555650c9ac tests-aa41131b39baf702`tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974 at scenarios.rs:1941:13
+     frame #2: 0x0000555556505217 tests-aa41131b39baf702`tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974::{closure#0}((null)={}) at scenarios.rs:1928:57
+     frame #3: 0x00005555565862e6 tests-aa41131b39baf702`<tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x00005555566cd0db tests-aa41131b39baf702`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x00005555566cd0d9 tests-aa41131b39baf702`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #6: 0x00005555566da735 tests-aa41131b39baf702`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #7: 0x00005555566da730 tests-aa41131b39baf702`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x00005555566da730 tests-aa41131b39baf702`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #9: 0x00005555566da71b tests-aa41131b39baf702`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #10: 0x00005555566da71b tests-aa41131b39baf702`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x00005555566da71b tests-aa41131b39baf702`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #12: 0x00005555566da706 tests-aa41131b39baf702`test::run_test::{closure#0} at lib.rs:668:43
+     frame #13: 0x00005555566d5294 tests-aa41131b39baf702`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #14: 0x00005555566d5219 tests-aa41131b39baf702`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x00005555566dd872 tests-aa41131b39baf702`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x00005555566dd863 tests-aa41131b39baf702`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x00005555566dd863 tests-aa41131b39baf702`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #18: 0x00005555566dd853 tests-aa41131b39baf702`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #19: 0x00005555566dd853 tests-aa41131b39baf702`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x00005555566dd853 tests-aa41131b39baf702`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x00005555566dd844 tests-aa41131b39baf702`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555a1fb5df tests-aa41131b39baf702`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2273:9 [inlined]
+     frame #23: 0x000055555a1fb5d8 tests-aa41131b39baf702`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:118:17
+(lldb) frame variable --depth 3
+(gandr_workflow_sweep::Sweep *) sweep = 0x00007ffff79fe298 {coverage:Full, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:""}}, rotation:Night({0:20755})}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x000055555650c9ac tests-aa41131b39baf702`tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974 at scenarios.rs:1941:13
+   1938	            )
+   1939	        };
+   1940	        let (drawn, slice) =
+-> 1941	            hovered_sources(&full(Rotation::Night(gandr_workflow_sweep::Night(20_755))));
+    	            ^
+   1942	        assert_eq!(
+   1943	            drawn,
+   1944	            Drawn::Slice,
+(lldb) frame variable --depth 3
+(unsigned long) corpus = 796
+(unsigned long) nights = 17
+(tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974::{closure_env#0}) full = {}
