@@ -1072,12 +1072,13 @@ impl<Node> Family<Node>
         self.own.last().or_else(|| self.frozen().last())
     }
 
-    /// Every node, in allocation order.
+    /// Every node, in allocation order, read from either end.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = &Node>
+    #[must_use]
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Node>
     {
         self.frozen().iter().chain(&self.own)
     }

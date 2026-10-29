@@ -1971,7 +1971,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+    /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
     #[spec(
         requires: match *value {
             Value::Constructor { datatype, ref fields, .. } => matches!(self.placed.get(AnyNode::ValueType(datatype)), Maybe::Present(_)) && fields.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
@@ -4146,22 +4146,31 @@ pub fn content_digest(
 /// definitions named by the same two, each constant they reach read by its
 /// position.
 ///
+/// Each earlier entry's rank already counts the identical entries before it,
+/// and identity in content is an equivalence. So the latest identical entry
+/// decides the rank: one past its own. The search runs from the newest entry
+/// back and stops there, so a module of many identical definitions compares
+/// each new one against one earlier twin, not against all of them (#3686).
+///
 /// # Specification
 /// - requires: the roots, and those of every definition `entries` names by
-///   content, live in `arena`.
+///   content, live in `arena`; every definition `entries` names by content is
+///   ranked by the identical entries before it.
 /// - ensures: a definition name over `declared` and `body`, ranked by the
 ///   earlier entries whose declared types and bodies are identical in reachable
-///   content. A digest filters the entries and one table decides each
-///   candidate, so no digest decides.
+///   content: one past the latest such entry's rank, or zero when none is. A
+///   digest filters the entries and one table decides each candidate, so no
+///   digest decides.
 /// - provides: admission's naming of a plain definition, injective on the
 ///   environment's positions.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two definitions of one type and body admitted into one
-///   environment are ranked apart; the predicate checks the roots kept.
-/// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+/// - hypothesis: L3 — three definitions of one type and body admitted into one
+///   environment, a definition of other content between them, rank 0, 1 and 2;
+///   the predicate checks the roots kept.
+/// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
 #[must_use]
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
     if kept_declared == declared && kept_body == body))]
@@ -4180,24 +4189,26 @@ pub(crate) fn name_definition(
     };
     let rank = entries
         .iter()
-        .filter(|entry| match entry.key_name() {
+        .rev()
+        .find_map(|entry| match entry.key_name() {
             ConstantName::Definition {
                 declared: earlier_declared,
                 body: earlier_body,
+                rank: earlier_rank,
                 digest: earlier_digest,
-                ..
-            } => {
-                earlier_digest == digest && {
-                    let mut table = ContentTable::new();
-                    table.place(arena, AnyNode::ValueType(declared))
-                        == table.place(arena, AnyNode::ValueType(earlier_declared))
-                        && table.place(arena, AnyNode::Value(body))
-                            == table.place(arena, AnyNode::Value(earlier_body))
-                }
+            } if earlier_digest == digest && {
+                let mut table = ContentTable::new();
+                table.place(arena, AnyNode::ValueType(declared))
+                    == table.place(arena, AnyNode::ValueType(earlier_declared))
+                    && table.place(arena, AnyNode::Value(body))
+                        == table.place(arena, AnyNode::Value(earlier_body))
+            } =>
+            {
+                Some(earlier_rank.0.saturating_add(1))
             },
-            ConstantName::Position => false,
+            ConstantName::Definition { .. } | ConstantName::Position => None,
         })
-        .count();
+        .unwrap_or(0);
     ConstantName::Definition {
         declared,
         body,
@@ -5434,7 +5445,7 @@ mod tests
     /// # Adequacy
     /// - hypothesis: L3 — the unit definition admits in every environment.
     /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+    /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
     fn unit_definition(environment: &mut crate::env::Environment) -> ConstantIndex
     {
         let mut staging = environment.stage();
@@ -5479,12 +5490,24 @@ mod tests
     }
 
     #[test]
-    fn two_definitions_of_one_content_keep_two_names()
+    fn each_twin_of_one_content_ranks_past_the_latest_3686()
     {
         let mut environment = crate::env::Environment::new();
         let left = unit_definition(&mut environment);
         let right = unit_definition(&mut environment);
-        let ranks = [left, right].map(|position| {
+        let mut staging = environment.stage();
+        let unit = staging.arena().value_type_unit();
+        let declared = staging.arena().value_type_product(&[unit, unit]);
+        let first = staging.arena().value_unit();
+        let second = staging.arena().value_unit();
+        let pair = staging.arena().value_tuple(&[first, second]);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, pair);
+        let other = environment
+            .add_decl(staged)
+            .expect("a definition of other content admits")
+            .position();
+        let third = unit_definition(&mut environment);
+        let ranks = [left, right, other, third].map(|position| {
             match environment
                 .entries()
                 .get(usize::from(position))
@@ -5498,8 +5521,14 @@ mod tests
         });
         assert_eq!(
             ranks,
-            [super::DefinitionRank(0), super::DefinitionRank(1)],
-            "the second definition of one type and body is ranked behind the first"
+            [
+                super::DefinitionRank(0),
+                super::DefinitionRank(1),
+                super::DefinitionRank(0),
+                super::DefinitionRank(2),
+            ],
+            "each definition of one type and body is ranked behind every earlier \
+             one, past a definition of other content between them"
         );
         let mut staging = environment.stage();
         let left = staging.arena().value_constant(left);
