@@ -3876,10 +3876,12 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     // The transport reads the map only lifted under its
                     // motive's binder: the lift is the written map's copy, so
-                    // it answers at the map's bytes.
+                    // each of its nodes answers at the bytes of the node it
+                    // copies.
+                    let mut carried = Vec::new();
                     let lifted = gandr_core_term::shift_value(sink.arena, first, Binders::ONE)
-                        .settle(sink.arena);
-                    record_copies(sink, mark, &[Carried::Value(first, lifted)], inserted);
+                        .settle_traced(sink.arena, &mut carried);
+                    record_copies(sink, mark, &carried, inserted);
                     mark = sink.arena.watermark();
                     gandr_core_term::identity::cong_lifted(
                         sink.arena, carrier, lifted, left, second,
