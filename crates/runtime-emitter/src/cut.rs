@@ -113,12 +113,13 @@ use crate::seam::MigrationRequest;
 ///   [`evaluate_on_with_host`] runs it, with a host that answers each spawn
 ///   with a handle and each read with a fresh copy of the writer's answer in
 ///   `store`. A read declines when the writer ended with no answer, and a spawn
-///   declines when its thunk does not copy. Each writer runs as
-///   [`evaluate_closed_on`] runs it, over the function the schedule lowered for
-///   its body and a store of its own, with a host that answers its own spawns
-///   and reads and declines every other operation. Every other operation and
-///   every migration of the reader goes to `host`. So a run whose writers halt
-///   answers as the sequential schedule does.
+///   declines when its thunk does not copy. Each writer runs over the function
+///   the schedule lowered for its body and a store of its own, each value its
+///   environment binds first laid out on the run's heap as a host's reply is.
+///   Its host answers its own spawns and reads and declines every other
+///   operation. Every other operation and every migration of the reader goes to
+///   `host`. So a run whose writers halt answers as the sequential schedule
+///   does.
 /// - panics: a panic of a writer that ran on this thread, or of the reader; a
 ///   writer's panic on another worker where the scope ends.
 /// - executable: none — the answer is observed by running the schedule.
@@ -143,7 +144,6 @@ use crate::seam::MigrationRequest;
 /// - witness: `tests::cut::a_writer_over_a_captured_function_answers_as_its_sequential_schedule`
 /// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`
 ///
-/// [`evaluate_closed_on`]: crate::evaluate_closed_on
 /// [`evaluate_on_with_host`]: crate::evaluate_on_with_host
 #[inline]
 pub fn evaluate_scheduled_on<Forking, Host>(
@@ -328,9 +328,12 @@ where
     }
 }
 
-/// A writer's host behind the cell's: it declines every operation.
+/// A host that declines every operation: a writer's host behind the cell's.
+///
+/// # Specification
+/// trivial.
 #[derive(Clone, Copy, Debug)]
-struct Declining;
+pub struct Declining;
 
 impl HostHandler for Declining
 {

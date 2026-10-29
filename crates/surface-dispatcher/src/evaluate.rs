@@ -4614,8 +4614,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// A tree sum in two halves, each building and summing a complete tree of
     /// depth ten: `both` cuts one half against the other, and `left` and
-    /// `right` are the halves alone. `writer` builds a tree and answers the
-    /// suspended sum over it, a cut's writer closed over what it captured.
+    /// `right` are the halves alone.
     ///
     /// # Specification
     /// trivial.
@@ -4631,8 +4630,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
              def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\
              def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
              def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\
-             def both : +U (-F Integer) ;\ndef both = thunk {{ run a <- half({depth}); run b <- half({depth}); a + b }} ;\n\
-             def writer : +U (-F (+U (-F Integer))) ;\ndef writer = thunk {{ run t <- full({depth}); thunk {{ sum(t) }} }} ;\n"
+             def both : +U (-F Integer) ;\ndef both = thunk {{ run a <- half({depth}); run b <- half({depth}); a + b }} ;\n"
         )
     }
 
@@ -4728,93 +4726,6 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     .map(Sum),
                 sequential,
                 "the writer on its own thread and the reader on this one answer as the sequential schedule on {tier:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_writer_runs_from_the_store_as_it_runs_in_place()
-    {
-        let source = tree_sum();
-        let mut program = program(source.as_str());
-        let (writer, left) = (
-            forced(&mut program, &SurfaceName::from("writer")),
-            forced(&mut program, &SurfaceName::from("left")),
-        );
-        let program = &program;
-        for tier in [Tier::Executor, Tier::Native] {
-            if matches!(tier, Tier::Native) && !PATCHER {
-                continue;
-            }
-            let fuel = Fuel::from(super::RUN_BUDGET);
-            let mut here = Store::new();
-            let outcome = gandr_runtime_emitter::evaluate_on(
-                tier,
-                &program.arena,
-                &program.definitions,
-                left,
-                fuel,
-                gandr_runtime_emitter::RunInputs::new(&mut here),
-            );
-            let in_place = summed(&here, &outcome);
-            assert_eq!(
-                in_place,
-                Some(Sum(1024_u64)),
-                "the sum in place on {tier:?}"
-            );
-            // The suspended sum `writer` answers over the tree it built, its
-            // body and environment in `store`.
-            let suspended = |store: &mut Store| {
-                let outcome = gandr_runtime_emitter::evaluate_on(
-                    tier,
-                    &program.arena,
-                    &program.definitions,
-                    writer,
-                    fuel,
-                    gandr_runtime_emitter::RunInputs::new(store),
-                );
-                let Ok(super::Outcome::Halted(thunk)) = outcome
-                else {
-                    panic!("the writer answers on {tier:?}: {outcome:?}");
-                };
-                let Some(&gandr_core_sequent::HeapValue::Thunk { body, environment }) =
-                    store.value(thunk)
-                else {
-                    panic!("the writer answers a thunk on {tier:?}");
-                };
-                (body, environment)
-            };
-            let closed = |(body, environment): (CommandId, gandr_core_sequent::Environment),
-                          store: &mut Store| {
-                gandr_runtime_emitter::evaluate_closed_on(
-                    tier,
-                    (&program.arena, &program.definitions),
-                    (body, environment),
-                    (fuel, gandr_runtime_emitter::RunInputs::new(store)),
-                )
-            };
-            let mut store = Store::new();
-            let thunk = suspended(&mut store);
-            let outcome = closed(thunk, &mut store);
-            assert_eq!(
-                summed(&store, &outcome),
-                in_place,
-                "the writer from the store on {tier:?}"
-            );
-            // The writer's own store, filled on this thread and moved to
-            // another.
-            let mut apart = Store::new();
-            let thunk = suspended(&mut apart);
-            let outcome = std::thread::scope(|scope| {
-                scope
-                    .spawn(|| closed(thunk, &mut apart))
-                    .join()
-                    .expect("the writer's thread joins")
-            });
-            assert_eq!(
-                summed(&apart, &outcome),
-                in_place,
-                "the writer from the store on another thread on {tier:?}"
             );
         }
     }

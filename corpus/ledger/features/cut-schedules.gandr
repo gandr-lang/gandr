@@ -1,6 +1,6 @@
 /// `cut-schedules` sums a complete tree with every recursive call under a cut.
 ///
-/// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does; a writer's suspended sum, moved out of its run with the tree it captured, runs from the store on another thread and answers as forcing it in place does.
+/// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does; a thunk a run returns runs from the store on another thread, with its captures on that run's heap and a shared capture counted twice, and answers as forcing it in place does.
 /// A cut's writer runs on the driver's pool as the left half of one join, and its reader reads the writer's sum through a host's reply and answers as the sequential schedule does.
 ///
 /// The sequential schedule runs each cut's writer and then its reader, so `sum` answers as under call by value.
@@ -9,7 +9,7 @@
 /// The measuring machine has a 16-core Ryzen 9 9950X3D at load 25 on 32 hardware threads.
 ///
 /// - see: crates/surface-dispatcher/src/evaluate.rs
-/// - see: crates/runtime-emitter/tests/closed.rs
+/// - see: crates/runtime-emitter/src/run.rs
 /// - see: crates/runtime-emitter/tests/cut.rs
 /// - see: #2954 — not implemented: the rule that spawns a writer at each independent cut
 
