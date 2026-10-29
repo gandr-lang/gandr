@@ -1590,7 +1590,8 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
 # that come off. Each case in `.config/claims/cases.json` holds an input and
 # the removals it must give: a merge's `Advances` and closing targets, the
-# closed and epic sweep, 4 hours of silence, and an open pull
+# closed and epic sweep, a label 4 hours old however fresh the issue (#3915),
+# read on a merge's run too, and an open pull
 # request that keeps a claim. Each case in `.config/claims/opening.json`
 # holds a branch, a body, the issues it works, the tree's lines naming what
 # it supersedes, the concerns ledger and the sources the change adds, and the
@@ -1603,7 +1604,8 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # case in `.config/claims/unit.json` holds an issue body and the lines
 # `unit:check` prints for it, or none (`unit.jq`, #2532); each in
 # `.config/claims/next.json` a lane's areas, the open issues and the claim
-# `claim:next` takes from them, or none (`next.jq`, #2533, #3736); each in
+# `claim:next` takes from them, or none, or the claim the lane holds (`next.jq`,
+# #2533, #3736, #3915); each in
 # `.config/claims/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
 # prints for them, or none (`ledger.jq`, #2525); each in

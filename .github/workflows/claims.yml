@@ -10,15 +10,19 @@ name: claims
 
 # `status:claimed` means a seat is on the issue now (#1270). The claim comes
 # off when a merged pull request's body says `Advances #n` or closes the
-# issue, when the issue is closed, on 4 hours of silence with no open pull
-# request naming the issue (#2534), and always on a `kind:epic` issue.
+# issue, when the issue is closed, when its label is 4 hours old with no open
+# pull request naming the issue (#2534, #3915), and always on a `kind:epic`
+# issue. The age is the label's: a comment on the issue leaves it alone.
 # `pr:open` refuses a body that names no such line for the branch's
 # issue (#2462), so every landing unclaims what it worked.
 # `.config/claims/claims.sh` reads, decides (`decide.jq`) and removes;
 # the removals are printed in the run log and nothing is posted for them.
-# A merge also ticks the `## Rows` of each `collector` it advances and closes
-# one it leaves with no open row, its comment naming the landing (#3732).
-# The sweep runs every 2 hours, so a lapsed claim comes off within 6.
+# A merge also writes a release marker on each open issue it advances, so the
+# branch's lane claims the continuation first (#3915), and it ticks the
+# `## Rows` of each `collector` it advances and closes one it leaves with no
+# open row, its comment naming the landing (#3732). Every run reads silence,
+# a merge's too: GitHub runs the schedule far less often than it states, so
+# the sweep is the backstop for a quiet day, not the clock a claim lapses by.
 on:
   pull_request:
     types: [closed]
@@ -64,6 +68,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CLAIMS_MERGED_BODY: ${{ github.event.pull_request.body }}
           CLAIMS_MERGED_NUMBER: ${{ github.event.pull_request.number }}
+          CLAIMS_MERGED_HEAD: ${{ github.event.pull_request.head.ref }}
         run: .config/claims/claims.sh merged
       - name: sweep tracking, epic and silent claims
         if: ${{ github.event_name != 'pull_request' }}
