@@ -2840,14 +2840,19 @@ fn punct_len(
     pos: ByteOffset,
 ) -> Option<ByteWidth>
 {
+    let byte = bytes.byte(pos)?;
+    // A spelling is compared only when its first byte is the source's: a
+    // compare of the whole spelling per table entry was half the labeler.
     for op in MULTI_PUNCT {
+        if op.as_bytes().first() != Some(&u8::from(byte)) {
+            continue;
+        }
         let width = ByteWidth::from(op.len());
         let end = pos.advance(width);
         if bool::from(bytes.span_matches(pos, end, BytePattern(op.as_bytes()))) {
             return Some(width);
         }
     }
-    let byte = bytes.byte(pos)?;
     bool::from(byte.is_single_punct()).then_some(ByteWidth::ONE)
 }
 
