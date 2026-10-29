@@ -20,6 +20,17 @@
     "output": "{sets}\n[toolchain]\nchannel = \"nightly-2026-05-13\""
   },
   {
+    "name": "#3601: on darwin, whose mv has no -T, a fetched repository still moves into place and serves the clone",
+    "pin": "sets",
+    "channel": "nightly-2026-06-25",
+    "repository": "darwin",
+    "source": "upstream",
+    "run": "clone",
+    "mv": "bsd",
+    "exit": 0,
+    "output": "{sets}\n[toolchain]\nchannel = \"nightly-2026-05-13\""
+  },
+  {
     "name": "#3531: a pin naming another channel than the toolchain's is refused, and the command does not run",
     "pin": "sets",
     "channel": "nightly-2026-07-09",
