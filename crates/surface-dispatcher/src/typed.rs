@@ -8752,6 +8752,48 @@ mod tests
         );
     }
 
+    /// #3801: a `cong` over an annotated thunk prints a type whose thunk
+    /// binds its argument at the parameter's written type. Read back under a
+    /// parameter the type does not name, each `Path` in that bind and in the
+    /// thunk's annotation reprinted one binder off, `Path(?, A, x)` for
+    /// `Path(A, x, y)`; it reprints as printed.
+    #[test]
+    fn an_annotated_thunk_under_cong_reprints_its_path_types_3801()
+    {
+        let source = SourceText::from(
+            "def whiskerRight(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, y),\n  \
+             f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) -> \
+             Path(Path(A, x, z), f1 then g, f2 then g) {\n  cong((thunk { fn (q : Path(A, x, y)) \
+             { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.reprinted))
+            .collect();
+        assert!(
+            reads
+                .iter()
+                .any(|&(ref spelled, _)| spelled.contains("<- pure")),
+            "a printed type binds the thunk's argument at its written type: {reads:?}"
+        );
+        let moved: Vec<_> = reads
+            .iter()
+            .filter(|&&(ref spelled, ref again)| match *again {
+                Maybe::Present(ref again) => again != spelled,
+                Maybe::Absent(super::reprinted::Absent::Unspelled) => true,
+                Maybe::Absent(
+                    super::reprinted::Absent::Unlowered | super::reprinted::Absent::Unrun,
+                ) => false,
+            })
+            .collect();
+        assert!(
+            moved.is_empty(),
+            "every printed type that lowers again reprints as itself: {moved:#?}"
+        );
+    }
+
     /// #3010: a record whose last field is a record sharing a label with an
     /// earlier field, read back, reprints with the labels it was written and
     /// printed with.

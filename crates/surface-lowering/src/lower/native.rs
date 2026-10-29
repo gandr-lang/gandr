@@ -8650,6 +8650,61 @@ impl<'source> Lowerer<'_, 'source>
         result
     }
 
+    /// `ty`, a value type read under `from` in `telescope`, carried under
+    /// `to` in the same telescope, a frame whose chain passes through `from`.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `from`, counting only the frames that
+    ///   bind in `telescope`; `from` is `to` or a frame of `to`'s chain.
+    /// - ensures: `ty` itself when no frame between `from` and `to` binds in
+    ///   `telescope`; otherwise `ty` with every free index raised by the frames
+    ///   between that bind, each node the shift copies recorded at the origin
+    ///   of the node it copies and every other node it mints with `origin`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed parameter of a lambda inside a type, under a
+    ///   parameter the type does not name, binds its argument at its written
+    ///   type.
+    /// - witness: `lower::identity::tests::an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
+    pub(super) fn lift_value_type(
+        &self,
+        ty: ValueTypeId,
+        from: Frame,
+        telescope: Telescope,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let bound = |frame| {
+            self.scope
+                .binders_in(frame, telescope)
+                .filter(|&binds| binds)
+                .count()
+        };
+        let gap = bound(to).saturating_sub(bound(from));
+        let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
+        if lift == Binders::NONE {
+            return ty;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let lifted = gandr_core_term::shift_value_type(sink.arena, ty, lift)
+            .settle_traced(sink.arena, &mut copies);
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        lifted
+    }
+
     /// `ty`, a computation type read under `frame` in `telescope`, carried
     /// into the term context of the same frame.
     ///
