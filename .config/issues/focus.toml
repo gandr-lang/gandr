@@ -1,0 +1,5 @@
+# The programme focus (#3959): while `epics` names any, `claim:next` offers
+# every lane only the focus's work, the defects and refactors its members
+# meet, then its units, the lane's areas first (`.config/claims/next.jq`). An
+# empty list sets no focus. The owner sets it and clears it.
+epics = [3714, 3954, 3955]

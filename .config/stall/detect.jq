@@ -39,7 +39,9 @@
 #                  its old process, and nothing claims for it. Its line
 #                  names the claim to run. It has no pull request, so it is
 #                  keyed by its lane, paged once while it lasts and never
-#                  stalled or paged again.
+#                  stalled or paged again. With a programme focus set and no
+#                  open member unowned (#3959), the line names the focus: no
+#                  claim serves the lane, so the coordinator assigns it.
 # A pull request's lane is its branch's first word, `triage-2783-stack-prefix`
 # the triage lane's; `stall:watch` pages each new finding to its lane's seat
 # and to the coordinator at once (#2972). A lane outside `lanes`, when given,
@@ -72,6 +74,9 @@
 #   seats       the lanes that hold a seat; absent reads as none;
 #   areas       each lane's areas, `{"<lane>": ["<area>"]}`; a seat's lane
 #               it lacks is read by no kind;
+#   focus       the programme focus, `{epics, open}`, `open` its open members
+#               no seat owns, not epics, not deferred or discarded; absent or
+#               null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
 #               `<number>:base-blocked:<head>` and `<lane>:seat-idle` was
 #               first read so, from the last reading; absent reads as none;
@@ -178,8 +183,11 @@
       | $seen_now["\($lane):seat-idle"] as $since
       | select($in.now - $since >= $t.idle * 60)
       | ($in.now - $since | minutes) as $age
+      | (if $in.focus != null and ($in.focus.open | length) == 0
+         then "no open pull request and no claimed issue in its areas, and the focus \($in.focus.epics | map("#\(.)") | join(" ")) holds no unowned member; the coordinator assigns its next work"
+         else "no open pull request and no claimed issue in its areas; run `mise run claim:next \($lane)`" end) as $what
       | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age,
-         line: "STALL seat-idle \($lane) \($age)m: no open pull request and no claimed issue in its areas; run `mise run claim:next \($lane)`"})
+         line: "STALL seat-idle \($lane) \($age)m: \($what)"})
   ]
 | sort_by(.number, .kind, .lane) as $findings
 | def key: "\(.number // .lane):\(.kind)";

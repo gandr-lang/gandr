@@ -1750,6 +1750,10 @@ fi
 # with `claim:release`. An issue the lane released, or a merge on its branch
 # advanced, in the last 2 hours heads its order, and another lane passes it
 # over for those 2 hours.
+# A programme focus (`.config/issues/focus.toml`, #3959) narrows the order to
+# the focus's work: its defects and refactors, then its units, the lane's
+# areas first. The answer opens with `focus: #<epic> …` on stderr, and
+# nothing outside the focus is offered.
 # No candidate prints `no claim: <lane>` and exits 1.
 ["claim:next"]
 description = "Claim the next item in a lane's claim order"
@@ -1789,14 +1793,30 @@ for epic in $epics; do
   children=$(gh api --paginate "repos/$repo/issues/$epic/sub_issues?per_page=100" --jq '[.[].number]' | jq -s 'add // []')
   order=$(jq --arg epic "$epic" --argjson children "$children" '. + {($epic): $children}' <<< "$order")
 done
+# The programme focus (#3959): its members (`deps_focus`), each parent's in
+# its sub-issue order, and the merged pull requests the open defects' and
+# refactors' `from:` lines name.
+focus=$(deps_focus "$repo")
+if [[ $focus != null ]]; then
+  order=$(jq -c --argjson focus "$focus" \
+    '. + ($focus.members | group_by(.parent) | map({key: "\(.[0].parent)", value: map(.number)}) | from_entries)' <<< "$order")
+  landings=$(jq -r -L "$claims" 'include "sections";
+      [.[] | select(.labels | index("kind:defect") or index("kind:refactor")) | .body // "" | from_lines[]] | unique[]' "$board/issues.json" \
+    | while read -r landing; do
+        gh api "repos/$repo/issues/$landing" --jq 'select(.pull_request.merged_at != null) | .number' \
+          | while read -r merged; do gh api "repos/$repo/pulls/$merged" --jq '{number, body: (.body // ""), head: .head.ref}'; done
+      done | jq -s -c .)
+  focus=$(jq -c --argjson landings "$landings" '{epics, members: [.members[] | {number, epic}], $landings}' <<< "$focus")
+fi
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
 gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {body: (.body // ""), head: .head.ref}]' | jq -s 'add // []' > "$board/prs.json"
 lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
-  --arg lane "$lane" --argjson now "$(date +%s)" --slurpfile prs "$board/prs.json" \
-  '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0]}' \
+  --arg lane "$lane" --argjson now "$(date +%s)" --slurpfile prs "$board/prs.json" --argjson focus "$focus" \
+  '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus}' \
   | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
+awk '/^focus: /' <<< "$lines" >&2
 held=$(awk '/^held: /' <<< "$lines")
 if [[ -n $held ]]; then
   echo "$held" >&2
@@ -1808,7 +1828,7 @@ while read -r _ issue; do
   echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^(observation due|sections due|restate): /' <<< "$lines"
-pick=$(awk '!/^(collector|blocked|observation due|sections due|restate): /' <<< "$lines")
+pick=$(awk '!/^(focus|collector|blocked|observation due|sections due|restate): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $lane" >&2
   exit 1

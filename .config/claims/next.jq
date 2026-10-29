@@ -22,6 +22,12 @@
 #            the board is read for no lane, and neither rule below applies
 #   now      the reading's time, in seconds since the epoch
 #   prs      the open pull requests: [{body, head}]
+#   focus    the programme focus (`.config/issues/focus.toml`, #3959), or
+#            absent for none: {epics: [number], members: [{number, epic}],
+#            landings: [{number, body, head}]}, members every sub-issue of a
+#            focus epic in any state, a sub-epic's in turn, each with the
+#            focus epic it falls under; landings the merged pull requests the
+#            open issues' `from:` lines name
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
@@ -71,6 +77,16 @@
 # in the last 2 hours comes first for that lane, ahead of every bucket, the
 # latest release first, and no other lane claims it in those 2 hours: the
 # continuation stays with the lane that holds its context.
+#
+# A focus narrows the order to the programme's work (#3959): the answer opens
+# with `focus: #<epic> …`, and the order offers nothing outside the focus, a
+# release or a collector included. First a `kind:defect` or `kind:refactor`
+# in the focus: its parent, or any `#n` its body writes, names a member or a
+# focus epic, or a `from:` line names a landing that works a member (`names`).
+# These rank by priority, effort and age, the lane's areas first, then any
+# area. Then a member, the focus units, in the focus epics' order and each
+# epic's sub-issue order, by priority first, the lane's areas first, then any
+# area. A lane still holds what it holds, the focus aside.
 
 include "sections";
 include "findings";
@@ -115,13 +131,37 @@ def observation($refusals):
 | (.now // 0) as $now
 | (.prs // []) as $prs
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
+| (if .focus == null or (.focus.epics | length) == 0 then null
+   else .focus as $focus
+     | {epics: $focus.epics, members: $focus.members,
+        named: ($focus.epics + [$focus.members[].number]),
+        landings: [$focus.landings[] | . as $pr | select(any($focus.members[]; . as $m | $pr | names($m.number))) | .number]}
+   end) as $focus
+| def written: [.body // "" | scan("(?<![\\w/])#([0-9]+)\\b") | .[0] | tonumber];
+  def focus_fix:
+    (has("kind:defect") or has("kind:refactor"))
+    and ((.parent | IN($focus.named[])) or any(written[]; IN($focus.named[]))
+      or any(.body // "" | from_lines[]; IN($focus.landings[])));
+  def membership: .number as $n | first($focus.members[] | select(.number == $n)) // null;
+  def focus_unit: membership != null and (focus_fix | not);
+  def focus_rank: membership as $m
+    | [($focus.epics | index($m.epic)), (.number as $n | $order["\(.parent)"] // [] | index($n) // infinite)];
+  def fixed: [., if has("kind:defect") then "defect" else "refactor" end];
+  (if $focus == null then empty else "focus: \($focus.epics | map("#\(.)") | join(" "))" end),
+  (.
 | (if $lane == null then []
    else [.issues[] | select(has("status:claimed") and held_by($lane; $areas))
      | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
    end) as $held
 | if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else
   [.issues[] | select(candidate) | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
-| [
+| if $focus != null then [
+    ($open | map(select([kept($now) | .lane == $lane] | any) | select(focus_fix or focus_unit)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
+    ($open | map(select(focus_fix and within($areas))) | sort_by(priority, effort, .number) | .[] | fixed),
+    ($open | map(select(focus_fix and (within($areas) | not))) | sort_by(priority, effort, .number) | .[] | fixed),
+    ($open | map(select(focus_unit and within($areas))) | sort_by(priority, focus_rank, .number) | .[] | [., "focus"]),
+    ($open | map(select(focus_unit and (within($areas) | not))) | sort_by(priority, focus_rank, .number) | .[] | [., "focus"])
+  ] else [
     ($open | map(select([kept($now) | .lane == $lane] | any)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
     (.issues
       | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and open_rows > 0))
@@ -137,7 +177,7 @@ def observation($refusals):
       | .[] | [., "planned"]),
     ($open | map(select(has("kind:performance"))) | sort_by(priority, .number) | .[] | [., "performance"]),
     ($open | map(select(has("kind:gap"))) | sort_by(priority, effort, .number) | .[] | [., "gap"])
-  ] as $ranked
+  ] end as $ranked
 | ([.issues[] | select(has("collector") and within($areas) and (has("kind:defect") | not))]
     | sort_by(.number) | .[] | open_rows as $k | select($k > 0)
     | "collector: #\(.number) (\($k) open row\(if $k == 1 then "" else "s" end))"),
@@ -151,3 +191,4 @@ def observation($refusals):
       (select(.[1] != "collector") | .[0] | quoted(unstated_axes)[] | "restate: \(.)"),
       "\(.[0].number)\t\(.[1])\t\(.[0].title)")
   end
+  )

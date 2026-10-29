@@ -1766,7 +1766,12 @@
       "order": {},
       "lane": "surface",
       "now": 1760000000,
-      "prs": [{ "body": "Closes #3699", "head": "surface-3699-fix" }],
+      "prs": [
+        {
+          "body": "Closes #3699",
+          "head": "surface-3699-fix"
+        }
+      ],
       "issues": [
         {
           "number": 3680,
@@ -1890,5 +1895,268 @@
       ]
     },
     "output": "observation due: #31 — mise run debug:test <package> <test>\n31\tdefect\tworkflow: released over 2 hours ago"
+  },
+  {
+    "name": "#3959: a focus offers a defect whose body names a focus member, in any area, and never a lane defect outside the focus; the answer names the focus",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [40],
+        "members": [
+          {
+            "number": 41,
+            "epic": 40
+          }
+        ],
+        "landings": []
+      },
+      "issues": [
+        {
+          "number": 40,
+          "title": "programme: the focus epic",
+          "labels": ["kind:epic", "area:core"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 41,
+          "title": "core: a focus unit",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 40,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 50,
+          "title": "workflow: a lane defect outside the focus",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 51,
+          "title": "core: a defect the focus unit meets",
+          "labels": ["kind:defect", "area:core"],
+          "parent": null,
+          "body": "Text. It bites #41.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "focus: #40\nobservation due: #51 — mise run debug:test <package> <test>\n51\tdefect\tcore: a defect the focus unit meets"
+  },
+  {
+    "name": "#3959: a refactor whose `from:` names a landing that works a focus member is offered before the focus's units; one from another landing is not",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [40],
+        "members": [
+          {
+            "number": 41,
+            "epic": 40
+          },
+          {
+            "number": 42,
+            "epic": 40
+          }
+        ],
+        "landings": [
+          {
+            "number": 900,
+            "body": "Closes #42",
+            "head": "core-42-done"
+          },
+          {
+            "number": 901,
+            "body": "Closes #7",
+            "head": "core-7-other"
+          }
+        ]
+      },
+      "issues": [
+        {
+          "number": 40,
+          "title": "programme: the focus epic",
+          "labels": ["kind:epic", "area:core"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 41,
+          "title": "workflow: a focus unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 40,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 60,
+          "title": "refactor(ci): from a focus landing",
+          "labels": ["kind:refactor", "area:ci"],
+          "parent": null,
+          "body": "Text. \n\nfrom: #900\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 61,
+          "title": "refactor(workflow): from another landing",
+          "labels": ["kind:refactor", "area:workflow"],
+          "parent": null,
+          "body": "Text. \n\nfrom: #901\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "focus: #40\n60\trefactor\trefactor(ci): from a focus landing"
+  },
+  {
+    "name": "#3959: the focus's units come in the focus epics' order and each epic's sub-issue order, the lane's areas first",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {
+        "70": [72, 71]
+      },
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [40, 70],
+        "members": [
+          {
+            "number": 41,
+            "epic": 40
+          },
+          {
+            "number": 71,
+            "epic": 70
+          },
+          {
+            "number": 72,
+            "epic": 70
+          }
+        ],
+        "landings": []
+      },
+      "issues": [
+        {
+          "number": 40,
+          "title": "programme: the focus epic",
+          "labels": ["kind:epic", "area:core"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 70,
+          "title": "programme: the second focus epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 41,
+          "title": "core: the first epic's unit",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 40,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 71,
+          "title": "workflow: the second epic's later unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 70,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 72,
+          "title": "workflow: the second epic's first unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 70,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "focus: #40 #70\n72\tfocus\tworkflow: the second epic's first unit"
+  },
+  {
+    "name": "#3959: a focus whose members are all closed offers nothing, and names the focus",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [40],
+        "members": [
+          {
+            "number": 41,
+            "epic": 40
+          }
+        ],
+        "landings": []
+      },
+      "issues": [
+        {
+          "number": 40,
+          "title": "programme: the focus epic",
+          "labels": ["kind:epic", "area:core"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 50,
+          "title": "workflow: a lane defect outside the focus",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "focus: #40"
+  },
+  {
+    "name": "#3959: a focus naming no epic leaves the order as it is",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [],
+        "members": [],
+        "landings": []
+      },
+      "issues": [
+        {
+          "number": 50,
+          "title": "workflow: a lane defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #50 — mise run debug:test <package> <test>\n50\tdefect\tworkflow: a lane defect"
   }
 ]

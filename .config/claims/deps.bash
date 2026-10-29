@@ -1,6 +1,7 @@
 # The GitHub dependency and sub-issue calls the tracker tasks share (#2902),
 # sourced by `unit:check`, `issue:file`, `epic:order`, `epic:deps`,
-# `epics:link`, `claim:next` and `report:deps`. REST for the per-issue
+# `epics:link`, `claim:next`, `report:deps` and the stall reading
+# (`.config/stall/stall.bash`). REST for the per-issue
 # reads, as `claim:next` reads the board: the GraphQL limit, shared by every
 # seat's watches, runs out. The one exception is `deps_open_graph`, a single pass
 # over every open issue at two points a page, where REST takes a call per
@@ -54,6 +55,35 @@ deps_open_blockers() {
 # The sub-issues of $2, as [{number, state}].
 deps_sub_issues() {
   gh api --paginate "repos/$1/issues/$2/sub_issues?per_page=100" --jq '[.[] | {number, state}]' | jq -s 'add // []'
+}
+
+# The programme focus (#3959): `.config/issues/focus.toml`'s epics and every
+# sub-issue under them in any state, a sub-epic's in turn, as `{epics,
+# members: [{number, epic, parent, state, labels}]}`, `epic` the focus epic a
+# member falls under and the members of one parent in its sub-issue order.
+# Prints `null` when the file names no epic.
+deps_focus() {
+  local repo=$1 focused epic parent children members='[]'
+  local -a pending nested
+  focused=$(yq -p toml -o json '.epics // []' "$(dirname "${BASH_SOURCE[0]}")/../issues/focus.toml" | jq -c .) || return 1
+  if [[ $focused == '[]' ]]; then
+    echo null
+    return
+  fi
+  for epic in $(jq -r '.[]' <<< "$focused"); do
+    pending=("$epic")
+    while ((${#pending[@]} > 0)); do
+      parent=${pending[0]}
+      pending=("${pending[@]:1}")
+      children=$(gh api --paginate "repos/$repo/issues/$parent/sub_issues?per_page=100" \
+        --jq '[.[] | {number, state, labels: [.labels[].name]}]' | jq -s -c 'add // []') || return 1
+      members=$(jq -c --argjson epic "$epic" --argjson parent "$parent" --argjson children "$children" \
+        '. + [$children[] | . + {epic: $epic, parent: $parent}]' <<< "$members")
+      mapfile -t nested < <(jq -r '.[] | select(.labels | index("kind:epic")) | .number' <<< "$children")
+      pending+=("${nested[@]}")
+    done
+  done
+  jq -n -c --argjson epics "$focused" --argjson members "$members" '{$epics, $members}'
 }
 
 # Every open issue's dependencies and sub-issues in one paginated GraphQL
