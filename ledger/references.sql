@@ -345,6 +345,7 @@ INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','core-checker','template::memo','exemplar','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','21da273baaf8fa8b1851c07f04df073e5f74b03c');
+INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','core-nbe','machine','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kernel-core','descent','exemplar','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','f69d6a7559364f8975c6703d516f594e90adc0e7');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','598eae9b2c06ca03405201deb229c39e1d1dfc04');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','bc468ed7bf854d175494383216341bc52e916430','2026-10-29','715ec7ca272d78491f01e8f72c273f72564822ce');
@@ -426,6 +427,7 @@ INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surfa
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','workspace','background','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','ec86c18a244f7869da25774f1cd9e8c036e54687');
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-driver','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb','core-nbe','traced','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','5630fb4598d9bfdaafb4ddf50a51da4d99bc1bb6','2026-10-27','e18d7dd7526358fee7a1b74909f23cbf4c6580e3');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');

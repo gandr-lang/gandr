@@ -37,6 +37,16 @@
 //! are minted once per binder level, so two goals opening binders at one depth
 //! read one variable.
 //!
+//! Under the spinal granularity stance, installed only through
+//! `TracedGranularity`, a constant's spine over an unforced body is applied one
+//! elimination per channel instead: each prefix is a channel keyed by the
+//! channel of the prefix one shorter and the elimination, the body channel the
+//! root of every chain. Two unfoldings that share a partial application read
+//! one evaluation of it, and the report's `SharedEliminations` counts the
+//! prefixes read from a channel already minted (#3149). Identity stays by
+//! domain node: equal arguments held in distinct nodes mint distinct channels.
+//! A held endpoint's re-application keeps one channel per neutral.
+//!
 //! # Frozen constants and biased choice
 //!
 //! Comparing two defined heads starts the alternatives the rule table names as
@@ -209,6 +219,13 @@
 //! empty choice is instead `ConversionFault::MachineInvariant`, never a vacuous
 //! refutation. Witness:
 //! `machine::tests::empty_choices_refuse_instead_of_producing_a_refutation`.
+//!
+//! # References
+//!
+//! - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — background: the Courant and
+//!   Leroy row of sharing as descent, one channel per key, and the spinal row,
+//!   a leg evaluated once per configuration; the spinal granularity stance
+//!   makes the first finer along the second, a prefix channel per spine prefix.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
@@ -585,6 +602,26 @@ impl From<ProcessCount> for usize
     }
 }
 
+/// How many prefix eliminations a run read from a channel another neutral's
+/// unfolding had already minted: the partial applications the spinal
+/// granularity stance evaluated once rather than again.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SharedEliminations(u64);
+
+impl From<SharedEliminations> for u64
+{
+    /// How many eliminations `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: SharedEliminations) -> Self
+    {
+        count.0
+    }
+}
+
 /// What one run reports.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MachineReport
@@ -600,6 +637,9 @@ pub struct MachineReport
     steps: StepCount,
     /// The support edges the run's memo entries hold; zero for the null memo.
     edges: SupportEdges,
+    /// The prefix eliminations read from a channel already minted; zero under
+    /// the skeleton stance, which mints no prefix channel.
+    shared: SharedEliminations,
 }
 
 impl MachineReport
@@ -657,6 +697,17 @@ impl MachineReport
     pub const fn edges(&self) -> SupportEdges
     {
         self.edges
+    }
+
+    /// The prefix eliminations the run read from a channel already minted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn shared(&self) -> SharedEliminations
+    {
+        self.shared
     }
 }
 
@@ -779,6 +830,7 @@ where
             derivations: DerivationCount::default(),
             steps: StepCount::default(),
             edges: SupportEdges::default(),
+            shared: SharedEliminations::default(),
         });
     }
     let mut scheduler = Scheduler::new(
@@ -808,6 +860,7 @@ where
         derivations: scheduler.derivations.count(),
         steps: scheduler.spent,
         edges: scheduler.supports.totals(),
+        shared: scheduler.shared,
     })
 }
 
@@ -1101,11 +1154,6 @@ enum Opening
 }
 
 /// A channel: one evaluation goals demand.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one per demanded evaluation, which runs in place; boxing the running evaluation \
-              would allocate once per channel to shrink the brief wait for a body"
-)]
 enum Channel<'run>
 {
     /// Waiting for a definition body, to re-apply a neutral's spine to it.
@@ -1115,6 +1163,15 @@ enum Channel<'run>
         body: ProcessId,
         /// The neutral whose spine is re-applied.
         neutral: NeutralId,
+    },
+    /// Waiting for a prefix of a spine, to apply the elimination after it:
+    /// one link of the spinal granularity stance's chain.
+    Extend
+    {
+        /// The channel of the prefix one elimination shorter.
+        source: ProcessId,
+        /// The elimination applied to what `source` answers.
+        elimination: Elimination,
     },
     /// Running an evaluation slice by slice.
     Running(Evaluation<'run>),
@@ -1228,6 +1285,12 @@ struct Scheduler<'run, M>
     bodies: Vec<BodyChannel>,
     /// One unfolding channel per neutral.
     unfoldings: BTreeMap<NeutralId, ProcessId>,
+    /// One prefix channel per source channel and elimination, minted only
+    /// under the spinal granularity stance.
+    prefixes: BTreeMap<(ProcessId, Elimination), ProcessId>,
+    /// How many prefix eliminations the run read from a channel it had
+    /// already minted.
+    shared: SharedEliminations,
     /// One opening channel per closure, binder level and arity.
     openings: BTreeMap<(CompClosureId, BinderLevel, Opening), ProcessId>,
     /// One entering channel per closure.
@@ -1277,7 +1340,8 @@ where
             && core::ptr::eq(&raw const *ret.domain, domain_address)
             && ret.settings == settings
             && ret.processes.is_empty() && ret.queue.is_empty() && ret.queued.is_empty()
-            && ret.bodies.is_empty() && ret.unfoldings.is_empty() && ret.openings.is_empty()
+            && ret.bodies.is_empty() && ret.unfoldings.is_empty() && ret.prefixes.is_empty()
+            && ret.shared.0 == 0 && ret.openings.is_empty()
             && ret.entries.is_empty() && ret.variables.is_empty()
             && usize::from(ret.derivations.count()) == 0
             && ret.supports.totals() == SupportEdges::default()
@@ -1302,6 +1366,8 @@ where
             queued: Vec::new(),
             bodies: Vec::new(),
             unfoldings: BTreeMap::new(),
+            prefixes: BTreeMap::new(),
+            shared: SharedEliminations::default(),
             openings: BTreeMap::new(),
             entries: BTreeMap::new(),
             variables: Vec::new(),
@@ -2222,8 +2288,9 @@ where
     /// # Specification
     /// - requires: `id` is the channel's own process.
     /// - ensures: a re-application waiting on a body that has answered starts
-    ///   its evaluation; a running evaluation runs one slice and answers when
-    ///   it reaches its weak head.
+    ///   its evaluation, and so does a prefix channel waiting on the prefix one
+    ///   elimination shorter; a running evaluation runs one slice and answers
+    ///   when it reaches its weak head.
     /// - provides: the evaluation half of the machine.
     /// - fails: [`ConversionFault::Evaluation`] when the evaluation is refused,
     ///   [`ConversionFault::MachineInvariant`] when a body answered a
@@ -2235,20 +2302,24 @@ where
     /// - [`ConversionFault::MachineInvariant`] — a body is not a value.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a reapplication waits for a value body, whereas a
-    ///   running evaluation pauses or finishes within one slice. The verdict
-    ///   and charged budget distinguish running before a body exists, charging
-    ///   a wait, losing paused work and failing to publish the channel’s
-    ///   evaluated answer.
+    /// - hypothesis: L3 — a reapplication waits for a value body and a prefix
+    ///   channel for its source's weak head, whereas a running evaluation
+    ///   pauses or finishes within one slice. The verdict and charged budget
+    ///   distinguish running before a body exists, charging a wait, losing
+    ///   paused work and failing to publish the channel’s evaluated answer.
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
     /// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
     #[spec(
         captures: [before = self.spent.0],
         ensures: |ret| self.spent.0 >= before && self.spent.0.saturating_sub(before) <= u64::from(SLICE)
             && match ret {
-                Ok(Turn::Wait) => self.spent.0 == before && matches!(*channel,
-                    Channel::Reapply { body, .. } if self.processes.get(body.0).is_some_and(|process| process.outcome == Outcome::Pending)),
+                Ok(Turn::Wait) => self.spent.0 == before && match *channel {
+                    Channel::Reapply { body: waited, .. } | Channel::Extend { source: waited, .. } =>
+                        self.processes.get(waited.0).is_some_and(|process| process.outcome == Outcome::Pending),
+                    Channel::Running(_) => false,
+                },
                 Ok(Turn::Again) => matches!(*channel, Channel::Running(_)),
                 Ok(Turn::Done) => self.processes.get(id.0).is_some_and(|process|
                     matches!(process.outcome, Outcome::Evaluated(_)) && matches!(process.work, Work::Spent)),
@@ -2274,6 +2345,26 @@ where
                     Outcome::Evaluated(Glued::Computation(_))
                     | Outcome::Settled(_)
                     | Outcome::Declined(_) => Err(ConversionFault::MachineInvariant),
+                }
+            },
+            Channel::Extend {
+                source,
+                elimination,
+            } => {
+                let answered = self.outcome(source)?;
+                match answered {
+                    Outcome::Pending => Ok(Turn::Wait),
+                    Outcome::Evaluated(head) => {
+                        *channel = Channel::Running(Evaluation::extend(
+                            self.definitions,
+                            head,
+                            elimination,
+                        ));
+                        Ok(Turn::Again)
+                    },
+                    Outcome::Settled(_) | Outcome::Declined(_) => {
+                        Err(ConversionFault::MachineInvariant)
+                    },
                 }
             },
             Channel::Running(ref mut evaluation) => {
@@ -4601,16 +4692,15 @@ where
     /// - ensures: the same channel for every request naming `entry` in this
     ///   run, evaluating the body the lowered chain holds for it.
     /// - provides: the skeleton granularity: one channel per distinct
-    ///   subterm-table entry, in a dense side vector.
+    ///   subterm-table entry, in a dense side vector; the root of every chain
+    ///   the spinal stance mints along a spine.
     /// - fails: [`ConversionFault::Evaluation`] with
     ///   [`EvalFault::DanglingTerm`] when the chain lowered no body for
-    ///   `entry`, and [`ConversionFault::MachineInvariant`] for a granularity
-    ///   stance no installed policy can hold.
+    ///   `entry`.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`ConversionFault::Evaluation`] — no lowered body for `entry`.
-    /// - [`ConversionFault::MachineInvariant`] — an uninstallable stance.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one lowered body may belong to one definition or be
@@ -4635,13 +4725,6 @@ where
         height: DefinitionHeight,
     ) -> Result<ProcessId, ConversionFault>
     {
-        match self.settings.granularity().stance() {
-            GranularityStance::Skeleton => {},
-            // The policy's constructor refuses this stance, so no installed
-            // policy holds it; the arm answers a typed refusal rather than
-            // standing in for a stance it does not implement.
-            GranularityStance::Spinal => return Err(ConversionFault::MachineInvariant),
-        }
         let index = usize::try_from(u32::from(entry))
             .map_err(|_overflow| ConversionFault::MachineInvariant)?;
         if let Some(&BodyChannel::Minted(channel)) = self.bodies.get(index) {
@@ -4683,17 +4766,22 @@ where
     ///   or a channel already answered with a forced body; otherwise a channel
     ///   re-applying the spine to the body once the body's channel answers, a
     ///   held endpoint's re-application running as [`Scheduler::reapplication`]
-    ///   builds it. The same channel for every request naming `neutral`.
+    ///   builds it. Under [`GranularityStance::Spinal`] a constant's spine over
+    ///   an unforced body is applied one elimination per channel instead, as
+    ///   [`Scheduler::prefix_channel`] mints them. The same channel for every
+    ///   request naming `neutral`.
     /// - provides: δ, shared: every goal unfolding one neutral reads one
     ///   evaluation.
     /// - fails: [`ConversionFault::MachineInvariant`] for a rigid neutral or a
-    ///   body forced to a computation, and every fault minting a body channel
+    ///   body forced to a computation, every fault minting a body channel
+    ///   raises, and under the spinal stance every fault minting its chain
     ///   raises.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — nothing to unfold.
-    /// - [`ConversionFault`] — as [`Scheduler::body_channel`] raises.
+    /// - [`ConversionFault`] — as [`Scheduler::body_channel`] raises, and as
+    ///   [`Scheduler::spinal_chain`] raises under the spinal stance.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constant neutral may have a bare or reapplied spine
@@ -4706,6 +4794,7 @@ where
     /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
     /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     #[spec(
@@ -4760,16 +4849,143 @@ where
             (Unfolding::Unforced(entry), true) => self.body_channel(entry, height)?,
             (Unfolding::Unforced(entry), false) => {
                 let body = self.body_channel(entry, height)?;
-                let channel = self.start(
-                    Work::Channel(Channel::Reapply { body, neutral }),
-                    Outcome::Pending,
-                    share,
-                )?;
-                self.depend(channel, body)?;
-                channel
+                match self.settings.granularity().stance() {
+                    GranularityStance::Spinal if defined == neutral => {
+                        self.spinal_chain(neutral, body, share)?
+                    },
+                    GranularityStance::Skeleton | GranularityStance::Spinal => {
+                        let channel = self.start(
+                            Work::Channel(Channel::Reapply { body, neutral }),
+                            Outcome::Pending,
+                            share,
+                        )?;
+                        self.depend(channel, body)?;
+                        channel
+                    },
+                }
             },
         };
         self.unfoldings.insert(neutral, channel);
+        Ok(channel)
+    }
+
+    /// The last channel of the chain applying `neutral`'s spine to the body
+    /// `body` answers, one elimination per channel, under the spinal stance.
+    ///
+    /// # Specification
+    /// - requires: `neutral` is headed by a constant, not a held endpoint, and
+    ///   `body` is the channel of the body it unfolds to.
+    /// - ensures: the channel of the whole spine, each prefix's channel read
+    ///   from [`Scheduler::prefix_channel`] over the channel of the prefix one
+    ///   elimination shorter, starting at `body`.
+    /// - provides: the spinal granularity stance: a partial application two
+    ///   neutrals share is evaluated once, along the spine.
+    /// - fails: [`ConversionFault::Domain`] for a dangling neutral, and every
+    ///   fault minting a prefix channel raises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ConversionFault::Domain`] — `neutral` does not resolve.
+    /// - [`ConversionFault`] — as [`Scheduler::prefix_channel`] raises.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop over the spine's positions, not recursion.
+    /// - measure: the positions left, which falls by one per iteration.
+    /// - boundedness: the spine's length, fixed on entry.
+    /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two neutrals over one unforced definition share their
+    ///   first argument; the second reads the first's prefix channel, and the
+    ///   run spends fewer evaluation steps at the verdict the kernel replays.
+    ///   Keying a prefix by the wrong head or elimination, or applying the
+    ///   spine out of order, changes the verdict, the shared count or the
+    ///   trace's replay.
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace_under_the_spinal_granularity`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or(true, |channel| self.processes.get(channel.0).is_some()),
+    )]
+    fn spinal_chain(
+        &mut self,
+        neutral: NeutralId,
+        body: ProcessId,
+        share: Share,
+    ) -> Result<ProcessId, ConversionFault>
+    {
+        let length = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+            .spine()
+            .len();
+        let mut source = body;
+        for position in 0 .. length {
+            let elimination = self
+                .domain
+                .neutral(neutral)
+                .and_then(|held| held.spine().get(position))
+                .copied()
+                .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+            source = self.prefix_channel(source, elimination, share)?;
+        }
+        Ok(source)
+    }
+
+    /// The channel applying `elimination` to what `source` answers, minted
+    /// once per source and elimination.
+    ///
+    /// # Specification
+    /// - requires: `source` is a body channel or a prefix channel of this run.
+    /// - ensures: the same channel for every request naming `source` and
+    ///   `elimination`, waiting on `source` when minted; a request a minted
+    ///   channel answers counts one shared elimination.
+    /// - provides: one prefix of a spine as a channel of its own, keyed by the
+    ///   prefix one shorter and the elimination, so identity stays by domain
+    ///   node.
+    /// - fails: every fault starting a process or recording a wait raises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ConversionFault::MachineInvariant`] — `source` is not a process of
+    ///   this run.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second neutral over one shared prefix reads the
+    ///   first's channel, counted once per shared elimination, and an unshared
+    ///   elimination mints a channel of its own. Minting twice for one key or
+    ///   reading a channel for another key changes the shared count, the
+    ///   processes or the verdict the kernel replays.
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
+    #[spec(
+        captures: [cached = self.prefixes.get(&(source, elimination)).copied(), shared = self.shared.0, processes = self.processes.len()],
+        ensures: |ret| ret.as_ref().map_or(true, |channel| self.prefixes.get(&(source, elimination)) == Some(channel)
+            && match cached {
+                Some(before) => *channel == before && self.shared.0 == shared.saturating_add(1) && self.processes.len() == processes,
+                None => self.shared.0 == shared && self.processes.len() == processes.saturating_add(1),
+            }),
+    )]
+    fn prefix_channel(
+        &mut self,
+        source: ProcessId,
+        elimination: Elimination,
+        share: Share,
+    ) -> Result<ProcessId, ConversionFault>
+    {
+        if let Some(&channel) = self.prefixes.get(&(source, elimination)) {
+            self.shared.0 = self.shared.0.saturating_add(1);
+            return Ok(channel);
+        }
+        let channel = self.start(
+            Work::Channel(Channel::Extend {
+                source,
+                elimination,
+            }),
+            Outcome::Pending,
+            share,
+        )?;
+        self.depend(channel, source)?;
+        self.prefixes.insert((source, elimination), channel);
         Ok(channel)
     }
 

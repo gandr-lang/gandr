@@ -4,9 +4,11 @@ use gandr_kernel_conversion_trace::TraceLog;
 use gandr_kernel_conversion_trace::TraceSink as _;
 
 use super::DuplicationStance;
+use super::GranularityStance;
 use super::PolicyRefusal;
 use super::TraceNode;
 use super::TracedDuplication;
+use super::TracedGranularity;
 
 #[test]
 fn the_spinal_stance_installs_only_bound_to_a_recording_sink()
@@ -37,6 +39,38 @@ fn the_spinal_stance_installs_only_bound_to_a_recording_sink()
         TracedDuplication::install(DuplicationStance::EraseAndClone, &mut log)
             .map(|installed| installed.stance()),
         "and the reference stance with it"
+    );
+}
+
+#[test]
+fn the_spinal_granularity_installs_only_bound_to_a_recording_sink()
+{
+    let mut discarding = NullSink;
+    assert_eq!(
+        Some(PolicyRefusal::UntracedGranularity {
+            stance: GranularityStance::Spinal,
+        }),
+        TracedGranularity::<NullSink>::install(GranularityStance::Spinal, &mut discarding).err(),
+        "a sink that keeps nothing cannot carry the spinal stance's derivations"
+    );
+    assert_eq!(
+        Ok(GranularityStance::Skeleton),
+        TracedGranularity::install(GranularityStance::Skeleton, &mut discarding)
+            .map(|installed| installed.stance()),
+        "the skeleton shares nothing a trace must certify, so any sink carries it"
+    );
+    let mut log = TraceLog::<TraceNode>::new();
+    assert_eq!(
+        Ok(GranularityStance::Spinal),
+        TracedGranularity::install(GranularityStance::Spinal, &mut log)
+            .map(|installed| installed.stance()),
+        "a recording sink carries the spinal stance"
+    );
+    assert_eq!(
+        Ok(GranularityStance::Skeleton),
+        TracedGranularity::install(GranularityStance::Skeleton, &mut log)
+            .map(|installed| installed.stance()),
+        "and the skeleton with it"
     );
 }
 

@@ -313,7 +313,7 @@ pub enum Suspended
 /// Every arm but [`Self::StaticApply`] is a computation eliminator. The static
 /// application is the vocabulary's one value eliminator, which is why a
 /// neutral in value position carries only static applications.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Elimination
 {
     /// A nominal case, retaining its motive and field functions over a capture.
