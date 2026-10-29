@@ -1,0 +1,54 @@
+// A complete binary tree built two ways agrees at depth twelve.
+//
+// One definition builds each level once and holds it in both halves of the
+// next, so its run shares every subtree. The other builds every copy afresh, so
+// its run holds the whole tree. The two results are one tree, shared in two
+// different ways.
+//
+// The conversion runs both endpoints within the tier's fuel. It compares their
+// readings, about 25,000 nodes, as the graphs they are shared as. A wrapper
+// over each half triples the nodes that each call builds.
+//
+// - see: #3604 — the sharing-equality check this row measures
+
+// The free naturals.
+import "../data/data-base.gandr";
+
+// The numeral twelve.
+import "./conversion-base.gandr";
+
+/// Binary trees with unlabelled leaves, each half under a wrapper.
+data Tree : Type {
+  /// The tree of depth zero.
+  Leaf : Tree;
+  /// A tree held as one half of a node.
+  Wrap : (inner : Tree) --> Tree;
+  /// A node over two halves.
+  Node : (left : Tree, right : Tree) --> Tree;
+}
+
+/// A node holding `t` in both halves, each half under its own wrapper.
+def twice(t : Tree) -> Tree {
+  Node(Wrap(t), Wrap(t))
+}
+
+/// Builds the complete tree of depth `n` and shares each level.
+def rec held(n : Nat) -> Tree {
+  case n {
+    Zero => Leaf,
+    Succ(m) => twice(held[<](m))
+  }
+}
+
+/// Builds the complete tree of depth `n` and shares no level.
+def rec built(n : Nat) -> Tree {
+  case n {
+    Zero => Leaf,
+    Succ(m) => Node(Wrap(built[<](m)), Wrap(built[<](m)))
+  }
+}
+
+/// The two trees agree at depth twelve.
+def treesAgree() -> Path(Tree, held(twelve), built(twelve)) {
+  here(held(twelve))
+}

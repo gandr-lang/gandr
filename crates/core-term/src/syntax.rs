@@ -315,6 +315,8 @@ use crate::classifier::Sort;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 
+mod shared;
+
 /// The zone of the unified context a binder or an occurrence belongs to.
 ///
 /// The two zones are `Γ; Σ`: the intuitionistic zone, whose bindings admit
@@ -1402,6 +1404,38 @@ pub fn equal_certificate_syntax(
 ) -> CertificateEquality
 {
     equal_syntax(arena, Reading::Syntax, StructuralGoal::Value(left, right))
+}
+
+/// Compare native certificate syntax as [`equal_certificate_syntax`] does,
+/// reading the two sides as the graphs they are shared as.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: the verdict [`equal_certificate_syntax`] gives, in time linear in
+///   the nodes the two sides reach and in the largest offset in its family that
+///   one of them holds, however differently each side shares them ([`shared`]).
+/// - provides: the comparison of two whole readings in an arena that holds them
+///   and little else, as the tier's reading arena does.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two sides sharing one subterm differently agree, and
+///   differ once one copy does; every former's twin agrees and each guard's
+///   breach differs, as under the pairwise walk.
+/// - witness: `syntax::tests::sides_shared_differently_agree_until_one_copy_differs`
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+#[spec(ensures: |ret| ret == equal_certificate_syntax(arena, left, right))]
+#[inline]
+#[must_use]
+pub fn equal_shared_certificate_syntax(
+    arena: &crate::CoreArena,
+    left: ValueId,
+    right: ValueId,
+) -> CertificateEquality
+{
+    shared::equal(arena, left, right)
 }
 
 /// Compare signature type syntax without making allocation identity observable.
@@ -2740,1100 +2774,1130 @@ fn equal_syntax(
         if !visited.insert(goal) {
             continue;
         }
-        match goal {
-            V(a, b) => {
-                if empty_word(&arena, signatures, (a, b)) == CertificateEquality::Equal
-                    || empty_word(&arena, signatures, (b, a)) == CertificateEquality::Equal
+        if pair_step(&mut arena, reading, signatures, goal, &mut pending)
+            == CertificateEquality::Different
+        {
+            return CertificateEquality::Different;
+        }
+    }
+    CertificateEquality::Equal
+}
+
+/// One pair's step of [`equal_syntax`]: whether the pair's two formers agree,
+/// and the pairs of their children that must agree in turn.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Different`] when either node is unreadable
+///   or the two disagree in former or in a payload other than path evidence;
+///   otherwise [`CertificateEquality::Equal`], with each pair of children the
+///   two must agree on pushed onto `pending`. Under [`Reading::Printed`] a pair
+///   the printed reading identifies outright is `Equal` with nothing pushed,
+///   and the reading's other identifications push the pairs they read; under
+///   [`Reading::Syntax`] the step leaves `arena` borrowed.
+/// - panics: none.
+/// - executable: none — the contract is the former's comparison, which the body
+///   states once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each former's twin agrees and each guard's breach
+///   disagrees, through [`equal_syntax`] and through the sharing check.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
+fn pair_step(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    reading: Reading<'_>,
+    signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
+    goal: StructuralGoal,
+    pending: &mut Vec<StructuralGoal>,
+) -> CertificateEquality
+{
+    use StructuralGoal::CompType as CT;
+    use StructuralGoal::Computation as C;
+    use StructuralGoal::Value as V;
+    use StructuralGoal::ValueType as VT;
+    match goal {
+        V(a, b) => {
+            if empty_word(arena, signatures, (a, b)) == CertificateEquality::Equal
+                || empty_word(arena, signatures, (b, a)) == CertificateEquality::Equal
+            {
+                return CertificateEquality::Equal;
+            }
+            let (Some(a), Some(b)) = (arena.value(a), arena.value(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            {
+                let (matched_left_value, matched_right_value) = (a, b);
+                if let Value::Constructor {
+                    datatype: a,
+                    tag: ta,
+                    fields: ref fa,
+                } = *matched_left_value
+                    && let Value::Constructor {
+                        datatype: b,
+                        tag: tb,
+                        fields: ref fb,
+                    } = *matched_right_value
+                    && (ta == tb && fa.len() == fb.len())
                 {
-                    continue;
-                }
-                let (Some(a), Some(b)) = (arena.value(a), arena.value(b))
-                else {
-                    return CertificateEquality::Different;
-                };
-                {
-                    let (matched_left_value, matched_right_value) = (a, b);
-                    if let Value::Constructor {
-                        datatype: a,
-                        tag: ta,
-                        fields: ref fa,
-                    } = *matched_left_value
-                        && let Value::Constructor {
-                            datatype: b,
-                            tag: tb,
-                            fields: ref fb,
-                        } = *matched_right_value
-                        && (ta == tb && fa.len() == fb.len())
-                    {
-                        {
-                            pending.push(VT(a, b));
-                            pending.extend(fa.iter().zip(fb).map(|(a, b)| V(*a, *b)));
-                        }
-                    }
-                    else if let Value::Record(ref a) = *matched_left_value
-                        && let Value::Record(ref b) = *matched_right_value
-                        && (a.len() == b.len() && a.keys().eq(b.keys()))
-                    {
-                        {
-                            pending.extend(a.values().zip(b.values()).map(|(a, b)| V(*a, *b)));
-                        }
-                    }
-                    else if let Value::Reify(ref left) = *matched_left_value
-                        && let Value::Reify(ref right) = *matched_right_value
-                        && left.len() == right.len()
-                    {
-                        for (left, right) in left.iter().zip(right.iter()) {
-                            match (*left, *right) {
-                                (
-                                    crate::control::StackFrame::Apply(left),
-                                    crate::control::StackFrame::Apply(right),
-                                ) => pending.push(V(left, right)),
-                                (
-                                    crate::control::StackFrame::Bind(left),
-                                    crate::control::StackFrame::Bind(right),
-                                ) => pending.push(C(left, right)),
-                                (
-                                    crate::control::StackFrame::Project(left),
-                                    crate::control::StackFrame::Project(right),
-                                ) if left == right => {},
-                                _ => return CertificateEquality::Different,
-                            }
-                        }
-                    }
-                    else if matches!(
-                        (matched_left_value, matched_right_value),
-                        (&Value::ListNil, &Value::ListNil)
-                    ) {
-                    }
-                    else if let (&Value::ListCons(a, b), &Value::ListCons(c, d)) =
-                        (matched_left_value, matched_right_value)
-                    {
-                        pending.extend([V(a, c), V(b, d)]);
-                    }
-                    else if let Value::PathRefl(a) = *matched_left_value
-                        && let Value::PathRefl(b) = *matched_right_value
-                    {
-                        pending.push(V(a, b));
-                    }
-                    else if let (&Value::Here(a), &Value::Here(b))
-                    | (&Value::Stay(a), &Value::Stay(b))
-                    | (&Value::Forward(a), &Value::Forward(b)) =
-                        (matched_left_value, matched_right_value)
-                    {
-                        pending.push(V(a, b));
-                    }
-                    else if let Value::Returned(a) = *matched_left_value
-                        && let Value::Returned(b) = *matched_right_value
-                    {
-                        pending.push(C(a, b));
-                    }
-                    // A call printed in a type, `f(x)`, is one spelling the
-                    // lowering keeps unelaborated where the checker decides
-                    // it and as the value it returns where a type after it
-                    // reads it; read back, either is the value it returns.
-                    else if matches!(reading, Reading::Printed(_))
-                        && let (&Value::Returned(a), &Value::Nested(b))
-                        | (&Value::Nested(a), &Value::Returned(b)) =
-                            (matched_left_value, matched_right_value)
-                    {
-                        pending.push(C(a, b));
-                    }
-                    else if let (&Value::Nested(a), &Value::Nested(b))
-                    | (&Value::Run(a), &Value::Run(b)) =
-                        (matched_left_value, matched_right_value)
-                    {
-                        pending.push(C(a, b));
-                    }
-                    else if let Value::StaticLambda(a) = *matched_left_value
-                        && let Value::StaticLambda(b) = *matched_right_value
-                    {
-                        pending.push(V(a, b));
-                    }
-                    else if let Value::PathProduct(a, b) = *matched_left_value
-                        && let Value::PathProduct(c, d) = *matched_right_value
-                    {
-                        {
-                            pending.extend([V(a, c), V(b, d)]);
-                        }
-                    }
-                    else if let (&Value::Funext(a, b), &Value::Funext(c, d))
-                    | (&Value::Equiv(a, b), &Value::Equiv(c, d))
-                    | (&Value::Univalence(a, b), &Value::Univalence(c, d))
-                    | (&Value::Then(a, b), &Value::Then(c, d))
-                    | (&Value::FlowProduct(a, b), &Value::FlowProduct(c, d))
-                    | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d))
-                    | (
-                        &Value::RecordUpdate {
-                            base: a,
-                            overlay: b,
-                        },
-                        &Value::RecordUpdate {
-                            base: c,
-                            overlay: d,
-                        },
-                    ) = (matched_left_value, matched_right_value)
-                    {
-                        pending.extend([V(a, c), V(b, d)]);
-                    }
-                    else if let Value::SessionRelated {
-                        relation: left_relation,
-                        source: a,
-                        target: b,
-                        payloads: p,
-                    } = *matched_left_value
-                        && let Value::SessionRelated {
-                            relation: right_relation,
-                            source: c,
-                            target: d,
-                            payloads: q,
-                        } = *matched_right_value
-                        && left_relation == right_relation
-                    {
-                        pending.extend([V(a, c), V(b, d), V(p, q)]);
-                    }
-                    else if let Value::Recorded(ref left) = *matched_left_value
-                        && let Value::Recorded(ref right) = *matched_right_value
-                        && left.len() == right.len()
-                    {
-                        for (left, right) in left.iter().zip(right.iter()) {
-                            match move_pair(left, right) {
-                                MovePair::Payloads(a, b) => pending.push(V(a, b)),
-                                MovePair::Agreed => {},
-                                MovePair::Different => return CertificateEquality::Different,
-                            }
-                        }
-                    }
-                    // A dialogue is its endpoints' moves: two logs that
-                    // interleave the same moves differently are one dialogue.
-                    else if let Value::Dialogue(ref left) = *matched_left_value
-                        && let Value::Dialogue(ref right) = *matched_right_value
-                    {
-                        if crate::session::pair_dialogues(left, right, |a, b| pending.push(V(a, b)))
-                            == CertificateEquality::Different
-                        {
-                            return CertificateEquality::Different;
-                        }
-                    }
-                    else if let Value::Web(ref left) = *matched_left_value
-                        && let Value::Web(ref right) = *matched_right_value
-                    {
-                        if left != right {
-                            return CertificateEquality::Different;
-                        }
-                    }
-                    else if let Value::Tuple(ref a) = *matched_left_value
-                        && let Value::Tuple(ref b) = *matched_right_value
-                        && a.len() == b.len()
-                    {
-                        pending.extend(a.iter().zip(b.iter()).map(|(a, b)| V(*a, *b)));
-                    }
-                    else if let Value::StaticApplication(a, b) = *matched_left_value
-                        && let Value::StaticApplication(c, d) = *matched_right_value
-                    {
-                        {
-                            pending.extend([V(a, c), V(b, d)]);
-                        }
-                    }
-                    else if let Value::PathEquiv {
-                        path_type: left_type,
-                        forward: left_forward,
-                        backward: left_backward,
-                        ..
-                    } = *matched_left_value
-                        && let Value::PathEquiv {
-                            path_type: right_type,
-                            forward: right_forward,
-                            backward: right_backward,
-                            ..
-                        } = *matched_right_value
-                    {
-                        pending.extend([
-                            VT(left_type, right_type),
-                            V(left_forward, right_forward),
-                            V(left_backward, right_backward),
-                        ]);
-                    }
-                    else if let Value::Ua {
-                        stratum: left_stratum,
-                        sides: ref left_sides,
-                        forward: left_forward,
-                        backward: left_backward,
-                    } = *matched_left_value
-                        && let Value::Ua {
-                            stratum: right_stratum,
-                            sides: ref right_sides,
-                            forward: right_forward,
-                            backward: right_backward,
-                        } = *matched_right_value
-                        && left_stratum == right_stratum
-                        && left_sides == right_sides
-                    {
-                        pending.extend([
-                            V(left_forward, right_forward),
-                            V(left_backward, right_backward),
-                        ]);
-                    }
-                    else if let Value::Injection(s, a) = *matched_left_value
-                        && let Value::Injection(t, b) = *matched_right_value
-                        && (s == t)
-                    {
-                        {
-                            pending.push(V(a, b));
-                        }
-                    }
-                    else if let Value::Thunk(a) = *matched_left_value
-                        && let Value::Thunk(b) = *matched_right_value
-                    {
-                        pending.push(C(a, b));
-                    }
-                    else if let Value::Ascribe { value: a, ty: s } = *matched_left_value
-                        && let Value::Ascribe { value: b, ty: t } = *matched_right_value
-                    {
-                        pending.extend([V(a, b), VT(s, t)]);
-                    }
-                    else if let Value::Primitive { primitive: a, .. } = *matched_left_value
-                        && let Value::Primitive { primitive: b, .. } = *matched_right_value
-                        && (a == b)
-                    {
-                        {}
-                    }
-                    else if let Value::Lift { ref target, body } = *matched_left_value
-                        && let Value::Lift {
-                            target: ref other,
-                            body: right,
-                        } = *matched_right_value
-                        && (target == other)
-                    {
-                        pending.push(V(body, right));
-                    }
-                    else if let Value::Quote(a) = *matched_left_value
-                        && let Value::Quote(b) = *matched_right_value
                     {
                         pending.push(VT(a, b));
+                        pending.extend(fa.iter().zip(fb).map(|(a, b)| V(*a, *b)));
                     }
-                    else if let Value::QuoteComputation(a) = *matched_left_value
-                        && let Value::QuoteComputation(b) = *matched_right_value
+                }
+                else if let Value::Record(ref a) = *matched_left_value
+                    && let Value::Record(ref b) = *matched_right_value
+                    && (a.len() == b.len() && a.keys().eq(b.keys()))
+                {
                     {
-                        {
-                            pending.push(CT(a, b));
+                        pending.extend(a.values().zip(b.values()).map(|(a, b)| V(*a, *b)));
+                    }
+                }
+                else if let Value::Reify(ref left) = *matched_left_value
+                    && let Value::Reify(ref right) = *matched_right_value
+                    && left.len() == right.len()
+                {
+                    for (left, right) in left.iter().zip(right.iter()) {
+                        match (*left, *right) {
+                            (
+                                crate::control::StackFrame::Apply(left),
+                                crate::control::StackFrame::Apply(right),
+                            ) => pending.push(V(left, right)),
+                            (
+                                crate::control::StackFrame::Bind(left),
+                                crate::control::StackFrame::Bind(right),
+                            ) => pending.push(C(left, right)),
+                            (
+                                crate::control::StackFrame::Project(left),
+                                crate::control::StackFrame::Project(right),
+                            ) if left == right => {},
+                            _ => return CertificateEquality::Different,
                         }
                     }
-                    else if let Value::Row(ref a) = *matched_left_value
-                        && let Value::Row(ref b) = *matched_right_value
+                }
+                else if matches!(
+                    (matched_left_value, matched_right_value),
+                    (&Value::ListNil, &Value::ListNil)
+                ) {
+                }
+                else if let (&Value::ListCons(a, b), &Value::ListCons(c, d)) =
+                    (matched_left_value, matched_right_value)
+                {
+                    pending.extend([V(a, c), V(b, d)]);
+                }
+                else if let Value::PathRefl(a) = *matched_left_value
+                    && let Value::PathRefl(b) = *matched_right_value
+                {
+                    pending.push(V(a, b));
+                }
+                else if let (&Value::Here(a), &Value::Here(b))
+                | (&Value::Stay(a), &Value::Stay(b))
+                | (&Value::Forward(a), &Value::Forward(b)) =
+                    (matched_left_value, matched_right_value)
+                {
+                    pending.push(V(a, b));
+                }
+                else if let Value::Returned(a) = *matched_left_value
+                    && let Value::Returned(b) = *matched_right_value
+                {
+                    pending.push(C(a, b));
+                }
+                // A call printed in a type, `f(x)`, is one spelling the
+                // lowering keeps unelaborated where the checker decides
+                // it and as the value it returns where a type after it
+                // reads it; read back, either is the value it returns.
+                else if matches!(reading, Reading::Printed(_))
+                    && let (&Value::Returned(a), &Value::Nested(b))
+                    | (&Value::Nested(a), &Value::Returned(b)) =
+                        (matched_left_value, matched_right_value)
+                {
+                    pending.push(C(a, b));
+                }
+                else if let (&Value::Nested(a), &Value::Nested(b))
+                | (&Value::Run(a), &Value::Run(b)) =
+                    (matched_left_value, matched_right_value)
+                {
+                    pending.push(C(a, b));
+                }
+                else if let Value::StaticLambda(a) = *matched_left_value
+                    && let Value::StaticLambda(b) = *matched_right_value
+                {
+                    pending.push(V(a, b));
+                }
+                else if let Value::PathProduct(a, b) = *matched_left_value
+                    && let Value::PathProduct(c, d) = *matched_right_value
+                {
                     {
-                        if row_children(&mut pending, a, b) == CertificateEquality::Different {
-                            return CertificateEquality::Different;
+                        pending.extend([V(a, c), V(b, d)]);
+                    }
+                }
+                else if let (&Value::Funext(a, b), &Value::Funext(c, d))
+                | (&Value::Equiv(a, b), &Value::Equiv(c, d))
+                | (&Value::Univalence(a, b), &Value::Univalence(c, d))
+                | (&Value::Then(a, b), &Value::Then(c, d))
+                | (&Value::FlowProduct(a, b), &Value::FlowProduct(c, d))
+                | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d))
+                | (
+                    &Value::RecordUpdate {
+                        base: a,
+                        overlay: b,
+                    },
+                    &Value::RecordUpdate {
+                        base: c,
+                        overlay: d,
+                    },
+                ) = (matched_left_value, matched_right_value)
+                {
+                    pending.extend([V(a, c), V(b, d)]);
+                }
+                else if let Value::SessionRelated {
+                    relation: left_relation,
+                    source: a,
+                    target: b,
+                    payloads: p,
+                } = *matched_left_value
+                    && let Value::SessionRelated {
+                        relation: right_relation,
+                        source: c,
+                        target: d,
+                        payloads: q,
+                    } = *matched_right_value
+                    && left_relation == right_relation
+                {
+                    pending.extend([V(a, c), V(b, d), V(p, q)]);
+                }
+                else if let Value::Recorded(ref left) = *matched_left_value
+                    && let Value::Recorded(ref right) = *matched_right_value
+                    && left.len() == right.len()
+                {
+                    for (left, right) in left.iter().zip(right.iter()) {
+                        match move_pair(left, right) {
+                            MovePair::Payloads(a, b) => pending.push(V(a, b)),
+                            MovePair::Agreed => {},
+                            MovePair::Different => return CertificateEquality::Different,
                         }
                     }
-                    else if let Value::Mark {
-                        mark: left_mark,
-                        body: left_body,
-                    } = *matched_left_value
-                        && let Value::Mark {
-                            mark: right_mark,
-                            body: right_body,
-                        } = *matched_right_value
-                        && (left_mark == right_mark)
+                }
+                // A dialogue is its endpoints' moves: two logs that
+                // interleave the same moves differently are one dialogue.
+                else if let Value::Dialogue(ref left) = *matched_left_value
+                    && let Value::Dialogue(ref right) = *matched_right_value
+                {
+                    if crate::session::pair_dialogues(left, right, |a, b| pending.push(V(a, b)))
+                        == CertificateEquality::Different
                     {
-                        pending.push(V(left_body, right_body));
-                    }
-                    else if (matches!(
-                        *matched_left_value,
-                        Value::Variable { .. }
-                            | Value::Constant(_)
-                            | Value::Literal(_)
-                            | Value::Hole(_)
-                    ) && (a == b))
-                    {
-                        {}
-                    }
-                    else {
                         return CertificateEquality::Different;
                     }
                 }
-            },
-            C(a, b) => {
-                let (Some(a), Some(b)) = (arena.computation(a), arena.computation(b))
-                else {
-                    return CertificateEquality::Different;
-                };
-                match (a, b) {
-                    (
-                        &Computation::DataCase {
-                            scrutinee: a,
-                            motive: am,
-                            branches: ref ab,
-                            arities: ref arities_a,
-                            equations: equations_a,
-                        },
-                        &Computation::DataCase {
-                            scrutinee: b,
-                            motive: bm,
-                            branches: ref bb,
-                            arities: ref arities_b,
-                            equations: equations_b,
-                        },
-                    ) if ab.len() == bb.len()
-                        && arities_a == arities_b
-                        && equations_a == equations_b =>
+                else if let Value::Web(ref left) = *matched_left_value
+                    && let Value::Web(ref right) = *matched_right_value
+                {
+                    if left != right {
+                        return CertificateEquality::Different;
+                    }
+                }
+                else if let Value::Tuple(ref a) = *matched_left_value
+                    && let Value::Tuple(ref b) = *matched_right_value
+                    && a.len() == b.len()
+                {
+                    pending.extend(a.iter().zip(b.iter()).map(|(a, b)| V(*a, *b)));
+                }
+                else if let Value::StaticApplication(a, b) = *matched_left_value
+                    && let Value::StaticApplication(c, d) = *matched_right_value
+                {
                     {
-                        pending.extend([V(a, b), CT(am, bm)]);
-                        pending.extend(ab.iter().zip(bb).map(|(a, b)| C(*a, *b)));
-                    },
-                    (
-                        &Computation::RecordProjection(a, ref al),
-                        &Computation::RecordProjection(b, ref bl),
-                    ) if al == bl => pending.push(V(a, b)),
-                    (
-                        &Computation::TupleProjection(a, ac),
-                        &Computation::TupleProjection(b, bc),
-                    ) if ac == bc => pending.push(V(a, b)),
-                    (
-                        &Computation::Perform {
-                            signature: ref left,
-                            operation: ref left_op,
-                            payload: left_payload,
-                        },
-                        &Computation::Perform {
-                            signature: ref right,
-                            operation: ref right_op,
-                            payload: right_payload,
-                        },
-                    ) if left_op == right_op => {
-                        if signature_children(&mut pending, left, right)
-                            == CertificateEquality::Different
-                        {
-                            return CertificateEquality::Different;
-                        }
-                        pending.push(V(left_payload, right_payload));
-                    },
-                    (
-                        &Computation::Handle {
-                            signature: ref left,
-                            subject: left_subject,
-                            on_return: left_return,
-                            clauses: ref left_clauses,
-                        },
-                        &Computation::Handle {
-                            signature: ref right,
-                            subject: right_subject,
-                            on_return: right_return,
-                            clauses: ref right_clauses,
-                        },
-                    ) if left_clauses.len() == right_clauses.len() => {
-                        if signature_children(&mut pending, left, right)
-                            == CertificateEquality::Different
-                        {
-                            return CertificateEquality::Different;
-                        }
-                        pending
-                            .extend([C(left_subject, right_subject), C(left_return, right_return)]);
-                        for (left, right) in left_clauses.iter().zip(right_clauses.iter()) {
-                            if left.operation != right.operation {
-                                return CertificateEquality::Different;
-                            }
-                            pending.push(C(left.body, right.body));
-                        }
-                    },
-                    (
-                        &Computation::Scope {
-                            signature: ref left,
-                            subject: left_subject,
-                            on_return: left_return,
-                            clauses: ref left_clauses,
-                        },
-                        &Computation::Scope {
-                            signature: ref right,
-                            subject: right_subject,
-                            on_return: right_return,
-                            clauses: ref right_clauses,
-                        },
-                    ) if left_clauses.len() == right_clauses.len() => {
-                        if signature_children(&mut pending, left, right)
-                            == CertificateEquality::Different
-                        {
-                            return CertificateEquality::Different;
-                        }
-                        pending
-                            .extend([C(left_subject, right_subject), C(left_return, right_return)]);
-                        for (left, right) in left_clauses.iter().zip(right_clauses.iter()) {
-                            if left.operation != right.operation {
-                                return CertificateEquality::Different;
-                            }
-                            pending.push(C(left.body, right.body));
-                        }
-                    },
-                    (
-                        &Computation::Exercise {
-                            capability: left_capability,
-                            signature: ref left,
-                            operation: ref left_op,
-                            payload: left_payload,
-                        },
-                        &Computation::Exercise {
-                            capability: right_capability,
-                            signature: ref right,
-                            operation: ref right_op,
-                            payload: right_payload,
-                        },
-                    ) if left_op == right_op => {
-                        if signature_children(&mut pending, left, right)
-                            == CertificateEquality::Different
-                        {
-                            return CertificateEquality::Different;
-                        }
-                        pending.extend([
-                            V(left_capability, right_capability),
-                            V(left_payload, right_payload),
-                        ]);
-                    },
-                    (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
-                        pending.extend([V(a, c), C(b, d)]);
-                    },
-                    (&Computation::Abandon(a), &Computation::Abandon(b))
-                    | (&Computation::Decompose(a), &Computation::Decompose(b)) => {
-                        pending.push(V(a, b));
-                    },
-                    (
-                        &Computation::Split {
-                            scrutinee: a,
-                            arity: left_arity,
-                            motive: left_motive,
-                            body: b,
-                        },
-                        &Computation::Split {
-                            scrutinee: c,
-                            arity: right_arity,
-                            motive: right_motive,
-                            body: d,
-                        },
-                    ) if left_arity == right_arity => match (left_motive, right_motive) {
-                        (SplitMotive::Ambient, SplitMotive::Ambient) => {
-                            pending.extend([V(a, c), C(b, d)]);
-                        },
-                        (SplitMotive::Scrutinee(left), SplitMotive::Scrutinee(right)) => {
-                            pending.extend([V(a, c), CT(left, right), C(b, d)]);
-                        },
-                        (SplitMotive::Ambient | SplitMotive::Scrutinee(_), _) => {
-                            return CertificateEquality::Different;
-                        },
-                    },
-                    (&Computation::Reset(a), &Computation::Reset(b))
-                    | (&Computation::Shift(a), &Computation::Shift(b))
-                    | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
-                    (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
-                        pending.extend([C(a, c), C(b, d)]);
-                    },
-                    (&Computation::With(ref left), &Computation::With(ref right))
-                        if left.len() == right.len() =>
-                    {
-                        pending.extend(left.iter().zip(right.iter()).map(|(a, b)| C(*a, *b)));
-                    },
-                    (
-                        &Computation::Ascribe { body: a, ty: b },
-                        &Computation::Ascribe { body: c, ty: d },
-                    ) => pending.extend([C(a, c), CT(b, d)]),
-                    (&Computation::Project(a, b), &Computation::Project(c, d)) if a == c => {
-                        pending.push(C(b, d));
-                    },
-                    (
-                        &Computation::ListFold {
-                            element: left_element,
-                            result: left_result,
-                            list: left_list,
-                            on_nil: left_nil,
-                            on_cons: left_cons,
-                        },
-                        &Computation::ListFold {
-                            element: right_element,
-                            result: right_result,
-                            list: right_list,
-                            on_nil: right_nil,
-                            on_cons: right_cons,
-                        },
-                    ) => pending.extend([
-                        VT(left_element, right_element),
-                        VT(left_result, right_result),
-                        V(left_list, right_list),
-                        C(left_nil, right_nil),
-                        C(left_cons, right_cons),
-                    ]),
-                    (
-                        &Computation::ListCase {
-                            list: left_list,
-                            on_nil: left_nil,
-                            on_cons: left_cons,
-                        },
-                        &Computation::ListCase {
-                            list: right_list,
-                            on_nil: right_nil,
-                            on_cons: right_cons,
-                        },
-                    ) => pending.extend([
-                        V(left_list, right_list),
-                        C(left_nil, right_nil),
-                        C(left_cons, right_cons),
-                    ]),
-                    (
-                        &Computation::PathTransport {
-                            motive: left_motive,
-                            path: left_path,
-                            value: left_value,
-                        },
-                        &Computation::PathTransport {
-                            motive: right_motive,
-                            path: right_path,
-                            value: right_value,
-                        },
-                    )
-                    | (
-                        &Computation::Ride {
-                            motive: left_motive,
-                            flow: left_path,
-                            value: left_value,
-                        },
-                        &Computation::Ride {
-                            motive: right_motive,
-                            flow: right_path,
-                            value: right_value,
-                        },
-                    ) => pending.extend([
-                        VT(left_motive, right_motive),
-                        V(left_path, right_path),
-                        V(left_value, right_value),
-                    ]),
-                    (
-                        &Computation::TelescopeTransport {
-                            motive: left_motive,
-                            path: left_path,
-                            start: left_start,
-                            over: left_over,
-                            value: left_value,
-                        },
-                        &Computation::TelescopeTransport {
-                            motive: right_motive,
-                            path: right_path,
-                            start: right_start,
-                            over: right_over,
-                            value: right_value,
-                        },
-                    ) => pending.extend([
-                        CT(left_motive, right_motive),
-                        V(left_path, right_path),
-                        V(left_start, right_start),
-                        V(left_over, right_over),
-                        V(left_value, right_value),
-                    ]),
-                    (
-                        &Computation::Primitive {
-                            primitive: a,
-                            arguments: ref aa,
-                        },
-                        &Computation::Primitive {
-                            primitive: b,
-                            arguments: ref right_arguments,
-                        },
-                    ) if a == b && aa.len() == right_arguments.len() => pending.extend(
-                        aa.iter()
-                            .zip(right_arguments.iter())
-                            .map(|(a, b)| V(*a, *b)),
-                    ),
-                    (
-                        &Computation::Fixpoint {
-                            body: a,
-                            evidence: left_evidence,
-                        },
-                        &Computation::Fixpoint {
-                            body: b,
-                            evidence: right_evidence,
-                        },
-                    ) if left_evidence == right_evidence => pending.push(C(a, b)),
-                    (&Computation::Return(a), &Computation::Return(b))
-                    | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),
-                    (&Computation::Application(a, b), &Computation::Application(c, d)) => {
-                        pending.extend([C(a, c), V(b, d)]);
-                    },
-                    (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         pending.extend([V(a, c), V(b, d)]);
-                    },
-                    (
-                        &Computation::Case {
-                            scrutinee: left_scrutinee,
-                            branches: ref left_branches,
-                        },
-                        &Computation::Case {
-                            scrutinee: right_scrutinee,
-                            branches: ref right_branches,
-                        },
-                    ) if left_branches.len() == right_branches.len() => {
-                        pending.push(V(left_scrutinee, right_scrutinee));
-                        pending.extend(
-                            left_branches
-                                .iter()
-                                .zip(right_branches.iter())
-                                .map(|(a, b)| C(*a, *b)),
-                        );
-                    },
-                    (&Computation::Hole(left), &Computation::Hole(right)) if left == right => {},
-                    (
-                        &Computation::Mark {
-                            mark: left_mark,
-                            body: left_body,
-                        },
-                        &Computation::Mark {
-                            mark: right_mark,
-                            body: right_body,
-                        },
-                    ) if left_mark == right_mark => pending.push(C(left_body, right_body)),
-                    (&Computation::Session(ref left), &Computation::Session(ref right)) => {
-                        if left.shape() != right.shape() {
-                            return CertificateEquality::Different;
-                        }
-                        pending.extend(
-                            left.value_types()
-                                .zip(right.value_types())
-                                .map(|(a, b)| VT(a, b)),
-                        );
-                        pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
-                        pending.extend(
-                            left.computations()
-                                .zip(right.computations())
-                                .map(|(a, b)| C(a, b)),
-                        );
-                    },
-                    (&Computation::Memory(ref left), &Computation::Memory(ref right)) => {
-                        if left.shape() != right.shape() {
-                            return CertificateEquality::Different;
-                        }
-                        pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
-                        pending.extend(
-                            left.computations()
-                                .zip(right.computations())
-                                .map(|(a, b)| C(a, b)),
-                        );
-                    },
-                    (&Computation::World(ref left), &Computation::World(ref right)) => {
-                        if left.shape() != right.shape() {
-                            return CertificateEquality::Different;
-                        }
-                        pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
-                        pending.extend(
-                            left.computations()
-                                .zip(right.computations())
-                                .map(|(a, b)| C(a, b)),
-                        );
-                    },
-                    _ => return CertificateEquality::Different,
+                    }
                 }
-            },
-            VT(a, b) => {
-                if matches!(read_as_words(&arena, signatures, (a, b)), Maybe::Present(_))
-                    || matches!(read_as_words(&arena, signatures, (b, a)), Maybe::Present(_))
+                else if let Value::PathEquiv {
+                    path_type: left_type,
+                    forward: left_forward,
+                    backward: left_backward,
+                    ..
+                } = *matched_left_value
+                    && let Value::PathEquiv {
+                        path_type: right_type,
+                        forward: right_forward,
+                        backward: right_backward,
+                        ..
+                    } = *matched_right_value
                 {
-                    continue;
+                    pending.extend([
+                        VT(left_type, right_type),
+                        V(left_forward, right_forward),
+                        V(left_backward, right_backward),
+                    ]);
                 }
-                let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
-                else {
-                    return CertificateEquality::Different;
-                };
+                else if let Value::Ua {
+                    stratum: left_stratum,
+                    sides: ref left_sides,
+                    forward: left_forward,
+                    backward: left_backward,
+                } = *matched_left_value
+                    && let Value::Ua {
+                        stratum: right_stratum,
+                        sides: ref right_sides,
+                        forward: right_forward,
+                        backward: right_backward,
+                    } = *matched_right_value
+                    && left_stratum == right_stratum
+                    && left_sides == right_sides
                 {
-                    let (matched_left_value, matched_right_value) = (a, b);
-                    if let ValueType::Data {
-                        declaration: a,
-                        arguments: ref aa,
-                    } = *matched_left_value
-                        && let ValueType::Data {
-                            declaration: b,
-                            arguments: ref right_arguments,
-                        } = *matched_right_value
-                        && (a == b && aa.len() == right_arguments.len())
-                    {
-                        {
-                            pending.extend(aa.iter().zip(right_arguments).map(|(a, b)| V(*a, *b)));
-                        }
-                    }
-                    else if let ValueType::Record(ref a) = *matched_left_value
-                        && let ValueType::Record(ref b) = *matched_right_value
-                        && (a.len() == b.len() && a.keys().eq(b.keys()))
-                    {
-                        {
-                            pending.extend(a.values().zip(b.values()).map(|(a, b)| VT(*a, *b)));
-                        }
-                    }
-                    else if let (
-                        &ValueType::Stack {
-                            input: a,
-                            output: b,
-                        },
-                        &ValueType::Stack {
-                            input: c,
-                            output: d,
-                        },
-                    ) = (matched_left_value, matched_right_value)
-                    {
-                        pending.extend([CT(a, c), CT(b, d)]);
-                    }
-                    else if let (
-                        &ValueType::Path {
-                            carrier: a,
-                            left: b,
-                            right: c,
-                        },
-                        &ValueType::Path {
-                            carrier: d,
-                            left: e,
-                            right: f,
-                        },
-                    )
-                    | (
-                        &ValueType::Flow {
-                            carrier: a,
-                            source: b,
-                            target: c,
-                        },
-                        &ValueType::Flow {
-                            carrier: d,
-                            source: e,
-                            target: f,
-                        },
-                    )
-                    | (
-                        &ValueType::Bridge {
-                            carrier: a,
-                            left: b,
-                            right: c,
-                        },
-                        &ValueType::Bridge {
-                            carrier: d,
-                            left: e,
-                            right: f,
-                        },
-                    ) = (matched_left_value, matched_right_value)
-                    {
-                        pending.extend([VT(a, d), V(b, e), V(c, f)]);
-                    }
-                    else if let (&ValueType::List(a), &ValueType::List(b)) =
-                        (matched_left_value, matched_right_value)
-                    {
-                        pending.push(VT(a, b));
-                    }
-                    else if let (&ValueType::Run(a), &ValueType::Run(b))
-                    | (&ValueType::Prefix(a), &ValueType::Prefix(b))
-                    | (&ValueType::Dialogue(a), &ValueType::Dialogue(b)) =
-                        (matched_left_value, matched_right_value)
+                    pending.extend([
+                        V(left_forward, right_forward),
+                        V(left_backward, right_backward),
+                    ]);
+                }
+                else if let Value::Injection(s, a) = *matched_left_value
+                    && let Value::Injection(t, b) = *matched_right_value
+                    && (s == t)
+                {
                     {
                         pending.push(V(a, b));
                     }
-                    else if let ValueType::PathUniverse(a, b) = *matched_left_value
-                        && let ValueType::PathUniverse(c, d) = *matched_right_value
-                    {
-                        {
-                            pending.extend([V(a, c), V(b, d)]);
-                        }
-                    }
-                    else if let ValueType::Product(ref a) = *matched_left_value
-                        && let ValueType::Product(ref b) = *matched_right_value
-                        && a.len() == b.len()
-                    {
-                        pending.extend(a.iter().zip(b.iter()).map(|(a, b)| VT(*a, *b)));
-                    }
-                    else if let ValueType::Sum(ref a) = *matched_left_value
-                        && let ValueType::Sum(ref b) = *matched_right_value
-                        && a.len() == b.len()
-                    {
-                        pending.extend(a.iter().zip(b.iter()).map(|(a, b)| VT(*a, *b)));
-                    }
-                    else if let ValueType::StaticPi {
-                        domain: a,
-                        codomain: b,
-                    } = *matched_left_value
-                        && let ValueType::StaticPi {
-                            domain: c,
-                            codomain: d,
-                        } = *matched_right_value
-                    {
-                        pending.extend([VT(a, c), VT(b, d)]);
-                    }
-                    else if let ValueType::Sigma {
-                        first: a,
-                        second: b,
-                    } = *matched_left_value
-                        && let ValueType::Sigma {
-                            first: c,
-                            second: d,
-                        } = *matched_right_value
-                    {
-                        pending.extend([VT(a, c), VT(b, d)]);
-                    }
-                    // The surface reads a record whose later field names no
-                    // earlier one as the product, and the printer spells a
-                    // dependent pair whose second factor, as printed, names
-                    // no binder as that record: read back, it is the product.
-                    // The second factor is compared with the product's second
-                    // component weakened past the binder, so a binder only a
-                    // reduced call names (#771) reads as the product too.
-                    else if matches!(reading, Reading::Printed(_))
-                        && let Some((first, second, component, rest)) =
-                            match (matched_left_value, matched_right_value) {
-                                (
-                                    &ValueType::Sigma { first, second },
-                                    &ValueType::Product(ref parts),
-                                )
-                                | (
-                                    &ValueType::Product(ref parts),
-                                    &ValueType::Sigma { first, second },
-                                ) => match **parts {
-                                    [component, rest] => Some((first, second, component, rest)),
-                                    _ => None,
-                                },
-                                _ => None,
-                            }
-                    {
-                        let rest = crate::rewrite::shift_value_type(
-                            arena.to_mut(),
-                            rest,
-                            crate::rewrite::Binders::ONE,
-                        )
-                        .settle(arena.to_mut());
-                        pending.extend([VT(first, component), VT(second, rest)]);
-                    }
-                    else if let ValueType::Thunk(a) = *matched_left_value
-                        && let ValueType::Thunk(b) = *matched_right_value
+                }
+                else if let Value::Thunk(a) = *matched_left_value
+                    && let Value::Thunk(b) = *matched_right_value
+                {
+                    pending.push(C(a, b));
+                }
+                else if let Value::Ascribe { value: a, ty: s } = *matched_left_value
+                    && let Value::Ascribe { value: b, ty: t } = *matched_right_value
+                {
+                    pending.extend([V(a, b), VT(s, t)]);
+                }
+                else if let Value::Primitive { primitive: a, .. } = *matched_left_value
+                    && let Value::Primitive { primitive: b, .. } = *matched_right_value
+                    && (a == b)
+                {
+                    {}
+                }
+                else if let Value::Lift { ref target, body } = *matched_left_value
+                    && let Value::Lift {
+                        target: ref other,
+                        body: right,
+                    } = *matched_right_value
+                    && (target == other)
+                {
+                    pending.push(V(body, right));
+                }
+                else if let Value::Quote(a) = *matched_left_value
+                    && let Value::Quote(b) = *matched_right_value
+                {
+                    pending.push(VT(a, b));
+                }
+                else if let Value::QuoteComputation(a) = *matched_left_value
+                    && let Value::QuoteComputation(b) = *matched_right_value
+                {
                     {
                         pending.push(CT(a, b));
                     }
-                    else if let ValueType::Lift {
-                        inner: a,
-                        ref target,
-                    } = *matched_left_value
-                        && let ValueType::Lift {
-                            inner: b,
-                            target: ref other,
-                        } = *matched_right_value
-                        && (target == other)
-                    {
-                        pending.push(VT(a, b));
-                    }
-                    else if let ValueType::Element {
-                        code: a,
-                        ref target,
-                    } = *matched_left_value
-                        && let ValueType::Element {
-                            code: b,
-                            target: ref other,
-                        } = *matched_right_value
-                        && (target == other)
-                    {
-                        pending.push(V(a, b));
-                    }
-                    else if let ValueType::Staged {
-                        base: a,
-                        stage: ref first,
-                    } = *matched_left_value
-                        && let ValueType::Staged {
-                            base: b,
-                            stage: ref second,
-                        } = *matched_right_value
-                        && (first == second)
-                    {
-                        pending.push(VT(a, b));
-                    }
-                    else if let ValueType::Kept {
-                        value: a,
-                        region: first,
-                    } = *matched_left_value
-                        && let ValueType::Kept {
-                            value: b,
-                            region: second,
-                        } = *matched_right_value
-                        && first == second
-                    {
-                        pending.push(VT(a, b));
-                    }
-                    else if let ValueType::Session(ref a) = *matched_left_value
-                        && let ValueType::Session(ref b) = *matched_right_value
-                        && a.protocol() == b.protocol()
-                        && a.state() == b.state()
-                    {
-                        pending.extend(
-                            a.payloads()
-                                .iter()
-                                .zip(b.payloads())
-                                .map(|(a, b)| VT(*a, *b)),
-                        );
-                    }
-                    else if let ValueType::Session(ref a) = *matched_left_value
-                        && let ValueType::Session(ref b) = *matched_right_value
-                        && matches!(reading, Reading::Printed(_))
-                    {
-                        if session_children(&mut pending, a, b) == CertificateEquality::Different {
-                            return CertificateEquality::Different;
-                        }
-                    }
-                    else if let ValueType::Capability {
-                        authority: ref first,
-                        grade: left_grade,
-                        region: left_region,
-                    } = *matched_left_value
-                        && let ValueType::Capability {
-                            authority: ref second,
-                            grade: right_grade,
-                            region: right_region,
-                        } = *matched_right_value
-                        && left_grade == right_grade
-                        && left_region == right_region
-                        && first.signatures().len() == second.signatures().len()
-                    {
-                        for (left, right) in first.signatures().zip(second.signatures()) {
-                            if signature_children(&mut pending, left, right)
-                                == CertificateEquality::Different
-                            {
-                                return CertificateEquality::Different;
-                            }
-                        }
-                    }
-                    else if let ValueType::World(ref first) = *matched_left_value
-                        && let ValueType::World(ref second) = *matched_right_value
-                        && first.shape() == second.shape()
-                    {
-                        pending.extend(first.types().zip(second.types()).map(|(a, b)| VT(a, b)));
-                    }
-                    else if matches!(
-                        (matched_left_value, matched_right_value),
-                        (&ValueType::Web, &ValueType::Web) | (&ValueType::Row, &ValueType::Row)
-                    ) {
-                    }
-                    else if let (&ValueType::RowTail(a), &ValueType::RowTail(b)) =
-                        (matched_left_value, matched_right_value)
-                    {
-                        pending.push(V(a, b));
-                    }
-                    else if (matches!(
-                        *matched_left_value,
-                        ValueType::Base(_)
-                            | ValueType::Universe { .. }
-                            | ValueType::Abstract(_)
-                            | ValueType::Unknown
-                            | ValueType::Buffer
-                    ) && (a == b))
-                    {
-                        {}
-                    }
-                    else {
+                }
+                else if let Value::Row(ref a) = *matched_left_value
+                    && let Value::Row(ref b) = *matched_right_value
+                {
+                    if row_children(pending, a, b) == CertificateEquality::Different {
                         return CertificateEquality::Different;
                     }
                 }
-            },
-            CT(a, b) => {
-                let (Some(a), Some(b)) = (arena.comp_type(a), arena.comp_type(b))
+                else if let Value::Mark {
+                    mark: left_mark,
+                    body: left_body,
+                } = *matched_left_value
+                    && let Value::Mark {
+                        mark: right_mark,
+                        body: right_body,
+                    } = *matched_right_value
+                    && (left_mark == right_mark)
+                {
+                    pending.push(V(left_body, right_body));
+                }
+                else if (matches!(
+                    *matched_left_value,
+                    Value::Variable { .. }
+                        | Value::Constant(_)
+                        | Value::Literal(_)
+                        | Value::Hole(_)
+                ) && (a == b))
+                {
+                    {}
+                }
                 else {
                     return CertificateEquality::Different;
-                };
-                match (a, b) {
-                    (&CompType::With(ref left), &CompType::With(ref right))
-                        if left.len() == right.len() =>
-                    {
-                        pending.extend(left.iter().zip(right.iter()).map(|(a, b)| CT(*a, *b)));
+                }
+            }
+        },
+        C(a, b) => {
+            let (Some(a), Some(b)) = (arena.computation(a), arena.computation(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            match (a, b) {
+                (
+                    &Computation::DataCase {
+                        scrutinee: a,
+                        motive: am,
+                        branches: ref ab,
+                        arities: ref arities_a,
+                        equations: equations_a,
                     },
-                    (
-                        &CompType::Returner {
-                            result: a,
-                            effects: ref first,
-                        },
-                        &CompType::Returner {
-                            result: b,
-                            effects: ref second,
-                        },
-                    ) => {
-                        if row_children(&mut pending, first, second)
+                    &Computation::DataCase {
+                        scrutinee: b,
+                        motive: bm,
+                        branches: ref bb,
+                        arities: ref arities_b,
+                        equations: equations_b,
+                    },
+                ) if ab.len() == bb.len()
+                    && arities_a == arities_b
+                    && equations_a == equations_b =>
+                {
+                    pending.extend([V(a, b), CT(am, bm)]);
+                    pending.extend(ab.iter().zip(bb).map(|(a, b)| C(*a, *b)));
+                },
+                (
+                    &Computation::RecordProjection(a, ref al),
+                    &Computation::RecordProjection(b, ref bl),
+                ) if al == bl => pending.push(V(a, b)),
+                (&Computation::TupleProjection(a, ac), &Computation::TupleProjection(b, bc))
+                    if ac == bc =>
+                {
+                    pending.push(V(a, b));
+                },
+                (
+                    &Computation::Perform {
+                        signature: ref left,
+                        operation: ref left_op,
+                        payload: left_payload,
+                    },
+                    &Computation::Perform {
+                        signature: ref right,
+                        operation: ref right_op,
+                        payload: right_payload,
+                    },
+                ) if left_op == right_op => {
+                    if signature_children(pending, left, right) == CertificateEquality::Different {
+                        return CertificateEquality::Different;
+                    }
+                    pending.push(V(left_payload, right_payload));
+                },
+                (
+                    &Computation::Handle {
+                        signature: ref left,
+                        subject: left_subject,
+                        on_return: left_return,
+                        clauses: ref left_clauses,
+                    },
+                    &Computation::Handle {
+                        signature: ref right,
+                        subject: right_subject,
+                        on_return: right_return,
+                        clauses: ref right_clauses,
+                    },
+                ) if left_clauses.len() == right_clauses.len() => {
+                    if signature_children(pending, left, right) == CertificateEquality::Different {
+                        return CertificateEquality::Different;
+                    }
+                    pending.extend([C(left_subject, right_subject), C(left_return, right_return)]);
+                    for (left, right) in left_clauses.iter().zip(right_clauses.iter()) {
+                        if left.operation != right.operation {
+                            return CertificateEquality::Different;
+                        }
+                        pending.push(C(left.body, right.body));
+                    }
+                },
+                (
+                    &Computation::Scope {
+                        signature: ref left,
+                        subject: left_subject,
+                        on_return: left_return,
+                        clauses: ref left_clauses,
+                    },
+                    &Computation::Scope {
+                        signature: ref right,
+                        subject: right_subject,
+                        on_return: right_return,
+                        clauses: ref right_clauses,
+                    },
+                ) if left_clauses.len() == right_clauses.len() => {
+                    if signature_children(pending, left, right) == CertificateEquality::Different {
+                        return CertificateEquality::Different;
+                    }
+                    pending.extend([C(left_subject, right_subject), C(left_return, right_return)]);
+                    for (left, right) in left_clauses.iter().zip(right_clauses.iter()) {
+                        if left.operation != right.operation {
+                            return CertificateEquality::Different;
+                        }
+                        pending.push(C(left.body, right.body));
+                    }
+                },
+                (
+                    &Computation::Exercise {
+                        capability: left_capability,
+                        signature: ref left,
+                        operation: ref left_op,
+                        payload: left_payload,
+                    },
+                    &Computation::Exercise {
+                        capability: right_capability,
+                        signature: ref right,
+                        operation: ref right_op,
+                        payload: right_payload,
+                    },
+                ) if left_op == right_op => {
+                    if signature_children(pending, left, right) == CertificateEquality::Different {
+                        return CertificateEquality::Different;
+                    }
+                    pending.extend([
+                        V(left_capability, right_capability),
+                        V(left_payload, right_payload),
+                    ]);
+                },
+                (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
+                    pending.extend([V(a, c), C(b, d)]);
+                },
+                (&Computation::Abandon(a), &Computation::Abandon(b))
+                | (&Computation::Decompose(a), &Computation::Decompose(b)) => {
+                    pending.push(V(a, b));
+                },
+                (
+                    &Computation::Split {
+                        scrutinee: a,
+                        arity: left_arity,
+                        motive: left_motive,
+                        body: b,
+                    },
+                    &Computation::Split {
+                        scrutinee: c,
+                        arity: right_arity,
+                        motive: right_motive,
+                        body: d,
+                    },
+                ) if left_arity == right_arity => match (left_motive, right_motive) {
+                    (SplitMotive::Ambient, SplitMotive::Ambient) => {
+                        pending.extend([V(a, c), C(b, d)]);
+                    },
+                    (SplitMotive::Scrutinee(left), SplitMotive::Scrutinee(right)) => {
+                        pending.extend([V(a, c), CT(left, right), C(b, d)]);
+                    },
+                    (SplitMotive::Ambient | SplitMotive::Scrutinee(_), _) => {
+                        return CertificateEquality::Different;
+                    },
+                },
+                (&Computation::Reset(a), &Computation::Reset(b))
+                | (&Computation::Shift(a), &Computation::Shift(b))
+                | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
+                (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
+                    pending.extend([C(a, c), C(b, d)]);
+                },
+                (&Computation::With(ref left), &Computation::With(ref right))
+                    if left.len() == right.len() =>
+                {
+                    pending.extend(left.iter().zip(right.iter()).map(|(a, b)| C(*a, *b)));
+                },
+                (
+                    &Computation::Ascribe { body: a, ty: b },
+                    &Computation::Ascribe { body: c, ty: d },
+                ) => pending.extend([C(a, c), CT(b, d)]),
+                (&Computation::Project(a, b), &Computation::Project(c, d)) if a == c => {
+                    pending.push(C(b, d));
+                },
+                (
+                    &Computation::ListFold {
+                        element: left_element,
+                        result: left_result,
+                        list: left_list,
+                        on_nil: left_nil,
+                        on_cons: left_cons,
+                    },
+                    &Computation::ListFold {
+                        element: right_element,
+                        result: right_result,
+                        list: right_list,
+                        on_nil: right_nil,
+                        on_cons: right_cons,
+                    },
+                ) => pending.extend([
+                    VT(left_element, right_element),
+                    VT(left_result, right_result),
+                    V(left_list, right_list),
+                    C(left_nil, right_nil),
+                    C(left_cons, right_cons),
+                ]),
+                (
+                    &Computation::ListCase {
+                        list: left_list,
+                        on_nil: left_nil,
+                        on_cons: left_cons,
+                    },
+                    &Computation::ListCase {
+                        list: right_list,
+                        on_nil: right_nil,
+                        on_cons: right_cons,
+                    },
+                ) => pending.extend([
+                    V(left_list, right_list),
+                    C(left_nil, right_nil),
+                    C(left_cons, right_cons),
+                ]),
+                (
+                    &Computation::PathTransport {
+                        motive: left_motive,
+                        path: left_path,
+                        value: left_value,
+                    },
+                    &Computation::PathTransport {
+                        motive: right_motive,
+                        path: right_path,
+                        value: right_value,
+                    },
+                )
+                | (
+                    &Computation::Ride {
+                        motive: left_motive,
+                        flow: left_path,
+                        value: left_value,
+                    },
+                    &Computation::Ride {
+                        motive: right_motive,
+                        flow: right_path,
+                        value: right_value,
+                    },
+                ) => pending.extend([
+                    VT(left_motive, right_motive),
+                    V(left_path, right_path),
+                    V(left_value, right_value),
+                ]),
+                (
+                    &Computation::TelescopeTransport {
+                        motive: left_motive,
+                        path: left_path,
+                        start: left_start,
+                        over: left_over,
+                        value: left_value,
+                    },
+                    &Computation::TelescopeTransport {
+                        motive: right_motive,
+                        path: right_path,
+                        start: right_start,
+                        over: right_over,
+                        value: right_value,
+                    },
+                ) => pending.extend([
+                    CT(left_motive, right_motive),
+                    V(left_path, right_path),
+                    V(left_start, right_start),
+                    V(left_over, right_over),
+                    V(left_value, right_value),
+                ]),
+                (
+                    &Computation::Primitive {
+                        primitive: a,
+                        arguments: ref aa,
+                    },
+                    &Computation::Primitive {
+                        primitive: b,
+                        arguments: ref right_arguments,
+                    },
+                ) if a == b && aa.len() == right_arguments.len() => pending.extend(
+                    aa.iter()
+                        .zip(right_arguments.iter())
+                        .map(|(a, b)| V(*a, *b)),
+                ),
+                (
+                    &Computation::Fixpoint {
+                        body: a,
+                        evidence: left_evidence,
+                    },
+                    &Computation::Fixpoint {
+                        body: b,
+                        evidence: right_evidence,
+                    },
+                ) if left_evidence == right_evidence => pending.push(C(a, b)),
+                (&Computation::Return(a), &Computation::Return(b))
+                | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),
+                (&Computation::Application(a, b), &Computation::Application(c, d)) => {
+                    pending.extend([C(a, c), V(b, d)]);
+                },
+                (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
+                    pending.extend([V(a, c), V(b, d)]);
+                },
+                (
+                    &Computation::Case {
+                        scrutinee: left_scrutinee,
+                        branches: ref left_branches,
+                    },
+                    &Computation::Case {
+                        scrutinee: right_scrutinee,
+                        branches: ref right_branches,
+                    },
+                ) if left_branches.len() == right_branches.len() => {
+                    pending.push(V(left_scrutinee, right_scrutinee));
+                    pending.extend(
+                        left_branches
+                            .iter()
+                            .zip(right_branches.iter())
+                            .map(|(a, b)| C(*a, *b)),
+                    );
+                },
+                (&Computation::Hole(left), &Computation::Hole(right)) if left == right => {},
+                (
+                    &Computation::Mark {
+                        mark: left_mark,
+                        body: left_body,
+                    },
+                    &Computation::Mark {
+                        mark: right_mark,
+                        body: right_body,
+                    },
+                ) if left_mark == right_mark => pending.push(C(left_body, right_body)),
+                (&Computation::Session(ref left), &Computation::Session(ref right)) => {
+                    if left.shape() != right.shape() {
+                        return CertificateEquality::Different;
+                    }
+                    pending.extend(
+                        left.value_types()
+                            .zip(right.value_types())
+                            .map(|(a, b)| VT(a, b)),
+                    );
+                    pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
+                    pending.extend(
+                        left.computations()
+                            .zip(right.computations())
+                            .map(|(a, b)| C(a, b)),
+                    );
+                },
+                (&Computation::Memory(ref left), &Computation::Memory(ref right)) => {
+                    if left.shape() != right.shape() {
+                        return CertificateEquality::Different;
+                    }
+                    pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
+                    pending.extend(
+                        left.computations()
+                            .zip(right.computations())
+                            .map(|(a, b)| C(a, b)),
+                    );
+                },
+                (&Computation::World(ref left), &Computation::World(ref right)) => {
+                    if left.shape() != right.shape() {
+                        return CertificateEquality::Different;
+                    }
+                    pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
+                    pending.extend(
+                        left.computations()
+                            .zip(right.computations())
+                            .map(|(a, b)| C(a, b)),
+                    );
+                },
+                _ => return CertificateEquality::Different,
+            }
+        },
+        VT(a, b) => {
+            if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
+                || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
+            {
+                return CertificateEquality::Equal;
+            }
+            let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            {
+                let (matched_left_value, matched_right_value) = (a, b);
+                if let ValueType::Data {
+                    declaration: a,
+                    arguments: ref aa,
+                } = *matched_left_value
+                    && let ValueType::Data {
+                        declaration: b,
+                        arguments: ref right_arguments,
+                    } = *matched_right_value
+                    && (a == b && aa.len() == right_arguments.len())
+                {
+                    {
+                        pending.extend(aa.iter().zip(right_arguments).map(|(a, b)| V(*a, *b)));
+                    }
+                }
+                else if let ValueType::Record(ref a) = *matched_left_value
+                    && let ValueType::Record(ref b) = *matched_right_value
+                    && (a.len() == b.len() && a.keys().eq(b.keys()))
+                {
+                    {
+                        pending.extend(a.values().zip(b.values()).map(|(a, b)| VT(*a, *b)));
+                    }
+                }
+                else if let (
+                    &ValueType::Stack {
+                        input: a,
+                        output: b,
+                    },
+                    &ValueType::Stack {
+                        input: c,
+                        output: d,
+                    },
+                ) = (matched_left_value, matched_right_value)
+                {
+                    pending.extend([CT(a, c), CT(b, d)]);
+                }
+                else if let (
+                    &ValueType::Path {
+                        carrier: a,
+                        left: b,
+                        right: c,
+                    },
+                    &ValueType::Path {
+                        carrier: d,
+                        left: e,
+                        right: f,
+                    },
+                )
+                | (
+                    &ValueType::Flow {
+                        carrier: a,
+                        source: b,
+                        target: c,
+                    },
+                    &ValueType::Flow {
+                        carrier: d,
+                        source: e,
+                        target: f,
+                    },
+                )
+                | (
+                    &ValueType::Bridge {
+                        carrier: a,
+                        left: b,
+                        right: c,
+                    },
+                    &ValueType::Bridge {
+                        carrier: d,
+                        left: e,
+                        right: f,
+                    },
+                ) = (matched_left_value, matched_right_value)
+                {
+                    pending.extend([VT(a, d), V(b, e), V(c, f)]);
+                }
+                else if let (&ValueType::List(a), &ValueType::List(b)) =
+                    (matched_left_value, matched_right_value)
+                {
+                    pending.push(VT(a, b));
+                }
+                else if let (&ValueType::Run(a), &ValueType::Run(b))
+                | (&ValueType::Prefix(a), &ValueType::Prefix(b))
+                | (&ValueType::Dialogue(a), &ValueType::Dialogue(b)) =
+                    (matched_left_value, matched_right_value)
+                {
+                    pending.push(V(a, b));
+                }
+                else if let ValueType::PathUniverse(a, b) = *matched_left_value
+                    && let ValueType::PathUniverse(c, d) = *matched_right_value
+                {
+                    {
+                        pending.extend([V(a, c), V(b, d)]);
+                    }
+                }
+                else if let ValueType::Product(ref a) = *matched_left_value
+                    && let ValueType::Product(ref b) = *matched_right_value
+                    && a.len() == b.len()
+                {
+                    pending.extend(a.iter().zip(b.iter()).map(|(a, b)| VT(*a, *b)));
+                }
+                else if let ValueType::Sum(ref a) = *matched_left_value
+                    && let ValueType::Sum(ref b) = *matched_right_value
+                    && a.len() == b.len()
+                {
+                    pending.extend(a.iter().zip(b.iter()).map(|(a, b)| VT(*a, *b)));
+                }
+                else if let ValueType::StaticPi {
+                    domain: a,
+                    codomain: b,
+                } = *matched_left_value
+                    && let ValueType::StaticPi {
+                        domain: c,
+                        codomain: d,
+                    } = *matched_right_value
+                {
+                    pending.extend([VT(a, c), VT(b, d)]);
+                }
+                else if let ValueType::Sigma {
+                    first: a,
+                    second: b,
+                } = *matched_left_value
+                    && let ValueType::Sigma {
+                        first: c,
+                        second: d,
+                    } = *matched_right_value
+                {
+                    pending.extend([VT(a, c), VT(b, d)]);
+                }
+                // The surface reads a record whose later field names no
+                // earlier one as the product, and the printer spells a
+                // dependent pair whose second factor, as printed, names
+                // no binder as that record: read back, it is the product.
+                // The second factor is compared with the product's second
+                // component weakened past the binder, so a binder only a
+                // reduced call names (#771) reads as the product too.
+                else if matches!(reading, Reading::Printed(_))
+                    && let Some((first, second, component, rest)) =
+                        match (matched_left_value, matched_right_value) {
+                            (
+                                &ValueType::Sigma { first, second },
+                                &ValueType::Product(ref parts),
+                            )
+                            | (
+                                &ValueType::Product(ref parts),
+                                &ValueType::Sigma { first, second },
+                            ) => match **parts {
+                                [component, rest] => Some((first, second, component, rest)),
+                                _ => None,
+                            },
+                            _ => None,
+                        }
+                {
+                    let rest = crate::rewrite::shift_value_type(
+                        arena.to_mut(),
+                        rest,
+                        crate::rewrite::Binders::ONE,
+                    )
+                    .settle(arena.to_mut());
+                    pending.extend([VT(first, component), VT(second, rest)]);
+                }
+                else if let ValueType::Thunk(a) = *matched_left_value
+                    && let ValueType::Thunk(b) = *matched_right_value
+                {
+                    pending.push(CT(a, b));
+                }
+                else if let ValueType::Lift {
+                    inner: a,
+                    ref target,
+                } = *matched_left_value
+                    && let ValueType::Lift {
+                        inner: b,
+                        target: ref other,
+                    } = *matched_right_value
+                    && (target == other)
+                {
+                    pending.push(VT(a, b));
+                }
+                else if let ValueType::Element {
+                    code: a,
+                    ref target,
+                } = *matched_left_value
+                    && let ValueType::Element {
+                        code: b,
+                        target: ref other,
+                    } = *matched_right_value
+                    && (target == other)
+                {
+                    pending.push(V(a, b));
+                }
+                else if let ValueType::Staged {
+                    base: a,
+                    stage: ref first,
+                } = *matched_left_value
+                    && let ValueType::Staged {
+                        base: b,
+                        stage: ref second,
+                    } = *matched_right_value
+                    && (first == second)
+                {
+                    pending.push(VT(a, b));
+                }
+                else if let ValueType::Kept {
+                    value: a,
+                    region: first,
+                } = *matched_left_value
+                    && let ValueType::Kept {
+                        value: b,
+                        region: second,
+                    } = *matched_right_value
+                    && first == second
+                {
+                    pending.push(VT(a, b));
+                }
+                else if let ValueType::Session(ref a) = *matched_left_value
+                    && let ValueType::Session(ref b) = *matched_right_value
+                    && a.protocol() == b.protocol()
+                    && a.state() == b.state()
+                {
+                    pending.extend(
+                        a.payloads()
+                            .iter()
+                            .zip(b.payloads())
+                            .map(|(a, b)| VT(*a, *b)),
+                    );
+                }
+                else if let ValueType::Session(ref a) = *matched_left_value
+                    && let ValueType::Session(ref b) = *matched_right_value
+                    && matches!(reading, Reading::Printed(_))
+                {
+                    if session_children(pending, a, b) == CertificateEquality::Different {
+                        return CertificateEquality::Different;
+                    }
+                }
+                else if let ValueType::Capability {
+                    authority: ref first,
+                    grade: left_grade,
+                    region: left_region,
+                } = *matched_left_value
+                    && let ValueType::Capability {
+                        authority: ref second,
+                        grade: right_grade,
+                        region: right_region,
+                    } = *matched_right_value
+                    && left_grade == right_grade
+                    && left_region == right_region
+                    && first.signatures().len() == second.signatures().len()
+                {
+                    for (left, right) in first.signatures().zip(second.signatures()) {
+                        if signature_children(pending, left, right)
                             == CertificateEquality::Different
                         {
                             return CertificateEquality::Different;
                         }
-                        pending.push(VT(a, b));
-                    },
-                    (
-                        &CompType::Arrow {
-                            domain: a,
-                            codomain: b,
-                        },
-                        &CompType::Arrow {
-                            domain: c,
-                            codomain: d,
-                        },
-                    )
-                    | (
-                        &CompType::Pi {
-                            domain: a,
-                            codomain: b,
-                        },
-                        &CompType::Pi {
-                            domain: c,
-                            codomain: d,
-                        },
-                    ) => pending.extend([VT(a, c), CT(b, d)]),
-                    // The surface reads `(x : A) -> C` as the plain arrow
-                    // where `C` does not name `x`, and the printer spells a
-                    // dependent arrow whose codomain, as printed, names no
-                    // binder as that arrow: read back, it is the arrow. The
-                    // codomain is compared with the arrow's weakened past the
-                    // binder, so a binder only a reduced call names (#736)
-                    // reads as the arrow too.
-                    (
-                        &CompType::Pi {
-                            domain: a,
-                            codomain: b,
-                        },
-                        &CompType::Arrow {
-                            domain: c,
-                            codomain: d,
-                        },
-                    )
-                    | (
-                        &CompType::Arrow {
-                            domain: c,
-                            codomain: d,
-                        },
-                        &CompType::Pi {
-                            domain: a,
-                            codomain: b,
-                        },
-                    ) if matches!(reading, Reading::Printed(_)) => {
-                        let d = crate::rewrite::shift_comp_type(
-                            arena.to_mut(),
-                            d,
-                            crate::rewrite::Binders::ONE,
-                        )
-                        .settle(arena.to_mut());
-                        pending.extend([VT(a, c), CT(b, d)]);
-                    },
-                    (
-                        &CompType::Element {
-                            code: a,
-                            ref target,
-                        },
-                        &CompType::Element {
-                            code: b,
-                            target: ref other,
-                        },
-                    ) if target == other => pending.push(V(a, b)),
-                    (&CompType::Unknown, &CompType::Unknown) => {},
-                    (
-                        &CompType::Codata {
-                            declaration: a,
-                            arguments: ref left,
-                        },
-                        &CompType::Codata {
-                            declaration: b,
-                            arguments: ref right,
-                        },
-                    ) if a == b && left.len() == right.len() => {
-                        pending.extend(left.iter().zip(right).map(|(a, b)| V(*a, *b)));
-                    },
-                    _ => return CertificateEquality::Different,
+                    }
                 }
-            },
-        }
+                else if let ValueType::World(ref first) = *matched_left_value
+                    && let ValueType::World(ref second) = *matched_right_value
+                    && first.shape() == second.shape()
+                {
+                    pending.extend(first.types().zip(second.types()).map(|(a, b)| VT(a, b)));
+                }
+                else if matches!(
+                    (matched_left_value, matched_right_value),
+                    (&ValueType::Web, &ValueType::Web) | (&ValueType::Row, &ValueType::Row)
+                ) {
+                }
+                else if let (&ValueType::RowTail(a), &ValueType::RowTail(b)) =
+                    (matched_left_value, matched_right_value)
+                {
+                    pending.push(V(a, b));
+                }
+                else if (matches!(
+                    *matched_left_value,
+                    ValueType::Base(_)
+                        | ValueType::Universe { .. }
+                        | ValueType::Abstract(_)
+                        | ValueType::Unknown
+                        | ValueType::Buffer
+                ) && (a == b))
+                {
+                    {}
+                }
+                else {
+                    return CertificateEquality::Different;
+                }
+            }
+        },
+        CT(a, b) => {
+            let (Some(a), Some(b)) = (arena.comp_type(a), arena.comp_type(b))
+            else {
+                return CertificateEquality::Different;
+            };
+            match (a, b) {
+                (&CompType::With(ref left), &CompType::With(ref right))
+                    if left.len() == right.len() =>
+                {
+                    pending.extend(left.iter().zip(right.iter()).map(|(a, b)| CT(*a, *b)));
+                },
+                (
+                    &CompType::Returner {
+                        result: a,
+                        effects: ref first,
+                    },
+                    &CompType::Returner {
+                        result: b,
+                        effects: ref second,
+                    },
+                ) => {
+                    if row_children(pending, first, second) == CertificateEquality::Different {
+                        return CertificateEquality::Different;
+                    }
+                    pending.push(VT(a, b));
+                },
+                (
+                    &CompType::Arrow {
+                        domain: a,
+                        codomain: b,
+                    },
+                    &CompType::Arrow {
+                        domain: c,
+                        codomain: d,
+                    },
+                )
+                | (
+                    &CompType::Pi {
+                        domain: a,
+                        codomain: b,
+                    },
+                    &CompType::Pi {
+                        domain: c,
+                        codomain: d,
+                    },
+                ) => pending.extend([VT(a, c), CT(b, d)]),
+                // The surface reads `(x : A) -> C` as the plain arrow
+                // where `C` does not name `x`, and the printer spells a
+                // dependent arrow whose codomain, as printed, names no
+                // binder as that arrow: read back, it is the arrow. The
+                // codomain is compared with the arrow's weakened past the
+                // binder, so a binder only a reduced call names (#736)
+                // reads as the arrow too.
+                (
+                    &CompType::Pi {
+                        domain: a,
+                        codomain: b,
+                    },
+                    &CompType::Arrow {
+                        domain: c,
+                        codomain: d,
+                    },
+                )
+                | (
+                    &CompType::Arrow {
+                        domain: c,
+                        codomain: d,
+                    },
+                    &CompType::Pi {
+                        domain: a,
+                        codomain: b,
+                    },
+                ) if matches!(reading, Reading::Printed(_)) => {
+                    let d = crate::rewrite::shift_comp_type(
+                        arena.to_mut(),
+                        d,
+                        crate::rewrite::Binders::ONE,
+                    )
+                    .settle(arena.to_mut());
+                    pending.extend([VT(a, c), CT(b, d)]);
+                },
+                (
+                    &CompType::Element {
+                        code: a,
+                        ref target,
+                    },
+                    &CompType::Element {
+                        code: b,
+                        target: ref other,
+                    },
+                ) if target == other => pending.push(V(a, b)),
+                (&CompType::Unknown, &CompType::Unknown) => {},
+                (
+                    &CompType::Codata {
+                        declaration: a,
+                        arguments: ref left,
+                    },
+                    &CompType::Codata {
+                        declaration: b,
+                        arguments: ref right,
+                    },
+                ) if a == b && left.len() == right.len() => {
+                    pending.extend(left.iter().zip(right).map(|(a, b)| V(*a, *b)));
+                },
+                _ => return CertificateEquality::Different,
+            }
+        },
     }
     CertificateEquality::Equal
 }
@@ -3980,6 +4044,89 @@ mod tests
             CertificateEquality::Equal,
             equal_certificate_syntax(&arena, one, two)
         );
+    }
+
+    #[test]
+    fn sides_shared_differently_agree_until_one_copy_differs()
+    {
+        const DEPTH: u32 = 10;
+        let mut arena = crate::CoreArena::new();
+        let mut shared = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let mut paired = shared;
+        let mut copy = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        for _ in 0 .. DEPTH {
+            shared = arena.value_tuple(&[shared, shared]);
+            let next = arena.value_tuple(&[paired, copy]);
+            copy = arena.value_tuple(&[copy, paired]);
+            paired = next;
+        }
+        // Two balanced trees of pairs, every copy minted afresh, their leaves
+        // the variable `0` but for the second tree's last leaf, the variable
+        // `1`. Each level pairs the one below it, left to right.
+        let width = 1_usize << DEPTH;
+        let mut level = Vec::with_capacity(width);
+        let mut above = Vec::with_capacity(width);
+        let mut roots = Vec::with_capacity(2);
+        for odd in [None, Some(width.saturating_sub(1))] {
+            level.clear();
+            for leaf in 0 .. width {
+                let index = u32::from(Some(leaf) == odd);
+                level.push(arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+            }
+            while level.len() > 1 {
+                above.clear();
+                for pair in level.chunks_exact(2) {
+                    above.push(arena.value_tuple(pair));
+                }
+                core::mem::swap(&mut level, &mut above);
+            }
+            roots.push(level.first().copied().expect("a tree has a root"));
+        }
+        let [tree, odd] = [roots.first(), roots.get(1)].map(|root| *root.expect("two trees"));
+        for (left, right, expected, message) in [
+            (
+                shared,
+                tree,
+                CertificateEquality::Equal,
+                "one node a level against a tree",
+            ),
+            (
+                tree,
+                shared,
+                CertificateEquality::Equal,
+                "a tree against one node a level",
+            ),
+            (
+                shared,
+                paired,
+                CertificateEquality::Equal,
+                "two chains crossing at each level",
+            ),
+            (
+                paired,
+                tree,
+                CertificateEquality::Equal,
+                "crossing chains against a tree",
+            ),
+            (
+                shared,
+                odd,
+                CertificateEquality::Different,
+                "the tree's last leaf differs",
+            ),
+            (
+                odd,
+                paired,
+                CertificateEquality::Different,
+                "the tree's last leaf differs",
+            ),
+        ] {
+            assert_eq!(
+                expected,
+                equal_shared_certificate_syntax(&arena, left, right),
+                "{message}"
+            );
+        }
     }
 
     #[test]
@@ -5214,18 +5361,22 @@ mod tests
             "a record update",
         ));
 
+        let comparisons: [fn(&crate::CoreArena, ValueId, ValueId) -> CertificateEquality; 2] =
+            [equal_certificate_syntax, equal_shared_certificate_syntax];
         for (twin, same, others, what) in cases {
-            assert_eq!(
-                CertificateEquality::Equal,
-                equal_certificate_syntax(&arena, twin, same),
-                "{what} equals its twin"
-            );
-            for other in others {
+            for compare in comparisons {
                 assert_eq!(
-                    CertificateEquality::Different,
-                    equal_certificate_syntax(&arena, twin, other),
-                    "{what} differs from one that changes a guarded part"
+                    CertificateEquality::Equal,
+                    compare(&arena, twin, same),
+                    "{what} equals its twin"
                 );
+                for &other in &others {
+                    assert_eq!(
+                        CertificateEquality::Different,
+                        compare(&arena, twin, other),
+                        "{what} differs from one that changes a guarded part"
+                    );
+                }
             }
         }
     }
@@ -5417,21 +5568,27 @@ mod tests
         let other = arena.computation_ascribe(returned, unit_motive);
         cases.push((twin, same, alloc::vec![other], "an ascription"));
 
+        let comparisons: [fn(&crate::CoreArena, ValueId, ValueId) -> CertificateEquality; 2] =
+            [equal_certificate_syntax, equal_shared_certificate_syntax];
+        let mut thunks = Vec::new();
         for (twin, same, others, what) in cases {
             let twin = arena.value_thunk(twin);
             let same = arena.value_thunk(same);
-            assert_eq!(
-                CertificateEquality::Equal,
-                equal_certificate_syntax(&arena, twin, same),
-                "{what} equals its twin"
-            );
-            for other in others {
-                let other = arena.value_thunk(other);
+            thunks.clear();
+            thunks.extend(others.into_iter().map(|other| arena.value_thunk(other)));
+            for compare in comparisons {
                 assert_eq!(
-                    CertificateEquality::Different,
-                    equal_certificate_syntax(&arena, twin, other),
-                    "{what} differs from one that changes a guarded part"
+                    CertificateEquality::Equal,
+                    compare(&arena, twin, same),
+                    "{what} equals its twin"
                 );
+                for &other in &thunks {
+                    assert_eq!(
+                        CertificateEquality::Different,
+                        compare(&arena, twin, other),
+                        "{what} differs from one that changes a guarded part"
+                    );
+                }
             }
         }
     }

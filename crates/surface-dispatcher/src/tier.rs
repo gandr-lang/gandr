@@ -3,9 +3,15 @@
 //! Each side of a pair is focused into the command IL beside the
 //! definitions admitted so far, run under the process's policy within
 //! [`TIER_FUEL`] jumps, and read back; the pair meets when the two readings
-//! are one term. The focused definitions persist across the pairs one
+//! are one term, compared as the graphs they are shared as in time linear in
+//! the nodes they reach. The focused definitions persist across the pairs one
 //! context offers, each later admission focused once when a pair first needs
 //! it.
+//!
+//! # References
+//!
+//! - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check
+//!   that [`ClosedTier::meet`] decides a pair's readings by.
 
 use alloc::boxed::Box;
 
@@ -29,7 +35,7 @@ use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
-use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::equal_shared_certificate_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::RunInputs;
@@ -210,7 +216,8 @@ impl ClosedTier for Emitted
             self.run(core, right, &mut read),
         ) {
             (Some(left), Some(right))
-                if equal_certificate_syntax(&read, left, right) == CertificateEquality::Equal =>
+                if equal_shared_certificate_syntax(&read, left, right)
+                    == CertificateEquality::Equal =>
             {
                 Meeting::Met
             },

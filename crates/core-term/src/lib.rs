@@ -331,6 +331,7 @@ pub use crate::syntax::Zone;
 pub use crate::syntax::decoded_comp_reading;
 pub use crate::syntax::equal_certificate_syntax;
 pub use crate::syntax::equal_comp_type_syntax;
+pub use crate::syntax::equal_shared_certificate_syntax;
 pub use crate::syntax::equal_type_reading;
 pub use crate::syntax::equal_type_syntax;
 pub use crate::syntax::identified_words;

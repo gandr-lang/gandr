@@ -18,7 +18,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 **Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value. The core language needs formers the kernel does not represent, so its node enums are its own; its leaf vocabulary is the kernel's, so a core term erases to a kernel term by remapping ids.
 
-**How.** A node holds its children as `Copy` ids minted only by constructors over children already minted, so teardown is a flat vector drop per family and the derived equality and hashing are shallow. De Bruijn indices make α-equivalence syntactic identity, so no freshness invariant is maintained. The context keeps one stack per zone, each with its own index space: `Γ` admits weakening and contraction, and `Σ` consumes a slot on its one occurrence. The definition chain names each body by a canonical subterm-table entry index, which is the same in every arena that decodes the artifact, and computes heights in one forward pass over admission order. The definitional environment is a forest of scopes whose parent always precedes the child, walked outward to the innermost override.
+**How.** A node holds its children as `Copy` ids minted only by constructors over children already minted, so teardown is a flat vector drop per family and the derived equality and hashing are shallow. De Bruijn indices make α-equivalence syntactic identity, so no freshness invariant is maintained. The context keeps one stack per zone, each with its own index space: `Γ` admits weakening and contraction, and `Σ` consumes a slot on its one occurrence.
 
 ## Provided features
 
@@ -129,6 +129,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — `HoldGrade` and `CapabilityGrade` are the tree's two-point grades, and the grade the page drafts keeps the count they forget.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
+- `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
 
 ## License
