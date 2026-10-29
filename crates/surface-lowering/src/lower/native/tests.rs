@@ -2686,6 +2686,51 @@ fn a_field_classifies_the_constructor_written_in_it_1171()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3744: a constructor annotated inside a signature type, past a parameter
+/// no type names, read its annotation counting that parameter's binder,
+/// which the arrow drops: the annotation's `d` read one past its binder,
+/// refused `UnboundIndex`. The annotation counts in the signature's
+/// telescope, as the constructor's fields do.
+#[test]
+fn an_annotation_inside_a_signature_type_counts_its_binders_there_3744()
+{
+    let mut arena = CoreArena::new();
+    let source = SourceText::from(
+        "data J(d : Type) : Type { Jota : (e : d) --> J(d); }\n\
+         data K(a : Type) : Type { Wrap : (x : a) --> K(a); }\n\
+         def jargs(d : Type, c : J(d)) -> -F Type { return Unit }\n\
+         def named(d : Type, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }\n\
+         def unnamed(d : Type, v : Integer, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }\n\
+         def between(d : Type, e : d, v : Integer, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }\n\
+         def outermost(v : Integer, d : Type, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }\n\
+         def inBody(d : Type, v : Integer, e : d) -> -F J(d) { return (Jota(e) : J(d)) }\n\
+         def quoted(d : Type, v : Integer, e : d) -> -F Type { return (jargs(d, (Jota(e) : J(d)))) }\n\
+         def wrapped(d : Type, v : Integer, e : d) -> -F K(J(d)) { return (Wrap(Jota(e)) : K(J(d))) }\n",
+    );
+    let module = lowered(source, &mut arena);
+    for name in [
+        "named",
+        "unnamed",
+        "between",
+        "outermost",
+        "inBody",
+        "quoted",
+        "wrapped",
+    ]
+    .map(SurfaceName::from)
+    {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_listed_constructor_takes_the_element_type_1544()
 {
