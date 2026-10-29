@@ -3226,6 +3226,10 @@ struct Lowerer<'run, 'source>
     /// reflexivity's point and every node under one, where a computation
     /// standing as a value is the value it returns.
     at_endpoint: BTreeSet<NodeIndex>,
+    /// The terms strictly under an endpoint, every one but the endpoints
+    /// themselves: a lambda there is checked at a parameter's thunk type, so
+    /// it is minted as its thunk (#3697).
+    within_endpoint: BTreeSet<NodeIndex>,
     /// What every node's paths do with the body it stands in, surveyed before
     /// the classification reads it.
     leaves: NodeTable<exits::Leaves>,
@@ -5184,6 +5188,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             in_type: BTreeSet::new(),
             in_quote: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
+            within_endpoint: BTreeSet::new(),
             leaves,
             exits: BTreeSet::new(),
             exitable: BTreeSet::new(),
@@ -6590,7 +6595,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   marks are already set when its children are reached.
     /// - ensures: every node under a path type's endpoint carries both marks,
     ///   and every node under reflexivity's point the endpoint mark, before it
-    ///   is classified.
+    ///   is classified; each node under an endpoint also carries the mark of a
+    ///   node strictly within one.
     /// - provides: the context a bound name inside a type resolves in, and the
     ///   one a computation standing as a value is returned in.
     /// - fails: never.
@@ -6607,7 +6613,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.in_type.contains(&position) == marked.0
                 && self.at_endpoint.contains(&position) == marked.1
                 && (!marked.0 || self.tree.children(position).all(|child| self.in_type.contains(&child)))
-                && (!marked.1 || self.tree.children(position).all(|child| self.at_endpoint.contains(&child)))
+                && (!marked.1 || self.tree.children(position).all(|child| {
+                    self.at_endpoint.contains(&child) && self.within_endpoint.contains(&child)
+                }))
         },
     )]
     fn inherit_type(
@@ -6623,6 +6631,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if self.at_endpoint.contains(&position) {
             self.at_endpoint.extend(self.tree.children(position));
+            self.within_endpoint.extend(self.tree.children(position));
         }
     }
 
@@ -7409,7 +7418,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a force; a function's result reads a computation type and reaches a
     ///   value type by a returner; a value position reaches a type of either
     ///   sort by a quote, and a computation as the value it returns at an
-    ///   endpoint or where a type reads it, and nested everywhere else; a tail,
+    ///   endpoint or where a type reads it, a lambda there as its thunk unless
+    ///   it is an endpoint itself (#3697), and nested everywhere else; a tail,
     ///   where a path through a body ends, reaches a value by the `return` its
     ///   polarity names, recorded as inferred and leaving; a `while` loop's
     ///   condition, and a tail of a handled subject, which is the subject's
@@ -7464,7 +7474,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | (Reading::Value(frame), Produced::Computation)
                     if self.at_endpoint.contains(&site.at.node) || self.type_read.contains(&site.at.node) =>
                 {
-                    Some((frame, Bridge::Inserted(Insertion::Endpoint)))
+                    let lambda = self.tree.node(site.at.node).is_some_and(|node| matches!(shape_of(self.pbg, node), Ok(Shape::Form { former: Former::Lambda, .. })));
+                    let endpoint = self.at_endpoint.contains(&site.at.node) && !self.within_endpoint.contains(&site.at.node);
+                    Some((frame, Bridge::Inserted(if lambda && !endpoint { Insertion::Thunk } else { Insertion::Endpoint })))
                 },
                 | (Reading::Value(frame), Produced::Computation) => {
                     Some((frame, Bridge::Inserted(Insertion::Nested)))
@@ -7522,7 +7534,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if self.at_endpoint.contains(&site.at.node)
                     || self.type_read.contains(&site.at.node) =>
             {
-                (frame, Bridge::Inserted(Insertion::Endpoint))
+                // A lambda there is checked at a parameter's thunk type, and a
+                // type elaborates no nested computation, so it is its thunk; a
+                // lambda that is an endpoint itself is the value it returns
+                // (#3697).
+                let lambda = self.tree.node(site.at.node).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.pbg, node),
+                        Ok(Shape::Form {
+                            former: Former::Lambda,
+                            ..
+                        })
+                    )
+                });
+                let endpoint = self.at_endpoint.contains(&site.at.node)
+                    && !self.within_endpoint.contains(&site.at.node);
+                let insertion = if lambda && !endpoint {
+                    Insertion::Thunk
+                }
+                else {
+                    Insertion::Endpoint
+                };
+                (frame, Bridge::Inserted(insertion))
             },
             (Reading::Value(frame), Produced::Computation) => {
                 (frame, Bridge::Inserted(Insertion::Nested))
@@ -20443,10 +20476,11 @@ impl Sink<'_>
     /// - ensures: a bare node is `minted` unchanged; a forced value is minted
     ///   as a force over it, a returned value type as a returner over it, a
     ///   quoted type as the quote of it at its own sort, a computation standing
-    ///   as an endpoint as the value it returns, and a value standing at a tail
-    ///   as the returner over it, each with `origin` marked as the insertion it
-    ///   is; nothing when the node did not lower at the sort its bridge leaves,
-    ///   which the classification makes unreachable.
+    ///   as an endpoint as the value it returns, a lambda standing there as its
+    ///   thunk, and a value standing at a tail as the returner over it, each
+    ///   with `origin` marked as the insertion it is; nothing when the node did
+    ///   not lower at the sort its bridge leaves, which the classification
+    ///   makes unreachable.
     /// - provides: the minting half of the insertions a position's sort
     ///   decides.
     /// - fails: never.
@@ -20461,6 +20495,7 @@ impl Sink<'_>
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `lower::identity::tests::a_lambda_argument_in_an_endpoint_is_its_thunk_3697`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         ensures: |ret| match bridge {
@@ -20484,12 +20519,12 @@ impl Sink<'_>
                 )
                 | (
                     Maybe::Present(Lowered::Computation(_)),
-                    Insertion::Endpoint | Insertion::Nested,
+                    Insertion::Endpoint | Insertion::Nested | Insertion::Thunk,
                     Maybe::Present(Lowered::Value(id)),
                 ) => self.origins.value(id) == Maybe::Present(origin.inserted(insertion)),
                 | (Maybe::Present(Lowered::Value(_)), Insertion::Force | Insertion::Return, _)
                 | (Maybe::Present(Lowered::ValueType(_)), Insertion::Returner, _)
-                | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint | Insertion::Nested, _)
+                | (Maybe::Present(Lowered::Computation(_)), Insertion::Endpoint | Insertion::Nested | Insertion::Thunk, _)
                 | (
                     Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
                     Insertion::Quote,
@@ -20535,6 +20570,10 @@ impl Sink<'_>
             },
             (Maybe::Present(Lowered::Computation(nested)), Insertion::Nested) => {
                 let id = self.arena.value_nested(nested);
+                Maybe::Present(self.value(id, inserted))
+            },
+            (Maybe::Present(Lowered::Computation(suspended)), Insertion::Thunk) => {
+                let id = self.arena.value_thunk(suspended);
                 Maybe::Present(self.value(id, inserted))
             },
             (Maybe::Present(Lowered::Value(returned)), Insertion::Return) => {

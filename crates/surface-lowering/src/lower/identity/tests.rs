@@ -578,6 +578,55 @@ fn a_computation_endpoint_is_the_value_it_returns()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3697: a lambda passed to a function inside a path type's endpoint was
+/// the value it returns, so the checker had to infer it, refused
+/// `NotSynthesisable`. It is its thunk, as the function's parameter checks a
+/// lambda in a body, and a type elaborates no nested computation.
+#[test]
+fn a_lambda_argument_in_an_endpoint_is_its_thunk_3697()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def atTrue(p : Bool => Bool) -> Bool { p(true) }\n\
+             def inTypeAnnotated : Path(Bool, atTrue(fn (a : Bool) { a }), true) = here(true);\n\
+             def inTypeBare : Path(Bool, atTrue(fn (a) { a }), true) = here(true);\n",
+        ),
+        &mut arena,
+    );
+    for name in ["inTypeAnnotated", "inTypeBare"] {
+        let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, name.into())
+        else {
+            panic!("`{name}` lowers both halves");
+        };
+        let Some(&ValueType::Path { left, .. }) = arena.value_type(declared_type)
+        else {
+            panic!("`{name}`'s signature is a path type");
+        };
+        let Some(&Value::Returned(call)) = arena.value(left)
+        else {
+            panic!("`{name}`'s left endpoint is the value the call returns");
+        };
+        let Some(&Computation::Application(_, argument)) = arena.computation(call)
+        else {
+            panic!("`{name}`'s endpoint applies `atTrue`");
+        };
+        assert!(
+            matches!(arena.value(argument), Some(&Value::Thunk(_))),
+            "`{name}`'s lambda is its thunk: {:?}",
+            arena.value(argument)
+        );
+        assert!(
+            matches!(
+                module.origins().value(argument),
+                Maybe::Present(origin) if origin.provenance() == Provenance::Inserted(Insertion::Thunk)
+            ),
+            "`{name}`'s thunk is the lowering's insertion"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_type_endpoint_is_quoted()
 {
