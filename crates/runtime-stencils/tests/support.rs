@@ -864,6 +864,7 @@ pub fn focus(program: &Program) -> (CommandArena, CommandId)
         program.root,
         &mut commands,
         &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
     )
     .unwrap_or_else(|refusal| panic!("{}: focusing refused: {refusal:?}", program.name));
     (commands, root)
@@ -1001,8 +1002,14 @@ fn reading(
     let mut core = CoreArena::new();
     let back = read_back_terminal(commands, store, value, &mut core).ok()?;
     let mut focused = CommandArena::new();
-    let root = focus_computation(&core, back, &mut focused, &mut Provenance::new())
-        .expect("a reading focuses");
+    let root = focus_computation(
+        &core,
+        back,
+        &mut focused,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a reading focuses");
     Some(render_command(&focused, root))
 }
 

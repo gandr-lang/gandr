@@ -106,8 +106,14 @@ fn focused(
 ) -> (CommandArena, CommandId)
 {
     let mut arena = CommandArena::new();
-    let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
-        .expect("the program focuses");
+    let root = focus_computation(
+        core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("the program focuses");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
     (arena, root)
 }

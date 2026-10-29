@@ -49,12 +49,12 @@ fn a_refused_focusing_leaves_the_arena_at_its_mark()
 
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let earlier = focus_computation(&core, fine, &mut arena, &mut provenance)
+    let earlier = focus_computation(&core, fine, &mut arena, &mut provenance, &Writers::NONE)
         .expect("a closed return focuses");
     let arena_mark = arena.watermark();
     let provenance_mark = provenance.len();
 
-    let outcome = focus_computation(&core, refused, &mut arena, &mut provenance);
+    let outcome = focus_computation(&core, refused, &mut arena, &mut provenance, &Writers::NONE);
     assert!(
         matches!(outcome, Err(FocusRefusal::Code(_))),
         "the static code is refused by name: {outcome:?}"
@@ -76,12 +76,14 @@ fn a_refused_focusing_leaves_the_arena_at_its_mark()
     );
 }
 
-/// Focusing records each bind of the caller's arena beside the binder `μ̃x.c`
-/// it minted, the inner bind first. It records no bind of an identity
-/// combinator's own build, whose writers name nodes of another arena. A
-/// refusal after a bind is recorded drops that bind's entry.
+/// A bind whose writer the caller names focuses as `⟨μα.𝓕⟦M⟧α |+ μ̃x.c⟩`, its
+/// binder marked independent. A bind whose writer it does not name stays
+/// fused, its binder sequential, and the decoder reads both back as the binds
+/// they focus. A refusal drops the mark it made. An identity combinator's build
+/// marks none of its own binders, though the caller names every computation of
+/// its arena.
 #[test]
-fn each_bind_records_its_binder_beside_its_writer()
+fn an_independent_bind_names_its_writer_and_marks_its_binder()
 {
     let mut core = CoreArena::new();
     let unit = core.value_unit();
@@ -104,34 +106,108 @@ fn each_bind_records_its_binder_beside_its_writer()
             })
             .collect::<Vec<_>>()
     };
+    let marked = |arena: &CommandArena| {
+        binders(arena)
+            .into_iter()
+            .filter(|&binder| arena.independence(binder) == Independence::Independent)
+            .collect::<Vec<_>>()
+    };
+    let cut_against = |arena: &CommandArena, binder| {
+        (0_u32 ..)
+            .take(usize::from(arena.command_count()))
+            .map(CommandId::from)
+            .find_map(|command| match arena.command(command) {
+                Some(&crate::il::CommandNode::Cut {
+                    polarity,
+                    producer,
+                    consumer,
+                    ..
+                }) if consumer == binder => Some((command, polarity, producer)),
+                _ => None,
+            })
+            .expect("each binder is cut against")
+    };
+    let fused = |core: &CoreArena, computation| {
+        let mut arena = CommandArena::new();
+        let root = focus_computation(
+            core,
+            computation,
+            &mut arena,
+            &mut Provenance::new(),
+            &Writers::NONE,
+        )
+        .expect("a bind focuses fused");
+        crate::pretty::render_command(&arena, root)
+    };
 
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let _root =
-        focus_computation(&core, nested, &mut arena, &mut provenance).expect("nested binds focus");
-    let recorded: Vec<(ConsumerId, ComputationId)> = provenance.binds().collect();
-    let minted = binders(&arena);
+    let root = focus_computation(
+        &core,
+        nested,
+        &mut arena,
+        &mut provenance,
+        &core::iter::once(second).collect::<Writers>(),
+    )
+    .expect("nested binds focus");
+    let &[inner_binder, outer_binder] = &*binders(&arena)
+    else {
+        panic!("each bind mints one binder, the inner bind's first");
+    };
     assert_eq!(
-        (minted, alloc::vec![second, first]),
-        (
-            recorded.iter().map(|&(binder, _)| binder).collect(),
-            recorded.iter().map(|&(_, writer)| writer).collect()
+        alloc::vec![inner_binder],
+        marked(&arena),
+        "only the bind of the named writer is marked"
+    );
+    let (named, polarity, writer) = cut_against(&arena, inner_binder);
+    assert_eq!(
+        (Some(FocusOrigin::Bind), Polarity::Positive),
+        (provenance.origin(named), polarity),
+        "the named writer is cut against its binder positively, for its bind"
+    );
+    assert!(
+        matches!(
+            arena.producer(writer),
+            Some(&ProducerNode::Mu { body }) if matches!(
+                arena.command(body),
+                Some(&crate::il::CommandNode::Cut { consumer, .. })
+                    if arena.consumer(consumer) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+            )
         ),
-        "each binder minted stands beside its writer, the inner bind's first"
+        "the writer is `μα.𝓕⟦M⟧α`, its return against its own covariable"
+    );
+    let (_, _, unnamed) = cut_against(&arena, outer_binder);
+    assert!(
+        !matches!(arena.producer(unnamed), Some(&ProducerNode::Mu { .. })),
+        "the unnamed writer stays fused with its binder"
+    );
+    let mut back = CoreArena::new();
+    let decoded =
+        crate::unfocus::unfocus_command(&arena, root, &mut back).expect("the named writer decodes");
+    assert_eq!(
+        fused(&core, nested),
+        fused(&back, decoded),
+        "the decoder reads the named writer back as the bind it focuses"
     );
 
     let code = core.value_static_lambda(unit);
     let refused_head = core.computation_return(code);
     let refused = core.computation_bind(refused_head, tail);
-    let outcome = focus_computation(&core, refused, &mut arena, &mut provenance);
+    let outcome = focus_computation(
+        &core,
+        refused,
+        &mut arena,
+        &mut provenance,
+        &core::iter::once(refused_head).collect::<Writers>(),
+    );
     assert!(
         matches!(outcome, Err(FocusRefusal::Code(_))),
-        "the writer's static code is refused after its bind: {outcome:?}"
+        "the writer's static code is refused after its binder is marked: {outcome:?}"
     );
     assert_eq!(
-        recorded,
-        provenance.binds().collect::<Vec<_>>(),
-        "the refused bind leaves no entry, and the kept ones stay"
+        alloc::vec![inner_binder],
+        marked(&arena),
+        "the refused bind's mark is dropped, and the kept mark stays"
     );
 
     let unit_type = core.value_type_unit();
@@ -140,22 +216,31 @@ fn each_bind_records_its_binder_beside_its_writer()
     let flow = core.value_flow_product(kept, kept);
     let writer = core.computation_return(flow);
     let program = core.computation_bind(writer, tail);
+    let every = [
+        first,
+        second,
+        tail,
+        inner,
+        nested,
+        refused_head,
+        refused,
+        writer,
+        program,
+    ];
     let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let _root = focus_computation(&core, program, &mut arena, &mut provenance)
-        .expect("a flow product focuses");
+    let _root = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &every.into_iter().collect::<Writers>(),
+    )
+    .expect("a flow product focuses");
     assert!(
         binders(&arena).len() > 1,
         "the pairing combinator's build mints binders of its own"
     );
-    assert_eq!(
-        alloc::vec![writer],
-        provenance
-            .binds()
-            .map(|(_, written)| written)
-            .collect::<Vec<_>>(),
-        "only the caller's bind is recorded"
-    );
+    assert_eq!(1, marked(&arena).len(), "only the caller's bind is marked");
 }
 
 /// A quote of either sort focuses to a code producer naming the same quote:
@@ -172,8 +257,8 @@ fn a_quote_focuses_to_the_code_it_names()
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
     let mut read_back = |code| {
-        let producer =
-            focus_value(&core, code, &mut arena, &mut provenance).expect("a quote focuses");
+        let producer = focus_value(&core, code, &mut arena, &mut provenance, &Writers::NONE)
+            .expect("a quote focuses");
         let Some(&ProducerNode::Code(held)) = arena.producer(producer)
         else {
             panic!("a quote focuses to a code producer");
@@ -223,7 +308,7 @@ fn a_static_code_is_refused_by_name()
         let mut provenance = Provenance::new();
         let mark = arena.watermark();
         assert_eq!(
-            focus_computation(&core, term, &mut arena, &mut provenance),
+            focus_computation(&core, term, &mut arena, &mut provenance, &Writers::NONE),
             Err(FocusRefusal::Code(code)),
             "the static code is refused by name"
         );
@@ -247,7 +332,7 @@ fn a_hole_is_reached_and_a_mark_refused_by_name_1881()
         let mut provenance = Provenance::new();
         let mark = arena.watermark();
         assert_eq!(
-            focus_computation(&core, term, &mut arena, &mut provenance),
+            focus_computation(&core, term, &mut arena, &mut provenance, &Writers::NONE),
             Err(FocusRefusal::IncompleteValue(incomplete)),
             "the value is refused by name"
         );
@@ -260,15 +345,21 @@ fn a_hole_is_reached_and_a_mark_refused_by_name_1881()
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
     assert_eq!(
-        focus_computation(&core, term, &mut arena, &mut provenance),
+        focus_computation(&core, term, &mut arena, &mut provenance, &Writers::NONE),
         Err(FocusRefusal::IncompleteComputation(computation_mark)),
         "the mark is refused by name"
     );
     let computation_hole = core.computation_hole(gandr_core_term::hole::HoleId::from(7_u32));
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let reached = focus_computation(&core, computation_hole, &mut arena, &mut provenance)
-        .expect("a computation hole focuses");
+    let reached = focus_computation(
+        &core,
+        computation_hole,
+        &mut arena,
+        &mut provenance,
+        &Writers::NONE,
+    )
+    .expect("a computation hole focuses");
     let Some(&crate::il::CommandNode::Perform {
         ref signature,
         ref operation,
@@ -310,7 +401,7 @@ fn a_placement_is_refused_by_name()
     let mut provenance = Provenance::new();
     let mark = arena.watermark();
     assert_eq!(
-        focus_computation(&core, placed, &mut arena, &mut provenance),
+        focus_computation(&core, placed, &mut arena, &mut provenance, &Writers::NONE),
         Err(FocusRefusal::Placement(placed)),
         "the placement is refused by name"
     );
@@ -340,8 +431,8 @@ fn a_record_focuses_to_its_labels_in_canonical_order()
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
     let mut image = |value| {
-        let producer =
-            focus_value(&core, value, &mut arena, &mut provenance).expect("a record focuses");
+        let producer = focus_value(&core, value, &mut arena, &mut provenance, &Writers::NONE)
+            .expect("a record focuses");
         let Some(ProducerNode::Constructor {
             tag: ConstructorTag::Record(labels),
             producers,
@@ -422,7 +513,7 @@ fn a_projection_selects_by_position_or_label()
         let term = core.computation_bind(projection, rest);
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let root = focus_computation(&core, term, &mut arena, &mut provenance)
+        let root = focus_computation(&core, term, &mut arena, &mut provenance, &Writers::NONE)
             .expect("a projection of a bound variable focuses");
         let Some(&crate::il::CommandNode::Cut {
             polarity,
@@ -483,7 +574,7 @@ fn focusing_mints_no_name()
     let focus_fresh = |core: &CoreArena| {
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let root = focus_computation(core, term, &mut arena, &mut provenance)
+        let root = focus_computation(core, term, &mut arena, &mut provenance, &Writers::NONE)
             .expect("a closed term focuses");
         (arena, provenance, root)
     };
@@ -540,31 +631,43 @@ fn each_focus_entry_rolls_back_dangling_inputs()
     let computation = elsewhere.computation_return(value);
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let earlier = focus_computation(&elsewhere, computation, &mut arena, &mut provenance)
-        .expect("closed return");
+    let earlier = focus_computation(
+        &elsewhere,
+        computation,
+        &mut arena,
+        &mut provenance,
+        &Writers::NONE,
+    )
+    .expect("closed return");
     let before = arena.clone();
     let origins = provenance.clone();
     assert_eq!(
         Err(FocusRefusal::DanglingComputation(computation)),
-        focus_computation(&core, computation, &mut arena, &mut provenance)
+        focus_computation(
+            &core,
+            computation,
+            &mut arena,
+            &mut provenance,
+            &Writers::NONE
+        )
     );
     assert_eq!(before, arena);
     assert_eq!(origins, provenance);
     assert_eq!(
         Err(FocusRefusal::DanglingValue(value)),
-        focus_value(&core, value, &mut arena, &mut provenance)
+        focus_value(&core, value, &mut arena, &mut provenance, &Writers::NONE)
     );
     assert_eq!(before, arena);
     assert_eq!(origins, provenance);
     assert_eq!(
         Err(FocusRefusal::DanglingValue(value)),
-        focus_top_value(&core, value, &mut arena, &mut provenance)
+        focus_top_value(&core, value, &mut arena, &mut provenance, &Writers::NONE)
     );
     assert_eq!(before, arena);
     assert_eq!(origins, provenance);
     assert_eq!(
         Err(FocusRefusal::DanglingValue(value)),
-        focus_definition(&core, value, &mut arena, &mut provenance)
+        focus_definition(&core, value, &mut arena, &mut provenance, &Writers::NONE)
     );
     assert_eq!(before, arena);
     assert_eq!(origins, provenance);
@@ -583,10 +686,10 @@ fn a_computed_value_focuses_to_the_capture_that_runs_it()
     let computed = core.value_returned(returned);
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let capture = focus_definition(&core, computed, &mut arena, &mut provenance)
+    let capture = focus_definition(&core, computed, &mut arena, &mut provenance, &Writers::NONE)
         .expect("a computed value focuses");
-    let plain =
-        focus_definition(&core, unit, &mut arena, &mut provenance).expect("a value focuses");
+    let plain = focus_definition(&core, unit, &mut arena, &mut provenance, &Writers::NONE)
+        .expect("a value focuses");
     assert_eq!(
         (
             alloc::string::String::from("μα. ⟨() |+ α0⟩"),
@@ -623,9 +726,10 @@ fn result_stacks_enforce_singletons_and_lifo()
         .expect("live children");
     let producers = [first, last];
     let commands = [before, after];
+    let none = Writers::NONE;
     for producer_count in 0_usize ..= 2_usize {
         for command_count in 0_usize ..= 2_usize {
-            let mut run = Focusing::new(&core, &mut arena, &mut provenance);
+            let mut run = Focusing::new(&core, (&mut arena, &mut provenance), &none);
             run.producers
                 .extend_from_slice(&producers[.. producer_count]);
             run.commands.extend_from_slice(&commands[.. command_count]);
@@ -636,7 +740,7 @@ fn result_stacks_enforce_singletons_and_lifo()
                 Err(FocusRefusal::TranslationInvariant)
             };
             assert_eq!(expected, run.single_producer());
-            let mut run = Focusing::new(&core, &mut arena, &mut provenance);
+            let mut run = Focusing::new(&core, (&mut arena, &mut provenance), &none);
             run.producers
                 .extend_from_slice(&producers[.. producer_count]);
             run.commands.extend_from_slice(&commands[.. command_count]);
@@ -649,7 +753,7 @@ fn result_stacks_enforce_singletons_and_lifo()
             assert_eq!(expected, run.single_command());
         }
     }
-    let mut run = Focusing::new(&core, &mut arena, &mut provenance);
+    let mut run = Focusing::new(&core, (&mut arena, &mut provenance), &none);
     run.producers.extend_from_slice(&producers);
     run.commands.extend_from_slice(&commands);
     assert_eq!(Ok(last), run.pop_producer());

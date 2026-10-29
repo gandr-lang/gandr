@@ -88,12 +88,17 @@ impl Emitted
                 let _skipped = self.definitions.push(Definition::Opaque);
             }
             let before = self.commands.producer_count();
-            let definition =
-                match focus_definition(core, body, &mut self.commands, &mut self.provenance) {
-                    Ok(_) if self.native_since(before).is_some() => Definition::Opaque,
-                    Ok(root) => Definition::Transparent(root),
-                    Err(_) => Definition::Opaque,
-                };
+            let definition = match focus_definition(
+                core,
+                body,
+                &mut self.commands,
+                &mut self.provenance,
+                &gandr_core_sequent::Writers::NONE,
+            ) {
+                Ok(_) if self.native_since(before).is_some() => Definition::Opaque,
+                Ok(root) => Definition::Transparent(root),
+                Err(_) => Definition::Opaque,
+            };
             let _position = self.definitions.push(definition);
         }
     }
@@ -136,10 +141,22 @@ impl Emitted
     {
         let before = self.commands.producer_count();
         let root = if let Value::Returned(computation) = *core.value(side)? {
-            focus_computation(core, computation, &mut self.commands, &mut self.provenance)
+            focus_computation(
+                core,
+                computation,
+                &mut self.commands,
+                &mut self.provenance,
+                &gandr_core_sequent::Writers::NONE,
+            )
         }
         else {
-            focus_top_value(core, side, &mut self.commands, &mut self.provenance)
+            focus_top_value(
+                core,
+                side,
+                &mut self.commands,
+                &mut self.provenance,
+                &gandr_core_sequent::Writers::NONE,
+            )
         }
         .ok()?;
         if self.native_since(before).is_some() {

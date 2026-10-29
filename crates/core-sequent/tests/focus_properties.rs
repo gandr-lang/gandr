@@ -176,8 +176,14 @@ fn hand_built_control_cases_cover_every_former()
     ] {
         let expected = core.value_thunk(program);
         let mut arena = CommandArena::new();
-        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-            .expect("control focuses");
+        let command = focus_computation(
+            &core,
+            program,
+            &mut arena,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("control focuses");
         assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
         assert_eq!(Agreement::Same, supports_are_walked(&arena));
         let restored = unfocus_command(&arena, command, &mut core).expect("image unfocuses");
@@ -675,7 +681,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let focused = focus_computation(&generated.core, root, &mut arena, &mut provenance);
+        let focused = focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE);
         prop_assert!(focused.is_ok(), "focusing refused a closed term: {:?}", focused);
         let command = focused.expect("checked above");
         prop_assert_eq!(Ok(FreeSet::default()), check_command(&arena, command), "the image is well formed and closed");
@@ -693,7 +699,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        focus_computation(&generated.core, root, &mut arena, &mut provenance).expect("focusing is total");
+        focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE).expect("focusing is total");
         prop_assert_eq!(Agreement::Same, supports_are_walked(&arena), "a carried support differs from the walk");
     }
 
@@ -707,7 +713,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let command = focus_computation(&generated.core, root, &mut arena, &mut provenance).expect("focusing is total");
+        let command = focus_computation(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE).expect("focusing is total");
         let mut decoded = CoreArena::new();
         let back = unfocus_command(&arena, command, &mut decoded);
         prop_assert!(back.is_ok(), "the image did not decode: {:?}", back);
@@ -727,7 +733,7 @@ proptest! {
         };
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let producer = focus_value(&generated.core, root, &mut arena, &mut provenance).expect("focusing is total");
+        let producer = focus_value(&generated.core, root, &mut arena, &mut provenance, &gandr_core_sequent::Writers::NONE).expect("focusing is total");
         let mut decoded = CoreArena::new();
         let back = unfocus_value(&arena, producer, &mut decoded);
         prop_assert!(back.is_ok(), "the image did not decode: {:?}", back);
@@ -1264,8 +1270,14 @@ fn hand_built_cases_cover_every_former()
     for case in cases() {
         let mut arena = CommandArena::new();
         let mut provenance = Provenance::new();
-        let command = focus_computation(&case.core, case.root, &mut arena, &mut provenance)
-            .unwrap_or_else(|refusal| panic!("{}: focusing refused: {refusal}", case.label));
+        let command = focus_computation(
+            &case.core,
+            case.root,
+            &mut arena,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .unwrap_or_else(|refusal| panic!("{}: focusing refused: {refusal}", case.label));
         assert_eq!(
             Some(case.origin),
             provenance.origin(command),
@@ -1319,8 +1331,14 @@ fn top_level_value_focuses_against_top()
     let seven = integer(&mut core, Integer(7));
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let command =
-        focus_top_value(&core, seven, &mut arena, &mut provenance).expect("a literal focuses");
+    let command = focus_top_value(
+        &core,
+        seven,
+        &mut arena,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a literal focuses");
     assert_eq!(
         Some(FocusOrigin::TopValue),
         provenance.origin(command),

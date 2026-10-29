@@ -1017,10 +1017,14 @@ fn each_form_ends_alike_on_both_executors_as_its_program_states()
         for value in defined {
             let definition = match value {
                 Some(value) => Definition::Transparent(
-                    focus_value(&program.core, value, &mut commands, &mut provenance)
-                        .unwrap_or_else(|refusal| {
-                            panic!("{what}: the constant focuses: {refusal:?}")
-                        }),
+                    focus_value(
+                        &program.core,
+                        value,
+                        &mut commands,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    )
+                    .unwrap_or_else(|refusal| panic!("{what}: the constant focuses: {refusal:?}")),
                 ),
                 None => Definition::Opaque,
             };

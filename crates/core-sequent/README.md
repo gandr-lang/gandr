@@ -24,12 +24,11 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 - `CommandArena`, `ProducerNode`, `ConsumerNode`, `CommandNode`, `PatternArm`, `CopatternArm`: the IL's three families, minted only over resolving children, refusing with `MintRefusal`.
 - `SequentWatermark` with `CommandArena::watermark` and `CommandArena::truncate_to`: the rollback a refused build takes.
-- `CommandArena::mark_independent` with `Independence` and `MarkRefusal`: the binders whose writers perform no operation, which a run may start before the binder's body.
 - `ConstructorTag` and `DestructorTag` with their declared `ProducerArity`, `ConsumerArity` and, for a destructor, the polarity it observes.
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
 - `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack held innermost frame first with each bind frame closed over its environment, and the full-family refusal.
 - `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first.
-- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` and each bind's writer in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. How each former focuses is stated in `src/focus.rs`. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
+- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. A writer the caller names in `Writers` is focused apart from its binder, which carries an `Independence` mark (`MarkRefusal`). `src/focus.rs` states how each former focuses. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer, whose annotations the command arena owns.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures — no thunk, recursive thunk, copattern object, `μ` a negative cut binds by name, or fold cell branch names a covariable outside its own binders — and the free variables and covariables of a command read off the support minting stored at its root.
@@ -79,6 +78,7 @@ Focus `return ()`, render the command, and read it back.
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::FreeSet;
 use gandr_core_sequent::Provenance;
+use gandr_core_sequent::Writers;
 use gandr_core_sequent::check_command;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::render_command;
@@ -91,7 +91,7 @@ let returned = core.computation_return(unit);
 
 let mut arena = CommandArena::new();
 let mut provenance = Provenance::new();
-let command = focus_computation(&core, returned, &mut arena, &mut provenance).expect("a closed term focuses");
+let command = focus_computation(&core, returned, &mut arena, &mut provenance, &Writers::NONE).expect("a closed term focuses");
 assert_eq!("⟨() |+ ★⟩", render_command(&arena, command));
 assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
 

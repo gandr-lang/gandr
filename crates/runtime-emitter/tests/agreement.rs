@@ -281,14 +281,27 @@ fn a_computed_constant_unfolds_once_to_its_answer()
     let mut provenance = Provenance::new();
     let mut definitions = Definitions::new();
     for value in [computed, cycle] {
-        let producer = focus_definition(&core, value, &mut commands, &mut provenance)
-            .expect("a computed value focuses");
+        let producer = focus_definition(
+            &core,
+            value,
+            &mut commands,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("a computed value focuses");
         definitions.push(Definition::Transparent(producer));
     }
     let both = core.value_tuple(&[first, first]);
     let mut root = |value| {
         let returned = core.computation_return(value);
-        focus_computation(&core, returned, &mut commands, &mut provenance).expect("closed")
+        focus_computation(
+            &core,
+            returned,
+            &mut commands,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("closed")
     };
     let twice = root(both);
     let looping = root(cyclic);

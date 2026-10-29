@@ -346,7 +346,14 @@ fn literal(
 {
     let mut core = CoreArena::new();
     let literal = integer(&mut core, value);
-    focus_value(&core, literal, commands, &mut Provenance::new()).expect("a literal focuses")
+    focus_value(
+        &core,
+        literal,
+        commands,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a literal focuses")
 }
 
 /// The cut of `producer` against `consumer` at `polarity`.
@@ -573,16 +580,37 @@ fn constants_unfold_once_and_a_cycle_is_stuck()
     let mut commands = CommandArena::new();
     let mut provenance = Provenance::new();
     let mut definitions = Definitions::new();
-    let body = focus_value(&core, suspended, &mut commands, &mut provenance).expect("a thunk");
+    let body = focus_value(
+        &core,
+        suspended,
+        &mut commands,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a thunk");
     definitions.push(Definition::Transparent(body));
     definitions.push(Definition::Opaque);
-    let loops = focus_value(&core, cyclic, &mut commands, &mut provenance).expect("a constant");
+    let loops = focus_value(
+        &core,
+        cyclic,
+        &mut commands,
+        &mut provenance,
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("a constant");
     definitions.push(Definition::Transparent(loops));
     let both = core.value_tuple(&[first, first]);
     let opaque_first = core.value_tuple(&[opaque, first]);
     let mut root = |value| {
         let returned = core.computation_return(value);
-        focus_computation(&core, returned, &mut commands, &mut provenance).expect("closed")
+        focus_computation(
+            &core,
+            returned,
+            &mut commands,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("closed")
     };
     let twice = root(both);
     let kept = root(opaque_first);

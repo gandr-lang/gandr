@@ -5251,8 +5251,14 @@ mod tests
         let within = core.computation_bind(inner, body);
         let root = core.computation_bind(outer, within);
         let mut commands = CommandArena::new();
-        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
         let arities: Vec<usize> = lowered
             .function
@@ -5311,8 +5317,14 @@ mod tests
             )]);
         let root = core.computation_bind(bound, cased);
         let mut commands = CommandArena::new();
-        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
         let instructions = lowered.function.instructions();
         let stencils: Vec<StencilId> = instructions
@@ -5364,8 +5376,14 @@ mod tests
         let first = core.value_thunk(body);
         let root = core.computation_force(first);
         let mut commands = CommandArena::new();
-        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
         let stencils: Vec<StencilId> = lowered
             .function
@@ -5405,8 +5423,14 @@ mod tests
         let rest = core.computation_return(outer);
         let root = core.computation_bind(bound, rest);
         let mut commands = CommandArena::new();
-        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         let named = (0_u32 ..).take(usize::from(commands.command_count())).any(|index| {
             matches!(
                 commands.command(CommandId::from(index)),
@@ -5465,8 +5489,14 @@ mod tests
     ) -> Vec<Instruction>
     {
         let mut commands = CommandArena::new();
-        let root = focus_computation(core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         lower(&commands, &Definitions::new(), root)
             .expect("the program lowers")
             .function
@@ -5702,8 +5732,14 @@ mod tests
         );
         let root = core.computation_bind(bound, handled);
         let mut commands = CommandArena::new();
-        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
         let handler = lowered
             .handlers
@@ -5758,8 +5794,14 @@ mod tests
             }]),
         );
         let mut commands = CommandArena::new();
-        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
-            .expect("the program focuses");
+        let root = focus_computation(
+            &core,
+            root,
+            &mut commands,
+            &mut Provenance::new(),
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
         lower(&commands, &Definitions::new(), root)
             .expect("the program lowers")
             .handlers
