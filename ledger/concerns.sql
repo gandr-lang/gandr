@@ -45,7 +45,7 @@ CREATE TABLE site(
   CHECK((concern = 'sharing') = (mechanism IS NOT NULL))
 ) WITHOUT ROWID;
 INSERT INTO site VALUES('fork','core-fork','','defines',NULL,'The `Fork` trait and `Serial`, the pool of one that a consumer runs on alone.');
-INSERT INTO site VALUES('fork','runtime-emitter','cut','consumes',NULL,'`evaluate_cut_on`: a cut''s writer and reader joined on the caller''s fork, the writer the left half, the reader waiting for its answer.');
+INSERT INTO site VALUES('fork','runtime-emitter','cut','consumes',NULL,'`evaluate_scheduled_on`: each writer a scheduled program spawns started on the caller''s fork, each read waiting for its writer.');
 INSERT INTO site VALUES('fork','surface-dispatcher','pool','implements',NULL,'`Pool` and `Pooled`, the driver-held pool that every consumer forks on.');
 INSERT INTO site VALUES('fork','surface-session','forms','consumes',NULL,'`mold_runs`: a revision''s changed forms molded on the session''s pool, one molder per worker.');
 INSERT INTO site VALUES('fork','surface-session','session','consumes',NULL,'`Session::trial_unit`: a trial''s candidates judged on the session''s pool, each result in its own slot.');

@@ -562,7 +562,7 @@ fn step(
 ///
 /// # Errors
 /// [`ClosureRefusal::Overflow`] past the `u32` index space.
-fn counted(count: BinderDepth) -> Result<DeBruijnIndex, ClosureRefusal>
+pub fn counted(count: BinderDepth) -> Result<DeBruijnIndex, ClosureRefusal>
 {
     u32::try_from(usize::from(count))
         .map(DeBruijnIndex::from)
@@ -572,7 +572,7 @@ fn counted(count: BinderDepth) -> Result<DeBruijnIndex, ClosureRefusal>
 /// How a renaming moves a term's free variables, each counted from the term
 /// it renames.
 #[derive(Clone, Copy, Debug)]
-enum Renaming
+pub enum Renaming
 {
     /// Every producer variable past `producers` binders and every covariable
     /// past `covariables`.
@@ -628,7 +628,7 @@ impl Depth
 
 /// Which index space an index counts in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Space
+pub enum Space
 {
     /// Intuitionistic producer variables.
     Producers,
@@ -736,7 +736,7 @@ enum Change
 /// # Errors
 /// As [`convert_step`]: an annotation naming a moved variable, a dangling
 /// node, an overflow or a refused mint.
-fn rename(
+pub fn rename(
     arena: &mut CommandArena,
     root: NodeAddress,
     renaming: Renaming,
@@ -845,7 +845,7 @@ enum Visit
 /// # Errors
 /// [`ClosureRefusal::Dangling`] for a node the arena does not hold; the
 /// first refusal `each` answers.
-fn children<Each>(
+pub fn children<Each>(
     arena: &CommandArena,
     node: NodeAddress,
     each: Each,
@@ -965,7 +965,7 @@ impl Fresh
 /// # Errors
 /// A dangling node, an image list that does not match the node's children, a
 /// refusal of `moved`, or a refused mint.
-fn rebuild<Moved>(
+pub fn rebuild<Moved>(
     arena: &mut CommandArena,
     node: NodeAddress,
     images: Vec<NodeAddress>,

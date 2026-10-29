@@ -759,6 +759,20 @@ pub const REACHED_HOLE: &str = "?hole";
 /// The one operation of [`REACHED_HOLE`].
 pub const REACHED: &str = "reached";
 
+/// The interface of a cut's cell, named so that no source can claim it: no
+/// handler a source writes answers its operations, so a run offers them to
+/// its host.
+pub const CELL: &str = "?cell";
+
+/// The operation of [`CELL`] that starts a cut's writer: its payload is the
+/// writer suspended as a thunk, and its reply is a handle on the writer's
+/// cell.
+pub const SPAWN: &str = "spawn";
+
+/// The operation of [`CELL`] that reads a cut's cell: its payload is the
+/// handle [`SPAWN`] replied with, and its reply is the writer's answer.
+pub const READ: &str = "read";
+
 /// A command node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CommandNode
