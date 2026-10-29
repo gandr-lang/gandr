@@ -226,6 +226,7 @@ use crate::function::Slots;
 use crate::function::Stub;
 use crate::fuse::Fused;
 use crate::fuse::fuse;
+use crate::run::Kept;
 
 /// A command the lowering does not lay out.
 ///
@@ -1420,6 +1421,10 @@ pub struct Lowered
     /// is the mark of their handler's frame, and whose block gives them up
     /// when the clause answers.
     pub marker: Option<Label>,
+    /// The emitted code the native tier found for the function, kept from
+    /// the lowering's first native run for every later one. A lowering's
+    /// function never changes once lowered, so the kept code stays its own.
+    pub kept: Kept,
 }
 
 /// The most instructions one lowering emits: past it the command declines
@@ -4982,6 +4987,7 @@ fn fused(lowered: Lowered) -> Lowered
     Lowered {
         function,
         fused: trace,
+        kept: Kept::default(),
         ..lowered
     }
 }
@@ -5237,6 +5243,7 @@ fn lowered(
             .collect(),
         joined: lowering.joined,
         marker: lowering.marker,
+        kept: Kept::default(),
     };
     Ok(lowered)
 }
