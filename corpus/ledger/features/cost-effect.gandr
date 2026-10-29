@@ -1,0 +1,71 @@
+/// `cost-effect`: decalf's cost effect.
+/// Implemented: the standard library declares `Cost`, decalf's cost effect with its two laws, and its model `Counting`, which counts in binary naturals and proves both laws by conversion. A scope that names a model takes the theory's value operations from it. A closed bound is a path. Conversion decides it, and the kernel replays it.
+/// Not implemented: a recursive definition that charges, one handler over every thunk that charges, fixtures that state the refusal of a bound below a run's count and of a model that breaks a law, and the certificate's cost delta; #3699, #1106, #3715, #3706 and #3702 owe them.
+// Three steps charged one and two, counted under `Counting` and bounded at
+// three, and the same steps under a model that erases every charge, which
+// answer as the program does with no charge.
+
+// `Cost`, `Counting`, `costs`, `counted` and `countOf`.
+import "../../../library/std/src/cost.gandr";
+// `Count`.
+import "../../../library/std/src/grade.gandr";
+
+/// Three steps: a charge of one, a charge of two, then seven.
+def threeSteps() -> [cost : Cost with sort N = Nat => Nat] Integer {
+  run _a <- cost.charge(costs((1 : Nat)));
+  run _b <- cost.charge(costs((2 : Nat)));
+  pure 7
+}
+
+/// The steps under the counting model.
+def countedSteps() -> (Nat => Nat) => Nat {
+  handle cost : Cost with sort N = Nat => Nat {
+    run _answer <- threeSteps();
+    pure counted
+  } with Counting
+}
+
+/// The count of the steps is three.
+def costsThree : Path(Nat, countOf(countedSteps()), (3 : Nat)) = here((3 : Nat));
+
+/// Whether the count of the steps is at most `n`.
+def within(n : Nat) -> Bool {
+  Count.le(countOf(countedSteps()), n)
+}
+
+/// The bound three holds: conversion decides it, and the kernel replays it.
+def boundThree : Path(Bool, within((3 : Nat)), true) = here(true);
+
+/// The extensional reading at integer answers: every charge is the identity.
+module Erased : Model(Cost) with sort N = Nat => Nat {
+  /// The answer itself.
+  type C = Integer;
+  /// A charge leaves what runs after it as it is.
+  def charge(c : Nat => Nat, k : Integer) -> Integer { k }
+  /// No cost.
+  def zero : Nat => Nat = thunk { fn (n) { pure n } };
+  /// Two costs, composed.
+  def plus(a : Nat => Nat, b : Nat => Nat) -> Nat => Nat {
+    thunk { fn (n) { run m <- b(n); a(m) } }
+  }
+  /// Charging nothing is the identity.
+  def chargeZero(k : Integer) -> Path(Integer, charge(zero, k), k) { here(k) }
+  /// Two charges are one.
+  def chargeTwice(a : Nat => Nat, b : Nat => Nat, k : Integer) -> Path(
+    Integer,
+    charge(a, charge(b, k)),
+    charge(plus(a, b), k)
+  ) {
+    here(k)
+  }
+}
+
+/// The steps under the erasing model.
+def erasedSteps() -> Integer {
+  handle cost : Cost with sort N = Nat => Nat {
+    threeSteps()
+  } with Erased
+}
+
+/// Erased, the steps answer as the program does with no charge.
+def erasedAnswer : Path(Integer, erasedSteps(), 7) = here(7);

@@ -1975,6 +1975,90 @@ fn a_scope_names_a_model_of_its_theory_2272()
     );
 }
 
+/// A cost theory whose costs a scope fixes: a charge, and the cost monoid's
+/// unit and sum as value operations, with decalf's two laws.
+const COST: &str = concat!(
+    "theory Cost {\n",
+    "  sort N : Type+;\n",
+    "  sort C : Type;\n",
+    "  oper charge : (c : N, k : C) --> C;\n",
+    "  oper zero : N;\n",
+    "  oper plus : (a : N, b : N) --> N;\n",
+    "  rule chargeZero : charge(zero(), k) <=> k;\n",
+    "  rule chargeTwice : charge(a, charge(b, k)) <=> charge(plus(a, b), k);\n",
+    "}\n",
+);
+
+/// A model of `Cost` whose cost is the function adding it, so its unit is the
+/// identity and its sum composition, and both laws hold by conversion.
+const COUNTING: &str = concat!(
+    "module Counting : Model(Cost) with sort N = Integer => Integer {\n",
+    "  type C = (Integer => Integer) => Integer;\n",
+    "  def charge(c : Integer => Integer, k : (Integer => Integer) => Integer) -> (Integer => Integer) => Integer {\n",
+    "    thunk { fn (before) { k(thunk { fn (n) { run m <- c(n); before(m) } }) } }\n",
+    "  }\n",
+    "  def zero : Integer => Integer = thunk { fn (n) { pure n } };\n",
+    "  def plus(a : Integer => Integer, b : Integer => Integer) -> Integer => Integer {\n",
+    "    thunk { fn (n) { run m <- b(n); a(m) } }\n",
+    "  }\n",
+    "  def chargeZero(k : (Integer => Integer) => Integer) -> Path((Integer => Integer) => Integer, charge(zero, k), k) {\n",
+    "    here(k)\n",
+    "  }\n",
+    "  def chargeTwice(a : Integer => Integer, b : Integer => Integer, k : (Integer => Integer) => Integer) -> Path((Integer => Integer) => Integer, charge(a, charge(b, k)), charge(plus(a, b), k)) {\n",
+    "    here(charge(plus(a, b), k))\n",
+    "  }\n",
+    "}\n",
+);
+
+/// A scope naming a model of a theory with value operations takes them from
+/// the model: it owes no law, since the module's ascription states both, and
+/// it checks. The same theory under written clauses is refused at its first
+/// value operation, which no clause answers (#2288).
+#[test]
+fn a_model_answers_a_theory_s_value_operations_2288()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{cost}{counting}",
+            "def answered() -> (Integer => Integer) => Integer {{ handle c : Cost with sort N = Integer => Integer {{ c.charge(thunk {{ fn (n) {{ pure n }} }}); pure thunk {{ fn (before) {{ before(0) }} }} }} with Counting }}\n",
+            "def written() -> Integer {{ handle c : Cost with sort N = Integer => Integer {{ pure 0 }} with {{ pure(x) => pure x, oper charge(n, k) => k() }} }}\n",
+        ),
+        cost = COST,
+        counting = COUNTING,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("answered"))
+    else {
+        panic!("`answered` is declared");
+    };
+    assert!(
+        module.handler_laws(declaration).is_empty(),
+        "the module's ascription states both laws, so the scope owes none"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "answered".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "answered".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "written".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UninterfacedMember { name, fault, .. })
+                if name == SurfaceName::from("zero") && fault == InterfaceFault::Value
+        ),
+        "{:?}",
+        outcome_of(&module, "written".into())
+    );
+}
+
 /// A scope a model answers records, at the scope, the answer as written: the
 /// module it names, `with Passing`, or the one model in scope, for a scope
 /// writing no `with`. A scope writing its clauses records none, so a printer

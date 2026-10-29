@@ -34,6 +34,18 @@ const STATE: &str = r"theory State {
   oper put : (s : S, k : C) --> C;
 }";
 
+/// A cost theory: the cost sort the handler fixes, the carrier, a charge, and
+/// the cost monoid's unit and sum, with decalf's two laws.
+const COST: &str = r"theory Cost {
+  sort N : Type+;
+  sort C : Type;
+  oper charge : (c : N, k : C) --> C;
+  oper zero : N;
+  oper plus : (a : N, b : N) --> N;
+  rule chargeZero : charge(zero(), k) <=> k;
+  rule chargeTwice : charge(a, charge(b, k)) <=> charge(plus(a, b), k);
+}";
+
 /// The members of the one theory `source` declares.
 ///
 /// # Specification
@@ -86,7 +98,53 @@ fn state_reads_as_a_get_and_a_put_2272()
                 reply: Vec::new(),
             },
         ],
-        read
+        read.effects
+    );
+    assert!(read.values.is_empty(), "state has no value operation");
+}
+
+/// A cost theory's `zero` and `plus` take and return the fixed cost sort, so
+/// they read as value operations apart from `charge`, and both laws, each
+/// applying one, are the model's to state; State's laws, which apply none,
+/// are read as before beside the same value operations (#2288).
+#[test]
+fn a_value_operation_is_read_apart_from_the_effects_2288()
+{
+    let fixed = fixing([Name::from("N")]);
+    let cost = NodeIndex::from(100_usize);
+    let members_of = members(SourceText::from(COST));
+    let read = operations(&members_of, &fixed).unwrap();
+    assert_eq!(
+        vec![TheoryOperation {
+            name: OperationName::from("charge"),
+            payload: vec![cost],
+            reply: Vec::new(),
+        }],
+        read.effects
+    );
+    assert_eq!(
+        read.values
+            .iter()
+            .map(|value| value.name.clone())
+            .collect::<Vec<Name>>(),
+        [Name::from("zero"), Name::from("plus")],
+        "the unit and the sum, in the theory's order"
+    );
+    assert!(
+        laws(&members_of, &read.effects, &read.values)
+            .unwrap()
+            .is_empty(),
+        "each law applies a value operation, which no clause answers"
+    );
+    let state_fixed = fixing([Name::from("S")]);
+    let state = members(SourceText::from(PUT_LAWS));
+    let state_read = operations(&state, &state_fixed).unwrap();
+    assert_eq!(
+        laws(&state, &state_read.effects, &read.values)
+            .unwrap()
+            .len(),
+        2,
+        "a law applying no value operation is read for the clauses"
     );
 }
 
@@ -174,7 +232,8 @@ fn a_theory_s_laws_read_for_its_handler_2272()
 {
     let fixed = fixing([Name::from("S")]);
     let members_of = members(SourceText::from(PUT_LAWS));
-    let read = laws(&members_of, &operations(&members_of, &fixed).unwrap()).unwrap();
+    let read_of = operations(&members_of, &fixed).unwrap();
+    let read = laws(&members_of, &read_of.effects, &read_of.values).unwrap();
     let placed: Vec<(RuleIndex, Binders)> = read
         .iter()
         .map(|law| (law.rule, law.read.metavariables))
@@ -195,7 +254,8 @@ fn a_theory_s_laws_read_for_its_handler_2272()
   rule putPut : put(s, put(f(s), k)) <=> put(f(s), k);
 }";
     let members_of = members(SourceText::from(odd));
-    let Err((named, fault)) = laws(&members_of, &operations(&members_of, &fixed).unwrap())
+    let read_of = operations(&members_of, &fixed).unwrap();
+    let Err((named, fault)) = laws(&members_of, &read_of.effects, &read_of.values)
     else {
         panic!("a law storing `f(s)` is no term a clause reads");
     };
@@ -229,7 +289,7 @@ fn a_theory_s_laws_rewrite_its_scope_s_subject_2272()
     let members_of = members(SourceText::from(laws_of));
     let operations_of = operations(&members_of, &fixed).unwrap();
     let read = |turns: &[RuleTurn]| -> Vec<RuleIndex> {
-        rules(&members_of, &operations_of, turns)
+        rules(&members_of, &operations_of.effects, turns)
             .iter()
             .map(SubjectRule::rule)
             .collect()

@@ -1,0 +1,75 @@
+// `std.cost`: decalf's cost effect (Grodin, Niu, Sterling and Harper,
+// _decalf: A Directed, Effectful Cost-Aware Logical Framework_, POPL 2024,
+// doi:10.1145/3632852). A program charges what a step costs with `charge`, an
+// operation of the theory `Cost`, and the theory's two laws are decalf's:
+// charging nothing is the identity, and two charges are one charge of their
+// sum. A cost is a value of the sort a scope fixes, and the cost monoid's
+// unit and sum are value operations, which only a model the scope names
+// answers. `Counting` counts in the prelude's binary naturals: a cost is the
+// function that adds it, so the unit is the identity, the sum is composition,
+// and both laws hold by conversion. A bound is a program: a run's count under
+// `Counting` is at most `n` exactly when `Count.le` holds, which `gandr check`
+// decides by conversion for a closed run and the kernel replays.
+
+// `Count`, whose sum counts and whose order bounds.
+import "./grade.gandr";
+
+/// decalf's cost effect: a charge, and the cost monoid's unit and sum.
+pub theory Cost {
+  /// The costs, a value type the scope fixes.
+  sort N : Type+;
+  /// The carrier, the answer of the model that handles a scope.
+  sort C : Type;
+  /// Charge the cost `c`, then continue.
+  oper charge : (c : N, k : C) --> C;
+  /// No cost.
+  oper zero : N;
+  /// Two costs, one after the other.
+  oper plus : (a : N, b : N) --> N;
+  /// Charging nothing is the identity.
+  rule chargeZero : charge(zero(), k) <=> k;
+  /// Two charges are one charge of their sum.
+  rule chargeTwice : charge(a, charge(b, k)) <=> charge(plus(a, b), k);
+}
+
+/// The cost `n`, as the function that adds it to what it is handed.
+pub def costs(n : Nat) -> Nat => Nat {
+  thunk { fn (m) { Count.plus(n, m) } }
+}
+
+/// The counting model: a run's count awaits the cost charged before it.
+pub module Counting : Model(Cost) with sort N = Nat => Nat {
+  /// A run's count, from the cost charged before it.
+  type C = (Nat => Nat) => Nat;
+  /// Charge `c` after what was charged before, then continue.
+  def charge(c : Nat => Nat, k : (Nat => Nat) => Nat) -> (Nat => Nat) => Nat {
+    thunk { fn (before) { k(thunk { fn (n) { before(c(n)) } }) } }
+  }
+  /// No cost: the identity.
+  def zero : Nat => Nat = thunk { fn (n) { pure n } };
+  /// Two costs: their composition, `b` first.
+  def plus(a : Nat => Nat, b : Nat => Nat) -> Nat => Nat {
+    thunk { fn (n) { a(b(n)) } }
+  }
+  /// Charging nothing is the identity, by η.
+  def chargeZero(k : (Nat => Nat) => Nat) -> Path((Nat => Nat) => Nat, charge(zero, k), k) {
+    here(k)
+  }
+  /// Two charges are one, by β and the associativity of `run`.
+  def chargeTwice(a : Nat => Nat, b : Nat => Nat, k : (Nat => Nat) => Nat) -> Path(
+    (Nat => Nat) => Nat,
+    charge(a, charge(b, k)),
+    charge(plus(a, b), k)
+  ) {
+    here(charge(plus(a, b), k))
+  }
+}
+
+/// What a scope under `Counting` answers once its subject is done: the cost
+/// charged so far, counted from none.
+pub def counted : (Nat => Nat) => Nat = fn (before) { before(Zero) };
+
+/// The count a run under `Counting` answers, nothing charged before it.
+pub def countOf(r : (Nat => Nat) => Nat) -> Nat {
+  r(fn (n) { pure n })
+}
