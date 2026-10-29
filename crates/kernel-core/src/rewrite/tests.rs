@@ -748,9 +748,9 @@ fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
 /// type parameters answers alike.
 ///
 /// The workload shares one subterm across many occurrences, so the memoized
-/// run records one entry per distinct `(content, depth)` pair while the
-/// memoless run recomputes each occurrence — and both produce the same
-/// rewritten node.
+/// run records one entry per distinct `(content, depth)` pair, and the
+/// memoless run answers each occurrence after the first from the walk's own
+/// memo (#3859). Both produce the same rewritten node.
 #[test]
 fn the_memoized_rewrite_agrees_with_the_memoless_one()
 {
@@ -813,10 +813,8 @@ fn the_memoized_rewrite_agrees_with_the_memoless_one()
         BinderDepth::from(1_u32),
     );
 
-    // Content, not identity: the two runs answer with the same *term*, and
-    // the memoized one answers with a shared spelling of it while the
-    // memoless one answers with the expansion. Comparing ids here would
-    // assert the opposite of the property under test.
+    // Content, not identity: the two runs answer with the same *term*, each
+    // spelling minted by its own walk, so their ids differ.
     assert_eq!(
         content_digest(&arena, AnyNode::Value(memoless_result)),
         content_digest(&arena, AnyNode::Value(memoized_result)),
@@ -833,29 +831,25 @@ fn the_memoized_rewrite_agrees_with_the_memoless_one()
         "and the substitution plane accounts nothing, so neither plane hides behind the other"
     );
 
-    // The anti-vacuity half, exhibited rather than counted: the memoized
-    // answer shares its two children on one node, and the memoless answer
-    // does not, so the workload cannot silently stop being shared and keep
-    // this case passing.
-    let Some(&[memoized_left, memoized_right]) =
-        arena.value(memoized_result).and_then(Value::components)
-    else {
-        panic!("the composite rewrites to a pair");
-    };
-    assert_eq!(
-        memoized_left, memoized_right,
-        "the memoized rewrite answers once for the one distinct subject"
-    );
-    let Some(&[memoless_left, memoless_right]) =
-        arena.value(memoless_result).and_then(Value::components)
-    else {
-        panic!("and so does the memoless one");
-    };
-    assert_ne!(
-        memoless_left, memoless_right,
-        "while the memoless rewrite answers once per occurrence, which is the cost the memo \
-             removes"
-    );
+    // The anti-vacuity half, exhibited rather than counted: each answer shares
+    // its two children at every level of the spine, so the workload cannot
+    // silently stop being shared and keep this case passing. The memoless
+    // walk shares too: it answers a node it rewrote once from its own memo,
+    // where it once minted every occurrence apart (#3859).
+    for (run, result) in [("memoized", memoized_result), ("memoless", memoless_result)] {
+        let mut level = result;
+        for depth in 0_u32 .. 12 {
+            let Some(&[left, right]) = arena.value(level).and_then(Value::components)
+            else {
+                panic!("the {run} rewrite answers a pair at level {depth}");
+            };
+            assert_eq!(
+                left, right,
+                "the {run} rewrite answers once for the one distinct subject at level {depth}"
+            );
+            level = left;
+        }
+    }
 }
 
 #[test]

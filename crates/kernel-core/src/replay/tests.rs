@@ -4237,3 +4237,53 @@ fn a_chain_of_beta_steps_walks_its_reduct_once()
         "the head is walked once, where every step walks the reduct left"
     );
 }
+
+#[test]
+fn an_unload_mints_each_shared_node_once_3859()
+{
+    use crate::generated::Head;
+    use crate::generated::Program;
+    use crate::generated::Redex;
+    use crate::generated::Step;
+
+    // The program a failing seed of the agreement property shrinks to: its
+    // unloads walk one shared term once for each occurrence, and minted
+    // sixteen million values inside 63 charges (#3859).
+    let head = |redex, passed| Head { redex, passed };
+    let program = Program {
+        steps: Vec::from([
+            Step::Redex(head(Redex::Recurse(1), true)),
+            Step::With,
+            Step::Force,
+            Step::Redex(head(Redex::MatchList(1), false)),
+            Step::Returned,
+            Step::Redex(head(Redex::Beta, false)),
+            Step::Redex(head(Redex::FoldList(3), true)),
+            Step::Redex(head(Redex::FoldList(3), false)),
+            Step::Returned,
+            Step::Fold,
+        ]),
+        heads: Vec::from([head(Redex::Beta, false)]),
+    };
+    for reduction in [super::Reduction::Plain, super::Reduction::Endpoint] {
+        let mut arena = TermArena::new();
+        let term = generated(&mut arena, &program);
+        // The values `arena` holds: the position of a value minted now.
+        let held =
+            |arena: &mut TermArena| usize::from(AnyNode::Value(arena.value_thunk(term)).offset());
+        let built = held(&mut arena);
+        let at_the_head = reduced(&mut arena, term, reduction, super::Unloading::AtTheHead);
+        let once = held(&mut arena) - built;
+        assert!(
+            once < 1_usize << 16_u32,
+            "{reduction:?}, unloaded at the head, minted {once} values"
+        );
+        let every_step = reduced(&mut arena, term, reduction, super::Unloading::EveryStep);
+        let each = held(&mut arena) - built - once;
+        assert!(
+            each < 1_usize << 16_u32,
+            "{reduction:?}, unloaded every step, minted {each} values"
+        );
+        assert_eq!(at_the_head, every_step, "{reduction:?}");
+    }
+}

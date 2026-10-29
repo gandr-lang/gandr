@@ -71,6 +71,7 @@ use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
+use gandr_kernel_check_memo::MemoRecord;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -1458,10 +1459,13 @@ where
 ///   rewrites to itself.
 /// - ensures: the rewritten node, minted into `arena` where a child changed and
 ///   reused where none did. A zero shift or an unreadable root returns its
-///   original outcome without traversal or memo lookup. Under an inactive memo
-///   no support is built, so `table` is untouched. Other memo hits may reuse
-///   equal-content results; memoized and memoless runs preserve the same
-///   content, with distinct-support versus occurrence-based expansion.
+///   original outcome without traversal or memo lookup. A node the walk has
+///   rewritten at a depth answers at that depth from the session memo where it
+///   stored the goal and from the walk's own memo otherwise, under any memo. So
+///   a walk mints at most once for each node and depth of its subject's graph.
+///   Under an inactive memo no support is built, so `table` is untouched.
+///   Session memo hits may reuse equal-content results across walks; memoized
+///   and memoless runs preserve the same content.
 /// - provides: the shared engine of the two rewrites. Predicates check family,
 ///   zero-shift identity and unreadable-root fallback. The witnesses compare
 ///   bounded memoized and memoless results rather than rerunning either walk.
@@ -1501,8 +1505,11 @@ where
 ///   open, and a twin of equal content minted apart kept, each asserted
 ///   exactly. L3 on a closed value beside the substituted occurrence and a
 ///   closed replacement: each plane's entries stay flat as either grows, which
-///   separates a walk opening what its rewrite cannot reach.
+///   separates a walk opening what its rewrite cannot reach. L3 on the program
+///   a failing seed shrinks to: the values an unload mints, bounded far below
+///   the sixteen million an occurrence-expanding walk mints.
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+/// - witness: `replay::tests::an_unload_mints_each_shared_node_once_3859`
 /// - witness: `rewrite::tests::a_substitution_opens_no_node_its_binder_cannot_reach_3464`
 /// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
 /// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
@@ -1543,10 +1550,12 @@ where
     }
     let mut tasks: Vec<RewriteTask> = Vec::new();
     let mut results: Vec<RewriteOutcome> = Vec::new();
-    // Goals the session memo does not key — an instantiation at a call and the
-    // rotation it carries a body with — are memoized within this walk, beside
-    // the nodes an instantiation found reading its binder and, for each node it
-    // has open, whether that node reads it, innermost last.
+    // The walk's own memo holds every goal the session memo does not store:
+    // one it does not key, every goal under an inactive memo, and one a memo
+    // at its ceiling declines. So a node its subject shares between
+    // occurrences is rewritten once at each depth under any memo (#3859).
+    // Beside it are the nodes an instantiation found reading its binder and,
+    // for each node it has open, whether that node reads it, innermost last.
     let mut local: HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome> =
         HashedMap::default();
     let mut reads: BTreeSet<(AnyNode, BinderDepth)> = BTreeSet::new();
@@ -1563,19 +1572,20 @@ where
                     continue;
                 }
                 let instantiating = matches!(step, Rewrite::Instantiate { .. });
-                // An inactive memo never answers, so its support is never
-                // built: the memoless walk encodes nothing.
+                // The session memo first, then the walk's own. An inactive
+                // memo never answers, so its support is never built: the
+                // memoless walk encodes nothing.
                 let hit = match step.goal(node, depth) {
                     Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
                         let support = RewriteSupport::build(table, arena, goal);
                         memo.recall(&support).map(|hit| *hit.outcome())
                     },
-                    Maybe::Present(_) => None,
-                    Maybe::Absent(keyed::Absent::Local) => match local.get(&(node, depth, step)) {
-                        Maybe::Present(&outcome) => Some(outcome),
-                        Maybe::Absent(hashed_entry::Absent::Unrecorded) => None,
-                    },
-                };
+                    Maybe::Present(_) | Maybe::Absent(keyed::Absent::Local) => None,
+                }
+                .or_else(|| match local.get(&(node, depth, step)) {
+                    Maybe::Present(&outcome) => Some(outcome),
+                    Maybe::Absent(hashed_entry::Absent::Unrecorded) => None,
+                });
                 if let Some(outcome) = hit {
                     if instantiating && reads.contains(&(node, depth)) {
                         note_read(&mut reads, &mut reading, (node, depth));
@@ -1783,23 +1793,30 @@ fn note_read(
 }
 
 /// Record one goal's outcome: in the session memo when it keys the goal and
-/// is active, in the walk's own memo when it does not key it.
+/// is active, and in the walk's own memo when the session memo does not store
+/// it.
 ///
 /// # Specification
 /// - requires: `outcome` is the goal's answer.
 /// - ensures: a goal the session keys is offered to `memo` under its support
-///   when the memo is active; any other goal is in `local` with `outcome`.
+///   when the memo is active. A goal the session memo does not store is in
+///   `local` with `outcome`: one it does not key, every goal under an inactive
+///   memo, and one a memo at its ceiling declines.
 /// - provides: the one recording step every close, record and bind-ahead takes.
-/// - fails: never; a memo at its ceiling declines, which costs reuse alone.
+/// - fails: never; a memo at its ceiling declines, and the walk's own memo
+///   holds the goal instead.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an instantiation's goals are recorded in the walk's own
-///   memo, and the memoized rewrite agrees with the memoless one on the
-///   session's goals.
+///   memo; a memoless shift of a pair spine shares each level's two children,
+///   and the memoized rewrite agrees with the memoless one on the session's
+///   goals.
 /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
-#[spec(ensures: !matches!(step.goal(node, depth), Maybe::Absent(_)) || local.get(&(node, depth, step)) == Maybe::Present(&outcome))]
+#[spec(ensures: (matches!(M::ACTIVITY, MemoActivity::Active)
+    && matches!(step.goal(node, depth), Maybe::Present(_)))
+    || local.get(&(node, depth, step)) == Maybe::Present(&outcome))]
 fn remember_rewrite<M>(
     (table, arena, memo): (&mut ContentTable, &TermArena, &mut M),
     local: &mut HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome>,
@@ -1808,16 +1825,18 @@ fn remember_rewrite<M>(
 ) where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    match step.goal(node, depth) {
-        Maybe::Present(goal) => {
-            if matches!(M::ACTIVITY, MemoActivity::Active) {
-                let support = RewriteSupport::build(table, arena, goal);
-                let _recorded = memo.remember(support, outcome);
-            }
+    let stored = match step.goal(node, depth) {
+        Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
+            let support = RewriteSupport::build(table, arena, goal);
+            matches!(
+                memo.remember(support, outcome),
+                Ok(MemoRecord::Recorded | MemoRecord::Replaced)
+            )
         },
-        Maybe::Absent(keyed::Absent::Local) => {
-            local.insert((node, depth, step), outcome);
-        },
+        Maybe::Present(_) | Maybe::Absent(keyed::Absent::Local) => false,
+    };
+    if !stored {
+        local.insert((node, depth, step), outcome);
     }
 }
 
