@@ -1113,6 +1113,77 @@ fn an_unread_call_replays_as_its_continuation()
 }
 
 #[test]
+fn a_held_call_replays_as_its_continuation_at_its_endpoint()
+{
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let hold = |side| ConversionDecision::Hold { side };
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let call = |arena: &mut TermArena, function: u32, argument: ValueId| {
+        let function = variable(arena, function);
+        let forced = arena.computation_force(function);
+        arena.computation_application(forced, argument)
+    };
+
+    // `force t ⟨force h z⟩` against `force h z to y. force t y`, `t`, `h`
+    // and `z` free: the call's value is its returned endpoint, so the bind
+    // is `force t` over that endpoint (#3824).
+    let argument = variable(&mut arena, 0);
+    let called = call(&mut arena, 1, argument);
+    let endpoint = arena.value_returned(called);
+    let written = call(&mut arena, 2, endpoint);
+    let bound_variable = variable(&mut arena, 0);
+    let passed = call(&mut arena, 3, bound_variable);
+    let bound = arena.computation_bind(called, passed);
+    let held = ReplaySides::Computations(written, bound);
+    assert_eq!(
+        run(&mut arena, &none, held, EngineClaim::Convertible, &[hold(
+            ConversionSide::Right
+        )]),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(bound, written),
+            EngineClaim::Convertible,
+            &[hold(ConversionSide::Left)]
+        ),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        run(&mut arena, &none, held, EngineClaim::Convertible, &[hold(
+            ConversionSide::Left
+        )]),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::from(0),
+        }),
+        "the side named holds no call"
+    );
+    assert_eq!(
+        convert(&mut arena, &none, held, ReplayBudget::default()),
+        KernelVerdict::Convertible,
+        "the kernel's own reading holds the call"
+    );
+
+    // Passed to another function `g`, the held call stands apart.
+    let elsewhere = call(&mut arena, 4, bound_variable);
+    let other = arena.computation_bind(called, elsewhere);
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(written, other),
+            EngineClaim::NotConvertible,
+            &[hold(ConversionSide::Right)]
+        ),
+        KernelVerdict::NotConvertible
+    );
+}
+
+#[test]
 fn the_kernel_converts_by_the_forced_rules_alone()
 {
     let mut arena = TermArena::new();

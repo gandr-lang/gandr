@@ -297,7 +297,7 @@ pub(super) fn portable<Node>(decision: ConversionDecision<Node>) -> ConversionDe
     ConversionDecision::EtaExpand { variable, .. } => variable == ReplayNode::Other,
     ConversionDecision::Force { thunk } => thunk == ReplayNode::Other,
     ConversionDecision::ComparedShared { left, right } => left == ReplayNode::Other && right == ReplayNode::Other,
-    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } | ConversionDecision::Evaluate => true,
+    ConversionDecision::Decompose | ConversionDecision::NegativeSubgoal { .. } | ConversionDecision::ReturnEta { .. } | ConversionDecision::Reassociate { .. } | ConversionDecision::Discard { .. } | ConversionDecision::Hold { .. } | ConversionDecision::Evaluate => true,
 }))]
 pub(super) fn engine(
     arena: &TermArena,

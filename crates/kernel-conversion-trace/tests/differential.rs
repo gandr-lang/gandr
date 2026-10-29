@@ -365,6 +365,7 @@ fn replay(
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
             | ConversionDecision::Discard { .. }
+            | ConversionDecision::Hold { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::Decompose
             | ConversionDecision::NegativeSubgoal { .. }
@@ -577,6 +578,7 @@ fn a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with()
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
             | ConversionDecision::Discard { .. }
+            | ConversionDecision::Hold { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose

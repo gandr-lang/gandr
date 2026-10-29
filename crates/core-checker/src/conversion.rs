@@ -1059,18 +1059,20 @@ pub fn indices_agree(
 /// - requires: both terms stand under the binders the conversion is under.
 /// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
 ///   on `context` when the machine relates `left` to `right` with returned
-///   endpoints held at the definitions they call; [`Agreement::Convertible`],
-///   recording nothing, when its traced reading waits for a fill
-///   ([`CheckingContext::awaits_fill`]); otherwise [`Agreement::Convertible`]
-///   exactly when its untraced conversion relates them, and
-///   [`Agreement::Apart`] when it does not.
+///   endpoints held at the definitions they call and the binders whose calls
+///   return ([`crate::divergence::returning`]) read as returning;
+///   [`Agreement::Convertible`], recording nothing, when its traced reading
+///   waits for a fill ([`CheckingContext::awaits_fill`]); otherwise
+///   [`Agreement::Convertible`] exactly when its untraced conversion relates
+///   them, and [`Agreement::Apart`] when it does not.
 /// - provides: the dialogue a definition carries for the kernel, whose forced
 ///   reading does not unfold a definition under a binder. The traced reading is
 ///   tried first and only ever adds a derivation: where it does not relate, the
 ///   verdict and every refusal are the untraced conversion's, so nothing the
 ///   conversion accepted is refused.
 /// - fails: the untraced conversion's refusal, where the traced reading does
-///   not relate.
+///   not relate, and [`crate::divergence::returning`]'s, where a binder's type
+///   does not read.
 /// - panics: none.
 /// - executable: none — both verdicts are the machine's own readings; a
 ///   predicate restating them would run the two readings again.
@@ -1093,9 +1095,10 @@ fn endpoints_agree(
     right: ValueId,
 ) -> Result<Agreement, CheckRefusal>
 {
+    let returning = crate::divergence::returning(context)?;
     match context
         .definitions()
-        .relation(context.arena(), left, right, &[])
+        .relation(context.arena(), left, right, &returning)
     {
         Ok((gandr_core_nbe::MachineVerdict::Convertible, decisions)) => {
             context.record_relation(left, right, decisions);

@@ -2748,6 +2748,15 @@ where
             {
                 continue;
             }
+            // A call that returns is the value it binds: the trace names the
+            // side whose call its continuation passes on to another
+            // variable's call, read at the call's returned endpoint.
+            if self
+                .hold(&mut goal, [&left_shape, &right_shape], next)?
+                .is_some()
+            {
+                continue;
+            }
             let bind = bind_rule(&left_shape, &right_shape);
             if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
                 if !matches!(rule(&left_shape, &right_shape), Rule::Structural)
@@ -3740,6 +3749,7 @@ where
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
             | ConversionDecision::Discard { .. }
+            | ConversionDecision::Hold { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
@@ -4310,6 +4320,118 @@ where
         let (side, continuation) = chosen;
         let dropped = self.arena.value_unit();
         let opened = self.instantiate(continuation, dropped);
+        goal.set(side, Term::Computation(opened));
+        Ok(Some(side))
+    }
+
+    /// Read a call on one side as its continuation at the call's returned
+    /// endpoint.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, and `next`
+    ///   the trace's next decision.
+    /// - ensures: a side holds a call when its shape [`unread_call`] reads, its
+    ///   term binds that call into that continuation, and the continuation
+    ///   reads its binder and is, under its applications, a force of another
+    ///   variable. Under [`Reading::Recorded`], when `next` is `Hold` naming a
+    ///   side that holds one, that decision is consumed and the side becomes
+    ///   the continuation instantiated at the call's returned endpoint; `None`
+    ///   and nothing changed when `next` is no `Hold`. Under
+    ///   [`Reading::Forced`] and [`Reading::Unfolding`], the left side's held
+    ///   call is read before the right's, reading nothing.
+    /// - provides: the replay of the hold, `M to x. N ≡ N[⟨M⟩/x]` when `M` is a
+    ///   call of a variable and `N` passes `x` to another variable's call: the
+    ///   instantiation the endpoint reading of [`Self::whnf`] performs for a
+    ///   continuation that does not inspect its binder. Every call of the
+    ///   fragment returns, so the forced reading takes it as it takes the
+    ///   discard.
+    /// - fails: a refusal when the trace names a `Hold` on a side that holds no
+    ///   such call.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `while let` walks the continuation's applications to their
+    ///   head, not recursion.
+    /// - measure: the applications left above the head.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a call passed on against the other variable's call
+    ///   over its endpoint replays on either side by the named decision and by
+    ///   the forced reading alone; a decision naming the side with no such call
+    ///   refuses; a call passed to another function stands apart once held.
+    /// - witness: `replay::tests::a_held_call_replays_as_its_continuation_at_its_endpoint`
+    #[spec(
+        captures: before = (self.position, goal.side(ConversionSide::Left), goal.side(ConversionSide::Right)),
+        ensures: |ret| match ret {
+            Ok(None) => self.position == before.0
+                && goal.side(ConversionSide::Left) == before.1
+                && goal.side(ConversionSide::Right) == before.2,
+            Ok(Some(side)) => goal.side(opposite(side)) == match opposite(side) {
+                ConversionSide::Left => before.1,
+                ConversionSide::Right => before.2,
+            },
+            Err(_) => self.position == before.0,
+        },
+    )]
+    fn hold(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+        next: Next,
+    ) -> Result<Option<ConversionSide>, Stop>
+    {
+        let [left, right] = shapes;
+        let arena: &TermArena = self.arena;
+        let held = |side: ConversionSide| {
+            let shape = match side {
+                ConversionSide::Left => left,
+                ConversionSide::Right => right,
+            };
+            let continuation = unread_call(shape)?;
+            let Term::Computation(bound) = goal.side(side)
+            else {
+                return None;
+            };
+            let Some(&Computation::Bind(call, body)) = arena.computation(bound)
+            else {
+                return None;
+            };
+            let mut head = body;
+            while let Some(&Computation::Application(function, _)) = arena.computation(head) {
+                head = function;
+            }
+            let binder = DeBruijnIndex::from(0_u32);
+            let passed_on = body == continuation
+                && matches!(arena.computation(head), Some(&Computation::Force(function))
+                    if matches!(arena.value(function), Some(&Value::Variable(index)) if index != binder))
+                && innermost(arena.computation_support(body)) != BinderUse::Ignored;
+            passed_on.then_some((call, body))
+        };
+        let (side, call, body) = match (self.reading, next) {
+            (Reading::Recorded, Next::Decision(ConversionDecision::Hold { side })) => {
+                let Some((call, body)) = held(side)
+                else {
+                    return Err(self.refuse(next));
+                };
+                self.take();
+                (side, call, body)
+            },
+            (Reading::Recorded, Next::Decision(_) | Next::End) => return Ok(None),
+            (Reading::Forced | Reading::Unfolding, _) => {
+                let Some((side, (call, body))) = [ConversionSide::Left, ConversionSide::Right]
+                    .into_iter()
+                    .find_map(|side| held(side).map(|found| (side, found)))
+                else {
+                    return Ok(None);
+                };
+                (side, call, body)
+            },
+        };
+        let endpoint = self.arena.value_returned(call);
+        let opened = self.instantiate(body, endpoint);
         goal.set(side, Term::Computation(opened));
         Ok(Some(side))
     }

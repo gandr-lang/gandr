@@ -271,6 +271,15 @@ pub enum ConversionDecision<Id>
         /// Which side was discarded.
         side: ConversionSide,
     },
+    /// The hold of a returning call: on one side `M to x. N`, its bind the
+    /// last elimination, `M` a call of a variable whose calls return and `x`
+    /// read in `N` but neither eliminated nor returned at its head, became
+    /// `N[⟨M⟩/x]`, since the value `M` returns is its returned endpoint.
+    Hold
+    {
+        /// Which side was held.
+        side: ConversionSide,
+    },
     /// A suspended computation or thunk was forced for the comparison.
     Force
     {
@@ -360,6 +369,7 @@ impl<Id> ConversionDecision<Id>
             Self::ReturnEta { side } => ConversionDecision::ReturnEta { side },
             Self::Reassociate { side } => ConversionDecision::Reassociate { side },
             Self::Discard { side } => ConversionDecision::Discard { side },
+            Self::Hold { side } => ConversionDecision::Hold { side },
             Self::Force { thunk } => ConversionDecision::Force {
                 thunk: anchor(thunk),
             },
@@ -412,6 +422,9 @@ mod tests
             ConversionDecision::Discard {
                 side: ConversionSide::Right,
             },
+            ConversionDecision::Hold {
+                side: ConversionSide::Left,
+            },
             ConversionDecision::Force { thunk: 8 },
             ConversionDecision::ComparedShared { left: 9, right: 10 },
             ConversionDecision::Decompose,
@@ -457,6 +470,9 @@ mod tests
             },
             ConversionDecision::Discard {
                 side: ConversionSide::Right,
+            },
+            ConversionDecision::Hold {
+                side: ConversionSide::Left,
             },
             ConversionDecision::Force { thunk: 108 },
             ConversionDecision::ComparedShared {

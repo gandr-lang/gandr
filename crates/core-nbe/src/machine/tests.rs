@@ -2691,6 +2691,7 @@ impl Kernel
          ConversionDecision::ReturnEta{side} => ConversionDecision::ReturnEta{side},
          ConversionDecision::Reassociate{side} => ConversionDecision::Reassociate{side},
          ConversionDecision::Discard{side} => ConversionDecision::Discard{side},
+         ConversionDecision::Hold{side} => ConversionDecision::Hold{side},
          ConversionDecision::Force{thunk} => ConversionDecision::Force{thunk:node(thunk)},
          ConversionDecision::ComparedShared{left,right} => ConversionDecision::ComparedShared{left:node(left),right:node(right)},
          ConversionDecision::NegativeSubgoal{position} => ConversionDecision::NegativeSubgoal{position},
@@ -3344,7 +3345,8 @@ fn an_unread_call_is_discarded_only_where_it_returns()
 {
     // Under rigid `g` at level 0 and `f` at level 1: `force g () to v. force
     // f ()` against `force f ()`, and `force g () to v. force f v`, whose
-    // continuation reads what the call returned.
+    // continuation reads what the call returned: no discard, but a hold to
+    // `force f ⟨force g ()⟩`, whose endpoint against `()` declines.
     let mut core = CoreArena::new();
     let unit = core.value_unit();
     let call = |core: &mut CoreArena, index: u32, argument: ValueId| {
@@ -3392,9 +3394,9 @@ fn an_unread_call_is_discarded_only_where_it_returns()
         (
             (read, followed),
             &both[..],
-            MachineVerdict::NotConvertible,
+            MachineVerdict::Declined(DeclineReason::Indeterminate),
             None,
-            Some(KernelVerdict::NotConvertible),
+            Some(KernelVerdict::Declined(ReplayDecline::EngineDeclined)),
         ),
     ] {
         let definitions =
@@ -3813,6 +3815,7 @@ fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361()
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
             | ConversionDecision::Discard { .. }
+            | ConversionDecision::Hold { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
@@ -4337,6 +4340,161 @@ fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_
             verdict,
             "a motive writing another call is undecided: {decisions:?}"
         );
+    }
+}
+
+#[test]
+fn a_returning_call_holds_where_its_continuation_passes_it_on_3824()
+{
+    // Under rigid `t`, `g`, `h` and `z` at levels 0 to 3: `force t ⟨force h
+    // z⟩` against `force h z to y. force t y`, the field type a family writes
+    // against the one a call's argument lowers to (#3824), and against `force
+    // h z to y. force g y`, which passes the value to another function.
+    let mut core = CoreArena::new();
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let (t, h, z) = (
+        variable(&mut core, 3),
+        variable(&mut core, 1),
+        variable(&mut core, 0),
+    );
+    let called = call(&mut core, h, &[z]);
+    let endpoint = core.value_returned(called);
+    let written = call(&mut core, t, &[endpoint]);
+    let (t_under, g_under, y) = (
+        variable(&mut core, 4),
+        variable(&mut core, 3),
+        variable(&mut core, 0),
+    );
+    let passed = call(&mut core, t_under, &[y]);
+    let bound = core.computation_bind(called, passed);
+    let elsewhere = call(&mut core, g_under, &[y]);
+    let other = core.computation_bind(called, elsewhere);
+    let world = World::new(core, &[]);
+    let every = [0_u32, 1, 2].map(BinderLevel::from);
+    let not_h = [0_u32, 1].map(BinderLevel::from);
+    let hold = |side| ConversionDecision::Hold { side };
+
+    for endpoints in [Endpoints::Run, Endpoints::Hold] {
+        for (sides, returning, expected, decided, kernel_owes) in [
+            (
+                (written, bound),
+                &every[..],
+                MachineVerdict::Convertible,
+                Some(hold(ConversionSide::Right)),
+                KernelVerdict::Convertible,
+            ),
+            (
+                (bound, written),
+                &every[..],
+                MachineVerdict::Convertible,
+                Some(hold(ConversionSide::Left)),
+                KernelVerdict::Convertible,
+            ),
+            (
+                (written, bound),
+                &not_h[..],
+                MachineVerdict::NotConvertible,
+                None,
+                KernelVerdict::NotConvertible,
+            ),
+            (
+                (written, other),
+                &every[..],
+                MachineVerdict::NotConvertible,
+                Some(hold(ConversionSide::Right)),
+                KernelVerdict::NotConvertible,
+            ),
+        ] {
+            let definitions =
+                Definitions::new(&world.chain, &world.environment, world.environment.root())
+                    .reading_endpoints(endpoints)
+                    .returning(returning);
+            let mut domain = DomainArena::new();
+            let mut environment = crate::closure::Environment::new();
+            for level in 0_u32 .. 4 {
+                let neutral = domain
+                    .neutral_node(
+                        crate::domain::NeutralHead::Variable {
+                            zone: Zone::Intuitionistic,
+                            level: BinderLevel::from(level),
+                        },
+                        Vec::new(),
+                        crate::domain::Unfolding::Rigid,
+                    )
+                    .expect("a variable is a neutral");
+                let variable = domain
+                    .value_neutral(neutral, crate::domain::TermFace::Reduced)
+                    .expect("a neutral is a value");
+                environment.extend(Zone::Intuitionistic, variable);
+            }
+            let fuel = Fuel::from(4_096_u32);
+            let (left, right) = sides;
+            let evaluate = |domain: &mut DomainArena, term| {
+                crate::eval::eval_comp_within(
+                    &world.core,
+                    domain,
+                    definitions,
+                    fuel,
+                    term,
+                    environment.clone(),
+                )
+                .map(|(evaluated, _remaining)| evaluated)
+                .expect("each side evaluates")
+            };
+            let one = evaluate(&mut domain, left);
+            let other = evaluate(&mut domain, right);
+            let problem = Problem::computations(one, other).under(BinderLevel::from(4_u32));
+            let mut log = TraceLog::new();
+            let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+                &world.core,
+                &mut domain,
+                definitions,
+                MachineSettings::default(),
+                problem,
+                &mut log,
+            )
+            .expect("the machine answers");
+            let decisions: Vec<ConversionDecision<TraceNode>> = log.decisions().copied().collect();
+            assert_eq!(
+                expected,
+                report.verdict(),
+                "a call of a variable that returns is its continuation at the call's endpoint, \
+                 where the continuation passes it on, and a call not known to return stays \
+                 ({endpoints:?}): {decisions:?}"
+            );
+            assert_eq!(
+                decided,
+                decisions
+                    .iter()
+                    .copied()
+                    .find(|decision| matches!(decision, ConversionDecision::Hold { .. })),
+                "the hold is a recorded decision on the side that bound the call: {decisions:?}"
+            );
+            let mut kernel = Kernel::default();
+            let sides = ReplaySides::Computations(
+                kernel.computation(&world.core, left),
+                kernel.computation(&world.core, right),
+            );
+            let claim = match report.verdict() {
+                MachineVerdict::Convertible => EngineClaim::Convertible,
+                MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+                MachineVerdict::Declined(_) => EngineClaim::Declined,
+            };
+            let replayed = replay(
+                &mut kernel.arena,
+                &Unfoldings::new(Vec::new()),
+                sides,
+                claim,
+                decisions.iter().map(|&decision| kernel_decision(decision)),
+                ReplayBudget::DEFAULT,
+            );
+            assert_eq!(
+                kernel_owes, replayed,
+                "the kernel replays the hold by name ({endpoints:?}): {decisions:?}"
+            );
+        }
     }
 }
 
