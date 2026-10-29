@@ -229,6 +229,57 @@ fn a_decode_of_a_returned_code_is_set_aside_against_another_former()
 }
 
 #[test]
+fn a_thunk_pair_forcing_a_thunk_is_set_aside_3733()
+{
+    // `thunk { λz. force (thunk (c x)) z }` against `thunk { λz. c(x, z) }`
+    // holds a β-redex the walk cannot read, so the pair waits for a reader
+    // that reduces; the plain walk separates the two. Two thunks forcing no
+    // thunk literal separate in place.
+    let mut arena = TermArena::new();
+    let constant = arena.value_constant(ConstantIndex::from(0_usize));
+    let x = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let z = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(constant);
+    let partial = arena.computation_application(forced, x);
+    let recursion = arena.value_thunk(partial);
+    let forced_recursion = arena.computation_force(recursion);
+    let redex = arena.computation_application(forced_recursion, z);
+    let redex = arena.computation_lambda(redex);
+    let redex = arena.value_thunk(redex);
+    let call = arena.computation_application(partial, z);
+    let call = arena.computation_lambda(call);
+    let call = arena.value_thunk(call);
+    for (left, right) in [(redex, call), (call, redex)] {
+        let mut pending = alloc::vec::Vec::new();
+        assert_eq!(
+            super::pending_endpoints(
+                &arena,
+                &crate::presented::FREE,
+                super::ConversionGoal::Value(left, right),
+                &mut pending
+            ),
+            Convertibility::Convertible,
+            "the thunks wait to be read"
+        );
+        assert_eq!(pending, [super::SetAside::Values(left, right)]);
+    }
+    let returns_x = arena.computation_return(x);
+    let returns_x = arena.value_thunk(returns_x);
+    let mut pending = alloc::vec::Vec::new();
+    assert_eq!(
+        super::pending_endpoints(
+            &arena,
+            &crate::presented::FREE,
+            super::ConversionGoal::Value(call, returns_x),
+            &mut pending
+        ),
+        Convertibility::Distinct,
+        "two thunks forcing no thunk separate in place"
+    );
+    assert!(pending.is_empty());
+}
+
+#[test]
 fn conversion_separates_every_former()
 {
     let mut arena = TermArena::new();

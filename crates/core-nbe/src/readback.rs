@@ -4011,6 +4011,26 @@ fn step_value(
             Ok(())
         },
         DomainValue::Thunk { body, .. } => {
+            // A definition's own body, closed over nothing, is the definition:
+            // under the refolding stance it reads back as the constant, as its
+            // recursion does in `step_comp`.
+            let named = {
+                let held = domain
+                    .comp_closure(body)
+                    .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+                if let crate::CompBody::Source(source) = held.body() {
+                    machine
+                        .definitions
+                        .recursion_of(core, source, held.environment())
+                }
+                else {
+                    None
+                }
+            };
+            if let Some(constant) = named {
+                machine.values.push(core.value_constant(constant));
+                return Ok(());
+            }
             let whnf = enter(core, domain, machine, body, Entry::Bare)?;
             machine.tasks.push(Task::Thunk);
             machine.tasks.push(Task::Comp {
@@ -4172,12 +4192,13 @@ fn fresh_motive(
 /// # Specification
 /// - requires: `binders` counts the binders `comp` stands under.
 /// - ensures: a retained face pushes the source id; a lambda opens its closure
-///   and pushes the body's task under one more binder; a fixpoint closed over
-///   nothing that a manifest definition suspends pushes `force` of that
-///   definition under [`crate::Recursion::Refolded`]; any other fixpoint opens
-///   its body under a fresh self variable the same way; either fixpoint is then
-///   applied to its leading arguments, first to last; a returner pushes its
-///   value's task; a stuck head starts the spine fold.
+///   and pushes the body's task under one more binder; a fixpoint that a
+///   manifest definition suspends under the parameters its closure binds pushes
+///   `force` of that definition applied to those parameters under
+///   [`crate::Recursion::Refolded`]; any other fixpoint opens its body under a
+///   fresh self variable the same way; either fixpoint is then applied to its
+///   leading arguments, first to last; a returner pushes its value's task; a
+///   stuck head starts the spine fold.
 /// - provides: the computation half of the transition relation. The clause
 ///   states that a success pushes at least one computation result or task and
 ///   consumes neither result stack; which node was pushed, and which frame was
@@ -4274,12 +4295,18 @@ fn step_comp(
                 };
                 (source, held.environment().clone())
             };
-            // A definition's own recursion, closed over nothing, is the
-            // definition: under the refolding stance it reads back as the
-            // call its source wrote.
-            if environment == crate::Environment::new()
-                && let Some(constant) = machine.definitions.recursion_of(core, source)
-            {
+            // A definition's own recursion, closed over the parameters the
+            // definition binds ahead of it, is the definition applied to
+            // them: under the refolding stance it reads back as the call its
+            // source wrote, the parameters first, outermost first.
+            if let Some(constant) = machine.definitions.recursion_of(core, source, &environment) {
+                for &parameter in environment.bindings(Zone::Intuitionistic).iter().rev() {
+                    machine.tasks.push(Task::Apply);
+                    machine.tasks.push(Task::Value {
+                        value: parameter,
+                        binders,
+                    });
+                }
                 let named = core.value_constant(constant);
                 machine.comps.push(core.computation_force(named));
                 return Ok(());

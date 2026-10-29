@@ -1189,6 +1189,127 @@ fn a_definition_s_own_recursion_reads_back_as_the_definition()
 }
 
 #[test]
+fn a_recursion_under_a_uniform_parameter_reads_back_as_the_definition_applied()
+{
+    // `c := thunk (λd. λe. fix rec. λu. case u { Z => return Z; S(p) =>
+    // force rec · p })` run at `S(v)` for free `d`, `e` and `v` sticks at the
+    // recursion applied to `v`, its closure binding `d` and `e`. Under the
+    // refolding stance that call reads back as `force c · d · e · v`, the
+    // parameters first, outermost first; under the unrolling stance it does
+    // not. The constant read back as a value is its name under the refolding
+    // stance, and its body under the unrolling one.
+    let mut core = CoreArena::new();
+    let constant = ConstantIndex::from(0_usize);
+    let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let on_zero = core.computation_return(zero);
+    // Under `p`, `u` and `rec`: `rec` is 2.
+    let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+    let recursion = core.computation_force(recursive);
+    let predecessor = core.value_variable(Zone::Intuitionistic, innermost());
+    let recurse = core.computation_application(recursion, predecessor);
+    let on_successor = core.computation_lambda(recurse);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, innermost());
+    let motive = core.comp_type_returner(nat);
+    let cases = core.computation_data_case(
+        scrutinee,
+        motive,
+        Vec::from([on_zero, on_successor]),
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let lambda = core.computation_lambda(cases);
+    let fixpoint = core.computation_fixpoint(
+        lambda,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let under_e = core.computation_lambda(fixpoint);
+    let under_d = core.computation_lambda(under_e);
+    let body = core.value_thunk(under_d);
+    let named = core.value_constant(constant);
+    let forced = core.computation_force(named);
+    // Under the run's three binders: `d` is 2, `e` 1 and `v` 0.
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let d = variable(&mut core, 2);
+    let e = variable(&mut core, 1);
+    let v = variable(&mut core, 0);
+    let at_d = core.computation_application(forced, d);
+    let at_e = core.computation_application(at_d, e);
+    let successor = core.value_constructor(nat, ConstructorTag::from(1_usize), Vec::from([v]));
+    let run = core.computation_application(at_e, successor);
+    let returned = |core: &mut CoreArena, call: ComputationId| {
+        let call = core.value_returned(call);
+        let call = core.computation_return(call);
+        let call = core.computation_lambda(call);
+        let call = core.computation_lambda(call);
+        core.computation_lambda(call)
+    };
+    let run = returned(&mut core, run);
+    let source_call = core.computation_application(at_e, v);
+    let source_call = returned(&mut core, source_call);
+    let constant_run = core.computation_return(named);
+    let body_run = core.computation_return(body);
+
+    let mut chain = DefinitionChain::new();
+    let defined = chain.define(
+        constant,
+        GlobalIndex::from(0_u32),
+        Transparency::Manifest,
+        &[],
+    );
+    assert!(defined.is_ok());
+    let environment = DefinitionalEnvironment::new();
+    let chain = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(body))
+        .unwrap_or_else(|never| match never {});
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let read = |core: &mut CoreArena, recursion: crate::Recursion, claim: ComputationId| {
+        let definitions = definitions.reading_recursion(recursion);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(core, &mut domain, definitions, ample(), claim)
+            .expect("the claim evaluates");
+        let read = readback_computation(
+            core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the claim reads back");
+        core.value_thunk(read)
+    };
+
+    let refolded = read(&mut core, crate::Recursion::Refolded, run);
+    let expected = core.value_thunk(source_call);
+    assert_eq!(
+        gandr_core_term::CertificateEquality::Equal,
+        gandr_core_term::equal_certificate_syntax(&core, refolded, expected),
+        "the refolded call applies the parameters ahead of `v`"
+    );
+    let unrolled = read(&mut core, crate::Recursion::Unrolled, run);
+    assert_eq!(
+        gandr_core_term::CertificateEquality::Different,
+        gandr_core_term::equal_certificate_syntax(&core, unrolled, expected),
+        "the unrolling stance keeps the fixpoint"
+    );
+    for (recursion, expected) in [
+        (crate::Recursion::Refolded, constant_run),
+        (crate::Recursion::Unrolled, body_run),
+    ] {
+        let read = read(&mut core, recursion, constant_run);
+        let expected = core.value_thunk(expected);
+        assert_eq!(
+            gandr_core_term::CertificateEquality::Equal,
+            gandr_core_term::equal_certificate_syntax(&core, read, expected),
+            "the constant under {recursion:?}"
+        );
+    }
+}
+
+#[test]
 fn nested_binders_read_back_as_the_indices_that_name_them()
 {
     let (chain, environment) = nothing_unfolds();
