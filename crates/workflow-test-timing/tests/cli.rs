@@ -92,6 +92,52 @@ fn a_report_reads_the_newest_stored_runs()
 }
 
 #[test]
+fn times_print_each_test_by_its_slowest_lane()
+{
+    let root = std::env::temp_dir().join(format!("test-timing-{}-times", std::process::id()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    let store = root.join("store");
+    for (run, slow) in [("201", "41.25"), ("202", "12.5")] {
+        let lane = store
+            .join(run)
+            .join("junit-cargo-test-enforcing-shard-2")
+            .join("ci-enforcing");
+        std::fs::create_dir_all(&lane).unwrap();
+        std::fs::write(lane.join("junit.xml"), ENFORCING.replace("SLOW", slow)).unwrap();
+        let plain = store.join(run).join("junit-cargo-test-plain-only");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(
+                plain.join("junit.xml"),
+                "<testsuites><testcase classname=\"gandr-a\" name=\"fast::t\" time=\"3.0\"/></testsuites>",
+            )
+            .unwrap();
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_test-timing"))
+        .args(["--offline", "--runs", "1", "--times", "--config"])
+        .arg(root.join("absent.toml"))
+        .arg("--store")
+        .arg(&store)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "",
+        "nothing on standard error, though no configuration exists"
+    );
+    assert!(output.status.success(), "exit 0");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "junit-cargo-test-plain-only\tgandr-a\tfast::t\t3.000\n\
+         junit-cargo-test-enforcing-shard-2\tgandr-a\tparse::was_slow\t2.000\n\
+         junit-cargo-test-enforcing-shard-2\tgandr-a\tslow::t\t12.500\n",
+        "the newest run alone, each test once, by the lane it held longest"
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn an_empty_store_is_refused()
 {
     let root = std::env::temp_dir().join(format!("test-timing-{}-empty", std::process::id()));

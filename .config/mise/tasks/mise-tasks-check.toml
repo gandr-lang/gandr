@@ -1609,7 +1609,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # collectors, and the rows `ci:recovery-file` marks and the collectors it
 # closes (`swept.jq`, #3326, #3732); each in `.config/claims/landed.json` a
 # merged body, the issues it advances, and the rows the merge ticks and the
-# collectors it closes (`landed.jq`, #3732). The
+# collectors it closes (`landed.jq`, #3732); each in
+# `.config/claims/slow.json` one run's test times, the open slow-test
+# collectors, and the collectors `ci:slow-file` opens, marks and closes
+# (`slow.jq`, #3752). The
 # term map itself, `.config/references/terms.toml`, is read whole: every row
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
@@ -1644,6 +1647,7 @@ cases absorbing absorbing.jq absorbing.json
 cases reads reads.jq reads.json --mode c
 cases swept swept.jq swept.json --mode c
 cases landed landed.jq landed.json --mode c
+cases slow slow.jq slow.json --mode c
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT

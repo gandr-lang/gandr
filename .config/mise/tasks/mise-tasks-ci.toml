@@ -1257,6 +1257,84 @@ jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/ope
     done
 {% endraw %}'''
 
+# A slow test is a report, never a dequeue (#3752): nextest's `ci` profile
+# marks a test slow past 30 s and fails it only past 5 minutes, and this task
+# files each slow test of one run. The run's `junit-*` artifacts sit under
+# SLOW_STORE/SLOW_RUN_ID (`target/test-timing` by default, the store
+# `test-timing` reads), and `test-timing --times` reads each test once, in the
+# lane it held longest. `.config/claims/slow.jq`, its cases held by
+# `check:claims`, decides the rest: one `collector` per test past SLOW_BUDGET
+# seconds (30 by default), `test: <binary> <test> ran <t> s in the <lane>
+# lane, past its 30 s budget`, kind:defect, area:workflow, priority:high,
+# with a row per run; a run under the budget ticks a row, and three ticked
+# rows in a row close it. Each slow test's line goes to standard output and,
+# when GITHUB_STEP_SUMMARY is set, to the job summary. SLOW_RUN_URL links
+# each row to its run; GH_REPO names the repository. Without SLOW_FILE set
+# the task prints what it would file and files nothing.
+["ci:slow-file"]
+description = "File each test past its 30 s budget on one collector issue"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+store=${SLOW_STORE:-target/test-timing}
+budget=${SLOW_BUDGET:-30}
+run=${SLOW_RUN_ID:?}
+url=${SLOW_RUN_URL:?}
+file=${SLOW_FILE:-}
+repo=${GH_REPO:-}
+if [[ -n $file && -z $repo ]]; then
+  echo "SLOW_FILE needs GH_REPO" >&2
+  exit 2
+fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+.config/mise/scope cargo run --locked --quiet --package gandr-workflow-test-timing -- \
+  --offline --runs 1 --times --store "$store" > "$scratch/times.tsv"
+jq -R 'split("\t") | {lane: .[0], binary: .[1], test: .[2], seconds: (.[3] | tonumber)}' "$scratch/times.tsv" \
+  | jq -s . > "$scratch/times.json"
+if [[ -n $repo ]]; then
+  gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"s budget" in:title' \
+    --json number,title,body > "$scratch/issues.json"
+else
+  echo '[]' > "$scratch/issues.json"
+fi
+claims=$(git rev-parse --show-toplevel)/.config/claims
+jq -n --argjson budget "$budget" --argjson id "$run" --arg url "$url" \
+  --slurpfile times "$scratch/times.json" --slurpfile issues "$scratch/issues.json" \
+  '{budget: $budget, run: {id: $id, url: $url}, times: $times[0], issues: $issues[0]}' \
+  | jq -c -L "$claims" -f "$claims/slow.jq" | jq -c '.[]' > "$scratch/actions"
+if [[ ! -s $scratch/actions ]]; then
+  echo "no test of run $run ran past its $budget s budget, and no slow-test collector changes"
+  exit 0
+fi
+{
+  printf '## Slow tests\n\n'
+  jq -r .line "$scratch/actions"
+} | if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then tee -a "$GITHUB_STEP_SUMMARY"; else cat; fi
+while IFS= read -r action; do
+  number=$(jq -r '.number // empty' <<< "$action")
+  title=$(jq -r .title <<< "$action")
+  if [[ -z $file ]]; then
+    echo "would $(if [[ -n $number ]]; then echo "update #$number"; else echo open; fi): $title$([[ $(jq -r .close <<< "$action") == true ]] && echo ', and close it')"
+    continue
+  fi
+  jq -r .body <<< "$action" > "$scratch/body.md"
+  if [[ -z $number ]]; then
+    created=$(gh issue create --repo "$repo" --title "$title" --label collector --label kind:defect \
+      --label area:workflow --label priority:high --label effort:unknown --body-file "$scratch/body.md")
+    echo "opened $created: $title"
+    continue
+  fi
+  gh issue edit "$number" --repo "$repo" --title "$title" --body-file "$scratch/body.md" > /dev/null
+  echo "updated #$number: $title"
+  if [[ $(jq -r .close <<< "$action") == true ]]; then
+    gh issue close "$number" --repo "$repo" --comment "Three runs in a row timed this test under its $budget s budget, the last $url." > /dev/null
+    echo "closed #$number"
+  fi
+done < "$scratch/actions"
+'''
+
 # A worktree is removed when its branch lands, mechanically: nothing else
 # removed one but a seat remembering to, and a `pr:watch` that dies with its
 # shell never prints `pr-merged`, so landed worktrees and their build
