@@ -1404,6 +1404,7 @@ mod kernel_ride_readmission
                 | ConversionDecision::ReturnEta { .. }
                 | ConversionDecision::Reassociate { .. }
                 | ConversionDecision::Discard { .. }
+                | ConversionDecision::Hold { .. }
                 | ConversionDecision::Force { .. }
                 | ConversionDecision::ComparedShared { .. }
                 | ConversionDecision::Decompose

@@ -2534,6 +2534,10 @@ where
                 self.discard(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
+            Plan::Step(Step::Hold(side)) => {
+                self.hold(id, goal, pair, side)?;
+                Ok(Turn::Again)
+            },
             Plan::Step(Step::Unreturn(side)) => {
                 self.unreturn(goal, pair, side)?;
                 Ok(Turn::Again)
@@ -3977,6 +3981,93 @@ where
         self.derivations
             .decide(id, ConversionDecision::Discard { side })?;
         let channel = self.open_channel(continuation, goal.depth, Opening::One)?;
+        Self::set_side(goal, side, Slot::Waiting(channel));
+        self.depend(id, channel)?;
+        Ok(())
+    }
+
+    /// Run the continuation of the call on `side` at the call's returned
+    /// endpoint.
+    ///
+    /// # Specification
+    /// - requires: [`crate::rules::passed_call`] reads `side` as a call its
+    ///   continuation passes on.
+    /// - ensures: the derivation records `Hold` naming `side`, and that side
+    ///   waits on the call's continuation entered at the returned endpoint of
+    ///   the call, the neutral's spine without its last bind; the other side
+    ///   and the depth are unchanged.
+    /// - provides: the hold of a call that returns, `M to x. N ≡ N[⟨M⟩/x]`.
+    /// - fails: every fault the channel or the domain raises, and
+    ///   [`ConversionFault::MachineInvariant`] when `side` is not a call its
+    ///   continuation passes on.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Every fault the channel or the domain raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call passed on against the other variable's call
+    ///   over its endpoint, on either side and in both stances, converts only
+    ///   through this step, and the kernel replays the recorded side; the same
+    ///   call of a variable not known to return stays apart from it.
+    /// - witness: `machine::tests::a_returning_call_holds_where_its_continuation_passes_it_on_3824`
+    #[spec(
+        captures: [depth = goal.depth, left = goal.left, right = goal.right],
+        ensures: |ret| ret.is_err() || (goal.depth == depth && match side {
+            ConversionSide::Left => goal.right == right && matches!(goal.left, Slot::Waiting(_)),
+            ConversionSide::Right => goal.left == left && matches!(goal.right, Slot::Waiting(_)),
+        }),
+    )]
+    fn hold(
+        &mut self,
+        id: ProcessId,
+        goal: &mut Goal,
+        pair: (Glued, Glued),
+        side: ConversionSide,
+    ) -> Result<(), ConversionFault>
+    {
+        let dangling = ConversionFault::Domain(DomainFault::Dangling);
+        let Glued::Computation(bound) = Self::side_of(pair, side)
+        else {
+            return Err(ConversionFault::MachineInvariant);
+        };
+        let held = *self.domain.computation(bound).ok_or(dangling)?;
+        let continuation =
+            crate::rules::passed_call(self.core, self.domain, self.definitions, held)?
+                .ok_or(ConversionFault::MachineInvariant)?;
+        let DomainComp::Neutral { neutral, .. } = held
+        else {
+            return Err(ConversionFault::MachineInvariant);
+        };
+        let node = self.domain.neutral(neutral).ok_or(dangling)?;
+        let (head, unfolding) = (node.head(), node.unfolding());
+        let (_bind, prefix) = node
+            .spine()
+            .split_last()
+            .ok_or(ConversionFault::MachineInvariant)?;
+        let prefix = prefix.to_vec();
+        let call = self
+            .domain
+            .neutral_node(head, prefix, unfolding)
+            .map_err(ConversionFault::Domain)?;
+        let call = self.domain.comp_neutral(call, CompTermFace::Reduced);
+        let endpoint =
+            crate::eval::returned_value(self.domain, call).map_err(ConversionFault::Evaluation)?;
+        self.derivations
+            .decide(id, ConversionDecision::Hold { side })?;
+        let evaluation = Evaluation::enter(
+            self.definitions,
+            self.domain,
+            continuation,
+            Bound::Variable(endpoint),
+        )
+        .map_err(ConversionFault::Evaluation)?;
+        let share = self.share_at(DefinitionHeight::default());
+        let channel = self.start(
+            Work::Channel(Channel::Running(evaluation)),
+            Outcome::Pending,
+            share,
+        )?;
         Self::set_side(goal, side, Slot::Waiting(channel));
         self.depend(id, channel)?;
         Ok(())

@@ -287,6 +287,11 @@ pub enum Step
     /// Run the continuation of the unread call on this side in its place: a
     /// call that returns and whose value nothing reads is dropped.
     Discard(ConversionSide),
+    /// Run the continuation of the call on this side at the call's returned
+    /// endpoint: a call that returns is the value it binds, so a
+    /// continuation passing that value to another variable's call is that
+    /// call over the endpoint.
+    Hold(ConversionSide),
     /// Read `return` of the returned endpoint on this side as the call it
     /// holds, the other side returning nothing yet: a call at the empty row
     /// returns, so it is the return of its result. The kernel's replay reads
@@ -3090,6 +3095,107 @@ pub fn unread_call(
     }
 }
 
+/// The continuation a call on one side passes its value on to, when the
+/// computation is a bind of such a call.
+///
+/// # Specification
+/// - requires: nothing — dangling ids are admissible input and refused.
+/// - ensures: `Some(continuation)` exactly when `comp` is a neutral headed by
+///   an intuitionistic variable whose calls [`Definitions::calls`] answers
+///   [`Calls::Return`] for, whose spine forces, applies and projects it and
+///   then, last, binds it into `continuation`, and whose continuation is a
+///   source body reading the value it binds, under applications a force of
+///   another variable. `None` otherwise.
+/// - provides: the planning half of [`Step::Hold`], and the continuation the
+///   machine runs at the call's returned endpoint when it takes the step.
+/// - fails: [`ConversionFault::Domain`] for a neutral or a closure that does
+///   not resolve, [`ConversionFault::MachineInvariant`] for a source body the
+///   core arena does not hold.
+/// - panics: none.
+/// - executable: none — the answer reads the domain's neutral and the core
+///   arena's body of its continuation, which a predicate could only read again;
+///   the witness holds it to stated terms.
+///
+/// # Errors
+/// - [`ConversionFault`] — as above.
+///
+/// # Termination
+/// - reason: the `while let` walks the continuation's applications to their
+///   head, not recursion.
+/// - measure: the applications left above the head.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call of a returning variable whose continuation passes
+///   its value to another variable's call is held, and the same call at no
+///   returning level is not; a continuation passing it to a different function
+///   holds and then refutes.
+/// - witness: `machine::tests::a_returning_call_holds_where_its_continuation_passes_it_on_3824`
+pub fn passed_call(
+    core: &CoreArena,
+    domain: &DomainArena,
+    definitions: Definitions<'_>,
+    comp: DomainComp,
+) -> Result<Option<CompClosureId>, ConversionFault>
+{
+    let dangling = ConversionFault::Domain(DomainFault::Dangling);
+    let DomainComp::Neutral { neutral, .. } = comp
+    else {
+        return Ok(None);
+    };
+    let held = domain.neutral(neutral).ok_or(dangling)?;
+    let NeutralHead::Variable {
+        zone: Zone::Intuitionistic,
+        level,
+    } = held.head()
+    else {
+        return Ok(None);
+    };
+    if definitions.calls(level) == Calls::Unknown {
+        return Ok(None);
+    }
+    let Some((&Elimination::Bind(continuation), prefix)) = held.spine().split_last()
+    else {
+        return Ok(None);
+    };
+    let calls = prefix.iter().all(|elimination| {
+        matches!(
+            *elimination,
+            Elimination::Force | Elimination::Apply(_) | Elimination::Projection(_)
+        )
+    });
+    if !calls {
+        return Ok(None);
+    }
+    let CompBody::Source(source) = domain.comp_closure(continuation).ok_or(dangling)?.body()
+    else {
+        return Ok(None);
+    };
+    let bound = DeBruijnIndex::from(0_u32);
+    let mut head = source;
+    while let Some(&gandr_core_term::Computation::Application(function, _)) = core.computation(head)
+    {
+        head = function;
+    }
+    let Some(&gandr_core_term::Computation::Force(function)) = core.computation(head)
+    else {
+        return Ok(None);
+    };
+    let passed_to_another = matches!(
+        core.value(function),
+        Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index != bound
+    );
+    if !passed_to_another {
+        return Ok(None);
+    }
+    let support = core
+        .computation_support(source)
+        .ok_or(ConversionFault::MachineInvariant)?;
+    Ok(support
+        .indices(Zone::Intuitionistic)
+        .any(|read| read == bound)
+        .then_some(continuation))
+}
+
 /// [`plan`] over two weak-head computations.
 ///
 /// # Specification
@@ -3239,7 +3345,20 @@ fn plan_comps(
                 neutral: right_neutral,
                 ..
             },
-        ) => return plan_rigid(core, domain, left_neutral, right_neutral),
+        ) => {
+            // A refutation stands only once neither side holds a call it
+            // passes on: the call at its returned endpoint may be the other
+            // side's argument.
+            let planned = plan_rigid(core, domain, left_neutral, right_neutral)?;
+            if planned == Plan::Leaf(Settled::NotConvertible) {
+                for (side, comp) in [(ConversionSide::Left, one), (ConversionSide::Right, other)] {
+                    if passed_call(core, domain, definitions, comp)?.is_some() {
+                        return Ok(Plan::Step(Step::Hold(side)));
+                    }
+                }
+            }
+            return Ok(planned);
+        },
         (
             DomainComp::Lambda { .. }
             | DomainComp::Return { .. }
