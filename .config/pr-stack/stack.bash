@@ -200,7 +200,8 @@ stack_entries() {
 # stack (#2094), so such a stack is unstacked first: GitHub leaves its queued
 # and auto-merge members stacked, and drops the rest, the closed one among
 # them. The stack's number is read again from a member it kept, if any, and
-# the open members it dropped are linked again with the chain.
+# the open members it dropped are linked again with the chain. A chain that
+# takes no arguments, one pull request in no stack, is linked nothing (#3817).
 stack_link() {
   local number stack entries kept stacks=() args
   for number in $(jq -r '.[].number' <<< "$1"); do
@@ -222,6 +223,7 @@ stack_link() {
   done
   mapfile -t args < <(jq -cn --argjson chain "$(jq -c 'map(.number)' <<< "$1")" \
     '{chain: $chain, stacks: ($ARGS.positional | map(fromjson))}' --args "${stacks[@]}" | jq -r -f "$pr_stack_dir/link.jq")
+  (( ${#args[@]} > 0 )) || return 0
   # No prompt is answered here: a question fails the link instead of waiting.
   gh stack link "${args[@]}" < /dev/null > /dev/null
 }

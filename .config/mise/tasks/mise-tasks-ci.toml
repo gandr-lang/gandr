@@ -3144,11 +3144,17 @@ if [[ -n "$unblocks" ]]; then
   gh pr merge "${url##*/}" -R "$repo" --merge --auto
   echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the red stack restacks it onto main"
 fi
+# A stack of one means its top merged after the obligations' check and before
+# this reading: GitHub moves the pull request to the trunk, and `gh stack
+# link` takes no chain of one, so nothing is linked (#3817). The next landing
+# queues it.
 if [[ "$base" != "$trunk" ]]; then
   number=${url##*/}
   stack=$(server_stack "$number")
   queued=$(queued_of "$stack")
-  if [[ "$queued" == '[]' ]]; then
+  if [[ $(jq length <<< "$stack") == 1 ]]; then
+    echo "#$number opens on $trunk, unlinked: #$top_number merged while it opened, and the next landing queues it"
+  elif [[ "$queued" == '[]' ]]; then
     stack_link "$stack"
     echo "#$number stacked on #$top_number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
   elif stack_link "$(jq -c --argjson queued "$queued" '[.[] | select(.number | IN($queued[]) | not)]' <<< "$stack")" 2> /dev/null; then

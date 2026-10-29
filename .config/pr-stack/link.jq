@@ -6,7 +6,12 @@
 # GitHub keeps a stack's merged members, and `gh stack link` refuses a list
 # that leaves one out. A chain already in a stack is therefore linked by the
 # stack's number: members already in it are skipped and the new ones appended
-# on top. A chain in no stack is linked by its numbers alone.
+# on top. A chain in no stack is linked by its numbers alone. `gh stack link`
+# takes at least two, so a chain of one in no stack takes no link: its pull
+# request stands alone on the trunk, as one whose stack top merged while it
+# opened does (#3817).
 
 (.stacks | map(select(. != null)) | first) as $stack
-| if $stack == null then .chain[] else $stack, .chain[] end
+| if $stack != null then $stack, .chain[]
+  elif (.chain | length) >= 2 then .chain[]
+  else empty end
