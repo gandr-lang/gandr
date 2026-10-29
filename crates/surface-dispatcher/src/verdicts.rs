@@ -122,8 +122,8 @@ impl VerdictCache
         }
     }
 
-    /// [`bridge::readmit_retiring`] under this cache's recall, settling a
-    /// whole readmission into the cache.
+    /// [`bridge::readmit_retiring`] under this cache's recall, timing each
+    /// admission by `stopwatch`, settling a whole readmission into the cache.
     ///
     /// # Specification
     /// - ensures: the readmission [`bridge::readmit_retiring`] gives under the
@@ -136,7 +136,7 @@ impl VerdictCache
     /// # Adequacy
     /// - hypothesis: L3 — as [`VerdictCache`].
     /// - witness: `verdicts::tests::a_second_cache_recalls_what_the_first_recorded_2799`
-    fn readmit<Poll>(
+    fn readmit<Poll, Watch>(
         &self,
         arena: &mut CoreArena,
         report: &gandr_core_checker::ModuleReport,
@@ -144,12 +144,14 @@ impl VerdictCache
             bridge::LeadingCount,
             Maybe<&bridge::Crossed, bridge::crossed::Absent>,
         ),
-        retirement: &Poll,
+        (retirement, stopwatch): (&Poll, &mut Watch),
     ) -> bridge::Readmitting<Poll::Retired>
     where
         Poll: Retirement,
+        Watch: bridge::Stopwatch,
     {
-        let polled = bridge::readmit_retiring(arena, report, leading, &self.recall, retirement);
+        let polled =
+            bridge::readmit_retiring(arena, report, leading, &self.recall, retirement, stopwatch);
         if let Polled::Whole((ref readmission, _)) = polled {
             self.settle(readmission);
         }
@@ -261,26 +263,28 @@ pub fn verdict_tally() -> Maybe<VerdictTally, tallied::Absent>
 
 /// [`bridge::readmit_retiring`] under the installed cache's recall, settling
 /// a whole readmission into the cache; under [`bridge::Recall::recheck`] when
-/// none is installed. A whole readmission adds the admitted results its kernel
-/// took to the process's tally.
+/// none is installed. Each admission is timed by `stopwatch`. A whole
+/// readmission adds the admitted results its kernel took to the process's
+/// tally.
 ///
 /// # Specification
 /// trivial.
-pub fn readmit<Poll>(
+pub fn readmit<Poll, Watch>(
     arena: &mut CoreArena,
     report: &gandr_core_checker::ModuleReport,
     leading: (
         bridge::LeadingCount,
         Maybe<&bridge::Crossed, bridge::crossed::Absent>,
     ),
-    retirement: &Poll,
+    (retirement, stopwatch): (&Poll, &mut Watch),
 ) -> bridge::Readmitting<Poll::Retired>
 where
     Poll: Retirement,
+    Watch: bridge::Stopwatch,
 {
     let polled = match INSTALLED.get() {
-        Some(cache) => cache.readmit(arena, report, leading, retirement),
-        None => bridge::readmit_retiring(arena, report, leading, &RECHECK, retirement),
+        Some(cache) => cache.readmit(arena, report, leading, (retirement, stopwatch)),
+        None => bridge::readmit_retiring(arena, report, leading, &RECHECK, retirement, stopwatch),
     };
     if let Polled::Whole((ref readmission, _)) = polled {
         crate::tier::took(readmission.environment().admitted());
@@ -344,7 +348,7 @@ mod tests
                     bridge::LeadingCount::NONE,
                     Maybe::Absent(bridge::crossed::Absent::Unasked),
                 ),
-                &Unretired,
+                (&Unretired, &mut bridge::Untimed),
             )
             .whole()
             .0

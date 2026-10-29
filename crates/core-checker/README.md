@@ -45,7 +45,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CheckRefusal::classify` assigns producer-failure classes ([`refusal`](src/refusal.rs)).
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the expected and the found types a refusal sets against each other, as nodes a face spells.
 - `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the machine held when it refused, per refused body by position ([`failure`](src/failure.rs)).
-- `bridge`: readmission into a fresh kernel environment — `readmit`, `Readmission` and its canonical `export`; `readmit_resuming`, `Crossed` and `export_resuming`, a prefix resumed from a record; `Readmitted`, `Outcome`, `ArtifactAudit`, `Replayed` and `Refusal`, each origin's account as [`bridge`](src/bridge.rs) states.
+- `bridge`: readmission into a fresh kernel environment — `readmit`, `Readmission` and its canonical `export`; `readmit_resuming`, `Crossed` and `export_resuming`, a prefix resumed from a record; `Readmitted`, `Outcome`, `ArtifactAudit`, `Replayed` and `Refusal`, each origin's account and time as [`bridge`](src/bridge.rs) states.
 - `Retirement`, `Demand`, `Polled`, `Unretired` and `bridge::readmit_retiring`: a run polled between its steps ([`retire`](src/retire.rs)).
 - The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
 - `Verdict::Suspended` and `ModuleReport::suspensions`: a judgement held on an owed code hole ([`elaboration`](src/elaboration.rs)).

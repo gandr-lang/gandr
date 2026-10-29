@@ -206,6 +206,8 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_core_term::ValueId;
 use gandr_core_term::hole::HoleId;
+use gandr_kernel_core::ExpansionCensus;
+use gandr_kernel_core::tallied;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::StructuredName;
@@ -260,6 +262,7 @@ use crate::evaluate::ScheduledRuns;
 use crate::exercised::Exercised;
 use crate::schedule::Scheduling;
 use crate::schedule::independent;
+use crate::stage::Monotonic;
 use crate::typed::TypeTable;
 use crate::typed::TypedRun;
 use crate::typed::wanted_types;
@@ -877,12 +880,24 @@ impl Admission
         Poll: Retirement,
     {
         let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
-        let (readmission, mut recorded) = match readmitted(
-            &mut self.arena,
-            &self.verdicts,
-            (boundary, crossed),
-            retirement,
-        ) {
+        let leading = (boundary, crossed);
+        // A measured admission times the kernel's admission of each
+        // declaration; any other reads no clock.
+        let polled = match self.positioning {
+            Positioning::Positioned => readmitted(
+                &mut self.arena,
+                &self.verdicts,
+                leading,
+                (retirement, &mut bridge::Timed::by(Monotonic::started())),
+            ),
+            Positioning::Unpositioned => readmitted(
+                &mut self.arena,
+                &self.verdicts,
+                leading,
+                (retirement, &mut bridge::Untimed),
+            ),
+        };
+        let (readmission, mut recorded) = match polled {
             Polled::Whole(whole) => whole,
             Polled::Retired(retired, held) => return Polled::Retired(retired, held),
         };
@@ -956,17 +971,18 @@ pub struct Resumption
 }
 
 /// Whether an admission records where each declaration stands in its
-/// artifact.
+/// artifact and what its admission tallied.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum Positioning
 {
-    /// It records each crossed declaration's artifact position, which a
-    /// measure reads.
+    /// It records each crossed declaration's artifact position, the census its
+    /// check charged and the time the kernel took to admit it, which a measure
+    /// reads.
     Positioned,
-    /// It records none, and pays nothing for them.
+    /// It records none, reads no clock, and pays nothing for them.
     #[default]
     Unpositioned,
 }
@@ -989,7 +1005,8 @@ quenchant_shape::reason_enum! {
 }
 
 /// Where each declaration that crossed into the kernel stands in the artifact
-/// its admission exported: its kernel position, by its module position.
+/// its admission exported, and what its admission tallied, by its module
+/// position.
 ///
 /// The kernel numbers only the declarations that cross, so a declaration's
 /// kernel position is not its module position.
@@ -1000,26 +1017,94 @@ quenchant_shape::reason_enum! {
 /// - ensures: one entry per declaration the kernel admitted as a definition, an
 ///   axiom or a nominal declaration, and none for one it was not offered.
 /// - panics: none.
-/// - executable: none — a data declaration; [`ArtifactPositions::position`]
-///   reads it.
+/// - executable: none — a data declaration; [`ArtifactPositions::placed`] reads
+///   it.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`crate::measure()`]: a row read at a declaration's
-///   module position reads another declaration's segment.
+///   module position reads another declaration's segment and tally.
 /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ArtifactPositions(BTreeMap<ConstantIndex, ConstantIndex>);
+pub struct ArtifactPositions(BTreeMap<ConstantIndex, Placed>);
+
+/// Where one declaration stands in its component's kernel artifact, and what
+/// the kernel's admission of it tallied.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Placed
+{
+    /// Its kernel position.
+    position: ConstantIndex,
+    /// What its check charged, goal by goal, or why no check was tallied.
+    census: Maybe<ExpansionCensus, tallied::Absent>,
+    /// How long the kernel took to admit it, or why no time was read.
+    took: bridge::AdmissionTime,
+}
+
+impl Placed
+{
+    /// The declaration's kernel position: where it stands in the artifact.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn position(&self) -> ConstantIndex
+    {
+        self.position
+    }
+
+    /// What the declaration's check charged: each goal expanded, recalled from
+    /// the check's memo or answered by an earlier admission's kept outcome.
+    /// A declaration a recorded verdict admitted ran no check here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn census(&self) -> Maybe<ExpansionCensus, tallied::Absent>
+    {
+        self.census
+    }
+
+    /// How long the kernel took to admit the declaration, or why no time was
+    /// read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn took(&self) -> bridge::AdmissionTime
+    {
+        self.took
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration has no place in its component's artifact.
+    pub mod placement {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The kernel admitted no declaration at that module position.
+            Uncrossed,
+        }
+    }
+}
 
 impl ArtifactPositions
 {
-    /// The position `readmission` gave each declaration the kernel admitted.
+    /// The position `readmission` gave each declaration the kernel admitted,
+    /// beside the census its environment entry keeps and the time its entry
+    /// carries.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one entry per readmitted declaration whose outcome is a
     ///   definition, an axiom or a nominal declaration, at the position its
-    ///   receipt names.
+    ///   receipt names, with what the environment's entry there answers of its
+    ///   census and the readmitted time.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1028,6 +1113,7 @@ impl ArtifactPositions
     #[spec(ensures: |ret| ret.0.len() <= readmission.readmitted().len())]
     fn of(readmission: &bridge::Readmission) -> Self
     {
+        let entries = readmission.environment().entries();
         Self(
             readmission
                 .readmitted()
@@ -1036,7 +1122,13 @@ impl ArtifactPositions
                     bridge::Outcome::Data { admitted, .. }
                     | bridge::Outcome::Defined { admitted, .. }
                     | bridge::Outcome::Assumed { admitted, .. } => {
-                        Some((entry.constant(), admitted.position()))
+                        let position = admitted.position();
+                        let census = entries.get(usize::from(position))?.census();
+                        Some((entry.constant(), Placed {
+                            position,
+                            census,
+                            took: entry.took(),
+                        }))
                     },
                     bridge::Outcome::Marked(_)
                     | bridge::Outcome::Suspended
@@ -1048,19 +1140,22 @@ impl ArtifactPositions
         )
     }
 
-    /// The artifact position of the declaration at module position
-    /// `constant`, when the kernel admitted it.
+    /// Where the declaration at module position `constant` stands in the
+    /// artifact, and what its admission tallied, when the kernel admitted it.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub fn position(
+    pub fn placed(
         &self,
         constant: ConstantIndex,
-    ) -> Option<ConstantIndex>
+    ) -> Maybe<Placed, placement::Absent>
     {
-        self.0.get(&constant).copied()
+        self.0
+            .get(&constant)
+            .map_or(Maybe::Absent(placement::Absent::Uncrossed), |&placed| {
+                Maybe::Present(placed)
+            })
     }
 }
 
@@ -4524,8 +4619,8 @@ type Readmitting<Retired> = Polled<
 /// Have the kernel re-derive every declaration in `verdicts` the checker
 /// accepted, or admit it on a verdict the installed cache recalls, resuming
 /// the first of them from `leading`'s record and recording its boundary's, as
-/// [`bridge::readmit_retiring`] does under `retirement` and the recall
-/// [`crate::verdicts::readmit`] chooses.
+/// [`bridge::readmit_retiring`] does under `timing`'s retirement and stopwatch
+/// and the recall [`crate::verdicts::readmit`] chooses.
 ///
 /// # Specification
 /// - requires: `verdicts` was judged over `arena`; `leading`'s record, when
@@ -4584,23 +4679,23 @@ type Readmitting<Retired> = Polled<
                 || matches!(*fault.outcome(), bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }) if residence(former) == Residence::Kernel)),
     },
 })]
-fn readmitted<Poll>(
+fn readmitted<Poll, Watch>(
     arena: &mut CoreArena,
     verdicts: &ModuleReport,
     leading: (
         bridge::LeadingCount,
         Maybe<&bridge::Crossed, bridge::crossed::Absent>,
     ),
-    retirement: &Poll,
+    timing: (&Poll, &mut Watch),
 ) -> Readmitting<Poll::Retired>
 where
     Poll: Retirement,
+    Watch: bridge::Stopwatch,
 {
-    let (readmission, recorded) =
-        match crate::verdicts::readmit(arena, verdicts, leading, retirement) {
-            Polled::Whole(whole) => whole,
-            Polled::Retired(retired, held) => return Polled::Retired(retired, held),
-        };
+    let (readmission, recorded) = match crate::verdicts::readmit(arena, verdicts, leading, timing) {
+        Polled::Whole(whole) => whole,
+        Polled::Retired(retired, held) => return Polled::Retired(retired, held),
+    };
     for readmitted in readmission.readmitted() {
         match *readmitted.outcome() {
             bridge::Outcome::Data { .. }
@@ -5622,10 +5717,15 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),
         );
-        let admission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
-            .whole()
-            .0
-            .expect("marks and withheld references are not disagreements");
+        let admission = readmitted(
+            &mut arena,
+            &verdicts,
+            WHOLE,
+            (&Unretired, &mut bridge::Untimed),
+        )
+        .whole()
+        .0
+        .expect("marks and withheld references are not disagreements");
         let [ref marked, ref withheld, ref defined] = *admission.readmitted()
         else {
             panic!("each declaration has one readmission outcome");
@@ -5644,7 +5744,13 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
             "the reference is accepted by the checker despite the withheld body"
         );
         let mut foreign = CoreArena::new();
-        let (Err(fault), _) = readmitted(&mut foreign, &verdicts, WHOLE, &Unretired).whole()
+        let (Err(fault), _) = readmitted(
+            &mut foreign,
+            &verdicts,
+            WHOLE,
+            (&Unretired, &mut bridge::Untimed),
+        )
+        .whole()
         else {
             panic!("over a foreign arena the accepted ids dangle");
         };
@@ -5711,10 +5817,15 @@ def delivered() -> -F Unit {
                 .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
             "both exchanges check"
         );
-        let admission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
-            .whole()
-            .0
-            .expect("both sides admit each exchange");
+        let admission = readmitted(
+            &mut arena,
+            &verdicts,
+            WHOLE,
+            (&Unretired, &mut bridge::Untimed),
+        )
+        .whole()
+        .0
+        .expect("both sides admit each exchange");
         let [ref finished, ref delivered] = *admission.readmitted()
         else {
             panic!("each declaration has one readmission outcome");
@@ -5764,10 +5875,15 @@ def delivered() -> -F Unit {
                 &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
                 &adapt(&module),
             );
-            let readmission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
-                .whole()
-                .0
-                .expect("the kernel re-derives every acceptance");
+            let readmission = readmitted(
+                &mut arena,
+                &verdicts,
+                WHOLE,
+                (&Unretired, &mut bridge::Untimed),
+            )
+            .whole()
+            .0
+            .expect("the kernel re-derives every acceptance");
             let kernel = readmission.export(module.structured_names());
             let mut program = Program::new(&arena, &module, &verdicts);
             let report = settle(

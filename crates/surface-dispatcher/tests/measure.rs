@@ -1,5 +1,5 @@
 //! Each declaration a settled source writes, measured in its component's
-//! kernel artifact.
+//! kernel artifact and in its admission's tally.
 
 use alloc::collections::BTreeMap;
 use core::convert::Infallible;
@@ -54,13 +54,16 @@ fn sizes_by_name(
 
 /// Each source of `library/math` measures the declarations it writes, in the
 /// order it writes them, and none of the closure it imports. Each row reads
-/// the sizes of the artifact's declaration of that name. A walk not asked to
+/// the sizes of the artifact's declaration of that name, the census the
+/// kernel's check of it charged and the time its admission took. Some row
+/// stands on an earlier admission's kept outcomes. A walk not asked to
 /// measure records no positions, and says so rather than measuring nothing.
 #[test]
 fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
 {
     let math = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/math");
     let mut written = BTreeMap::new();
+    let mut kept = 0_u64;
     let ControlFlow::Continue(_) = Walk::new(vec![math.clone()]).measuring().visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
@@ -95,6 +98,32 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                         .is_ok_and(|shared| shared <= u64::from(row.unshared())),
                     "a segment adds no more entries than its roots' trees hold"
                 );
+                let Maybe::Present(census) = row.census()
+                else {
+                    panic!(
+                        "{}'s {} is checked, no cache recalling it: {:?}",
+                        path.display(),
+                        row.name(),
+                        row.census()
+                    );
+                };
+                assert!(
+                    u64::from(census.expansions())
+                        .saturating_add(u64::from(census.recalls()))
+                        .saturating_add(u64::from(census.kept()))
+                        > 0,
+                    "{}'s check of {} charges at least its declared type's formation",
+                    path.display(),
+                    row.name()
+                );
+                kept = kept.saturating_add(u64::from(census.kept()));
+                assert!(
+                    matches!(row.took(), Maybe::Present(_)),
+                    "{}'s admission of {} is timed: {:?}",
+                    path.display(),
+                    row.name(),
+                    row.took()
+                );
             }
             let names: Vec<String> = rows.iter().map(|row| row.name().to_string()).collect();
             let _replaced = written.insert(
@@ -117,6 +146,10 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
             .as_slice()
         ),
         "math.cylinder measures the three composites it writes, none of math.path's"
+    );
+    assert!(
+        kept > 0,
+        "a declaration of math stands on the outcomes an earlier admission kept"
     );
     let mut unasked = 0_usize;
     let ControlFlow::Continue(_) = Walk::new(vec![math]).visit(

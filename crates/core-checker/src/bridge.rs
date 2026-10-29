@@ -455,6 +455,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
+use core::time::Duration;
 
 use anodized::spec;
 use gandr_core_nbe::TraceNode;
@@ -544,6 +545,7 @@ use crate::retire::Demand;
 use crate::retire::Polled;
 use crate::retire::Retirement;
 use crate::retire::Unretired;
+use crate::template::Clock;
 use crate::view::CompTypeView;
 
 mod native;
@@ -951,7 +953,8 @@ impl Replayed
 }
 
 /// One declaration's outcome, beside the position and origin the judgement
-/// echoed and the certificates its erasure replayed.
+/// echoed, the certificates its erasure replayed and how long the kernel's
+/// admission of it took.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Readmitted
 {
@@ -964,6 +967,8 @@ pub struct Readmitted
     /// The certificates the kernel replayed before the declaration was
     /// offered, in the order the erasure met the unfoldings.
     certificates: Vec<Replayed>,
+    /// How long the kernel's admission of it took, or why no time was read.
+    took: AdmissionTime,
 }
 
 impl Readmitted
@@ -1011,6 +1016,168 @@ impl Readmitted
     pub fn certificates(&self) -> &[Replayed]
     {
         &self.certificates
+    }
+
+    /// How long [`Environment::add_decl`] took to admit or reject the
+    /// declaration, by the readmission's [`Stopwatch`], or why no time was
+    /// read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn took(&self) -> AdmissionTime
+    {
+        self.took
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a readmitted declaration carries no admission time.
+    pub mod timed {
+        /// The reason no time was read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The readmission read no clock.
+            Untimed,
+            /// The kernel was never offered the declaration.
+            Unoffered,
+            /// A mutual block admits its members together, so no member has
+            /// a time of its own.
+            Block,
+        }
+    }
+}
+
+/// How long the kernel's admission of one declaration took, or why no time
+/// was read.
+pub type AdmissionTime = Maybe<Duration, timed::Absent>;
+
+/// The time of a declaration the kernel was never offered.
+const UNOFFERED: AdmissionTime = Maybe::Absent(timed::Absent::Unoffered);
+
+/// How a readmission times the kernel's admission of each declaration: by a
+/// [`Clock`] the caller supplies, or not at all.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Self::stop`] answers the time since the [`Self::start`] it is
+///   given, or why it read none.
+/// - provides: the seam a measured walk times the kernel through; the checker
+///   reads no clock of its own, and an untimed readmission reads none.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the trait has no body, and each reading is the clock's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readmission under a ticking clock times each
+///   declaration it admits alone and none it does not, and an untimed one times
+///   none.
+/// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+pub trait Stopwatch
+{
+    /// What a start leaves for its stop to read against.
+    type Started: Copy;
+
+    /// Begin timing one admission.
+    ///
+    /// # Specification
+    /// trivial.
+    fn start(&mut self) -> Self::Started;
+
+    /// End timing the admission `started` began.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stop(
+        &mut self,
+        started: Self::Started,
+    ) -> AdmissionTime;
+}
+
+/// The stopwatch that reads no clock: every admission untimed.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Untimed;
+
+impl Stopwatch for Untimed
+{
+    type Started = ();
+
+    /// Read nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn start(&mut self)
+    {
+    }
+
+    /// Answer that no clock was read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn stop(
+        &mut self,
+        (): (),
+    ) -> AdmissionTime
+    {
+        Maybe::Absent(timed::Absent::Untimed)
+    }
+}
+
+/// The stopwatch that reads its clock around each admission.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Timed<C>(C);
+
+impl<C> Timed<C>
+{
+    /// A stopwatch reading `clock`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn by(clock: C) -> Self
+    {
+        Self(clock)
+    }
+}
+
+impl<C> Stopwatch for Timed<C>
+where
+    C: Clock,
+{
+    type Started = Duration;
+
+    /// The clock's reading at the start.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn start(&mut self) -> Duration
+    {
+        self.0.now()
+    }
+
+    /// The time since `started`, zero if the clock went back.
+    ///
+    /// # Specification
+    /// - ensures: present, the difference of a fresh reading and `started`,
+    ///   zero if the clock went back.
+    /// - panics: none.
+    /// - executable: none — the fresh reading is the clock's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Stopwatch`].
+    /// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+    #[inline]
+    fn stop(
+        &mut self,
+        started: Duration,
+    ) -> AdmissionTime
+    {
+        Maybe::Present(self.0.now().saturating_sub(started))
     }
 }
 
@@ -1647,6 +1814,7 @@ impl Crossed
                 origin: judged.origin(),
                 outcome: entry.outcome.clone(),
                 certificates: entry.certificates.clone(),
+                took: entry.took,
             });
         }
         let mut positions = self.positions.clone();
@@ -1746,13 +1914,13 @@ pub fn readmit(
 /// - ensures: as [`readmit`]. The entries `crossed` holds are resumed rather
 ///   than crossed again when each names the position the report's declaration
 ///   at its index carries, under a verdict of the kind its outcome crossed: its
-///   outcome and certificates as recorded, its origin the report's, and the
-///   core bodies a later declaration unfolds read from the report;
-///   [`Readmission::resumed`] counts them, none when `crossed` is absent or
-///   disagrees. The record is present when this readmission crossed at least
-///   one of the first `boundary` declarations, every one of them was admitted
-///   or static, and no mutual block or open seal spans the boundary; absent
-///   otherwise.
+///   outcome, certificates and admission time as recorded, its origin the
+///   report's, and the core bodies a later declaration unfolds read from the
+///   report; [`Readmission::resumed`] counts them, none when `crossed` is
+///   absent or disagrees. The record is present when this readmission crossed
+///   at least one of the first `boundary` declarations, every one of them was
+///   admitted or static, and no mutual block or open seal spans the boundary;
+///   absent otherwise.
 /// - provides: the language server's recheck of a document laid out after its
 ///   import closure: the closure's declarations cross once, and each later
 ///   revision of the document resumes them.
@@ -1781,6 +1949,7 @@ pub fn readmit_resuming(
         (boundary, crossed),
         &Recall::recheck(),
         &Unretired,
+        &mut Untimed,
     )
     .whole()
 }
@@ -1865,6 +2034,8 @@ pub type Readmitting<Retired> = Polled<
 /// declaration it crosses: retired, it stops there and answers the record of
 /// the declarations before it.
 ///
+/// It times each admission by `stopwatch`.
+///
 /// # Specification
 /// - requires: as [`readmit_resuming`], of `leading`'s boundary and record.
 /// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
@@ -1876,7 +2047,10 @@ pub type Readmitting<Retired> = Polled<
 ///   every one was admitted or static, and no seal is open at `k`; absent
 ///   otherwise. A mutual block crosses whole, so `k` never falls inside one; a
 ///   poll is read only before a declaration, so `k` is always one of the
-///   report's.
+///   report's. Each declaration the kernel admitted or rejected alone carries
+///   the time `stopwatch` read around its [`Environment::add_decl`], a resumed
+///   one the time the readmission that admitted it read; a member of a mutual
+///   block and one the kernel was never offered carry the reason none was read.
 /// - provides: an admission a newer revision overtakes stops at its next
 ///   declaration, and the next one resumes what it crossed.
 /// - fails: never.
@@ -1887,6 +2061,7 @@ pub type Readmitting<Retired> = Polled<
 ///   record, answers what a whole readmission answers; one under the receipt of
 ///   its own cold run recalls what that run checked.
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+/// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
 /// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
 #[inline]
 #[spec(ensures: |ret| match ret {
@@ -1894,15 +2069,17 @@ pub type Readmitting<Retired> = Polled<
     Polled::Retired(_, Maybe::Present(ref record)) => usize::from(record.boundary()) < report.judged().len(),
     Polled::Retired(_, Maybe::Absent(_)) => true,
 })]
-pub fn readmit_retiring<Poll>(
+pub fn readmit_retiring<Poll, Watch>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     leading: (LeadingCount, Maybe<&Crossed, crossed::Absent>),
     recall: &Recall,
     retirement: &Poll,
+    stopwatch: &mut Watch,
 ) -> Readmitting<Poll::Retired>
 where
     Poll: Retirement,
+    Watch: Stopwatch,
 {
     let (boundary, crossed) = leading;
     readmit_from(
@@ -1914,7 +2091,7 @@ where
             crossed,
             recall,
         },
-        retirement,
+        (retirement, stopwatch),
     )
 }
 
@@ -1944,9 +2121,15 @@ fn readmit_with<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    readmit_from(arena, report, vouch, Resume::Whole, &Unretired)
-        .whole()
-        .0
+    readmit_from(
+        arena,
+        report,
+        vouch,
+        Resume::Whole,
+        (&Unretired, &mut Untimed),
+    )
+    .whole()
+    .0
 }
 
 /// How a readmission treats its report's leading declarations.
@@ -1969,8 +2152,9 @@ enum Resume<'crossed>
 }
 
 /// [`readmit_with`] under `resume`, polling `retirement` before each
-/// declaration: the readmission and the record of its leading declarations
-/// [`Resume::Leading`] asks for, or what it held when retired.
+/// declaration and timing each admission by `stopwatch`: the readmission and
+/// the record of its leading declarations [`Resume::Leading`] asks for, or what
+/// it held when retired.
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`].
@@ -1994,16 +2178,17 @@ enum Resume<'crossed>
     Polled::Retired(..) => true,
 })]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn readmit_from<Vouch, Poll>(
+fn readmit_from<Vouch, Poll, Watch>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
     resume: Resume<'_>,
-    retirement: &Poll,
+    (retirement, stopwatch): (&Poll, &mut Watch),
 ) -> Readmitting<Poll::Retired>
 where
     Vouch: Fn(Certificate) -> Certificate,
     Poll: Retirement,
+    Watch: Stopwatch,
 {
     let source = Source {
         lifts: report.lifts(),
@@ -2122,6 +2307,7 @@ where
                     origin: member.origin(),
                     outcome,
                     certificates,
+                    took: Maybe::Absent(timed::Absent::Block),
                 });
             }
             index = index.saturating_sub(1).saturating_add(block.len());
@@ -2154,7 +2340,7 @@ where
         // A type operator — a definition whose type views as a static Pi — stays
         // on the checker's side; a type the view refuses is not one, and its
         // own erasure refuses it.
-        let (outcome, certificates) = match (definition, judged.verdict()) {
+        let (outcome, certificates, took) = match (definition, judged.verdict()) {
             (None, Verdict::Data) => {
                 let offer = match (
                     report.data_signatures().get(&constant),
@@ -2170,6 +2356,7 @@ where
                             origin: judged.origin(),
                             outcome: Outcome::Static,
                             certificates: Vec::new(),
+                            took: UNOFFERED,
                         });
                         continue;
                     },
@@ -2179,6 +2366,7 @@ where
                             origin: judged.origin(),
                             outcome: Outcome::Refused(Refusal::MachineInvariant),
                             certificates: Vec::new(),
+                            took: UNOFFERED,
                         });
                         continue;
                     },
@@ -2190,7 +2378,7 @@ where
                     &mut positions,
                     constant,
                     offer,
-                    &vouch,
+                    (&vouch, &mut *stopwatch),
                 )
             },
             (Some((declared, body)), _)
@@ -2201,7 +2389,7 @@ where
             {
                 let defined = source.definitions.get(&constant).copied().unwrap_or(body);
                 positions.definitions.define(constant, defined);
-                (Outcome::Static, Vec::new())
+                (Outcome::Static, Vec::new(), UNOFFERED)
             },
             (Some((declared, body)), _) => cross(
                 &mut environment,
@@ -2227,7 +2415,7 @@ where
                         .get(&constant)
                         .unwrap_or(&UNQUANTIFIED),
                 },
-                &vouch,
+                (&vouch, &mut *stopwatch),
             ),
             (None, Verdict::Owed(entry)) => cross(
                 &mut environment,
@@ -2238,13 +2426,15 @@ where
                 Offer::Axiom {
                     declared: entry.absence().declared().id(),
                 },
-                &vouch,
+                (&vouch, &mut *stopwatch),
             ),
-            (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new()),
-            (None, Verdict::Suspended(_)) => (Outcome::Suspended, Vec::new()),
-            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
-                (Outcome::Refused(Refusal::MachineInvariant), Vec::new())
-            },
+            (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new(), UNOFFERED),
+            (None, Verdict::Suspended(_)) => (Outcome::Suspended, Vec::new(), UNOFFERED),
+            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => (
+                Outcome::Refused(Refusal::MachineInvariant),
+                Vec::new(),
+                UNOFFERED,
+            ),
         };
         if report.abstract_types().contains_key(&constant)
             && matches!(
@@ -2271,6 +2461,7 @@ where
             origin: judged.origin(),
             outcome,
             certificates,
+            took,
         });
         close_seals(&mut environment, &mut positions, &mut readmitted, constant);
     }
@@ -2660,8 +2851,11 @@ enum Erased
 ///   each native operation it is the first declaration to read, each an axiom
 ///   the audit of whatever reads it names, and the free model of each effect it
 ///   is the first declaration to handle. The replayed verdicts are returned
-///   beside the outcome; a native signature or a free model the kernel rejects
-///   is the declaration's [`Outcome::Rejected`].
+///   beside the outcome, and beside them the time `stopwatch` read around the
+///   kernel's admission of the offer: [`timed::Absent::Unoffered`] when the
+///   offer never reached [`Environment::add_decl`]. A native signature or a
+///   free model the kernel rejects is the declaration's [`Outcome::Rejected`],
+///   its offer never made.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -2684,26 +2878,29 @@ enum Erased
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
-            && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
+            && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible)
+            && ret.2 != UNOFFERED,
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
             usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)
             && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)
-            && positions.admitted.len() == crossed,
+            && positions.admitted.len() == crossed
+            && (matches!(ret.0, Outcome::Rejected(_)) || ret.2 == UNOFFERED),
         | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
     },
 )]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn cross<Vouch>(
+fn cross<Vouch, Watch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
     constant: ConstantIndex,
     offer: Offer<'_>,
-    vouch: &Vouch,
-) -> (Outcome, Vec<Replayed>)
+    (vouch, stopwatch): (&Vouch, &mut Watch),
+) -> (Outcome, Vec<Replayed>, AdmissionTime)
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Watch: Stopwatch,
 {
     let staged = loop {
         let next = ConstantIndex::from(environment.entries().len());
@@ -2724,22 +2921,25 @@ where
             Ok(staged) => break staged,
             Err(Unstaged::Unseeded(seed)) => {
                 if let Err(outcome) = seeded(environment, arena, source, positions, &seed, vouch) {
-                    return (outcome, Vec::new());
+                    return (outcome, Vec::new(), UNOFFERED);
                 }
             },
             Err(Unstaged::Refused(outcome, replayed)) => {
                 if let Maybe::Absent(_) =
                     assumed_for(environment, arena, source, positions, &outcome, vouch)
                 {
-                    return (outcome, replayed);
+                    return (outcome, replayed, UNOFFERED);
                 }
             },
         }
     };
     let staged_as = staged.declaration.declaration().clone();
-    let admitted = match admit(environment, staged.declaration) {
+    let started = stopwatch.start();
+    let admitted = admit(environment, staged.declaration);
+    let took = stopwatch.stop(started);
+    let admitted = match admitted {
         Ok(admitted) => admitted,
-        Err(error) => return (Outcome::Rejected(error), staged.replayed),
+        Err(error) => return (Outcome::Rejected(error), staged.replayed, took),
     };
     let outcome = settle(
         environment,
@@ -2748,7 +2948,7 @@ where
         (constant, offer, staged.image),
         (staged_as, admitted),
     );
-    (outcome, staged.replayed)
+    (outcome, staged.replayed, took)
 }
 
 /// Offer one staged declaration to the kernel through

@@ -127,6 +127,7 @@ use gandr_kernel_term::ValueTypeId;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
 
+use crate::census::ExpansionCensus;
 use crate::check;
 use crate::encoding::ConstantName;
 use crate::error::KernelError;
@@ -1051,6 +1052,12 @@ pub struct AdmittedDeclaration
     accessibility: check::Accessibility,
     /// How a memo key names a reference to it, decided at admission.
     key_name: ConstantName,
+    /// What its check charged: each goal expanded, recalled from the check's
+    /// memo or answered by an earlier admission's kept outcome, per plane.
+    /// Empty when a recorded verdict or the bypass admitted it, since neither
+    /// runs a check. [`AdmittedDeclaration::census`] answers it only for a
+    /// checked admission.
+    census: ExpansionCensus,
 }
 
 impl AdmittedDeclaration
@@ -1128,6 +1135,51 @@ impl AdmittedDeclaration
     pub(crate) const fn key_name(&self) -> ConstantName
     {
         self.key_name
+    }
+
+    /// What the declaration's check charged, goal by goal: its admission's
+    /// tally, when this kernel checked it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the census its check charged when the declaration was
+    ///   [`Admission::Checked`]. A recorded verdict's admission answers
+    ///   [`tallied::Absent::Recalled`] and the bypass's
+    ///   [`tallied::Absent::Unchecked`], since neither ran a check.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a recalled or bypassed declaration whose census read
+    ///   as the empty tally of a check that charged nothing.
+    /// - witness: `env::tests::a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first`
+    #[inline]
+    #[spec(ensures: |ret| matches!(
+        (self.admission, ret),
+        (Admission::Checked, Maybe::Present(_))
+            | (Admission::Recalled, Maybe::Absent(tallied::Absent::Recalled))
+            | (Admission::Unchecked, Maybe::Absent(tallied::Absent::Unchecked))
+    ))]
+    pub const fn census(&self) -> Maybe<ExpansionCensus, tallied::Absent>
+    {
+        match self.admission {
+            Admission::Checked => Maybe::Present(self.census),
+            Admission::Recalled => Maybe::Absent(tallied::Absent::Recalled),
+            Admission::Unchecked => Maybe::Absent(tallied::Absent::Unchecked),
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an admitted declaration carries no census of its check.
+    pub mod tallied {
+        /// The reason no check of it was tallied here.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// A recorded verdict admitted it, so this kernel ran no check.
+            Recalled,
+            /// The bypass admitted it, which runs no check.
+            Unchecked,
+        }
     }
 }
 
@@ -1607,17 +1659,18 @@ impl Environment
     ///   that type. The declaration is appended, its audit precomputed, the
     ///   arena holds prior content plus this declaration's with the checker's
     ///   intermediates truncated, and the admission floor rises to that mark.
-    ///   On any failure the arena is truncated to this declaration's
-    ///   content-start clamped into `[admission floor, checker-entry mark]`, so
-    ///   every caller-observable face of the environment is exactly what it was
-    ///   before the call. When the environment keys its admissions
-    ///   ([`Self::recalling`] under a trusting policy) and every admission
-    ///   before was a lone keyed one, the declaration's key chains the previous
-    ///   key over its canonical segment. A key a verified receipt from a
-    ///   trusted signer attests admits the declaration as
-    ///   [`Admission::Recalled`] with the recorded reading and without the
-    ///   check; any other key is checked and, on success, recorded for
-    ///   [`Self::receipt`] unless its check took an admitted result
+    ///   The entry keeps the [`ExpansionCensus`] its check charged, empty when
+    ///   a recorded verdict admitted it. On any failure the arena is truncated
+    ///   to this declaration's content-start clamped into `[admission floor,
+    ///   checker-entry mark]`, so every caller-observable face of the
+    ///   environment is exactly what it was before the call. When the
+    ///   environment keys its admissions ([`Self::recalling`] under a trusting
+    ///   policy) and every admission before was a lone keyed one, the
+    ///   declaration's key chains the previous key over its canonical segment.
+    ///   A key a verified receipt from a trusted signer attests admits the
+    ///   declaration as [`Admission::Recalled`] with the recorded reading and
+    ///   without the check; any other key is checked and, on success, recorded
+    ///   for [`Self::receipt`] unless its check took an admitted result
     ///   ([`crate::admitted`]), since a receipt attests only what the kernel
     ///   checked itself. A rejection ends the chain.
     /// - provides: the one checked entry into the kernel. It takes **no memo**,
@@ -1714,6 +1767,7 @@ impl Environment
             Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
         };
         let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+        let mut census = ExpansionCensus::new();
         let (outcome, admission) = match recalled {
             Maybe::Present(accessibility) => (Ok(accessibility), Admission::Recalled),
             Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => {
@@ -1733,6 +1787,7 @@ impl Environment
                             .taking(crate::admitted::Taking::under(admitting, &taken)),
                         &declaration,
                         &mut names.session,
+                        &mut census,
                     ),
                     Admission::Checked,
                 )
@@ -1768,6 +1823,7 @@ impl Environment
                     block: check::occurrence::Block::lone(position),
                     accessibility,
                     key_name,
+                    census,
                 });
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
@@ -1900,6 +1956,7 @@ impl Environment
             block: check::occurrence::Block::lone(position),
             accessibility: check::Accessibility::unwalked(),
             key_name: ConstantName::Position,
+            census: ExpansionCensus::new(),
         });
         self.advance_seals(position);
         CheckedId::new(position)
@@ -2044,10 +2101,13 @@ impl Environment
         let mut admitted = Vec::with_capacity(members.len());
         // A block records no verdict, so what its checks take is only counted.
         let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
+        // Each member's tally: its declared type's formation here, then its
+        // own check.
+        let mut censuses = alloc::vec![ExpansionCensus::new(); members.len()];
         // The definitions' declared types form with the families in scope and
         // no definition: a declared type names the block's families, never
         // its definitions.
-        for member in members.iter().skip(families) {
+        for (member, census) in members.iter().zip(censuses.iter_mut()).skip(families) {
             let levels = LevelContext::admit(
                 member.levels().params(),
                 member.levels().constraints().to_vec(),
@@ -2071,10 +2131,11 @@ impl Environment
                     ),
                 member.declared_id(),
                 &mut names.session,
+                census,
             )?;
             self.arena.truncate_to(content_end);
         }
-        for (offset, member) in members.iter().enumerate() {
+        for ((offset, member), census) in members.iter().enumerate().zip(censuses.iter_mut()) {
             let position = ConstantIndex::from(base.saturating_add(offset));
             let levels = LevelContext::admit(
                 member.levels().params(),
@@ -2104,7 +2165,7 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member, &mut names.session)?
+                check::check_declaration(arena, judgement, member, &mut names.session, census)?
             };
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
@@ -2128,6 +2189,7 @@ impl Environment
                 // A block's members name one another, and a definition its own
                 // constant, so a key names each by its position.
                 key_name: ConstantName::Position,
+                census: *census,
             });
             self.advance_seals(position);
             admitted.push(CheckedId::new(position));
@@ -3471,6 +3533,66 @@ mod tests
         assert!(
             environment.add_decl(second).is_ok(),
             "a reference to an admitted declaration resolves to its declared type"
+        );
+    }
+
+    #[test]
+    fn a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first()
+    {
+        let mut environment = Environment::new();
+        let admit_unit = |environment: &mut Environment| {
+            let staged = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_unit();
+                let body = staging.arena().value_unit();
+                staging.def(LevelSignature::monomorphic(), declared, body)
+            };
+            let admitted = environment
+                .add_decl(staged)
+                .expect("a unit definition admits");
+            let super::Maybe::Present(census) = environment
+                .entries()
+                .get(usize::from(admitted.position()))
+                .expect("an admitted declaration has an entry")
+                .census()
+            else {
+                panic!("a checked admission keeps its census");
+            };
+            census
+        };
+        let first = admit_unit(&mut environment);
+        let second = admit_unit(&mut environment);
+        assert_eq!(
+            u64::from(first.kept()),
+            0,
+            "the first admission has no earlier outcome to stand on"
+        );
+        assert!(
+            u64::from(first.expansions()) > 0,
+            "the first admission runs its rules: {first:?}"
+        );
+        assert!(
+            u64::from(second.kept()) > 0,
+            "the second admission stands on the first's kept outcomes: {second:?}"
+        );
+        assert!(
+            second.expansions() < first.expansions(),
+            "and so runs fewer rules than the first: {first:?} against {second:?}"
+        );
+        let bypassed = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        let bypassed = environment.add_decl_unchecked(bypassed);
+        assert_eq!(
+            environment
+                .entries()
+                .get(usize::from(bypassed.position()))
+                .map(super::AdmittedDeclaration::census),
+            Some(super::Maybe::Absent(super::tallied::Absent::Unchecked)),
+            "the bypass runs no check, so it answers no tally"
         );
     }
 

@@ -27,7 +27,7 @@
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
-//! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work (`gandr-surface-dispatcher`'s `measure` module) | as `check`: a measure settles nothing |
+//! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared, <goals> expanded, <goals> recalled, <goals> kept, <n> ns`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work, then the goals the kernel's check of it expanded, recalled from its memo and answered by an earlier admission's kept outcome, and the time the kernel took to admit it (`gandr-surface-dispatcher`'s `measure` module); a declaration a recorded verdict admitted spells `admitted on a recorded verdict` in place of the counts | as `check`: a measure settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
@@ -324,6 +324,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_kernel_core::tallied;
 use gandr_runtime_net::Binding;
 use gandr_runtime_net::Lookup;
 use gandr_runtime_net::Net;
@@ -405,6 +406,7 @@ use gandr_surface_dispatcher::measure;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
 use gandr_surface_dispatcher::relock;
+use gandr_surface_dispatcher::timed;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
@@ -3115,7 +3117,8 @@ fn stage(
 ///   unsettled and two for faulted, as the walk's final report decides under
 ///   the offered verb, or a lock, a manifest, an export, a dependency's export
 ///   or a deployment when that is worse, at every verbosity. Every byte written
-///   and the exit are the same at every width.
+///   and the exit are the same at every width, save the time each measure line
+///   reads off the clock.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -3317,14 +3320,19 @@ fn run(
 }
 
 /// Print each declaration a settled source writes, measured in its
-/// component's kernel artifact.
+/// component's kernel artifact and in its admission's tally.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: for a settled source whose admission ran, one line on standard
 ///   output per declaration it writes that crossed into the kernel, in its
 ///   report's order: `measure: <path>: <name>: <bytes> bytes, <entries> shared,
-///   <work> unshared`. An artifact that does not decode is `gandr: <path>:
+///   <work> unshared, <goals> expanded, <goals> recalled, <goals> kept,
+///   <time>`. The three goal counts are the census the kernel's check of it
+///   charged. A declaration this kernel did not check spells `admitted on a
+///   recorded verdict` or `admitted unchecked` in their place. The time is `<n>
+///   ns` when its admission was timed, and otherwise `untimed`, `unoffered` or
+///   `admitted in a block`. An artifact that does not decode is `gandr: <path>:
 ///   <why>` on standard error. Any other step prints nothing.
 /// - fails: the first write error, without writing anything after it.
 /// - panics: none.
@@ -3334,9 +3342,11 @@ fn run(
 /// The [`std::io::Error`] of the first write that failed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `math.cylinder` checked with `--measure` prints one line
-///   per composite it writes and none for a declaration it imports, and a check
-///   without the flag prints none.
+/// - hypothesis: L3 — two sources checked with `--measure` over a fresh store
+///   print one line per declaration each writes and none for one imported, each
+///   with a census that charges a goal and a time. A check without the flag
+///   prints none. Measured again, each line spells the recorded verdict that
+///   admitted it in place of counts its check never charged.
 /// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
 fn measured(
     step: &Step<'_>,
@@ -3353,15 +3363,36 @@ fn measured(
     match measure(composed) {
         Ok(Maybe::Present(rows)) => {
             for row in rows {
-                writeln!(
+                write!(
                     stdout,
-                    "measure: {}: {}: {} bytes, {} shared, {} unshared",
+                    "measure: {}: {}: {} bytes, {} shared, {} unshared, ",
                     path.display(),
                     row.name(),
                     usize::from(row.bytes()),
                     row.shared(),
-                    row.unshared()
+                    row.unshared(),
                 )?;
+                match row.census() {
+                    Maybe::Present(census) => write!(
+                        stdout,
+                        "{} expanded, {} recalled, {} kept, ",
+                        u64::from(census.expansions()),
+                        u64::from(census.recalls()),
+                        u64::from(census.kept())
+                    )?,
+                    Maybe::Absent(tallied::Absent::Recalled) => {
+                        write!(stdout, "admitted on a recorded verdict, ")?;
+                    },
+                    Maybe::Absent(tallied::Absent::Unchecked) => {
+                        write!(stdout, "admitted unchecked, ")?;
+                    },
+                }
+                match row.took() {
+                    Maybe::Present(took) => writeln!(stdout, "{} ns", took.as_nanos())?,
+                    Maybe::Absent(timed::Absent::Untimed) => writeln!(stdout, "untimed")?,
+                    Maybe::Absent(timed::Absent::Unoffered) => writeln!(stdout, "unoffered")?,
+                    Maybe::Absent(timed::Absent::Block) => writeln!(stdout, "admitted in a block")?,
+                }
             }
             Ok(())
         },
