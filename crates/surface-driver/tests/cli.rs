@@ -704,6 +704,76 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 }
 
 #[test]
+fn check_measures_each_declaration_a_source_writes()
+{
+    let scratch = Scratch::new(Path::new("measure"));
+    let _base = scratch.file(
+        Path::new("base.gandr"),
+        Text::from("pub def one(n: Integer) -> -F Integer { n }\n"),
+    );
+    let _top = scratch.file(
+        Path::new("top.gandr"),
+        Text::from("import \"./base.gandr\" ;\ndef two(n: Integer) -> -F Integer { one(n) }\n"),
+    );
+    let check = Path::new("check");
+    let plain = ran(gandr(&[check, &scratch.0]));
+    assert_eq!(code(&plain), Code(0_i32), "{}", stdout(&plain));
+    assert!(
+        !stdout(&plain).contains("measure: "),
+        "a check measures nothing unasked"
+    );
+
+    let measured = ran(gandr(&[check, Path::new("--measure"), &scratch.0]));
+    assert_eq!(
+        code(&measured),
+        Code(0_i32),
+        "a measure settles nothing: {}",
+        stderr(&measured)
+    );
+    let printed = stdout(&measured);
+    let mut rows: Vec<(String, String)> = printed
+        .lines()
+        .filter_map(|line| line.strip_prefix("measure: "))
+        .map(|row| {
+            let (path, rest) = row.split_once(": ").expect("a row names its source");
+            let (name, sizes) = rest.split_once(": ").expect("a row names its declaration");
+            assert_eq!(sizes.split(", ").count(), 3, "{sizes:?} spells three sizes");
+            let mut read = [0_u64; 3];
+            for ((slot, size), unit) in read
+                .iter_mut()
+                .zip(sizes.split(", "))
+                .zip(["bytes", "shared", "unshared"])
+            {
+                *slot = size
+                    .strip_suffix(unit)
+                    .and_then(|count| count.trim_end().parse().ok())
+                    .unwrap_or_else(|| panic!("{sizes:?} spells its {unit}"));
+            }
+            let [bytes, shared, unshared] = read;
+            assert!(bytes > 0, "a segment holds bytes: {row}");
+            assert!(
+                shared <= unshared,
+                "a segment adds no more entries than its roots' trees hold: {row}"
+            );
+            let file = Path::new(path)
+                .file_name()
+                .map(|file| file.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            (file, name.to_owned())
+        })
+        .collect();
+    rows.sort();
+    assert_eq!(
+        rows,
+        [
+            ("base.gandr".to_owned(), "one".to_owned()),
+            ("top.gandr".to_owned(), "two".to_owned())
+        ],
+        "each source measures the declaration it writes, and none it imports: {printed}"
+    );
+}
+
+#[test]
 fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
 {
     let scratch = Scratch::new(Path::new("runs"));

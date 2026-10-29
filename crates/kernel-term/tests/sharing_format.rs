@@ -49,6 +49,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::WireTag;
 use gandr_kernel_term::decode;
+use gandr_kernel_term::decode_measured;
 use gandr_kernel_term::encode;
 use proptest::prelude::Just;
 use proptest::prelude::ProptestConfig;
@@ -1707,6 +1708,66 @@ fn sharing_round_trips_with_sharing_at_the_shared_nodes()
         TableEntryCount::from(3),
         artifact.metrics().table_entries(),
         "the unit type, the unit value and the pair are the whole table"
+    );
+}
+
+#[test]
+fn each_declaration_measures_the_entries_its_segment_adds_and_its_roots_work()
+{
+    let mut arena = TermArena::new();
+    // The first declaration's segment holds the unit type, the unit value and
+    // the pair of two units: three entries, and a tree of one declared node
+    // and three body nodes.
+    let first_declared = arena.value_type_unit();
+    let shared = arena.value_unit();
+    let first_body = arena.value_tuple(&[shared, shared]);
+    let first = definition_over(&mut arena, first_declared, first_body);
+    // The second declaration's type and body are entries the first segment
+    // holds already, so its segment adds none, though its tree has two nodes.
+    let second_declared = arena.value_type_unit();
+    let second_body = arena.value_unit();
+    let second = definition_over(&mut arena, second_declared, second_body);
+    let bytes = encode(&arena, &[first, second]);
+
+    let (artifact, measures) =
+        decode_measured(bytes.as_image()).expect("a well-formed artifact decodes measured");
+    let read: Vec<(TableEntryCount, ExpandedWork)> = measures
+        .iter()
+        .map(|measure| (measure.entries(), measure.expanded_work()))
+        .collect();
+    assert_eq!(
+        vec![
+            (TableEntryCount::from(3), ExpandedWork::from(4)),
+            (TableEntryCount::from(0), ExpandedWork::from(2)),
+        ],
+        read,
+        "a declaration counts the entries its own segment adds, and every node of its roots' \
+         trees"
+    );
+    assert_eq!(
+        artifact.metrics().table_entries(),
+        TableEntryCount::from(3),
+        "the declarations' entries sum to the table"
+    );
+    assert_eq!(
+        artifact.metrics().artifact_expanded_work(),
+        ExpandedWork::from(6),
+        "the declarations' work sums to the artifact's"
+    );
+    assert_eq!(
+        decode(bytes.as_image()),
+        Ok(artifact),
+        "measuring decodes the artifact decode does"
+    );
+
+    let image = Vec::from(bytes);
+    let short = image
+        .get(.. image.len().saturating_sub(1))
+        .unwrap_or_default();
+    assert_eq!(
+        decode(short.into()).err(),
+        decode_measured(short.into()).err(),
+        "measuring refuses what decode refuses, with its refusal"
     );
 }
 

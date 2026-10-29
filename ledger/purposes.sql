@@ -1239,6 +1239,7 @@ INSERT INTO purpose VALUES('kernel-term','base::NumericLiteral','struct','A cano
 INSERT INTO purpose VALUES('kernel-term','base::Sign','enum','The sign of a numeric literal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::StringLiteral','struct','A canonical string literal, inhabiting BaseType::String.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::WiderThanWidth','struct','Why a bit pattern is no literal of a width: it sets a bit above the width.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','budget::DeclarationMeasure','struct','What one declaration adds to its artifact: the subterm-table entries its segment adds and the expanded work of its roots.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','budget::DecodeMetrics','struct','The deterministic decode-budget metrics of an artifact.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','budget::ExpandedWork','struct','Saturating expanded — that is, tree — work measured over a shared graph.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','budget::GlobalIndex','struct','The global index of one entry in the artifact''s subterm table.',NULL,'fits','sound',NULL);
@@ -1268,6 +1269,7 @@ INSERT INTO purpose VALUES('kernel-term','decode::SegmentLayout','struct','Where
 INSERT INTO purpose VALUES('kernel-term','decode::decode','function','Decode an artifact image into its declaration sequence and shared arena.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::decode_after','function','Decode of image, resuming after prefix when image''s declaration segments lead with prefix''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decode::decode_keeping','function','Decode of image, keeping what decoding its first end declarations left for decode_after to resume.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','decode::decode_measured','function','Decode an artifact image as decode does, beside one measure per declaration of the entries its segment adds and its roots'' expanded work.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::EncodedPrefix','struct','The encoding of an admission-ordered sequence''s leading declarations, which an encoding of any sequence leading with them resumes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::SegmentEncoder','struct','Encodes an admission-ordered sequence one declaration at a time, each as the segment the whole sequence''s encoding writes for it.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','encode::encode','function','Encode an admission-ordered declaration sequence over `arena` into canonical bytes.','sharing','fits','sound',NULL);
@@ -2030,6 +2032,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','component::lay_out_written','fu
 INSERT INTO purpose VALUES('surface-dispatcher','component::named_path','function','The path a laid-out closure names the file at `path` by: its canonical path when it exists, else the path a file written there will have, as lay_out states for Laid::named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::path_imports','function','The path addresses the imports at `tree`''s root write, in source order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Admission','struct','What offering a judged module to the kernel needs: the arena it was judged over, its verdicts, and the structured names the export writes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::ArtifactPositions','struct','Where each declaration that crossed into the kernel stands in its artifact, by its module position.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Checking','enum','How a lowered module is checked: whole, or after a closure judged once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::ComposeFault','enum','Why one source could not be carried through the pipeline: an engine fault, never a verdict about the source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Composed','enum','What one source became.',NULL,'fits','sound',NULL);
@@ -2039,6 +2042,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::JudgedClosure','struct
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowered','enum','What the lowering made of one parsed source, before any checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowering','struct','One source parsed and lowered: what the lowering made of it, beside the completion obligations the parser recorded while committing its tree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::LoweringCount','struct','How many sources a run has lowered.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::Positioning','enum','Whether an admission records where each declaration stands in its artifact, which a measure reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Recorded','struct','The untabled judgement of a module''s latest revision, held so that the next revision whose judgement reads the same inputs takes its verdicts rather than judging again.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Recording','enum','Whether an untabled judgement answers from, and keeps, the judgement of a module''s revision before.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Resumption','struct','What Admission::admit_resuming answers.',NULL,'fits','sound',NULL);
@@ -2126,6 +2130,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secrets','enum','Wher
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Site','struct','One place a world runs at, as its file''s `Site` model states it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Stated','enum','A field a site''s, a manifold''s or a secrets model''s file states.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Undeployed','enum','Why a site''s or a manifold''s file deploys nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','measure::Measure','struct','One declaration''s sizes in its component''s kernel artifact: its segment''s bytes, the table entries the segment adds and its roots'' expanded work.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','measure::measure','function','Measure each declaration a settled source writes in its component''s kernel artifact.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Absence','enum','Whether reconciling a held file writes it where none stands, or leaves none because the model states nothing it would record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Body','struct','The body of a file the checker wrote, below its digest header.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Differing','enum','What reconciling does with a file the checker wrote whose text is not the render: keep it or rewrite it.',NULL,'fits','sound',NULL);

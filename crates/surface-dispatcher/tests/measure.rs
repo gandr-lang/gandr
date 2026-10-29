@@ -1,0 +1,152 @@
+//! Each declaration a settled source writes, measured in its component's
+//! kernel artifact.
+
+use alloc::collections::BTreeMap;
+use core::convert::Infallible;
+use core::ops::ControlFlow;
+use std::path::PathBuf;
+
+use gandr_kernel_term::ArtifactImage;
+use gandr_kernel_term::ByteCount;
+use gandr_kernel_term::ExpandedWork;
+use gandr_kernel_term::TableEntryCount;
+use gandr_kernel_term::decode_measured;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::measure;
+use gandr_surface_dispatcher::measured;
+use quenchant_shape::shape::Maybe;
+
+/// The sizes of every declaration a component's artifact holds, by the last
+/// segment of its structured name. A later declaration of a name replaces an
+/// earlier one, so a source's own declaration replaces any its closure holds.
+///
+/// # Specification
+/// trivial.
+fn sizes_by_name(
+    image: ArtifactImage<'_>
+) -> BTreeMap<String, (ByteCount, TableEntryCount, ExpandedWork)>
+{
+    let (artifact, measures) = decode_measured(image).expect("the admitted artifact decodes");
+    let layout = artifact.segments();
+    let mut start = usize::from(layout.header_end());
+    let mut sizes = BTreeMap::new();
+    for ((declaration, &end), measure) in artifact
+        .declarations()
+        .iter()
+        .zip(layout.declaration_ends())
+        .zip(&measures)
+    {
+        let end = usize::from(end);
+        if let Some(last) = declaration.declaration().name().segments().last() {
+            let _replaced = sizes.insert(
+                last.as_ref().to_owned(),
+                (
+                    ByteCount::from(end.saturating_sub(start)),
+                    measure.entries(),
+                    measure.expanded_work(),
+                ),
+            );
+        }
+        start = end;
+    }
+    sizes
+}
+
+/// Each source of `library/math` measures the declarations it writes, in the
+/// order it writes them, and none of the closure it imports. Each row reads
+/// the sizes of the artifact's declaration of that name. A walk not asked to
+/// measure records no positions, and says so rather than measuring nothing.
+#[test]
+fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
+{
+    let math = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/math");
+    let mut written = BTreeMap::new();
+    let ControlFlow::Continue(_) = Walk::new(vec![math.clone()]).measuring().visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                path, ref composed, ..
+            } = step
+            else {
+                panic!("each math source is read: {step:?}");
+            };
+            let Composed::Settled {
+                kernel: Maybe::Present(ref kernel),
+                ..
+            } = *composed
+            else {
+                panic!("{} is judged and admitted", path.display());
+            };
+            let Ok(Maybe::Present(rows)) = measure(composed)
+            else {
+                panic!("{} is measured", path.display());
+            };
+            let sizes = sizes_by_name(kernel.as_image());
+            for row in &rows {
+                assert_eq!(
+                    sizes.get(row.name().as_ref()),
+                    Some(&(row.bytes(), row.shared(), row.unshared())),
+                    "{}'s row for {} reads that declaration's segment",
+                    path.display(),
+                    row.name()
+                );
+                assert!(
+                    u64::try_from(usize::from(row.shared()))
+                        .is_ok_and(|shared| shared <= u64::from(row.unshared())),
+                    "a segment adds no more entries than its roots' trees hold"
+                );
+            }
+            let names: Vec<String> = rows.iter().map(|row| row.name().to_string()).collect();
+            let _replaced = written.insert(
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                names,
+            );
+            ControlFlow::Continue(())
+        },
+    );
+    assert_eq!(
+        written.get("cylinder.gandr").map(Vec::as_slice),
+        Some(
+            [
+                "cylinderComposite2".to_owned(),
+                "cylinderStack2".to_owned(),
+                "coneComposite2".to_owned()
+            ]
+            .as_slice()
+        ),
+        "math.cylinder measures the three composites it writes, none of math.path's"
+    );
+    let mut unasked = 0_usize;
+    let ControlFlow::Continue(_) = Walk::new(vec![math]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                path, ref composed, ..
+            } = step
+            else {
+                panic!("each math source is read: {step:?}");
+            };
+            assert!(
+                matches!(
+                    measure(composed),
+                    Ok(Maybe::Absent(measured::Absent::Unpositioned))
+                ),
+                "{} recorded no positions unasked",
+                path.display()
+            );
+            unasked = unasked.saturating_add(1);
+            ControlFlow::Continue(())
+        },
+    );
+    assert_eq!(
+        unasked,
+        written.len(),
+        "the unasked walk reaches every source the measuring one did"
+    );
+}

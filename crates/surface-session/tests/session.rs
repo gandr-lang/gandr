@@ -1808,6 +1808,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 unused,
                 unreached,
                 kernel,
+                positions,
                 program,
                 ..
             } => Composed::Settled {
@@ -1824,6 +1825,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 unused,
                 unreached,
                 kernel,
+                positions,
                 program,
             },
             refused @ Composed::Refused(_) => refused,

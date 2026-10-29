@@ -29,3 +29,72 @@ for root in {{ usage.roots }}; do
 done | LC_ALL=C sort -k2 > "$out"
 echo "corpus manifest: $(wc -l < "$out") files to $out"
 '''
+
+# The page-28 stress, as far as the library writes it: `library/math` checked
+# whole, every verdict rechecked and each declaration measured, under the
+# platform's `time`. The cylinder composites' rows stand beside the artifact
+# sizes Catt reports for the same constructions at dimension 2 (Benjamin,
+# Markakis, Offord, Sarti and Vicary, "Naturality for Higher-Dimensional Path
+# Types", arXiv:2501.11620, Example 1.4 and § 6). A row's bytes are its
+# segment in the kernel artifact, its shared size the subterm-table entries
+# the segment adds, and its unshared size its roots' expanded work. The
+# check's wall time and peak resident set follow, with the load average they
+# were taken under. The check runs over scratch configuration, cache and data
+# directories, so it reads no verdict and commits nothing to the user's store.
+["bench:stress"]
+description = "Check library/math measured and timed, its cylinder composites beside Catt's artifact sizes"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+case "$(uname -s)" in
+  Darwin) timing=-l ;;
+  *) timing=-v ;;
+esac
+status=0
+XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data" \
+  /usr/bin/time "$timing" target/release/gandr check --recheck --measure library/math \
+  > "$scratch/check" 2> "$scratch/time" || status=$?
+if [ "$status" -ne 0 ]; then
+  printf 'bench:stress: the check exits %s\n' "$status" >&2
+  awk '!/^measure: /' "$scratch/check" "$scratch/time" >&2
+  exit "$status"
+fi
+awk '
+function catt(declaration, construction, size) {
+  name[++count] = declaration; builtin[declaration] = construction; bytes[declaration] = size
+}
+BEGIN {
+  catt("cylinderComposite2", "cylcomp(2,1,2)", 818)
+  catt("cylinderStack2", "cylstack(2)", 830)
+  catt("coneComposite2", "conecomp(2,1,2)", 501)
+}
+/^measure: / {
+  split($0, part, ": ")
+  if (part[3] in bytes) {
+    split(part[4], size, ", ")
+    sub(/ bytes$/, "", size[1]); sub(/ shared$/, "", size[2]); sub(/ unshared$/, "", size[3])
+    row[part[3]] = size[1] "\t" size[2] "\t" size[3]
+  }
+}
+END {
+  print "| declaration | Catt built-in | Catt bytes | gandr bytes | shared | unshared |"
+  print "| --- | --- | --: | --: | --: | --: |"
+  for (i = 1; i <= count; i++) {
+    if (!(name[i] in row)) { missing = missing " " name[i]; continue }
+    split(row[name[i]], size, "\t")
+    printf "| `%s` | `%s` | %s | %s | %s | %s |\n", name[i], builtin[name[i]], bytes[name[i]], size[1], size[2], size[3]
+  }
+  if (missing != "") { printf "bench:stress: no row for%s\n", missing > "/dev/stderr"; exit 1 }
+}' "$scratch/check"
+awk '
+/ real / { wall = $1 " s" }
+/maximum resident set size/ { peak = $1 }
+/Elapsed \(wall clock\) time/ { wall = $NF }
+/Maximum resident set size \(kbytes\)/ { peak = $NF * 1024 }
+END { printf "\nwall %s, peak resident set %s bytes\n", wall, peak }
+' "$scratch/time"
+uptime | awk -F 'load averages?: ' '{ printf "load %s\n", $2 }'
+'''

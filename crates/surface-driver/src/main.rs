@@ -27,6 +27,7 @@
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
+//! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work (`gandr-surface-dispatcher`'s `measure` module) | as `check`: a measure settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
@@ -207,6 +208,15 @@
 //!   fetches each path dependency's export from the store by its address, the
 //!   coordinate only naming where to check it first (`depended`; §
 //!   package-design-typed-hydration).
+//! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and
+//!   § 6 give Catt's artifact sizes, which `gandr check --measure` prints each
+//!   declaration's bytes beside.
+//! - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing
+//!   format's one table per artifact and its expanded-work budget, the shared
+//!   and unshared sizes a `measure:` line prints.
+//! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing
+//!   ratio of iterated composites grows with dimension, so a `measure:` line
+//!   prints both sizes.
 //!
 //! # Output the driver cannot write is a fault
 //!
@@ -391,6 +401,7 @@ use gandr_surface_dispatcher::WorldBinding;
 use gandr_surface_dispatcher::WorldBindings;
 use gandr_surface_dispatcher::WorldName;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_dispatcher::measure;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
 use gandr_surface_dispatcher::relock;
@@ -492,6 +503,11 @@ enum Command
         /// `kernel.policy`.
         #[arg(long)]
         recheck: bool,
+        /// Print, for each declaration a settled source writes, the bytes its
+        /// segment takes in the kernel's artifact, the subterm-table entries
+        /// the segment adds and its roots' expanded work.
+        #[arg(long)]
+        measure: bool,
         /// How much of each report to print.
         #[arg(long, value_enum, default_value_t = Level::User)]
         verbosity: Level,
@@ -1196,8 +1212,9 @@ impl From<SpellingName> for Spelling
     }
 }
 
-/// How a verb prints what it reports: how much of each report, and the
-/// spelling every type and value is written in.
+/// How a verb prints what it reports: how much of each report, the spelling
+/// every type and value is written in, and whether a check measures each
+/// declaration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Printing
 {
@@ -1205,6 +1222,18 @@ struct Printing
     verbosity: Verbosity,
     /// The spelling every type and value is written in.
     spelling: Spelling,
+    /// Whether a check prints each declaration's sizes.
+    measuring: Measuring,
+}
+
+/// Whether a check prints each declaration's sizes in its kernel artifact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Measuring
+{
+    /// Each declaration a settled source writes prints its `measure:` line.
+    Measured,
+    /// No size prints.
+    Unmeasured,
 }
 
 /// What a walk is run as: its verb, the lints it reports, the packages whose
@@ -1589,6 +1618,7 @@ fn main() -> ExitCode
     // The network, bindings and migrations a `run` or `host` gives its program.
     let mut hosting = Hosting::default();
     let mut store: Option<Store> = None;
+    let mut measuring = Measuring::Unmeasured;
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
         Some(Command::Check {
@@ -1597,10 +1627,14 @@ fn main() -> ExitCode
             grant,
             entry,
             recheck,
+            measure,
             verbosity,
             jobs,
             paths,
         }) => {
+            if measure {
+                measuring = Measuring::Measured;
+            }
             let grant = match grant {
                 None => HostGrant::UNBOUNDED,
                 Some(operations) => match HostGrant::within(&operations) {
@@ -1884,6 +1918,7 @@ fn main() -> ExitCode
         Printing {
             verbosity,
             spelling,
+            measuring,
         },
         &packages,
         hosting,
@@ -2595,21 +2630,23 @@ fn doubled(doubled: Doubled) -> ExitCode
 ///   each refusal, unsettled declaration and goal as a plain source snippet
 ///   followed by an empty line, and each ledger line — a settled fixture or a
 ///   pending source's refusal under `test`, a pending source the lowering read
-///   — prefixed with its path. Each path the walk cannot carry through the
-///   pipeline is a line on standard error. A walk under `check` then reconciles
-///   the lock and the manifest of each of `packages`, commits its export into
-///   `store`, and re-admits each path dependency's export from it, as [`run`]
-///   does. The run's report and its verdict close standard output, and the exit
-///   code is the verdict's, or a lock's, a manifest's, an export's or a
-///   dependency's export's when that is worse. A script follows [`script`], its
-///   entry's `Net` operations served on a network bound as `hosting` says, its
-///   migrations sent where `hosting`'s bindings bind them, or its worlds served
-///   when `hosting` serves, the network bound first and its peer spelling,
-///   `<key>@<ip:port>`, the first line on standard error: what it prints goes
-///   to standard output, what it writes to standard error goes there beside its
-///   diagnostics, the lines it reads come from standard input, and its run
-///   status chooses the exit. A staging follows [`stage`], a formatting
-///   [`fmt`], a ledger task [`ledger`], and a census [`cells`].
+///   — prefixed with its path. Under `check --measure` each settled source then
+///   prints its `measure:` lines, as [`run`] states. Each path the walk cannot
+///   carry through the pipeline is a line on standard error. A walk under
+///   `check` then reconciles the lock and the manifest of each of `packages`,
+///   commits its export into `store`, and re-admits each path dependency's
+///   export from it, as [`run`] does. The run's report and its verdict close
+///   standard output, and the exit code is the verdict's, or a lock's, a
+///   manifest's, an export's or a dependency's export's when that is worse. A
+///   script follows [`script`], its entry's `Net` operations served on a
+///   network bound as `hosting` says, its migrations sent where `hosting`'s
+///   bindings bind them, or its worlds served when `hosting` serves, the
+///   network bound first and its peer spelling, `<key>@<ip:port>`, the first
+///   line on standard error: what it prints goes to standard output, what it
+///   writes to standard error goes there beside its diagnostics, the lines it
+///   reads come from standard input, and its run status chooses the exit. A
+///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
+///   and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -3015,18 +3052,20 @@ fn stage(
 ///   every type in `spelling` — below the JSON level a report as a plain
 ///   snippet followed by an empty line and a ledger line as itself, at it each
 ///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
-///   line to standard error. Under `check`, each package of the pass first
-///   prints what locking its dependencies before the walk came to, as
-///   [`locked`] states; then each whose library settled with no refusal has its
-///   manifest read from the library's program and reconciled: each written,
-///   rewritten or unchanged is the line `manifest: <path>: <what>` on standard
-///   output, at the JSON level an object whose `level` is `manifest`; a library
-///   that states no manifest, and a manifest refused as drift, are each `gandr:
-///   <path>: <why>` on standard error and unsettle the run, and one that cannot
-///   be read or written faults it. Each package whose lock is held and whose
-///   sources all settled then commits its export, the artifacts the walk
-///   admitted for its sources as [`Exporting`] keeps them, into the pass's
-///   store under its address's root, as
+///   line to standard error. Under `check` measuring, each source step's
+///   diagnostics are followed by its declarations' measures, as [`measured`]
+///   states. Under `check`, each package of the pass first prints what locking
+///   its dependencies before the walk came to, as [`locked`] states; then each
+///   whose library settled with no refusal has its manifest read from the
+///   library's program and reconciled: each written, rewritten or unchanged is
+///   the line `manifest: <path>: <what>` on standard output, at the JSON level
+///   an object whose `level` is `manifest`; a library that states no manifest,
+///   and a manifest refused as drift, are each `gandr: <path>: <why>` on
+///   standard error and unsettle the run, and one that cannot be read or
+///   written faults it. Each package whose lock is held and whose sources all
+///   settled then commits its export, the artifacts the walk admitted for its
+///   sources as [`Exporting`] keeps them, into the pass's store under its
+///   address's root, as
 ///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) states,
 ///   printing nothing; a store that refuses the commit is `gandr: <root>:
 ///   <why>` on standard error and faults the run, and so is an artifact that
@@ -3072,6 +3111,7 @@ fn stage(
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
 /// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
 /// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+/// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -3092,8 +3132,16 @@ fn run(
     let Printing {
         verbosity,
         spelling,
+        measuring,
     } = printing;
     let checking = matches!(verb, Verb::Check(_));
+    let measured_walk = checking && measuring == Measuring::Measured;
+    let walk = if measured_walk {
+        walk.measuring()
+    }
+    else {
+        walk
+    };
     // The manifest each package's library states, and the export its sources
     // build, by the package's place.
     let mut manifests: Vec<Option<Result<Manifest, Unmanifested>>> =
@@ -3139,6 +3187,9 @@ fn run(
                     if let Err(error) = written {
                         return ControlFlow::Break(error);
                     }
+                }
+                if measured_walk && let Err(error) = measured(&step, stdout, stderr) {
+                    return ControlFlow::Break(error);
                 }
                 if checking {
                     if let Some(ref attributed) = attributed {
@@ -3215,6 +3266,60 @@ fn run(
         RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
         RunVerdict::Faulted => ExitCode::from(FAULTED),
     })
+}
+
+/// Print each declaration a settled source writes, measured in its
+/// component's kernel artifact.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a settled source whose admission ran, one line on standard
+///   output per declaration it writes that crossed into the kernel, in its
+///   report's order: `measure: <path>: <name>: <bytes> bytes, <entries> shared,
+///   <work> unshared`. An artifact that does not decode is `gandr: <path>:
+///   <why>` on standard error. Any other step prints nothing.
+/// - fails: the first write error, without writing anything after it.
+/// - panics: none.
+/// - executable: none — the lines are the streams'.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `math.cylinder` checked with `--measure` prints one line
+///   per composite it writes and none for a declaration it imports, and a check
+///   without the flag prints none.
+/// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
+fn measured(
+    step: &Step<'_>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<()>
+{
+    let Step::Source {
+        path, ref composed, ..
+    } = *step
+    else {
+        return Ok(());
+    };
+    match measure(composed) {
+        Ok(Maybe::Present(rows)) => {
+            for row in rows {
+                writeln!(
+                    stdout,
+                    "measure: {}: {}: {} bytes, {} shared, {} unshared",
+                    path.display(),
+                    row.name(),
+                    usize::from(row.bytes()),
+                    row.shared(),
+                    row.unshared()
+                )?;
+            }
+            Ok(())
+        },
+        Ok(Maybe::Absent(_)) => Ok(()),
+        Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),
+    }
 }
 
 /// Print what locking `packaged`'s dependencies came to, and the verdict it

@@ -669,6 +669,94 @@ impl DecodeMetrics
     }
 }
 
+/// One declaration's share of a decoded artifact: the subterm-table entries
+/// its segment adds, and the expanded work of its roots.
+///
+/// The entries are the declaration's shared size: what the table grows by as
+/// its segment is read, a subterm an earlier segment holds counted there. The
+/// expanded work is its unshared size: the tree its roots stand for, a shared
+/// subterm counted at every occurrence. Over every declaration the entries sum
+/// to [`DecodeMetrics::table_entries`], and the expanded work, unsaturated, to
+/// [`DecodeMetrics::artifact_expanded_work`].
+///
+/// # Specification
+/// - requires: the quantities are read in their named domains.
+/// - ensures: carries the two quantities without proving that a budget is
+///   admitted; the decoder performs that check.
+/// - panics: none.
+/// - executable: none — this report is a data declaration; the decoder is its
+///   executable boundary.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares each declaration's measure with the entries its
+///   segment introduces and the closed-form tree size of its roots, over two
+///   declarations the second of which shares every subterm with the first. The
+///   sums against the artifact's totals distinguish a measure read from the
+///   wrong segment or the wrong roots.
+/// - witness: `tests::sharing_format::each_declaration_measures_the_entries_its_segment_adds_and_its_roots_work`
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DeclarationMeasure
+{
+    /// The subterm-table entries the declaration's segment adds.
+    entries: TableEntryCount,
+    /// The saturating sum of the expanded work of the declaration's roots.
+    expanded_work: ExpandedWork,
+}
+
+impl DeclarationMeasure
+{
+    /// Pair a declaration's entries with its roots' expanded work.
+    ///
+    /// # Specification
+    /// - requires: both quantities describe the same declaration.
+    /// - ensures: returns the measure carrying the two quantities unchanged.
+    /// - provides: the per-declaration report the measuring decode fills.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the type's.
+    /// - witness: `tests::sharing_format::each_declaration_measures_the_entries_its_segment_adds_and_its_roots_work`
+    #[spec(
+        ensures: |ret| ret.entries.0 == entries.0 && ret.expanded_work.0 == expanded_work.0,
+    )]
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        entries: TableEntryCount,
+        expanded_work: ExpandedWork,
+    ) -> Self
+    {
+        Self {
+            entries,
+            expanded_work,
+        }
+    }
+
+    /// The subterm-table entries the declaration's segment adds: its shared
+    /// size.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn entries(&self) -> TableEntryCount
+    {
+        self.entries
+    }
+
+    /// The saturating sum of the expanded work of the declaration's roots: its
+    /// unshared size.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn expanded_work(&self) -> ExpandedWork
+    {
+        self.expanded_work
+    }
+}
+
 #[cfg(test)]
 mod tests
 {

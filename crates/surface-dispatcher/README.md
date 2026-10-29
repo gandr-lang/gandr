@@ -26,14 +26,14 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Width` and `Threads`: how many threads a walk lowers its sources on, the host's physical performance cores by default.
 - `compose`, `compose_on`, `Scheduling`, `Composed`, `ComposeFault`, `LoweringCount` and `ParsedBytes`: the composition, on either schedule.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
-- `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure, the component it makes when given alone. `lower_closure`, `lower_resumed_unit` and `Unheld`: an import closure lowered once and resumed for each document laid after it. `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: the closure's own declarations judged, focused, settled and spelled once, and each document judged after them on a copy of the state they left. `Recorded` and `Recording`: a revision whose lowering moves no node of the one judged before it takes that judgement's verdicts, and settles and spells again at its own spans.
+- `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure. `lower_closure`, `lower_resumed_unit`, `Unheld`, `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: a closure lowered and judged once for every document laid after it. `Recorded` and `Recording`: a revision that moves no lowered node takes the verdicts of the one before ([`compose`](src/compose.rs)).
 - `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module; `Admission::admit_resuming` and `Resumption` resume its leading declarations from an earlier readmission's record; `install_verdict_cache` keeps kernel verdicts ([`verdicts`](src/verdicts.rs)).
 - `spellings` and `failures` on `Composed::Settled`: the diagnostics model's `TypeSpellings` of the types a module's checker refusals compare and its failures name, spelled while its arena was at hand, and the `Failures` the checking machine kept for each refused body, by admission position.
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings, lint findings and ledger lines.
 - `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables; a lint reaches every source when enabled, and otherwise only the declarations and modules whose attribute asks for it, `Lints::asking_effects` narrowing `explicit-runs` to the runs that perform an effect. `inferred` on `Composed::Settled` holds the exits the lowering inferred, which the `explicit-exits` lint reports, and `runs` the runs the checker inferred, which the `explicit-runs` lint reports.
 - `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy, in the order shadowed, copied out of the lowered module's `Recognition` before its origin table moves; a face reports each as a warning.
 - `adapt`: the lowering's module as checker declaration input.
-- `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at — each binder, term and written type with its span, spelled when a face asks, with the type a term was checked against when it differs — and each declaration's type or refusal under both its signature's and its definition's keys, from one typed run of the checker; `TypeTable::of_parsed` and `TypeTable::of_parsed_unit` type a parse the caller holds, and `TypeTable::of_parsed_after` types it after a judged closure's state.
+- `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at, from one typed run of the checker. `TypeTable::of_parsed`, `of_parsed_unit` and `of_parsed_after` type a parse the caller holds ([`typed`](src/typed.rs)).
 - `SourceRoot` and `classify`: the root a source sits under, by its path.
 - `Walk`, `Walk::visit`, `Step`, `Standing`, `Standing::of` and `SourceFault`: the walk at any width, and the standing a step or a session submission carries.
 - `HostGrant`, `OperationName`, `WorldName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by, and the worlds every declaration is entered at, read against the worlds each module declares; `compose` and `test` judge under neither.
@@ -44,6 +44,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
 - `Census`, `CensusStep`, `CensusFault` and `CellRow`: the cells verb ([`cells`](src/cells.rs)).
+- `measure`, `Measure`, `measured::Absent`, `Walk::measuring`, `Positioning`, `ArtifactPositions` and `positioned::Absent`: each declaration's sizes in its kernel artifact ([`measure`](src/measure.rs)).
 - `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 
@@ -123,6 +124,9 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: a source its flow refuses answers at no site.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a failed translation refuses its importer.
 - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check the tier meets a pair by.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
+- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
 
 ## License
 

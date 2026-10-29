@@ -35,6 +35,16 @@
 //!   the header's minted-atom table is re-derived from the declarations, and a
 //!   decoded artifact goes whole to one replay
 //!   ([`DecodedArtifact::into_parts`]).
+//! - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing
+//!   format's one table per artifact and its expanded-work budget, so a
+//!   declaration's shared size is the entries its segment adds and its unshared
+//!   size its roots' expanded work ([`decode_measured`]).
+//! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and
+//!   § 6 give Catt's artifact sizes, which [`decode_measured`]'s
+//!   per-declaration shares stand beside.
+//! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing
+//!   ratio of iterated composites grows with dimension, so [`decode_measured`]
+//!   reports both sizes rather than one.
 
 pub mod session;
 
@@ -67,6 +77,7 @@ use crate::base::Magnitude;
 use crate::base::NumericLiteral;
 use crate::base::Sign;
 use crate::base::StringLiteral;
+use crate::budget::DeclarationMeasure;
 use crate::budget::DecodeMetrics;
 use crate::budget::ExpandedWork;
 use crate::budget::GlobalIndex;
@@ -593,7 +604,45 @@ impl DecodedArtifact
             .unwrap_or(artifact.segments.header_end) == image.length()))]
 pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
 {
-    decode_splitting(image, None).map(|(artifact, _)| artifact)
+    decode_splitting(image, None, None).map(|(artifact, _)| artifact)
+}
+
+/// [`decode`], measuring each declaration's share of the artifact.
+///
+/// # Specification
+/// - requires: nothing; image may be arbitrary or adversarial.
+/// - ensures: [`decode`]'s answer, artifact or refusal. On success, one measure
+///   per declaration in admission order: the subterm-table entries its segment
+///   adds, and the saturating sum of its roots' expanded work. The entries sum
+///   to the artifact's table entries.
+/// - provides: each declaration's shared and unshared size, which a caller
+///   reports beside its segment's bytes; [`decode`] pays none of it.
+/// - fails: as [`decode`].
+/// - panics: none.
+/// - intension: the expanded work comes off the scan the budget check rides;
+///   each declaration's roots are summed once more.
+///
+/// # Errors
+/// Any [`DecodeError`].
+///
+/// # Adequacy
+/// - hypothesis: L2 compares each measure with the entries its segment
+///   introduces and the closed-form tree size of its roots, and the sums with
+///   the artifact's totals; L3 compares a truncated image's refusal with
+///   [`decode`]'s.
+/// - witness: `tests::sharing_format::each_declaration_measures_the_entries_its_segment_adds_and_its_roots_work`
+#[inline]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&(ref artifact, ref measures)|
+    measures.len() == artifact.declarations.len()
+        && measures.iter().map(|measure| usize::from(measure.entries())).sum::<usize>()
+            == usize::from(artifact.metrics.table_entries())))]
+pub fn decode_measured(
+    image: ArtifactImage<'_>
+) -> Result<(DecodedArtifact, Vec<DeclarationMeasure>), DecodeError>
+{
+    let mut measures = Vec::new();
+    let (artifact, _) = decode_splitting(image, None, Some(&mut measures))?;
+    Ok((artifact, measures))
 }
 
 /// What a decode kept of the table its first declarations filled.
@@ -626,8 +675,9 @@ struct Kept
 /// # Specification
 /// - requires: nothing; image may be arbitrary or adversarial.
 /// - ensures: [`decode`]'s answer; on success, what decoding the first `keep`
-///   declarations left when `keep` is present and the artifact holds that many.
-/// - fails: as [`decode`].
+///   declarations left when `keep` is present and the artifact holds that many,
+///   and, when `measures` is present, one measure per declaration pushed onto
+///   it as [`decode_measured`] states.
 /// - panics: none.
 ///
 /// # Errors
@@ -641,6 +691,7 @@ struct Kept
 fn decode_splitting(
     image: ArtifactImage<'_>,
     keep: Option<ConstantIndex>,
+    mut measures: Option<&mut Vec<DeclarationMeasure>>,
 ) -> Result<(DecodedArtifact, Option<Kept>), DecodeError>
 {
     let mut reader = ByteReader::new(image);
@@ -661,7 +712,14 @@ fn decode_splitting(
         if remaining == 0_u64 {
             break;
         }
+        let entries = table.nodes.len();
         let meta = decode_declaration(&mut reader, &mut table)?;
+        if let Some(measures) = measures.as_deref_mut() {
+            measures.push(DeclarationMeasure::new(
+                TableEntryCount::from(table.nodes.len().saturating_sub(entries)),
+                ExpandedWork::default(),
+            ));
+        }
         metas.push(meta);
         declaration_ends.push(reader.position);
         remaining = remaining.wrapping_sub(1_u64);
@@ -671,8 +729,15 @@ fn decode_splitting(
             site: MalformedSite::TrailingBytes,
         });
     }
-    let metrics = budget_report(&table, &metas);
+    let mut expanded = Vec::with_capacity(table.children.len());
+    let metrics = budget_report(&table, &metas, &mut expanded);
     check_budget(metrics)?;
+    if let Some(measures) = measures {
+        for (measure, meta) in measures.iter_mut().zip(&metas) {
+            let (_, work) = root_work(&expanded, core::slice::from_ref(meta));
+            *measure = DeclarationMeasure::new(measure.entries(), work);
+        }
+    }
     let kept = snapshot.map(|leading| {
         let mut expanded = Vec::with_capacity(leading.children.len());
         extend_expanded(&leading.children, &mut expanded);
@@ -817,7 +882,7 @@ pub fn decode_keeping(
     DecodeError,
 >
 {
-    let (artifact, kept) = decode_splitting(image, Some(end))?;
+    let (artifact, kept) = decode_splitting(image, Some(end), None)?;
     let leading = usize::from(end);
     let (Some(kept), Some(declarations), Some(ends)) = (
         kept,
@@ -993,16 +1058,18 @@ pub fn decode_after(
 /// # Specification
 /// - requires: every entry's children are strictly earlier, which decode
 ///   checked as the entries accrued, so a forward scan resolves each child's
-///   size before its parent's.
+///   size before its parent's; `expanded` holds the expanded work of the
+///   table's first entries, as [`extend_expanded`] requires.
 /// - ensures: the entry count, the maximum expanded size over every declaration
 ///   root, and the saturating sum of those root sizes — each a function of the
-///   canonical bytes alone. An index that resolves to no entry contributes the
-///   saturated ceiling, so a wiring defect refuses rather than under-reports.
-/// - provides: the one scan both the acceptance gate and the telemetry read;
-///   there is no second descent. The clauses check topological input order and
-///   the exact entry count. Expanded sizes stay prose: the only available
-///   derivation is this scan, whose memo vector would have to be allocated and
-///   recomputed as a predicate.
+///   canonical bytes alone — with `expanded` holding every entry's expanded
+///   work. An index that resolves to no entry contributes the saturated
+///   ceiling, so a wiring defect refuses rather than under-reports.
+/// - provides: the one scan the acceptance gate, the telemetry and a
+///   declaration's measure read; there is no second descent. The clauses check
+///   topological input order and the exact entry count. Expanded sizes stay
+///   prose: the only available derivation is this scan, whose memo vector would
+///   have to be allocated and recomputed as a predicate.
 /// - fails: never — a saturating scan is total.
 /// - panics: none.
 ///
@@ -1016,18 +1083,20 @@ pub fn decode_after(
 /// - witness: `tests::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
 /// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
 #[spec(
-    requires: table.children.iter().enumerate().all(|(parent, children)|
-        children.iter().all(|child| child.offset().0 < parent)),
-    ensures: |ret| ret.table_entries() == TableEntryCount::from(table.nodes.len()),
+    requires: expanded.len() <= table.children.len()
+        && table.children.iter().enumerate().all(|(parent, children)|
+            children.iter().all(|child| child.offset().0 < parent)),
+    ensures: |ret| ret.table_entries() == TableEntryCount::from(table.nodes.len())
+        && expanded.len() == table.children.len(),
 )]
 fn budget_report(
     table: &Table,
     metas: &[DeclMeta],
+    expanded: &mut Vec<ExpandedWork>,
 ) -> DecodeMetrics
 {
-    let mut expanded: Vec<ExpandedWork> = Vec::with_capacity(table.children.len());
-    extend_expanded(&table.children, &mut expanded);
-    let (largest, total) = root_work(&expanded, metas);
+    extend_expanded(&table.children, expanded);
+    let (largest, total) = root_work(expanded, metas);
     DecodeMetrics::new(TableEntryCount::from(table.nodes.len()), largest, total)
 }
 
@@ -1079,8 +1148,8 @@ fn extend_expanded(
 /// - ensures: the largest expanded work over every root of every declaration,
 ///   and the saturating sum of them all; a root that resolves to no entry
 ///   counts the saturated ceiling.
-/// - provides: [`budget_report`]'s root scan, and its resumption after a
-///   decoded prefix.
+/// - provides: [`budget_report`]'s root scan, its resumption after a decoded
+///   prefix, and the work of each declaration [`decode_measured`] measures.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -5496,7 +5565,7 @@ mod tests
                     cells: None,
                 })
                 .collect();
-            super::budget_report(&table, &metas)
+            super::budget_report(&table, &metas, &mut alloc::vec::Vec::new())
         };
         let edges = [
             vec![],
@@ -5590,7 +5659,7 @@ mod tests
             rules: vec![],
             cells: None,
         };
-        let metrics = super::budget_report(&table, &[meta]);
+        let metrics = super::budget_report(&table, &[meta], &mut alloc::vec::Vec::new());
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
         assert_eq!(
             u64::from(metrics.artifact_expanded_work()),

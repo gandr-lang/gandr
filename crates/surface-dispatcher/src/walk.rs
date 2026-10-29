@@ -121,6 +121,7 @@ use crate::compose::JudgedClosure;
 use crate::compose::Keeping;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
+use crate::compose::Positioning;
 use crate::compose::judge_component;
 use crate::compose::kept;
 use crate::compose::lower_closure;
@@ -330,6 +331,9 @@ pub struct Walk
     grant: HostGrant,
     /// The reader every source of the walk is read through.
     reader: Reader,
+    /// Whether each admission records where each declaration stands in its
+    /// artifact, which a measure reads.
+    positioning: Positioning,
 }
 
 /// Where a walk is among the paths it was given.
@@ -594,6 +598,7 @@ impl Walk
             report: RunReport::default(),
             grant: HostGrant::UNBOUNDED,
             reader: Reader::new(),
+            positioning: Positioning::Unpositioned,
         }
     }
 
@@ -620,6 +625,29 @@ impl Walk
     ) -> Self
     {
         self.grant = grant;
+        self
+    }
+
+    /// The walk recording, at each admission, where each declaration stands
+    /// in its artifact, so [`crate::measure()`] reads each source's rows.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the walk, unchanged but for its positioning; a walk records
+    ///   no positions until asked, and pays nothing for them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a measuring walk over `library/math` reads each
+    ///   source's rows, and a walk not asked answers that it recorded none.
+    /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| ret.positioning == Positioning::Positioned)]
+    pub fn measuring(mut self) -> Self
+    {
+        self.positioning = Positioning::Positioned;
         self
     }
 
@@ -802,6 +830,7 @@ impl Walk
             },
         };
         let grant = &self.grant;
+        let positioning = self.positioning;
         let grouped = group(grammar, given, Reading::ImportForms, &BTreeSet::new());
         self.report.parsed_mut().absorb(grouped.parsed);
         // The prelude every component lays first, parsed and lowered here once
@@ -937,14 +966,14 @@ impl Walk
                                     judge_regrouped(
                                         &mut self.report,
                                         grammar,
-                                        (grant, keeping),
+                                        (grant, keeping, positioning),
                                         again,
                                     )
                                 }
                                 else {
                                     judge(
                                         &mut self.report,
-                                        (grant, keeping),
+                                        (grant, keeping, positioning),
                                         component,
                                         (lowering, job.checking),
                                     )
@@ -960,7 +989,12 @@ impl Walk
                                 else {
                                     continue;
                                 };
-                                judge_regrouped(&mut self.report, grammar, (grant, keeping), again)
+                                judge_regrouped(
+                                    &mut self.report,
+                                    grammar,
+                                    (grant, keeping, positioning),
+                                    again,
+                                )
                             };
                             unjudged.insert(held);
                         }
@@ -1435,10 +1469,10 @@ fn lower_after<'text>(
 /// - requires: `lowering` is what [`lower`] or [`lower_unit_source`] made of
 ///   `component`, beside the checking it came with.
 /// - ensures: one held composition per member, in member order: what
-///   [`judge_component`] makes of a lowering under `keeping`, each beside the
-///   component's one kept admission, or the lowering's fault at every source,
-///   with no admission; `report`'s spellings advance as [`judge_component`]
-///   says.
+///   [`judge_component`] makes of a lowering under `keeping` and `positioning`,
+///   each beside the component's one kept admission, or the lowering's fault at
+///   every source, with no admission; `report`'s spellings advance as
+///   [`judge_component`] says.
 /// - fails: never; a fault is carried in the answer.
 /// - panics: none.
 ///
@@ -1449,7 +1483,7 @@ fn lower_after<'text>(
 #[spec(ensures: |ref ret| ret.len() == component.members.len())]
 fn judge<'text>(
     report: &mut RunReport,
-    (grant, keeping): (&HostGrant, Keeping),
+    (grant, keeping, positioning): (&HostGrant, Keeping, Positioning),
     component: &'text Component,
     (lowering, checking): (
         Result<Lowering<'text>, ComposeFault<'text>>,
@@ -1462,7 +1496,7 @@ fn judge<'text>(
             (lowering, SourceText::from(component.text.as_str())),
             (grant, checking),
             (&component.members, report.spellings_mut()),
-            keeping,
+            (keeping, positioning),
         ),
         Err(fault) => (
             component
@@ -1518,7 +1552,7 @@ fn judge<'text>(
 fn judge_regrouped<'text>(
     report: &mut RunReport,
     grammar: &Pbg,
-    (grant, keeping): (&HostGrant, Keeping),
+    (grant, keeping, positioning): (&HostGrant, Keeping, Positioning),
     again: &'text Grouped,
 ) -> Vec<Option<Held<'text>>>
 {
@@ -1537,10 +1571,15 @@ fn judge_regrouped<'text>(
             .parsed_mut()
             .absorb(ParsedBytes::from(part.text.len()));
         parts.push(
-            judge(report, (grant, keeping), part, (lowering, Checking::Whole))
-                .into_iter()
-                .map(Some)
-                .collect(),
+            judge(
+                report,
+                (grant, keeping, positioning),
+                part,
+                (lowering, Checking::Whole),
+            )
+            .into_iter()
+            .map(Some)
+            .collect(),
         );
     }
     again
