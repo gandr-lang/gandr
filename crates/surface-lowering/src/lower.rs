@@ -3226,10 +3226,6 @@ struct Lowerer<'run, 'source>
     /// reflexivity's point and every node under one, where a computation
     /// standing as a value is the value it returns.
     at_endpoint: BTreeSet<NodeIndex>,
-    /// The terms strictly under an endpoint, every one but the endpoints
-    /// themselves: a lambda there is checked at a parameter's thunk type, so
-    /// it is minted as its thunk (#3697).
-    within_endpoint: BTreeSet<NodeIndex>,
     /// Each abstraction whose binder ranges over the points of a path, with
     /// the carrier the path's written type states (#3773). A lambda `cong`
     /// maps by types its binder with it, is minted as its thunk, and the
@@ -5197,7 +5193,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             in_type: BTreeSet::new(),
             in_quote: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
-            within_endpoint: BTreeSet::new(),
             over_points: BTreeMap::new(),
             binders_over_points: BTreeMap::new(),
             leaves,
@@ -6606,8 +6601,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   marks are already set when its children are reached.
     /// - ensures: every node under a path type's endpoint carries both marks,
     ///   and every node under reflexivity's point the endpoint mark, before it
-    ///   is classified; each node under an endpoint also carries the mark of a
-    ///   node strictly within one.
+    ///   is classified.
     /// - provides: the context a bound name inside a type resolves in, and the
     ///   one a computation standing as a value is returned in.
     /// - fails: never.
@@ -6624,9 +6618,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.in_type.contains(&position) == marked.0
                 && self.at_endpoint.contains(&position) == marked.1
                 && (!marked.0 || self.tree.children(position).all(|child| self.in_type.contains(&child)))
-                && (!marked.1 || self.tree.children(position).all(|child| {
-                    self.at_endpoint.contains(&child) && self.within_endpoint.contains(&child)
-                }))
+                && (!marked.1 || self.tree.children(position).all(|child| self.at_endpoint.contains(&child)))
         },
     )]
     fn inherit_type(
@@ -6642,7 +6634,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if self.at_endpoint.contains(&position) {
             self.at_endpoint.extend(self.tree.children(position));
-            self.within_endpoint.extend(self.tree.children(position));
         }
     }
 
@@ -7429,14 +7420,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a force; a function's result reads a computation type and reaches a
     ///   value type by a returner; a value position reaches a type of either
     ///   sort by a quote, and a computation as the value it returns at an
-    ///   endpoint or where a type reads it, a lambda there as its thunk unless
-    ///   it is an endpoint itself (#3697), a lambda `cong` maps by as its thunk
-    ///   (#3773), and nested everywhere else; a tail, where a path through a
-    ///   body ends, reaches a value by the `return` its polarity names,
-    ///   recorded as inferred and leaving; a `while` loop's condition, and a
-    ///   tail of a handled subject, which is the subject's result, reach a
-    ///   value by a `return` recorded as no exit; the bridge is recorded for
-    ///   the form's node, and every other match records none.
+    ///   endpoint or where a type reads it, a lambda there as its thunk (#3697,
+    ///   #3767), a lambda `cong` maps by as its thunk (#3773), and nested
+    ///   everywhere else; a tail, where a path through a body ends, reaches a
+    ///   value by the `return` its polarity names, recorded as inferred and
+    ///   leaving; a `while` loop's condition, and a tail of a handled subject,
+    ///   which is the subject's result, reach a value by a `return` recorded as
+    ///   no exit; the bridge is recorded for the form's node, and every other
+    ///   match records none.
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
@@ -7492,8 +7483,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if self.at_endpoint.contains(&site.at.node) || self.type_read.contains(&site.at.node) =>
                 {
                     let lambda = self.tree.node(site.at.node).is_some_and(|node| matches!(shape_of(self.pbg, node), Ok(Shape::Form { former: Former::Lambda, .. })));
-                    let endpoint = self.at_endpoint.contains(&site.at.node) && !self.within_endpoint.contains(&site.at.node);
-                    Some((frame, Bridge::Inserted(if lambda && !endpoint { Insertion::Thunk } else { Insertion::Endpoint })))
+                    Some((frame, Bridge::Inserted(if lambda { Insertion::Thunk } else { Insertion::Endpoint })))
                 },
                 | (Reading::Value(frame), Produced::Computation) => {
                     Some((frame, Bridge::Inserted(Insertion::Nested)))
@@ -7558,10 +7548,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if self.at_endpoint.contains(&site.at.node)
                     || self.type_read.contains(&site.at.node) =>
             {
-                // A lambda there is checked at a parameter's thunk type, and a
-                // type elaborates no nested computation, so it is its thunk; a
-                // lambda that is an endpoint itself is the value it returns
-                // (#3697).
+                // A lambda there is checked at a thunk type, an endpoint's
+                // carrier or a parameter's, and a type elaborates no nested
+                // computation, so it is its thunk (#3697, #3767).
                 let lambda = self.tree.node(site.at.node).is_some_and(|node| {
                     matches!(
                         shape_of(self.pbg, node),
@@ -7571,9 +7560,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         })
                     )
                 });
-                let endpoint = self.at_endpoint.contains(&site.at.node)
-                    && !self.within_endpoint.contains(&site.at.node);
-                let insertion = if lambda && !endpoint {
+                let insertion = if lambda {
                     Insertion::Thunk
                 }
                 else {

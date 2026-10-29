@@ -47,9 +47,9 @@ def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S
 def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> Path(
   Path(Int, S(x), S(x)) => Int,
   transport(\X. X => Int, certificates(x), f),
-  thunk { fn (d) { f(d) } }
+  fn (d) { f(d) }
 ) {
-  here(thunk { fn (d) { f(d) } })
+  here(fn (d) { f(d) })
 }
 
 /// The carried consumer, run on a certificate of the join's boundary: it

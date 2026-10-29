@@ -3327,10 +3327,10 @@ fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
     for (root, sugared, explicit) in [
         (
             in_thunk,
-            "Path(Unit * Integer => Unit * Integer, thunk { fn (a) { pick(type(Unit * Integer), \
-             a) } }, thunk { fn (a) { pick(type(Unit * Integer), a) } })",
-            "Path(+U (#{Unit, Integer} -> -F #{Unit, Integer}), thunk { fn (a) { \
-             pick(#{Unit, Integer}, a) } }, thunk { fn (a) { pick(#{Unit, Integer}, a) } })",
+            "Path(Unit * Integer => Unit * Integer, fn (a) { pick(type(Unit * Integer), a) }, fn \
+             (a) { pick(type(Unit * Integer), a) })",
+            "Path(+U (#{Unit, Integer} -> -F #{Unit, Integer}), fn (a) { pick(#{Unit, Integer}, \
+             a) }, fn (a) { pick(#{Unit, Integer}, a) })",
         ),
         (
             at_endpoint,

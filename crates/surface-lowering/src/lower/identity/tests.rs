@@ -627,6 +627,91 @@ fn a_lambda_argument_in_an_endpoint_is_its_thunk_3697()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3767: a lambda written bare as a path type's endpoint, or as
+/// reflexivity's point, was the value it returns, so the checker had to infer
+/// it, refused `NotSynthesisable`. It is its thunk, as one written strictly
+/// inside an endpoint is (#3697): the endpoint's carrier is the thunk type it
+/// checks at.
+#[test]
+fn a_lambda_endpoint_is_its_thunk_3767()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def direct : Path(Bool => Bool, fn (a) { a }, fn (a) { a }) = here(fn (a) { a });\n\
+             def result(d : Bool => Bool) -> Path(Bool => Bool, fn (a) { d(a) }, fn (a) { d(a) }) {\n  here(fn (a) { d(a) })\n}\n",
+        ),
+        &mut arena,
+    );
+    // Both check: the checker meets each lambda as its thunk, at the
+    // endpoint's carrier.
+    assert_accepted(&judged(&module, &mut arena));
+    let thunked = |at: gandr_core_term::ValueId| {
+        matches!(arena.value(at), Some(&Value::Thunk(body)) if matches!(arena.computation(body), Some(&Computation::Lambda(_))))
+            && matches!(
+                module.origins().value(at),
+                Maybe::Present(origin) if origin.provenance() == Provenance::Inserted(Insertion::Thunk)
+            )
+    };
+    for name in ["direct", "result"] {
+        let DeclarationOutcome::Completed {
+            declared_type,
+            body,
+        } = outcome_of(&module, name.into())
+        else {
+            panic!("`{name}` lowers both halves");
+        };
+        let mut signature = declared_type;
+        while let Some(&ValueType::Thunk(computation)) = arena.value_type(signature) {
+            let Some(
+                &gandr_core_term::CompType::Pi { codomain, .. }
+                | &gandr_core_term::CompType::Arrow { codomain, .. },
+            ) = arena.comp_type(computation)
+            else {
+                panic!("`{name}`'s signature is a function's");
+            };
+            let Some(&gandr_core_term::CompType::Returner { result, .. }) =
+                arena.comp_type(codomain)
+            else {
+                panic!("`{name}`'s function returns its path");
+            };
+            signature = result;
+        }
+        let Some(&ValueType::Path { left, right, .. }) = arena.value_type(signature)
+        else {
+            panic!("`{name}`'s type is a path type");
+        };
+        assert!(
+            thunked(left) && thunked(right),
+            "`{name}`'s endpoints are their lambdas' thunks: {:?} and {:?}",
+            arena.value(left),
+            arena.value(right)
+        );
+        // A value definition's body is reflexivity itself, and a function's
+        // returns it.
+        let reflexivity = if matches!(arena.value(body), Some(&Value::Here(_))) {
+            body
+        }
+        else {
+            let Some(&Computation::Return(returned)) =
+                arena.computation(tail_of(&module, &arena, name.into()))
+            else {
+                panic!("`{name}`'s body returns reflexivity");
+            };
+            returned
+        };
+        let Some(&Value::Here(point)) = arena.value(reflexivity)
+        else {
+            panic!("`{name}`'s body is `here`");
+        };
+        assert!(
+            thunked(point),
+            "`{name}`'s point is its lambda's thunk: {:?}",
+            arena.value(point)
+        );
+    }
+}
+
 #[test]
 fn a_type_endpoint_is_quoted()
 {

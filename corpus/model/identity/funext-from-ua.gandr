@@ -188,17 +188,17 @@ def whisker(
   s : #{x : b, y : b, p : Path(b, x, y)} => b,
   t : #{x : b, y : b, p : Path(b, x, y)} => b,
   e : Path(#{x : b, y : b, p : Path(b, x, y)} => b, s, t)
-) -> Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { t(k(x)) } }) {
+) -> Path(a => b, fn (x) { s(k(x)) }, fn (x) { t(k(x)) }) {
   transport(
     (w : #{x : b, y : b, p : Path(b, x, y)} => b, Path(
       #{x : b, y : b, p : Path(b, x, y)} => b,
       s,
       w
-    )) => Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { w(k(x)) } }),
+    )) => Path(a => b, fn (x) { s(k(x)) }, fn (x) { w(k(x)) }),
     e,
     here(s),
     here(e),
-    here(thunk { fn (x) { s(k(x)) } })
+    here(fn (x) { s(k(x)) })
   )
 }
 
@@ -206,15 +206,15 @@ def whisker(
 /// between its two ends, whatever the functions are.
 def funextOfSpace(a : Type, b : Type, k : a => #{x : b, y : b, p : Path(b, x, y)}) -> Path(
   a => b,
-  thunk { fn (x) { source(b, k(x)) } },
-  thunk { fn (x) { target(b, k(x)) } }
+  fn (x) { source(b, k(x)) },
+  fn (x) { target(b, k(x)) }
 ) {
   whisker(
     a,
     b,
     k,
-    thunk { fn (w) { source(b, w) } },
-    thunk { fn (w) { target(b, w) } },
+    fn (w) { source(b, w) },
+    fn (w) { target(b, w) },
     endsAgree(b)
   )
 }
@@ -231,5 +231,5 @@ def funextFromUa(
   g : a => b,
   h : (x : a) => Path(b, f(x), g(x))
 ) -> Path(a => b, f, g) {
-  funextOfSpace(a, b, thunk { fn (x) { (f(x), (g(x), h(x))) } })
+  funextOfSpace(a, b, fn (x) { (f(x), (g(x), h(x))) })
 }

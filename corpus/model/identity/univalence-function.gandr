@@ -16,9 +16,9 @@ import "./univalence.gandr";
 def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> Path(
   Int => Int,
   transport(\X. X => X, loopsAreIntegers, f),
-  thunk { fn (n) { wind(f(spin(n))) } }
+  fn (n) { wind(f(spin(n))) }
 ) {
-  here(thunk { fn (n) { wind(f(spin(n))) } })
+  here(fn (n) { wind(f(spin(n))) })
 }
 
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
