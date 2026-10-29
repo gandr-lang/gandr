@@ -96,14 +96,15 @@
 //! night and covers the whole over the [`Nights`] it states beside its
 //! sample: its whole cost on the nightly runner over its share. The slice is
 //! a hash of the sweep's name and the source's corpus path
-//! ([`Rotation::holds`]). The typing cannot rotate by source: its costliest
-//! source alone types for longer than its share, so it types every source
-//! each night, opened whole up to the night's part and typed through it,
-//! each source cut into as many parts as its nights so each costs about that
-//! fraction ([`Rotation::part`]). Either way the night is the UTC day, every
-//! input is visited within the sweep's nights, the run prints the night it
-//! visited, and `GANDR_SWEEP_NIGHT` replays it. A sweep cheap enough visits
-//! the whole corpus every night. The alternatives were one night count for
+//! ([`Rotation::holds`]). The typing and the erasure cannot rotate by source:
+//! each one's costliest source alone takes longer than its share, so each
+//! visits every source each night, opened whole up to the night's part and
+//! typed or erased through it, each source cut into as many parts as its
+//! nights so each costs about that fraction ([`Rotation::part`], #3850).
+//! Either way the night is the UTC day, every input is visited within the
+//! sweep's nights, the run prints the night it visited, and
+//! `GANDR_SWEEP_NIGHT` replays it. A sweep cheap enough visits the whole
+//! corpus every night. The alternatives were one night count for
 //! every rotating sweep, which leaves the costliest past the budget or spreads
 //! the cheaper ones thinner than they need; a stride over the keystrokes,
 //! which never visits the text between its steps; shards across jobs, which
