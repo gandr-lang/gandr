@@ -164,5 +164,46 @@
       ]
     },
     "output": []
+  },
+  {
+    "name": "#3975: a nightly sweep that reaches its 240 s limit opens its own collector, the nightly's reason in its body; the same test's 30 s collector from the merge queue is left alone, and a sweep under the limit files nothing",
+    "input": {
+      "budget": 240,
+      "reason": "in the nightly sweeps, its limit. nextest ends such a sweep and passes it, so a timeout never turns the night red (#3975).",
+      "run": {
+        "id": 40963693628,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40963693628"
+      },
+      "times": [
+        {
+          "lane": "junit-sweeps",
+          "binary": "gandr-surface-lsp::tests",
+          "test": "editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault",
+          "seconds": 240.139
+        },
+        {
+          "lane": "junit-sweeps",
+          "binary": "gandr-surface-lsp::tests",
+          "test": "editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful",
+          "seconds": 180.2
+        }
+      ],
+      "issues": [
+        {
+          "number": 3900,
+          "title": "test: gandr-surface-lsp::tests editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault ran 41.5 s in the cargo-test-enforcing-shard-3 lane, past its 30 s budget",
+          "body": "`editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault` in `gandr-surface-lsp::tests` ran past its 30 s budget in CI.\n\n## Runs\n\n- [ ] [run 40900000000](https://github.com/gandr-lang/gandr/actions/runs/40900000000) — `cargo-test-enforcing-shard-3`: 41.5 s\n"
+        }
+      ]
+    },
+    "output": [
+      {
+        "number": null,
+        "title": "test: gandr-surface-lsp::tests editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault ran 240.14 s in the sweeps lane, past its 240 s budget",
+        "body": "`editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault` in `gandr-surface-lsp::tests` ran past its 240 s budget in the nightly sweeps, its limit. nextest ends such a sweep and passes it, so a timeout never turns the night red (#3975).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40963693628](https://github.com/gandr-lang/gandr/actions/runs/40963693628) — `sweeps`: 240.14 s\n",
+        "close": false,
+        "line": "- `editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault` in `gandr-surface-lsp::tests`: 240.14 s in `sweeps`, past its 240 s budget"
+      }
+    ]
   }
 ]
