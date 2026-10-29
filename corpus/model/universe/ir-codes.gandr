@@ -13,8 +13,8 @@
 // reads that function through the decoder `t`.
 //
 // - see: #3575 — not implemented: the family a code defines, with its decoder
-// - see: `pathological/universe/ir-codes.gandr` — the family a code defines,
-//   its decoder, and the decode of its arguments, refused
+// - see: `pathological/universe/ir-codes.gandr` — the family a code defines
+//   and its decoder, refused, over the decode of its arguments
 // - see: Dybjer and Setzer, _A finite axiomatization of inductive-recursive
 //   definitions_, TLCA 1999, doi:10.1007/3-540-48959-2_11
 

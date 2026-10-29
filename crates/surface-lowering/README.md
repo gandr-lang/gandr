@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
-The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-lowering` runs the crate's tests; how their witnesses build their trees is in the crate rustdoc.
+The same example is the crate-level doctest; the crate rustdoc says how the witnesses build their trees.
 
 ## Where the detail lives
 
@@ -124,6 +124,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
+- `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: a decode carries no stage.
 
 ## License
 
