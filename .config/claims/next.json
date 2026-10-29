@@ -135,7 +135,7 @@
         "100": [30, 25, 33]
       }
     },
-    "output": "61\tdefect\tissue 61"
+    "output": "observation due: #61 — mise run debug:test <package> <test>\n61\tdefect\tissue 61"
   },
   {
     "name": "#3736: a defect in another area, or in none, is claimed once the lane's buckets are empty, the oldest first, before performance, gaps and planned units",
@@ -273,7 +273,7 @@
         "100": [30, 25, 33]
       }
     },
-    "output": "58\tdefect\ta defect with no area"
+    "output": "observation due: #58 — mise run debug:test <package> <test>\n58\tdefect\ta defect with no area"
   },
   {
     "name": "then a performance issue in any area, a deferred one skipped",
@@ -672,7 +672,7 @@
       ],
       "order": {}
     },
-    "output": "9\tdefect\tthe next defect"
+    "output": "observation due: #9 — mise run debug:test <package> <test>\n9\tdefect\tthe next defect"
   },
   {
     "name": "#3326: a board of collectors with no open row gives no claim and lists none",
@@ -734,7 +734,7 @@
         }
       ]
     },
-    "output": "sections due: #5 — `## Sources` is missing\nsections due: #5 — `## Readings` is missing\nsections due: #5 — `## Concerns` is missing\nsections due: #5 — `## Ledger` is missing\nsections due: #5 — `## Not in this slice` is missing\nsections due: #5 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n5\tdefect\ta sectionless defect"
+    "output": "observation due: #5 — mise run debug:test <package> <test>\nsections due: #5 — `## Sources` is missing\nsections due: #5 — `## Readings` is missing\nsections due: #5 — `## Concerns` is missing\nsections due: #5 — `## Ledger` is missing\nsections due: #5 — `## Not in this slice` is missing\nsections due: #5 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n5\tdefect\ta sectionless defect"
   },
   {
     "name": "#2744: a performance issue in the area comes before an older one in another area",
@@ -921,7 +921,7 @@
         "100": [30, 25, 33]
       }
     },
-    "output": "blocked: #61\n60\tdefect\tissue 60"
+    "output": "blocked: #61\nobservation due: #60 — mise run debug:test <package> <test>\n60\tdefect\tissue 60"
   },
   {
     "name": "within a bucket `priority:high` ranks first: a high defect before an older medium one (#2902)",
@@ -1059,7 +1059,7 @@
         "100": [30, 25, 33]
       }
     },
-    "output": "60\tdefect\tissue 60"
+    "output": "observation due: #60 — mise run debug:test <package> <test>\n60\tdefect\tissue 60"
   },
   {
     "name": "a high gap ranks before a cheaper one: priority before effort within the bucket (#2902)",
@@ -1193,7 +1193,7 @@
         }
       ]
     },
-    "output": "sections due: #4 — `## Readings` marks `oracle` `no` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n4\tdefect\ta bare defect"
+    "output": "observation due: #4 — mise run debug:test <package> <test>\nsections due: #4 — `## Readings` marks `oracle` `no` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n4\tdefect\ta bare defect"
   },
   {
     "name": "#2955: a pick whose readings are the migration's `unstated` placeholder is claimed, the questions printed first",
@@ -1217,7 +1217,7 @@
         }
       ]
     },
-    "output": "restate: `univalent`: what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence\nrestate: `resident`: representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n5\tdefect\tan unstated defect"
+    "output": "observation due: #5 — mise run debug:test <package> <test>\nrestate: `univalent`: what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence\nrestate: `resident`: representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n5\tdefect\tan unstated defect"
   },
   {
     "name": "a refactor in the area is claimed before a performance issue, a gap and a planned unit (#2884)",
@@ -1295,7 +1295,7 @@
       ],
       "order": {}
     },
-    "output": "80\tdefect\tbroken"
+    "output": "observation due: #80 — mise run debug:test <package> <test>\n80\tdefect\tbroken"
   },
   {
     "name": "#3736: a refactor in another area is claimed before a performance issue of the lane",
@@ -1401,7 +1401,7 @@
         "100": [3800]
       }
     },
-    "output": "3700\tdefect\ta ux defect"
+    "output": "observation due: #3700 — mise run debug:test <package> <test>\n3700\tdefect\ta ux defect"
   },
   {
     "name": "#3736: with every surface bucket empty a workflow refactor is claimed before a planned surface unit",
@@ -1463,7 +1463,7 @@
         }
       ]
     },
-    "output": "12\tdefect\ta ten-minute fix"
+    "output": "observation due: #12 — mise run debug:test <package> <test>\n12\tdefect\ta ten-minute fix"
   },
   {
     "name": "#3111: a collector in the area that is no defect prints with its open rows, a landed or fixed row and a checked item not counted; another area's does not print",
@@ -1497,7 +1497,7 @@
         }
       ]
     },
-    "output": "collector: #20 (3 open rows)\n22\tdefect\tthe defect"
+    "output": "collector: #20 (3 open rows)\nobservation due: #22 — mise run debug:test <package> <test>\n22\tdefect\tthe defect"
   },
   {
     "name": "#3369: a hotpath collector counts only its open row: a fixed, accepted or runner-shift row settles, and the `## Settled` table is no row",
@@ -1531,7 +1531,7 @@
         }
       ]
     },
-    "output": "collector: #20 (1 open row)\n22\tdefect\tthe defect"
+    "output": "collector: #20 (1 open row)\nobservation due: #22 — mise run debug:test <package> <test>\n22\tdefect\tthe defect"
   },
   {
     "name": "#3326: a defect collector with an open row heads the order, the oldest first, ahead of an older defect and a planned unit; an owned one is passed over, one with no open row is not listed, and the pick prints no section due",
@@ -1599,7 +1599,7 @@
         }
       ]
     },
-    "output": "30\tcollector\trecovery: a cause"
+    "output": "observation due: #30 — mise run debug:test <package> <test>\n30\tcollector\trecovery: a cause"
   },
   {
     "name": "#3134: `status:unsectioned` is informational: the filed defect first in order is the pick, its sections due, and no other issue is named",
@@ -1651,7 +1651,7 @@
         }
       ]
     },
-    "output": "sections due: #5 — `## Sources` is missing\nsections due: #5 — `## Readings` is missing\nsections due: #5 — `## Concerns` is missing\nsections due: #5 — `## Ledger` is missing\nsections due: #5 — `## Not in this slice` is missing\nsections due: #5 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n5\tdefect\ta filed defect"
+    "output": "observation due: #5 — mise run debug:test <package> <test>\nsections due: #5 — `## Sources` is missing\nsections due: #5 — `## Readings` is missing\nsections due: #5 — `## Concerns` is missing\nsections due: #5 — `## Ledger` is missing\nsections due: #5 — `## Not in this slice` is missing\nsections due: #5 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n5\tdefect\ta filed defect"
   },
   {
     "name": "#3169: a pick whose `## Readings` lacks `located` and `resident` prints them due with the questions that ask which memory and which crossing",
@@ -1669,7 +1669,7 @@
         }
       ]
     },
-    "output": "sections due: #41 — `## Readings` has no row for `located`; the axis asks at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)\nsections due: #41 — `## Readings` has no row for `resident`; the axis asks representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n41\tdefect\tsurface: a value crossing worlds"
+    "output": "observation due: #41 — mise run debug:test <package> <test>\nsections due: #41 — `## Readings` has no row for `located`; the axis asks at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)\nsections due: #41 — `## Readings` has no row for `resident`; the axis asks representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n41\tdefect\tsurface: a value crossing worlds"
   },
   {
     "name": "#3246: a pick filed before the seventh reading prints `zero-cost` as a section due, quoting its question; the pick is claimed",
@@ -1687,6 +1687,44 @@
         }
       ]
     },
-    "output": "sections due: #41 — `## Readings` has no row for `zero-cost`; the axis asks what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it\n41\tdefect\tsurface: a unit filed before the seventh reading"
+    "output": "observation due: #41 — mise run debug:test <package> <test>\nsections due: #41 — `## Readings` has no row for `zero-cost`; the axis asks what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it\n41\tdefect\tsurface: a unit filed before the seventh reading"
+  },
+  {
+    "name": "#3758: a defect whose title names a refusal of `.config/debug/refusals.toml` opens with that refusal's `debug:refusal` command",
+    "input": {
+      "areas": ["area:kernel"],
+      "order": {},
+      "refusals": ["EndpointMismatch", "WrongSort"],
+      "issues": [
+        {
+          "number": 50,
+          "title": "kernel: EndpointMismatch on a transported path",
+          "labels": ["kind:defect", "area:kernel", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #50 — mise run debug:refusal EndpointMismatch <package> <test>\n50\tdefect\tkernel: EndpointMismatch on a transported path"
+  },
+  {
+    "name": "#3758: a refusal's name inside a longer word is no refusal named; the defect opens with `debug:test`",
+    "input": {
+      "areas": ["area:kernel"],
+      "order": {},
+      "refusals": ["WrongSort"],
+      "issues": [
+        {
+          "number": 51,
+          "title": "kernel: WrongSorted heads lose their motive",
+          "labels": ["kind:defect", "area:kernel", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #51 — mise run debug:test <package> <test>\n51\tdefect\tkernel: WrongSorted heads lose their motive"
   }
 ]

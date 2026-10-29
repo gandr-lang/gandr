@@ -430,6 +430,14 @@ printf '%s\n' "$base"
 # reads the ticks from a file it leaves alone. `--require-acknowledged` exits 2
 # while any prose obligation is unticked.
 #
+# A defect owes one more line: its observation in the running program
+# (#3758). When the body works a `kind:defect` issue, the task writes a
+# `### Observed` block after the section (`.config/claims/observed.jq`). The
+# box is ticked when the change adds a transcript under a crate's
+# `tests/debug-traces/` that a `debug:` task wrote, stopped at a breakpoint,
+# in a test the body names. No hand ticks it. `--require-acknowledged` exits 2
+# while it is open.
+#
 # A performance fix owes one more line: whether a lint could have refused the
 # pattern it fixes (#1370). The body names the issues it works
 # (`.config/claims/targets.jq`); when one of them, or the pull request named
@@ -507,9 +515,35 @@ for left in target/evidence/records/*.jsonl target/evidence/doc/*.json; do
   name=${file#*/}
   [[ -n ${written[$directory/${name%%.*}]:-} ]] || rm -- "$left"
 done
+status=0
 quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
   --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
-  --comment target/evidence/comment.md --selection target/evidence/selection
+  --comment target/evidence/comment.md --selection target/evidence/selection || status=$?
+if [[ -n $text ]]; then
+  defect=false
+  for set in "${labels[@]}"; do
+    if [[ ,$set, == *,kind:defect,* ]]; then defect=true; fi
+  done
+  transcripts=$(git diff --name-only --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-traces/*.txt' \
+    | while IFS= read -r path; do jq -Rs --arg path "$path" '{path: $path, text: .}' "$path"; done | jq -s .)
+  block=$(jq -n -r --argjson defect "$defect" --rawfile body "$text" --argjson transcripts "$transcripts" \
+    '{defect: $defect, body: $body, transcripts: $transcripts}' | jq -r -f .config/claims/observed.jq)
+  if [[ -n ${usage_body:-} ]]; then
+    awk -v block="$block" '
+      /^<!-- gandr-observed:start -->$/ { skip = 1 }
+      !skip { print }
+      /^<!-- gandr-observed:end -->$/ { skip = 0; next }
+      /^<!-- quenchant-obligations:end -->$/ && !skip && block != "" { print block; placed = 1 }
+      END { if (!placed && block != "") print block }
+    ' "$usage_body" > "$usage_body.observed"
+    mv -- "$usage_body.observed" "$usage_body"
+  fi
+  if [[ $block == *'- [ ] observed'* ]]; then
+    printf '%s\n' "$block" >&2
+    if [[ ${usage_require_acknowledged:-false} == true && $status == 0 ]]; then status=2; fi
+  fi
+fi
+exit "$status"
 '''
 
 # The recorded case of the re-verification lane (#2636), the witness the
@@ -1615,7 +1649,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # collectors it closes (`landed.jq`, #3732); each in
 # `.config/claims/slow.json` one run's test times, the open slow-test
 # collectors, and the collectors `ci:slow-file` opens, marks and closes
-# (`slow.jq`, #3752). The
+# (`slow.jq`, #3752); each in
+# `.config/claims/observed.json` a body, whether it works a defect and the
+# transcripts the change adds, and the `### Observed` block
+# `evidence:obligations` writes for them (`observed.jq`, #3758). The
 # term map itself, `.config/references/terms.toml`, is read whole: every row
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
@@ -1651,6 +1688,7 @@ cases reads reads.jq reads.json --mode c
 cases swept swept.jq swept.json --mode c
 cases landed landed.jq landed.json --mode c
 cases slow slow.jq slow.json --mode c
+cases observed observed.jq observed.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT

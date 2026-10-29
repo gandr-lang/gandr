@@ -1,0 +1,38 @@
+#:tombi toml-version = "v1.0.0"
+
+# Where each refusal is made, for `mise run debug:refusal` (#3758). A site is
+# a source file and an extended regular expression over its lines; every
+# matching line is a breakpoint, its number read from the source when the
+# task runs, so a site that moves needs no edit here. A refusal this table
+# lacks is one more `[refusal.<Name>]` table.
+
+[refusal.EndpointMismatch]
+sites = [
+  { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*return Err\(CheckRefusal::EndpointMismatch \{' },
+  { file = "crates/kernel-core/src/flow_universe.rs", pattern = 'Err\(FlowError::EndpointMismatch\)' },
+]
+
+[refusal.UnboundIndex]
+sites = [
+  { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker/src/judgement/access.rs", pattern = '^\s*return Err\(CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-checker/src/judgement/session.rs", pattern = '^\s*CheckRefusal::UnboundIndex \{' },
+  { file = "crates/core-term/src/context.rs", pattern = '^\s*let unbound = ContextError::UnboundIndex' },
+]
+
+[refusal.WrongSort]
+sites = [
+  { file = "crates/surface-lowering/src/classify.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
+  { file = "crates/surface-dispatcher/src/compose.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
+]
+
+[refusal.NotSynthesisable]
+sites = [
+  { file = "crates/core-checker/src/judgement.rs", pattern = 'Err\(CheckRefusal::NotSynthesisable \{' },
+  { file = "crates/core-checker/src/judgement/session.rs", pattern = '^\s*Err\(CheckRefusal::NotSynthesisable \{' },
+]
+
+[refusal.OutOfFragment]
+sites = [
+  { file = "crates/core-checker/src/bridge.rs", pattern = '(return Err\(|= |\|former\| |^\s*)Refusal::OutOfFragment \{' },
+]

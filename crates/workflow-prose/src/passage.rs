@@ -257,11 +257,18 @@ pub fn readme(
     paragraph.passages
 }
 
-/// The lines that open and close the block `pr:open` writes, which no rule
-/// reads.
-const OBLIGATIONS: [&str; 2] = [
-    "<!-- quenchant-obligations:start -->",
-    "<!-- quenchant-obligations:end -->",
+/// The lines that open and close each block the workflow writes into a body,
+/// which no rule reads: `pr:open`'s obligations and the `### Observed` box
+/// `evidence:obligations` writes for a defect.
+const GENERATED: [(&str, &str); 2] = [
+    (
+        "<!-- quenchant-obligations:start -->",
+        "<!-- quenchant-obligations:end -->",
+    ),
+    (
+        "<!-- gandr-observed:start -->",
+        "<!-- gandr-observed:end -->",
+    ),
 ];
 
 /// The keywords of a line that only links issues.
@@ -408,9 +415,9 @@ fn answered(item: Text<'_>) -> Text<'_>
 ///   mechanism's form is read from its answer, as [`answered`] states. A blank
 ///   line, a heading, a table row, a quotation, an HTML line, a line that only
 ///   links issues and a `from:` line end the open passage and are not read.
-///   Every line of a fenced block and of the block `pr:open` writes between its
-///   obligations markers is not read, nor is the text of an HTML comment. Each
-///   passage starts on its first line.
+///   Every line of a fenced block and of a block the workflow writes between
+///   its markers is not read, nor is the text of an HTML comment. Each passage
+///   starts on its first line.
 /// - provides: the body text the sentence rules read.
 /// - fails: never.
 /// - panics: none.
@@ -418,8 +425,9 @@ fn answered(item: Text<'_>) -> Text<'_>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a body with a paragraph, items, a form item, a fence, a
-///   table, a comment, a link line and the obligations block; reading any
-///   skipped line, or joining two items, changes the passages.
+///   table, a comment, a link line, the obligations block and the observed
+///   block; reading any skipped line, or joining two items, changes the
+///   passages.
 /// - witness: `passage::tests::a_body_reads_its_paragraphs_and_items`
 #[inline]
 #[must_use]
@@ -434,8 +442,11 @@ pub fn body(
     let mut commented = Comment::Closed;
     for (index, raw) in text.0.lines().enumerate() {
         let trimmed = raw.trim();
-        if OBLIGATIONS.contains(&trimmed) {
-            obliged = trimmed == OBLIGATIONS[0];
+        if let Some(&(start, _)) = GENERATED
+            .iter()
+            .find(|&&(start, end)| trimmed == start || trimmed == end)
+        {
+            obliged = trimmed == start;
             paragraph.close();
             continue;
         }
@@ -873,7 +884,9 @@ mod tests
                     — nothing is transported\n- the cache is stale — it fails\n1. numbered\n\n```sh\n\
                     This was code.\n```\n\n| a | b |\n> quoted text\n<!--\nhidden too\n-->\nCloses \
                     #12, #13\nfrom: the owner\n<!-- quenchant-obligations:start -->\nIt was written \
-                    by the tool.\n<!-- quenchant-obligations:end -->\n#12 holds it.\nLast.\n";
+                    by the tool.\n<!-- quenchant-obligations:end -->\n<!-- gandr-observed:start \
+                    -->\n- [ ] observed — it was seen by nobody.\n<!-- gandr-observed:end -->\n#12 \
+                    holds it.\nLast.\n";
         let passages = body(Text("pr.md"), Text(text));
         let read: Vec<String> = passages
             .iter()
@@ -886,7 +899,7 @@ mod tests
             "9:nothing is transported",
             "10:the cache is stale — it fails",
             "11:numbered",
-            "27:#12 holds it. Last.",
+            "30:#12 holds it. Last.",
         ]);
         assert!(
             passages

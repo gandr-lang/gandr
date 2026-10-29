@@ -3,7 +3,8 @@
 # after one `collector: #n (k open rows)` line for each collector in the
 # lane's areas that is no defect and holds an open row (#3111, #3326), one
 # `blocked: #n` line for each issue ranked ahead of it that waits on an open
-# issue, one `sections due: #n — <finding>` line for each section the pick
+# issue, one `observation due: #n — <command>` line when the pick is a defect
+# (#3758), one `sections due: #n — <finding>` line for each section the pick
 # lacks (#3134), and one `restate: `<axis>`: <question>` line for each of the
 # pick's readings still the migration's `unstated` placeholder (#2955).
 #
@@ -15,6 +16,8 @@
 #            the issue's body, or null; blocked how many open issues it is
 #            GitHub-`blocked by` (#2902), or null for none
 #   order    each open epic's sub-issues in the epic's order: {"<epic>": [number]}
+#   refusals the refusals `.config/debug/refusals.toml` names; absent reads
+#            as none
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
@@ -73,8 +76,17 @@ def blocked: (.blocked // 0) > 0;
 # A collector's open rows (#3111), as `collector_rows` reads them.
 def open_rows: .body // "" | collector_rows | length;
 
+# The command a defect's observation starts from (#3758): the refusal its
+# title names, a table of `.config/debug/refusals.toml`, else the test alone.
+def observation($refusals):
+  .title as $title
+  | ([$refusals[] | select(. as $name | $title | test("\\b\($name)\\b"))] | first) as $refusal
+  | "observation due: #\(.number) — mise run "
+    + (if $refusal == null then "debug:test <package> <test>" else "debug:refusal \($refusal) <package> <test>" end);
+
 .areas as $areas
 | .order as $order
+| (.refusals // []) as $refusals
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
 | [.issues[] | select(candidate)] as $open
 | [
@@ -100,6 +112,7 @@ def open_rows: .body // "" | collector_rows | length;
     | reduce .[] as $entry ([]; if any(.[]; .number == $entry[0].number) then . else . + [$entry[0]] end)
     | .[] | "blocked: #\(.number)"),
   ($at // empty | $ranked[.]
-    | (select(.[1] != "collector") | .[0] | .number as $n | .body // "" | findings | "sections due: #\($n) — \(.)"),
+    | (select(.[0] | has("kind:defect")) | .[0] | observation($refusals)),
+      (select(.[1] != "collector") | .[0] | .number as $n | .body // "" | findings | "sections due: #\($n) — \(.)"),
       (select(.[1] != "collector") | .[0] | quoted(unstated_axes)[] | "restate: \(.)"),
       "\(.[0].number)\t\(.[1])\t\(.[0].title)")
