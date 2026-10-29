@@ -27,6 +27,24 @@
     "output": "1272\n1273"
   },
   {
+    "name": "#3817: a chain of one in no stack, its top merged while it opened, is linked nothing",
+    "program": "link.jq",
+    "input": {
+      "chain": [3814],
+      "stacks": [null]
+    },
+    "output": ""
+  },
+  {
+    "name": "#3817: a chain of one already in a stack is still linked by the stack's number",
+    "program": "link.jq",
+    "input": {
+      "chain": [3814],
+      "stacks": [3810]
+    },
+    "output": "3810\n3814"
+  },
+  {
     "name": "a stack is read from its middle down to main and up to its top",
     "program": "chain.jq",
     "args": {
