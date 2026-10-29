@@ -1721,7 +1721,9 @@ fi
 # as the defect it is, its rows worked by the landing, and prints no section
 # due, keeping its own shape. The lane's defects and refactors come next,
 # then the oldest defect or refactor of any area, before any planned unit
-# (#3736). Any other collector in the lane's areas holding an open row is
+# (#3736). Another area's performance issues and gaps come last, after the
+# lane's planned units: they are another lane's planned work (#3827). Any
+# other collector in the lane's areas holding an open row is
 # printed first, on stderr, as `collector: #n (k open rows)` (#3111), the
 # carving due. A defect pick opens with `observation due: #n — mise run
 # debug:refusal <Refusal> <package> <test>` (#3758), the refusal its title

@@ -32,11 +32,13 @@
 # `## Refactoring` verdict asked for (#2884); then a `kind:defect` or a
 # `kind:refactor` in any area, the oldest first, so a bucket no lane asks for
 # drains before planned work (#3736, reversing #3111's rule that a defect in
-# another area is not offered); a `kind:performance` in the lane's areas,
-# then any `kind:performance`; a `kind:gap` in the lane's areas; then a
-# planned unit, an issue in the lane's areas whose parent is an open epic not
-# itself deferred, the oldest epic first and its sub-issues in the epic's
-# order. Within each bucket of the lane the `priority:` label ranks first
+# another area is not offered); a `kind:performance` in the lane's areas; a
+# `kind:gap` in the lane's areas; then a planned unit, an issue in the lane's
+# areas whose parent is an open epic not itself deferred, the oldest epic
+# first and its sub-issues in the epic's order; and last a `kind:performance`
+# or a `kind:gap` in any area, another lane's planned work, which a lane takes
+# only once its own is done (#3827). Within each bucket of the lane the
+# `priority:` label ranks first
 # (`high`, `medium`, `backlog`, then none, #2902), so defects stay first
 # across buckets and a high one leads its own. Defects and gaps then rank by
 # `effort:`, cheapest first (`easy`, `medium`, `hard`, `unknown`, then none):
@@ -97,12 +99,13 @@ def observation($refusals):
     ($open | map(select(has("kind:refactor") and within($areas))) | sort_by(priority, .number) | .[] | [., "refactor"]),
     ($open | map(select(has("kind:defect") or has("kind:refactor"))) | sort_by(.number) | .[] | [., if has("kind:defect") then "defect" else "refactor" end]),
     ($open | map(select(has("kind:performance") and within($areas))) | sort_by(priority, .number) | .[] | [., "performance"]),
-    ($open | map(select(has("kind:performance"))) | sort_by(priority, .number) | .[] | [., "performance"]),
     ($open | map(select(has("kind:gap") and within($areas))) | sort_by(priority, effort, .number) | .[] | [., "gap"]),
     ($open
       | map(select(within($areas) and .parent != null) | .parent as $p | select($epics | index($p) != null))
       | sort_by(priority, .parent, (.number as $n | $order["\(.parent)"] // [] | index($n) // infinite), .number)
-      | .[] | [., "planned"])
+      | .[] | [., "planned"]),
+    ($open | map(select(has("kind:performance"))) | sort_by(priority, .number) | .[] | [., "performance"]),
+    ($open | map(select(has("kind:gap"))) | sort_by(priority, effort, .number) | .[] | [., "gap"])
   ] as $ranked
 | ([.issues[] | select(has("collector") and within($areas) and (has("kind:defect") | not))]
     | sort_by(.number) | .[] | open_rows as $k | select($k > 0)

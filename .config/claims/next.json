@@ -276,7 +276,7 @@
     "output": "observation due: #58 — mise run debug:test <package> <test>\n58\tdefect\ta defect with no area"
   },
   {
-    "name": "then a performance issue in any area, a deferred one skipped",
+    "name": "with nothing of its own a lane claims another area's performance issue, before another area's gap, a deferred one skipped",
     "input": {
       "areas": ["area:workflow"],
       "issues": [
@@ -292,20 +292,6 @@
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
           "parent": null,
-          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
-        },
-        {
-          "number": 30,
-          "title": "issue 30",
-          "labels": ["kind:feature", "area:workflow"],
-          "parent": 100,
-          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
-        },
-        {
-          "number": 25,
-          "title": "issue 25",
-          "labels": ["kind:feature", "area:workflow"],
-          "parent": 100,
           "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
         },
         {
@@ -330,37 +316,9 @@
           "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
         },
         {
-          "number": 40,
-          "title": "issue 40",
-          "labels": ["kind:gap", "area:workflow", "effort:medium"],
-          "parent": null,
-          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
-        },
-        {
-          "number": 45,
-          "title": "issue 45",
-          "labels": ["kind:gap", "area:workflow", "effort:easy"],
-          "parent": null,
-          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
-        },
-        {
-          "number": 41,
-          "title": "issue 41",
-          "labels": ["kind:gap", "area:workflow"],
-          "parent": null,
-          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
-        },
-        {
           "number": 42,
           "title": "issue 42",
           "labels": ["kind:gap", "area:core", "effort:easy"],
-          "parent": null,
-          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
-        },
-        {
-          "number": 43,
-          "title": "issue 43",
-          "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
           "parent": null,
           "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
         },
@@ -398,6 +356,80 @@
       }
     },
     "output": "50\tperformance\tissue 50"
+  },
+  {
+    "name": "#3827: a lane's planned unit is claimed before another area's performance issue",
+    "input": {
+      "areas": ["area:workflow"],
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 20,
+          "title": "issue 20",
+          "labels": ["kind:performance", "area:surface", "priority:high"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ],
+      "order": {
+        "100": [30]
+      }
+    },
+    "output": "30\tplanned\tissue 30"
+  },
+  {
+    "name": "#3827: a lane's gap is claimed before another area's performance issue",
+    "input": {
+      "areas": ["area:workflow"],
+      "issues": [
+        {
+          "number": 45,
+          "title": "issue 45",
+          "labels": ["kind:gap", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 20,
+          "title": "issue 20",
+          "labels": ["kind:performance", "area:surface", "priority:high"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ],
+      "order": {}
+    },
+    "output": "45\tgap\tissue 45"
+  },
+  {
+    "name": "#3827: with nothing of its own a lane claims another area's gap",
+    "input": {
+      "areas": ["area:workflow"],
+      "issues": [
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:core", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ],
+      "order": {}
+    },
+    "output": "42\tgap\tissue 42"
   },
   {
     "name": "then a gap in the area, the cheapest first: easy before medium before none, an owned one and another area's skipped",
@@ -782,7 +814,7 @@
         }
       ]
     },
-    "output": "sections due: #20 — `## Sources` is missing\nsections due: #20 — `## Readings` is missing\nsections due: #20 — `## Concerns` is missing\nsections due: #20 — `## Ledger` is missing\nsections due: #20 — `## Not in this slice` is missing\nsections due: #20 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n20\tperformance\ta performance issue"
+    "output": "sections due: #21 — `## Sources` is missing\nsections due: #21 — `## Readings` is missing\nsections due: #21 — `## Concerns` is missing\nsections due: #21 — `## Ledger` is missing\nsections due: #21 — `## Not in this slice` is missing\nsections due: #21 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n21\tgap\ta gap"
   },
   {
     "name": "an issue with an open `blocked by` dependency is passed over and named, the next candidate claimed (#2902)",
