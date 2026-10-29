@@ -1740,8 +1740,16 @@ fi
 # carving due. A defect pick opens with `observation due: #n — mise run
 # debug:refusal <Refusal> <package> <test>` (#3758), the refusal its title
 # names, or `debug:test` when it names none: the observation starts in the
-# debugger. It adds `status:claimed` and prints the claim as `#n <title>`;
+# debugger. It adds `status:claimed`, writes the lane's claim marker in the
+# body (`.config/claims/markers.jq`), and prints the claim as `#n <title>`;
 # `--dry-run` prints it without claiming.
+#
+# One claim is in hand at a time (#3915): a lane holding a claimed issue that
+# no open pull request names claims nothing, each such issue printed on
+# stderr as `held: #n <title>`, and exits 1; the seat lands it or lets it go
+# with `claim:release`. An issue the lane released, or a merge on its branch
+# advanced, in the last 2 hours heads its order, and another lane passes it
+# over for those 2 hours.
 # No candidate prints `no claim: <lane>` and exits 1.
 ["claim:next"]
 description = "Claim the next item in a lane's claim order"
@@ -1783,9 +1791,18 @@ for epic in $epics; do
 done
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
+gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
+  --jq '[.[] | {body: (.body // ""), head: .head.ref}]' | jq -s 'add // []' > "$board/prs.json"
 lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
-  '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals}' \
+  --arg lane "$lane" --argjson now "$(date +%s)" --slurpfile prs "$board/prs.json" \
+  '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0]}' \
   | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
+held=$(awk '/^held: /' <<< "$lines")
+if [[ -n $held ]]; then
+  echo "$held" >&2
+  echo "claim:next: $lane holds a claim no open pull request names; land it or run \`mise run claim:release $lane <n>\`" >&2
+  exit 1
+fi
 awk '/^collector: /' <<< "$lines" >&2
 while read -r _ issue; do
   echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
@@ -1801,9 +1818,49 @@ if [[ ${usage_dry_run:-false} == true ]]; then
   echo "claim:next: dry run, nothing claimed ($bucket)" >&2
 else
   gh api -X POST "repos/$repo/issues/$number/labels" -f 'labels[]=status:claimed' > /dev/null
+  jq -c -L "$claims" --arg number "$number" --arg lane "$lane" \
+    'include "markers"; .[] | select(.number == ($number | tonumber)) | {body: (.body | marked(claim_marker($lane)))}' "$board/issues.json" \
+    | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
   echo "claim:next: claimed ($bucket)" >&2
 fi
 printf '#%s %s\n' "$number" "$title"
+'''
+
+# A seat lets a claim go (#3915): `claim:release <lane> <n>` takes
+# `status:claimed` off issue n and writes the lane's release marker in its
+# body (`.config/claims/markers.jq`), so `claim:next <lane>` offers it first
+# for 2 hours and another lane passes it over meanwhile. A seat releases what
+# it stops working without landing: a blocked unit, or one it hands back with
+# findings.
+["claim:release"]
+description = "Let a lane's claim go, keeping the continuation for the lane"
+usage = '''
+arg "<lane>" help="the lane, a key of .config/issues/lanes.toml"
+arg "<issue>" help="the claimed issue's number"
+'''
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+lane=${usage_lane:?}
+number=${usage_issue:?}
+root=$(git rev-parse --show-toplevel)
+if [[ $(yq -p toml -o json ".lane | has(\"$lane\")" "$root/.config/issues/lanes.toml") != true ]]; then
+  echo "claim:release: no lane \`$lane\` in .config/issues/lanes.toml" >&2
+  exit 2
+fi
+repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+issue=$(gh api "repos/$repo/issues/$number" --jq '{state, body: (.body // ""), claimed: ([.labels[].name] | index("status:claimed") != null)}')
+if [[ $(jq -r .claimed <<< "$issue") != true ]]; then
+  echo "claim:release: #$number carries no status:claimed" >&2
+  exit 1
+fi
+gh api -X DELETE "repos/$repo/issues/$number/labels/status:claimed" > /dev/null
+jq -c -L "$root/.config/claims" --arg lane "$lane" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  'include "markers"; {body: (.body | marked(released_marker($lane; $at)))}' <<< "$issue" \
+  | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
+echo "claim:release: released #$number to $lane for 2 hours" >&2
 '''
 
 # A landing patches the features ledger rows it names, in the landing (#2525):

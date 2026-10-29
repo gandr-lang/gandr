@@ -18,6 +18,10 @@
 #   order    each open epic's sub-issues in the epic's order: {"<epic>": [number]}
 #   refusals the refusals `.config/debug/refusals.toml` names; absent reads
 #            as none
+#   lane     the lane claiming, a key of `.config/issues/lanes.toml`; absent,
+#            the board is read for no lane, and neither rule below applies
+#   now      the reading's time, in seconds since the epoch
+#   prs      the open pull requests: [{body, head}]
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
@@ -56,9 +60,22 @@
 # issue blocks is named once, so the seat sees why it was passed over. A pick
 # whose reading is the `unstated` placeholder is claimed all the same, its
 # axes' questions printed first.
+#
+# A claim is the slice in hand (`tracker.md` § tracker-claims, #3915). A lane
+# holds a claimed issue when its claim marker names the lane (`markers.jq`),
+# or, with no marker, when the issue is in the lane's areas, as a stall
+# reading places it. A lane holding a claimed issue that no open pull request
+# names (`names`, as the lifecycle reads it) claims nothing: the answer is one
+# `held: #n <title>` line per such issue and no pick, and `claim:release` is
+# the way out. An issue a lane released, or a merge on its branch advanced,
+# in the last 2 hours comes first for that lane, ahead of every bucket, the
+# latest release first, and no other lane claims it in those 2 hours: the
+# continuation stays with the lane that holds its context.
 
 include "sections";
 include "findings";
+include "targets";
+include "markers";
 
 def has($label): .labels | index($label) != null;
 def within($areas): .labels as $labels | any($areas[]; . as $area | $labels | index($area) != null);
@@ -75,6 +92,11 @@ def unstated_axes: [.body // "" | marks | select(.reason | unstated) | .axis];
 def quoted($marked): [axes[] | . as $axis | select($marked | index($axis)) | "`\($axis)`: \(questions[$axis])"];
 def blocked: (.blocked // 0) > 0;
 
+# A release within the 2 hours a lane keeps its continuation (#3915).
+def kept($now): .body | release | select(. != null and $now - .at < 7200);
+# Whether lane `$lane`, over `$areas`, holds this claimed issue.
+def held_by($lane; $areas): (.body | claim_lane) as $marked | if $marked != null then $marked == $lane else within($areas) end;
+
 # A collector's open rows (#3111), as `collector_rows` reads them.
 def open_rows: .body // "" | collector_rows | length;
 
@@ -89,9 +111,18 @@ def observation($refusals):
 .areas as $areas
 | .order as $order
 | (.refusals // []) as $refusals
+| .lane as $lane
+| (.now // 0) as $now
+| (.prs // []) as $prs
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
-| [.issues[] | select(candidate)] as $open
+| (if $lane == null then []
+   else [.issues[] | select(has("status:claimed") and held_by($lane; $areas))
+     | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
+   end) as $held
+| if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else
+  [.issues[] | select(candidate) | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
 | [
+    ($open | map(select([kept($now) | .lane == $lane] | any)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
     (.issues
       | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and open_rows > 0))
       | sort_by(.number) | .[] | [., "collector"]),
@@ -119,3 +150,4 @@ def observation($refusals):
       (select(.[1] != "collector") | .[0] | .number as $n | .body // "" | findings | "sections due: #\($n) — \(.)"),
       (select(.[1] != "collector") | .[0] | quoted(unstated_axes)[] | "restate: \(.)"),
       "\(.[0].number)\t\(.[1])\t\(.[0].title)")
+  end

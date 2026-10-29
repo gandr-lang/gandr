@@ -1758,5 +1758,137 @@
       ]
     },
     "output": "observation due: #51 — mise run debug:test <package> <test>\n51\tdefect\tkernel: WrongSorted heads lose their motive"
+  },
+  {
+    "name": "#3915: a lane holding a claimed issue that no open pull request names claims nothing, and names the issue; a claim a pull request names holds nothing",
+    "input": {
+      "areas": ["area:surface", "area:ux"],
+      "order": {},
+      "lane": "surface",
+      "now": 1760000000,
+      "prs": [{ "body": "Closes #3699", "head": "surface-3699-fix" }],
+      "issues": [
+        {
+          "number": 3680,
+          "title": "surface: a claim in hand",
+          "labels": ["kind:defect", "area:surface", "status:claimed"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 3699,
+          "title": "surface: a claim with its pull request",
+          "labels": ["kind:defect", "area:surface", "status:claimed"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 3811,
+          "title": "surface: an unowned defect",
+          "labels": ["kind:defect", "area:surface"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        }
+      ]
+    },
+    "output": "held: #3680 surface: a claim in hand"
+  },
+  {
+    "name": "#3915: a claim marker places a claim in its lane over the issue's areas",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 10,
+          "title": "workflow: another lane's claim",
+          "labels": ["kind:defect", "area:workflow", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n\n<!-- claim: lane=surface -->\n",
+          "blocked": null
+        },
+        {
+          "number": 11,
+          "title": "core: this lane's claim",
+          "labels": ["kind:performance", "area:core", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n\n<!-- claim: lane=triage -->\n",
+          "blocked": null
+        },
+        {
+          "number": 12,
+          "title": "workflow: an unowned defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        }
+      ]
+    },
+    "output": "held: #11 core: this lane's claim"
+  },
+  {
+    "name": "#3915: an issue its lane released within 2 hours comes first for that lane, ahead of the lane's defect",
+    "input": {
+      "areas": ["area:surface", "area:ux"],
+      "order": {},
+      "lane": "surface",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 20,
+          "title": "core: a released continuation",
+          "labels": ["kind:performance", "area:core"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T07:53:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 21,
+          "title": "surface: the lane's defect",
+          "labels": ["kind:defect", "area:surface"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        }
+      ]
+    },
+    "output": "20\treleased\tcore: a released continuation"
+  },
+  {
+    "name": "#3915: another lane passes over an issue released within 2 hours, and takes one released longer ago",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 30,
+          "title": "workflow: released an hour ago",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n<!-- released: lane=surface at=2025-10-09T07:53:20Z -->\n",
+          "blocked": null
+        },
+        {
+          "number": 31,
+          "title": "workflow: released over 2 hours ago",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #31 — mise run debug:test <package> <test>\n31\tdefect\tworkflow: released over 2 hours ago"
   }
 ]

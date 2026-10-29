@@ -7,6 +7,13 @@ def closing: "(close[sd]?|fix(e[sd])?|resolve[sd]?)";
 def working: "(\(closing)|advances)";
 def targets($keyword): [match("(?i)\\b\($keyword)\\s+#([0-9]+)\\b"; "g") | .captures[-1].string | tonumber];
 
+# Whether an open pull request, `{body, head}`, names issue `$n`: a working
+# keyword in its body, or the number in its branch. A claim it names keeps
+# its seat (`decide.jq`, `next.jq`).
+def names($n):
+  (.body | test("(?i)\\b\(working)\\s+#\($n)\\b"))
+  or (.head | test("(^|[^0-9])\($n)([^0-9]|$)"));
+
 # The closing keywords a body carries outside its head's keyword lines
 # (#2980): GitHub closes the issue a keyword names when the pull request
 # merges, wherever the keyword stands, so `closed #628` in prose closes #628.
