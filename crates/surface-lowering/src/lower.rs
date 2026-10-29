@@ -9919,11 +9919,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // The mode variable a deduced receiver is written at, `self : m T`.
         let mut deduced: Option<SurfaceName<'source>> = None;
         // A recursive tail stages the parameter its body's matches take
-        // apart, read off the syntax ahead before anything binds.
+        // apart, read off the syntax ahead before anything binds. A parameter
+        // whose type is a decode carries no stage (`Self::decodes`).
         let staged = match (recursive, named) {
             (Maybe::Present(_), Maybe::Present(own)) => {
                 let mut ahead = cursor.clone();
                 let mut names = Vec::new();
+                let mut types: Vec<Option<NodeIndex>> = Vec::new();
                 let mut roots = Vec::new();
                 let mut listed = true;
                 while let Maybe::Present(piece) = ahead.read() {
@@ -9932,20 +9934,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             if listed && TileName::BINDERS.contains(&label) =>
                         {
                             names.push(self.name_at(at));
+                            types.push(None);
                         },
                         Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE => {
                             listed = false;
                         },
-                        Piece::Operand(operand) if !listed => roots.push(operand.node),
-                        Piece::Tile { .. } | Piece::Operand(_) => {},
+                        Piece::Operand(operand) if listed => {
+                            if let Some(last) = types.last_mut() {
+                                *last = Some(operand.node);
+                            }
+                        },
+                        Piece::Operand(operand) => roots.push(operand.node),
+                        Piece::Tile { .. } => {},
                     }
+                }
+                let mut decoded = Vec::with_capacity(types.len());
+                for ty in types {
+                    decoded.push(match ty {
+                        Some(ty) => self.decodes(site, frame, ty)?,
+                        None => native::Decoded(false),
+                    });
                 }
                 let own = self.name_at(own);
                 let joint = match self.collected.owner_of(site.at.node) {
                     Maybe::Present(owner) => self.joint(owner),
                     Maybe::Absent(_) => native::Joint::alone(),
                 };
-                Some(self.staged_by_body(own, &joint, &names, &roots)?)
+                Some(self.staged_by_body(own, &joint, &names, &decoded, &roots)?)
             },
             _ => None,
         };

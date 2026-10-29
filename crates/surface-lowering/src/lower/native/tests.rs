@@ -1059,6 +1059,36 @@ fn a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3680: a claim under a match on a parameter typed by a decode, inside a
+/// match on the code it decodes, staged the decoded parameter, the innermost
+/// match's. A decode carries no stage, and `x` is a field of the pair, never
+/// below `v`: the case on `c` then left `v` unrefined, refused
+/// `ShapeMismatch`. The claim descends on the code, so `size` stages `c`.
+#[test]
+fn a_claim_under_a_match_on_a_decode_stages_the_code_3680()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}data Pair(a : Type) : Type {{ MkPair : (x : a, y : a) --> Pair(a); }}\n\
+         data U : Type {{ NatU : U; PairU : (a : U) --> U; }}\n\
+         def rec el(u : U) -> -F Type {{ case u {{ NatU => return Nat, PairU(a) => {{ run e <- el[<](a); return (Pair(e)) }} }} }}\n\
+         def rec size(c : U, v : el(c)) -> -F Nat {{ case c {{ NatU => return Zero, PairU(a) => case v {{ MkPair(x, y) => size[<](a, x) }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let name = SurfaceName::from("size");
+    assert!(
+        matches!(
+            outcome_of(&module, name),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`size` lowers: {:?}",
+        outcome_of(&module, name)
+    );
+    let (outside, _fixpoint) = fixpoint_of(&arena, &module, name);
+    assert_eq!(outside, ParameterAt(0), "`size` stages `c`, the code");
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #3087: a descent written in a quoted record type's field stands under the
 /// match on the parameter it takes apart, as a bare one does, so it stages
 /// that parameter rather than the last, whatever follows it.

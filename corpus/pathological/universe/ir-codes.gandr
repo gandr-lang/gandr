@@ -7,12 +7,12 @@
 // A call computes the type of the arguments. The family thus occurs inside a
 // call in its own field. The occurrence walk refuses it. The decoder calls
 // itself through `decodeArgs`. That call stands at no stage below the code.
-// The marked call in `decodeArgs` stages the code. The code's case then leaves
-// the arguments' type unrefined. The checker refuses the case on them.
+// The marked call in `decodeArgs` stages the code, and the code's case refines
+// the arguments' type. The arguments' second field then reads as unknown. The
+// checker unfolds `args` and loses its own marked call.
 //
 // - see: #3575 — not implemented: the family a code defines, with its decoder
-// - see: #3680 — a staged fixpoint's case on its code leaves a later binder
-//   unrefined
+// - see: #3733 — a decoder's unfolded body reads its own marked call as unknown
 // - see: `model/universe/ir-codes.gandr` — the codes and their arguments,
 //   admitted
 
@@ -22,9 +22,9 @@ import "../../model/data/data-base.gandr";
 // The codes and their arguments.
 import "../../model/universe/ir-codes.gandr";
 
-/// The decode of the arguments a code asks for. Its case on the arguments
-/// meets their type unrefined by the staged code's case.
-@[ refuses("ShapeMismatch"), form(explicit) ]
+/// The decode of the arguments a code asks for. Their second field reads as
+/// unknown once the code's case refines them.
+@[ refuses("TypeMismatch"), form(explicit) ]
 def rec decodeArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), v : args(d, c, x, t)) -> d {
   case c {
     Iota(e) => e,

@@ -1,0 +1,74 @@
+test: lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680 --break tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680$
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64).
+(lldb) settings set -- target.run-args  "lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680$
+Breakpoint 1: where = gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680 + 20 at tests.rs:1070:21, address = 0x0000000101181170
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lowering-52666a784a556435`__rustc::rust_panic + 12 at panicking.rs:875:25, address = 0x0000000101dad97c
+(lldb) run
+
+running 1 test
+test lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680 ... warning: This version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited.
+Process 68965 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64)
+Process 68965 stopped
+* thread #2, name = 'lower::native::tests::a_claim_under_a_match_on_a_decode_stages_', stop reason = breakpoint 1.1
+       frame #0: 0x0000000101181170 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680 at tests.rs:1070:21
+   1067	#[test]
+   1068	fn a_claim_under_a_match_on_a_decode_stages_the_code_3680()
+   1069	{
+-> 1070	    let mut arena = CoreArena::new();
+    	                    ^
+   1071	    let source = alloc::format!(
+   1072	        "{NAT}data Pair(a : Type) : Type {{ MkPair : (x : a, y : a) --> Pair(a); }}\n\
+   1073	         data U : Type {{ NatU : U; PairU : (a : U) --> U; }}\n\
+Target 0: (gandr_surface_lowering-52666a784a556435) stopped.
+(lldb) bt 24
+* thread #2, name = 'lower::native::tests::a_claim_under_a_match_on_a_decode_stages_', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000101181170 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680 at tests.rs:1070:21
+     frame #1: 0x000000010111bc64 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680::{closure#0}((null)={}) at tests.rs:1068:60
+     frame #2: 0x00000001008df098 gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #3: 0x00000001011c6d90 gandr_surface_lowering-52666a784a556435`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #4: 0x00000001011c6d88 gandr_surface_lowering-52666a784a556435`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18 [opt]
+     frame #5: 0x00000001011d2044 gandr_surface_lowering-52666a784a556435`test::run_test_in_process::{closure#0} at lib.rs:747:74 [opt] [inlined]
+     frame #6: 0x00000001011d2038 gandr_surface_lowering-52666a784a556435`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #7: 0x00000001011d2038 gandr_surface_lowering-52666a784a556435`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [opt] [inlined]
+     frame #8: 0x00000001011d2034 gandr_surface_lowering-52666a784a556435`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [opt] [inlined]
+     frame #9: 0x00000001011d2034 gandr_surface_lowering-52666a784a556435`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #10: 0x00000001011d2034 gandr_surface_lowering-52666a784a556435`test::run_test_in_process at lib.rs:747:27 [opt] [inlined]
+     frame #11: 0x00000001011d2028 gandr_surface_lowering-52666a784a556435`test::run_test::{closure#0} at lib.rs:668:43 [opt]
+     frame #12: 0x00000001011ccecc gandr_surface_lowering-52666a784a556435`test::run_test::{closure#1} at lib.rs:698:41 [opt] [inlined]
+     frame #13: 0x00000001011cce68 gandr_surface_lowering-52666a784a556435`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #14: 0x00000001011d44f4 gandr_surface_lowering-52666a784a556435`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #15: 0x00000001011d44e4 gandr_surface_lowering-52666a784a556435`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #16: 0x00000001011d44e4 gandr_surface_lowering-52666a784a556435`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [opt] [inlined]
+     frame #17: 0x00000001011d44e0 gandr_surface_lowering-52666a784a556435`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [opt] [inlined]
+     frame #18: 0x00000001011d44e0 gandr_surface_lowering-52666a784a556435`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #19: 0x00000001011d44e0 gandr_surface_lowering-52666a784a556435`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #20: 0x00000001011d44d0 gandr_surface_lowering-52666a784a556435`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #21: 0x0000000101c37b34 gandr_surface_lowering-52666a784a556435`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2273:9 [opt] [inlined]
+     frame #22: 0x0000000101c37b28 gandr_surface_lowering-52666a784a556435`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:118:17 [opt]
+     frame #23: 0x000000018cf9fc58 libsystem_pthread.dylib`_pthread_start + 136
+(lldb) frame variable --depth 3
+(lldb) up
+frame #1: 0x000000010111bc64 gandr_surface_lowering-52666a784a556435`gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680::{closure#0}((null)={}) at tests.rs:1068:60
+   1065	/// below `v`: the case on `c` then left `v` unrefined, refused
+   1066	/// `ShapeMismatch`. The claim descends on the code, so `size` stages `c`.
+   1067	#[test]
+-> 1068	fn a_claim_under_a_match_on_a_decode_stages_the_code_3680()
+    	                                                           ^
+   1069	{
+   1070	    let mut arena = CoreArena::new();
+   1071	    let source = alloc::format!(
+(lldb) frame variable --depth 3
+(gandr_surface_lowering::lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680::{closure_env#0} *)  = 0x000000017000669e {}

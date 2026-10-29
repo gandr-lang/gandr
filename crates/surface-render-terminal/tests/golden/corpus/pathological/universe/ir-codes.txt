@@ -1,8 +1,8 @@
-error[ShapeMismatch]: expected a nominal datatype
-   ╭▸ corpus/pathological/universe/ir-codes.gandr:31:21
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/universe/ir-codes.gandr:35:78
    │
 28 │     def rec decodeArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), v : args(d, c, x, t)) -> d {
-   │     │                  ┬         ┬          ┬         ┬                   ─ checked against `args(d, c, x, t) -> -F d`; while checking the body of this function; binds v : args(d, c, x, t)
+   │     │                  ┬         ┬          ┬         ┬                   ─ checked against `args(d, c, x, t) -> -F d`; while checking the body of this function; binds v : args(d, c, x, t), v : args(d, (DeltaC(a, f) : IR(d)), x, t)
    │     │                  │         │          │         │
    │     │                  │         │          │         checked against `(a : x => d) -> args(d, c, x, a) -> -F d`; while checking the body of this function; binds t : x => d
    │     │                  │         │          checked against `(a : Type) -> (b : a => d) -> args(d, c, a, b) -> -F d`; while checking the body of this function; binds x : Type
@@ -12,17 +12,24 @@ error[ShapeMismatch]: expected a nominal datatype
 29 │ │┌    case c {
 30 │ ││      Iota(e) => e,
 31 │ ││      SigmaC(a, f) => case v {
-   │ ││┏━━━━━━━━━━━━━━━━━━━━━┛
-32 │ ││┃       MkSig(y, r) => decodeArgs[<](d, f(y), x, t, r)
-33 │ ││┃     },
-   │ ││┗━━━━━┛ its type is not of the required shape: found `args(d, c, x, t)`
-   ‡ ││
+32 │ ││        MkSig(y, r) => decodeArgs[<](d, f(y), x, t, r)
+33 │ ││      },
+34 │ ││      DeltaC(a, f) => case v {
+   │ ││┌─────────────────────┘
+35 │ │││       MkSig(h, r) => decodeArgs[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
+   │ │││                      ┬───────────────────────────────────────────────────────┯─
+   │ │││                      │                                                       │
+   │ │││                      │                                                       its type does not convert: expected `args(d, f(thunk { fn (b) { t(?(b)) } }), x, t)`, found `args(d, f(fn (b) { t(?(b)) }), x, t)`
+   │ │││                      checked against `-F d`; while checking the argument of this application
+36 │ │││     }
+   │ ││└─────┘ checked against `-F d`; while checking the body of this function; binds _ : a => x, _ : args(d, f(fn (b) { t(?(b)) }), x, t)
 37 │ ││    }
-   │ │└────┘ checked against `-F d`; while checking the body of this function; binds a : Type, f : a => IR(d)
+   │ │└────┘ checked against `-F d`; while checking the body of this function; binds a : Type, f : (a => d) => IR(d)
 38 │ │   }
-   │ └───┘ checked against `(d : Type, c : IR(d), x : Type, t : x => d, args(d, c, x, t)) => d`; while checking the body of this function; binds decodeArgs : (a : IR(d), b : Type, c : b => d, args(d, a, b, c)) => d
+   │ └───┘ checked against `(d : Type, c : IR(d), x : Type, t : x => d, args(d, c, x, t)) => d`; while checking the body of this function; binds decodeArgs : (a : IR(d), x : Type, t : x => d, args(d, a, x, t)) => d
    │
-   ╰ note: `decodeArgs` is refused with ShapeMismatch, as its expectation states
+   ├ note: `decodeArgs` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[IndexOccurrence]: the datatype occurs inside a term in its field 0 of constructor 0
    ╭▸ corpus/pathological/universe/ir-codes.gandr:45:3
