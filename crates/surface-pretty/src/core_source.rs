@@ -12,6 +12,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sources;
 use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -81,7 +82,7 @@ pub enum CoreNode
 /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Restoration(BTreeMap<CoreNode, CoreNode>);
+pub struct Restoration(Sources);
 
 impl Restoration
 {
@@ -98,36 +99,17 @@ impl Restoration
     /// # Adequacy
     /// - hypothesis: L3 — as [`Restoration`].
     /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
-    #[spec(ensures: |ret| carried.iter().all(|pair| ret.0.contains_key(&match *pair {
-        | Carried::Value(_, rebuilt) => CoreNode::Value(rebuilt),
-        | Carried::Computation(_, rebuilt) => CoreNode::Computation(rebuilt),
-        | Carried::ValueType(_, rebuilt) => CoreNode::ValueType(rebuilt),
-        | Carried::CompType(_, rebuilt) => CoreNode::CompType(rebuilt),
-    })))]
+    #[spec(ensures: |ret| carried.iter().all(|pair| match *pair {
+        | Carried::Value(_, rebuilt) => ret.0.values().contains_key(&rebuilt),
+        | Carried::Computation(_, rebuilt) => ret.0.computations().contains_key(&rebuilt),
+        | Carried::ValueType(_, rebuilt) => ret.0.value_types().contains_key(&rebuilt),
+        | Carried::CompType(_, rebuilt) => ret.0.comp_types().contains_key(&rebuilt),
+    }))]
     #[inline]
     #[must_use]
     pub fn of(carried: &[Carried]) -> Self
     {
-        let mut restored = BTreeMap::new();
-        for pair in carried {
-            let (original, rebuilt) = match *pair {
-                Carried::Value(original, rebuilt) => {
-                    (CoreNode::Value(original), CoreNode::Value(rebuilt))
-                },
-                Carried::Computation(original, rebuilt) => (
-                    CoreNode::Computation(original),
-                    CoreNode::Computation(rebuilt),
-                ),
-                Carried::ValueType(original, rebuilt) => {
-                    (CoreNode::ValueType(original), CoreNode::ValueType(rebuilt))
-                },
-                Carried::CompType(original, rebuilt) => {
-                    (CoreNode::CompType(original), CoreNode::CompType(rebuilt))
-                },
-            };
-            restored.entry(rebuilt).or_insert(original);
-        }
-        Self(restored)
+        Self(Sources::of(carried))
     }
 
     /// The node `node` was rebuilt from, or `node` itself.
@@ -140,12 +122,17 @@ impl Restoration
         node: CoreNode,
     ) -> CoreNode
     {
-        self.0.get(&node).copied().unwrap_or(node)
+        match node {
+            CoreNode::Value(id) => CoreNode::Value(self.0.value(id)),
+            CoreNode::Computation(id) => CoreNode::Computation(self.0.computation(id)),
+            CoreNode::ValueType(id) => CoreNode::ValueType(self.0.value_type(id)),
+            CoreNode::CompType(id) => CoreNode::CompType(self.0.comp_type(id)),
+        }
     }
 }
 
 /// The restoration that restores nothing.
-const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
+const UNRESTORED: &Restoration = &Restoration(Sources::new());
 
 /// The key a [`Constructors`] table holds a family under.
 ///

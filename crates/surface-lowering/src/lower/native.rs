@@ -11708,9 +11708,9 @@ fn record_copied_since(
     carried: &[Carried],
 )
 {
-    let sources = exits::Sources::of(carried);
+    let sources = gandr_core_term::Sources::of(carried);
     for id in sink.arena.values_since(mark) {
-        let recorded = sources.value(sink, id, origin);
+        let recorded = exits::value_origin(sink, &sources, id, origin);
         sink.origins.record_value(id, recorded);
     }
     for id in sink.arena.computations_since(mark) {
@@ -11719,18 +11719,18 @@ fn record_copied_since(
                 sink.origins.record_computation(id, written);
             },
             Maybe::Present(_) | Maybe::Absent(_) => {
-                let recorded = sources.computation(sink, id, origin);
+                let recorded = exits::computation_origin(sink, &sources, id, origin);
                 sink.origins.record_computation(id, recorded);
-                sources.keep_case(sink, id);
+                exits::keep_case(sink, &sources, id);
             },
         }
     }
     for id in sink.arena.value_types_since(mark) {
-        let recorded = sources.value_type(sink, id, origin);
+        let recorded = exits::value_type_origin(sink, &sources, id, origin);
         sink.origins.record_value_type(id, recorded);
     }
     for id in sink.arena.comp_types_since(mark) {
-        let recorded = sources.comp_type(sink, id, origin);
+        let recorded = exits::comp_type_origin(sink, &sources, id, origin);
         sink.origins.record_comp_type(id, recorded);
     }
     exits::label_replaced(sink, carried);

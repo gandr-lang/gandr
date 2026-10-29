@@ -103,6 +103,7 @@ use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::FieldLabel;
+use gandr_core_term::Sources;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
@@ -1028,30 +1029,15 @@ impl OriginTable
         binds: &[(ValueId, ComputationId)],
     )
     {
-        let mut values = BTreeMap::new();
+        let sources = Sources::of(carried);
         let mut computations = BTreeMap::new();
-        let mut value_types = BTreeMap::new();
-        let mut comp_types = BTreeMap::new();
         for &(run, bind) in binds {
             let _first = computations.entry(bind).or_insert(Source::Run(run));
         }
-        for pair in carried {
-            match *pair {
-                Carried::Value(held, written) => {
-                    let _first = values.entry(written).or_insert(held);
-                },
-                Carried::Computation(held, written) => {
-                    let _first = computations.entry(written).or_insert(Source::Rebuilt(held));
-                },
-                Carried::ValueType(held, written) => {
-                    let _first = value_types.entry(written).or_insert(held);
-                },
-                Carried::CompType(held, written) => {
-                    let _first = comp_types.entry(written).or_insert(held);
-                },
-            }
+        for (&written, &held) in sources.computations() {
+            let _first = computations.entry(written).or_insert(Source::Rebuilt(held));
         }
-        for (written, held) in values {
+        for (&written, &held) in sources.values() {
             if let Maybe::Present(origin) = self.value(held) {
                 self.record_value(written, origin);
             }
@@ -1076,7 +1062,7 @@ impl OriginTable
                 self.record_computation(written, origin);
             }
         }
-        for (written, held) in value_types {
+        for (&written, &held) in sources.value_types() {
             if let Maybe::Present(origin) = self.value_type(held) {
                 self.record_value_type(written, origin);
             }
@@ -1087,7 +1073,7 @@ impl OriginTable
                 self.record_second(written, label);
             }
         }
-        for (written, held) in comp_types {
+        for (&written, &held) in sources.comp_types() {
             if let Maybe::Present(origin) = self.comp_type(held) {
                 self.record_comp_type(written, origin);
             }

@@ -54,6 +54,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::Sources;
 use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -1984,209 +1985,141 @@ pub(super) fn record_copies(
 {
     let sources = Sources::of(carried);
     for id in sink.arena.values_since(mark) {
-        let origin = sources.value(sink, id, fallback);
+        let origin = value_origin(sink, &sources, id, fallback);
         sink.origins.record_value(id, origin);
     }
     for id in sink.arena.computations_since(mark) {
-        let origin = sources.computation(sink, id, fallback);
+        let origin = computation_origin(sink, &sources, id, fallback);
         sink.origins.record_computation(id, origin);
-        sources.keep_case(sink, id);
+        keep_case(sink, &sources, id);
     }
     for id in sink.arena.value_types_since(mark) {
-        let origin = sources.value_type(sink, id, fallback);
+        let origin = value_type_origin(sink, &sources, id, fallback);
         sink.origins.record_value_type(id, origin);
     }
     for id in sink.arena.comp_types_since(mark) {
-        let origin = sources.comp_type(sink, id, fallback);
+        let origin = comp_type_origin(sink, &sources, id, fallback);
         sink.origins.record_comp_type(id, origin);
     }
     label_replaced(sink, carried);
 }
 
-/// The node each copy one rewrite reported was made from, family by family:
-/// the first it reports for that copy.
+/// The origin of value `id`: the origin of the value it stands for in
+/// `sources`, or `fallback`.
 ///
 /// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: each map sends a copy to the node `carried` first reports it
-///   rewritten from.
-/// - executable: none — the record holds no arena to check either id against.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`record_copies`].
-/// - witness: `lower::tests::every_minted_node_has_an_origin`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct Sources
+/// trivial.
+pub(super) fn value_origin(
+    sink: &Sink<'_>,
+    sources: &Sources,
+    id: ValueId,
+    fallback: Origin,
+) -> Origin
 {
-    /// The value each value copy was made from.
-    values: BTreeMap<ValueId, ValueId>,
-    /// The computation each computation copy was made from.
-    computations: BTreeMap<ComputationId, ComputationId>,
-    /// The value type each value type copy was made from.
-    value_types: BTreeMap<ValueTypeId, ValueTypeId>,
-    /// The computation type each computation type copy was made from.
-    comp_types: BTreeMap<CompTypeId, CompTypeId>,
+    sources.values().get(&id).map_or(fallback, |&held| {
+        found_or(sink.origins.value(held), fallback)
+    })
 }
 
-impl Sources
+/// The origin of computation `id`: the origin of the computation it stands
+/// for in `sources`, or `fallback`.
+///
+/// # Specification
+/// trivial.
+pub(super) fn computation_origin(
+    sink: &Sink<'_>,
+    sources: &Sources,
+    id: ComputationId,
+    fallback: Origin,
+) -> Origin
 {
-    /// The sources `carried` reports, each copy's first.
-    ///
-    /// # Specification
-    /// - requires: `carried` is what rewrites reported.
-    /// - ensures: a computation copy maps to the first computation `carried`
-    ///   pairs it with; every other family alike.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`record_copies`].
-    /// - witness: `lower::tests::every_minted_node_has_an_origin`
-    #[spec(ensures: |ret| carried.iter().all(|pair| match *pair {
-        Carried::Computation(_, written) => ret.computations.contains_key(&written),
-        Carried::Value(_, written) => ret.values.contains_key(&written),
-        Carried::ValueType(_, written) => ret.value_types.contains_key(&written),
-        Carried::CompType(_, written) => ret.comp_types.contains_key(&written),
-    }))]
-    pub(super) fn of(carried: &[Carried]) -> Self
-    {
-        let mut sources = Self::default();
-        for pair in carried {
-            match *pair {
-                Carried::Value(held, written) => {
-                    let _first = sources.values.entry(written).or_insert(held);
-                },
-                Carried::Computation(held, written) => {
-                    let _first = sources.computations.entry(written).or_insert(held);
-                },
-                Carried::ValueType(held, written) => {
-                    let _first = sources.value_types.entry(written).or_insert(held);
-                },
-                Carried::CompType(held, written) => {
-                    let _first = sources.comp_types.entry(written).or_insert(held);
-                },
-            }
-        }
-        sources
-    }
+    sources.computations().get(&id).map_or(fallback, |&held| {
+        found_or(sink.origins.computation(held), fallback)
+    })
+}
 
-    /// The origin of value `id`: its source's, or `fallback`.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn value(
-        &self,
-        sink: &Sink<'_>,
-        id: ValueId,
-        fallback: Origin,
-    ) -> Origin
-    {
-        match self.values.get(&id) {
-            Some(&held) => found_or(sink.origins.value(held), fallback),
-            None => fallback,
-        }
-    }
+/// The origin of value type `id`: the origin of the value type it stands for
+/// in `sources`, or `fallback`.
+///
+/// # Specification
+/// trivial.
+pub(super) fn value_type_origin(
+    sink: &Sink<'_>,
+    sources: &Sources,
+    id: ValueTypeId,
+    fallback: Origin,
+) -> Origin
+{
+    sources.value_types().get(&id).map_or(fallback, |&held| {
+        found_or(sink.origins.value_type(held), fallback)
+    })
+}
 
-    /// The origin of computation `id`: its source's, or `fallback`.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn computation(
-        &self,
-        sink: &Sink<'_>,
-        id: ComputationId,
-        fallback: Origin,
-    ) -> Origin
-    {
-        match self.computations.get(&id) {
-            Some(&held) => found_or(sink.origins.computation(held), fallback),
-            None => fallback,
-        }
-    }
+/// The origin of computation type `id`: the origin of the computation type it
+/// stands for in `sources`, or `fallback`.
+///
+/// # Specification
+/// trivial.
+pub(super) fn comp_type_origin(
+    sink: &Sink<'_>,
+    sources: &Sources,
+    id: CompTypeId,
+    fallback: Origin,
+) -> Origin
+{
+    sources.comp_types().get(&id).map_or(fallback, |&held| {
+        found_or(sink.origins.comp_type(held), fallback)
+    })
+}
 
-    /// The origin of value type `id`: its source's, or `fallback`.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn value_type(
-        &self,
-        sink: &Sink<'_>,
-        id: ValueTypeId,
-        fallback: Origin,
-    ) -> Origin
-    {
-        match self.value_types.get(&id) {
-            Some(&held) => found_or(sink.origins.value_type(held), fallback),
-            None => fallback,
-        }
+/// Record for computation `id` the match record of the computation it stands
+/// for in `sources`, when that one roots a match, and the family it
+/// eliminates, when it is a data case.
+///
+/// # Specification
+/// - requires: `id` has no match record yet.
+/// - ensures: a copy of a match's root carries that match's record; where the
+///   source eliminates the value its record names and the copy eliminates a
+///   value of its own, the copy's record names the copy's, so the patterns
+///   answer where the run judged the copy (#298); a copy of a data case
+///   eliminates the source's family.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a match carried under a binder keeps its patterns, a
+///   match bound by a `run` whose block continues its local ends answers its
+///   patterns at the copy's scrutinee, and a match written in an arm that binds
+///   a field names its own arms in the leaf's copy.
+/// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+/// - witness: `lower::native::tests::a_data_case_names_the_family_it_eliminates_809`
+#[spec(ensures: sources.computations().get(&id).is_none_or(|&held|
+    (matches!(sink.origins.case(held), Maybe::Absent(_)) || matches!(sink.origins.case(id), Maybe::Present(_)))
+    && (matches!(sink.origins.elimination(held), Maybe::Absent(_)) || matches!(sink.origins.elimination(id), Maybe::Present(_)))))]
+pub(super) fn keep_case(
+    sink: &mut Sink<'_>,
+    sources: &Sources,
+    id: ComputationId,
+)
+{
+    let Some(&held) = sources.computations().get(&id)
+    else {
+        return;
+    };
+    if let Maybe::Present(family) = sink.origins.elimination(held) {
+        sink.origins.record_elimination(id, family);
     }
-
-    /// The origin of computation type `id`: its source's, or `fallback`.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn comp_type(
-        &self,
-        sink: &Sink<'_>,
-        id: CompTypeId,
-        fallback: Origin,
-    ) -> Origin
-    {
-        match self.comp_types.get(&id) {
-            Some(&held) => found_or(sink.origins.comp_type(held), fallback),
-            None => fallback,
+    if let Maybe::Present(case) = sink.origins.case(held) {
+        let mut kept = case.clone();
+        if let (Some(source), Some(copy)) = (
+            eliminated(sink.arena.computation(held)),
+            eliminated(sink.arena.computation(id)),
+        ) && kept.scrutinised == Maybe::Present(source)
+        {
+            kept.scrutinised = Maybe::Present(copy);
         }
-    }
-
-    /// Record for computation `id` the match record of the computation it was
-    /// copied from, when that one roots a match, and the family it eliminates,
-    /// when it is a data case.
-    ///
-    /// # Specification
-    /// - requires: `id` has no match record yet.
-    /// - ensures: a copy of a match's root carries that match's record; where
-    ///   the source eliminates the value its record names and the copy
-    ///   eliminates a value of its own, the copy's record names the copy's, so
-    ///   the patterns answer where the run judged the copy (#298); a copy of a
-    ///   data case eliminates the source's family.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a match carried under a binder keeps its patterns, a
-    ///   match bound by a `run` whose block continues its local ends answers
-    ///   its patterns at the copy's scrutinee, and a match written in an arm
-    ///   that binds a field names its own arms in the leaf's copy.
-    /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
-    /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-    /// - witness: `lower::native::tests::a_data_case_names_the_family_it_eliminates_809`
-    #[spec(ensures: self.computations.get(&id).is_none_or(|&held|
-        (matches!(sink.origins.case(held), Maybe::Absent(_)) || matches!(sink.origins.case(id), Maybe::Present(_)))
-        && (matches!(sink.origins.elimination(held), Maybe::Absent(_)) || matches!(sink.origins.elimination(id), Maybe::Present(_)))))]
-    pub(super) fn keep_case(
-        &self,
-        sink: &mut Sink<'_>,
-        id: ComputationId,
-    )
-    {
-        let Some(&held) = self.computations.get(&id)
-        else {
-            return;
-        };
-        if let Maybe::Present(family) = sink.origins.elimination(held) {
-            sink.origins.record_elimination(id, family);
-        }
-        if let Maybe::Present(case) = sink.origins.case(held) {
-            let mut kept = case.clone();
-            if let (Some(source), Some(copy)) = (
-                eliminated(sink.arena.computation(held)),
-                eliminated(sink.arena.computation(id)),
-            ) && kept.scrutinised == Maybe::Present(source)
-            {
-                kept.scrutinised = Maybe::Present(copy);
-            }
-            sink.origins.record_case(id, kept);
-        }
+        sink.origins.record_case(id, kept);
     }
 }
 
