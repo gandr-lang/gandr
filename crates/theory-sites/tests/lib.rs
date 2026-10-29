@@ -45,6 +45,8 @@ macro_rules! site_map {
 }
 
 #[cfg(test)]
+mod chains;
+#[cfg(test)]
 mod maps;
 #[cfg(test)]
 mod point_count;

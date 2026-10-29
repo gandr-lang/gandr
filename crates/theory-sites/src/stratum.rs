@@ -95,10 +95,11 @@
 //!   so the only species at it has no generator and its one equivalence is
 //!   empty. The alternative certifies it with every corolla past it. Reversal:
 //!   a consumer that names the stratum of the empty shape.
-//! - **A degree past the catalogue is refused.** The catalogue at size `b`
-//!   holds a shape of every degree to `b`, the `b` points, and none above, so a
-//!   stratum named by a higher degree would claim a Segal condition at no shape
-//!   the bound enumerates. Reversal: none at a finite bound.
+//! - **A degree past the catalogue is refused.** The wiring catalogue at size
+//!   `b` holds a shape of every degree to `b`, the `b` points, and none above.
+//!   The chain catalogue holds its chains' odd degrees to `b - 2`. A stratum
+//!   named by a degree above every shape would claim a Segal condition at no
+//!   shape the bound enumerates. Reversal: none at a finite bound.
 //!
 //! [`segal`]: crate::segal()
 
@@ -224,6 +225,26 @@ impl Legs
             }
         }
         legs
+    }
+
+    /// The wires the vertex consumes, in wire order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn inputs(&self) -> &[Wire]
+    {
+        &self.inputs
+    }
+
+    /// The wires the vertex produces, in wire order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn outputs(&self) -> &[Wire]
+    {
+        &self.outputs
     }
 
     /// The profile the legs make.
@@ -874,9 +895,11 @@ impl<'catalogue> SegalStratum<'catalogue>
     ///   size four degree three holds the closed chain's one graft; degree zero
     ///   and a degree past the catalogue are refused by their degree, and the
     ///   catalogue at size zero, which lacks the point, by the empty shape at
-    ///   degree one.
+    ///   degree one. The chain catalogue at size seven is certified at degree
+    ///   four with the 2-chain's cocone, and at degree five with the 3-chain's.
     /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
     /// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
+    /// - witness: `tests::chains::the_chain_stratum_is_certified_through_the_three_chain`
     ///
     /// [`segal`]: crate::segal()
     #[inline]

@@ -542,6 +542,53 @@ impl Shape
         })
     }
 
+    /// The chain of `length` vertices, each with one input leg and one output
+    /// leg: wire `0` opens into vertex `0`, wire `i` runs from vertex `i - 1`
+    /// to vertex `i`, and wire `length` opens out of the last vertex.
+    ///
+    /// # Specification
+    /// - ensures: on success the shape has `length` vertices and `length + 1`
+    ///   wires, wire `i` consumed by vertex `i` below `length` and produced by
+    ///   vertex `i - 1` above zero, its other ends open.
+    /// - fails: as [`Shape::from_ends`]. The chain of no vertex is the stick,
+    ///   refused at wire `0`, and a chain past 64 vertices has too many.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ShapeObstruction::Stick`]: `length` is zero.
+    /// - [`ShapeObstruction::TooManyVertices`]: `length` exceeds 64.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the 3-chain's ends written by hand, the stick at
+    ///   length zero and the count past 64.
+    /// - witness: `tests::chains::a_chain_runs_from_its_open_input_to_its_open_output`
+    #[inline]
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref shape) => shape.vertices == length && shape.ends.len() == usize::from(length).saturating_add(1),
+        Err(ShapeObstruction::Stick { wire }) => usize::from(length) == 0 && usize::from(wire) == 0,
+        Err(ShapeObstruction::TooManyVertices { vertices }) => vertices == length && usize::from(length) > MAX_VERTICES,
+        Err(_) => false,
+    })]
+    pub fn chain(length: EdgeCount) -> Result<Self, ShapeObstruction>
+    {
+        let last = usize::from(length);
+        let ends = (0 ..= last)
+            .map(|wire| {
+                Ends::new(
+                    wire.checked_sub(1)
+                        .map_or(End::Open, |producer| End::Vertex(Edge::from(producer))),
+                    if wire == last {
+                        End::Open
+                    }
+                    else {
+                        End::Vertex(Edge::from(wire))
+                    },
+                )
+            })
+            .collect();
+        Self::from_ends(length, ends)
+    }
+
     /// The carrier wiring presenting this shape, every generator labelled
     /// alike.
     ///

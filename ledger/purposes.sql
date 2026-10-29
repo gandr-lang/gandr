@@ -3912,7 +3912,8 @@ INSERT INTO purpose VALUES('theory-shapes','oracle::Countermodel','struct','Hold
 INSERT INTO purpose VALUES('theory-shapes','oracle::Derivation','enum','Names a derivation of entailment in the finite face lattice, so the derivation''s form is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::Evidence','enum','Names the answer to an entailment query, so the evidence''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::decide','function','Decides whether the premise entails the conclusion, so the entailment''s evidence is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','catalogue::Catalogue','struct','Every shape class of size at most a bound, and every map of the class between any two of them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','catalogue::Catalogue','struct','Every shape class of a family of size at most a bound, and every map of the class between any two of them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','catalogue::Family','enum','Which shapes a catalogue holds: every stick-free wiring, or the chains with the empty shape and the point.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::ShapeIndex','struct','A shape''s position in a catalogue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationDefect','enum','How a map''s factorization fails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationFailure','struct','A map whose factorization fails, and how.',NULL,'fits','sound',NULL);
@@ -3936,6 +3937,9 @@ INSERT INTO purpose VALUES('theory-sites','conditions::pushouts','function','Whe
 INSERT INTO purpose VALUES('theory-sites','conditions::rigidity','function','Whether an automorphism fixing a lowering map is the identity: axiom (iv) of a generalized Reedy category.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::split_lowering','function','Whether every lowering map has a section.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','degree::Degree','struct','A shape''s degree: its vertices, points included, plus its inner wires.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','diagram::Boundary','struct','A cell''s boundary: the colour of each input leg and each output leg of the vertex it fills, each side in the shape''s wire order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','diagram::Unfilled','enum','Why a diagram does not fill a shape.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','diagram::fills','function','Whether cells, one per vertex of a shape, have their vertices'' profiles and meet along its inner wires, with the diagram''s boundary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::CompositionMismatch','enum','Why two maps do not compose.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::ImageForm','enum','How a map''s vertex images are sized.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::Invertibility','enum','Whether a map has an inverse in the class.',NULL,'fits','sound',NULL);

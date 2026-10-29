@@ -3,13 +3,16 @@
 //! examined and the smallest counter-example.
 //!
 //! Conditions on single maps run over the shapes of size at most five;
-//! conditions on composable pairs and spans over size at most four.
+//! conditions on composable pairs and spans over size at most four. The last
+//! table builds the chain catalogue and the wiring catalogue at size seven and
+//! times each one's build and stratum certification.
 //!
 //! Run it with `cargo run --release -p gandr-theory-sites --example suites`.
 
 use core::fmt::Display;
 use std::io::Write;
 use std::io::stdout;
+use std::time::Instant;
 
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Cocones;
@@ -18,9 +21,11 @@ use gandr_theory_sites::GeneratorBound;
 use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Part;
 use gandr_theory_sites::Scope;
+use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Site;
+use gandr_theory_sites::Uncertified;
 use gandr_theory_sites::closure;
 use gandr_theory_sites::codegeneracies;
 use gandr_theory_sites::core_decomposition;
@@ -132,6 +137,45 @@ fn header(out: &mut impl Write) -> std::io::Result<()>
         out,
         "| --------- | ---- | ------- | ----- | ------------------------ |"
     )
+}
+
+/// One stratum row: the family, the bound, the catalogue's shape count, the
+/// degree, what certifying the stratum found, and the time to build and
+/// certify.
+///
+/// # Specification
+/// trivial.
+fn stratum_row(
+    out: &mut impl Write,
+    family: &impl Display,
+    bound: ShapeSize,
+    degree: Degree,
+    build: impl FnOnce(ShapeSize) -> Result<Catalogue, ShapeObstruction>,
+) -> Result<(), RunError>
+{
+    let start = Instant::now();
+    let catalogue = build(bound)?;
+    let verdict = match SegalStratum::certify(&catalogue, degree) {
+        Ok(stratum) => format!(
+            "certified: {} corollas, {} cocones",
+            stratum.corollas().len(),
+            stratum.cocones().len()
+        ),
+        Err(Uncertified::Degree { .. }) => "refused: no shape reaches the degree".to_owned(),
+        Err(Uncertified::Condition {
+            witness,
+            degree: failing,
+        }) => format!("refused at `{witness}`, degree {failing}"),
+    };
+    let elapsed = start.elapsed();
+    writeln!(
+        out,
+        "| {family} | ≤ {} | {} | {degree} | {verdict} | {} µs |",
+        usize::from(bound),
+        catalogue.shapes().len(),
+        elapsed.as_micros(),
+    )?;
+    Ok(())
 }
 
 /// Runs every condition and prints its row.
@@ -293,6 +337,32 @@ fn main() -> Result<(), RunError>
         &"no unit without the empty diagram",
         two,
         &units.content,
+    )?;
+    writeln!(out)?;
+    writeln!(
+        out,
+        "| Catalogue | Size | Shapes | Degree | Stratum | Build and certify |"
+    )?;
+    writeln!(
+        out,
+        "| --------- | ---- | ------ | ------ | ------- | ----------------- |"
+    )?;
+    let seven = ShapeSize::from(7_usize);
+    for degree in [4_usize, 5] {
+        stratum_row(
+            &mut out,
+            &"chains",
+            seven,
+            Degree::from(degree),
+            Catalogue::chains,
+        )?;
+    }
+    stratum_row(
+        &mut out,
+        &"wirings",
+        seven,
+        Degree::from(4_usize),
+        Catalogue::build,
     )?;
     Ok(())
 }
