@@ -547,6 +547,38 @@ fn the_path_composite_moves_both_ways()
     }
 }
 
+/// A derived motive holding a statement formats once as explicit: the
+/// statement's `;` stands against its value, as the formatter lays out a
+/// block, never after the printer's space (#3891).
+#[test]
+fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
+{
+    let grammar = grammar();
+    let source = "def whiskered(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  cong((thunk { fn (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)
+}
+";
+    let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
+    assert!(
+        once.contains("<- pure c;\n") || once.contains("<- pure c; "),
+        "the motive's statement ends against its value: {once}"
+    );
+    assert_eq!(
+        spelled(&grammar, once.as_str(), Form::Explicit, Selection::Every),
+        once,
+        "the explicit form is a fixed point"
+    );
+}
+
 /// #778: an inverse and a map's action on a path move both ways as the
 /// composite does: desugared, each is the transport whose motive and moved
 /// reflexivity the lowering derived, spelled as the printer spells them;
