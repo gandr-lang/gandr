@@ -7,10 +7,14 @@
 // is empty or a tree before a forest: the two families name each other, so
 // they are one block, admitted as one and sharing one stage; and the two
 // measures name each other, so they are one fixpoint over the sum of their
-// domains, each measure that fixpoint at its own summand. A call through
+// domains, each measure that fixpoint at its own summand. A measure may take a
+// parameter after the tree, and the fixpoint passes it on. A call through
 // either stands one stage below the node or forest it was read from (Abel,
 // _Termination checking with types_, doi:10.1051/ita:2004015). What the direct
 // form refuses is in `../../pathological/data/rose.gandr`.
+//
+// - see: #3722 — a measure passes a parameter after the tree to its sibling,
+//   by which `treeWeight` and `forestWeight` check
 
 // The naturals the measures count in, their addition, and the lists the
 // direct form nests through.
@@ -116,3 +120,28 @@ def sapling_nodes : () => Nat = treeSize(sapling);
 /// A forest of a sapling and a leaf: four nodes.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def forested : () => Nat = forestSize(More(sapling, More(leaf, Empty)));
+
+/// Two measures that pass a weight to each other unchanged, one block. Each
+/// descends on its first parameter, and the joint passes `k` on.
+rec {
+  /// The nodes of a tree, each weighing `k`.
+  @[ checks ]
+  def rec treeWeight(t : Rose, k : Nat) -> Nat {
+    case t {
+      Node(kids) => plus(k, forestWeight[<](kids, k))
+    }
+  }
+
+  /// The nodes of a forest, each weighing `k`.
+  @[ checks ]
+  def rec forestWeight(ts : Forest, k : Nat) -> Nat {
+    case ts {
+      Empty => Zero,
+      More(t, rest) => plus(treeWeight[<](t, k), forestWeight[<](rest, k))
+    }
+  }
+}
+
+/// The sapling's three nodes, each weighing two.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
+def sapling_weight : () => Nat = treeWeight(sapling, Succ(Succ(Zero)));

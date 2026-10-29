@@ -216,9 +216,14 @@
 //! through a sibling, `g[<](a)`, lowers to `(force f) (inj_g a)`. The
 //! checkers stage that sum at the one stage the block's families share, so a
 //! call descends through any of them; `Lowerer::mint_joints` states the
-//! choice. A member of the joint takes one parameter: a call through it
-//! refuses a leading one as non-uniform and a later one as unadmitted, and a
-//! member's claim standing alone, the joint's thunk at the sum, is unadmitted.
+//! choice. A member of the joint stages its first parameter. A claim through
+//! a sibling stages it as a claim through the member itself does, since both
+//! run the one fixpoint. The parameters after it stay the lambdas of the
+//! member's branch `bᵢ`, so a descent `g[<](a, c)` lowers to `(force f)
+//! (inj_g a) c` and varies `c` freely. A call through a member with a
+//! parameter before its staged one refuses it as non-uniform, or as
+//! unadmitted when the calls vary it. A member's claim standing alone, the
+//! joint's thunk at the sum, is unadmitted.
 //! A block holding a member the lowering refused forms no joint: each other
 //! member is its own fixpoint, and a call through a sibling names the
 //! sibling's declaration, so its refusal is reported as that one's
@@ -11773,11 +11778,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   foreign-claim refusal for an instantiation whose head names a function
     ///   other than a recursive one in scope; the unresolved-name refusal, at
     ///   the head, for a head that names nothing; the unadmitted refusal for a
-    ///   call through a joint member over a parameter after its staged one, for
-    ///   a joint member's claim standing unapplied, whose thunk is the joint's
-    ///   at the sum of the block's domains, and for a `>` claim standing
-    ///   unapplied or naming a joint member; the arity refusal, at the call,
-    ///   for a call passing other than one argument per parameter; the
+    ///   call through a joint member that stages a parameter after its first,
+    ///   for a joint member's claim standing unapplied, whose thunk is the
+    ///   joint's at the sum of the block's domains, and for a `>` claim
+    ///   standing unapplied or naming a joint member; the arity refusal, at the
+    ///   call, for a call passing other than one argument per parameter; the
     ///   non-uniform refusal, at the argument, for a parameter before the
     ///   staged one passed as anything but itself, and at the call for a joint
     ///   member over leading parameters; the several-parameters refusal
@@ -11790,17 +11795,19 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a descent call over one parameter, over a uniform
-    ///   leading one and over a varying later one, a claim standing unapplied
-    ///   and a productive call as a copattern arm lower to their variable, and
-    ///   a descent call under a lambda a body's quoted family holds to it at
-    ///   its index in the body; a productive call elsewhere, combined claims, a
-    ///   claim on a function that is not recursive, a wrong argument count and
-    ///   a varied leading parameter each refuse by their own boundary.
+    ///   leading one and over a varying later one, a call through a joint
+    ///   member over a later one, a claim standing unapplied and a productive
+    ///   call as a copattern arm lower to their variable, and a descent call
+    ///   under a lambda a body's quoted family holds to it at its index in the
+    ///   body; a productive call elsewhere, combined claims, a claim on a
+    ///   function that is not recursive, a wrong argument count and a varied
+    ///   leading parameter each refuse by their own boundary.
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     /// - witness: `lower::tests::a_self_call_a_body_quotes_reads_its_fixpoint_at_its_index_3562`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..) | Plan::Access(_)))))]
     pub(super) fn instantiation(
@@ -11937,13 +11944,13 @@ impl<'source> Lowerer<'_, 'source>
         self.claim(site, bound.binder)?;
         match (descent, summand) {
             (Some(descent), Maybe::Present(summand)) => {
-                // The joint fixpoint takes one argument, the injection of the
-                // descended value: no member passes a leading parameter or
-                // one after its staged one.
+                // The joint fixpoint takes the injection of the descended value
+                // first, then the parameters after it: no member passes a
+                // leading parameter, so each stages its first.
                 if !stretch(&self.parameters, recursion.uniform).is_empty() {
                     return Err(descent.call.out(FragmentBoundary::NonUniform));
                 }
-                if stretch(&self.parameters, recursion.parameters).len() != 1 {
+                if recursion.staged != ParameterAt(0) {
                     return Err(descent
                         .call
                         .out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
@@ -12157,7 +12164,9 @@ impl<'source> Lowerer<'_, 'source>
     /// body before the body is classified: the parameter the innermost match
     /// above the body's first claim scrutinises, written bare; the first
     /// parameter when that claim is productive; and the last parameter where
-    /// no match on a parameter stands above it or the body claims nothing.
+    /// no match on a parameter stands above it or the body claims nothing. In
+    /// a joint, a claim through a sibling member is a claim of the function's
+    /// own, since it runs the one fixpoint.
     ///
     /// **Choice.** The position is read off the body, where the match that
     /// takes the staged parameter apart already says it. **Alternatives.** A
@@ -12169,23 +12178,24 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `parameters` are the function's parameter names in order,
-    ///   and `roots` the syntax the function writes after its parameter list,
-    ///   in source order.
+    ///   `roots` the syntax the function writes after its parameter list, in
+    ///   source order, and `joint` the joint the function is read in.
     /// - ensures: `staged` is the position, in `0 .. parameters.len()`, of the
-    ///   parameter the innermost match above the first claim of `own` in source
-    ///   order — an instantiation, or a descent `own[<](…)` written where a
-    ///   type is read — scrutinises, a scrutinee written as a bare name equal
-    ///   to that parameter's, passing over each match whose parameter that call
-    ///   writes back bare in its own place — it consumes that one alongside the
-    ///   one it descends on — unless every such match is passed over; the first
-    ///   position when that instantiation claims productivity (`>`), so every
-    ///   call may vary every parameter; the last position otherwise. `kept` is
-    ///   the longest run of parameters before `staged`, from the first, that
-    ///   every call of `own` under `roots` writes back bare in its own place
-    ///   ([`Self::kept_before`]). The classification sweep checks every claim
-    ///   against `staged` ([`Self::claim`]) and every kept argument against its
-    ///   parameter ([`Self::uniform_descent`]), so a name a binder between the
-    ///   match and the parameter shadows is refused there.
+    ///   parameter the innermost match above the first claim in source order —
+    ///   an instantiation of `own` or of a member of `joint`, or a descent
+    ///   `own[<](…)` written where a type is read — scrutinises, a scrutinee
+    ///   written as a bare name equal to that parameter's, passing over each
+    ///   match whose parameter that call writes back bare in its own place — it
+    ///   consumes that one alongside the one it descends on — unless every such
+    ///   match is passed over; the first position when that instantiation
+    ///   claims productivity (`>`), so every call may vary every parameter; the
+    ///   last position otherwise. `kept` is the longest run of parameters
+    ///   before `staged`, from the first, that every call of `own` under
+    ///   `roots` writes back bare in its own place ([`Self::kept_before`]). The
+    ///   classification sweep checks every claim against `staged`
+    ///   ([`Self::claim`]) and every kept argument against its parameter
+    ///   ([`Self::uniform_descent`]), so a name a binder between the match and
+    ///   the parameter shadows is refused there.
     /// - provides: where the function binds its own name: after the kept
     ///   parameters, the ones from `kept` to `staged` its fixpoint's leading
     ///   binders.
@@ -12205,23 +12215,26 @@ impl<'source> Lowerer<'_, 'source>
     ///   nested matches on one parameter's fields and under no match on a
     ///   parameter each stage their own position; an accumulator before the
     ///   staged parameter that the calls change is not kept; a productive call
-    ///   stages the first parameter.
+    ///   stages the first parameter; a joint member whose one claim is through
+    ///   a sibling stages the parameter that claim's match takes apart.
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_definition_without_a_case_on_a_parameter_stages_its_last`
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged && staging.staged.0 < parameters.len().max(1)))]
     pub(super) fn staged_by_body(
         &mut self,
         own: SurfaceName<'source>,
+        joint: &Joint,
         parameters: &[SurfaceName<'source>],
         roots: &[NodeIndex],
     ) -> Result<Staging, LoweringRefusal<'source>>
     {
         let mut scratch = core::mem::take(&mut self.scratch);
-        let found = self.first_claim(own, parameters, roots, &mut scratch);
+        let found = self.first_claim(own, joint, parameters, roots, &mut scratch);
         let staged = match found {
             Ok(found) => found.unwrap_or_else(|| ParameterAt(parameters.len().saturating_sub(1))),
             Err(refusal) => {
@@ -12352,8 +12365,9 @@ impl<'source> Lowerer<'_, 'source>
         Ok(ParameterAt(kept))
     }
 
-    /// The position the match above the first claim of `own` under `roots`
-    /// scrutinises, by [`Self::staged_by_body`]'s rule.
+    /// The position the match above the first claim of `own`, or of a member
+    /// of `joint`, under `roots` scrutinises, by [`Self::staged_by_body`]'s
+    /// rule.
     ///
     /// # Specification
     /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
@@ -12363,8 +12377,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   the innermost's when it writes back every one — of the first position
     ///   when the instantiation's claim is `>`, or of the last position where
     ///   no match on a parameter stands above the first claim; `None` when no
-    ///   instantiation of `own`, and no descent of it written where a type is
-    ///   read, stands under `roots`.
+    ///   instantiation of `own` or of a member of `joint`, and no descent of
+    ///   `own` written where a type is read, stands under `roots`.
     /// - fails: as [`Self::staged_by_body`].
     /// - panics: none.
     ///
@@ -12380,10 +12394,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|position| position.0 < parameters.len().max(1))))]
     fn first_claim(
         &self,
         own: SurfaceName<'source>,
+        joint: &Joint,
         parameters: &[SurfaceName<'source>],
         roots: &[NodeIndex],
         scratch: &mut Pieces,
@@ -12408,16 +12424,22 @@ impl<'source> Lowerer<'_, 'source>
                 .position(|&parameter| parameter == written)
                 .map(ParameterAt))
         };
-        // Whether `operand` names `own` bare.
-        let named_own = |operand: Placed| -> Result<bool, LoweringRefusal<'source>> {
+        // Whether `operand` names, bare, `own` or a member of the joint, each
+        // a head the one fixpoint answers.
+        let named_claimed = |operand: Placed| -> Result<bool, LoweringRefusal<'source>> {
             let Some(node) = self.tree.node(operand.node)
             else {
                 return Ok(false);
             };
-            Ok(matches!(shape_of(self.pbg, node)?, Shape::Form {
+            if !matches!(shape_of(self.pbg, node)?, Shape::Form {
                 former: Former::Name,
                 ..
-            }) && self.name_at(operand) == own)
+            }) {
+                return Ok(false);
+            }
+            let written = self.name_at(operand);
+            Ok(written == own
+                || matches!(joint.member(&self.collected, written), Maybe::Present(_)))
         };
         // The match a claim with `arguments` descends on, from the innermost
         // `link` outward: past each match whose parameter the claim writes
@@ -12472,16 +12494,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             if former == Some(Former::Instantiation)
                 && let Some(head) = operands.clone().next()
-                && self.tree.node(head.node).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.pbg, node),
-                        Ok(Shape::Form {
-                            former: Former::Name,
-                            ..
-                        })
-                    )
-                })
-                && self.name_at(head) == own
+                && named_claimed(head)?
             {
                 // A productive claim varies every parameter: each call is a
                 // fresh observation's answer, so nothing stays fixed.
@@ -12497,10 +12510,10 @@ impl<'source> Lowerer<'_, 'source>
                     .map(|&(position, _)| position);
                 return Ok(Some(innermost.unwrap_or(last)));
             }
-            // A call of `own` descends on the innermost matched parameter it
-            // does not pass back unchanged: a match on a parameter the call
-            // writes back bare, inside one on the parameter it takes apart,
-            // consumes the one alongside the other.
+            // A call of `own`, or of a joint member, descends on the innermost
+            // matched parameter it does not pass back unchanged: a match on a
+            // parameter the call writes back bare, inside one on the parameter
+            // it takes apart, consumes the one alongside the other.
             let mut chosen = scrutinised;
             if former == Some(Former::Call) && scrutinised.is_some() {
                 written.clear();
@@ -12522,7 +12535,7 @@ impl<'source> Lowerer<'_, 'source>
                         Piece::Tile { .. } => None,
                     });
                     if let Some(instantiated) = instantiated
-                        && named_own(instantiated)?
+                        && named_claimed(instantiated)?
                     {
                         chosen = descended(scrutinised, arguments, &links)?.or(scrutinised);
                     }
@@ -13008,21 +13021,25 @@ impl<'source> Lowerer<'_, 'source>
     /// fixpoint over a sum of a block's families at the block's one stage, so
     /// mutual recursion is the joint fixpoint `fix f. λ y. case y { … }` over
     /// `A₀ + … + Aₙ`, a member `λ x. f (injᵢ x)` and a descent through a
-    /// sibling `f (inj_j v)`. **Alternatives.** A mutual fixpoint former, a
-    /// new kernel node the record declines; a tuple of fixpoints, which no
-    /// stage relates. **Reversal.** A member over parameters beside its staged
-    /// one, or at a dependent type, joins once the joint reads a telescope
-    /// rather than one domain.
+    /// sibling `f (inj_j v) c₁ … cₘ`. A member's parameters after its staged
+    /// one stay the lambdas of its branch, so the case stands directly under
+    /// the staged lambda and no branch is re-indexed past them.
+    /// **Alternatives.** A mutual fixpoint former, a new kernel node the
+    /// record declines; a tuple of fixpoints, which no stage relates.
+    /// **Reversal.** A member over leading parameters, or at a dependent
+    /// type, joins once the joint reads a telescope rather than one domain.
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: in a mutual block of at least two `def rec` declarations,
-    ///   each lowered to `thunk (fix. λ. bᵢ)` at `+U (Aᵢ -> C)`, every member's
-    ///   body is `thunk (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑ }) : Σᵢ Aᵢ ->
-    ///   C) (injᵢ x))`, each `bᵢ` raised past the case's binder and its copies
-    ///   at the origins of what they copy, every other node the fixpoint's
-    ///   insertion; the fixpoint claims descent when a member's did. A block
-    ///   with a member that did not lower so is unchanged.
+    ///   each staging its first parameter and lowered to `thunk (fix. λ. bᵢ)`
+    ///   at `+U (Aᵢ -> C)`, `bᵢ` the lambdas of the later parameters over the
+    ///   body and `C` the arrow over their types, every member's body is `thunk
+    ///   (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑ }) : Σᵢ Aᵢ -> C) (injᵢ x))`,
+    ///   each `bᵢ` raised past the case's binder and its copies at the origins
+    ///   of what they copy, every other node the fixpoint's insertion; the
+    ///   fixpoint claims descent when a member's did. A block with a member
+    ///   that did not lower so is unchanged.
     /// - provides: mutual recursion between a block's functions as the one
     ///   fixpoint the core has.
     /// - fails: never.
@@ -13033,6 +13050,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     pub(super) fn mint_joints(
         &mut self,
@@ -13143,15 +13161,17 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: a function tail of one parameter lowered to `thunk (fix. λ.
-    ///   b)` at `+U (A -> C)` reads as its declaration, `A`, `C`, `b` and the
-    ///   fixpoint's claim.
+    /// - ensures: a function tail staging its first parameter, lowered to
+    ///   `thunk (fix. λ. b)` at `+U (A -> C)`, reads as its declaration, `A`,
+    ///   `C`, `b` and the fixpoint's claim; `b` holds the lambdas of the
+    ///   parameters after the first, and `C` the arrow over their types.
     /// - fails: [`joint::Absent::Unjoined`] for anything else.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Joint`].
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(read) => sink.arena.computation(read.branch).is_some(),
         Maybe::Absent(reason) => reason == joint::Absent::Unjoined,
@@ -13175,14 +13195,15 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unjoined;
         };
-        // A member joins over its one parameter; the plans are spent by the
-        // mint sweep, so its recursion record, keyed by the frame the
-        // declaration form types, says how many it takes.
-        let unary = self.recursions.iter().any(|(&binder, recursion)| {
+        // A member joins over its first parameter, the one it stages; the
+        // plans are spent by the mint sweep, so its recursion record, keyed by
+        // the frame the declaration form types, says which it stages.
+        let staged_first = self.recursions.iter().any(|(&binder, recursion)| {
             self.scope.declared(binder) == Maybe::Present(declaration.node)
-                && stretch(&self.parameters, recursion.parameters).len() == 1
+                && !stretch(&self.parameters, recursion.parameters).is_empty()
+                && recursion.staged == ParameterAt(0)
         });
-        if !unary {
+        if !staged_first {
             return unjoined;
         }
         let (Maybe::Present(signature), Maybe::Present(body), Maybe::Present(origin)) = (

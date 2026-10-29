@@ -20,6 +20,11 @@ sites = [
   { file = "crates/core-term/src/context.rs", pattern = '^\s*let unbound = ContextError::UnboundIndex' },
 ]
 
+[refusal.DescentOnSeveralParameters]
+sites = [
+  { file = "crates/surface-lowering/src/lower/native.rs", pattern = '^\s*Err\(LoweringRefusal::DescentOnSeveralParameters \{' },
+]
+
 [refusal.WrongSort]
 sites = [
   { file = "crates/surface-lowering/src/classify.rs", pattern = '^\s*boundary: FragmentBoundary::WrongSort,' },
