@@ -2715,8 +2715,8 @@ where
     ///
     /// # Specification
     /// - requires: `pair` holds the goal's ready sides.
-    /// - ensures: each value side that [`crate::rules::returned`] reads as a
-    ///   computation is replaced by it; every other side, and the depth,
+    /// - ensures: each value side that [`crate::eval::held_endpoint`] reads as
+    ///   a computation is replaced by it; every other side, and the depth,
     ///   unchanged.
     /// - provides: [`Step::Returned`]: the kernel's replay reads a returned
     ///   endpoint as its computation before any rule, so the two engines
@@ -2747,7 +2747,9 @@ where
             else {
                 continue;
             };
-            if let Some(computation) = crate::rules::returned(self.domain, value)? {
+            if let Some(computation) =
+                crate::eval::held_endpoint(self.domain, value).map_err(ConversionFault::Domain)?
+            {
                 Self::set_side(goal, side, Slot::Ready(Glued::Computation(computation)));
             }
         }
@@ -3144,7 +3146,7 @@ where
     ///   so the kernel's premise and this side name one term.
     /// - witness: `machine::tests::a_tuple_of_a_neutrals_projections_is_the_neutral_715`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|value|
-        crate::rules::returned(self.domain, *value).is_ok_and(|held| held.is_some())))]
+        crate::eval::held_endpoint(self.domain, *value).is_ok_and(|held| held.is_some())))]
     fn projected(
         &mut self,
         neutral: NeutralId,

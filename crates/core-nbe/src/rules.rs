@@ -53,6 +53,7 @@ use crate::domain::Projector;
 use crate::domain::Unfolding;
 use crate::eval::Calls;
 use crate::eval::Definitions;
+use crate::eval::held_endpoint;
 use crate::machine::DeclineReason;
 
 /// A two-valued answer a rule gives on its own.
@@ -1870,7 +1871,7 @@ enum Term
     Ok(None) => !matches!(heads, (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))),
     Ok(Some(plan)) => matches!(*plan, Plan::Shared(Settled::Convertible) | Plan::Decline(DeclineReason::Indeterminate))
         || (*plan == Plan::Step(Step::Returned) && matches!(term, Term::Values(left, right)
-            if matches!((returned(domain, left), returned(domain, right)), (Ok(Some(_)), Ok(Some(_))))))
+            if matches!((held_endpoint(domain, left), held_endpoint(domain, right)), (Ok(Some(_)), Ok(Some(_))))))
         || matches!(term, Term::Comps(left, right)
             if held_eliminations(core, domain, left, right).is_ok_and(|held| held.as_ref() == Some(plan))
                 || matches!(*plan, Plan::Decompose(ref subgoals)
@@ -1902,7 +1903,12 @@ fn whole(
         | crate::conv::Settlement::StructurallyApart
         | crate::conv::Settlement::Deferred(_) => match term {
             Term::Values(left, right)
-                if returned(domain, left)?.is_some() && returned(domain, right)?.is_some() =>
+                if held_endpoint(domain, left)
+                    .map_err(ConversionFault::Domain)?
+                    .is_some()
+                    && held_endpoint(domain, right)
+                        .map_err(ConversionFault::Domain)?
+                        .is_some() =>
             {
                 Plan::Step(Step::Returned)
             },
@@ -2305,70 +2311,14 @@ fn held_levels(
     }
 }
 
-/// The computation a value holds when it is a returned endpoint with an empty
-/// spine.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: `Some` of the computation when `value` is a neutral headed by a
-///   returned endpoint and eliminated by nothing; `None` for every other value.
-/// - provides: the side [`Step::Returned`] reads as its computation.
-/// - fails: [`ConversionFault::Domain`] when a node does not resolve.
-/// - panics: none.
-///
-/// # Errors
-/// - [`ConversionFault::Domain`] — a node does not resolve.
-///
-/// # Adequacy
-/// - hypothesis: L3 — two endpoints over transports whose motives close over
-///   different environments read as their computations and convert; reading a
-///   neutral with a spine as its head's computation drops the spine.
-/// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
-#[spec(ensures: |ret| match domain.value(value) {
-    | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-    | Some(&DomainValue::Neutral { neutral, .. }) => match domain.neutral(neutral) {
-        | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-        | Some(node) => match node.head() {
-            | NeutralHead::Returned(computation) if node.spine().is_empty() => ret == Ok(Some(computation)),
-            | _ => ret == Ok(None),
-        },
-    },
-    | Some(_) => ret == Ok(None),
-})]
-pub fn returned(
-    domain: &DomainArena,
-    value: DomainValueId,
-) -> Result<Option<DomainCompId>, ConversionFault>
-{
-    let DomainValue::Neutral { neutral, .. } = *domain
-        .value(value)
-        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
-    else {
-        return Ok(None);
-    };
-    let held = domain
-        .neutral(neutral)
-        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
-    Ok(match held.head() {
-        NeutralHead::Returned(computation) if held.spine().is_empty() => Some(computation),
-        NeutralHead::Returned(_)
-        | NeutralHead::Constant(_)
-        | NeutralHead::Variable { .. }
-        | NeutralHead::Module(_)
-        | NeutralHead::Primitive(_)
-        | NeutralHead::Hole { .. }
-        | NeutralHead::Mark { .. } => None,
-    })
-}
-
 /// The side of two computations that returns a returned endpoint while the
 /// other side is no `return`, with the call that endpoint holds.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `Some((side, call))` exactly when `side`'s computation is `return
-///   v` with [`returned`] reading `v` as `call`, and the other computation is
-///   no `return`, the left side first; `None` otherwise.
+///   v` with [`held_endpoint`] reading `v` as `call`, and the other computation
+///   is no `return`, the left side first; `None` otherwise.
 /// - provides: the planning half of [`Step::Unreturn`], and the call the
 ///   machine reads in that side's place.
 /// - fails: [`ConversionFault::Domain`] when a node does not resolve.
@@ -2390,7 +2340,9 @@ pub fn returned_return(
 ) -> Result<Option<(ConversionSide, DomainCompId)>, ConversionFault>
 {
     let held = |comp: DomainComp| match comp {
-        DomainComp::Return { value, .. } => returned(domain, value).map(Some),
+        DomainComp::Return { value, .. } => held_endpoint(domain, value)
+            .map(Some)
+            .map_err(ConversionFault::Domain),
         DomainComp::Lambda { .. } | DomainComp::Neutral { .. } | DomainComp::Fixpoint { .. } => {
             Ok(None)
         },
