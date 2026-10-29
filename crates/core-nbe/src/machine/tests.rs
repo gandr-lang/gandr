@@ -4270,6 +4270,77 @@ fn a_held_transport_compares_with_a_bind_over_its_call_3800()
 }
 
 #[test]
+fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_3807()
+{
+    // `λx. S to q. tr(y. Path(Unit, ⟨R x⟩, y), q, ())` against `λx. tr(y.
+    // Path(Unit, ⟨R x⟩, y), ⟨S⟩, ())` for the stuck call `S` and the rigid
+    // `R`: `cong(g, f(a))` against `cong(g, idq(f(a)))` in miniature. Each
+    // side writes its own motive, the bind's under `q` as well, so the two
+    // motives are two nodes at two closures. The sides decompose as binds
+    // over `S`, and the motives compare by the call `R x` each writes, its
+    // argument read through each closure. A motive writing `R ()` instead is
+    // undecided, since a call is flexible.
+    let build = || {
+        let mut core = CoreArena::new();
+        let stuck = stuck_call(&mut core);
+        let unit_type = core.value_type_unit();
+        let unit = core.value_unit();
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let motive_over = |core: &mut CoreArena, argument| {
+            let applied = call(core, rigid, &[argument]);
+            let endpoint = core.value_returned(applied);
+            let point = innermost(core);
+            core.value_type_path(unit_type, endpoint, point)
+        };
+        let bound_x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let bound_motive = motive_over(&mut core, bound_x);
+        let bound_path = innermost(&mut core);
+        let continuation = core.computation_path_transport(bound_motive, bound_path, unit);
+        let bound = core.computation_bind(stuck, continuation);
+        let bound = core.computation_lambda(bound);
+        let held_x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let held_motive = motive_over(&mut core, held_x);
+        let held_path = core.value_returned(stuck);
+        let held = core.computation_path_transport(held_motive, held_path, unit);
+        let held = core.computation_lambda(held);
+        let other_motive = motive_over(&mut core, unit);
+        let other = core.computation_path_transport(other_motive, held_path, unit);
+        let other = core.computation_lambda(other);
+        let converting = [
+            Sides::Computations(bound, held),
+            Sides::Computations(held, bound),
+        ];
+        (core, converting, Sides::Computations(bound, other))
+    };
+    let (core, converting, undecided) = build();
+    let read = World::new(core, &[]);
+    let (core, ..) = build();
+    let held = World::new(core, &[]).holding();
+
+    for world in [&read, &held] {
+        for sides in converting {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(
+                MachineVerdict::Convertible,
+                verdict,
+                "the motives compare by the call each writes: {decisions:?}"
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                world.replayed(sides, verdict, &decisions),
+                "the kernel closes the two motives as α-equal: {decisions:?}"
+            );
+        }
+        let (verdict, decisions) = world.traced(undecided);
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::UndecidedCodes),
+            verdict,
+            "a motive writing another call is undecided: {decisions:?}"
+        );
+    }
+}
+
+#[test]
 fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
 {
     // `⟨g ⟨S⟩ ⟨unit⟩⟩` against `⟨g ⟨S⟩ ()⟩` for the stuck call `S`, the
