@@ -156,7 +156,9 @@ jobs:
   # scaled by 900/818, as every job's share is (#3013): 56 s of setup and
   # 402 s of sweeps. A night's slice of a rotating sweep costs what its
   # sources cost, so one night's sweeps can run past the share while the
-  # whole nightly stays within 900 s.
+  # whole nightly stays within 900 s. A sweep that reaches its 240 s limit
+  # ends and passes, and the job uploads its JUnit report for `reports` to
+  # file (#3975).
   sweeps:
     name: sweep the night's inputs, specifications enforced
     needs: [ci-image-ref, freshness]
@@ -179,6 +181,15 @@ jobs:
       - *fetch-dependencies
       - name: run the night's sweeps
         run: mise run ci:sweeps-nightly
+      - name: upload the sweeps' test report
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-sweeps
+          path: target/nextest/nightly/junit.xml
+          retention-days: 7
+          if-no-files-found: ignore
 
   # The recovery sweep (`mise run ledger:recovery`, #1782): every literal
   # tile of every syntax exemplar missed and deleted, built from the same
@@ -228,7 +239,7 @@ jobs:
             sed -n 's/^cause: /- /p' recovery.out/causes.txt
           } >> "$GITHUB_STEP_SUMMARY"
       - name: upload the recovery report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: *upload-artifact
         with:
           name: recovery-report
           path: recovery.out/report.txt
@@ -346,7 +357,7 @@ jobs:
   # every active workflow and reads the cache's usage.
   reports:
     name: report and file the night's findings
-    needs: [ci-image-ref, recovery]
+    needs: [ci-image-ref, sweeps, recovery]
     if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
     runs-on: *linux
     permissions:
@@ -371,13 +382,34 @@ jobs:
       - *setup-rust
       - name: download the recovery report
         if: &recovered ${{ !cancelled() && needs.recovery.result != 'skipped' }}
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: &download-artifact actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: recovery-report
           path: recovery.out
       - name: file the recovery sweep's causes
         if: *recovered
         run: mise run ci:recovery-file
+      # A sweep that reached its 240 s limit, filed on its own collector as
+      # the merge queue files a slow test (`mise run ci:slow-file`, #3975):
+      # a timeout obligates triage and never turns the night red. A dispatch
+      # files too, so the night it measures is on the board.
+      - name: download the sweeps' test report
+        id: swept
+        if: ${{ !cancelled() && needs.sweeps.result != 'skipped' }}
+        continue-on-error: true
+        uses: *download-artifact
+        with:
+          name: junit-sweeps
+          path: target/test-timing/${{ github.run_id }}/junit-sweeps
+      - name: file the sweeps that reached their limit
+        if: ${{ !cancelled() && steps.swept.outcome == 'success' }}
+        env:
+          SLOW_BUDGET: "240"
+          SLOW_FILE: "true"
+          SLOW_REASON: "in the nightly sweeps, its limit. nextest ends such a sweep and passes it, so a timeout never turns the night red (#3975)."
+          SLOW_RUN_ID: ${{ github.run_id }}
+          SLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: mise run ci:slow-file
       - name: report the dependencies
         if: &not-cancelled ${{ !cancelled() }}
         run: mise run report:deps

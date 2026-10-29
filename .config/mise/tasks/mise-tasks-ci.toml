@@ -1269,7 +1269,9 @@ jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/ope
 # with a row per run; a run under the budget ticks a row, and three ticked
 # rows in a row close it. Each slow test's line goes to standard output and,
 # when GITHUB_STEP_SUMMARY is set, to the job summary. SLOW_RUN_URL links
-# each row to its run; GH_REPO names the repository. Without SLOW_FILE set
+# each row to its run; GH_REPO names the repository. SLOW_REASON, when set,
+# says in the body what the run did with a test past the budget: the nightly
+# ends a sweep at its limit and passes it (#3975). Without SLOW_FILE set
 # the task prints what it would file and files nothing.
 ["ci:slow-file"]
 description = "File each test past its 30 s budget on one collector issue"
@@ -1300,9 +1302,9 @@ else
   echo '[]' > "$scratch/issues.json"
 fi
 claims=$(git rev-parse --show-toplevel)/.config/claims
-jq -n --argjson budget "$budget" --argjson id "$run" --arg url "$url" \
+jq -n --argjson budget "$budget" --argjson id "$run" --arg url "$url" --arg reason "${SLOW_REASON:-}" \
   --slurpfile times "$scratch/times.json" --slurpfile issues "$scratch/issues.json" \
-  '{budget: $budget, run: {id: $id, url: $url}, times: $times[0], issues: $issues[0]}' \
+  '{budget: $budget, reason: (if $reason == "" then null else $reason end), run: {id: $id, url: $url}, times: $times[0], issues: $issues[0]}' \
   | jq -c -L "$claims" -f "$claims/slow.jq" | jq -c '.[]' > "$scratch/actions"
 if [[ ! -s $scratch/actions ]]; then
   echo "no test of run $run ran past its $budget s budget, and no slow-test collector changes"

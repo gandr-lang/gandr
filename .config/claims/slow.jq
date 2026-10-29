@@ -13,8 +13,15 @@
 # did not run says nothing of it. A row for the run already present adds
 # nothing, so a run read twice files once.
 #
+# A collector is its budget's: only an issue whose title ends `past its <b> s
+# budget` is read, so a sweep's 30 s collector from the merge queue and its
+# 240 s one from the nightly (#3975) stay apart.
+#
 # Input:
 #   budget   the budget in seconds
+#   reason   what the run did with a test past the budget, the body's
+#            sentence after `ran past its <b> s budget`; absent, the merge
+#            queue's: nextest marks it slow and runs it on
 #   run      {id, url}: the run whose reports were read
 #   times    [{lane, binary, test, seconds}]: each test once, in the lane it
 #            held longest (`test-timing --times`)
@@ -36,10 +43,12 @@ def closes: length >= 3 and (.[-3:] | all(startswith("- [x]")));
   def title($time):
     "test: \($time.binary) \($time.test) ran \($time.seconds | hundredths) s in the \($time.lane | lane_name) lane, past its \($in.budget) s budget";
   def body($binary; $test; $rows):
-    "`\($test)` in `\($binary)` ran past its \($in.budget) s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\n"
+    "`\($test)` in `\($binary)` ran past its \($in.budget) s budget "
+    + ($in.reason // "in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).")
+    + "\n\n"
     + "Each run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n"
     + "## Runs\n\n" + ($rows | join("\n")) + "\n";
-  [$in.issues[] | . + (.title | capture("^test: (?<binary>\\S+) (?<test>\\S+) ran "))] as $open
+  [$in.issues[] | select(.title | endswith("past its \($in.budget) s budget")) | . + (.title | capture("^test: (?<binary>\\S+) (?<test>\\S+) ran "))] as $open
 | ($in.times | map({key: "\(.binary)\t\(.test)", value: .}) | from_entries) as $timed
 | [$in.times[]
     | select(.seconds > $in.budget)

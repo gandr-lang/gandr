@@ -68,13 +68,19 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 # the hovers at every position rotate over seventeen and the token drops over
 # thirteen. The six cheapest sweeps visit the corpus whole.
 # nextest does not inherit a default filter, so the profile states it again.
-# The limit is the slowest sweep's share of the budget, so a sweep that
-# outgrows it fails as a timeout rather than passing slowly: a sweep's night
-# is sized to at most 170 s.
+# The limit is the slowest sweep's share of the budget: a sweep's night is
+# sized to at most 170 s. A sweep that outgrows it ends there and passes
+# (`on-timeout = "pass"`, nextest's `TIMEOUT-PASS`), so a timeout never turns
+# the night red (#3975): the night's reports job reads this profile's JUnit
+# report and files the sweep on its own collector (`mise run ci:slow-file`,
+# 240 s its budget). A failed assertion still fails the night.
 [profile.nightly]
 inherits = "sweeps"
 default-filter = "test(/(^|::)sweeps::/)"
-slow-timeout = { period = "60s", terminate-after = 4 }
+slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "pass" }
+
+[profile.nightly.junit]
+path = "junit.xml"
 
 # The instrumented enforcing run is a report, never a gate, and instrumentation
 # multiplies the specification cost several times over, so its limit is its
@@ -83,6 +89,12 @@ slow-timeout = { period = "60s", terminate-after = 4 }
 [profile.coverage]
 inherits = "ci-enforcing"
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# A sweep that reaches the coverage limit ends there and passes, so the upload
+# still runs (#3975); `coverage.yml` files it as the nightly does.
+[[profile.coverage.overrides]]
+filter = "test(/(^|::)sweeps::/)"
+slow-timeout = { period = "60s", terminate-after = 10, on-timeout = "pass" }
 
 # A witnessed mutation run (`mise run mutants:witnessed`). A witness the
 # default profile ends at five minutes fails, and a failed witness reads its
