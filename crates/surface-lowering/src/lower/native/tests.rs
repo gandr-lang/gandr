@@ -2425,6 +2425,36 @@ fn a_constructor_answers_a_definition_s_application_2112()
     ));
 }
 
+/// #3665: a constructor returned against a result written as the application
+/// of a definition written as a function tail, `-> wrapped(Integer)` with
+/// `def wrapped(A : Type) -> -F Type { … }`, was refused as unannotated: the
+/// lowering found the body of a definition written `= e` alone. The tail's
+/// declaration form holds its body, so the constructor lowers, bare and
+/// returned, and the checker accepts it.
+#[test]
+fn a_constructor_answers_a_function_tail_s_application_3665()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def same(A : Type) -> -F Type {{ return A }}\n\
+         def wrapped(A : Type) -> -F Type {{ run t <- same(A); return (Maybe(t)) }}\n\
+         def bare() -> wrapped(Integer) {{ Some(1) }}\n\
+         def returned() -> wrapped(Integer) {{ return Some(2) }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["bare", "returned"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #1833: a constructor written as a call's argument took no classifier from
 /// the parameter it is passed to, so `count(Some(3))` was refused as
 /// unannotated where `count((Some(3) : Maybe(Integer)))` checked. The

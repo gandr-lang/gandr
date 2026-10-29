@@ -245,8 +245,7 @@ impl Machine<'_, '_>
     ///   stage above the first ([`crate::recursion::room`]); otherwise as
     ///   [`Self::native_constructor`], but at the annotation as written: one
     ///   that reads as a family only at its weak head is refused
-    ///   [`CheckRefusal::NotADataType`], and the lowering writes no such
-    ///   constructor in a body yet (#3665).
+    ///   [`CheckRefusal::NotADataType`].
     /// - panics: none.
     ///
     /// # Errors
