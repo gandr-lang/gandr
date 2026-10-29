@@ -20,38 +20,9 @@ workflow  repository tooling and gates
 
 ## Map
 
-An arrow is one category's dependencies on another. Its label counts the `[dependencies]` edges between their crates. Dev and build dependencies are not counted. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
+The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
 
 [`ledger/README.md` § Files](../ledger/README.md#files) states how both maps are generated and checked, and what the concern, purpose and reference ledgers hold.
-
-<!-- crate-map:begin -->
-```mermaid
-flowchart BT
-  theory
-  kernel
-  core
-  storage
-  runtime
-  surface
-  workflow
-  kernel -->|1| theory
-  core -->|10| theory
-  core -->|21| kernel
-  storage -->|6| theory
-  storage -->|1| kernel
-  storage -->|1| core
-  runtime -->|1| theory
-  runtime -->|2| kernel
-  runtime -->|5| core
-  runtime -->|3| storage
-  surface -->|11| theory
-  surface -->|12| kernel
-  surface -->|27| core
-  surface -->|8| storage
-  surface -->|3| runtime
-  workflow -->|4| surface
-```
-<!-- crate-map:end -->
 
 ## Members
 
