@@ -217,7 +217,9 @@ fn scheduled(
 
 /// The value `program` answers on `tier` on each schedule, read back into
 /// `core`: the sequential one first, then the scheduled one on the serial
-/// fork, each offering its other operations to `host`.
+/// fork, each offering its other operations to `host`. The scheduled program
+/// also runs under `host` alone, which starts no writer, so each writer stays
+/// in place; that run answers as the scheduled one does.
 ///
 /// # Specification
 /// trivial.
@@ -257,6 +259,23 @@ where
     };
     let scheduled =
         read_back_value(&program.arena, &store, value, core).expect("the answer reads back");
+    let mut store = Store::new();
+    let outcome = evaluate_on_with_host(
+        tier,
+        (&program.arena, &program.definitions, program.spawning),
+        (budget(), RunInputs::new(&mut store)),
+        host,
+    );
+    let Ok(HostOutcome::Completed(Outcome::Halted(value))) = outcome
+    else {
+        panic!("the scheduled program, each writer in place, halts on {tier:?}: {outcome:?}");
+    };
+    let kept = read_back_value(&program.arena, &store, value, core).expect("the answer reads back");
+    assert_eq!(
+        CertificateEquality::Equal,
+        equal_certificate_syntax(core, kept, scheduled),
+        "each writer kept in place answers as the scheduled run on {tier:?}"
+    );
     (sequential, scheduled)
 }
 
