@@ -1286,6 +1286,39 @@ impl ContentTable
         Self::default()
     }
 
+    /// Empty the table as [`Self::new`] makes it, keeping every buffer's
+    /// capacity, so placing into it again allocates only past what it held.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table holds no record, placement or constant name.
+    /// - provides: a scratch table that numbers, records and names whatever it
+    ///   places next as a fresh table does.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — content placed, the table cleared, then other content
+    ///   and the first content again, each against a fresh table, distinguish a
+    ///   clear that keeps a record, a placement or the index.
+    /// - witness: `encoding::tests::a_cleared_table_places_as_a_fresh_one_does`
+    #[inline]
+    #[spec(ensures: self.records == 0 && self.stream.0.is_empty()
+        && self.placed.count() == PlacementCount(0) && self.constants.is_empty())]
+    pub(crate) fn clear(&mut self)
+    {
+        self.stream.0.clear();
+        self.spans.clear();
+        self.interned.clear();
+        self.placed.forget_from(ArenaWatermark::default());
+        self.seen = TruncationStamp::default();
+        self.records = 0;
+        self.scratch.0.clear();
+        self.members.clear();
+        self.tasks.clear();
+        self.constants.clear();
+    }
+
     /// The framed record stream: the canonical encoding of everything this
     /// table has been asked about, in assignment order.
     ///
@@ -4152,6 +4185,10 @@ pub fn content_digest(
 /// back and stops there, so a module of many identical definitions compares
 /// each new one against one earlier twin, not against all of them (#3686).
 ///
+/// `table` is scratch: the naming clears it, digests the two roots, and places
+/// each candidate's roots beside them, so admission names every definition
+/// through one table's buffers.
+///
 /// # Specification
 /// - requires: the roots, and those of every definition `entries` names by
 ///   content, live in `arena`; every definition `entries` names by content is
@@ -4160,7 +4197,7 @@ pub fn content_digest(
 ///   earlier entries whose declared types and bodies are identical in reachable
 ///   content: one past the latest such entry's rank, or zero when none is. A
 ///   digest filters the entries and one table decides each candidate, so no
-///   digest decides.
+///   digest decides. Whatever `table` held before does not reach the name.
 /// - provides: admission's naming of a plain definition, injective on the
 ///   environment's positions.
 /// - fails: never.
@@ -4168,25 +4205,25 @@ pub fn content_digest(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — three definitions of one type and body admitted into one
-///   environment, a definition of other content between them, rank 0, 1 and 2;
-///   the predicate checks the roots kept.
+///   environment, a definition of other content between them, rank 0, 1 and 2,
+///   each named through the table the one before it left full; the predicate
+///   checks the roots kept.
 /// - witness: `encoding::tests::each_twin_of_one_content_ranks_past_the_latest_3686`
 #[must_use]
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
     if kept_declared == declared && kept_body == body))]
 pub(crate) fn name_definition(
+    table: &mut ContentTable,
     arena: &TermArena,
     entries: &crate::env::Entries,
     declared: ValueTypeId,
     body: ValueId,
 ) -> ConstantName
 {
-    let digest = {
-        let mut table = ContentTable::new();
-        let _declared = table.place(arena, AnyNode::ValueType(declared));
-        let _body = table.place(arena, AnyNode::Value(body));
-        table.stream().digest()
-    };
+    table.clear();
+    let placed_declared = table.place(arena, AnyNode::ValueType(declared));
+    let placed_body = table.place(arena, AnyNode::Value(body));
+    let digest = table.stream().digest();
     let rank = entries
         .iter()
         .rev()
@@ -4196,13 +4233,9 @@ pub(crate) fn name_definition(
                 body: earlier_body,
                 rank: earlier_rank,
                 digest: earlier_digest,
-            } if earlier_digest == digest && {
-                let mut table = ContentTable::new();
-                table.place(arena, AnyNode::ValueType(declared))
-                    == table.place(arena, AnyNode::ValueType(earlier_declared))
-                    && table.place(arena, AnyNode::Value(body))
-                        == table.place(arena, AnyNode::Value(earlier_body))
-            } =>
+            } if earlier_digest == digest
+                && table.place(arena, AnyNode::ValueType(earlier_declared)) == placed_declared
+                && table.place(arena, AnyNode::Value(earlier_body)) == placed_body =>
             {
                 Some(earlier_rank.0.saturating_add(1))
             },
@@ -5326,6 +5359,41 @@ mod tests
         assert_eq!(table.records, 18_u64);
         assert_eq!(table.placed.count(), PlacementCount(34));
         assert_eq!(usize::from(table.stream().length()), before);
+    }
+
+    #[test]
+    fn a_cleared_table_places_as_a_fresh_one_does()
+    {
+        let mut arena = TermArena::new();
+        let mut earlier = arena.value_unit();
+        for _step in 0 .. 8_u32 {
+            earlier = arena.value_tuple(&[earlier, earlier]);
+        }
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let unit = arena.value_unit();
+        let later = arena.value_tuple(&[variable, unit]);
+        let mut table = ContentTable::new();
+        let _earlier = table.place(&arena, AnyNode::Value(earlier));
+        table.clear();
+        let mut fresh = ContentTable::new();
+        assert_eq!(
+            table.place(&arena, AnyNode::Value(later)),
+            fresh.place(&arena, AnyNode::Value(later)),
+            "a cleared table numbers its first record as a fresh one does"
+        );
+        assert_eq!(table.records, fresh.records);
+        assert_eq!(table.placed.count(), fresh.placed.count());
+        assert_eq!(
+            table.stream(),
+            fresh.stream(),
+            "a cleared table's stream holds only what it placed since"
+        );
+        assert_eq!(
+            table.place(&arena, AnyNode::Value(earlier)),
+            fresh.place(&arena, AnyNode::Value(earlier)),
+            "content placed before the clear is recorded again, not recalled"
+        );
+        assert_eq!(table.stream(), fresh.stream());
     }
 
     #[test]

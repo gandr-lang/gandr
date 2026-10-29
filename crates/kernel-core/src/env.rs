@@ -1216,14 +1216,20 @@ pub type Entries = Family<AdmittedDeclaration>;
 /// No admitted declaration: what a judgement over an empty environment reads.
 pub(crate) static NO_ENTRIES: Entries = Entries::new();
 
-/// The session an environment lends each admission's check: its content table
-/// names the environment's nodes once for the environment's life.
+/// What an environment names content through: the session it lends each
+/// admission's check, whose content table names the environment's nodes once
+/// for the environment's life, and the scratch table admission names each
+/// plain definition through.
 ///
-/// A clone starts an empty session of its own and names the nodes it reads
-/// afresh.
-#[repr(transparent)]
+/// A clone starts empty and names the nodes it reads afresh.
 #[derive(Debug, Default)]
-struct Names(crate::support::SupportContext);
+struct Names
+{
+    /// The session every admission's check is lent.
+    session: crate::support::SupportContext,
+    /// The table [`crate::encoding::name_definition`] clears and reuses.
+    definitions: crate::encoding::ContentTable,
+}
 
 impl Clone for Names
 {
@@ -1695,7 +1701,7 @@ impl Environment
                         arena,
                         check::Judgement::new(entries, &levels).unsealing(manifest),
                         &declaration,
-                        &mut names.0,
+                        &mut names.session,
                     ),
                     Admission::Checked,
                 )
@@ -1941,7 +1947,7 @@ impl Environment
                 // admitted at a reused position is named as its own admission
                 // names it.
                 self.names
-                    .0
+                    .session
                     .forget_constants_from(ConstantIndex::from(usize::from(base)));
                 self.manifest = manifest;
                 self.arena.truncate_to(rejected);
@@ -2011,7 +2017,7 @@ impl Environment
                         members,
                     ),
                 member.declared_id(),
-                &mut names.0,
+                &mut names.session,
             )?;
             self.arena.truncate_to(content_end);
         }
@@ -2043,7 +2049,7 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member, &mut names.0)?
+                check::check_declaration(arena, judgement, member, &mut names.session)?
             };
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
@@ -2530,7 +2536,7 @@ impl Environment
         ConstantName::Position => true,
     })]
     fn definition_name(
-        &self,
+        &mut self,
         declaration: &Declaration,
     ) -> ConstantName
     {
@@ -2548,7 +2554,13 @@ impl Environment
             && declaration.presentation().rules().is_empty()
             && declaration.presentation().cells().is_none();
         if plain {
-            crate::encoding::name_definition(&self.arena, &self.entries, declared, body)
+            crate::encoding::name_definition(
+                &mut self.names.definitions,
+                &self.arena,
+                &self.entries,
+                declared,
+                body,
+            )
         }
         else {
             ConstantName::Position
@@ -3466,7 +3478,7 @@ mod tests
             .expect("a reference to the definition admits");
         assert!(
             matches!(
-                environment.names.0.constant_name(definition),
+                environment.names.session.constant_name(definition),
                 Some(crate::encoding::ConstantName::Definition { .. })
             ),
             "the refused member's positional name leaves the table with it, so \

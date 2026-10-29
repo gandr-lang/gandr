@@ -321,6 +321,30 @@ impl HashIndex
         }
     }
 
+    /// Forget every filed position, keeping the slots for the next insertion.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no position is filed under any hash, and the capacity is
+    ///   unchanged.
+    /// - provides: an index that files positions as an empty one does without
+    ///   allocating again up to its capacity.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — keys filed, cleared, then other keys filed from the
+    ///   first position distinguish a clear that keeps an entry, one that keeps
+    ///   the count and one that drops the slots.
+    /// - witness: `table::tests::a_cleared_index_files_afresh_within_its_capacity`
+    #[inline]
+    #[spec(captures: capacity = self.slots.len(),
+        ensures: self.len == 0 && self.slots.len() == capacity)]
+    pub fn clear(&mut self)
+    {
+        self.slots.fill(Slot::EMPTY);
+        self.len = 0;
+    }
+
     /// The home slot of `hash`; slot zero of the empty table.
     ///
     /// # Specification
@@ -692,6 +716,43 @@ mod tests
             find(&index, &entries, TableHash::of(&absent), absent),
             Probe::Vacant(_)
         ));
+    }
+
+    #[test]
+    fn a_cleared_index_files_afresh_within_its_capacity()
+    {
+        let mut index = HashIndex::new();
+        let mut entries = Vec::new();
+        for key in (0 .. 100).map(Key) {
+            let _filed = intern(&mut index, &mut entries, TableHash::of(&key), key);
+        }
+        let capacity = index.slots.len();
+        index.clear();
+        assert_eq!(index.len, 0);
+        assert_eq!(index.slots.len(), capacity, "the slots are kept");
+        for key in &entries {
+            assert!(
+                matches!(
+                    find(&index, &entries, TableHash::of(key), *key),
+                    Probe::Vacant(_)
+                ),
+                "no key filed before the clear is found"
+            );
+        }
+        let mut fresh = Vec::new();
+        for key in (1_000 .. 1_100).map(Key) {
+            let expected = at(fresh.len());
+            assert_eq!(
+                intern(&mut index, &mut fresh, TableHash::of(&key), key),
+                expected
+            );
+        }
+        assert_eq!(index.len, 100);
+        assert_eq!(
+            index.slots.len(),
+            capacity,
+            "refiling within the capacity never grows"
+        );
     }
 
     #[test]
