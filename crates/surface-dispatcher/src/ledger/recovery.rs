@@ -1230,4 +1230,35 @@ mod tests
         }
         assert!(report.formed >= licensed.len(), "{report}");
     }
+
+    /// #3811: `++` deleted from `[1] ++ [2]` leaves `[1]  [2]`, an
+    /// instantiation whose head is no name. Its refusal marks the whole
+    /// instantiation, the deleted tile's place among it, so the mutant is
+    /// reported at its mutation.
+    #[test]
+    fn an_instantiation_whose_head_is_no_name_marks_its_mutation_3811()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-instantiation",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("binary-expression.add.concat.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/binary-expression.add.concat.gandr"),
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.at == 184_usize
+                    && finding.tile == "++"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "binary-expression.add.concat.gandr:184: `++` deleted is reported at its mutation: {report}"
+        );
+    }
 }

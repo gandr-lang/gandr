@@ -11828,21 +11828,23 @@ impl<'source> Lowerer<'_, 'source>
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
-    ///   claim the grammar reserves; the unguarded-corecursion refusal for a
-    ///   `>` call that is not the whole arm of a copattern block; the
-    ///   foreign-claim refusal for an instantiation whose head names a function
-    ///   other than a recursive one in scope; the unresolved-name refusal, at
-    ///   the head, for a head that names nothing; the unadmitted refusal for a
-    ///   call through a joint member that stages a parameter after its first,
-    ///   for a joint member's claim standing unapplied, whose thunk is the
-    ///   joint's at the sum of the block's domains, and for a `>` claim
-    ///   standing unapplied or naming a joint member; the arity refusal, at the
-    ///   call, for a call passing other than one argument per parameter; the
-    ///   non-uniform refusal, at the argument, for a parameter before the
-    ///   staged one passed as anything but itself, and at the call for a joint
-    ///   member over leading parameters; the several-parameters refusal
-    ///   [`Self::claim`] raises; the wrong-sort refusal outside a head or value
-    ///   position; and the allowance refusal from the binder walk.
+    ///   claim the grammar reserves, marking the resident under a named head
+    ///   and the whole instantiation under any other head (#3811); the
+    ///   unguarded-corecursion refusal for a `>` call that is not the whole arm
+    ///   of a copattern block; the foreign-claim refusal for an instantiation
+    ///   whose head names a function other than a recursive one in scope; the
+    ///   unresolved-name refusal, at the head, for a head that names nothing;
+    ///   the unadmitted refusal for a call through a joint member that stages a
+    ///   parameter after its first, for a joint member's claim standing
+    ///   unapplied, whose thunk is the joint's at the sum of the block's
+    ///   domains, and for a `>` claim standing unapplied or naming a joint
+    ///   member; the arity refusal, at the call, for a call passing other than
+    ///   one argument per parameter; the non-uniform refusal, at the argument,
+    ///   for a parameter before the staged one passed as anything but itself,
+    ///   and at the call for a joint member over leading parameters; the
+    ///   several-parameters refusal [`Self::claim`] raises; the wrong-sort
+    ///   refusal outside a head or value position; and the allowance refusal
+    ///   from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -11856,7 +11858,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   under a lambda a body's quoted family holds to it at its index in the
     ///   body; a productive call elsewhere, combined claims, a claim on a
     ///   function that is not recursive, a wrong argument count and a varied
-    ///   leading parameter each refuse by their own boundary.
+    ///   leading parameter each refuse by their own boundary, and a resident
+    ///   that is no claim under a head that is no name marks the whole
+    ///   instantiation.
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
@@ -11864,6 +11868,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     /// - witness: `lower::tests::a_self_call_a_body_quotes_reads_its_fixpoint_at_its_index_3562`
+    /// - witness: `lower::native::tests::a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3811`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..) | Plan::Access(_)))))]
     pub(super) fn instantiation(
         &mut self,
@@ -11900,14 +11905,6 @@ impl<'source> Lowerer<'_, 'source>
         };
         self.scratch = scratch;
         read?;
-        let Some(claim) = claim
-        else {
-            let claim = Site {
-                at: resident,
-                ..site
-            };
-            return Err(claim.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
-        };
         let named = self.tree.node(head.node).is_some_and(|node| {
             matches!(
                 shape_of(self.pbg, node),
@@ -11917,6 +11914,21 @@ impl<'source> Lowerer<'_, 'source>
                 })
             )
         });
+        let Some(claim) = claim
+        else {
+            // A resident that is no claim is the mistake under a name a claim
+            // could stand on; under any other head the instantiation is (#3811).
+            let marked = if named {
+                Site {
+                    at: resident,
+                    ..site
+                }
+            }
+            else {
+                site
+            };
+            return Err(marked.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
+        };
         if !named {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         }

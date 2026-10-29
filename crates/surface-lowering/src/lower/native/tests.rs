@@ -1585,6 +1585,29 @@ fn a_descent_claim_names_its_own_function_873()
 }
 
 #[test]
+fn a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3811()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!("{NAT}def joined = [1]  [2] ;\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let start = source.find("[1]  [2]").unwrap_or_default();
+
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("joined")),
+        LoweringRefusal::OutOfFragment {
+            span: crate::fixture::span(
+                gandr_surface_syntax::ByteOffset::from(start),
+                gandr_surface_syntax::ByteOffset::from(start.saturating_add("[1]  [2]".len())),
+            ),
+            form: FormName::INSTANTIATION,
+            sort: FragmentSort::Value,
+            boundary: FragmentBoundary::Reserved(crate::Unbuilt::RecursiveClaim),
+        },
+        "an instantiation whose head is no name is refused whole, not at its resident"
+    );
+}
+
+#[test]
 fn a_data_family_named_where_a_value_is_read_is_quoted()
 {
     let mut arena = CoreArena::new();
