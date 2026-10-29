@@ -2,7 +2,8 @@
 
 `.config/debug/lldbinit` imports this module. It loads rustc's own formatters
 from the pinned toolchain's `lib/rustlib/etc`, then corrects the defects that
-make a sum-type enum print the wrong variant:
+make a sum-type enum print the wrong variant, and the one that lets a length
+take lldb's memory:
 
 - lldb places an enum's `$discr$` member at offset 0, its byte offset kept as a
   bit-field width. Where the tag sits past offset 0, the formatters read the
@@ -17,6 +18,13 @@ make a sum-type enum print the wrong variant:
   (#3778, `variants.py`). Where it does, the correction prints the raw tag and
   every variant raw, never a variant. The `debug:` tasks run LLVM's lldb on
   macOS instead (`lldb.bash`).
+- A value not yet written, such as a local at its function's entry, holds what
+  the stack held. A pointer read as a `&str`'s length asks lldb for 94 TB, and
+  one read as a `Vec`'s length gives a summary billions of children to walk
+  (#3823). The correction reads the extent a length, a capacity or a bucket
+  mask gives only where it lies in the process's readable memory
+  (`extents.py`). Past it, the value has no children, and its summary names
+  the raw field.
 """
 
 import functools
@@ -28,6 +36,7 @@ from typing import Callable, Optional, Tuple
 import lldb
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from extents import Region, covered  # noqa: E402
 from variants import pick  # noqa: E402
 
 VARIANTS = "$variants$"
@@ -35,6 +44,8 @@ DISCRIMINANT = "$discr$"
 TRUNCATED_NAMES = lldb.SBDebugger.GetVersionString().startswith("lldb-")
 """Xcode's lldb, whose version reads `lldb-<build>`, keeps 32 bits of each variant name."""
 TRUNCATION = "Xcode's lldb names this enum's variants by 32 bits of each tag; run LLVM's lldb, `brew install lldb`"
+REGIONS: dict = {"stop": None, "seen": []}
+"""The memory regions lldb gave at the current stop of a process, asked once each."""
 
 
 def _rustlib_etc(debugger: lldb.SBDebugger) -> str:
@@ -127,6 +138,144 @@ def is_sum_enum(sbtype: lldb.SBType, _dict) -> bool:
     return sbtype.GetNumberOfFields() == 1 and sbtype.GetFieldAtIndex(0).GetName() == VARIANTS
 
 
+def region_at(process: lldb.SBProcess) -> Callable[[int], Optional[Region]]:
+    """The process's memory region holding an address, from lldb, cached for the stop."""
+    stop = (process.GetUniqueID(), process.GetStopID())
+    if REGIONS["stop"] != stop:
+        REGIONS.update(stop=stop, seen=[])
+    seen = REGIONS["seen"]
+
+    def at(address: int) -> Optional[Region]:
+        for region in seen:
+            if region[0] <= address < region[1]:
+                return region
+        info = lldb.SBMemoryRegionInfo()
+        if not process.GetMemoryRegionInfo(address, info).Success():
+            return None
+        region = (info.GetRegionBase(), info.GetRegionEnd(), info.IsReadable())
+        seen.append(region)
+        return region
+
+    return at
+
+
+def past(valobj: lldb.SBValue, field: str, value: int, address: int, size: int) -> Optional[str]:
+    """The raw field, named, where the extent it gives lies past the process's memory.
+
+    Without a process lldb reads the object file, which bounds every read.
+    """
+    process = valobj.GetProcess()
+    if not process.IsValid() or covered(region_at(process), address, size):
+        return None
+    return f"{field} {value:#x} past mapped memory"
+
+
+def bounded_providers(providers) -> dict:
+    """rustc's providers whose children a length counts, each refusing an extent past memory.
+
+    A refused value has no children and keeps the raw field as `past`.
+    """
+
+    class StdVecSyntheticProvider(providers.StdVecSyntheticProvider):
+        def update(self) -> None:
+            super().update()
+            extent = self.length * self.element_type_size
+            self.past = past(self.valobj, "len", self.length, self.data_ptr.GetValueAsUnsigned(), extent)
+            if self.past:
+                self.length = 0
+
+    class StdSliceSyntheticProvider(providers.StdSliceSyntheticProvider):
+        def update(self) -> None:
+            super().update()
+            extent = self.length * self.element_size
+            self.past = past(self.valobj, "length", self.length, self.data_ptr.GetValueAsUnsigned(), extent)
+            if self.past:
+                self.length = 0
+
+    class StdStringSyntheticProvider(providers.StdStringSyntheticProvider):
+        def update(self) -> None:
+            super().update()
+            self.past = past(self.valobj, "len", self.length, self.data_ptr.GetValueAsUnsigned(), self.length)
+            if self.past:
+                self.length = 0
+
+    class StdVecDequeSyntheticProvider(providers.StdVecDequeSyntheticProvider):
+        def update(self) -> None:
+            super().update()
+            if self.element_type_size and self.size > self.cap:
+                self.past = f"len {self.size:#x} past cap {self.cap:#x}"
+            else:
+                extent = self.cap * self.element_type_size
+                self.past = past(self.valobj, "cap", self.cap, self.data_ptr.GetValueAsUnsigned(), extent)
+            if self.past:
+                self.size = 0
+
+    class StdHashMapSyntheticProvider(providers.StdHashMapSyntheticProvider):
+        def update(self) -> None:
+            table = self.table().GetChildMemberWithName("table")
+            mask = table.GetChildMemberWithName("bucket_mask").GetValueAsUnsigned()
+            ctrl = table.GetChildMemberWithName("ctrl").GetChildAtIndex(0).GetValueAsUnsigned()
+            self.past = past(self.valobj, "bucket_mask", mask, ctrl, mask + 1)
+            if self.past:
+                self.size = 0
+                self.valid_indices = []
+            else:
+                super().update()
+
+    return {
+        bounded.__name__: bounded
+        for bounded in (
+            StdVecSyntheticProvider,
+            StdSliceSyntheticProvider,
+            StdStringSyntheticProvider,
+            StdVecDequeSyntheticProvider,
+            StdHashMapSyntheticProvider,
+        )
+    }
+
+
+def bounded_size_summary(summary: Callable[[lldb.SBValue, dict], str]) -> Callable[[lldb.SBValue, dict], str]:
+    """rustc's `size=` summary, the raw field in place of a size past memory."""
+
+    @functools.wraps(summary)
+    def bounded(valobj: lldb.SBValue, internal_dict: dict) -> str:
+        synthetic = valobj.GetTypeSynthetic()
+        if synthetic.IsValid() and synthetic.IsClassName():
+            module, name = synthetic.GetData().rsplit(".", 1)
+            provider = getattr(sys.modules[module], name)(valobj.GetNonSyntheticValue(), internal_dict)
+            if getattr(provider, "past", None):
+                return f"<{provider.past}>"
+        return summary(valobj, internal_dict)
+
+    return bounded
+
+
+def bounded_str_summary(summary: Callable[[lldb.SBValue, dict], str]) -> Callable[[lldb.SBValue, dict], str]:
+    """rustc's `&str` summary, the raw length in place of a read past memory."""
+
+    @functools.wraps(summary)
+    def bounded(valobj: lldb.SBValue, internal_dict: dict) -> str:
+        raw = valobj.GetNonSyntheticValue()
+        length = raw.GetChildMemberWithName("length").GetValueAsUnsigned()
+        address = raw.GetChildMemberWithName("data_ptr").GetValueAsUnsigned()
+        reading = past(raw, "length", length, address, length)
+        return f"<{reading}>" if reading else summary(valobj, internal_dict)
+
+    return bounded
+
+
+def bounded_read_string(read: Callable[..., str]) -> Callable[..., str]:
+    """rustc's string read, refusing a length past memory before lldb allocates for it."""
+
+    @functools.wraps(read)
+    def bounded(process: lldb.SBProcess, address: int, length: int, error: Optional[lldb.SBError] = None) -> str:
+        if process.IsValid() and not covered(region_at(process), address, length):
+            return f"<error: length {length:#x} past mapped memory>"
+        return read(process, address, length, error)
+
+    return bounded
+
+
 def __lldb_init_module(debugger: lldb.SBDebugger, _dict) -> None:
     etc = _rustlib_etc(debugger)
     debugger.HandleCommand(f'command script import "{os.path.join(etc, "lldb_lookup.py")}"')
@@ -150,3 +299,8 @@ def __lldb_init_module(debugger: lldb.SBDebugger, _dict) -> None:
     if TRUNCATED_NAMES:
         lookup.ClangEncodedEnumSummaryProvider = refusing_summary(lookup.ClangEncodedEnumSummaryProvider)
         providers.ClangEncodedEnumProvider.update = refusing_update(providers.ClangEncodedEnumProvider.update)
+    lookup.StdStrSummaryProvider = bounded_str_summary(lookup.StdStrSummaryProvider)
+    lookup.SizeSummaryProvider = bounded_size_summary(lookup.SizeSummaryProvider)
+    providers.read_string = bounded_read_string(providers.read_string)
+    for name, provider in bounded_providers(providers).items():
+        setattr(lookup, name, provider)
