@@ -26,9 +26,9 @@ use gandr_kernel_term::ValueId;
 pub struct Program
 {
     /// The steps, in order.
-    steps: Vec<Step>,
+    pub steps: Vec<Step>,
     /// The redexes applied after them, the last at the head.
-    heads: Vec<Head>,
+    pub heads: Vec<Head>,
 }
 
 /// Programs of up to forty steps and one to three redexes, so that every
@@ -51,7 +51,7 @@ pub fn program() -> impl proptest::strategy::Strategy<Value = Program>
 /// the innermost variable or its return, so that a body built from nothing
 /// reads the binder it stands under.
 #[derive(Clone, Copy, Debug)]
-enum Step
+pub enum Step
 {
     /// The variable at this index.
     Variable(u8),
@@ -107,19 +107,19 @@ enum Step
 
 /// A redex and how it meets its introduction.
 #[derive(Clone, Copy, Debug)]
-struct Head
+pub struct Head
 {
     /// The elimination and introduction.
-    redex: Redex,
+    pub redex: Redex,
     /// Whether a beta around the redex passes it its introduction, so that
     /// the redex reads it through a cell of another environment.
-    passed: bool,
+    pub passed: bool,
 }
 
 /// An elimination met by its introduction, built from the stacks' tops, so
 /// that a generated term reduces and its bodies read what each step binds.
 #[derive(Clone, Copy, Debug)]
-enum Redex
+pub enum Redex
 {
     /// `(λ. c) v`.
     Beta,
