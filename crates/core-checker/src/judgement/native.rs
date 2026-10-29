@@ -63,10 +63,12 @@ impl Machine<'_, '_>
     /// - ensures: the annotation forms before the declaration-ordered field
     ///   checks; their success synthesizes that same nominal annotation. The
     ///   fields and the stated indices read the annotation at its weak head, so
-    ///   an annotation a definition computes reads as its family.
+    ///   an annotation a definition computes reads as its family. An annotation
+    ///   whose indices compute the stated ones records the constructor restated
+    ///   ([`Self::stands_at`]).
     /// - fails: wrong nominal shape at the weak head, unknown tag, or wrong
-    ///   field arity; an annotation at other indices than the constructor
-    ///   states ([`Self::stands_at`]).
+    ///   field arity; an annotation at indices that neither agree with nor
+    ///   convert with the ones the constructor states ([`Self::stands_at`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -79,6 +81,7 @@ impl Machine<'_, '_>
     /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
     /// - witness: `tests::native_formers::a_constructor_at_a_computed_type_checks_at_its_family_3570`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn native_constructor(
@@ -481,18 +484,23 @@ impl Machine<'_, '_>
     }
 
     /// Refuse a constructor of an indexed family whose annotation names other
-    /// indices than the ones the constructor states.
+    /// indices than the ones the constructor states, and restate one whose
+    /// annotation computes them.
     ///
     /// # Specification
     /// - requires: `term` is a constructor value of `datatype` tagged `tag`, at
-    ///   its declared field count.
-    /// - ensures: success exactly when the family has no index or each index of
+    ///   its declared field count; `datatype` is its annotation's weak head.
+    /// - ensures: success exactly when the family has no index, each index of
     ///   the application [`former::stated_at`] reads agrees with the
-    ///   annotation's as syntax ([`crate::conversion::indices_agree`]), as the
-    ///   kernel compares them.
+    ///   annotation's as syntax ([`crate::conversion::indices_agree`]), or the
+    ///   stated application converts with `datatype`
+    ///   ([`crate::conversion::equivalent`]). In the last case the constructor
+    ///   is recorded restated: at its stated application, ascribed its
+    ///   annotation. The kernel compares indices as syntax and checks the
+    ///   restatement in the constructor's place.
     /// - fails: [`CheckRefusal::TypeMismatch`] with the stated application as
     ///   found and the annotation as expected; otherwise as
-    ///   [`former::stated_at`].
+    ///   [`former::stated_at`] and the conversion.
     /// - panics: none.
     ///
     /// # Errors
@@ -501,9 +509,10 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — `Nil` annotated at `Vec(a, S(Z))` is refused and at
     ///   `Vec(a, Z)` admitted. A constructor annotated at a call that returns
-    ///   its stated index is refused in both checkers.
+    ///   its stated index is admitted in both checkers, and one at a call that
+    ///   returns another index is refused.
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
-    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_stands_apart_from_its_stated_index_3624`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
     #[spec(captures: depth = self.context.depth(Zone::Intuitionistic), ensures: self.context.depth(Zone::Intuitionistic) == depth)]
     fn stands_at(
         &mut self,
@@ -539,19 +548,44 @@ impl Machine<'_, '_>
             .zip(wanted.iter().copied())
             .skip(parameters)
             .collect();
+        let mut apart = false;
         for (found, wanted) in pairs {
             if crate::conversion::indices_agree(self.context, found, wanted)?
                 != crate::conversion::Agreement::Convertible
             {
-                return Err(CheckRefusal::TypeMismatch(
-                    crate::refusal::Mismatch::Value {
-                        at: term,
-                        synthesised: stated,
-                        expected: datatype,
-                    },
-                ));
+                apart = true;
+                break;
             }
         }
+        if !apart {
+            return Ok(());
+        }
+        let mismatch = CheckRefusal::TypeMismatch(crate::refusal::Mismatch::Value {
+            at: term,
+            synthesised: stated,
+            expected: datatype,
+        });
+        // An annotation whose index is a call that computes the stated index:
+        // the kernel reads the constructor at its stated application, ascribed
+        // the annotation, and converts the two types.
+        if crate::conversion::equivalent(self.context, stated, datatype)?
+            != crate::conversion::Agreement::Convertible
+        {
+            return Err(mismatch);
+        }
+        let &Value::Constructor {
+            datatype: written,
+            ref fields,
+            ..
+        } = self.value(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let fields = fields.clone();
+        let arena = self.context.arena_mut();
+        let at_stated = arena.value_constructor(stated, tag, fields);
+        let restated = arena.value_ascribe(at_stated, written);
+        self.context.record_restated(term, restated);
         Ok(())
     }
 

@@ -528,9 +528,10 @@ pub struct ModuleReport
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position, with each derivation.
     relations: BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
-    /// The nodes each accepted declaration refined by a solved variable, by
-    /// position, each beside the node the kernel reads in its place.
-    refinements: BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
+    /// The nodes each accepted declaration checked in another form than
+    /// written, by position, each beside the node the kernel reads in its
+    /// place.
+    refinements: BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
     /// The laws each lawful declaration's folds rest on, by position, in its
     /// folded type's rule order.
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
@@ -792,16 +793,17 @@ impl ModuleReport
         &self.relations
     }
 
-    /// The nodes each accepted declaration refined by a solved variable, by
-    /// position, each beside the node the declaration crosses to the kernel in
-    /// its place, ascending by the refined node.
+    /// The nodes each accepted declaration checked in another form than
+    /// written, by position, each beside the node the declaration crosses to
+    /// the kernel in its place, ascending by the refined node: an arm or a
+    /// case refined by a solved variable, and a constructor restated at its
+    /// stated application.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn refinements(&self)
-    -> &BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>
+    pub const fn refinements(&self) -> &BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>
     {
         &self.refinements
     }

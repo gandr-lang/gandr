@@ -9,15 +9,12 @@
 // states. Each turns to `checks` as its rung lands, and the source then moves
 // to the model root.
 //
-// - see: #3627 — not implemented: a constructor at an index written as a call,
-//   for `append`
 // - see: #3631 — not implemented: a transport's motive that names a
 //   recursion's stage, for `zip`
 // - see: #3515 — not implemented: injectivity, for `tail` and `zip`
 // - see: #3516 — not implemented: an implicit under a constructor, for
 //   `firstOfPair`
 // - see: #3517 — not implemented: an implicit block on `def rec`, for `zip`
-//   and `append`
 // - see: #3481 — the spike that wrote these programs
 
 // The naturals the lengths count in.
@@ -57,16 +54,5 @@ def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(
     VCons(m, x, xt) => case ys {
       VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
     }
-  }
-}
-
-/// One vector after another, at the length `plus(m, n)`. The `VCons` arm
-/// returns `VCons` at `plus(m, Succ(k))`, which computes the index `VCons`
-/// states, but the constructor meets its annotation as syntax.
-@[ refuses("TypeMismatch") ]
-def rec append(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> Vec(a, plus(m, n)) {
-  case xs {
-    VNil => ys,
-    VCons(k, x, xt) => VCons(plus(m, k), x, append[<](a, k, m, xt, ys))
   }
 }

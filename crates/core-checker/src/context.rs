@@ -392,14 +392,16 @@ pub struct CheckingContext<'arena>
     /// The path endpoint pairs each accepted declaration's type conversions
     /// related, by position.
     relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
-    /// The nodes the judgement refined by a solved variable since the
-    /// declaration under way began, each beside the node checked in its place.
-    refining: BTreeMap<ComputationId, ComputationId>,
+    /// The nodes the judgement checked in another form than written since the
+    /// declaration under way began, each beside the node checked in its place:
+    /// an arm or a case refined by a solved variable, and a constructor
+    /// restated at its stated application.
+    refining: BTreeMap<TermNode, TermNode>,
     /// What reads each refinement since the last take back as written.
     readings: crate::solution::Written,
     /// The refined nodes of each accepted declaration, by position, each beside
     /// the node the kernel reads in its place, ascending by the refined node.
-    refinements: BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
+    refinements: BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
     /// The laws each lawful declaration's folds rest on, by position, in its
     /// folded type's rule order.
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
@@ -609,11 +611,11 @@ pub struct Checkpoint
     /// [`CheckingContext::relations`].
     relations: BTreeMap<ConstantIndex, Vec<crate::code::EndpointRelation>>,
     /// The refinements the context records since its last take.
-    refining: BTreeMap<ComputationId, ComputationId>,
+    refining: BTreeMap<TermNode, TermNode>,
     /// What reads each refinement since the last take back as written.
     readings: crate::solution::Written,
     /// [`CheckingContext::refinements`].
-    refinements: BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
+    refinements: BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
     /// [`CheckingContext::laws`].
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// [`CheckingContext::operation_rules`].
@@ -3519,15 +3521,45 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   elaborates the call where it is written.
     /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
     /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
-    #[spec(ensures: self.refining.get(&at) == Some(&refined.term))]
+    #[spec(ensures: self.refining.get(&TermNode::Computation(at)) == Some(&TermNode::Computation(refined.term)))]
     pub(crate) fn record_refinement(
         &mut self,
         at: ComputationId,
         refined: &crate::solution::Refined,
     )
     {
-        let _earlier = self.refining.insert(at, refined.term);
+        let _earlier = self.refining.insert(
+            TermNode::Computation(at),
+            TermNode::Computation(refined.term),
+        );
         self.readings.record(refined);
+    }
+
+    /// Record that the kernel reads `restated` in the place of the constructor
+    /// `at`: the constructor at its stated application, ascribed the
+    /// annotation it is written at.
+    ///
+    /// # Specification
+    /// - requires: `restated` ascribes the constructor at the application it
+    ///   states to `at`'s annotation, and the two types convert.
+    /// - ensures: `at` has `restated` as its refinement, replacing an earlier
+    ///   one, until the next take.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor annotated at a call that computes its
+    ///   stated index crosses restated, and the kernel admits it.
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    #[spec(ensures: self.refining.get(&TermNode::Value(at)) == Some(&TermNode::Value(restated)))]
+    pub(crate) fn record_restated(
+        &mut self,
+        at: ValueId,
+        restated: ValueId,
+    )
+    {
+        let _earlier = self
+            .refining
+            .insert(TermNode::Value(at), TermNode::Value(restated));
     }
 
     /// The written value `at` stands for: the value a refinement rewrote into
@@ -3603,7 +3635,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — as [`CheckingContext::record_refinement`].
     /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
     #[spec(ensures: self.refining.is_empty())]
-    pub(crate) fn take_refining(&mut self) -> Vec<(ComputationId, ComputationId)>
+    pub(crate) fn take_refining(&mut self) -> Vec<(TermNode, TermNode)>
     {
         self.readings.clear();
         core::mem::take(&mut self.refining).into_iter().collect()
@@ -3626,7 +3658,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) fn keep_refinements(
         &mut self,
         constant: ConstantIndex,
-        refinements: Vec<(ComputationId, ComputationId)>,
+        refinements: Vec<(TermNode, TermNode)>,
     )
     {
         if !refinements.is_empty() {
@@ -3641,8 +3673,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn refinements(&self)
-    -> &BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>
+    pub const fn refinements(&self) -> &BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>
     {
         &self.refinements
     }

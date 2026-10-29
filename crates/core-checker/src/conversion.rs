@@ -1009,7 +1009,8 @@ pub fn equivalent(
 
 /// Whether a constructor's stated index and its annotation's index are the
 /// same term. The kernel compares them as syntax and reads no call by
-/// reduction, so the checker does the same.
+/// reduction, so the checker does the same, and restates a constructor whose
+/// indices convert without agreeing.
 ///
 /// # Specification
 /// - requires: both terms stand under the binders open now, at one type.
@@ -1024,9 +1025,9 @@ pub fn equivalent(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a constructor annotated at a call that returns its stated
-///   index is refused in both checkers, though the call converts with that
-///   index in a type.
-/// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_stands_apart_from_its_stated_index_3624`
+///   index does not agree as syntax and crosses restated, which the kernel
+///   admits; one annotated at a call that returns another index is refused.
+/// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
 #[spec(ensures: |ret| left != right || ret.is_err() || ret == Ok(Agreement::Convertible))]
 pub fn indices_agree(
     context: &mut CheckingContext<'_>,

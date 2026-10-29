@@ -2593,9 +2593,9 @@ struct Source<'source>
     /// The path endpoint pairs each accepted declaration's conversions
     /// related, by position.
     relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
-    /// The nodes each accepted declaration's judgement refined by a solved
-    /// variable, by position, each beside the node the kernel reads.
-    refinements: &'source BTreeMap<ConstantIndex, Vec<(ComputationId, ComputationId)>>,
+    /// The nodes each accepted declaration's judgement checked in another form
+    /// than written, by position, each beside the node the kernel reads.
+    refinements: &'source BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
     /// The laws each lawful declaration's folds rest on, by position.
     laws: &'source BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// The rules of the operation each ruled declaration lowered from, by
@@ -2635,9 +2635,9 @@ enum Offer<'signature>
         body: ValueId,
         /// The path endpoint pairs its conversions related.
         relations: &'signature [EndpointRelation],
-        /// The nodes its judgement refined by a solved variable, ascending,
-        /// each beside the node the kernel reads in its place.
-        refined: &'signature [(ComputationId, ComputationId)],
+        /// The nodes its judgement checked in another form than written,
+        /// ascending, each beside the node the kernel reads in its place.
+        refined: &'signature [(TermNode, TermNode)],
         /// The laws its folds rest on, by module position.
         laws: &'signature [ConstantIndex],
         /// The rules of the operation it lowered from, over module positions.
@@ -4826,11 +4826,12 @@ enum Frame
         /// The domain's image.
         domain: gandr_kernel_term::ValueTypeId,
     },
-    /// A static application at a reducible head, or a `ua`, erased as its
-    /// reduct or its derived path, awaiting that value's image.
+    /// A static application at a reducible head, a `ua`, or a constructor the
+    /// judgement restated, erased as its reduct, its derived path or its
+    /// restatement, awaiting that value's image.
     Reduced
     {
-        /// The static application or the `ua`.
+        /// The static application, the `ua` or the constructor.
         at: ValueId,
     },
     /// A static application at a rigid head, awaiting its head's value.
@@ -4971,9 +4972,9 @@ struct Erasure<'source, 'positions>
     /// declaration holds yet — a data declaration's own, or every member of
     /// its mutual block.
     crossing: &'positions [(ConstantIndex, ConstantIndex)],
-    /// The nodes the judgement refined by a solved variable in the declaration
-    /// erased, ascending, each beside the node erased in its place.
-    refined: &'positions [(ComputationId, ComputationId)],
+    /// The nodes the judgement checked in another form than written in the
+    /// declaration erased, ascending, each beside the node erased in its place.
+    refined: &'positions [(TermNode, TermNode)],
     /// The declaration the erasure met that the environment does not hold
     /// yet — a native operation's signature or a handled effect's free model
     /// — which stops it.
@@ -5030,14 +5031,15 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     }
 
     /// The same erasure reading each node of `refined` as the node beside it:
-    /// an arm or a case the judgement refined by a solved variable, which the
-    /// kernel checks as refined while the core body keeps it as written.
+    /// an arm or a case the judgement refined by a solved variable, or a
+    /// constructor it restated at its stated application, which the kernel
+    /// checks in that form while the core body keeps it as written.
     ///
     /// # Specification
     /// trivial.
     const fn refining(
         mut self,
-        refined: &'positions [(ComputationId, ComputationId)],
+        refined: &'positions [(TermNode, TermNode)],
     ) -> Self
     {
         self.refined = refined;
@@ -5979,18 +5981,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::descend`]: a code with a recorded lift opens its
-    ///   frame and decodes at its own level; otherwise an intuitionistic
-    ///   variable, a constant that crossed, the unit value and an integer or
-    ///   string literal are minted, and a thunk, a returned endpoint, a quote
-    ///   and a pair open their frames. A value ascription crosses as the value
-    ///   its ascribed return returns, so the kernel replays its stated type
-    ///   wherever it synthesises. A static application at a reducible head,
-    ///   read normalizing, takes its certified step and opens the frame
-    ///   awaiting its reduct; any other opens the frames of a kernel static
-    ///   application. Read verbatim, a constant naming a static definition and
-    ///   a closed static lambda are minted as the static operators they are
-    ///   numbered at. On success the current mode's memo holds `at`.
+    /// - ensures: as [`Self::descend`]: a constructor the judgement restated at
+    ///   its stated application opens the frame awaiting its restatement; a
+    ///   code with a recorded lift opens its frame and decodes at its own
+    ///   level; otherwise an intuitionistic variable, a constant that crossed,
+    ///   the unit value and an integer or string literal are minted, and a
+    ///   thunk, a returned endpoint, a quote and a pair open their frames. A
+    ///   value ascription crosses as the value its ascribed return returns, so
+    ///   the kernel replays its stated type wherever it synthesises. A static
+    ///   application at a reducible head, read normalizing, takes its certified
+    ///   step and opens the frame awaiting its reduct; any other opens the
+    ///   frames of a kernel static application. Read verbatim, a constant
+    ///   naming a static definition and a closed static lambda are minted as
+    ///   the static operators they are numbered at. On success the current
+    ///   mode's memo holds `at`.
     /// - fails: [`Refusal::Cyclic`] for an open value;
     ///   [`Refusal::DanglingNode`]; [`Refusal::Session`];
     ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
@@ -6007,6 +6011,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
     #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
     fn descend_value(
         &mut self,
@@ -6019,6 +6024,18 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::Value(erased))),
             Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
             None => {},
+        }
+        // A constructor the judgement restated at its stated application
+        // crosses as that restatement, which the kernel checks; the core body
+        // keeps the constructor as written, which the machine runs.
+        if let Ok(place) = self
+            .refined
+            .binary_search_by_key(&TermNode::Value(at), |&(node, _)| node)
+            && let Some(&(_, restated)) = self.refined.get(place)
+        {
+            self.memo().values.insert(at, Image::Open);
+            self.frames.push(Frame::Reduced { at });
+            return Ok(Step::Descend(CoreNode::Term(restated)));
         }
         if let Some(lift) = self.source.lifts.get(&at) {
             self.memo().values.insert(at, Image::Open);
@@ -6788,7 +6805,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.refined.binary_search_by_key(&at, |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.refined.binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -6814,14 +6831,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         // A node the judgement refined by a solved variable crosses as its
         // refinement, which the kernel checks; the core body keeps it as
         // written, which the evaluator and the machine run.
-        if let Ok(place) = self.refined.binary_search_by_key(&at, |&(node, _)| node)
+        if let Ok(place) = self
+            .refined
+            .binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node)
             && let Some(&(_, refined)) = self.refined.get(place)
         {
             self.memo().computations.insert(at, Image::Open);
             self.frames.push(Frame::Rewritten { at });
-            return Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
-                refined,
-            ))));
+            return Ok(Step::Descend(CoreNode::Term(refined)));
         }
         let Some(computation) = self.arena.computation(at)
         else {
