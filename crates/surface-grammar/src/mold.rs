@@ -28,16 +28,19 @@
 //!   a fixed hasher for a stable order.
 //! - Reversal: a measured build in which interning dominates.
 //!
-//! ### A token's label and menus in one probe
+//! ### A token's label resolved once, its menus read by number
 //!
 //! A parser resolves every token's spellings to declared labels and reads their
 //! menus: a keyword's own spelling, then the lexeme classes it falls back to.
-//! `Pbg::tile_label` resolves a `LabelText` to its `TileLabel`, and the table
-//! keeps both of a label's menus in one hash map keyed by the label, so the
-//! resolution and each menu read are one hash probe apiece rather than string
-//! comparisons down an ordered map, and a parser holds no label list of its
-//! own. Against those comparisons, parsing the corpus takes about a fifth less
-//! time and builds the same trees. Nothing iterates the map in an observable
+//! The table numbers each declared label in the order of its first mold, and
+//! keeps a hash map from the label to its number, the menus in a vector by
+//! number, and each mold's label number in a column. `Pbg::label_id` resolves a
+//! `LabelText` in one hash probe. From then on a parser reads both menus, the
+//! sorts a label follows and each mold's label by number, with no further probe
+//! or string comparison. Against a probe per read, the keystroke workload runs
+//! about 7 % fewer instructions and 4 % fewer cycles and builds the same trees.
+//! Against string comparisons down an ordered map, the probe itself took about
+//! a fifth off parsing the corpus. Nothing iterates the map in an observable
 //! order: `candidate_counts` sorts what it lists, and the fingerprint and the
 //! frozen tables read the mold columns.
 //!
@@ -51,10 +54,11 @@
 //! threat a seeded hasher would answer.
 //!
 //! - Alternatives: a sorted label list the parser binary-searches per token,
-//!   which costs string comparisons on every token; a perfect hash generated
-//!   with the frozen tables, which needs a build step for a cost a probe
-//!   already removes; `rapidhash`, the fastest measured by half a percent,
-//!   which adds a proc-macro dependency.
+//!   which costs string comparisons on every token; a probe per menu read,
+//!   which hashes and compares a spelling at every step of every token; a
+//!   perfect hash generated with the frozen tables, which needs a build step
+//!   for a cost one probe per label already removes; `rapidhash`, the fastest
+//!   measured by half a percent, which adds a proc-macro dependency.
 //! - Reversal: `foldhash` unmaintained or dropped from the graph, or a grammar
 //!   whose labels come from untrusted input.
 //!
@@ -177,6 +181,16 @@ impl From<RCtxId> for u32
         id.0
     }
 }
+
+/// A declared label by its number in the grammar's label table.
+///
+/// A parser resolves a token's [`LabelText`] to it once, then reads the
+/// label's menus and compares molds' labels by it, with no further probe or
+/// string compare. The default is the first label's number, for an inline
+/// holder to fill the slots it does not read.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LabelId(u32);
 
 /// One symbol the zipper crosses stepping out of a context.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -337,9 +351,11 @@ pub struct MoldColumns<'table>
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct LabelMenus
 {
+    /// The label.
+    label: TileLabel,
     /// Every mold the label can take, ascending.
     declared: Vec<MoldId>,
     /// The molds it can take where no form is open, ascending: those without a
@@ -484,9 +500,13 @@ pub struct MoldTable
     /// Each mold's rule, by id: its position in the rules the table was built
     /// from.
     owners: Vec<usize>,
-    /// Each declared label's candidate menus, keyed by the label so a token's
-    /// spelling resolves to its label and both menus in one probe.
-    labels: HashMap<TileLabel, LabelMenus, FixedState>,
+    /// Each declared label's number, keyed by the label so a token's spelling
+    /// resolves to it in one probe.
+    labels: HashMap<TileLabel, LabelId, FixedState>,
+    /// Each declared label's candidate menus, by its number.
+    menus: Vec<LabelMenus>,
+    /// Each mold's label, by id: the number of the label it carries.
+    mold_labels: Vec<LabelId>,
     /// The same-form adjacency, ascending and unique.
     adjacencies: Vec<(MoldId, MoldId)>,
     /// Where each mold's run of [`adjacencies`](Self::adjacencies) starts, by
@@ -888,8 +908,12 @@ impl MoldTable
         let index = |mold: MoldId| usize::try_from(u32::from(mold)).ok();
         let flag = |flags: &[bool], mold: MoldId| index(mold).and_then(|at| flags.get(at)).copied().unwrap_or(false);
         ret.bounds.len() == count && ret.has_pred.len() == count && ret.has_succ.len() == count && ret.is_first.len() == count && ret.is_complete_last.len() == count && ret.is_required_tail.len() == count && ret.successor_starts.len() == count.saturating_add(1)
-            && ret.labels.values().map(|menus| menus.declared.len()).sum::<usize>() == count
-            && ret.labels.iter().all(|(label, menus)| menus.declared.is_sorted_by(|left, right| left < right) && menus.declared.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == label.0)) && menus.fresh.iter().copied().eq(menus.declared.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))) && menus.left_holes == menus.declared.iter().fold(HoleSorts::default(), |sorts, &mold| sorts.union(left_holes(mold, &ret.molds, &ret.rctxs))))
+            && ret.menus.iter().map(|menus| menus.declared.len()).sum::<usize>() == count
+            && ret.labels.len() == ret.menus.len()
+            && ret.labels.iter().all(|(label, &id)| ret.menus(id).is_some_and(|menus| menus.label == *label))
+            && ret.mold_labels.len() == count
+            && ret.molds.iter().zip(&ret.mold_labels).all(|(def, &id)| ret.menus(id).is_some_and(|menus| menus.label.0 == def.label))
+            && ret.menus.iter().all(|menus| menus.declared.is_sorted_by(|left, right| left < right) && menus.declared.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == menus.label.0)) && menus.fresh.iter().copied().eq(menus.declared.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))) && menus.left_holes == menus.declared.iter().fold(HoleSorts::default(), |sorts, &mold| sorts.union(left_holes(mold, &ret.molds, &ret.rctxs))))
             && ret.adjacencies.is_sorted_by(|left, right| left < right)
             && {
                 let mut incidence = vec![(false, false); count];
@@ -932,13 +956,27 @@ impl MoldTable
             .iter()
             .map(|mold| bounds_for(mold, &rctxs))
             .collect::<Vec<_>>();
+        // Each label is numbered in the order of its first mold, so the
+        // numbering is fixed by the mold columns.
         let mut labels = HashMap::with_hasher(FixedState::default());
+        let mut menus: Vec<LabelMenus> = Vec::new();
+        let mut mold_labels = Vec::with_capacity(molds.len());
         for (raw, mold) in (0_u32 ..).zip(&molds) {
-            labels
-                .entry(TileLabel(mold.label))
-                .or_insert_with(LabelMenus::default)
-                .declared
-                .push(MoldId::from(raw));
+            let label = TileLabel(mold.label);
+            let id = *labels.entry(label).or_insert_with(|| {
+                let id = LabelId(u32::try_from(menus.len()).unwrap_or(u32::MAX));
+                menus.push(LabelMenus {
+                    label,
+                    declared: Vec::new(),
+                    fresh: Vec::new(),
+                    left_holes: HoleSorts::default(),
+                });
+                id
+            });
+            if let Some(held) = usize::try_from(id.0).ok().and_then(|at| menus.get_mut(at)) {
+                held.declared.push(MoldId::from(raw));
+            }
+            mold_labels.push(id);
         }
         // Dense per-mold flags: the fresh-menu filter probes them once per
         // mold, and the form-membership queries read them directly.
@@ -990,7 +1028,7 @@ impl MoldTable
             running = running.saturating_add(*start);
             *start = running;
         }
-        for menus in labels.values_mut() {
+        for menus in &mut menus {
             menus.fresh = menus
                 .declared
                 .iter()
@@ -1016,6 +1054,8 @@ impl MoldTable
             bounds,
             owners,
             labels,
+            menus,
+            mold_labels,
             adjacencies,
             successor_starts,
             has_pred,
@@ -1490,7 +1530,49 @@ impl MoldTable
     {
         self.labels
             .get_key_value(spelled.0)
-            .map(|(&label, _menus)| label)
+            .map(|(&label, _id)| label)
+    }
+
+    /// The number of the declared label spelled `spelled`, if one is.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn label_id(
+        &self,
+        spelled: LabelText<'_>,
+    ) -> Option<LabelId>
+    {
+        self.labels.get(spelled.0).copied()
+    }
+
+    /// The number of the label mold `mold` carries; none past the table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn mold_label(
+        &self,
+        mold: MoldId,
+    ) -> Option<LabelId>
+    {
+        let at = usize::try_from(u32::from(mold)).ok()?;
+        self.mold_labels.get(at).copied()
+    }
+
+    /// The menus of the label numbered `id`; none past the table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn menus(
+        &self,
+        id: LabelId,
+    ) -> Option<&LabelMenus>
+    {
+        self.menus.get(usize::try_from(id.0).ok()?)
     }
 
     /// Every mold `label` can take, ascending.
@@ -1506,6 +1588,21 @@ impl MoldTable
     {
         self.labels
             .get(label.0)
+            .map_or(&[], |&id| self.label_candidates(id))
+    }
+
+    /// Every mold the label numbered `id` can take, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn label_candidates(
+        &self,
+        id: LabelId,
+    ) -> &[MoldId]
+    {
+        self.menus(id)
             .map_or(&[], |menus| menus.declared.as_slice())
     }
 
@@ -1522,7 +1619,22 @@ impl MoldTable
     {
         self.labels
             .get(label.0)
-            .map_or(&[], |menus| menus.fresh.as_slice())
+            .map_or(&[], |&id| self.label_fresh_candidates(id))
+    }
+
+    /// The molds the label numbered `id` can take where no form is open,
+    /// ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn label_fresh_candidates(
+        &self,
+        id: LabelId,
+    ) -> &[MoldId]
+    {
+        self.menus(id).map_or(&[], |menus| menus.fresh.as_slice())
     }
 
     /// Whether a token labelled `label` can stand right after a whole form of
@@ -1540,8 +1652,27 @@ impl MoldTable
         sort: Sort,
     ) -> LabelFollowsForm
     {
-        self.labels
-            .get(label.0)
+        self.labels.get(label.0).map_or_else(
+            || HoleSorts::default().follows(sort),
+            |&id| self.label_follows_form(id, sort),
+        )
+    }
+
+    /// Whether a token labelled with the label numbered `id` can stand right
+    /// after a whole form of `sort`, as [`follows_form`](Self::follows_form)
+    /// reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn label_follows_form(
+        &self,
+        id: LabelId,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        self.menus(id)
             .map(|menus| menus.left_holes)
             .unwrap_or_default()
             .follows(sort)
@@ -1556,9 +1687,9 @@ impl MoldTable
     pub(crate) fn candidate_counts(&self) -> Vec<(TileLabel, CandidateCount)>
     {
         let mut counts = self
-            .labels
+            .menus
             .iter()
-            .map(|(&label, menus)| (label, CandidateCount(menus.declared.len())))
+            .map(|menus| (menus.label, CandidateCount(menus.declared.len())))
             .collect::<Vec<_>>();
         counts.sort_unstable_by_key(|&(label, _count)| label);
         counts

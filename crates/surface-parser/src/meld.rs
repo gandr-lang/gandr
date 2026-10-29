@@ -214,11 +214,11 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_surface_grammar::LabelId;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileKind;
-use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -398,27 +398,28 @@ impl<'text> From<SpaceText<'text>> for SourceFragment<'text>
     }
 }
 
-/// Borrowed candidate-label set for the next lexical token.
+/// Borrowed candidate-label set for the next lexical token: its declared
+/// labels, by number.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CandidateLabels<'labels>(&'labels [&'static str]);
+pub struct CandidateLabels<'labels>(&'labels [LabelId]);
 
-impl<'labels> From<&'labels [&'static str]> for CandidateLabels<'labels>
+impl<'labels> From<&'labels [LabelId]> for CandidateLabels<'labels>
 {
-    /// Adopt a borrowed slice of label names as a candidate set.
+    /// Adopt a borrowed slice of label numbers as a candidate set.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(value: &'labels [&'static str]) -> Self
+    fn from(value: &'labels [LabelId]) -> Self
     {
         Self(value)
     }
 }
 
-impl<'labels> From<CandidateLabels<'labels>> for &'labels [&'static str]
+impl<'labels> From<CandidateLabels<'labels>> for &'labels [LabelId]
 {
-    /// Read the slice of label names back.
+    /// Read the slice of label numbers back.
     ///
     /// # Specification
     /// trivial.
@@ -3236,8 +3237,8 @@ impl<'pbg> MeldState<'pbg>
             });
             match incoming {
                 Incoming::Tile(tile) => qualifying(tile),
-                Incoming::Token(labels) => <&[&str]>::from(labels).iter()
-                    .flat_map(|&label| self.pbg.candidates(TileLabel(label)).iter().copied())
+                Incoming::Token(labels) => <&[LabelId]>::from(labels).iter()
+                    .flat_map(|&label| self.pbg.label_candidates(label).iter().copied())
                     .any(qualifying),
             }
         })
@@ -3277,9 +3278,9 @@ impl<'pbg> MeldState<'pbg>
         };
         TailExtension::from(match incoming {
             Incoming::Tile(tile) => continues(tile),
-            Incoming::Token(labels) => <&[&str]>::from(labels).iter().any(|&label| {
+            Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().any(|&label| {
                 self.pbg
-                    .candidates(TileLabel(label))
+                    .label_candidates(label)
                     .iter()
                     .any(|&tile| continues(tile))
             }),
@@ -3461,18 +3462,18 @@ impl<'pbg> MeldState<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, which the labeler caps"
         )
     )]
-    #[spec(ensures: |ret| bool::from(ret) == <&[&'static str]>::from(labels).iter().any(|&label| self.pbg.candidates(TileLabel(label)).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
+    #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
     fn successor_label_in(
         &self,
         mold: MoldId,
         labels: CandidateLabels<'_>,
     ) -> SuccessorLabelPresence
     {
-        let labels = <&[&'static str]>::from(labels);
+        let labels = <&[LabelId]>::from(labels);
         SuccessorLabelPresence::from(self.pbg.mold_successors(mold).iter().any(|&(_, right)| {
             self.pbg
-                .mold(right)
-                .is_ok_and(|def| labels.contains(&def.label))
+                .mold_label(right)
+                .is_some_and(|label| labels.contains(&label))
         }))
     }
 
@@ -8770,6 +8771,8 @@ mod tests
     use core::error::Error;
 
     use anodized::spec;
+    use gandr_surface_grammar::LabelId;
+    use gandr_surface_grammar::LabelText;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::Regex;
     use gandr_surface_grammar::Rule;
@@ -10043,16 +10046,19 @@ mod tests
                 state.extends_tail(frontier, super::Incoming::Tile(open))
             ));
         }
-        let absent_labels: &[&[&str]] = &[&[], &["absent"], &[" )"]];
-        for &labels in absent_labels {
+        let label = |spelled: &str| pbg.label_id(LabelText(spelled)).ok_or("undeclared label");
+        // No label, and the opener's own label, which no same-form tile of
+        // the opener carries.
+        let absent_labels: [&[LabelId]; 2] = [&[], &[label("(")?]];
+        for labels in absent_labels {
             assert!(!bool::from(
                 state.successor_label_in(open, super::CandidateLabels::from(labels))
             ));
         }
-        let closing: &[&str] = &[")"];
+        let closing = [label(")")?];
         assert!(bool::from(state.successor_label_in(
             open,
-            super::CandidateLabels::from(closing)
+            super::CandidateLabels::from(closing.as_slice())
         )));
         for _ in 0_u8 .. 2_u8 {
             state.push(&MoldedTile::new(open, TileText::from("(")));

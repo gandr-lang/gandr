@@ -635,6 +635,54 @@ fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// A spelling resolves to its label's number once: every menu read by the
+/// number is the one read by the spelling, no two labels share a number, and
+/// each mold's label number is its label's.
+#[test]
+fn a_label_reads_its_menus_by_its_number() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built_in()?;
+    let sorts = [
+        Sort::Item,
+        Sort::Pattern,
+        Sort::Expression,
+        Sort::Type,
+        Sort::Instantiation,
+        Sort::ModuleMember,
+    ];
+    let mut numbers = BTreeSet::new();
+    for (label, _count) in pbg.candidate_counts() {
+        let id = pbg
+            .label_id(LabelText(label.0))
+            .ok_or("a declared label has a number")?;
+        assert!(numbers.insert(id), "{label} shares its number");
+        assert_eq!(
+            pbg.candidates(label),
+            pbg.label_candidates(id),
+            "the menu of {label}"
+        );
+        assert_eq!(
+            pbg.fresh_candidates(label),
+            pbg.label_fresh_candidates(id),
+            "the fresh menu of {label}"
+        );
+        for sort in sorts {
+            assert_eq!(
+                bool::from(pbg.follows_form(label, sort)),
+                bool::from(pbg.label_follows_form(id, sort)),
+                "{label} after a form of {sort:?}"
+            );
+        }
+        for &mold in pbg.candidates(label) {
+            assert_eq!(Some(id), pbg.mold_label(mold), "the label of {mold:?}");
+        }
+    }
+    assert_eq!(None, pbg.label_id(LabelText("no such label")));
+    assert_eq!(None, pbg.label_id(LabelText("identifie")));
+    assert_eq!(None, pbg.mold_label(MoldId::from(u32::MAX)));
+    Ok(())
+}
+
 /// #2213: a token can stand right after a whole form exactly when one of its
 /// label's molds faces, on its left, a hole that form fills — of the form's
 /// sort, or of any sort after an item. The walk over every candidate's left

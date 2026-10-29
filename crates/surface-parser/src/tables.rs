@@ -126,8 +126,7 @@ use gandr_surface_syntax::MoldId;
 use crate::meld::Frontier;
 use crate::meld::MeldState;
 use crate::meld::MoldAdmissibility;
-use crate::mold::CandidateLabel;
-use crate::mold::TokenLabels;
+use crate::mold::LabelIds;
 
 /// The most frontiers a [`SettleChain`] names; a longer chain leaves every
 /// candidate its own push class.
@@ -500,8 +499,9 @@ impl WindowClasses
     /// `classes`.
     ///
     /// # Specification
-    /// - requires: `openers` ascending; `labels` the labels of the significant
-    ///   tokens after the tie, the window's and the one after it.
+    /// - requires: `openers` ascending; `labels` the declared labels, by
+    ///   number, of the significant tokens after the tie, the window's and the
+    ///   one after it.
     /// - ensures: `classes` holds one number per opener, in order; two openers'
     ///   numbers agree exactly when their signatures do.
     /// - panics: none.
@@ -518,7 +518,7 @@ impl WindowClasses
         &mut self,
         pbg: &Pbg,
         openers: &[MoldId],
-        labels: &[TokenLabels<'_>],
+        labels: &[LabelIds],
         classes: &mut Vec<WindowClass>,
     )
     {
@@ -553,7 +553,7 @@ impl WindowClasses
         // are nodes of the level after that position, and the node's edges.
         // Every expansion lands on a later level, so a level is whole before
         // its nodes are expanded and their indices are final. The melder
-        // matches a successor to a token by its label's spelling, so each
+        // matches a successor to a token by its label's number, so each
         // successor's label is read once and matched at every position.
         for level in 0 .. depth {
             let mut at = 0_usize;
@@ -561,11 +561,10 @@ impl WindowClasses
                 at = at.saturating_add(1);
                 let start = edges.len();
                 for &(_, successor) in pbg.mold_successors(mold) {
-                    let Ok(def) = pbg.mold(successor)
+                    let Some(label) = pbg.mold_label(successor)
                     else {
                         continue;
                     };
-                    let label = CandidateLabel::from(def.label);
                     let named = if bool::from(pbg.mold_is_form_first(successor)) {
                         u32::from(successor)
                     }
@@ -573,7 +572,7 @@ impl WindowClasses
                         UNNAMED
                     };
                     for (position, token) in labels.iter().enumerate().skip(level) {
-                        let Some(carried) = token.iter().position(|&held| held == label)
+                        let Some(carried) = token.as_slice().iter().position(|&held| held == label)
                         else {
                             continue;
                         };
