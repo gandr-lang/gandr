@@ -2884,3 +2884,129 @@ fn quoted_formers_preserve_distinct_children_and_targets()
     assert_eq!(&target, held);
     assert_eq!(Some(&Value::Constant(constant)), core.value(code));
 }
+
+#[test]
+fn a_shared_value_reads_back_once_at_each_binder_depth()
+{
+    // `return () to x₀. return (x₀, x₀) to x₁. … return x₁₆`: the domain
+    // shares each pair's two components, so readback builds one pair a step.
+    let doublings = 16_usize;
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let bound = core.value_variable(Zone::Intuitionistic, innermost());
+    let mut body = core.computation_return(bound);
+    for _ in 0 .. doublings {
+        let pair = core.value_tuple(&[bound, bound]);
+        let returned = core.computation_return(pair);
+        body = core.computation_bind(returned, body);
+    }
+    let first = core.computation_return(unit);
+    let chain = core.computation_bind(first, body);
+    let suspended = core.value_thunk(chain);
+    let (lowered, environment) = nothing_unfolds();
+    let definitions = Definitions::new(&lowered, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let evaluated = eval_value(&core, &mut domain, definitions, ample(), suspended)
+        .expect("the chain evaluates");
+    let read = readback_value(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        evaluated,
+    )
+    .expect("the shared chain reads back within a budget its tree would exhaust");
+    let Some(&Value::Thunk(read_body)) = core.value(read)
+    else {
+        panic!("the chain reads back as a thunk");
+    };
+    let Some(&Computation::Return(mut node)) = core.computation(read_body)
+    else {
+        panic!("its body returns the last pair");
+    };
+    for step in 0 .. doublings {
+        let Some(&Value::Tuple(ref components)) = core.value(node)
+        else {
+            panic!("step {step} is a pair");
+        };
+        let [left, right] = **components
+        else {
+            panic!("step {step} has two components");
+        };
+        assert_eq!(
+            left, right,
+            "step {step}'s two components are one core node"
+        );
+        node = left;
+    }
+    assert_eq!(
+        Some(&Value::unit()),
+        core.value(node),
+        "the chain ends at the unit"
+    );
+
+    // `thunk (λ. return (x₀, thunk (λ. return x₁)))`: the outer binder's
+    // variable is one domain value, read under one binder and under two.
+    let mut core = CoreArena::new();
+    let near = core.value_variable(Zone::Intuitionistic, innermost());
+    let far = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let inner_return = core.computation_return(far);
+    let inner_lambda = core.computation_lambda(inner_return);
+    let inner = core.value_thunk(inner_lambda);
+    let pair = core.value_tuple(&[near, inner]);
+    let outer_return = core.computation_return(pair);
+    let outer_lambda = core.computation_lambda(outer_return);
+    let outer = core.value_thunk(outer_lambda);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_value(&core, &mut domain, definitions, ample(), outer)
+        .expect("the nested thunk evaluates");
+    let read = readback_value(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        evaluated,
+    )
+    .expect("the nested thunk reads back");
+    let variable = |index: u32| {
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        })
+    };
+    let returned = |core: &CoreArena, thunk| {
+        let Some(&Value::Thunk(body)) = core.value(thunk)
+        else {
+            panic!("a thunk reads back as a thunk");
+        };
+        let Some(&Computation::Lambda(inside)) = core.computation(body)
+        else {
+            panic!("its body is a lambda");
+        };
+        let Some(&Computation::Return(value)) = core.computation(inside)
+        else {
+            panic!("the lambda returns a value");
+        };
+        value
+    };
+    let Some(&Value::Tuple(ref components)) = core.value(returned(&core, read))
+    else {
+        panic!("the outer lambda returns a pair");
+    };
+    let [first, second] = **components
+    else {
+        panic!("the pair has two components");
+    };
+    assert_eq!(
+        variable(0),
+        core.value(first).cloned(),
+        "under one binder, x reads as index 0"
+    );
+    assert_eq!(
+        variable(1),
+        core.value(returned(&core, second)).cloned(),
+        "under two binders, the same domain value reads as index 1"
+    );
+}

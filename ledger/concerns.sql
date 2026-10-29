@@ -33,6 +33,7 @@ INSERT INTO descent VALUES('record-leaves','built','a sorted record sequence''s 
 INSERT INTO descent VALUES('spinal','built','occurrences under a binder','the spine, each maximal rib a leg','the spinal calculus''s two permutation quotients','a leg evaluated once per configuration','the property against the copying stance, and the conversion trace a traced verdict records');
 INSERT INTO descent VALUES('subterm-table','built','every subterm of an exported artifact','structural equality, computed bottom-up by the writer','equality of tag, child indices and inline payload','one table entry, referenced by every parent','the reader''s re-encode-compare: the writer is untrusted and feeds no judgement, so this is not hash-consing');
 INSERT INTO descent VALUES('superposition','built','members of a family indexed by guard points','the schema','agreement away from the guarded points, a member a guard vector','one schema check, rows by exact identity','the schema and its rows');
+INSERT INTO descent VALUES('useful-sharing','built','a shared domain value''s occurrences in a read-back term','the domain value and the binders open where it stands','one run''s mode, definitions and written hole, which fix what the value reads back to','one core node built once and referenced at every occurrence','none: the kernel checks the read-back term, and two domain nodes of equal content stay two core nodes, so this is not hash-consing');
 CREATE TABLE site(
   concern   TEXT NOT NULL REFERENCES concern(id),
   crate     TEXT NOT NULL CHECK(crate GLOB '[a-z]*-[a-z]*' AND crate NOT GLOB '*[^a-z0-9-]*'),
@@ -62,6 +63,7 @@ INSERT INTO site VALUES('sharing','core-nbe','duplicate','implements','spinal','
 INSERT INTO site VALUES('sharing','core-nbe','eval','implements','spinal','The machine''s leg sharing: a leg''s first weak head in one configuration remembered, and taken by every later occurrence read in it.');
 INSERT INTO site VALUES('sharing','core-nbe','machine','implements','courant-leroy','The lazy concurrent convertibility search and its memo.');
 INSERT INTO site VALUES('sharing','core-nbe','overlay','implements','spinal','The overlay a spinal leg''s evaluation is shared through.');
+INSERT INTO site VALUES('sharing','core-nbe','readback','implements','useful-sharing','Readback''s table for one run: a shared domain value read once at each binder depth, so the normal form keeps the sharing the domain held.');
 INSERT INTO site VALUES('sharing','core-nbe','resharing','implements','courant-leroy','The memo''s resharing of a comparison already decided.');
 INSERT INTO site VALUES('sharing','core-nbe','traced','implements','spinal','The spinal stance on the certifying path: a root evaluated through its own duplicate, its shared legs handed to the machine, its conversions recorded for replay.');
 INSERT INTO site VALUES('sharing','core-term','handler::subject','implements','effect-laws','A theory''s laws as rewrites of a scope''s subject: a run of requests a law''s left side covers glued into its right side''s fewer before the scope runs.');
