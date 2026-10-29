@@ -32,11 +32,19 @@
 #                  (#2885): the seat's watch that files it died with its
 #                  session. Its fix is `mise run refactor:file <n>`; a merged
 #                  pull request is never stalled, only paged.
+#   seat-idle      a lane that holds a seat, with no open pull request whose
+#                  branch names it and no `status:claimed` issue carrying one
+#                  of its areas, for `idle` minutes since the detector first
+#                  saw it so (#3822): a restored seat's watchers died with
+#                  its old process, and nothing claims for it. Its line
+#                  names the claim to run. It has no pull request, so it is
+#                  keyed by its lane, paged once while it lasts and never
+#                  stalled or paged again.
 # A pull request's lane is its branch's first word, `triage-2783-stack-prefix`
 # the triage lane's; `stall:watch` pages each new finding to its lane's seat
 # and to the coordinator at once (#2972). A lane outside `lanes`, when given,
 # is one no seat holds: its finding is unplaced, and `stall:watch` files it as
-# an issue.
+# an issue. A `seat-idle` lane is a seat's by its reading, so always placed.
 #
 # A finding standing `escalate` minutes after it was first paged stalls its
 # pull request: `stall:watch` writes the `stall` comment and adds the
@@ -52,27 +60,31 @@
 #   trunk       the default branch;
 #   required    the trunk's required contexts;
 #   thresholds  `{root_unqueued, ejections, ejection_window, depth, red,
-#               conflicting, base_blocked, unfiled, escalate, repage}`, the
-#               minutes, counts and depth above;
+#               conflicting, base_blocked, unfiled, idle, escalate, repage}`,
+#               the minutes, counts and depth above;
 #   lanes       the lanes a finding can be placed in; absent places every
 #               lane;
 #   prs         `facts.jq`'s pull requests;
-#   merged, filed
-#               `facts.jq`'s merged pull requests and the numbers refactor
-#               issues were filed from; absent reads as none;
-#   seen        when each `<number>:conflicting:<head>` and
-#               `<number>:base-blocked:<head>` was first read so, from the
-#               last reading; absent reads as none;
-#   paged       each `<number>:<kind>` finding's `{first, last}`: when it was
+#   merged, filed, claimed
+#               `facts.jq`'s merged pull requests, the numbers refactor
+#               issues were filed from and the claimed issues' areas; absent
+#               reads as none;
+#   seats       the lanes that hold a seat; absent reads as none;
+#   areas       each lane's areas, `{"<lane>": ["<area>"]}`; a seat's lane
+#               it lacks is read by no kind;
+#   seen        when each `<number>:conflicting:<head>`,
+#               `<number>:base-blocked:<head>` and `<lane>:seat-idle` was
+#               first read so, from the last reading; absent reads as none;
+#   paged       each `<number>:<kind>` finding's `{first, last}`, or
+#               `<lane>:<kind>` for one with no pull request: when it was
 #               first paged and when the coordinator was last paged on it; a
 #               bare time, as an older memory holds, is both; absent reads as
 #               none;
-#   stalled     when each stalled pull request, by number, was stalled;
-#               absent reads as none.
 # Output: `{findings, pages, repages, stall, release, seen, paged, stalled}`:
 #   findings    every stall now, ordered by pull request and kind, each
 #               `{kind, number, lane, placed, age, line}`, the age in minutes
-#               and the line `STALL <kind> #<number> <lane> <age>m: <what>`;
+#               and the line `STALL <kind> #<number> <lane> <age>m: <what>`,
+#               `STALL seat-idle <lane> <age>m: <what>` with no pull request;
 #   pages       the findings not paged yet, for the seat and the coordinator:
 #               a stall is paged once while it lasts, and again only after it
 #               cleared;
@@ -112,8 +124,16 @@
       elif $below.mergeable == "CONFLICTING" then "its base #\($below.number) conflicts with its own base"
       else empty
       end;
-  ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
+  # The lanes that hold a seat and nothing in hand: no open pull request on
+  # a branch of the lane, and no claimed issue in one of its areas.
+  [($in.seats // [])[] | . as $lane
+    | (($in.areas // {})[$lane] // empty | map("area:" + .)) as $labels
+    | select(any($in.prs[]; lane == $lane) | not)
+    | select(any(($in.claimed // [])[]; any(.areas[]; IN($labels[]))) | not)
+    | $lane] as $idle
+| ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
     + [$prs[] | select([blocker] != []) | "\(.number):base-blocked:\(.oid)"]
+    + [$idle[] | "\(.):seat-idle"]
     | map({key: ., value: ($seen[.] // $in.now)}) | from_entries) as $seen_now
 | [
     ($prs[] | select(.base == $in.trunk and (.queued | not) and .mergeable == "MERGEABLE")
@@ -153,13 +173,19 @@
       | select(.number | IN(($in.filed // [])[]) | not)
       | select($in.now - .merged >= $t.unfiled * 60)
       | finding("verdict-unfiled"; .merged;
-          "merged with a `\(.verdict)` refactoring verdict and no `kind:refactor` issue carries `from: #\(.number)`; run `mise run refactor:file \(.number)`"))
+          "merged with a `\(.verdict)` refactoring verdict and no `kind:refactor` issue carries `from: #\(.number)`; run `mise run refactor:file \(.number)`")),
+    ($idle[] | . as $lane
+      | $seen_now["\($lane):seat-idle"] as $since
+      | select($in.now - $since >= $t.idle * 60)
+      | ($in.now - $since | minutes) as $age
+      | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age,
+         line: "STALL seat-idle \($lane) \($age)m: no open pull request and no claimed issue in its areas; run `mise run claim:next \($lane)`"})
   ]
-| sort_by(.number, .kind) as $findings
-| def key: "\(.number):\(.kind)";
+| sort_by(.number, .kind, .lane) as $findings
+| def key: "\(.number // .lane):\(.kind)";
   def escalated: $paged[key] as $p | $p != null and $in.now - $p.first >= $t.escalate * 60;
-  [$findings[] | select(escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
-| [$findings[] | select(.kind != "verdict-unfiled" and escalated and $stalled["\(.number)"] == null)] as $stalling
+  [$findings[] | select(.kind != "seat-idle" and escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
+| [$findings[] | select((.kind | IN("verdict-unfiled", "seat-idle") | not) and escalated and $stalled["\(.number)"] == null)] as $stalling
 | [$stalled | keys[] | tonumber as $n
     | ([$in.prs[] | select(.number == $n)] | first) as $pr
     | select($pr == null or $pr.queued or $pr.draft)

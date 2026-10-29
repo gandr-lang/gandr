@@ -39,5 +39,8 @@ query($owner: String!, $name: String!) {
     refactors: issues(labels: ["kind:refactor"], last: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
       nodes { body }
     }
+    claimed: issues(states: OPEN, labels: ["status:claimed"], first: 100) {
+      nodes { number labels(first: 30) { nodes { name } } }
+    }
   }
 }
