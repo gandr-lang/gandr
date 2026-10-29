@@ -3582,6 +3582,26 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.readings.value(at)
     }
 
+    /// Where `at` stands in the term as written, read through every
+    /// refinement since the last take (#3694).
+    ///
+    /// # Specification
+    /// - ensures: as [`crate::solution::Written::standing`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::solution::Written::standing`].
+    /// - witness: `tests::native_formers::a_refusal_inside_a_refined_arm_names_the_written_term_3694`
+    #[spec(ensures: |ret| ret == self.readings.standing(at))]
+    #[must_use]
+    pub(crate) fn standing(
+        &self,
+        at: TermNode,
+    ) -> crate::solution::Standing
+    {
+        self.readings.standing(at)
+    }
+
     /// Open the binder of the lambda `at`, which the binders' innermost is:
     /// a generalising lambda's binder stands for the binder it copies.
     ///

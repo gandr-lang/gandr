@@ -89,6 +89,22 @@ pub struct Refined
     /// Each lambda the refinement minted for a generalised binder, beside the
     /// place of the binder it stands for.
     pub generalising: Vec<(ComputationId, BinderDepth)>,
+    /// Each other node the refinement minted, which stands for no written
+    /// node: a thunk, a transport, a bind, a force, an application, a
+    /// reflexivity or a case (#3694).
+    pub minted: Vec<TermNode>,
+}
+
+/// Where a node of a refined term stands in the term as written (#3694).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Standing
+{
+    /// The node is written, or rewrites this written node.
+    Written(TermNode),
+    /// The node is a lambda that copies the written binder at this place.
+    Copy(BinderDepth),
+    /// The refinement minted the node, and it stands for no written node.
+    Minted,
 }
 
 /// What reads a refined term back as written: the written node of each
@@ -110,6 +126,8 @@ pub struct Written
     /// Each lambda a refinement minted for a generalised binder, beside the
     /// place of the binder it stands for.
     generalising: BTreeMap<ComputationId, BinderDepth>,
+    /// Each other node a refinement minted.
+    minted: alloc::collections::BTreeSet<TermNode>,
     /// Each generalised binder open now, by its place, beside the place of the
     /// binder it stands for, ascending by place.
     standing: Vec<(BinderDepth, BinderDepth)>,
@@ -156,6 +174,43 @@ impl Written
         }
         self.generalising
             .extend(refined.generalising.iter().copied());
+        self.minted.extend(refined.minted.iter().copied());
+    }
+
+    /// Where `at` stands in the term as written.
+    ///
+    /// # Specification
+    /// - ensures: [`Standing::Minted`] for a node a refinement minted other
+    ///   than a generalising lambda, [`Standing::Copy`] with the binder's place
+    ///   for a generalising lambda, and otherwise the written node `at`
+    ///   rewrites, or `at` itself when no refinement rewrote it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal inside a refined arm reads its written
+    ///   term, its copied binder and its minted nodes apart.
+    /// - witness: `tests::native_formers::a_refusal_inside_a_refined_arm_names_the_written_term_3694`
+    #[spec(ensures: |ret| match ret {
+        | Standing::Minted => self.minted.contains(&at),
+        | Standing::Copy(place) => matches!(at, TermNode::Computation(lambda) if self.generalising.get(&lambda) == Some(&place)),
+        | Standing::Written(_) => !self.minted.contains(&at),
+    })]
+    #[must_use]
+    pub fn standing(
+        &self,
+        at: TermNode,
+    ) -> Standing
+    {
+        if self.minted.contains(&at) {
+            return Standing::Minted;
+        }
+        match at {
+            TermNode::Value(value) => Standing::Written(TermNode::Value(self.value(value))),
+            TermNode::Computation(computation) => match self.generalising.get(&computation) {
+                Some(&place) => Standing::Copy(place),
+                None => Standing::Written(TermNode::Computation(self.computation(computation))),
+            },
+        }
     }
 
     /// The written value `at` stands for.
@@ -339,7 +394,7 @@ impl Written
     /// - hypothesis: L2 — the witness's typed run follows two verdict runs and
     ///   reads no record of theirs.
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
-    #[spec(ensures: self.values.is_empty() && self.computations.is_empty() && self.generalising.is_empty() && self.standing.is_empty())]
+    #[spec(ensures: self.values.is_empty() && self.computations.is_empty() && self.generalising.is_empty() && self.minted.is_empty() && self.standing.is_empty())]
     pub fn clear(&mut self)
     {
         *self = Self::default();
@@ -507,9 +562,14 @@ pub fn refined_arm(
     if steps.is_empty() {
         return Ok(Maybe::Absent(unrefined::Absent::Unsolved));
     }
-    let (mut refined, mut generalising) = (problem.body, Vec::new());
+    let (mut refined, mut generalising, mut minted) = (problem.body, Vec::new(), Vec::new());
     for solved in steps.iter().rev() {
-        refined = wrapped(context.arena_mut(), solved, refined, &mut generalising)?;
+        refined = wrapped(
+            context.arena_mut(),
+            solved,
+            refined,
+            (&mut generalising, &mut minted),
+        )?;
     }
     for &lambda in written.iter().rev() {
         refined = context.arena_mut().computation_lambda(refined);
@@ -519,6 +579,7 @@ pub fn refined_arm(
         term: refined,
         carried,
         generalising,
+        minted,
     }))
 }
 
@@ -679,14 +740,21 @@ pub fn refined_case(
         (arms, arities),
         equations,
     );
+    let mut minted = Vec::from([TermNode::Computation(refined)]);
     for &place in &generalised {
         let argument = variable_at(arena, depth, place)?;
+        minted.push(TermNode::Value(argument));
         refined = arena.computation_application(refined, argument);
+        minted.push(TermNode::Computation(refined));
     }
+    // The last application stands where the case was written, at its type.
+    let _applied = minted.pop();
+    carried.push(Carried::Computation(case, refined));
     Ok(Maybe::Present(Refined {
         term: refined,
         carried,
         generalising,
+        minted,
     }))
 }
 
@@ -1241,7 +1309,8 @@ fn solved_binder(
 /// - requires: `inner` is read inside the thunk of `solved`.
 /// - ensures: a bind of the transport, past the reversal of the equation when
 ///   the variable stood on the stated side. Each lambda of the thunk joins
-///   `generalising` beside the place of the binder it stands for.
+///   `generalising` beside the place of the binder it stands for, and each
+///   other node it mints joins `minted`.
 /// - fails: as [`refined_arm`].
 /// - panics: none.
 ///
@@ -1255,13 +1324,14 @@ fn solved_binder(
 #[spec(
     captures: before = generalising.len(),
     ensures: |ret| ret.as_ref().map_or(true, |&refined| matches!(arena.computation(refined), Some(&Computation::Bind(..)))
-        && generalising.len() == before.saturating_add(solved.generalised.len())),
+        && generalising.len() == before.saturating_add(solved.generalised.len())
+        && minted.last() == Some(&TermNode::Computation(refined))),
 )]
 fn wrapped(
     arena: &mut CoreArena,
     solved: &Solved,
     inner: ComputationId,
-    generalising: &mut Vec<(ComputationId, BinderDepth)>,
+    (generalising, minted): (&mut Vec<(ComputationId, BinderDepth)>, &mut Vec<TermNode>),
 ) -> Result<ComputationId, CheckRefusal>
 {
     let depth = solved.depth;
@@ -1282,11 +1352,20 @@ fn wrapped(
     let beneath = depth_past(base, 1)?;
     let transported = variable_at(arena, beneath, base)?;
     let mut applied = arena.computation_force(transported);
+    minted.extend([
+        TermNode::Value(path),
+        TermNode::Value(thunk),
+        TermNode::Computation(transport),
+        TermNode::Value(transported),
+        TermNode::Computation(applied),
+    ]);
     for &place in &solved.generalised {
         let argument = variable_at(arena, beneath, place)?;
         applied = arena.computation_application(applied, argument);
+        minted.extend([TermNode::Value(argument), TermNode::Computation(applied)]);
     }
     let mut refined = arena.computation_bind(transport, applied);
+    minted.push(TermNode::Computation(refined));
     if solved.side == Side::Stated {
         // `e : Path(I, x, s)` reversed: `here(x)` carried along `e` in the
         // family `λz. Path(I, z, x)`.
@@ -1300,6 +1379,13 @@ fn wrapped(
         let equation = variable_at(arena, depth, solved.equation)?;
         let reversed = arena.computation_path_transport(family, equation, reflexivity);
         refined = arena.computation_bind(reversed, refined);
+        minted.extend([
+            TermNode::Value(point),
+            TermNode::Value(reflexivity),
+            TermNode::Value(equation),
+            TermNode::Computation(reversed),
+            TermNode::Computation(refined),
+        ]);
     }
     Ok(refined)
 }
