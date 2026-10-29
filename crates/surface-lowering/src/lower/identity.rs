@@ -308,7 +308,6 @@ use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
-use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
@@ -809,8 +808,9 @@ pub(super) struct Identity
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a parameter and a call each mint the path type they
-///   state.
+///   state, and a reflexivity's point its binder's type.
 /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+/// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Typed
 {
@@ -826,6 +826,16 @@ enum Typed
     },
     /// A call, by its function's written result.
     Called(Callee),
+    /// A reflexivity `here(x)` at a binder, by the binder's written type `A`:
+    /// the reflexivity stands at `Path(A, x, x)`.
+    Point
+    {
+        /// The binder's written type.
+        declared: NodeIndex,
+        /// The frame a type naming the binder reads it under; nothing in a
+        /// body.
+        in_type: Option<Frame>,
+    },
 }
 
 impl Typed
@@ -837,7 +847,7 @@ impl Typed
     const fn node(self) -> NodeIndex
     {
         match self {
-            Self::Parameter { declared, .. } => declared,
+            Self::Parameter { declared, .. } | Self::Point { declared, .. } => declared,
             Self::Called(callee) => callee.result,
         }
     }
@@ -2965,7 +2975,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(_) = whole {
                 let _first = read.insert(at);
             }
-            let typed = |path| match self.typed(path) {
+            let typed = |path| match self.operand_typed(path) {
                 Maybe::Present(typed) => Some(typed),
                 Maybe::Absent(_) => None,
             };
@@ -3080,31 +3090,17 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Typed, synthesised::Absent>
     {
         let unread = Maybe::Absent(synthesised::Absent::Unread);
+        if let Some((declared, in_type)) = self.point_binder(path) {
+            return match self.path_written(declared) {
+                Some(_) => Maybe::Present(Typed::Parameter { declared, in_type }),
+                None => unread,
+            };
+        }
         let mut at = path;
         while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
             at = inner;
         }
-        // A static motive's binder states no type, and ranges over the points
-        // of its transport's path (#3773).
-        let parameter = |binder: ScopeId, in_type: Option<Frame>| {
-            let declared = match self.scope.declared(binder) {
-                Maybe::Present(declared) => Some(declared),
-                Maybe::Absent(_) => self.binders_over_points.get(&binder).copied(),
-            };
-            match declared {
-                Some(declared) if self.path_written(declared).is_some() => {
-                    Maybe::Present(Typed::Parameter { declared, in_type })
-                },
-                Some(_) | None => unread,
-            }
-        };
         match self.plans.get(at) {
-            Some(&Plan::Variable(_, binder)) => parameter(binder, None),
-            Some(&Plan::StaticApplication(Code::Bound { from, binder, .. }, arguments))
-                if arguments.start == arguments.end =>
-            {
-                parameter(binder, Some(from))
-            },
             Some(&Plan::Constant(constant)) => self
                 .stated_path(constant)
                 .map_or(unread, |callee| Maybe::Present(Typed::Called(callee))),
@@ -3145,6 +3141,93 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => unread,
         }
+    }
+
+    /// What a derived operation's operand `path` reads its type off: a
+    /// reflexivity at a binder by the binder's written type, any other path
+    /// as [`Self::typed`] reads it.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified every node.
+    /// - ensures: through transparent plans, [`Typed::Point`] for `here(x)`
+    ///   whose point [`Self::point_binder`] reads; [`Self::typed`]'s answer
+    ///   otherwise.
+    /// - fails: as [`Self::typed`].
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexivity first in `then`, at a point of no path
+    ///   type.
+    /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
+    #[spec(ensures: |ret| !matches!(ret, Maybe::Present(Typed::Point { .. })) || matches!(self.typed(path), Maybe::Absent(_)))]
+    fn operand_typed(
+        &self,
+        path: NodeIndex,
+    ) -> Maybe<Typed, synthesised::Absent>
+    {
+        let mut at = path;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        if let Some(&Plan::Here(point)) = self.plans.get(at)
+            && let Some((declared, in_type)) = self.point_binder(point)
+        {
+            return Maybe::Present(Typed::Point { declared, in_type });
+        }
+        self.typed(path)
+    }
+
+    /// The type the binder `point` names writes, beside the frame a use in a
+    /// type reads it from, when `point` is a bare binder: a variable, or a
+    /// binder named in a type.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified every node.
+    /// - ensures: through transparent plans, a variable's binder's written type
+    ///   with no frame, a binder named in a type with the frame it is read
+    ///   from; a static motive's binder, which writes no type, at the type of
+    ///   the points it ranges over (#3773).
+    /// - fails: none for a binder that writes no type and ranges over no
+    ///   points, and for any other form.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::typed`], and a reflexivity at a point of
+    ///   no path type.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
+    #[spec(ensures: |ret| ret.is_none_or(|(_, in_type)| in_type.is_none() || !matches!(self.plans.get(point), Some(&Plan::Variable(..)))))]
+    fn point_binder(
+        &self,
+        point: NodeIndex,
+    ) -> Option<(NodeIndex, Option<Frame>)>
+    {
+        let mut at = point;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        let (binder, in_type) = match self.plans.get(at) {
+            Some(&Plan::Variable(_, binder)) => (binder, None),
+            Some(&Plan::StaticApplication(Code::Bound { from, binder, .. }, arguments))
+                if arguments.start == arguments.end =>
+            {
+                (binder, Some(from))
+            },
+            _ => return None,
+        };
+        let declared = match self.scope.declared(binder) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(_) => *self.binders_over_points.get(&binder)?,
+        };
+        Some((declared, in_type))
     }
 
     /// What a call of the declaration at `constant` reads its result off: a
@@ -3403,9 +3486,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   the synthesised operations whose own type is read.
     /// - ensures: through parentheses, the node itself when it is a loop, a
     ///   word of a loop's words, an answered derived operation, one in `read`,
-    ///   a reflexivity `here(x)` whose point `x` is read so, or a parameter, a
-    ///   call or a named declaration [`Self::typed`] reads in a declaration
-    ///   that lowers.
+    ///   a reflexivity `here(x)` whose point is a binder of a written type that
+    ///   lowers, or whose point `x` is read so, or a parameter, a call or a
+    ///   named declaration [`Self::typed`] reads in a declaration that lowers.
     /// - fails: [`synthesised::Absent::Unread`] for any other path;
     ///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -3449,12 +3532,18 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
                 },
-                // `here(x)` stands at a path between paths when `x` is a path
-                // whose own type is read: one reflexivity is read through.
+                // `here(x)` at a binder of any written type stands at `Path(A,
+                // x, x)`, `A` that type (#3834). At any other point, one
+                // reflexivity is read through to the path the point is.
                 Some(&Plan::Here(point)) if reflexivity.is_none() => {
-                    reflexivity = Some(at);
-                    at = point;
-                    continue;
+                    if let Some((declared, _)) = self.point_binder(point) {
+                        !self.collected.refused(declared).0
+                    }
+                    else {
+                        reflexivity = Some(at);
+                        at = point;
+                        continue;
+                    }
                 },
                 Some(&Plan::Derived(Derived {
                     stance: Stance::Answered(_),
@@ -4278,18 +4367,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   operation stands; otherwise a loop, or a word of a loop's words,
     ///   stands at `Path(F, x, x)`, `F` its family and `x` the point the words
     ///   spell, minted as [`Self::words_point`] mints them, a reflexivity
-    ///   `here(p)` at `Path(Path(A, a, b), p, p)` when its point `p` stands at
-    ///   `Path(A, a, b)`, and a derived operation's returned transport at the
-    ///   path type recorded against it.
+    ///   `here(x)` at `Path(A, x, x)` when its point is a binder whose written
+    ///   type `A` carries to where the operation stands, and otherwise at
+    ///   `Path(Path(A, a, b), p, p)` when its point `p` stands at `Path(A, a,
+    ///   b)`, and a derived operation's returned transport at the path type
+    ///   recorded against it.
     /// - fails: [`synthesised::Absent::Unread`] for any other value, and for a
     ///   path or a type that did not lower.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a loop, the empty word, an operation over a word, a
-    ///   parameter and a call.
+    ///   parameter and a call; a reflexivity at a point of no path type.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(read) => sink.arena.value_type(read.carrier).is_some(),
         | Maybe::Absent(_) => true,
@@ -4310,20 +4402,32 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return self.operand_identity(path, typed, frame, sink);
         };
-        let typed = match self.typed(point) {
-            Maybe::Present(typed) => Some(typed),
-            Maybe::Absent(_) => None,
+        let unread = Maybe::Absent(synthesised::Absent::Unread);
+        // A point at a binder of any written type `A` stands at `A` (#3834).
+        let carrier = match typed {
+            Some(Typed::Point { declared, in_type }) => {
+                match self.carried_parameter_type(declared, in_type, frame, sink) {
+                    Maybe::Present(carrier) => carrier,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                }
+            },
+            Some(Typed::Parameter { .. } | Typed::Called(_)) | None => {
+                let typed = match self.typed(point) {
+                    Maybe::Present(typed) => Some(typed),
+                    Maybe::Absent(_) => None,
+                };
+                let Maybe::Present(inner) = self.operand_identity(point, typed, frame, sink)
+                else {
+                    return unread;
+                };
+                sink.arena
+                    .value_type_path(inner.carrier, inner.left, inner.right)
+            },
         };
-        let (Maybe::Present(inner), Maybe::Present(value)) = (
-            self.operand_identity(point, typed, frame, sink),
-            self.value_at(point),
-        )
+        let Maybe::Present(value) = self.value_at(point)
         else {
-            return Maybe::Absent(synthesised::Absent::Unread);
+            return unread;
         };
-        let carrier = sink
-            .arena
-            .value_type_path(inner.carrier, inner.left, inner.right);
         Maybe::Present(Identity {
             carrier,
             left: value,
@@ -4366,7 +4470,7 @@ impl<'source> Lowerer<'_, 'source>
                 return self.parameter_identity(declared, in_type, frame, sink);
             },
             Some(Typed::Called(callee)) => return self.called_identity(callee, frame, sink),
-            None => {},
+            Some(Typed::Point { .. }) | None => {},
         }
         let Maybe::Present(value) = self.value_at(path)
         else {
@@ -4405,10 +4509,9 @@ impl<'source> Lowerer<'_, 'source>
     /// parameter's use: a body under `frame`, or a type under `in_type`.
     ///
     /// # Specification
-    /// - requires: `declared` is minted or absent, read where a value type is
-    ///   read under the frame its binder extends.
-    /// - ensures: the written path type, carried as [`Self::carried`] carries
-    ///   it from the frame its binder extends.
+    /// - requires: as [`Self::carried_parameter_type`].
+    /// - ensures: [`Self::carried_parameter_type`]'s answer, read as a path
+    ///   type.
     /// - fails: [`synthesised::Absent::Unread`] when the type did not lower or
     ///   is no path type.
     /// - panics: none.
@@ -4428,16 +4531,46 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<Identity, synthesised::Absent>
     {
-        let unread = Maybe::Absent(synthesised::Absent::Unread);
-        let (Maybe::Present(written), super::Reading::ValueType(from)) =
-            (self.value_type_at(declared), self.reading(declared))
-        else {
-            return unread;
-        };
-        match self.carried(written, from, in_type, frame, sink) {
+        match self.carried_parameter_type(declared, in_type, frame, sink) {
             Maybe::Present(carried) => path_identity(sink.arena, carried),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
+    }
+
+    /// The type a parameter's binder writes, `declared`, carried to the
+    /// parameter's use: a body under `frame`, or a type under `in_type`.
+    ///
+    /// # Specification
+    /// - requires: `declared` is minted or absent, read where a value type is
+    ///   read under the frame its binder extends.
+    /// - ensures: the written type, carried as [`Self::carried`] carries it
+    ///   from the frame its binder extends.
+    /// - fails: [`synthesised::Absent::Unread`] when the type did not lower.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path parameter in a body and in a type, and a
+    ///   reflexivity's point of no path type.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(carried) => sink.arena.value_type(carried).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn carried_parameter_type(
+        &self,
+        declared: NodeIndex,
+        in_type: Option<Frame>,
+        frame: Frame,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ValueTypeId, synthesised::Absent>
+    {
+        let (Maybe::Present(written), super::Reading::ValueType(from)) =
+            (self.value_type_at(declared), self.reading(declared))
+        else {
+            return Maybe::Absent(synthesised::Absent::Unread);
+        };
+        self.carried(written, from, in_type, frame, sink)
     }
 
     /// The value type `written`, read under `from`, carried to a use whose

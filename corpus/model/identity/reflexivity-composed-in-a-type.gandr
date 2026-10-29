@@ -1,0 +1,33 @@
+// A reflexivity at a point composes with `then` in a type.
+//
+// `here(x)` reads its type off its point's binder, whatever type the binder
+// writes: `Path(A, x, x)` when `x : A`. A composite whose first operand is a
+// reflexivity, or ends in one, takes its type from that reading.
+//
+// Each declaration states such a composite in its own type.
+//
+// - see: #3834 — a reflexivity first in `then`, refused before
+
+/// A reflexivity stands first in the type's composite. The left unit holds
+/// up to a path, not by computation, so the composite stands on both sides.
+def hereFirst(A : Type, x : A, y : A, f : Path(A, x, y)) -> Path(
+  Path(A, x, y),
+  here(x) then f,
+  here(x) then f
+) {
+  here(here(x) then f)
+}
+
+/// A composite ending in a reflexivity, first in another.
+def endsInHere(A : Type, x : A, y : A, c : A, f : Path(A, x, y), q : Path(A, y, c)) -> Path(
+  Path(A, x, c),
+  (f then here(y)) then q,
+  f then q
+) {
+  here(f then q)
+}
+
+/// Two reflexivities compose to the reflexivity.
+def hereTwice(A : Type, x : A) -> Path(Path(A, x, x), here(x) then here(x), here(x)) {
+  here(here(x))
+}
