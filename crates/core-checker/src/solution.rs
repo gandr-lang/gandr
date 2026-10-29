@@ -48,6 +48,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sources;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -121,11 +122,8 @@ pub enum Standing
 #[derive(Clone, Debug, Default)]
 pub struct Written
 {
-    /// Each value a refinement rewrote, beside the written value it stands for.
-    values: BTreeMap<ValueId, ValueId>,
-    /// Each computation a refinement rewrote, beside the written computation
-    /// it stands for.
-    computations: BTreeMap<ComputationId, ComputationId>,
+    /// Each node a refinement rewrote, beside the written node it stands for.
+    sources: Sources,
     /// Each lambda or bind a refinement minted for a generalised binder, beside
     /// the place of the binder it stands for.
     generalising: BTreeMap<ComputationId, BinderDepth>,
@@ -141,8 +139,9 @@ impl Written
     /// Record what reads `refined` back as written.
     ///
     /// A substitution's trace reports an entry it carries under a binder beside
-    /// the node it carries it to, after the subject's node that the entry
-    /// replaces. So a rewrite keeps the first node it is reported from.
+    /// the node it carries it to, in ascending order of the node each pair
+    /// rewrites. The refinement mints each entry after the subject, so the
+    /// subject's node comes first, and the rewrite stands for it.
     ///
     /// # Specification
     /// - requires: `refined`'s rewrites are in the order the refinement made
@@ -162,19 +161,7 @@ impl Written
         refined: &Refined,
     )
     {
-        for &pair in &refined.carried {
-            match pair {
-                Carried::Value(held, rewritten) => {
-                    let written = self.value(held);
-                    let _kept = self.values.entry(rewritten).or_insert(written);
-                },
-                Carried::Computation(held, rewritten) => {
-                    let written = self.computation(held);
-                    let _kept = self.computations.entry(rewritten).or_insert(written);
-                },
-                Carried::ValueType(..) | Carried::CompType(..) => {},
-            }
-        }
+        self.sources.record_through(&refined.carried);
         self.generalising
             .extend(refined.generalising.iter().copied());
         self.minted.extend(refined.minted.iter().copied());
@@ -226,14 +213,14 @@ impl Written
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record`].
     /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
-    #[spec(ensures: |ret| self.values.get(&at).map_or(ret == at, |&origin| ret == origin))]
+    #[spec(ensures: |ret| self.sources.values().get(&at).map_or(ret == at, |&origin| ret == origin))]
     #[must_use]
     pub fn value(
         &self,
         at: ValueId,
     ) -> ValueId
     {
-        self.values.get(&at).copied().unwrap_or(at)
+        self.sources.value(at)
     }
 
     /// The written computation `at` stands for.
@@ -246,14 +233,14 @@ impl Written
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record`].
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
-    #[spec(ensures: |ret| self.computations.get(&at).map_or(ret == at, |&origin| ret == origin))]
+    #[spec(ensures: |ret| self.sources.computations().get(&at).map_or(ret == at, |&origin| ret == origin))]
     #[must_use]
     pub fn computation(
         &self,
         at: ComputationId,
     ) -> ComputationId
     {
-        self.computations.get(&at).copied().unwrap_or(at)
+        self.sources.computation(at)
     }
 
     /// Open the binder of the lambda or bind `minted` at `place`.
@@ -397,7 +384,7 @@ impl Written
     /// - hypothesis: L2 — the witness's typed run follows two verdict runs and
     ///   reads no record of theirs.
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
-    #[spec(ensures: self.values.is_empty() && self.computations.is_empty() && self.generalising.is_empty() && self.minted.is_empty() && self.standing.is_empty())]
+    #[spec(ensures: self.sources.values().is_empty() && self.sources.computations().is_empty() && self.generalising.is_empty() && self.minted.is_empty() && self.standing.is_empty())]
     pub fn clear(&mut self)
     {
         *self = Self::default();

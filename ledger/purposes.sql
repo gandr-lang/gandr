@@ -868,6 +868,7 @@ INSERT INTO purpose VALUES('core-term','session::SessionType','struct','The type
 INSERT INTO purpose VALUES('core-term','session::Step','enum','What an endpoint at a session state does next: send, receive, select, offer, or close.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','session::WebPiece','enum','One node of a dialogue''s decomposition, in preorder: a series, parallel or prime node is followed by its factors.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','session::pair_dialogues','function','Pairs two dialogues'' payloads as identity compares them: endpoint by endpoint, each endpoint''s moves in its own order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','sources::Sources','struct','The node each node a rewrite put in place stands for, family by family: the table a reader of rewrite traces reads an origin or a written term back through.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','staged::Part','enum','One node of a type a staging walk reads: a value type or a computation type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','staged::Supply','struct','A stage a call supplies a binder of its callee at, written f[i = s].',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','staged::placed','function','Hands each child of a part a stage may be placed under to each, in order: the former''s own children, the types an argument of a data type quotes, and none for any other former.',NULL,'fits','sound',NULL);
