@@ -1,13 +1,18 @@
 /// A transport along a held call.
 ///
-/// A composite whose second path is a stuck call is one composite. The call
-/// may stand alone or behind an identity, and the kernel agrees.
+/// A composite whose second path is a stuck call is one composite, and so is
+/// an action on that call. The call may stand alone or behind an identity,
+/// and the kernel agrees.
 ///
 /// The append runs a held operand and writes a bind over its call. A
 /// transport along the held path is a bind over the same call. So the two
-/// compare by the call, then by the transports under one variable.
+/// compare by the call, then by the transports under one variable. Two
+/// actions write the call in their motives, which compare by its function
+/// and argument.
 ///
 /// - see: #3800 — the checker declined two composites that differ only by a call of an identity
+/// - see: #3802 — the code walk compares two written calls by their function and argument
+/// - see: #3807 — the checker refused two actions whose motives each write the call
 
 /// The identity on paths from `x` to `y`.
 def idq(B : Type, x : B, y : B, p : Path(B, x, y)) -> Path(B, x, y) {
@@ -101,4 +106,46 @@ def thenAlongANamedCall(
   a : A
 ) -> Path(Path(B, w, y), thenNamed(A, B, w, x, y, p, f, a), thenNamedIdq(A, B, w, x, y, p, f, a)) {
   here(thenNamed(A, B, w, x, y, p, f, a))
+}
+
+/// `g`'s action on the path a variable function returns.
+def acted(
+  A : Type,
+  B : Type,
+  C : Type,
+  x : B,
+  y : B,
+  f : A => Path(B, x, y),
+  g : B => C,
+  a : A
+) -> Path(C, g(x), g(y)) {
+  cong(g, f(a))
+}
+
+/// The same action, on the path through `idq`.
+def actedIdq(
+  A : Type,
+  B : Type,
+  C : Type,
+  x : B,
+  y : B,
+  f : A => Path(B, x, y),
+  g : B => C,
+  a : A
+) -> Path(C, g(x), g(y)) {
+  cong(g, idq(B, x, y, f(a)))
+}
+
+/// Two actions on a variable function's path.
+def congAlongACall(
+  A : Type,
+  B : Type,
+  C : Type,
+  x : B,
+  y : B,
+  f : A => Path(B, x, y),
+  g : B => C,
+  a : A
+) -> Path(Path(C, g(x), g(y)), acted(A, B, C, x, y, f, g, a), actedIdq(A, B, C, x, y, f, g, a)) {
+  here(acted(A, B, C, x, y, f, g, a))
 }
