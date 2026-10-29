@@ -1153,9 +1153,9 @@ done <<< "$landings"
 # report, the one ending in its `mutants swept:` line, each family row of a
 # collector is ticked once the night's cause of its name and kind no longer
 # lists the family, and unticked when it lists it again. A night without the
-# cause is a clear run, counted on the body; the third in a row closes the
-# collector, its comment naming the landing whose body `Advances` it, the
-# latest merged.
+# cause closes the collector (#3732): the sweep reads every exemplar, so a
+# cause it does not report is gone. Its comment names the run and the landing
+# whose body `Advances` it, the latest merged.
 ["ci:recovery-file"]
 description = "File each cause of the recovery sweep's report on one issue"
 tools.jq = "1.8.1"
@@ -1242,16 +1242,16 @@ jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/ope
       number=$(jq -r .number <<< "$swept")
       close=$(jq -r .close <<< "$swept")
       if [[ -z $file ]]; then
-        echo "would mark #$number's rows ($(jq -r .clear <<< "$swept") clear run(s))$([[ $close == true ]] && echo ', and close it')"
+        echo "would mark #$number's rows$([[ $close == true ]] && echo ', and close it')"
         continue
       fi
       jq -r .body <<< "$swept" > "$scratch/swept.md"
       gh issue edit "$number" --repo "$repo" --body-file "$scratch/swept.md" > /dev/null
-      echo "marked #$number's rows ($(jq -r .clear <<< "$swept") clear run(s))"
+      echo "marked #$number's rows"
       if [[ $close == true ]]; then
         landing=$(gh pr list --repo "$repo" --state merged --limit 100 --search "\"#$number\" in:body" --json number,mergedAt,body \
           | jq -r --arg n "$number" '[.[] | select(.body | test("(?i)\\badvances\\s+#\($n)\\b"))] | max_by(.mergedAt) | .number // empty')
-        gh issue close "$number" --repo "$repo" --comment "The recovery sweep has found no mutant of this cause for three nights${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)}, so every family is marked where it was made; $(if [[ -n $landing ]]; then echo "the landing: #$landing."; else echo "no merged pull request advances it."; fi)" > /dev/null
+        gh issue close "$number" --repo "$repo" --comment "The recovery sweep${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)} found no mutant of this cause, so every family is marked where it was made; $(if [[ -n $landing ]]; then echo "the landing: #$landing."; else echo "no merged pull request advances it."; fi)" > /dev/null
         echo "closed #$number${landing:+ (the landing: #$landing)}"
       fi
     done

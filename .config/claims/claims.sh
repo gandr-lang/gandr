@@ -8,7 +8,9 @@
 # issue before this runs, and GitHub keeps its labels), and the open pull
 # requests through the API, lets `decide.jq` pick the claims that come off,
 # removes the label from each and prints one line per removal; nothing is
-# posted on an issue. `--dry-run` prints the removals without making them.
+# posted for a removal. A merge then ticks the rows of each `collector` it
+# advances and closes one it leaves with no open row (#3732). `--dry-run`
+# prints the removals and the rows without making them.
 set -euo pipefail
 mode=${1:?usage: claims.sh merged|sweep [--dry-run]}
 dry=${2:-}
@@ -47,3 +49,33 @@ while IFS=$'\t' read -r number reason; do
   count=$((count + 1))
 done <<< "$removals"
 printf '%s: %d of %d claims removed\n' "$mode" "$count" "$(jq length <<< "$claimed")"
+
+# A merge that advances a `collector` ticks the rows its body's `## Rows`
+# names, and a collector it leaves with no open row closes, its comment naming
+# the landing (#3732, `landed.jq`). The landing is $CLAIMS_MERGED_NUMBER.
+[[ $mode == merged ]] || exit 0
+advanced=$(jq -rn -L "$here" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets("advances") | unique[]')
+[[ -n $advanced ]] || exit 0
+issues=$(for number in $advanced; do
+  gh api "repos/$repo/issues/$number" --jq 'select(.state == "open" and .pull_request == null) | {number, labels: [.labels[].name], body: (.body // "")}'
+done | jq -s .)
+landing=${CLAIMS_MERGED_NUMBER:-}
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+jq -n --argjson issues "$issues" '{body: (env.CLAIMS_MERGED_BODY // ""), issues: $issues}' \
+  | jq -c -L "$here" -f "$here/landed.jq" \
+  | while IFS= read -r landed; do
+      number=$(jq -r .number <<< "$landed")
+      close=$(jq -r .close <<< "$landed")
+      if [[ "$dry" == --dry-run ]]; then
+        printf 'would tick the rows of #%s%s\n' "$number" "$([[ $close == true ]] && echo ', and close it')"
+        continue
+      fi
+      jq -r .body <<< "$landed" > "$scratch/body.md"
+      gh issue edit "$number" -R "$repo" --body-file "$scratch/body.md" > /dev/null
+      printf 'ticked the rows of #%s\n' "$number"
+      if [[ $close == true ]]; then
+        gh issue close "$number" -R "$repo" --comment "The landing${landing:+ #$landing} clears the last open row, so the collector closes." > /dev/null
+        printf 'closed #%s%s\n' "$number" "${landing:+ (the landing: #$landing)}"
+      fi
+    done

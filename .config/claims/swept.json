@@ -14,12 +14,11 @@
     "output": {
       "number": 7,
       "body": "The cause.\n\n- [x] `a-b`\n- [ ] `c_d`\n- [ ] `e` — #9\n",
-      "clear": 0,
       "close": false
     }
   },
   {
-    "name": "#3326: a night without the cause ticks every row and counts a clear run on the body",
+    "name": "#3732: a night without the cause of the collector's kind ticks every row and closes it",
     "input": {
       "causes": [{ "name": "OutsideLoop", "kind": "missed", "families": ["a-b"] }],
       "issues": [
@@ -30,45 +29,50 @@
         }
       ]
     },
-    "output": {
-      "number": 7,
-      "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 1 -->\n",
-      "clear": 1,
-      "close": false
-    }
+    "output": { "number": 7, "body": "The cause.\n\n- [x] `a-b`\n", "close": true }
   },
   {
-    "name": "#3326: the third clear run in a row closes the collector",
+    "name": "#3732: the collectors of 2026-10-29, every row ticked by hand and their causes gone from the report, each close",
     "input": {
-      "causes": [],
+      "causes": [{ "name": "MalformedForm", "kind": "deleted", "families": ["a-b"] }],
+      "issues": [
+        {
+          "number": 2558,
+          "title": "recovery: OutOfFragment.WrongSort.declaration marks other bytes than a deleted tile",
+          "body": "- [x] `circuit_declaration`\n- [x] `codata_declaration`\n- [x] `command_substitution` — #3063\n- [x] `instantiation`\n"
+        },
+        {
+          "number": 3494,
+          "title": "recovery: DuplicateDefinition marks other bytes than a deleted tile",
+          "body": "- [x] `forget-model-expression` — #3678\n"
+        },
+        {
+          "number": 3495,
+          "title": "recovery: OutOfFragment.Misplaced marks other bytes than a missed tile",
+          "body": "- [x] `a-b` — #3687\n"
+        },
+        {
+          "number": 3496,
+          "title": "recovery: OutOfFragment.NotInTail marks other bytes than a deleted tile",
+          "body": "- [x] `a-b` — #3691\n"
+        }
+      ]
+    },
+    "output": "{\"number\":2558,\"body\":\"- [x] `circuit_declaration`\\n- [x] `codata_declaration`\\n- [x] `command_substitution` — #3063\\n- [x] `instantiation`\\n\",\"close\":true}\n{\"number\":3494,\"body\":\"- [x] `forget-model-expression` — #3678\\n\",\"close\":true}\n{\"number\":3495,\"body\":\"- [x] `a-b` — #3687\\n\",\"close\":true}\n{\"number\":3496,\"body\":\"- [x] `a-b` — #3691\\n\",\"close\":true}"
+  },
+  {
+    "name": "#3732: a collector whose cause stays, every row ticked, stays open",
+    "input": {
+      "causes": [{ "name": "OutsideLoop", "kind": "deleted", "families": ["f-g"] }],
       "issues": [
         {
           "number": 7,
           "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
-          "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 2 -->\n"
+          "body": "- [x] `a-b`\n"
         }
       ]
     },
-    "output": {
-      "number": 7,
-      "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 3 -->\n",
-      "clear": 3,
-      "close": true
-    }
-  },
-  {
-    "name": "#3326: a cause back after a clear run takes the count off and reopens its row",
-    "input": {
-      "causes": [{ "name": "OutsideLoop", "kind": "deleted", "families": ["a-b"] }],
-      "issues": [
-        {
-          "number": 7,
-          "title": "recovery: OutsideLoop marks other bytes than a deleted tile",
-          "body": "The cause.\n\n- [x] `a-b`\n<!-- swept: clear 2 -->\n"
-        }
-      ]
-    },
-    "output": { "number": 7, "body": "The cause.\n\n- [ ] `a-b`\n", "clear": 0, "close": false }
+    "output": ""
   },
   {
     "name": "#3326: a collector whose rows already match the night is left alone, and a title of no cause and kind is not read",

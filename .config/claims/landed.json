@@ -1,0 +1,58 @@
+[
+  {
+    "name": "#3732: a landing that clears a collector's last open row ticks it and closes the collector",
+    "input": {
+      "body": "Advances #3494\n\n## Rows\n\n- `forget-model-expression`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 3494,
+          "labels": ["kind:defect", "area:surface", "collector"],
+          "body": "The cause.\n\n## Families\n\n- [ ] `forget-model-expression`\n"
+        }
+      ]
+    },
+    "output": {
+      "number": 3494,
+      "body": "The cause.\n\n## Families\n\n- [x] `forget-model-expression`\n",
+      "close": true
+    }
+  },
+  {
+    "name": "#3732: a landing that clears some rows ticks them and leaves the collector open, a row keyed with text after it ticked by its key",
+    "input": {
+      "body": "Advances #2558\n\n## Rows\n\n- `instantiation`\n- `command_substitution` — the shared cause\n",
+      "issues": [
+        {
+          "number": 2558,
+          "labels": ["kind:defect", "area:surface", "collector"],
+          "body": "- [ ] `circuit_declaration`\n- [ ] `command_substitution` — #3063\n- [ ] `instantiation`\n"
+        }
+      ]
+    },
+    "output": {
+      "number": 2558,
+      "body": "- [ ] `circuit_declaration`\n- [x] `command_substitution` — #3063\n- [x] `instantiation`\n",
+      "close": false
+    }
+  },
+  {
+    "name": "#3732: a collector whose open row is a table row stays open, and an issue the body closes or that is no collector is not read",
+    "input": {
+      "body": "Advances #1068\nAdvances #20\nCloses #21\n\n## Rows\n\n- `a`\n",
+      "issues": [
+        {
+          "number": 1068,
+          "labels": ["kind:gap", "area:workflow", "collector"],
+          "body": "- [ ] `a`\n\n| pull request | status |\n| --- | --- |\n| #9 | open |\n"
+        },
+        { "number": 20, "labels": ["kind:defect"], "body": "- [ ] `a`\n" },
+        { "number": 21, "labels": ["collector"], "body": "- [ ] `a`\n" }
+      ]
+    },
+    "output": {
+      "number": 1068,
+      "body": "- [x] `a`\n\n| pull request | status |\n| --- | --- |\n| #9 | open |\n",
+      "close": false
+    }
+  }
+]

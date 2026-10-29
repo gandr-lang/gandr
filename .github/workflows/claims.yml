@@ -15,7 +15,9 @@ name: claims
 # `pr:open` refuses a body that names no such line for the branch's
 # issue (#2462), so every landing unclaims what it worked.
 # `.config/claims/claims.sh` reads, decides (`decide.jq`) and removes;
-# the removals are printed in the run log and nothing is posted on an issue.
+# the removals are printed in the run log and nothing is posted for them.
+# A merge also ticks the `## Rows` of each `collector` it advances and closes
+# one it leaves with no open row, its comment naming the landing (#3732).
 # The sweep runs every 2 hours, so a lapsed claim comes off within 6.
 on:
   pull_request:
@@ -61,6 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLAIMS_MERGED_BODY: ${{ github.event.pull_request.body }}
+          CLAIMS_MERGED_NUMBER: ${{ github.event.pull_request.number }}
         run: .config/claims/claims.sh merged
       - name: sweep tracking, epic and silent claims
         if: ${{ github.event_name != 'pull_request' }}
