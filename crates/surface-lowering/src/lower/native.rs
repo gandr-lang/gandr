@@ -2588,13 +2588,15 @@ impl<'source> Lowerer<'_, 'source>
     ///   its recursive field and its parameter field classified with it; and
     ///   one written as a data family's argument, classified by its place; one
     ///   passed to a parameter stating a closed type, classified by it; one
-    ///   answering a definition's application, and one a declared constant's.
+    ///   answering a definition's application, written as `= e` or as a
+    ///   function tail, and one a declared constant's.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
+    /// - witness: `lower::native::tests::a_constructor_answers_a_function_tail_s_application_3665`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -2658,8 +2660,9 @@ impl<'source> Lowerer<'_, 'source>
             },
             (None, None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
         };
-        // A result decoding a parameter or a constant with no written body
-        // states no type the constructor can carry.
+        // A result decoding a parameter or a constant with no body, written
+        // as `= e` or as a function tail, states no type the constructor can
+        // carry.
         if let Classifier::Answered { answer, .. } = classifier
             && answer.over == Over::Written
             && let Some(&(Plan::Decode(code, ..) | Plan::Unquote(code, ..))) =
@@ -8879,8 +8882,9 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The node of the one form a top-level definition of `constant` writes
-    /// as its body.
+    /// The node of the body a top-level definition of `constant` writes: the
+    /// one form of `= e ;`, or the declaration form of a function tail
+    /// `(params) -> T { … }`, which the tail lowers at (#3665).
     ///
     /// # Specification
     /// trivial.
@@ -8892,13 +8896,20 @@ impl<'source> Lowerer<'_, 'source>
         if let Some(slot) = self.collected.slots.get(usize::from(constant))
             && slot.constant == constant
             && let Container::TopLevel(_) = slot.container
-            && let Maybe::Present(Half {
-                operand: Operand::Written(body),
-                ..
-            }) = slot.definition
             && let Maybe::Absent(_) = slot.refusal
         {
-            return Maybe::Present(body.node);
+            match slot.definition {
+                Maybe::Present(Half {
+                    operand: Operand::Written(body),
+                    ..
+                }) => return Maybe::Present(body.node),
+                Maybe::Present(Half {
+                    declaration,
+                    operand: Operand::Function,
+                    ..
+                }) => return Maybe::Present(declaration.node),
+                Maybe::Present(_) | Maybe::Absent(_) => {},
+            }
         }
 
         Maybe::Absent(unfolding::Absent::Opaque)
