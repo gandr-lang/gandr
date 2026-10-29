@@ -401,6 +401,11 @@ enum Placed
     /// lowering's result is the term the program means, and the case around
     /// the value answers.
     Discarded,
+    /// A lambda `cong` maps a path by, `fn (q) { q then g }` in `cong(fn (q)
+    /// { q then g }, a)` (#3773): the lowering reads the lambda's body into
+    /// the transport's motive, its binder the motive's, so no judged core
+    /// node holds the lambda itself; its body's nodes and the `cong` answer.
+    Mapped,
     /// An arrow of the kind a data family writes after its parameters,
     /// `Nat -> Type` in `data Vec(a : Type) : Nat -> Type { … }`, and each
     /// arrow down its codomain: the lowering reads the kind as the family's
@@ -1015,6 +1020,12 @@ fn gated(
                     && rules.iter().any(|&(start, end)| {
                         start <= usize::from(span.start()) && usize::from(span.end()) <= end
                     })));
+        let mapped = melded
+            && def.label == "fn"
+            && def.sort == Sort::Expression
+            && source
+                .get(.. usize::from(span.start()))
+                .is_some_and(|before| before.trim_end().ends_with("cong("));
         let templated = flows.iter().any(|&(start, end)| {
             start <= usize::from(span.start()) && usize::from(span.end()) <= end
         });
@@ -1026,6 +1037,7 @@ fn gated(
             .or_else(|| moved.then_some(Placed::Move))
             .or_else(|| chained.then_some(Placed::Chained))
             .or_else(|| dropped.then_some(Placed::Discarded))
+            .or_else(|| mapped.then_some(Placed::Mapped))
             .or_else(|| kinded.then_some(Placed::Kind))
             .or_else(|| (sized || supplied).then_some(Placed::Stage))
             .or_else(|| (regioned || naming).then_some(Placed::Region))

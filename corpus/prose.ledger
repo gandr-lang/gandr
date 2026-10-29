@@ -540,6 +540,7 @@ corpus/model/identity/circle-rotation.gandr Tense 55a83e4bf2679304
 corpus/model/identity/circle.gandr Passive 96dd4374b9a7f198
 corpus/model/identity/circle.gandr Tense c6b0c35263ef02df
 corpus/model/identity/circle.gandr Tense fb8c562e8c86aeab
+corpus/model/identity/cong-over-a-lambda.gandr IngMain 8b5e4876054a9430
 corpus/model/identity/cong-thunk.gandr Tense 500a82cec4766ad9
 corpus/model/identity/cong-thunk.gandr Tense eb48fa6cb4a260a2
 corpus/model/identity/equiv-data.gandr Tense 03b69565a60187a3
@@ -1251,7 +1252,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragm
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.Misplaced.txt Procedure a0cb84b173472244
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NonContractive.txt Procedure 82cdaca3d16c30e5
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NonUniform.txt Procedure fbf16f61e9de9729
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotAFunction.txt Procedure 9a197c7b428511af
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotAFunction.txt Procedure 28cb0d8126ba0f21
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotAtResult.txt Procedure 70192787dabfde13
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotInTail.txt Procedure c30b829c3f586f8c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.Stage.txt Procedure c0b7bc73e94de351
@@ -1438,8 +1439,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/identity/atom-id
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt Procedure 921d4bf9ff1bfecc
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/cell-not-a-loop.txt Procedure 8177cf64e07d14fb
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 18aa93537ee9b3fa
+crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 28cb0d8126ba0f21
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 5acc3f19f3b29f8d
-crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 9a197c7b428511af
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/compound-endpoint-over-a-function.txt Procedure 404994b85ddfbce5
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-rule.txt Procedure 9440b16f14f33f0e
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/directed-cell.txt Procedure 43a0f119f677be87

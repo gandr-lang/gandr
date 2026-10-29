@@ -390,8 +390,9 @@ fn lowered(
                      in, or of a member of its mutual block; this one names another function",
                 ),
                 FragmentBoundary::NotAFunction => f.write_str(
-                    "`cong` maps a path by a function, and a constructor is not one; write a \
-                     function definition that applies it",
+                    "`cong` maps a path by a function, and neither a constructor nor a type \
+                     operator `\\q. e` is one; write `fn (q) { e }`, or a function definition \
+                     that applies the constructor",
                 ),
                 FragmentBoundary::NotInTail => write!(
                     f,

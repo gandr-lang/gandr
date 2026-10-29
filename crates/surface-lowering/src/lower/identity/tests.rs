@@ -862,6 +862,70 @@ fn then_and_cong_in_a_type_take_their_types_from_their_operands_3772()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3773: a lambda `fn (q) { e }` as `cong`'s function was refused, its
+/// binder with no type. The binder takes the type of the path's points, so
+/// the fixture's declaration lowers and checks. The transport the printer
+/// spells it as, `b then g` over its motive's binder, lowers and checks too.
+/// The static abstraction `\q. e` is a type operator, so `cong` refuses it
+/// as no function.
+#[test]
+fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "../../../../../corpus/model/identity/cong-over-a-lambda.gandr"
+        )),
+        &mut arena,
+    );
+    assert!(
+        !matches!(
+            outcome_of(&module, "whiskerRight".into()),
+            DeclarationOutcome::Refused(_)
+        ),
+        "`whiskerRight` lowers: {:?}",
+        outcome_of(&module, "whiskerRight".into())
+    );
+    assert_accepted(&judged(&module, &mut arena));
+    let spelled = lowered(
+        SourceText::from(
+            "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
+             a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then \
+             g, f2 then g) {\n  transport(\\b. Path(Path(A, x, z), f1 then g, b then g), a, \
+             here(f1 then g))\n}\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        !matches!(
+            outcome_of(&spelled, "whiskered".into()),
+            DeclarationOutcome::Refused(_)
+        ),
+        "the motive's binder reads its path's type: {:?}",
+        outcome_of(&spelled, "whiskered".into())
+    );
+    assert_accepted(&judged(&spelled, &mut arena));
+    let abstracted = lowered(
+        SourceText::from(
+            "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
+             a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then \
+             g, f2 then g) {\n  cong(\\q. q then g, a)\n}\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            outcome_of(&abstracted, "whiskered".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::NotAFunction,
+                ..
+            })
+        ),
+        "`\\q. e` is no function: {:?}",
+        outcome_of(&abstracted, "whiskered".into())
+    );
+}
+
 /// The transport `cong` unfolds to reads its map only lifted under the
 /// motive's binder; a parameter map's lift is the written map's copy, so it
 /// answers at the map's bytes (#443).

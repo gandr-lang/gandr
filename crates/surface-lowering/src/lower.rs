@@ -3230,6 +3230,15 @@ struct Lowerer<'run, 'source>
     /// themselves: a lambda there is checked at a parameter's thunk type, so
     /// it is minted as its thunk (#3697).
     within_endpoint: BTreeSet<NodeIndex>,
+    /// Each abstraction whose binder ranges over the points of a path, with
+    /// the carrier the path's written type states (#3773). A lambda `cong`
+    /// maps by types its binder with it, is minted as its thunk, and the
+    /// transport's motive reads its body. A static motive of `transport`
+    /// records its binder in [`Self::binders_over_points`].
+    over_points: BTreeMap<NodeIndex, NodeIndex>,
+    /// The binder of each static motive [`Self::over_points`] records, with
+    /// that carrier: an operation over the binder reads its path type off it.
+    binders_over_points: BTreeMap<ScopeId, NodeIndex>,
     /// What every node's paths do with the body it stands in, surveyed before
     /// the classification reads it.
     leaves: NodeTable<exits::Leaves>,
@@ -5189,6 +5198,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             in_quote: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
             within_endpoint: BTreeSet::new(),
+            over_points: BTreeMap::new(),
+            binders_over_points: BTreeMap::new(),
             leaves,
             exits: BTreeSet::new(),
             exitable: BTreeSet::new(),
@@ -7419,12 +7430,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   value type by a returner; a value position reaches a type of either
     ///   sort by a quote, and a computation as the value it returns at an
     ///   endpoint or where a type reads it, a lambda there as its thunk unless
-    ///   it is an endpoint itself (#3697), and nested everywhere else; a tail,
-    ///   where a path through a body ends, reaches a value by the `return` its
-    ///   polarity names, recorded as inferred and leaving; a `while` loop's
-    ///   condition, and a tail of a handled subject, which is the subject's
-    ///   result, reach a value by a `return` recorded as no exit; the bridge is
-    ///   recorded for the form's node, and every other match records none.
+    ///   it is an endpoint itself (#3697), a lambda `cong` maps by as its thunk
+    ///   (#3773), and nested everywhere else; a tail, where a path through a
+    ///   body ends, reaches a value by the `return` its polarity names,
+    ///   recorded as inferred and leaving; a `while` loop's condition, and a
+    ///   tail of a handled subject, which is the subject's result, reach a
+    ///   value by a `return` recorded as no exit; the bridge is recorded for
+    ///   the form's node, and every other match records none.
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
@@ -7471,6 +7483,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Reading::Value(frame),
                     Produced::ValueType | Produced::CompType,
                 ) => Some((frame, Bridge::Inserted(Insertion::Quote))),
+                | (Reading::Value(frame), Produced::Computation)
+                    if self.over_points.contains_key(&site.at.node) =>
+                {
+                    Some((frame, Bridge::Inserted(Insertion::Thunk)))
+                },
                 | (Reading::Value(frame), Produced::Computation)
                     if self.at_endpoint.contains(&site.at.node) || self.type_read.contains(&site.at.node) =>
                 {
@@ -7529,6 +7546,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
                 (frame, Bridge::Inserted(Insertion::Quote))
+            },
+            // A lambda `cong` maps by is minted as its thunk, whose body the
+            // transport's motive reads (#3773).
+            (Reading::Value(frame), Produced::Computation)
+                if self.over_points.contains_key(&site.at.node) =>
+            {
+                (frame, Bridge::Inserted(Insertion::Thunk))
             },
             (Reading::Value(frame), Produced::Computation)
                 if self.at_endpoint.contains(&site.at.node)
@@ -9542,7 +9566,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   written with its type `A` reads `A` as a value type under the frame
     ///   the lambda stands in, binds the parameter typed `A`, and reads its
     ///   block beneath one more binder, unnamed: the bind the mint ascribes the
-    ///   argument at, recorded with `A` (#3735).
+    ///   argument at, recorded with `A` (#3735). A lambda `cong` maps a path
+    ///   by, untyped and unanswered, types its binder with the carrier its
+    ///   path's written type states (#3773).
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
     ///   computation; the unadmitted refusal for a type abstraction; the arity
@@ -9561,6 +9587,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
     /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::tests::a_typed_parameter_binds_its_argument_ascribed_1310`
+    /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -9591,9 +9618,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             // its own type.
             self.read(declared.node, Reading::ValueType(frame));
         }
+        // A lambda `cong` maps by takes the carrier its path's type states
+        // (#3773).
         let typed = declared
             .map(|declared| declared.node)
-            .or_else(|| arrow.map(|(domain, _)| domain));
+            .or_else(|| arrow.map(|(domain, _)| domain))
+            .or_else(|| self.over_points.get(&site.at.node).copied());
         let extended = Frame::Inner(match typed {
             Some(declared) => {
                 self.scope
@@ -14232,7 +14262,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a frame extending its own, untyped — the checker reads the type from
     ///   the operator's signature — reads its body as a value under that frame,
     ///   so a type written there is quoted, and is planned as the static lambda
-    ///   over it.
+    ///   over it. A transport's motive [`Self::over_points`] records keeps its
+    ///   binder untyped, and records it with the carrier of its path (#3773).
     /// - provides: the introduction of a type operator.
     /// - fails: yields the wrong-sort refusal where no value is read, a
     ///   misplaced-tile fault for a binder out of shape, the binder policy's
@@ -14285,6 +14316,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let extended = self
             .scope
             .extend_operand(frame, name, Maybe::Present(binder.span));
+        // A transport's motive ranges over its path's points (#3773).
+        if let Some(&carrier) = self.over_points.get(&site.at.node) {
+            let _first = self.binders_over_points.insert(extended, carrier);
+        }
         self.read(body.node, Reading::Value(Frame::Inner(extended)));
 
         self.plan(site, Plan::StaticLambda(body.node));

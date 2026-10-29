@@ -304,8 +304,9 @@ pub enum FragmentBoundary
     /// other than the recursive one it is written in: a descent claim heads a
     /// call of the function being defined or of a member of its mutual block.
     ForeignClaim,
-    /// The form is `cong` at a constructor, which is not a function: `cong`
-    /// maps a path by a function definition.
+    /// The form is `cong` at a constructor or at a static abstraction `\q. e`,
+    /// neither of which is a function: `cong` maps a path by a function
+    /// definition or a lambda `fn (q) { e }`.
     NotAFunction,
     /// The form is a function exit, `return` or `become`, a loop exit,
     /// `break` or `continue`, or a loop, standing where no path through a
@@ -403,9 +404,9 @@ impl fmt::Display for FragmentBoundary
                 "names a function other than the recursive one it is written in: a descent \
                  claim heads a call of the function being defined",
             ),
-            Self::NotAFunction => {
-                f.write_str("maps a path by a constructor, which is not a function")
-            },
+            Self::NotAFunction => f.write_str(
+                "maps a path by a constructor or a type operator, neither of which is a function",
+            ),
             Self::NotInTail => f.write_str(
                 "stands where no path through a function, a lambda, a thunk or a copattern \
                  clause body passes; an exit leaves, and a loop runs, only on such a path",
