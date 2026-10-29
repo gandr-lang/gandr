@@ -1284,7 +1284,9 @@ def later = 7;"#,
 
 /// A call of operations over operations reads over terms: over a plain sort,
 /// and over a graded sort carrying the grade its failure stands at, where a
-/// failure passed for a cut is ill sorted (#1510).
+/// failure passed for a cut is ill sorted. Over 2-cells a vertical composite
+/// reads with its 1-cells, and a whiskered one, whose index composes homs, is
+/// refused apart from an ill-sorted call (#1510).
 #[test]
 fn a_call_nesting_operations_reads_over_terms_1510()
 {
@@ -1309,6 +1311,20 @@ fn a_call_nesting_operations_reads_over_terms_1510()
   rule left : choose(x, y) ==> x;
 }"#,
     );
+    let two_cells = SourceText::from(
+        r#"theory TwoCells {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  sort Two(src : Hom(x, y), tgt : Hom(x, y)) : Type;
+  oper o : () --> Ob;
+  oper e : () --> Hom(o(), o());
+  oper alpha : () --> Two(e(), e());
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper vcomp : (s : Two(f, g), t : Two(g, k)) --> Two(f, k);
+  oper whiskerR : (s : Two(f, g), h : Hom(b, c)) --> Two(comp(f, h), comp(g, h));
+  rule vassoc : vcomp(vcomp(s, t), u) ==> vcomp(s, vcomp(t, u));
+}"#,
+    );
     for (source, calls) in [
         (
             choices,
@@ -1322,6 +1338,19 @@ fn a_call_nesting_operations_reads_over_terms_1510()
             ][..],
         ),
         (plain, &[("choose(second, first)", Ok("second"))][..]),
+        (
+            two_cells,
+            &[
+                (
+                    "vcomp(vcomp(alpha, alpha), alpha)",
+                    Ok("vcomp(alpha, vcomp(alpha, alpha))"),
+                ),
+                (
+                    "vcomp(whiskerR(alpha, e), whiskerR(alpha, e))",
+                    Err(NormalFormFault::Unsorted(Unsorted::Nested)),
+                ),
+            ][..],
+        ),
     ] {
         lowered(source, |module| {
             let [theory, ..] = *module.declarations().iter().collect::<Vec<_>>()
@@ -1343,6 +1372,11 @@ fn a_call_nesting_operations_reads_over_terms_1510()
         NormalFormFault::Unsorted(Unsorted::Clash).to_string(),
         NormalFormFault::NotACall(ElaborateError::UnsupportedShape).to_string(),
         "an ill-sorted call reads apart from one that does not elaborate"
+    );
+    assert_ne!(
+        NormalFormFault::Unsorted(Unsorted::Nested).to_string(),
+        NormalFormFault::Unsorted(Unsorted::Clash).to_string(),
+        "an index nesting an indexed operation reads apart from an ill-sorted call"
     );
 }
 

@@ -1629,7 +1629,10 @@ fn chain(
 /// #1510: a category's laws over `Hom(dom, cod)` read with the objects each
 /// application's sorting fixes, so the unit laws' overlap is one well-sorted
 /// term and joins; written as they are, without the indices, the same laws
-/// part at `comp(id(a), id(b))`.
+/// part at `comp(id(a), id(b))`. A whisker beside them, whose output's
+/// indices compose homs, leaves their reading indexed: no law's sorting
+/// meets its composite index. A law whiskering a whisker meets it, and the
+/// presentation is decided as written.
 #[test]
 fn a_categorys_laws_join_over_their_objects_1510()
 {
@@ -1714,6 +1717,47 @@ fn a_categorys_laws_join_over_their_objects_1510()
         read.decide(&mut fuel()),
         Ok(()),
         "over the objects the unit laws' overlap is `id(a)` both ways"
+    );
+    let (sorts, operations) = signature(&mut code, true);
+    // `Two(src : Hom, tgt : Hom)` and `whiskerR : (s : Two(f, g), h : Hom(b,
+    // c)) --> Two(comp(f, h), comp(g, h))`.
+    let [two, src, tgt, whisker, s_name, h_name] =
+        ["Two", "src", "tgt", "whiskerR", "s", "h"].map(|name| code.text(literal(name)));
+    let tgt_port = code.node(port, vec![tgt, hom, end, end]);
+    let src_port = code.node(port, vec![src, hom, end, tgt_port]);
+    let whiskered_sorts = code.node(sort, vec![two, src_port, sorts]);
+    let h_var = code.var(literal("h"));
+    let composites = [first, second].map(|cell| code.app(literal("comp"), &[cell, h_var]));
+    let [cells, composed, objects] = [&[first, second][..], &composites[..], &[middle, target][..]]
+        .map(|terms| chain(&mut code, terms));
+    let whisker_output = code.node(port, vec![unnamed, two, composed, end]);
+    let h_port = code.node(port, vec![h_name, hom, objects, end]);
+    let s_port = code.node(port, vec![s_name, two, cells, h_port]);
+    let whiskered_operations = code.node(oper, vec![whisker, s_port, whisker_output, operations]);
+    let whiskered = code.presenting(whiskered_sorts, whiskered_operations, members.clone());
+    let read = TheoryRules::read(&code.arena, whiskered).expect("the whiskered category reads");
+    assert_ne!(
+        read.decided(),
+        read.rules(),
+        "a whisker's composite index leaves the laws read with their objects"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        Ok(()),
+        "and their overlaps join as the category's do"
+    );
+    let [cell, other] = ["s", "k"].map(|name| code.var(literal(name)));
+    let inner = code.app(literal("whiskerR"), &[cell, third]);
+    let twice = code.app(literal("whiskerR"), &[inner, other]);
+    let twice_name = code.text(literal("twice"));
+    let mut nesting = members.clone();
+    nesting.push((rule_tag, vec![twice_name, twice, twice]));
+    let nested = code.presenting(whiskered_sorts, whiskered_operations, nesting);
+    let read = TheoryRules::read(&code.arena, nested).expect("the nested law reads");
+    assert_eq!(
+        read.decided(),
+        read.rules(),
+        "a whisker's index applies composition, so its laws are decided as written"
     );
     let (sorts, operations) = signature(&mut code, false);
     let written = code.presenting(sorts, operations, members);

@@ -24,14 +24,16 @@
 //!
 //! A presentation the reading does not cover has none, and its rules are
 //! decided as written: no sort indexed; a port that binds or abstracts; an
-//! operation of other than one output; an index term applying an operation
-//! with indices of its own, or naming no implicit index and no input port; a
-//! rule other than first-order over operation applications and variables; a
-//! rule whose two sides do not sort alike; a sorting that fixes a rule's
-//! variable to a term, or two of them to one; or a right side naming an index
-//! its left side does not fix. The reading only narrows the critical pairs to
-//! the well-sorted ones, so declining it decides no presentation the written
-//! reading does not.
+//! operation of other than one output; an index term naming no implicit index
+//! and no input port; a rule other than first-order over operation
+//! applications and variables; a rule whose two sides do not sort alike; a
+//! sorting that fixes a rule's variable to a term, or two of them to one; a
+//! right side naming an index its left side does not fix; or a rule one of
+//! whose indices applies an operation with indices of its own. An operation
+//! whose index terms apply such an operation leaves the reading whole until a
+//! rule's sorting meets it (#1510). The reading only narrows the critical
+//! pairs to the well-sorted ones, so declining it decides no presentation the
+//! written reading does not.
 //!
 //! The front end's `gandr_theory_computads::Indexing` reads a description's
 //! laws the same way; the kernel re-derives the indices from the value rather
@@ -234,10 +236,11 @@ impl<'arena> Reader<'arena>
     ///   `Computation` of `sorts` has an index port, and every `Oper`, `Obs`,
     ///   `Const` and `Nested` of `operations` has a distinct name, only `Port`
     ///   inputs and one `Port` output, each index term a `Var`, or an `App` or
-    ///   `Con` over its `Arg` chain applying no operation with implicit
-    ///   indices; each operation's implicit indices the names its ports' index
-    ///   terms' `Var`s name that no input port does, in pre-order, inputs then
-    ///   the output, each once. [`None`] otherwise.
+    ///   `Con` over its `Arg` chain; each operation's implicit indices the
+    ///   names its ports' index terms' `Var`s name that no input port does, in
+    ///   pre-order, inputs then the output, each once. [`None`] otherwise. An
+    ///   index term applying an operation with implicit indices of its own is
+    ///   read; a rule whose indices meet it is declined ([`Reader::indexed`]).
     /// - panics: none.
     /// - executable: none — the answer is the walk of the two chains.
     /// - intension: one walk of each chain, each index term read from a
@@ -330,26 +333,6 @@ impl<'arena> Reader<'arena>
                 return None;
             }
             at = rest;
-        }
-        for sorting in signature.0.values() {
-            let ports = sorting
-                .inputs
-                .iter()
-                .map(|&(_, port)| port)
-                .chain([sorting.output]);
-            for port in ports {
-                let _count = self.index_terms(port.indices, &mut pending)?;
-                while let Some(term) = pending.pop() {
-                    if let Some((tag::APP | tag::CON, &[name, chain])) =
-                        tagged(self.constructor(term))
-                    {
-                        if signature.implicit(self.text(name)?) == Verdict::Holds {
-                            return None;
-                        }
-                        let _count = self.index_terms(chain, &mut pending)?;
-                    }
-                }
-            }
         }
         Some(signature)
     }
