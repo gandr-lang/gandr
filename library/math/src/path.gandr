@@ -11,6 +11,7 @@
 // unitor go by based path induction on their last path, the telescope
 // form of `transport`. The right unitor holds by conversion, because a
 // composite with a reflexivity on the right reduces to its left operand.
+// The whiskers are `ap` of a composition with a fixed path.
 //
 // - see: #3711 — the naturality meta-operation these definitions serve
 // - see: #628 — `math` beside `std`, and the groupoid laws it holds
@@ -23,6 +24,48 @@ pub def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)
 /// A function's action on a path, whose type states its endpoints.
 pub def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
   cong(F, p)
+}
+
+/// The left whisker: a path composed before a path of paths, by the action of composing with it.
+pub def whiskerLeft(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  g1 : Path(A, y, z),
+  g2 : Path(A, y, z),
+  b : Path(Path(A, y, z), g1, g2)
+) -> Path(Path(A, x, z), f then g1, f then g2) {
+  ap(
+    Path(A, y, z),
+    Path(A, x, z),
+    (fn (q : Path(A, y, z)) { f then q } : Path(A, y, z) => Path(A, x, z)),
+    g1,
+    g2,
+    b
+  )
+}
+
+/// The right whisker: a path composed after a path of paths, by the action of composing with it.
+pub def whiskerRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  ap(
+    Path(A, x, y),
+    Path(A, x, z),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    f1,
+    f2,
+    a
+  )
 }
 
 /// A dependent function's action on a path: its value at the start carried along the path meets its value at the end.

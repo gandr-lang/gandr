@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 1eff3b2fead8ae9edc34fbd3bae8593262d6018d27d3b3eebbf91b9ccbbd9c9f
+# blake3: 6c6f41f3e4f28f99487e71b1176cd4d3246f3eff2cf60ec6434b5f290ac7a188
 
 [package]
 name = "math"
@@ -9,6 +9,7 @@ licence = "MIT OR Apache-2.0"
 documentation = "https://github.com/gandr-lang/gandr/tree/main/library/math"
 endpoint = "https://github.com/gandr-lang/gandr"
 modules = [
+  "cylinder",
   "path",
 ]
 

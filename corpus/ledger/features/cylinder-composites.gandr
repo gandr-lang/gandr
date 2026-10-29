@@ -1,0 +1,87 @@
+/// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them.
+///
+/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each composite is the term Catt's built-in prints, and the kernel replays each.
+///
+/// Not implemented: the composites at dimension 3, which the naturality operation generates, and the harness that compares Catt's output (#3833).
+///
+/// Each composite computes at reflexivities, so each declaration states a composite of reflexivities and proves it by reflexivity.
+///
+/// - see: library/math/src/cylinder.gandr
+/// - see: #3712 — the composites at dimension 2, written from Catt's terms
+
+// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`.
+import "../../../library/math/src/cylinder.gandr";
+
+/// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
+def cylinderCompositeAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  cylinderComposite2(
+    A,
+    x,
+    x,
+    here(x),
+    x,
+    x,
+    here(x),
+    here(x),
+    here(x),
+    here(here(x)),
+    x,
+    here(x),
+    x,
+    here(x),
+    here(x),
+    here(here(x))
+  ),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
+
+/// A stack of two squares of reflexivities composes to the reflexivity of the reflexivity.
+def cylinderStackAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  cylinderStack2(
+    A,
+    x,
+    x,
+    here(x),
+    x,
+    x,
+    here(x),
+    here(x),
+    here(x),
+    here(here(x)),
+    x,
+    x,
+    here(x),
+    here(x),
+    here(x),
+    here(here(x))
+  ),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
+
+/// Two triangles of reflexivities over one apex compose to the reflexivity of the reflexivity.
+def coneCompositeAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  coneComposite2(
+    A,
+    x,
+    x,
+    here(x),
+    x,
+    here(x),
+    here(x),
+    here(here(x)),
+    x,
+    here(x),
+    here(x),
+    here(here(x))
+  ),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
