@@ -163,12 +163,14 @@ pub struct TelescopeEntry<'source>
 /// - requires: nothing to construct this data.
 /// - ensures: `binder` is the tile the source writes the parameter's name at,
 ///   and `declared` the type written for it, unless it is written bare or its
-///   type names an entry of the implicit telescope.
+///   type names an entry of the implicit telescope; `dependent` whether that
+///   type names a parameter written before it.
 /// - executable: none — a record of written tiles.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Collector::explicit_parameters`].
 /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+/// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExplicitParameter
 {
@@ -176,6 +178,9 @@ pub struct ExplicitParameter
     pub binder: Placed,
     /// The type it is written with, read under the parameters before it.
     pub declared: Maybe<Placed, unclosed::Absent>,
+    /// Whether the type names a parameter written before it, so an answer
+    /// read off it reads the callee's binders (#3921).
+    pub dependent: bool,
 }
 
 /// A parameter's position among a telescope's parameters as they are
@@ -329,6 +334,14 @@ pub fn merge_order(
 
     Err(Cycle { first, second })
 }
+
+/// The tiles a binder's name is written at: lowercase, a type variable, or
+/// capitalised as a type's name is (#3921).
+const BINDER_TILES: [TileName; 3] = [
+    TileName::IDENTIFIER,
+    TileName::TYPE_VARIABLE,
+    TileName::TYPE_IDENTIFIER,
+];
 
 impl<'source> Collector<'_, 'source>
 {
@@ -665,13 +678,14 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `header` stands just past a declaration's name.
     /// - ensures: past an implicit telescope `[ … ]` when one is written, one
-    ///   entry per parameter of the parenthesised list, at its name's tile: `x
-    ///   : T` its `T`, or [`unclosed::Absent::Dependent`] when `T` names an
-    ///   entry of the telescope; a bare `x` [`unclosed::Absent::Unwritten`]; a
-    ///   receiver's mode word skipped. None when no parameter list follows, or
-    ///   one is out of shape. `header` is left where it was. A type naming a
-    ///   parameter before its own is kept: the arguments written for those
-    ///   replace them where the call is read.
+    ///   entry per parameter of the parenthesised list, at its name's tile, a
+    ///   lowercase or a capitalised name alike: `x : T` its `T`, or
+    ///   [`unclosed::Absent::Dependent`] when `T` names an entry of the
+    ///   telescope; a bare `x` [`unclosed::Absent::Unwritten`]; a receiver's
+    ///   mode word skipped. None when no parameter list follows, or one is out
+    ///   of shape. `header` is left where it was. A type naming a parameter
+    ///   before its own is kept: the arguments written for those replace them
+    ///   where the call is read.
     /// - provides: [`super::Collected::parameters`], the type each argument of
     ///   a call checks against.
     /// - fails: never: a type whose pieces do not read counts as naming one.
@@ -681,9 +695,11 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor argument takes its classifier from the
-    ///   parameter at its place, closed or naming the one before it.
+    ///   parameter at its place, closed or naming the one before it; a lambda
+    ///   argument's binder its parameter's domain, past capitalised binders.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     pub(super) fn explicit_parameters(
         &self,
         header: &Cursor<'_>,
@@ -699,7 +715,7 @@ impl<'source> Collector<'_, 'source>
                     {
                         break;
                     },
-                    Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => {
+                    Maybe::Present(Piece::Tile { label, at }) if BINDER_TILES.contains(&label) => {
                         let _fresh = bound.insert(self.name_of(at));
                     },
                     Maybe::Present(_) => {},
@@ -711,8 +727,14 @@ impl<'source> Collector<'_, 'source>
             return Vec::new();
         }
         let mut parameters = Vec::new();
-        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
-            let declared = match cursor.tile(TileName::COLON) {
+        let mut earlier: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        // A binder is written lowercase, `x`, a type variable, or capitalised,
+        // `A : Type`, as a type's name is (#3921).
+        while let Maybe::Present(Piece::Tile { label, at: written }) = cursor.peek()
+            && BINDER_TILES.contains(&label)
+        {
+            let _binder = cursor.read();
+            let (declared, dependent) = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     if let Maybe::Absent(_) = cursor.tile(TileName::SHARED)
                         && let Maybe::Absent(_) = cursor.tile(TileName::CONSUMED)
@@ -720,15 +742,20 @@ impl<'source> Collector<'_, 'source>
                         let _mode = cursor.tile(TileName::IDENTIFIER);
                     }
                     match cursor.read() {
-                        Maybe::Present(Piece::Operand(typed)) => self.closed(typed, &bound),
+                        Maybe::Present(Piece::Operand(typed)) => (
+                            self.closed(typed, &bound),
+                            matches!(self.closed(typed, &earlier), Maybe::Absent(_)),
+                        ),
                         Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => return Vec::new(),
                     }
                 },
-                Maybe::Absent(_) => Maybe::Absent(unclosed::Absent::Unwritten),
+                Maybe::Absent(_) => (Maybe::Absent(unclosed::Absent::Unwritten), false),
             };
+            let _fresh = earlier.insert(self.name_of(written));
             parameters.push(ExplicitParameter {
                 binder: written,
                 declared,
+                dependent,
             });
             let _comma = cursor.tile(TileName::COMMA);
         }
@@ -775,8 +802,7 @@ impl<'source> Collector<'_, 'source>
                 match *piece {
                     Piece::Operand(operand) => pending.push(operand.node),
                     Piece::Tile { label, at }
-                        if (label == TileName::IDENTIFIER || label == TileName::TYPE_VARIABLE)
-                            && names.contains(&self.name_of(at)) =>
+                        if BINDER_TILES.contains(&label) && names.contains(&self.name_of(at)) =>
                     {
                         return Maybe::Absent(unclosed::Absent::Dependent);
                     },

@@ -308,6 +308,7 @@ use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
+use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
@@ -820,6 +821,8 @@ enum Typed
     {
         /// The binder's written type.
         declared: NodeIndex,
+        /// The binder, which a call's argument may type (#3921).
+        binder: ScopeId,
         /// The frame a type naming the binder reads it under; nothing in a
         /// body.
         in_type: Option<Frame>,
@@ -832,6 +835,8 @@ enum Typed
     {
         /// The binder's written type.
         declared: NodeIndex,
+        /// The binder, which a call's argument may type (#3921).
+        binder: ScopeId,
         /// The frame a type naming the binder reads it under; nothing in a
         /// body.
         in_type: Option<Frame>,
@@ -3090,9 +3095,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Typed, synthesised::Absent>
     {
         let unread = Maybe::Absent(synthesised::Absent::Unread);
-        if let Some((declared, in_type)) = self.point_binder(path) {
+        if let Some((declared, binder, in_type)) = self.point_binder(path) {
             return match self.path_written(declared) {
-                Some(_) => Maybe::Present(Typed::Parameter { declared, in_type }),
+                Some(_) => Maybe::Present(Typed::Parameter {
+                    declared,
+                    binder,
+                    in_type,
+                }),
                 None => unread,
             };
         }
@@ -3174,16 +3183,20 @@ impl<'source> Lowerer<'_, 'source>
             at = inner;
         }
         if let Some(&Plan::Here(point)) = self.plans.get(at)
-            && let Some((declared, in_type)) = self.point_binder(point)
+            && let Some((declared, binder, in_type)) = self.point_binder(point)
         {
-            return Maybe::Present(Typed::Point { declared, in_type });
+            return Maybe::Present(Typed::Point {
+                declared,
+                binder,
+                in_type,
+            });
         }
         self.typed(path)
     }
 
-    /// The type the binder `point` names writes, beside the frame a use in a
-    /// type reads it from, when `point` is a bare binder: a variable, or a
-    /// binder named in a type.
+    /// The type the binder `point` names writes, beside the binder and the
+    /// frame a use in a type reads it from, when `point` is a bare binder: a
+    /// variable, or a binder named in a type.
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified every node.
@@ -3204,11 +3217,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   no path type.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
-    #[spec(ensures: |ret| ret.is_none_or(|(_, in_type)| in_type.is_none() || !matches!(self.plans.get(point), Some(&Plan::Variable(..)))))]
+    #[spec(ensures: |ret| ret.is_none_or(|(_, _, in_type)| in_type.is_none() || !matches!(self.plans.get(point), Some(&Plan::Variable(..)))))]
     fn point_binder(
         &self,
         point: NodeIndex,
-    ) -> Option<(NodeIndex, Option<Frame>)>
+    ) -> Option<(NodeIndex, ScopeId, Option<Frame>)>
     {
         let mut at = point;
         while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
@@ -3227,7 +3240,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(declared) => declared,
             Maybe::Absent(_) => *self.binders_over_points.get(&binder)?,
         };
-        Some((declared, in_type))
+        Some((declared, binder, in_type))
     }
 
     /// What a call of the declaration at `constant` reads its result off: a
@@ -3536,7 +3549,7 @@ impl<'source> Lowerer<'_, 'source>
                 // x, x)`, `A` that type (#3834). At any other point, one
                 // reflexivity is read through to the path the point is.
                 Some(&Plan::Here(point)) if reflexivity.is_none() => {
-                    if let Some((declared, _)) = self.point_binder(point) {
+                    if let Some((declared, ..)) = self.point_binder(point) {
                         !self.collected.refused(declared).0
                     }
                     else {
@@ -4420,11 +4433,13 @@ impl<'source> Lowerer<'_, 'source>
         let unread = Maybe::Absent(synthesised::Absent::Unread);
         // A point at a binder of any written type `A` stands at `A` (#3834).
         let carrier = match typed {
-            Some(Typed::Point { declared, in_type }) => {
-                match self.carried_parameter_type(declared, in_type, frame, sink) {
-                    Maybe::Present(carrier) => carrier,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
-                }
+            Some(Typed::Point {
+                declared,
+                binder,
+                in_type,
+            }) => match self.carried_parameter_type((declared, binder), in_type, frame, sink) {
+                Maybe::Present(carrier) => carrier,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
             Some(Typed::Parameter { .. } | Typed::Called(_)) | None => {
                 let typed = match self.typed(point) {
@@ -4481,8 +4496,12 @@ impl<'source> Lowerer<'_, 'source>
     {
         let unread = Maybe::Absent(synthesised::Absent::Unread);
         match typed {
-            Some(Typed::Parameter { declared, in_type }) => {
-                return self.parameter_identity(declared, in_type, frame, sink);
+            Some(Typed::Parameter {
+                declared,
+                binder,
+                in_type,
+            }) => {
+                return self.parameter_identity((declared, binder), in_type, frame, sink);
             },
             Some(Typed::Called(callee)) => return self.called_identity(callee, frame, sink),
             Some(Typed::Point { .. }) | None => {},
@@ -4540,7 +4559,7 @@ impl<'source> Lowerer<'_, 'source>
     })]
     fn parameter_identity(
         &self,
-        declared: NodeIndex,
+        declared: (NodeIndex, ScopeId),
         in_type: Option<Frame>,
         frame: Frame,
         sink: &mut Sink<'_>,
@@ -4552,38 +4571,83 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The type a parameter's binder writes, `declared`, carried to the
-    /// parameter's use: a body under `frame`, or a type under `in_type`.
+    /// The type a parameter's binder writes, `declared` beside the binder,
+    /// carried to the parameter's use: a body under `frame`, or a type under
+    /// `in_type`.
     ///
     /// # Specification
     /// - requires: `declared` is minted or absent, read where a value type is
-    ///   read under the frame its binder extends.
+    ///   read under the frame its binder extends, or a call's parameter types
+    ///   the binder ([`Lowerer::argued_binders`]).
     /// - ensures: the written type, carried as [`Self::carried`] carries it
-    ///   from the frame its binder extends.
-    /// - fails: [`synthesised::Absent::Unread`] when the type did not lower.
+    ///   from the frame its binder extends; for a binder a call's parameter
+    ///   types, used in a body, the parameter's domain with each parameter it
+    ///   names replaced by the argument the call writes for it, raised past the
+    ///   binders between the call and `frame` (#3921).
+    /// - fails: [`synthesised::Absent::Unread`] when the type did not lower, or
+    ///   names a parameter no argument stands for.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a path parameter in a body and in a type, and a
-    ///   reflexivity's point of no path type.
+    /// - hypothesis: L3 — a path parameter in a body and in a type, a
+    ///   reflexivity's point of no path type, and a lambda's binder a call's
+    ///   parameter types.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(carried) => sink.arena.value_type(carried).is_some(),
         | Maybe::Absent(_) => true,
     })]
     fn carried_parameter_type(
         &self,
-        declared: NodeIndex,
+        (declared, binder): (NodeIndex, ScopeId),
         in_type: Option<Frame>,
         frame: Frame,
         sink: &mut Sink<'_>,
     ) -> Maybe<ValueTypeId, synthesised::Absent>
     {
+        let unread = Maybe::Absent(synthesised::Absent::Unread);
+        if in_type.is_none()
+            && let Some(&(called, domain, stands)) = self.argued_binders.get(&binder)
+        {
+            let Maybe::Present((written, environment)) =
+                self.called_environment(called, domain, sink)
+            else {
+                return unread;
+            };
+            let at_call = if environment.is_empty() {
+                written
+            }
+            else {
+                let code = sink.arena.value_quote(written);
+                let substituted = gandr_core_term::substitute_environment(
+                    sink.arena,
+                    gandr_core_term::hole::TermId::Value(code),
+                    &environment,
+                );
+                let gandr_core_term::hole::TermId::Value(substituted) = substituted
+                else {
+                    return unread;
+                };
+                let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+                else {
+                    return unread;
+                };
+                ty
+            };
+            let depth = |at: Frame| self.scope.telescope_binders(at).count();
+            let lift = Binders::from(
+                u32::try_from(depth(frame).saturating_sub(depth(stands))).unwrap_or(u32::MAX),
+            );
+            return Maybe::Present(
+                gandr_core_term::shift_value_type(sink.arena, at_call, lift).settle(sink.arena),
+            );
+        }
         let (Maybe::Present(written), super::Reading::ValueType(from)) =
             (self.value_type_at(declared), self.reading(declared))
         else {
-            return Maybe::Absent(synthesised::Absent::Unread);
+            return unread;
         };
         self.carried(written, from, in_type, frame, sink)
     }
