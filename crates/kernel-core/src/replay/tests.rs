@@ -274,6 +274,66 @@ fn a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695()
     assert_eq!(arena.watermark(), mark);
 }
 
+#[test]
+fn a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969()
+{
+    // #3969: the engine reads `⟨f(x) to t. g(t)⟩` through its bind, the call
+    // `f(x)` stuck at a variable, to the call `g(⟨f(x)⟩)` a binder heads, and
+    // finds it shared with the endpoint `⟨g(⟨f(x)⟩)⟩` under one `here`. The
+    // kernel closes that pair once the endpoint keeps the call it read
+    // through to, and not when the continuation calls `g` at `x` instead.
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let call = |arena: &mut TermArena, function: u32, argument| {
+        let head = arena.value_variable(DeBruijnIndex::from(function));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let inner = call(&mut arena, 1, x);
+    let held = arena.value_returned(inner);
+    let outer = call(&mut arena, 2, held);
+    let point = arena.value_returned(outer);
+    let left = arena.value_here(point);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let shifted_x = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let opened = |arena: &mut TermArena, argument| {
+        let continuation = call(arena, 3, argument);
+        let bind = arena.computation_bind(inner, continuation);
+        let endpoint = arena.value_returned(bind);
+        let here = arena.value_here(endpoint);
+        let returner = arena.computation_return(here);
+        arena.value_returned(returner)
+    };
+    let alike = opened(&mut arena, bound);
+    let apart = opened(&mut arena, shifted_x);
+    let mark = arena.watermark();
+
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Values(left, alike),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "the endpoint reads through its bind to the call the other side holds"
+    );
+    assert_ne!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Values(left, apart),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "and a continuation calling `g` at `x` is no shared pair"
+    );
+    assert_eq!(arena.watermark(), mark);
+}
+
 /// Two returned calls neither of which reads to a `return` walk their
 /// computations (#3920). A lambda the source ascribes crosses as a typed
 /// position, the fold `⟨fold(nil; return thunk λ)⟩`. A call through it,

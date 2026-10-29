@@ -5152,13 +5152,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// presented type by the type's rules.
     ///
     /// A side reads to the value its computation returns, through every
-    /// `return` it reaches by `reduction`, and then to its normal form under
-    /// the presentations ([`Self::present`]), as a goal's root reads before
-    /// its shape; no definition unfolds, as no decision names one. A pair that
-    /// read to something is walked again, its own set-aside pairs read in
-    /// turn. A pair neither side of which reads to anything compares by
-    /// [`equal_weakened`]; two thunks, or two returned values, it leaves apart
-    /// walk their computations the same way.
+    /// `return` it reaches by `reduction`; a computation that reaches none
+    /// reads to the returned endpoint over what it reduced to, as
+    /// [`Self::normalize_returned`] keeps it, so a bind read through to a
+    /// binder's call compares by that call. The side then reads to its normal
+    /// form under the presentations ([`Self::present`]), as a goal's root
+    /// reads before its shape; no definition unfolds, as no decision names
+    /// one. A pair that read to something is walked again, its own set-aside
+    /// pairs read in turn. A pair neither side of which reads to anything
+    /// compares by [`equal_weakened`]; two thunks, or two returned values, it
+    /// leaves apart walk their computations the same way.
     ///
     /// # Specification
     /// - requires: every pair's values live in the arena.
@@ -5185,13 +5188,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - hypothesis: L3 — a call over an endpoint returning the other side's
     ///   argument is alike, and over one returning another variable is not;
     ///   leaving the endpoints unread changes the first, and answering every
-    ///   read pair alike the second. Two points one presented rule relates are
-    ///   alike, and two no rule relates are not (#1723); leaving the rules
-    ///   unread changes the first. A call through a lambda and the same call
-    ///   through its ascription's fold, neither returning, are alike, and
-    ///   through a lambda calling another rigid are not (#3920); comparing an
-    ///   unread returned pair by α-equality changes the first.
+    ///   read pair alike the second. An endpoint whose bind reads through to
+    ///   the call the other side holds is alike, and one reading to another
+    ///   call is not (#3969); dropping what a stuck reading reduced to changes
+    ///   the first. Two points one presented rule relates are alike, and two no
+    ///   rule relates are not (#1723); leaving the rules unread changes the
+    ///   first. A call through a lambda and the same call through its
+    ///   ascription's fold, neither returning, are alike, and through a lambda
+    ///   calling another rigid are not (#3920); comparing an unread returned
+    ///   pair by α-equality changes the first.
     /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
+    /// - witness: `replay::tests::a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969`
     /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
     /// - witness: `replay::tests::an_unread_pair_of_returned_calls_walks_their_computations_3920`
     #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
@@ -5216,11 +5223,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     else {
                         return Err(unreadable());
                     };
-                    let Some(&Computation::Return(returned)) = self.arena.computation(reduced)
-                    else {
-                        break;
-                    };
-                    *side = returned;
+                    if let Some(&Computation::Return(returned)) = self.arena.computation(reduced) {
+                        *side = returned;
+                        continue;
+                    }
+                    // A computation that reaches no `return` reads as the
+                    // endpoint over what it reduced to, as the forced reading
+                    // keeps it: a bind read through to a binder's call compares
+                    // by that call, as the engine read it (#3969).
+                    if reduced != computation {
+                        *side = self.arena.value_returned(reduced);
+                    }
+                    break;
                 }
                 // A constructor of a presented type is set aside for its
                 // normal form: read it by the type's rules.
