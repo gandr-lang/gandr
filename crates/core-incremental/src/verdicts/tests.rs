@@ -103,12 +103,21 @@ fn a_damaged_file_is_passed_over()
         .map(|entry| entry.expect("an entry reads").path())
         .next()
         .expect("the receipt was written");
-    let mut bytes = std::fs::read(&written).expect("the receipt reads");
-    let _truncated = bytes.pop();
-    std::fs::write(&written, &bytes).expect("the damage is written");
-    let reopened = FileVerdictStore::open(scratch.path()).expect("the directory reopens");
-    assert_eq!(usize::from(reopened.damaged()), 1);
-    for record in receipt.records() {
-        assert!(reopened.receipts(record.key()).is_empty());
+    let bytes = std::fs::read(&written).expect("the receipt reads");
+    let truncated = bytes.get(.. bytes.len() - 1).expect("in range").to_vec();
+    let mut changed = bytes;
+    if let Some(last) = changed.last_mut() {
+        *last ^= 0x01_u8;
+    }
+    for (damaged, what) in [
+        (truncated, "a truncated receipt"),
+        (changed, "a changed verdict byte"),
+    ] {
+        std::fs::write(&written, &damaged).expect("the damage is written");
+        let reopened = FileVerdictStore::open(scratch.path()).expect("the directory reopens");
+        assert_eq!(usize::from(reopened.damaged()), 1, "{what}");
+        for record in receipt.records() {
+            assert!(reopened.receipts(record.key()).is_empty(), "{what}");
+        }
     }
 }

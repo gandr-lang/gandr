@@ -94,7 +94,7 @@
 //! | Edit and lowering semantics | `tests/common.rs` and `tests/generate.rs` | forward and shadowed names, maximal literals, missing indices, clamped insertion, coordinated rename and modular integer selection |
 //! | Type-position dependencies | `footprint` and the guards in `checkpoint` | quoted abstract types, recorded-answer types, cycles and opaque readers |
 //! | Canonical representation | `content` and `codec` | all supported node sorts, graph discovery, payloads, malformed tags, lengths and canonicality |
-//! | Store failure atomicity | `persistence` and `tests/defects.rs` | dangling ids and capped levels preserve stored records; filesystem cleanup remains best effort |
+//! | Store failure atomicity | `persistence`, `record` and `tests/defects.rs` | dangling ids and capped levels preserve stored records; filesystem cleanup remains best effort |
 //! | Reachability and work | `tests/defects.rs` | deterministic value-only-edit census, shadowing termination and exact work counts for chains of 250 through 2,000 items; zero-length chains are empty |
 //! | Session and stream transitions | `session` and `stream` | retained state on failure, item ordering, liveness and terminal events |
 //!
@@ -165,6 +165,7 @@ mod fixture;
 mod footprint;
 mod order;
 mod persistence;
+mod record;
 mod region;
 mod session;
 mod stream;

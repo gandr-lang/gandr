@@ -395,6 +395,7 @@ INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-
 INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-term','rewrite','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','b2c8a4df8de0c7c5ff66936671cffeac70d29b8c','2026-10-27','e1dcbc647274f9f7095957e40ce3af95f7bc688b');
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','record','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','verdicts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-core','verdict','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-term','encode','background',NULL,NULL,NULL);

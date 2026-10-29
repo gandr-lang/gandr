@@ -1,11 +1,15 @@
 //! The kernel's recorded verdicts on disk: one file per receipt, named by the
 //! BLAKE3 digest of its bytes, in a directory the driver names.
 //!
+//! Each file is a record of [`crate::record`] under no key: the frame checks
+//! the receipt's length and digest before the receipt is decoded.
+//!
 //! The store is untrusted. It answers, for a key, the receipt whose records
 //! hold it, and the kernel verifies that receipt's signature, and that its
 //! signer is one the run's policy lists, before it believes a record
-//! ([`gandr_kernel_core::verdict`]). A file that does not read as a receipt is
-//! counted and passed over: a damaged record costs a replay, never a verdict.
+//! ([`gandr_kernel_core::verdict`]). A file whose frame or receipt does not
+//! read is counted and passed over: a damaged record costs a replay, never a
+//! verdict. A file the store wrote before the frame is such a file.
 //!
 //! # References
 //!
@@ -32,11 +36,25 @@ use gandr_kernel_core::verdict::stored;
 use quenchant_shape::shape::Maybe;
 
 use crate::codec::Bytes;
-use crate::persistence::ArtifactBytes;
-use crate::persistence::TemporaryRecord;
+use crate::record;
+use crate::record::Format;
+use crate::record::Length;
+use crate::record::Payload;
+use crate::record::RecordName;
+use crate::record::Spelling;
 
-/// The bytes every receipt file leads with.
-const MAGIC: &[u8; 16] = b"gandr:verdicts:1";
+/// The receipt record's format.
+const RECEIPTS: Format = Format {
+    magic: *b"GVRFILE\0",
+    version: 1,
+    key: 0,
+};
+
+/// The byte length of a receipt's signer, signature and record count.
+const SIGNED_LEN: usize = 104;
+
+/// The byte length of a receipt record's key and verdict length.
+const RECORD_LEN: usize = 40;
 
 /// Why the store could not do what it was asked.
 ///
@@ -111,8 +129,9 @@ impl FileVerdictStore
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the directory exists; the index holds every file named by a
-    ///   64-digit digest that reads as a receipt, and the damaged count every
-    ///   such file that does not. Temporaries and other names are left alone.
+    ///   record's name whose frame and receipt read, and the damaged count
+    ///   every such file whose frame or receipt does not. Temporaries and other
+    ///   names are left alone.
     /// - fails: [`VerdictStoreError::Unopened`] when the directory cannot be
     ///   created or listed.
     /// - panics: propagates a panic from the supplied `AsRef` implementation.
@@ -139,18 +158,19 @@ impl FileVerdictStore
             else {
                 continue;
             };
-            let named = entry.file_name().to_str().is_some_and(|name| {
-                name.len() == 64 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
-            });
-            if !named {
+            if RecordName::spelling(&entry.file_name()) != Spelling::Record {
                 continue;
             }
             let read = std::fs::read(entry.path());
-            let Maybe::Present(receipt) = read
-                .as_deref()
-                .map_or(Maybe::Absent(stored::Absent::Unrecorded), |bytes| {
-                    decode(Bytes(bytes))
-                })
+            let Maybe::Present(receipt) =
+                read.as_deref()
+                    .map_or(
+                        Maybe::Absent(stored::Absent::Unrecorded),
+                        |bytes| match RECEIPTS.read(Bytes(bytes)) {
+                            Maybe::Present(framed) => decode(framed.payload),
+                            Maybe::Absent(_) => Maybe::Absent(stored::Absent::Unrecorded),
+                        },
+                    )
             else {
                 damaged = damaged.saturating_add(1);
                 continue;
@@ -194,13 +214,15 @@ impl FileVerdictStore
         stored: &StoredReceipt,
     ) -> Result<(), VerdictStoreError>
     {
-        let bytes = encode(stored);
-        let name = bytes.named_by_digest();
-        let record = TemporaryRecord::write(&self.root, &name, &bytes)
-            .map_err(|_error| VerdictStoreError::Unwritten)?;
-        record
-            .commit(&name.within(&self.root))
-            .map_err(|_error| VerdictStoreError::Unwritten)
+        let reserve = stored.records().iter().fold(SIGNED_LEN, |sum, record| {
+            sum.saturating_add(RECORD_LEN)
+                .saturating_add(record.encoded().as_ref().len())
+        });
+        let bytes = RECEIPTS
+            .frame(Bytes(&[]), Length(reserve), |out| encode(stored, out))
+            .map_err(|_fault| VerdictStoreError::Unwritten)?;
+        record::publish(&self.root, &bytes.named_by_digest(), &bytes)
+            .map_err(|_fault| VerdictStoreError::Unwritten)
     }
 
     /// How many files did not read as a receipt at open.
@@ -231,34 +253,35 @@ impl VerdictSource for FileVerdictStore
     }
 }
 
-/// The file bytes of `stored`: the magic, the signer, the signature, the
+/// Append the payload of `stored` to `out`: the signer, the signature, the
 /// record count, then each record as its key and its counted verdict bytes,
 /// in the key order the receipt holds them in.
 ///
 /// # Specification
 /// trivial.
-fn encode(stored: &StoredReceipt) -> ArtifactBytes
+fn encode(
+    stored: &StoredReceipt,
+    out: &mut Payload<'_>,
+)
 {
     let records = stored.records();
-    let mut out = Vec::from(MAGIC.as_slice());
-    out.extend_from_slice(&<[u8; 32]>::from(stored.receipt().signer()));
-    out.extend_from_slice(&<[u8; 64]>::from(stored.receipt().signature()));
-    out.extend_from_slice(
+    out.append(Bytes(&<[u8; 32]>::from(stored.receipt().signer())));
+    out.append(Bytes(&<[u8; 64]>::from(stored.receipt().signature())));
+    out.append(Bytes(
         &u64::try_from(records.len())
             .unwrap_or(u64::MAX)
             .to_le_bytes(),
-    );
+    ));
     for record in records {
         let verdict = record.encoded();
-        out.extend_from_slice(&<[u8; 32]>::from(record.key()));
-        out.extend_from_slice(
+        out.append(Bytes(&<[u8; 32]>::from(record.key())));
+        out.append(Bytes(
             &u64::try_from(verdict.as_ref().len())
                 .unwrap_or(u64::MAX)
                 .to_le_bytes(),
-        );
-        out.extend_from_slice(verdict.as_ref());
+        ));
+        out.append(Bytes(verdict.as_ref()));
     }
-    ArtifactBytes::from(out)
 }
 
 /// The receipt [`encode`] wrote as `bytes`; absent when they are not one,
@@ -269,11 +292,7 @@ fn encode(stored: &StoredReceipt) -> ArtifactBytes
 fn decode(bytes: Bytes<'_>) -> Maybe<StoredReceipt, stored::Absent>
 {
     let unread = Maybe::Absent(stored::Absent::Unrecorded);
-    let Some(rest) = bytes.0.strip_prefix(MAGIC.as_slice())
-    else {
-        return unread;
-    };
-    let Some((signer, rest)) = rest.split_first_chunk::<32>()
+    let Some((signer, rest)) = bytes.0.split_first_chunk::<32>()
     else {
         return unread;
     };

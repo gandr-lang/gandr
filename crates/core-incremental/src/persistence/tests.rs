@@ -924,7 +924,7 @@ fn file_load_rejects_parseable_noncanonical_payload_after_integrity_checks()
     .expect("raw noncanonical table");
     let artifact =
         artifact_bytes(address, backend(), Bytes(payload.as_ref())).expect("representable");
-    std::fs::write(store.record_path(address), &artifact.0).expect("write");
+    std::fs::write(store.record_path(address), artifact.as_ref()).expect("write");
     assert_eq!(
         store.load(
             address,
@@ -1277,6 +1277,40 @@ fn file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes()
             "{what}"
         );
     }
+}
+
+#[test]
+fn a_record_under_the_unmoved_header_loads()
+{
+    let scratch = Scratch::new(Label("unmoved-header"));
+    let mut store = FileCheckpointStore::open(scratch.path()).expect("open");
+    let mut program = pair();
+    let address = address_of(&program).expect("resolved");
+    let checkpoints = checked(&mut program);
+    let payload = Vec::from(bytes_of(&checkpoints));
+    // The header as the store spelled it before the frame was shared.
+    let mut record = Vec::from(b"GCKFILE\0".as_slice());
+    record.extend_from_slice(&1_u32.to_le_bytes());
+    record.extend_from_slice(&address.0);
+    record.extend_from_slice(&backend().0);
+    record.extend_from_slice(&u64::try_from(payload.len()).expect("fits").to_le_bytes());
+    record.extend_from_slice(blake3::hash(&payload).as_bytes());
+    record.extend_from_slice(&payload);
+    let path = store.record_path(address);
+    std::fs::write(&path, &record).expect("write");
+    assert_eq!(
+        store.load(address, backend()),
+        Ok(Maybe::Present(checkpoints.clone())),
+        "a record written under the unmoved header loads"
+    );
+    store
+        .store(address, backend(), &checkpoints)
+        .expect("stored");
+    assert_eq!(
+        std::fs::read(&path).expect("read"),
+        record,
+        "the store writes the same bytes"
+    );
 }
 
 #[test]
