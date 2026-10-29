@@ -3122,7 +3122,9 @@ impl<'source> Respelling<'_, 'source>
     }
 }
 
-/// Write `tokens`, as the printer spaced them, into `out`.
+/// Write `tokens`, as the printer spaced them, into `out`, but a statement's
+/// `;` against the token before it, as the formatter lays out a block: the
+/// printer writes ` ;`, and a second pass would set it otherwise (#3891).
 ///
 /// # Specification
 /// trivial.
@@ -3132,7 +3134,7 @@ fn written<'source>(
 )
 {
     for token in tokens {
-        if token.spaced == Spaced::Yes {
+        if token.spaced == Spaced::Yes && token.text != ";" {
             out.gap(Spelling(" "));
         }
         out.fragment(SourceFragment::from(token.text.as_str()));
