@@ -9,6 +9,9 @@
 # - `lower`: `apart` has the lower edit another file; `clashes` has it edit
 #   `f.txt` too.
 # - `queued`: what `in_queue` reads for the lower.
+# - `restacked` (#3877): the upper is stacked on the lower once, and the
+#   lower's own commit is then rewritten with another patch and pushed, as
+#   its seat's restack does, before the step runs.
 # The server is stubbed: no other pull request is open, and the top read
 # after a wait is `null`, the lower having merged. The result is one line
 # compared with the case's `output`: `stacked on <branch>`, with `, waited`
@@ -66,6 +69,20 @@ for (( i = 0; i < count; i++ )); do
   open_prs() { echo '[]'; }
   in_queue() { echo "$queued"; }
   await_top() { echo null; }
+  if [[ $(jq -r ".[$i].restacked // false" "$cases") == true ]]; then
+    stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1
+    (
+      git clone --quiet --branch lower "$dir/origin.git" "$dir/seat" 2> /dev/null
+      cd "$dir/seat"
+      git config user.name case
+      git config user.email case@example.invalid
+      git config commit.gpgsign false
+      printf '%s\n' restacked > l.txt
+      git commit --quiet --all --amend --no-edit
+      git push --quiet --force origin lower
+    ) > /dev/null
+    git fetch --quiet origin
+  fi
   if stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1; then
     if [[ $stacked_top == null ]]; then actual="stacked on main"; else actual="stacked on $(jq -r .head <<< "$stacked_top")"; fi
     if grep -q 'waiting for it to merge' "$dir/out"; then actual+=", waited"; fi

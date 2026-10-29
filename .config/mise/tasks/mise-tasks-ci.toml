@@ -2843,9 +2843,11 @@ fi
 # Every pull request stacks on the server's top (#1264): when any pull request
 # is open, the branch's own commits are rebased onto the top's branch (`top.jq`:
 # the open pull request no other targets, on the longest chain from main). Its
-# own commits leave out every other open pull request's and every patch the top
-# already carries (`own_fork`, #1298), so a rerun after the top moved never
-# carries another pull request's change. Its obligations are measured against
+# own commits leave out every other open pull request's, every patch the top
+# already carries (`own_fork`, #1298), and every commit below the one the
+# branch was last stacked on, recorded in the worktree's git directory
+# (`stack_base`, #3877). So a rerun after the top moved never carries another
+# pull request's change. Its obligations are measured against
 # the top's head, and it opens with the top's branch as its base, linked into
 # the top's stack (`gh stack link`). Above members already in the merge queue
 # only the open members are linked (#1988); where GitHub refuses that link,

@@ -26,5 +26,13 @@
     "lower": "clashes",
     "queued": true,
     "output": "refused: conflicts; resolve"
+  },
+  {
+    "name": "#3877: a branch stacked once, over a top restacked since with its own commit's patch changed, replays its own commit alone",
+    "top": "current",
+    "lower": "apart",
+    "queued": false,
+    "restacked": true,
+    "output": "stacked on lower"
   }
 ]
