@@ -3,9 +3,9 @@
 // The composites of naturality and coherence state their types in a
 // path's endpoints and its action under a function. The native forms
 // `then` and `cong` synthesise their types from their operands, so a
-// statement over a reflexivity or a variable function needs the endpoints
-// written. These definitions write them, and prove the groupoid laws of
-// composition beside them.
+// statement over a variable function needs the endpoints written. A
+// reflexivity reads its type off its point (#3834). These definitions write
+// the endpoints, and prove the groupoid laws of composition beside them.
 //
 // Each law is a definition at its path type. The associator and the left
 // unitor go by based path induction on their last path, the telescope

@@ -1083,6 +1083,33 @@ fn then_and_cong_in_a_type_take_their_types_from_their_operands_3772()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3834: a reflexivity `here(x)` read its type only when `x`'s binder wrote
+/// a path type, so `then` refused one first as unannotated, and a composite
+/// ending in one first too. `here(x)` reads `Path(A, x, x)` off a binder
+/// written at `A`, so the fixture's declarations lower and check.
+#[test]
+fn a_reflexivity_composes_at_a_point_of_any_type_3834()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "../../../../../corpus/model/identity/reflexivity-composed-in-a-type.gandr"
+        )),
+        &mut arena,
+    );
+    for name in ["hereFirst", "endsInHere", "hereTwice"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers its type and its body: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #3773: a lambda `fn (q) { e }` as `cong`'s function was refused, its
 /// binder with no type. The binder takes the type of the path's points, so
 /// the fixture's declaration lowers and checks. The transport the printer
