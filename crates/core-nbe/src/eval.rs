@@ -5379,11 +5379,7 @@ fn staged_position(
         return Err(EvalFault::DanglingTerm);
     };
     match core.computation(term) {
-        Some(&Computation::Fixpoint {
-            evidence: gandr_kernel_term::FixpointEvidence::Staged { position },
-            ..
-        }) => Ok(position),
-        Some(&Computation::Fixpoint { .. }) => Ok(gandr_kernel_term::StagedPosition::default()),
+        Some(&Computation::Fixpoint { evidence, .. }) => Ok(evidence.gate()),
         Some(_) | None => Err(EvalFault::DanglingTerm),
     }
 }

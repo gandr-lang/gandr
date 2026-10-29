@@ -379,7 +379,6 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::RewriteFuel;
-use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -2535,21 +2534,6 @@ const fn opposite(side: ConversionSide) -> ConversionSide
 const fn unreadable() -> Stop
 {
     Stop::Refused(ReplayRefusal::Unreadable)
-}
-
-/// The argument position a fixpoint carrying `evidence` gates on: a staged
-/// fixpoint's own position, the first argument otherwise.
-///
-/// # Specification
-/// trivial.
-fn gate_position(evidence: FixpointEvidence) -> StagedPosition
-{
-    match evidence {
-        FixpointEvidence::Staged { position } => position,
-        FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => {
-            StagedPosition::default()
-        },
-    }
 }
 
 /// What reading a transport's family as a cong link's gave.
@@ -5748,7 +5732,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // the argument's head the neutral's. Short of its staged
                 // argument it stands at no gate.
                 Some(&Computation::Fixpoint { body, evidence }) => {
-                    let staged = usize::from(gate_position(evidence));
+                    let staged = usize::from(evidence.gate());
                     let mut leading = Vec::with_capacity(staged);
                     let mut applied = focus;
                     while leading.len() < staged {
@@ -6121,7 +6105,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // unfolds in the application at that argument, the leading
                 // ones applied beneath it as they stood.
                 Some(&Computation::Fixpoint { evidence, .. }) => {
-                    let staged = usize::from(gate_position(evidence));
+                    let staged = usize::from(evidence.gate());
                     let mut applied = focus;
                     for _leading in 0 .. staged {
                         let Some(Frame::Apply(argument)) = frames.pop()
@@ -6943,7 +6927,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // is a definition: unfolding it substitutes nothing and
                         // cannot recur, so it unfolds at that gate (#2833).
                         Some(&Computation::Fixpoint { body, evidence }) => {
-                            let position = usize::from(gate_position(evidence));
+                            let position = usize::from(evidence.gate());
                             // The argument at the staged position, read through
                             // the cells: that many applications down the stack,
                             // every frame above it an application too.
@@ -7888,9 +7872,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the argument at [`gate_position`] among those `call`'s spine
-    ///   of applications passes, first argument first; `None` when it passes no
-    ///   more.
+    /// - ensures: the argument at [`FixpointEvidence::gate`] among those
+    ///   `call`'s spine of applications passes, first argument first; `None`
+    ///   when it passes no more.
     /// - provides: the gate [`Self::shut_recursion`] and [`Self::run_step`]
     ///   test.
     /// - fails: never.
@@ -7922,8 +7906,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         }
         // The spine holds its last argument outermost, so the gate stands
         // that many applications in from the arguments after it.
-        let mut after =
-            passed.checked_sub(usize::from(gate_position(evidence)).saturating_add(1))?;
+        let mut after = passed.checked_sub(usize::from(evidence.gate()).saturating_add(1))?;
         let mut focus = call;
         while let Some(&Computation::Application(function, argument)) =
             self.arena.computation(focus)

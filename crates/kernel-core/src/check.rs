@@ -4431,13 +4431,7 @@ where
                                 actual: comp_type_witness(arena, expected),
                             });
                         }
-                        let position = match evidence {
-                            FixpointEvidence::Partial => None,
-                            FixpointEvidence::StructuralDescent => {
-                                Some(gandr_kernel_term::StagedPosition::default())
-                            },
-                            FixpointEvidence::Staged { position } => Some(position),
-                        };
+                        let position = evidence.descent();
                         let (own, inside) = match position {
                             None => (expected, expected),
                             Some(position) => {
@@ -6949,13 +6943,7 @@ where
             // discharged with it; a refusal leaves the result as declared.
             if let Some(&Value::Thunk(root)) = arena.value(body)
                 && let Some(&Computation::Fixpoint { evidence, .. }) = arena.computation(root)
-                && let Some(recursed) = match evidence {
-                    FixpointEvidence::Partial => None,
-                    FixpointEvidence::StructuralDescent => {
-                        Some(gandr_kernel_term::StagedPosition::default())
-                    },
-                    FixpointEvidence::Staged { position } => Some(position),
-                }
+                && let Some(recursed) = evidence.descent()
                 && let Some(&ValueType::Thunk(classifier)) = arena.value_type(unsealed)
                 && let Maybe::Present(position) =
                     recursion::returns_recursed_on(arena, classifier, recursed)?
