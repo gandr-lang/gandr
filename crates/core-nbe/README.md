@@ -91,8 +91,6 @@ cargo nextest run -p gandr-core-nbe
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-core-nbe
 ```
 
-The deep evaluation, deep readback and teardown suites run inside a thread with a deliberately small stack, so a machine or a destructor that recursed per node fails them rather than fitting on a large host stack. The pinned-term suite compares each readback against an expected term written out by hand.
-
 ## Where the detail lives
 
 Mechanism, rules, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
@@ -122,6 +120,8 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 
 - `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory` — background: Peter Dybjer, "Program Testing and the Meaning Explanations of Intuitionistic Type Theory", _Epistemology versus Ontology_, 2012 — a judgement tested by running it on generated input, the reading the spinal stance enters on.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — a sharing mechanism enters on a property test against its reference and an informal simulation argument.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — background: sharing as descent; the spinal granularity makes the Courant and Leroy row finer along the spinal row.
+- `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — background: a finer sharing installs only behind a replayed trace.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep, and § 4.2's useful sharing, whose compact normal form readback builds.
 
 ## License

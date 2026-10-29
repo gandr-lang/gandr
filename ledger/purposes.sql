@@ -449,6 +449,7 @@ INSERT INTO purpose VALUES('core-nbe','machine::MachineVerdict','enum','What the
 INSERT INTO purpose VALUES('core-nbe','machine::Problem','struct','What the machine is asked: two weak heads of one polarity.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','machine::ProcessCount','struct','How many processes a run started.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','machine::ProcessId','struct','The id of one process in a run''s arena.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','machine::SharedEliminations','struct','How many prefix eliminations a run read from a channel already minted.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','machine::StepBudget','struct','How many rule instances and evaluation steps a run may spend before it declines.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','machine::StepCount','struct','How many rule instances and evaluation steps a run spent.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','machine::TraceNode','enum','The node a trace decision names.','sharing','fits','sound',NULL);
@@ -517,6 +518,7 @@ INSERT INTO purpose VALUES('core-nbe','stage::double','function','Build a doubli
 INSERT INTO purpose VALUES('core-nbe','stage::normalize','function','Normalize staging syntax, recording a replayable equation per step.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','stage::power','function','Build a power program over a staged natural.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','traced::TracedDuplication','struct','A duplication stance installed bound to the trace sink.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','traced::TracedGranularity','struct','A granularity stance installed bound to the trace sink.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','boundary::ConsumerArity','struct','Names the number of children a consumer frame takes, so the check and the machine read the count rather than a constant.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','boundary::NodeCount','struct','Names a count of arena nodes, so a size or a length reads as a count and not an address.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','boundary::ProducerArity','struct','Names the number of children a producer head declares, so the check and the machine read the count rather than a constant.',NULL,'fits','sound',NULL);

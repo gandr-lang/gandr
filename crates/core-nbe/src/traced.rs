@@ -1,4 +1,4 @@
-//! The duplication stance installed on the certifying path.
+//! The duplication and granularity stances installed on the certifying path.
 //!
 //! # A traced stance installs bound to a recording sink
 //!
@@ -80,6 +80,25 @@
 //! Reversal: `gandr-core-checker` composes the conversion machine with the
 //! kernel's replay at its conversion boundary, as the only such composition;
 //! the certifying constructor then moves behind it.
+//!
+//! # The spinal granularity stance
+//!
+//! [`TracedGranularity::install`] binds a granularity stance to the sink its
+//! conversions record into, and refuses the spinal stance with
+//! [`PolicyRefusal::UntracedGranularity`] over a sink that retains nothing.
+//! Its `decide` runs the machine under the installed stance in place of the
+//! settings' own, so a run whose channels share partial applications along
+//! spines records the derivation the kernel replays (#3149). The kernel
+//! replays over its own unshared terms, so a shared prefix that answered
+//! differently from its unshared evaluation surfaces as a refused trace.
+//! `GranularityPolicy::new` refuses the stance, so this is its one route.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — background: a finer sharing
+//!   changes which evaluations a derivation reads, so a sharing stance installs
+//!   only behind a trace the kernel replays; both installations here take that
+//!   sink.
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
@@ -114,6 +133,8 @@ use crate::overlay_eval::eval_overlay_shared;
 use crate::overlay_eval::eval_overlay_value;
 use crate::policy::DuplicationPolicy;
 use crate::policy::DuplicationStance;
+use crate::policy::GranularityPolicy;
+use crate::policy::GranularityStance;
 use crate::policy::PolicyRefusal;
 use crate::resharing::GoalSupport;
 
@@ -466,6 +487,128 @@ where
         M: CheckMemo<GoalSupport, ProcessId> + Default,
     {
         decide::<S, M>(core, domain, definitions, settings, problem, self.sink)
+    }
+}
+
+/// A granularity stance installed bound to the trace sink every conversion
+/// decided under it records into.
+#[derive(Debug)]
+pub struct TracedGranularity<'sink, S>
+{
+    /// The installed policy, which never leaves this value.
+    policy: GranularityPolicy,
+    /// The sink every conversion decided under the policy records into.
+    sink: &'sink mut S,
+}
+
+impl<'sink, S> TracedGranularity<'sink, S>
+where
+    S: TraceSink<TraceNode>,
+{
+    /// Install `stance` bound to `sink`.
+    ///
+    /// # Specification
+    /// - requires: nothing — every stance and every sink is admissible input.
+    /// - ensures: on success an installation at `stance` holding `sink`; the
+    ///   skeleton stance installs with any sink, the spinal stance only with a
+    ///   sink that retains every decision.
+    /// - provides: the one route by which the spinal granularity stance reaches
+    ///   the machine, and only together with the sink its verdicts are recorded
+    ///   into.
+    /// - fails: [`PolicyRefusal::UntracedGranularity`] for the spinal stance
+    ///   bound to a sink that retains nothing, naming the stance it refused.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PolicyRefusal::UntracedGranularity`] — the spinal stance needs a
+    ///   sink that records, and this one discards.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surface is the stance against the sink's
+    ///   activity, separated by all four pairings, each asserted by variant,
+    ///   with the refusal asserted to name the stance. Removing the refusal or
+    ///   changing the reported stance changes one of these installations.
+    /// - witness: `traced::tests::the_spinal_granularity_installs_only_bound_to_a_recording_sink`
+    #[inline]
+    #[spec(ensures: |ret| match (stance, S::ACTIVITY) {
+        | (GranularityStance::Spinal, SinkActivity::Inactive) => {
+            matches!(ret, Err(PolicyRefusal::UntracedGranularity { stance: refused }) if refused == stance)
+        },
+        | (GranularityStance::Skeleton, _) | (GranularityStance::Spinal, SinkActivity::Active) => {
+            ret.as_ref().is_ok_and(|installed| installed.stance() == stance)
+        },
+    })]
+    pub fn install(
+        stance: GranularityStance,
+        sink: &'sink mut S,
+    ) -> Result<Self, PolicyRefusal>
+    {
+        match (stance, S::ACTIVITY) {
+            (GranularityStance::Spinal, SinkActivity::Inactive) => {
+                Err(PolicyRefusal::UntracedGranularity { stance })
+            },
+            (GranularityStance::Skeleton, _)
+            | (GranularityStance::Spinal, SinkActivity::Active) => Ok(Self {
+                policy: GranularityPolicy::traced(stance),
+                sink,
+            }),
+        }
+    }
+
+    /// The installed stance.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn stance(&self) -> GranularityStance
+    {
+        self.policy.stance()
+    }
+
+    /// Decide a conversion problem under the installed stance, recording into
+    /// the bound sink.
+    ///
+    /// # Specification
+    /// - requires: as [`decide`].
+    /// - ensures: as [`decide`] over `settings` with its granularity replaced
+    ///   by the installed one, recording into the bound sink.
+    /// - provides: the conversion entry for an installed granularity stance:
+    ///   the one route by which a verdict over spinal channels is reached, and
+    ///   it records.
+    /// - fails: as [`decide`] fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Every variant of [`ConversionFault`]; see its documentation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the oracle is the kernel's sequential replay over the
+    ///   original core terms: every catalogue and ladder pair decided here
+    ///   under the spinal stance is replayed to the same verdict, and a shared
+    ///   partial application spends fewer steps at a replayed verdict. A run
+    ///   under the settings' own stance would share nothing and spend the
+    ///   skeleton's steps.
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace_under_the_spinal_granularity`
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
+    #[inline]
+    #[spec(
+        captures: entry_count = usize::from(self.sink.recorded_count()),
+        ensures: |ret| usize::from(self.sink.recorded_count()) >= entry_count,
+    )]
+    pub fn decide<M>(
+        &mut self,
+        core: &CoreArena,
+        domain: &mut DomainArena,
+        definitions: Definitions<'_>,
+        settings: MachineSettings,
+        problem: Problem,
+    ) -> Result<MachineReport, ConversionFault>
+    where
+        M: CheckMemo<GoalSupport, ProcessId> + Default,
+    {
+        let installed = MachineSettings::new(settings.scheduling(), self.policy, settings.budget());
+        decide::<S, M>(core, domain, definitions, installed, problem, self.sink)
     }
 }
 

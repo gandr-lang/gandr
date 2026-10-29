@@ -42,6 +42,10 @@
 //!   sink every conversion decided under it records into, the one route by
 //!   which the spinal stance reaches evaluation; its evaluator shares each
 //!   rib's evaluation across the occurrences that read it in one configuration.
+//! - [`TracedGranularity`] installs a granularity stance bound to the trace
+//!   sink its conversions record into, the one route by which the spinal stance
+//!   reaches the machine; its channels share a partial application two
+//!   unfoldings make, evaluated once along the spine.
 //! - A hole evaluates to a neutral headed by [`NeutralHead::Hole`], suspended
 //!   in its environment, and a mark to one headed by [`NeutralHead::Mark`];
 //!   [`fill_and_resume`] writes a hole of a result and runs what the fill
@@ -83,7 +87,8 @@
 //!   `DuplicationPolicy::copies`.
 //! - `GranularityPolicy` with its `GranularityStance`: how finely the
 //!   conversion machine shares evaluations, `Skeleton` by default and `Spinal`
-//!   refused with `PolicyRefusal::GranularityGated`.
+//!   refused with `PolicyRefusal::GranularityGated`, installed only through
+//!   `TracedGranularity`.
 //! - `Definitions`: the lowered chain, the definitional environment and the
 //!   scope a run reads unfoldings through, with the `Endpoints` stance a
 //!   compound endpoint reads in, the `Recursion` stance a readback names a
@@ -111,24 +116,24 @@
 //! - `decide`: the conversion machine over a `Problem` under `MachineSettings`,
 //!   generic over the check memo it re-shares goals through, answering a
 //!   `MachineReport` with its `MachineVerdict`, `ProcessCount`,
-//!   `DerivationCount`, `StepCount` and `SupportEdges`, and emitting the
-//!   winning derivation in preorder through a `TraceSink<TraceNode>`; refusing
-//!   with `ConversionFault`. Positive leaves carry explicit shared-comparison
-//!   evidence so nested component proofs retain their boundaries. The
-//!   search-free steps answer first with no process started; otherwise goals
-//!   and evaluation channels run fairly over one run queue until the root
-//!   answers or the run declines — `DeclineReason::Cycle` when a goal would
-//!   unfold a definition over a spine already unfolded on its chain or the
-//!   needed goals all wait on one another through a re-shared goal,
-//!   `DeclineReason::Budget` when the run spends its `StepBudget`. Every rule
-//!   arm is exercised, both verdicts and both declines, a refutation naming its
-//!   negative premise and outranking a decline, one channel per distinct
-//!   definition body, a null sink that keeps no derivation while reaching the
-//!   recording sink's verdict, and a null memo that reaches the live memo's
-//!   verdict. Every recorded derivation replays through `gandr-kernel-core`'s
-//!   `replay` to the machine's verdict, a trace claiming the other verdict or
-//!   naming the wrong side is refused, and a run an unlucky schedule declines
-//!   stays declined through the kernel.
+//!   `DerivationCount`, `StepCount`, `SupportEdges` and `SharedEliminations`,
+//!   and emitting the winning derivation in preorder through a
+//!   `TraceSink<TraceNode>`; refusing with `ConversionFault`. Positive leaves
+//!   carry explicit shared-comparison evidence so nested component proofs
+//!   retain their boundaries. The search-free steps answer first with no
+//!   process started; otherwise goals and evaluation channels run fairly over
+//!   one run queue until the root answers or the run declines —
+//!   `DeclineReason::Cycle` when a goal would unfold a definition over a spine
+//!   already unfolded on its chain or the needed goals all wait on one another
+//!   through a re-shared goal, `DeclineReason::Budget` when the run spends its
+//!   `StepBudget`. Every rule arm is exercised, both verdicts and both
+//!   declines, a refutation naming its negative premise and outranking a
+//!   decline, one channel per distinct definition body, a null sink that keeps
+//!   no derivation while reaching the recording sink's verdict, and a null memo
+//!   that reaches the live memo's verdict. Every recorded derivation replays
+//!   through `gandr-kernel-core`'s `replay` to the machine's verdict, a trace
+//!   claiming the other verdict or naming the wrong side is refused, and a run
+//!   an unlucky schedule declines stays declined through the kernel.
 //! - The commuting conversions of `F` in `decide`: before two neutral
 //!   computations over one head decompose, the machine makes the first two
 //!   binds in a row on a side one (`Reassociate`), then binds a side one bind
@@ -209,6 +214,13 @@
 //!   the evaluator's step count shows a rib evaluated once across the
 //!   applications of its abstraction, a rib full laziness could not float out
 //!   included, and an open leg evaluated per occurrence.
+//! - `TracedGranularity`: a granularity stance installed with the trace sink
+//!   its conversions record into, refusing the spinal stance over a sink that
+//!   retains nothing with `PolicyRefusal::UntracedGranularity`. Its `decide`
+//!   runs the machine under the installed stance; under `Spinal` a neutral's
+//!   spine is applied one elimination per channel, each prefix keyed by the
+//!   prefix one shorter and the elimination, and `SharedEliminations` counts
+//!   the prefixes read from a channel already minted.
 //! - `fill_and_resume`, `match_pattern`, `select_arm`, `Matched`, `Selection`,
 //!   `ArmIndex`, `LiveFault` and `MatchFault`, with `NeutralHead::Hole`,
 //!   `NeutralHead::Mark`, `Suspended` and the indeterminate deferral and
@@ -455,6 +467,7 @@ pub use crate::machine::MachineVerdict;
 pub use crate::machine::Problem;
 pub use crate::machine::ProcessCount;
 pub use crate::machine::ProcessId;
+pub use crate::machine::SharedEliminations;
 pub use crate::machine::StepBudget;
 pub use crate::machine::StepCount;
 pub use crate::machine::TraceNode;
@@ -520,3 +533,4 @@ pub use crate::resharing::ResharingPlane;
 pub use crate::resharing::SupportEdges;
 pub use crate::resharing::SupportSides;
 pub use crate::traced::TracedDuplication;
+pub use crate::traced::TracedGranularity;

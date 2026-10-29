@@ -3049,6 +3049,61 @@ impl<'run> Evaluation<'run>
         Self { machine, answer }
     }
 
+    /// An evaluation applying one `elimination` to `head`, the weak head a
+    /// shorter prefix of a spine left.
+    ///
+    /// # Specification
+    /// - requires: `head` is the answer of the prefix of a neutral's spine just
+    ///   before `elimination`: a value before the spine's first elimination or
+    ///   while every earlier one is a static application, a computation
+    ///   otherwise.
+    /// - ensures: an evaluation whose answer is the weak head of `head` under
+    ///   `elimination`, so a chain of these over a spine's eliminations, each
+    ///   started at the answer of the one before, answers what
+    ///   [`Evaluation::eliminate`] answers over the whole spine.
+    /// - provides: one link of the spinal granularity stance's chain, where
+    ///   each prefix of a spine is a channel of its own.
+    /// - fails: never here; an elimination that does not fit `head` is refused
+    ///   by the slice that reaches it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two neutrals over one unforced definition share their
+    ///   first argument, and the chain evaluates the shared prefix once; the
+    ///   kernel replays the verdict over the unshared terms, so an elimination
+    ///   applied to the wrong head or in the wrong order changes the verdict or
+    ///   refuses the trace.
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace_under_the_spinal_granularity`
+    #[spec(
+        ensures: |ret| ret.machine.fuel.0 == 0_u32
+            && match head {
+                Glued::Value(value) => ret.machine.values.last() == Some(&value) && ret.machine.comps.is_empty(),
+                Glued::Computation(comp) => ret.machine.comps.as_slice() == [comp],
+            }
+            && (ret.answer == Answer::Value) == (matches!(head, Glued::Value(_)) && matches!(elimination, Elimination::StaticApply(_))),
+    )]
+    pub(crate) fn extend(
+        definitions: Definitions<'run>,
+        head: Glued,
+        elimination: Elimination,
+    ) -> Self
+    {
+        let mut machine = Machine::new(definitions, Fuel(0_u32));
+        let pushed = push_eliminations(&mut machine, &[elimination]);
+        let answer = match head {
+            Glued::Value(value) => {
+                machine.values.push(value);
+                pushed
+            },
+            Glued::Computation(comp) => {
+                machine.comps.push(comp);
+                Answer::Computation
+            },
+        };
+        Self { machine, answer }
+    }
+
     /// An evaluation of a held endpoint once the definition its computation
     /// is stuck on unfolds: `inner` re-applied to `head`, the computation that
     /// gives delivered as a value, and each spine of `enclosing`, innermost

@@ -147,12 +147,15 @@
 //! of one body — of one definition, or of two the table gave one body — read
 //! one evaluation. Re-applying a neutral's spine to that body, entering a thunk
 //! and opening a binder under a fresh variable are each one channel per
-//! neutral, closure, or closure and level. `GranularityStance::Spinal` would
-//! mint channels along spines as well, sharing partial applications between
-//! unfoldings; `GranularityPolicy::new` refuses it with
+//! neutral, closure, or closure and level. `GranularityStance::Spinal` mints
+//! channels along spines as well: a neutral's spine over an unforced body is
+//! applied one elimination per channel, each keyed by the channel of the prefix
+//! one shorter and the elimination, so a partial application two unfoldings
+//! share is evaluated once. `GranularityPolicy::new` refuses it with
 //! `PolicyRefusal::GranularityGated`, because a finer sharing changes which
-//! evaluations a derivation reads, and it installs only once a replayed trace
-//! certifies its runs.
+//! evaluations a derivation reads. It installs only through
+//! [`TracedGranularity::install`], bound to a sink that records, so every
+//! verdict decided under it carries the trace the kernel replays (#3149).
 //!
 //! Alternatives: no parameter, with the skeleton hard-wired, which leaves the
 //! finer stance no seam to arrive through; and one channel per neutral with no
@@ -177,6 +180,8 @@ use gandr_core_term::DefinitionHeight;
 
 #[cfg(doc)]
 use crate::traced::TracedDuplication;
+#[cfg(doc)]
+use crate::traced::TracedGranularity;
 
 /// A process's share of the scheduler's attention.
 ///
@@ -371,9 +376,9 @@ pub enum Copied
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PolicyRefusal
 {
-    /// The granularity stance installs only behind a certification trace,
-    /// which this crate does not take: a finer sharing changes which
-    /// evaluations a derivation reads.
+    /// The spinal granularity stance installs only bound to a trace sink,
+    /// through [`TracedGranularity::install`], never as a bare policy: a
+    /// finer sharing changes which evaluations a derivation reads.
     GranularityGated
     {
         /// The stance that was refused.
@@ -386,6 +391,14 @@ pub enum PolicyRefusal
     {
         /// The stance that was refused.
         stance: DuplicationStance,
+    },
+    /// A traced installation of the spinal granularity stance was asked for
+    /// over a sink that retains nothing, so its verdicts would carry no
+    /// derivation for the kernel to replay.
+    UntracedGranularity
+    {
+        /// The stance that was refused.
+        stance: GranularityStance,
     },
 }
 
@@ -535,8 +548,8 @@ impl GranularityPolicy
     /// - panics: none.
     ///
     /// # Errors
-    /// - [`PolicyRefusal::GranularityGated`] — the stance needs a certification
-    ///   trace, and installation takes none.
+    /// - [`PolicyRefusal::GranularityGated`] — the stance installs only bound
+    ///   to a trace sink, through [`TracedGranularity::install`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the decision surface is the gate, separated by
@@ -562,13 +575,24 @@ impl GranularityPolicy
         }
     }
 
+    /// A policy at `stance`, for the traced installation alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn traced(stance: GranularityStance) -> Self
+    {
+        Self { stance }
+    }
+
     /// The installed stance.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the installed stance, which is
-    ///   [`GranularityStance::Skeleton`] for every policy that exists, since
-    ///   [`GranularityPolicy::new`] refuses the other.
+    ///   [`GranularityStance::Skeleton`] for every policy
+    ///   [`GranularityPolicy::new`] installs, since it refuses the other.
     /// - provides: the stance the machine's channel minting consults.
     /// - fails: never.
     /// - panics: none.
@@ -580,7 +604,7 @@ impl GranularityPolicy
     /// - witness: `policy::tests::the_finer_granularity_stance_is_gated`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.stance && ret == GranularityStance::Skeleton)]
+    #[spec(ensures: |ret| ret == self.stance)]
     pub fn stance(&self) -> GranularityStance
     {
         self.stance

@@ -147,13 +147,6 @@
 //!   Reversal: a core former binds into `Zone::Linear`; the walk then gains the
 //!   arm in that shape, asking the linear zone's one-shot discipline before it
 //!   copies a capture rather than deciding that again.
-//! - **The spinal granularity stance.** `GranularityStance::Spinal` stays
-//!   refused with `PolicyRefusal::GranularityGated` (see `policy`): duplication
-//!   decides what one evaluation shares, while the granularity decides how
-//!   finely the conversion machine shares its channels, and the second waits on
-//!   evidence the first produces. Reversal: with the spinal duplication
-//!   differential green, a measurement shows the skeleton's channels
-//!   re-evaluating a shared partial application.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

@@ -81,11 +81,13 @@ use crate::overlay::ValueGraft;
 use crate::overlay::ValueNode;
 use crate::policy::DuplicationStance;
 use crate::policy::GranularityPolicy;
+use crate::policy::GranularityStance;
 use crate::policy::SchedulingPolicy;
 use crate::policy::SchedulingStance;
 use crate::resharing::GoalSupport;
 use crate::resharing::ResharingMemo;
 use crate::traced::TracedDuplication;
+use crate::traced::TracedGranularity;
 
 /// A pair of core terms of one polarity, to be evaluated and compared.
 #[derive(Clone, Copy, Debug)]
@@ -444,23 +446,7 @@ impl World
         let definitions = Definitions::new(&self.chain, &self.environment, self.environment.root())
             .reading_endpoints(self.endpoints);
         let mut domain = DomainArena::new();
-        let fuel = Fuel::from(4_096_u32);
-        let problem = match sides {
-            Sides::Values(left, right) => {
-                let left = eval_value(&self.core, &mut domain, definitions, fuel, left)
-                    .expect("the left side evaluates");
-                let right = eval_value(&self.core, &mut domain, definitions, fuel, right)
-                    .expect("the right side evaluates");
-                Problem::values(left, right)
-            },
-            Sides::Computations(left, right) => {
-                let left = eval_computation(&self.core, &mut domain, definitions, fuel, left)
-                    .expect("the left side evaluates");
-                let right = eval_computation(&self.core, &mut domain, definitions, fuel, right)
-                    .expect("the right side evaluates");
-                Problem::computations(left, right)
-            },
-        };
+        let problem = self.evaluated(&mut domain, definitions, sides);
         decide::<S, M>(
             &self.core,
             &mut domain,
@@ -470,6 +456,98 @@ impl World
             sink,
         )
         .expect("the machine answers every fixture")
+    }
+
+    /// Evaluate `sides` into `domain` under `definitions`, at the fixture
+    /// fuel.
+    ///
+    /// # Specification
+    /// - requires: both sides are closed.
+    /// - ensures: the problem over the two weak heads, at the floor.
+    /// - provides: the one evaluation every run of a world starts from.
+    /// - panics: when a side does not evaluate, which no fixture provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed value and computation fixtures evaluate within
+    ///   the fixture fuel; the verdicts every run reaches over them distinguish
+    ///   a swapped side or a side evaluated at the wrong polarity.
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace_under_the_spinal_granularity`
+    #[spec(
+            ensures: |ret| matches!((sides, ret), (Sides::Values(..), Problem { left: crate::domain::Glued::Value(_), right: crate::domain::Glued::Value(_), .. })
+                | (Sides::Computations(..), Problem { left: crate::domain::Glued::Computation(_), right: crate::domain::Glued::Computation(_), .. }))
+        )]
+    fn evaluated(
+        &self,
+        domain: &mut DomainArena,
+        definitions: Definitions<'_>,
+        sides: Sides,
+    ) -> Problem
+    {
+        let fuel = Fuel::from(4_096_u32);
+        match sides {
+            Sides::Values(left, right) => {
+                let left = eval_value(&self.core, domain, definitions, fuel, left)
+                    .expect("the left side evaluates");
+                let right = eval_value(&self.core, domain, definitions, fuel, right)
+                    .expect("the right side evaluates");
+                Problem::values(left, right)
+            },
+            Sides::Computations(left, right) => {
+                let left = eval_computation(&self.core, domain, definitions, fuel, left)
+                    .expect("the left side evaluates");
+                let right = eval_computation(&self.core, domain, definitions, fuel, right)
+                    .expect("the right side evaluates");
+                Problem::computations(left, right)
+            },
+        }
+    }
+
+    /// Evaluate `sides` into a fresh domain and decide them through a
+    /// granularity stance installed with a recording sink.
+    ///
+    /// # Specification
+    /// - requires: both sides are closed.
+    /// - ensures: the machine's report under `stance` and the decisions the
+    ///   bound sink recorded, in order.
+    /// - provides: the run every granularity certification test replays.
+    /// - panics: when installation, evaluation or the machine refuses, which no
+    ///   fixture provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed catalogue, ladder and shared-prefix fixtures
+    ///   are decided under both granularity stances. Kernel agreement, the
+    ///   shared count and the step count distinguish a stance ignored by the
+    ///   installation, a prefix keyed to the wrong head and a prefix evaluated
+    ///   again.
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace_under_the_spinal_granularity`
+    /// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
+    #[spec(
+            ensures: |ret| usize::from(ret.0.derivations()) == usize::from(ret.0.processes())
+                && (stance == GranularityStance::Spinal || u64::from(ret.0.shared()) == 0)
+        )]
+    fn granular(
+        &self,
+        stance: GranularityStance,
+        sides: Sides,
+    ) -> (MachineReport, Vec<ConversionDecision<TraceNode>>)
+    {
+        let definitions = Definitions::new(&self.chain, &self.environment, self.environment.root())
+            .reading_endpoints(self.endpoints);
+        let mut domain = DomainArena::new();
+        let problem = self.evaluated(&mut domain, definitions, sides);
+        let mut log = TraceLog::new();
+        let report = TracedGranularity::install(stance, &mut log)
+            .expect("a recording sink carries either stance")
+            .decide::<ResharingMemo>(
+                &self.core,
+                &mut domain,
+                definitions,
+                MachineSettings::default(),
+                problem,
+            )
+            .expect("the machine answers every fixture");
+        (report, log.decisions().copied().collect())
     }
 
     /// Decide `sides` and keep the trace.
@@ -5263,6 +5341,125 @@ fn the_kernel_certifies_every_spinal_catalogue_and_ladder_trace()
             "{sides:?}: {decisions:?}"
         );
     }
+}
+
+#[test]
+fn the_kernel_certifies_every_catalogue_and_ladder_trace_under_the_spinal_granularity()
+{
+    let (world, cases) = catalogue();
+    for (sides, expected) in cases {
+        let (report, decisions) = world.granular(GranularityStance::Spinal, sides);
+        assert_eq!(expected, report.verdict(), "{sides:?}");
+        assert_eq!(
+            certified(report.verdict()),
+            world.replayed(sides, report.verdict(), &decisions),
+            "{sides:?}: {decisions:?}"
+        );
+    }
+    let (world, rungs) = ladders();
+    for sides in rungs {
+        let (report, decisions) = world.granular(GranularityStance::Spinal, sides);
+        assert_eq!(MachineVerdict::Convertible, report.verdict(), "{sides:?}");
+        assert_eq!(
+            KernelVerdict::Convertible,
+            world.replayed(sides, report.verdict(), &decisions),
+            "{sides:?}: {decisions:?}"
+        );
+    }
+}
+
+/// How many binds a [`curried`] function's partial application runs.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct BindCount(u32);
+
+/// `λx. return x to r₁. … return rₙ₋₁ to rₙ. λy. return rₙ` at `depth` binds:
+/// a curried function whose partial application spends `depth` binds before
+/// its second binder, and whose answer reads only its first argument.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a thunk of a lambda whose body sequences `depth` returns of the
+///   variable bound last, then a lambda returning the variable bound just
+///   outside it.
+/// - provides: the shared partial application the spinal granularity stance is
+///   for.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two applications of the function to one first argument
+///   and two different second arguments; the step count's slope in `depth`
+///   shows whether the partial application is evaluated once or twice.
+/// - witness: `machine::tests::a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149`
+#[spec(
+        ensures: |ret| matches!(core.value(ret), Some(&Value::Thunk(body)) if matches!(core.computation(body), Some(&Computation::Lambda(_))))
+    )]
+fn curried(
+    core: &mut CoreArena,
+    depth: BindCount,
+) -> ValueId
+{
+    let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let returned = core.computation_return(outer);
+    let mut tail = core.computation_lambda(returned);
+    for _bind in 0_u32 .. depth.0 {
+        let occurrence = innermost(core);
+        let produced = core.computation_return(occurrence);
+        tail = core.computation_bind(produced, tail);
+    }
+    let lambda = core.computation_lambda(tail);
+    core.value_thunk(lambda)
+}
+
+#[test]
+fn a_shared_partial_application_is_evaluated_once_under_the_spinal_stance_3149()
+{
+    // `λz. F z ()` against `λz. F z ((), ())` for `F` = [`curried`]: both
+    // sides open under one fresh variable, so the two unfoldings apply `F`
+    // to one domain node and share the partial application `F z`.
+    let steps = |depth: BindCount| {
+        let mut core = CoreArena::new();
+        let body = curried(&mut core, depth);
+        let function = core.value_constant(Name::Zero.constant());
+        let unit = core.value_unit();
+        let first = core.value_unit();
+        let second = core.value_unit();
+        let units = core.value_tuple(&[first, second]);
+        let occurrence = innermost(&mut core);
+        let applied = call(&mut core, function, &[occurrence, unit]);
+        let left = core.computation_lambda(applied);
+        let applied = call(&mut core, function, &[occurrence, units]);
+        let right = core.computation_lambda(applied);
+        let sides = Sides::Computations(left, right);
+        let world = World::new(core, &[(Name::Zero, body)]);
+        let [skeleton, spinal] =
+            [GranularityStance::Skeleton, GranularityStance::Spinal].map(|stance| {
+                let (report, decisions) = world.granular(stance, sides);
+                assert_eq!(MachineVerdict::Convertible, report.verdict(), "{stance:?}");
+                assert_eq!(
+                    KernelVerdict::Convertible,
+                    world.replayed(sides, report.verdict(), &decisions),
+                    "{stance:?}: {decisions:?}"
+                );
+                report
+            });
+        assert_eq!(
+            (0_u64, 2_u64),
+            (u64::from(skeleton.shared()), u64::from(spinal.shared())),
+            "the second unfolding reads the force and the first application from the first's channels"
+        );
+        [skeleton, spinal].map(|report| u64::from(report.steps()))
+    };
+    let [
+        [skeleton_shallow, spinal_shallow],
+        [skeleton_deep, spinal_deep],
+    ] = [BindCount(4), BindCount(8)].map(steps);
+    assert_eq!(
+        skeleton_deep - skeleton_shallow,
+        2 * (spinal_deep - spinal_shallow),
+        "the skeleton evaluates the partial application once per unfolding, the spinal stance \
+         once: {skeleton_shallow} and {skeleton_deep} steps against {spinal_shallow} and {spinal_deep}"
+    );
 }
 
 #[test]
