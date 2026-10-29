@@ -3648,7 +3648,9 @@ pub fn source_pieces(
 ///   refused alone and decorated by the attribute blocks before it, so `@[
 ///   refuses("DuplicateImportAlias") ] import … as … ;` states it. A stray
 ///   takes its slot where it is written, before the forms after it, so its
-///   refusal is reported ahead of what a later form refuses because of it. Each
+///   refusal is reported ahead of what a later form refuses because of it. A
+///   `pub` mark before a child that declares nothing is filed after that
+///   child's strays, so a stray word after the mark is reported first. Each
 ///   forgetting map the manifest model types of a root child ask for takes its
 ///   slot before the child's own. An extern block carrying `boundary` takes the
 ///   slot its check runs in where it is written, owning the attribute blocks
@@ -3743,6 +3745,10 @@ pub fn collect_source<'source>(
     // The `pub` mark read before the declaration it exports, attribute blocks
     // between the two aside.
     let mut marked: Option<Placed> = None;
+    // A `pub` mark before a child that declares nothing, filed after the
+    // child's own strays: a child that strays, a misspelt `def` among them,
+    // is the cause, and the mark's refusal the consequence (#3495).
+    let mut declined: Option<Placed> = None;
     let mut after_stray = false;
     // A complete item of the grammar the lowering does not reach yet is a
     // declaration out of the fragment: it carries its own refusal, whatever
@@ -3795,6 +3801,9 @@ pub fn collect_source<'source>(
                 .is_some_and(|text| <&str>::from(text).trim() == ";");
         if terminates && let Some(last) = strays.last_mut() {
             last.terminator = Some(child);
+        }
+        if let Some(mark) = declined.take() {
+            strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));
         }
         for stray in core::mem::take(&mut strays) {
             first_stray.get_or_insert(stray.refusal);
@@ -3852,7 +3861,7 @@ pub fn collect_source<'source>(
                     .insert(child.node, core::mem::take(&mut mark_docs));
             }
             else {
-                strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));
+                declined = Some(mark);
             }
         }
         if collector.derives(child)?.0 {
@@ -4034,6 +4043,9 @@ pub fn collect_source<'source>(
     if let Some(first) = placed.first() {
         let source = collector.collected.unit.source_at(first.span.start());
         collector.answered(source, &mut strays)?;
+    }
+    if let Some(mark) = declined {
+        strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));
     }
     if let Some(mark) = marked {
         strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));

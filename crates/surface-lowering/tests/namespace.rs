@@ -5333,6 +5333,33 @@ fn a_pub_mark_before_no_declaration_is_misplaced_2687()
     );
 }
 
+/// #3495: a `pub` mark before a word that strays yields to the word's own
+/// refusal: `pub de answer = 42 ;` misspells `def`, and the source is refused
+/// at `de`, as it is with no mark, not at the mark the stray leaves bare.
+#[test]
+fn a_mark_before_a_stray_word_yields_to_the_word_3495()
+{
+    let pbg = grammar();
+    for (text, word) in [
+        ("pub de answer = 42 ;\n", bytes(4_usize, 6_usize)),
+        ("de answer = 42 ;\n", bytes(0_usize, 2_usize)),
+    ] {
+        let refused = lowered(&pbg, &parsed(&pbg, SourceText::from(text)))
+            .expect_err("a source declaring nothing is refused whole");
+        assert!(
+            matches!(
+                refused,
+                LoweringRefusal::OutOfFragment {
+                    span,
+                    boundary: FragmentBoundary::TopLevel,
+                    ..
+                } if span == word
+            ),
+            "{text:?} is refused at the stray word: {refused:?}"
+        );
+    }
+}
+
 /// #2687: documentation written before a `pub` mark documents the declaration
 /// the mark exports, as it does with no mark, and joins the documentation of
 /// an attribute block after the mark in source order.
