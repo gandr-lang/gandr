@@ -1460,7 +1460,9 @@ FROM reference;"); keys read $resolved"
 # repository, once per case in `.config/pr-stack/behind.json`: a queued lower
 # that lacks the trunk change the upper builds on is waited out, one not
 # queued is refused naming the change, and a conflict with the lower's own
-# change is refused at once (#3654, `stack_on_top`).
+# change is refused at once (#3654, `stack_on_top`). A branch stacked once,
+# over a lower restacked since, replays its own commit alone (#3877,
+# `stack_base`).
 ["check:pr-stack"]
 description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a change is measured from a fetched trunk, and a top behind the trunk is waited out or refused"
 tools.jq = "1.8.1"

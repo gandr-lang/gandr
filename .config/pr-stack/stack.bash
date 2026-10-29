@@ -64,14 +64,34 @@ await_top() {
   done
 }
 
+# The commit the checked-out branch was last stacked on, recorded in the
+# worktree's git directory as `gandr-stack-base` (#3877). A run that fails
+# after it stacks leaves the old top's commits in the branch, and a top
+# restacked since holds none of them by hash and may hold none by patch. The
+# record names them still. Prints nothing when no record is kept, or when
+# HEAD no longer carries the commit it names.
+stack_base() {
+  local record base
+  record=$(git rev-parse --git-path gandr-stack-base)
+  [[ -s $record ]] || return 0
+  base=$(< "$record")
+  if git merge-base --is-ancestor "$base" HEAD 2> /dev/null; then printf '%s\n' "$base"; fi
+}
+
+# Record `$1`, the commit the checked-out branch now stands on, as its stack
+# base (`stack_base`, #3877).
+record_stack_base() {
+  git rev-parse "$1" > "$(git rev-parse --git-path gandr-stack-base)"
+}
+
 # The commit below the checked-out branch `$1`'s own commits, where its rebase
 # onto the top's branch `$2` starts (#1298). Its own commits are those above
-# `origin/$trunk` that no other open pull request's head holds and whose patch
-# `origin/$2` does not already carry. A branch an earlier run stacked holds
-# the commits of the top it was stacked on, and of any pull request that top
-# has since been rebased off; neither is its own. Its own commits sit at its
-# top, so the parent of the oldest is the fork. Prints `HEAD` when it holds
-# none.
+# `origin/$trunk` and the branch's stack base (`stack_base`, #3877) that no
+# other open pull request's head holds and whose patch `origin/$2` does not
+# already carry. A branch an earlier run stacked holds the commits of the top
+# it was stacked on, and of any pull request that top has since been rebased
+# off; neither is its own. Its own commits sit at its top, so the parent of
+# the oldest is the fork. Prints `HEAD` when it holds none.
 own_fork() {
   local heads=() head commit
   local -A held=()
@@ -79,6 +99,7 @@ own_fork() {
     git fetch --quiet origin "$head"
     heads+=("origin/$head")
   done
+  mapfile -t -O "${#heads[@]}" heads < <(stack_base)
   # The patch comparison reads the top's side whole, so it runs apart from the
   # exclusion of the other heads.
   for commit in $(git rev-list --no-merges HEAD --not "origin/$trunk" "${heads[@]}"); do held[$commit]=1; done
@@ -120,9 +141,15 @@ stack_on_top() {
     base=$(jq -r .head <<< "$stacked_top")
     number=$(jq -r .number <<< "$stacked_top")
     git fetch --quiet origin "$base" "$trunk"
-    git merge-base --is-ancestor "origin/$base" HEAD && return 0
+    if git merge-base --is-ancestor "origin/$base" HEAD; then
+      record_stack_base "origin/$base"
+      return 0
+    fi
     fork=$(own_fork "$own" "$base")
-    git rebase --quiet --update-refs --onto "origin/$base" "$fork" > /dev/null 2>&1 && return 0
+    if git rebase --quiet --update-refs --onto "origin/$base" "$fork" > /dev/null 2>&1; then
+      record_stack_base "origin/$base"
+      return 0
+    fi
     git rebase --abort
     lacked=$(trunk_lacked "$base")
     if [[ -z $lacked ]]; then
@@ -180,6 +207,7 @@ restack_moved() {
     echo "the stack top moved to #$(jq -r .number <<< "$now"), and the rebase of $own onto $onto conflicts; run \`pr:open\` again" >&2
     return 2
   fi
+  record_stack_base "origin/$onto"
   stacked_top=$now
   echo "the stack top moved to #$(jq -r .number <<< "$now") while the obligations were measured; $own restacks onto it, its own change measured as it was"
 }
