@@ -3154,8 +3154,9 @@ struct Lowerer<'run, 'source>
     /// its classifier.
     ascribed: BTreeMap<NodeIndex, NodeIndex>,
     /// Each lambda's binder written with a type, `x` in `fn (x : A) { … }`,
-    /// with `A`, read under the frame of the argument the lambda binds apart.
-    typed_parameters: BTreeMap<NodeIndex, (NodeIndex, Frame)>,
+    /// with `A`, the frame it was read under, which the lambda stands in, and
+    /// the lambda's own frame, which binds `x`.
+    typed_parameters: BTreeMap<NodeIndex, (NodeIndex, Frame, Frame)>,
     /// Each value argument of a data family's application, with its place.
     argued: BTreeMap<NodeIndex, native::Argued>,
     /// Each argument of a call naming a declaration, with the type the
@@ -9505,10 +9506,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   answers a written arrow `A -> C`, parentheses stripped, the binder is
     ///   typed `A` as a parameter's written type types it, and the body answers
     ///   `C`, each under the frame the arrow was read under. A parameter
-    ///   written with its type `A` binds the argument apart, unnamed, reads `A`
-    ///   as a value type under that argument's frame, and binds the parameter
-    ///   typed `A` in a frame extending it, recorded with `A` for the mint to
-    ///   ascribe the argument at.
+    ///   written with its type `A` reads `A` as a value type under the frame
+    ///   the lambda stands in, binds the parameter typed `A`, and reads its
+    ///   block beneath one more binder, unnamed: the bind the mint ascribes the
+    ///   argument at, recorded with `A` (#3735).
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
     ///   computation; the unadmitted refusal for a type abstraction; the arity
@@ -9552,32 +9553,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.note_binder(binder, name)?;
         let arrow = self.answered_arrow(site)?;
         let unnamed = Maybe::Absent(binder_site::Absent::Unwritten);
-        let (frame, typed) = match declared {
-            Some(declared) => {
-                let argument = match arrow {
-                    Some((domain, _)) => {
-                        self.scope
-                            .extend_typed(frame, SurfaceName::from(""), domain, unnamed)
-                    },
-                    None => self.scope.extend(frame, SurfaceName::from(""), unnamed),
-                };
-                let argument = Frame::Inner(argument);
-                self.read(declared.node, Reading::ValueType(argument));
-                let _first = self
-                    .typed_parameters
-                    .insert(binder.node, (declared.node, argument));
-                (argument, Some(declared.node))
-            },
-            None => (frame, arrow.map(|(domain, _)| domain)),
-        };
-        let extended = match typed {
+        if let Some(declared) = declared {
+            // Read where the lambda stands: the parameter is not in scope in
+            // its own type.
+            self.read(declared.node, Reading::ValueType(frame));
+        }
+        let typed = declared
+            .map(|declared| declared.node)
+            .or_else(|| arrow.map(|(domain, _)| domain));
+        let extended = Frame::Inner(match typed {
             Some(declared) => {
                 self.scope
                     .extend_typed(frame, name, declared, Maybe::Present(binder.span))
             },
             None => self.scope.extend(frame, name, Maybe::Present(binder.span)),
+        });
+        // A typed parameter's body stands beneath the bind that holds the
+        // argument to its type, whose own binder no name reads (#3735).
+        let under = match declared {
+            Some(declared) => {
+                let _first = self
+                    .typed_parameters
+                    .insert(binder.node, (declared.node, frame, extended));
+                Frame::Inner(self.scope.extend(extended, SurfaceName::from(""), unnamed))
+            },
+            None => extended,
         };
-        let body = self.block(site, &mut cursor, Frame::Inner(extended))?;
+        let body = self.block(site, &mut cursor, under)?;
         let answer = match arrow {
             Some((_, codomain)) => {
                 let _passed = self.answers.insert(body.last, codomain);
@@ -16829,9 +16831,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map(|under| {
                     let id = sink.arena.computation_lambda(under);
                     let lowered = sink.computation(id, origin);
-                    if !self.typed_parameters.contains_key(&binder)
-                        && let Maybe::Present(name) = self.origin_at(binder)
-                    {
+                    if let Maybe::Present(name) = self.origin_at(binder) {
                         sink.origins.record_binder(id, name);
                     }
                     lowered
@@ -16959,19 +16959,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         })
     }
 
-    /// `under`, the body of the lambda whose parameter is `binder`, with the
-    /// argument the lambda binds bound as the parameter: where the parameter
-    /// is written with its type `A`, `(return #0 : -F A) to x. under`.
+    /// `under`, the body of the lambda whose parameter is `binder`, beneath
+    /// the bind that holds the argument to the parameter's written type:
+    /// where the parameter is written with its type `A`, `(return #0 : -F A)
+    /// to _. under`. The parameter is the lambda's own binder, so a type that
+    /// reads the lambda's binder reads the parameter (#3735).
     ///
     /// # Specification
-    /// - requires: `under` is minted under the parameter's frame; a typed
-    ///   parameter's frame extends the argument's, under which its `A` was read
-    ///   as a value type.
+    /// - requires: `under` is minted beneath a typed parameter's bind, its
+    ///   frame one unnamed binder past the lambda's own; `A` was read as a
+    ///   value type where the lambda stands.
     /// - ensures: `under` itself for a parameter written without a type;
     ///   otherwise the bind of the argument, returned and ascribed the returner
-    ///   of `A` carried into the term context of the argument's frame, over
+    ///   of `A` carried into the term context of the lambda's frame, over
     ///   `under`, every node minted at `origin` marked as the parameter's
-    ///   insertion, and the bind recorded as binding the parameter's name.
+    ///   insertion.
     /// - fails: the written type's absence where it was not minted.
     /// - panics: none.
     ///
@@ -16993,14 +16995,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         origin: Origin,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        let Some(&(declared, argument)) = self.typed_parameters.get(&binder)
+        let Some(&(declared, read, parameter)) = self.typed_parameters.get(&binder)
         else {
             return Maybe::Present(under);
         };
         self.value_type_at(declared).map(|written| {
             let inserted = origin.inserted(Insertion::Parameter);
-            let declared =
-                self.relocate_value_type(written, argument, Telescope::Signature, sink, inserted);
+            let declared = self.carry_value_type(
+                written,
+                read,
+                Telescope::Signature,
+                parameter,
+                sink,
+                inserted,
+            );
             let returner = sink.arena.comp_type_returner(declared);
             sink.origins.record_comp_type(returner, inserted);
             let passed = sink
@@ -17013,9 +17021,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             sink.origins.record_computation(ascribed, inserted);
             let bound = sink.arena.computation_bind(ascribed, under);
             sink.origins.record_computation(bound, inserted);
-            if let Maybe::Present(name) = self.origin_at(binder) {
-                sink.origins.record_binder(bound, name);
-            }
             bound
         })
     }
@@ -23230,10 +23235,10 @@ mod tests
         );
     }
 
-    /// A lambda's parameter written with its type binds the argument apart,
-    /// returns it ascribed that type, and binds the parameter over the body:
-    /// the checker holds the arrow's domain to the written type, and the
-    /// body's use resolves to the parameter as written (#1310).
+    /// A lambda's parameter written with its type is the lambda's own binder:
+    /// the argument, returned ascribed that type, is bound apart over the body,
+    /// so the checker holds the arrow's domain to the written type (#1310), and
+    /// the body reads the parameter where a dependent result type does (#3735).
     #[test]
     fn a_typed_parameter_binds_its_argument_ascribed_1310()
     {
@@ -23270,9 +23275,13 @@ mod tests
             Some(&CompType::Returner { result, .. })
                 if arena.value_type(result) == Some(&ValueType::Base(BaseType::Integer))
         ));
+        let parameter = Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(1_u32),
+        };
         assert!(
-            matches!(arena.computation(rest), Some(&Computation::Return(returned)) if arena.value(returned) == Some(&innermost)),
-            "the body reads the parameter as the bind's binder"
+            matches!(arena.computation(rest), Some(&Computation::Return(returned)) if arena.value(returned) == Some(&parameter)),
+            "the body reads the parameter as the lambda's own binder, past the bind's"
         );
         let at = source.find("y :").unwrap();
         assert!(
