@@ -1300,10 +1300,12 @@ where
 ///   answers what settling it whole answers; a refused name an application
 ///   binds reads the application's attribute, and a refused declaration writing
 ///   its own halves keeps its own; a witness that checks beside its refused
-///   function keeps the default.
+///   function keeps the default, and so does a function that checks beside its
+///   refused witness.
 /// - witness: `settle::tests::a_module_settled_after_its_leading_report_settles_as_a_whole_one_776`
 /// - witness: `settle::tests::an_application_s_attribute_states_its_refused_names_1274`
 /// - witness: `settle::tests::a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706`
+/// - witness: `settle::tests::a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
@@ -1362,8 +1364,9 @@ where
         // A name an application or a module's header binds writes no half:
         // when it is refused, the attributes before that form state its
         // expectation, and a witness that checks keeps the default. A witness
-        // of a written signature reads its function's form, and when it
-        // checks the function alone states that form's expectation.
+        // of a written signature reads its function's form. When it checks,
+        // the function alone states that form's expectation; when it is
+        // refused and the function checks, the witness alone states it.
         let expectations = match produced {
             Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
                 if !header(module.attributes(), lowered).is_empty() =>
@@ -1372,7 +1375,8 @@ where
             },
             Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. })
                 if expectations.membership == Membership::Fixture
-                    && function_s_form(module, lowered).is_some() =>
+                    && (function_s_form(module, lowered).is_some()
+                        || refused_witness_s_form(module, verdicts, lowered).is_some()) =>
             {
                 Expectations::unattributed()
             },
@@ -1878,28 +1882,89 @@ fn function_s_form(
     lowered: &LoweredDeclaration<'_>,
 ) -> Option<UnitKey>
 {
-    let keys = |declaration: &LoweredDeclaration<'_>| {
-        [
-            declaration.signature(),
-            declaration.definition(),
-            declaration.refused_form(),
-        ]
-        .into_iter()
-        .filter_map(|key| match key {
-            Maybe::Present(key) => Some(key),
-            Maybe::Absent(_) => None,
-        })
-    };
     if lowered.role() != Role::Witness {
         return None;
     }
-    keys(lowered)
+    form_keys(lowered)
         .filter(|&key| !module.attributes().entries(key).is_empty())
         .find(|&key| {
             module.declarations().iter().any(|other| {
-                other.constant() != lowered.constant() && keys(other).any(|held| held == key)
+                other.constant() != lowered.constant() && form_keys(other).any(|held| held == key)
             })
         })
+}
+
+/// The form whose attributes the declaration `lowered` reads as its own and
+/// a refused witness of `module` reads too: the function that checks against
+/// the signature one form states, beside the witness of the signature its
+/// defining form writes, refused.
+///
+/// # Specification
+/// - requires: `verdicts` is the report the checker gave `module`.
+/// - ensures: present only when `lowered` is no [`Role::Witness`]: then the
+///   first of its signature, definition and refused-form keys that files an
+///   entry and is a key of a witness at another admission position, which
+///   lowering refused or `verdicts` refuses.
+/// - provides: which function that checks keeps the default beside its refused
+///   witness.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function signed twice whose body checks against the
+///   stated signature settles beside the witness its written signature refuses,
+///   and a function refused beside its witness that checks still states its
+///   refusal.
+/// - witness: `settle::tests::a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840`
+/// - witness: `settle::tests::a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706`
+#[spec(ensures: |ret| ret.is_none() || lowered.role() != Role::Witness)]
+fn refused_witness_s_form(
+    module: &LoweredModule<'_>,
+    verdicts: &ModuleReport,
+    lowered: &LoweredDeclaration<'_>,
+) -> Option<UnitKey>
+{
+    if lowered.role() == Role::Witness {
+        return None;
+    }
+    let refused = |witness: &LoweredDeclaration<'_>| {
+        matches!(witness.outcome(), DeclarationOutcome::Refused(_))
+            || verdicts.judged().iter().any(|answer| {
+                answer.constant() == witness.constant()
+                    && matches!(answer.verdict(), Verdict::Refused(_))
+            })
+    };
+    form_keys(lowered)
+        .filter(|&key| !module.attributes().entries(key).is_empty())
+        .find(|&key| {
+            module.declarations().iter().any(|other| {
+                other.role() == Role::Witness
+                    && other.constant() != lowered.constant()
+                    && form_keys(other).any(|held| held == key)
+                    && refused(other)
+            })
+        })
+}
+
+/// The signature, definition and refused-form keys `declaration` holds, in
+/// that order.
+///
+/// # Specification
+/// trivial.
+fn form_keys<'declaration>(
+    declaration: &'declaration LoweredDeclaration<'_>
+) -> impl Iterator<Item = UnitKey> + 'declaration
+{
+    [
+        declaration.signature(),
+        declaration.definition(),
+        declaration.refused_form(),
+    ]
+    .into_iter()
+    .filter_map(|key| match key {
+        Maybe::Present(key) => Some(key),
+        Maybe::Absent(_) => None,
+    })
 }
 
 /// What the declaration `lowered` of `module` states under `root`: the
@@ -3544,6 +3609,45 @@ data NatUnits : Type {{
                 report.declarations()
             );
         }
+    }
+
+    /// #3840: an expectation written before a signed function whose signature
+    /// another form states settles the refusal its witness meets. The
+    /// function that checks against the stated signature keeps the default
+    /// when the witness of its written one is refused.
+    #[test]
+    fn a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840()
+    {
+        let source = r#"def g : +U (Bool -> -F Integer) ; @[ refuses("TypeMismatch") ] def g(x : Bool) -> Bool { 1 }"#;
+        let report = settled(CorpusRoot::Fixture, SourceText::from(source));
+        let fixtures: Vec<_> = report
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.membership() == Membership::Fixture)
+            .collect();
+        let [fixture] = *fixtures
+        else {
+            panic!(
+                "the refused witness alone states the expectation, got {:?}",
+                report.declarations()
+            );
+        };
+        assert!(
+            matches!(fixture.produced().refusal(), Maybe::Present(refusal) if refusal.name() == RefusalName::TypeMismatch),
+            "the fixture is the witness refused TypeMismatch, got {fixture:?}"
+        );
+        let unsettled: Vec<_> = report
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.settlement() != Settlement::Settled)
+            .map(DeclarationReport::name)
+            .collect();
+        assert!(
+            unsettled.is_empty(),
+            "the refused witness settles under its expectation and the function that checks \
+             under the default, got {unsettled:?} unsettled in {:?}",
+            report.declarations()
+        );
     }
 
     /// #776: a module settled after its leading declarations' report — a
