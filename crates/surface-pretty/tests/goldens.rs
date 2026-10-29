@@ -5166,6 +5166,48 @@ fn a_thunk_the_checker_inserts_is_left_out_1457()
     );
 }
 
+/// A lambda ascribed a type is written without the thunk the checker
+/// inserts over it, as the formatter writes it, while an ascribed thunk over
+/// a call keeps its braces (#3872).
+#[test]
+fn an_ascribed_lambda_is_written_without_its_thunk_3872()
+{
+    let names = [Name::from("kept"), Name::from("twice")];
+    let mut core = CoreArena::new();
+    let number = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(number);
+    let arrow = core.comp_type_arrow(number, returns_integer);
+    let function = core.value_type_thunk(arrow);
+    let suspended = core.value_type_thunk(returns_integer);
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    let kept = core.computation_force(kept);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(bound);
+    let lambda = core.computation_lambda(returned);
+    let lambda = core.value_thunk(lambda);
+    let lambda = core.value_ascribe(lambda, function);
+    let over_lambda = core.computation_application(kept, lambda);
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let twice = core.value_constant(ConstantIndex::from(1_usize));
+    let twice = core.computation_force(twice);
+    let doubled = core.computation_application(twice, one);
+    let doubled = core.value_thunk(doubled);
+    let doubled = core.value_ascribe(doubled, suspended);
+    let over_call = core.computation_application(kept, doubled);
+    let source = CoreSource::new(&core, &names);
+    let computation = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, computation(over_lambda)),
+        faithful(Written("kept((fn (a) { a } : +U (Integer -> -F Integer)))")),
+        "an ascribed thunk over a lambda is written as the lambda"
+    );
+    assert_eq!(
+        spelled(&source, computation(over_call)),
+        faithful(Written("kept((thunk { twice(1) } : +U (-F Integer)))")),
+        "an ascribed thunk over a call keeps its braces"
+    );
+}
+
 /// The sugared form writes a block's `run` statements that only sequence
 /// calls at their binders' reads, as the formatter does: each read once, in
 /// the statements' order, as an argument or a field, with no call reading a

@@ -1159,9 +1159,10 @@ where
     let continues = |node| Slot::of(node, Admits::Computation(Tail::Continues), Binds::NONE);
     let ends = |node, binds| Slot::of(node, Admits::Computation(Tail::Ends), binds);
     // A lambda standing as an endpoint or a point is the thunk the lowering
-    // mints over it, so the thunk is left out where bodies are spelled
-    // (#3767).
-    let endpoint = |node| {
+    // mints over it (#3767), and a lambda ascribed a type is the thunk the
+    // checker inserts over it (#3872): the thunk is left out where bodies are
+    // spelled.
+    let bare = |node| {
         if bodies == Bodies::Spelled
             && let Former::Thunk(body) = source.read(node)
             && matches!(source.read(body), Former::Lambda(_))
@@ -1299,13 +1300,13 @@ where
             carrier,
             left,
             right,
-        } => Vec::from([value_type(carrier), endpoint(left), endpoint(right)]),
+        } => Vec::from([value_type(carrier), bare(left), bare(right)]),
         Former::Relation {
             relation: Relation::Flow,
             left,
             right,
-        } => Vec::from([endpoint(left), endpoint(right)]),
-        Former::Here(child) | Former::Stay(child) => Vec::from([endpoint(child)]),
+        } => Vec::from([bare(left), bare(right)]),
+        Former::Here(child) | Former::Stay(child) => Vec::from([bare(child)]),
         Former::Relation {
             relation: Relation::Isomorphism | Relation::Equivalence,
             left,
@@ -1584,7 +1585,7 @@ where
         } => match (truth(source, annotated, ty), natural(source, annotated, ty)) {
             (Some(_), _) => Vec::new(),
             (None, Some(_)) => Vec::from([value_type(ty)]),
-            (None, None) => Vec::from([value(annotated), value_type(ty)]),
+            (None, None) => Vec::from([bare(annotated), value_type(ty)]),
         },
         // An offer's arm and a fork's child end in a computation the surface
         // reads only as one, `retire => pure unit`: no exit is elided there.
