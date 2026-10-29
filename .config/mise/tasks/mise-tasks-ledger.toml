@@ -24,23 +24,24 @@ description = "Dump ledger/features.db to the tracked ledger/features.sql, rows 
 run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
 
 # The crate map (#2290): `ledger/crates.dot` and the category graph between
-# `crates/README.md`'s markers, generated from `cargo metadata` and the sites
-# of `ledger/concerns.sql` by `.config/crate-map/map.jq`. `check:crate-map`
-# in `mise-tasks-check.toml` holds their currency, the layering and the
+# `ledger/README.md`'s markers (#3890), generated from `cargo metadata` and
+# the sites of `ledger/concerns.sql` by `.config/crate-map/map.jq`, in the
+# layering of `crates/README.md`. `check:crate-map` in
+# `mise-tasks-check.toml` holds their currency, the layering and the
 # concerns' sites.
 ["ledger:crate-map"]
-description = "Generate ledger/crates.dot and crates/README.md's category map from cargo metadata and the concerns"
+description = "Generate ledger/crates.dot and ledger/README.md's category map from cargo metadata and the concerns"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 metadata=$(cargo metadata --locked --no-deps --format-version 1)
 sites=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
-map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq <<< "$metadata"; }
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --rawfile page ledger/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq <<< "$metadata"; }
 map -r dot > ledger/crates.dot.new
-map -j readme > crates/README.md.new
+map -j readme > ledger/README.md.new
 mv ledger/crates.dot.new ledger/crates.dot
-mv crates/README.md.new crates/README.md
+mv ledger/README.md.new ledger/README.md
 '''
 
 # The concerns ledger, `ledger/concerns.sql`, is edited by hand: an `INSERT`

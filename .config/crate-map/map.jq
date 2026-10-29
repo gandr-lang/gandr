@@ -10,9 +10,9 @@
 #   concern's colour between each two of its crates in name order, a loop on
 #   a concern's only crate; everything sorted so the file depends on the
 #   graph alone;
-# - `readme`: `$readme` with the category graph between its `crate-map`
-#   markers rewritten, one arrow per pair of categories, labelled with the
-#   edges it stands for;
+# - `readme`: the page `$page`, `ledger/README.md`, with the category graph
+#   between its `crate-map` markers rewritten, one arrow per pair of
+#   categories, labelled with the edges it stands for (#3890);
 # - `findings`: one line per crate outside `crates/<category>-<name>`, per
 #   edge to a category listed after its own, the layering's two refusals, and
 #   per concern site in a crate the workspace does not have.
@@ -109,9 +109,9 @@ def mermaid:
 
 def readme:
   mermaid as $block
-  | ($readme
+  | ($ARGS.named.page // error("the readme form takes the page holding the markers as `$page`")
      | capture("^(?<head>(?:.|\n)*<!-- crate-map:begin -->\n)(?:.|\n)*?(?<tail><!-- crate-map:end -->(?:.|\n)*)$")
-     // error("crates/README.md holds no `<!-- crate-map:begin -->` … `<!-- crate-map:end -->` block"))
+     // error("the page holds no `<!-- crate-map:begin -->` … `<!-- crate-map:end -->` block"))
   | .head + $block + "\n" + .tail;
 
 def findings:
