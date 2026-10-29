@@ -169,9 +169,11 @@ use gandr_core_sequent::Provenance;
 use gandr_core_sequent::ReadbackRefusal;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
+use gandr_core_sequent::Writers;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::focus_definition;
 use gandr_core_sequent::read_back_terminal;
+use gandr_core_sequent::spawn_independent_definitions;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -179,6 +181,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
+use gandr_runtime_emitter::Choice;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
@@ -189,6 +192,7 @@ use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::Trace;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
+use gandr_runtime_emitter::evaluate_scheduled_on;
 use gandr_runtime_emitter::evaluate_with_host;
 use gandr_surface_corpus::Channel;
 use gandr_surface_corpus::RunSpelling;
@@ -220,6 +224,7 @@ use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::item_program;
+use crate::pool::Pool;
 
 mod console;
 mod entry;
@@ -294,6 +299,22 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a program keeps no concurrent schedule of its definitions.
+    mod scheduled {
+        /// Every run unfolds the definitions as focused.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The judgement named no writer, so no definition holds a marked
+            /// cut.
+            Unmarked,
+            /// The schedule's rewrite refused a node, so every run takes the
+            /// sequential schedule.
+            Refused,
+        }
+    }
+}
+
 /// The code-word jumps one run may spend: far past any run the fragment can
 /// write, whose only recursion descends structurally and so always halts,
 /// and the bound that keeps a run of a later fragment from looping
@@ -331,19 +352,6 @@ impl Engine
             Self::Executor => Tier::Executor,
         }
     }
-}
-
-/// Which tier a run asks the emitter for.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug)]
-enum Choice
-{
-    /// The tier the process's policy picks.
-    Policy,
-    /// One tier.
-    Tier(Tier),
 }
 
 /// What hosts the operations a run offers, and whether it records its
@@ -392,6 +400,9 @@ pub struct Program<'source>
     arena: CommandArena,
     /// What each constant unfolds to, by admission position.
     definitions: Definitions,
+    /// The definitions with each marked cut rewritten into a spawn of its
+    /// writer and a read of its handle: what a concurrent run unfolds.
+    scheduled: Maybe<Definitions, scheduled::Absent>,
     /// Each declaration's name and standing, by admission position; a
     /// position no declaration holds is absent.
     declarations: BTreeMap<ConstantIndex, Declared<'source>>,
@@ -916,20 +927,27 @@ impl<'source> Program<'source>
         verdicts: &ModuleReport,
     ) -> Self
     {
-        Self::after(Focused::default(), core, module, verdicts)
+        Self::after(Focused::default(), core, module, verdicts, &Writers::NONE)
     }
 
     /// [`Self::new`] continuing `focused`, the part of the program the
     /// module's leading declarations make: its declarations are taken as
     /// focused and sealed, and only the later ones are focused and spelled.
+    /// Each later accepted body focuses each bind of `writers` apart, its
+    /// binder marked independent.
     ///
     /// # Specification
     /// - requires: as [`Self::new`]; `focused` is [`Self::into_focused`] of the
     ///   program of a module whose declarations lead `module`'s, judged over an
-    ///   arena `core` extends, its verdicts leading `verdicts`.
-    /// - ensures: the program [`Self::new`] builds of `module`.
+    ///   arena `core` extends, its verdicts leading `verdicts`. `writers` names
+    ///   computations of `core` the checker typed as performing nothing.
+    /// - ensures: the program [`Self::new`] builds of `module`, but each later
+    ///   accepted body focused with `writers`. When `writers` names a writer,
+    ///   the program also keeps its definitions rewritten by
+    ///   [`spawn_independent_definitions`], for a concurrent run to unfold.
     /// - provides: a document's program at the cost of its own declarations.
-    /// - fails: never.
+    /// - fails: never; a schedule the rewrite refuses leaves every run
+    ///   sequential.
     /// - panics: none.
     /// - executable: none — the clause is [`Self::new`]'s answer over the whole
     ///   module; the witness compares the two.
@@ -943,11 +961,13 @@ impl<'source> Program<'source>
     ///   reaching no hidden member changes no run: the first was sealed by the
     ///   leading program in the same spelling, and only a run whose read-back
     ///   mentions a hidden member reads the seal, which such a declaration's
-    ///   run never does.
+    ///   run never does. A program focused with the tree sum's writers keeps
+    ///   its definitions scheduled, and a program focused with none keeps none.
     /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_skipped_admission_position_holds_no_declaration`
     /// - witness: `evaluate::tests::a_run_naming_a_hidden_member_is_opaque_at_its_module`
+    /// - witness: `evaluate::tests::a_tree_sum_composed_concurrently_answers_as_the_sequential_schedule_2954`
     #[must_use]
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub(crate) fn after(
@@ -955,6 +975,7 @@ impl<'source> Program<'source>
         core: &CoreArena,
         module: &LoweredModule<'source>,
         verdicts: &ModuleReport,
+        writers: &Writers,
     ) -> Self
     {
         let Focused {
@@ -983,13 +1004,7 @@ impl<'source> Program<'source>
             let (definition, slot) = match (verdict, body) {
                 (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
                 (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
-                    match focus_definition(
-                        core,
-                        body,
-                        &mut arena,
-                        &mut provenance,
-                        &gandr_core_sequent::Writers::NONE,
-                    ) {
+                    match focus_definition(core, body, &mut arena, &mut provenance, writers) {
                         Ok(producer) => (
                             Definition::Transparent(producer),
                             Slot::Defined(references(core, body)),
@@ -1108,9 +1123,17 @@ impl<'source> Program<'source>
         }
         let entry = entry::entry_of(core, module, verdicts);
         let reads = footprint_spellings(core, module);
+        let scheduled = if *writers == Writers::NONE {
+            Maybe::Absent(scheduled::Absent::Unmarked)
+        }
+        else {
+            spawn_independent_definitions(&mut arena, &definitions)
+                .map_or(Maybe::Absent(scheduled::Absent::Refused), Maybe::Present)
+        };
         Self {
             arena,
             definitions,
+            scheduled,
             declarations,
             names,
             printed,
@@ -1532,6 +1555,57 @@ impl<'source> Program<'source>
             Hosting::Printing(console),
         )
         .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` as [`Self::evaluate_printing`] does,
+    /// on the concurrent schedule: each independent writer the program's
+    /// definitions hold starts as a job of `pool`, and each read waits for it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate_printing`] gives. A writer performs
+    ///   nothing, so the schedule reorders no line `console` captures. A
+    ///   program that keeps no schedule runs as [`Self::evaluate_printing`]
+    ///   runs it.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: a writer's panic, where its read or its scope ends.
+    /// - executable: none — the agreement is observed by running both
+    ///   schedules.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the tree sum composed on the concurrent schedule
+    ///   answers its sequential sum at four threads and at one, and every
+    ///   corpus `runs` item settles as it settles sequentially.
+    /// - witness: `evaluate::tests::a_tree_sum_composed_concurrently_answers_as_the_sequential_schedule_2954`
+    fn evaluate_printing_scheduled(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Captured,
+        pool: &Pool,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        let mut store = Store::new();
+        let ran = match self.scheduled {
+            Maybe::Present(ref scheduled) => {
+                self.terminal_on((pool, scheduled), (returned, forced), (&mut store, console))
+            },
+            Maybe::Absent(scheduled::Absent::Unmarked | scheduled::Absent::Refused) => self
+                .terminal(
+                    (returned, forced),
+                    Choice::Policy,
+                    (&mut store, Hosting::Printing(console)),
+                ),
+        };
+        match ran {
+            Ok(Ok(terminal)) => self.finish(constant, &store, terminal),
+            Ok(Err(evaluation)) => evaluation,
+            Err(declined) => Evaluation::Unfinished(Unfinished::Declined(declined)),
+        }
     }
 
     /// Run the declaration at `constant` as [`Self::evaluate_printing`] does,
@@ -2059,7 +2133,7 @@ impl<'source> Program<'source>
     ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
     {
         let fuel = Fuel::from(RUN_BUDGET);
-        let mut run = |root, store: &mut Store| {
+        let run = |root, store: &mut Store| {
             let (inputs, console) = hosting.inputs(store);
             let Some(console) = console
             else {
@@ -2097,6 +2171,63 @@ impl<'source> Program<'source>
                 HostOutcome::Aborted(never) => match never {},
             })
         };
+        self.forced((returned, forced), store, run)
+    }
+
+    /// [`Self::terminal`] on the concurrent schedule, the policy's tier asked
+    /// for: each root runs over `scheduled` with its independent writers
+    /// started as jobs of `pool`, and each `Console.print` it offers is
+    /// written to `console`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The tier's [`Declined`].
+    fn terminal_on(
+        &self,
+        (pool, scheduled): (&Pool, &Definitions),
+        roots: (CommandId, CommandId),
+        (store, console): (&mut Store, &mut Captured),
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
+    {
+        let fuel = Fuel::from(RUN_BUDGET);
+        let mut host = console::PrintingHost::new(console);
+        self.forced(
+            roots,
+            store,
+            |root, store: &mut Store| match evaluate_scheduled_on(
+                pool,
+                Choice::Policy,
+                (&self.arena, scheduled, root),
+                (fuel, store),
+                &mut host,
+            )? {
+                HostOutcome::Completed(outcome) => Ok(outcome),
+                HostOutcome::Aborted(never) => match never {},
+            },
+        )
+    }
+
+    /// Run `returned` into `store` with `run`, then `forced` when it answers
+    /// a suspension: the terminal value, or the evaluation that ends the run
+    /// first, blaming the opaque constant it observed or answers outside any
+    /// suspension.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The run's [`Declined`].
+    fn forced<Run>(
+        &self,
+        (returned, forced): (CommandId, CommandId),
+        store: &mut Store,
+        mut run: Run,
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
+    where
+        Run: FnMut(CommandId, &mut Store) -> Result<Outcome, Declined>,
+    {
         let outcome = run(returned, store)?;
         let terminal = match self.halted(store, outcome) {
             Ok(terminal) => terminal,
@@ -3063,6 +3194,107 @@ impl Runner for Program<'_>
             .get(&constant)
             .cloned()
             .unwrap_or_else(|| RunSpelling::from(String::from(NO_ITEM)))
+    }
+}
+
+/// A program whose `runs` take the concurrent schedule on a pool: what
+/// settles a composition scheduled concurrently. Every other run a
+/// settlement makes is the program's own, sequential.
+#[derive(Debug)]
+pub struct ScheduledRuns<'program, 'source, 'pool>
+{
+    /// The program run.
+    program: &'program mut Program<'source>,
+    /// The pool each independent writer starts on.
+    pool: &'pool Pool,
+}
+
+impl<'program, 'source, 'pool> ScheduledRuns<'program, 'source, 'pool>
+{
+    /// The runs of `program` on `pool`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn new(
+        program: &'program mut Program<'source>,
+        pool: &'pool Pool,
+    ) -> Self
+    {
+        Self { program, pool }
+    }
+}
+
+impl Runner for ScheduledRuns<'_, '_, '_>
+{
+    /// Spells the outcome as [`Program`]'s run does, its writers started on
+    /// the pool.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        let mut captured = Captured::default();
+        let evaluation =
+            self.program
+                .evaluate_printing_scheduled(constant, &mut captured, self.pool);
+        printed(&captured, &evaluation)
+    }
+
+    /// As [`Program`]'s traced run: a traced run records its channels in
+    /// the order its forks take them, so it stays sequential.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun
+    {
+        self.program.run_traced(constant)
+    }
+
+    /// As [`Program`]'s run of a refused declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.program.run_refused(constant)
+    }
+
+    /// As [`Program`]'s decomposition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.program.decompose(constant)
+    }
+
+    /// As [`Program`]'s footprint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.program.reads(constant)
     }
 }
 
@@ -4864,7 +5096,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 let mut store = Store::new();
                 let run = gandr_runtime_emitter::evaluate_scheduled_on(
                     pool,
-                    tier,
+                    Choice::Tier(tier),
                     (&program.arena, &definitions, scheduled),
                     (fuel, &mut store),
                     &mut Declining,
@@ -5001,7 +5233,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 let mut store = Store::new();
                 let run = gandr_runtime_emitter::evaluate_scheduled_on(
                     pool,
-                    tier,
+                    Choice::Tier(tier),
                     (&arena, &definitions, scheduled),
                     (fuel, &mut store),
                     &mut Declining,
@@ -5017,6 +5249,59 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     pool.width()
                 );
             }
+        }
+    }
+
+    /// The tree sum composed on the concurrent schedule: the judgement names
+    /// the recursive calls and the halves as writers, so the program keeps
+    /// its definitions scheduled. `both` then answers, on the driver's pool at
+    /// four threads and at one, the sum its sequential composition answers.
+    #[test]
+    fn a_tree_sum_composed_concurrently_answers_as_the_sequential_schedule_2954()
+    {
+        let source = tree_sum();
+        let grammar = built_in().expect("the built-in grammar builds");
+        let wide =
+            crate::pool::Pool::new(crate::width::Width::Threads(crate::width::Threads::from(
+                core::num::NonZeroUsize::new(4_usize).expect("four threads"),
+            )));
+        let serial = crate::pool::Pool::default();
+        let composed = |scheduling| match crate::compose::compose_on(
+            &grammar,
+            CorpusRoot::Fixture,
+            source.as_str().into(),
+            &mut LoweringCount::default(),
+            scheduling,
+        ) {
+            Ok(Composed::Settled { program, .. }) => program,
+            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
+        };
+        let mut sequential = composed(crate::schedule::Scheduling::Sequential);
+        let mut concurrent = composed(crate::schedule::Scheduling::Concurrent(&wide));
+        assert!(
+            matches!(
+                sequential.scheduled,
+                Maybe::Absent(super::scheduled::Absent::Unmarked)
+            ),
+            "the sequential composition keeps no schedule"
+        );
+        assert!(
+            matches!(concurrent.scheduled, Maybe::Present(_)),
+            "the concurrent composition keeps its definitions scheduled"
+        );
+        let both = constant(&sequential, &SurfaceName::from("both"));
+        let answered = sequential.evaluate(both).to_string();
+        assert_eq!(answered, "2048", "the sequential schedule sums both halves");
+        for pool in [&wide, &serial] {
+            let mut captured = Captured::default();
+            let evaluation = concurrent.evaluate_printing_scheduled(both, &mut captured, pool);
+            assert_eq!(
+                evaluation.to_string(),
+                answered,
+                "the concurrent schedule answers the sequential sum at {:?}",
+                pool.width()
+            );
         }
     }
 

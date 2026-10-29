@@ -597,6 +597,7 @@ INSERT INTO purpose VALUES('core-sequent','readback::read_back_terminal','functi
 INSERT INTO purpose VALUES('core-sequent','readback::read_back_value','function','Reads a positive heap value back as a core value, closing a thunk or a function over its environment''s readbacks.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','spawn::ScheduleRefusal','enum','Names why a command has no schedule: a rewrite the closure conversion refused, or the cell interface refused as a signature.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','spawn::spawn_independent','function','Rewrites each cut whose binder is marked independent to spawn its writer and to read it before the binder is first needed, in the root and in each definition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-sequent','spawn::spawn_independent_definitions','function','Rewrites each marked cut of the definitions alone, so a program schedules its definitions once for every root it runs.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','store::Accumulation','enum','Names the observation that grew an accumulator from the one it holds: a force, or an application to the argument it holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','store::ClosedCommand','struct','Holds a bind frame''s command and the environment it runs under, so a literal stack''s frame is a closed command.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','store::CopyRefusal','enum','Names why a value did not copy into another store: a dangling address or chain, a capability whose address is its identity, or the destination''s refusal.',NULL,'fits','sound',NULL);
@@ -1595,6 +1596,7 @@ INSERT INTO purpose VALUES('runtime-emitter','lower::lower_unfused','function','
 INSERT INTO purpose VALUES('runtime-emitter','native::EmitRefusal','enum','Names why emission failed: a region mapping failed, the function is larger than a region, a hole could not be patched, a label is unbound, the last instruction falls off, or an operand is missing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::PatchRefusal','enum','Names why a hole could not be patched: a branch target beyond reach, an address beyond page reach, a value past its field, a wrong shape, or a wrong kind.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::memory::MapFailure','struct','Names why mapping a region failed: the host''s error number.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','run::Choice','enum','Names the tier a run asks for: the one the process''s policy picks, or one tier.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Declined','enum','Names why a run gave no outcome: a form the lowering refused, no patcher, an emission refusal, an unbound label, a cache miss, a stuck run, a spent budget, a transfer refusal, or a reply the run cannot hold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::POLICY_VARIABLE','constant','Names the environment variable the policy is read from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Policy','enum','Names when a run takes native code: emit on a function''s first run and serve the cache after, never emit, or serve only cached code.',NULL,'fits','sound',NULL);
@@ -2044,6 +2046,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::SpellingCount','struct
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Unheld','enum','Why an import closure''s lowering is not held for the documents laid after it: each such document is lowered with its closure, whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::adapt','function','The checker''s input for `module`: every declaration the lowering did not refuse, in admission order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::compose','function','Carry one source through the pipeline: parse, lower, adapt, check, settle.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::compose_on','function','Carry one source through the pipeline as `compose` does, its `runs` items settled on the schedule the caller selects.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::item_program','function','Key each declaration the lowering did not refuse by its name: the program the incremental checker resumes over and a package''s address digests.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::judge','function','Judge and settle one lowered module, its kernel admission left to run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::judge_member','function','Judge and settle one lowered unit, reporting the source that starts at `base`: judge projected onto the unit''s last source.',NULL,'fits','sound',NULL);
@@ -2179,6 +2182,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','report::Verb','enum','The verb 
 INSERT INTO purpose VALUES('surface-dispatcher','report::shown','function','How `verb` prints `declaration`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','root::SourceRoot','enum','The root a source sits under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','root::classify','function','Classify the source at `path` by the innermost root directory it sits under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','schedule::Scheduling','enum','Which schedule a composition''s runs give their independent cuts: the sequential one, or each writer started as a job of the driver''s pool.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','script::Ran','enum','What running a composed source came to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','script::Script','struct','One source file to run as a program.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','script::ScriptRun','enum','What running a script came to.',NULL,'fits','sound',NULL);

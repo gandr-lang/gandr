@@ -198,6 +198,7 @@ use gandr_core_checker::worlds::Entry;
 use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
+use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -212,6 +213,7 @@ use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Produced;
 use gandr_surface_corpus::Rooted;
+use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
@@ -254,7 +256,10 @@ use quenchant_shape::shape::Maybe;
 use crate::component::Member;
 use crate::evaluate::Focused;
 use crate::evaluate::Program;
+use crate::evaluate::ScheduledRuns;
 use crate::exercised::Exercised;
+use crate::schedule::Scheduling;
+use crate::schedule::independent;
 use crate::typed::TypeTable;
 use crate::typed::TypedRun;
 use crate::typed::wanted_types;
@@ -2368,6 +2373,32 @@ pub fn judge_member_after_retiring<'source, Poll>(
 where
     Poll: Retirement,
 {
+    judge_member_on(
+        root,
+        (module, text),
+        arena,
+        (grant, checking),
+        base,
+        (retirement, recording, Scheduling::Sequential),
+    )
+}
+
+/// [`judge_member_after_retiring`], the runs of its settlement on the
+/// schedule `scheduling` names.
+///
+/// # Specification
+/// trivial.
+fn judge_member_on<'source, Poll>(
+    root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    (grant, checking): (&HostGrant, Checking<'source>),
+    base: ByteOffset,
+    (retirement, recording, scheduling): (&Poll, Recording<'_>, Scheduling<'_>),
+) -> Polled<Judged<'source>, Poll::Retired, ()>
+where
+    Poll: Retirement,
+{
     let last = Member {
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
@@ -2378,7 +2409,12 @@ where
         arena,
         (grant, checking),
         (&[], last),
-        (&mut SpellingCount::default(), Tabling::Untabled, recording),
+        (
+            &mut SpellingCount::default(),
+            Tabling::Untabled,
+            recording,
+            scheduling,
+        ),
         retirement,
     ) {
         Polled::Whole((projected, admission, _untabled, _after)) => Polled::Whole(Judged {
@@ -2477,6 +2513,7 @@ where
             &mut SpellingCount::default(),
             Tabling::Tabled(unit),
             Recording::Unrecorded,
+            Scheduling::Sequential,
         ),
         retirement,
     ) {
@@ -2628,7 +2665,12 @@ fn judge_members<'source, Poll>(
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
-    (spelled, tabling, recording): (&mut SpellingCount, Tabling<'_>, Recording<'_>),
+    (spelled, tabling, recording, scheduling): (
+        &mut SpellingCount,
+        Tabling<'_>,
+        Recording<'_>,
+        Scheduling<'_>,
+    ),
     retirement: &Poll,
 ) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
 where
@@ -2651,9 +2693,15 @@ where
         Tabling::Tabled(_) => Some(written_types(&module, &arena, last.start)),
         Tabling::Untabled => None,
     };
-    let recorded = match (recording, tabling) {
-        (Recording::Recorded(recorded), Tabling::Untabled) => Some(recorded),
-        (Recording::Recorded(_), Tabling::Tabled(_)) | (Recording::Unrecorded, _) => None,
+    // A recorded answer keeps no typings, so neither a table nor the
+    // concurrent schedule's writers read one.
+    let recorded = match (recording, tabling, scheduling) {
+        (Recording::Recorded(recorded), Tabling::Untabled, Scheduling::Sequential) => {
+            Some(recorded)
+        },
+        (Recording::Recorded(_), Tabling::Tabled(_), _)
+        | (Recording::Recorded(_), Tabling::Untabled, Scheduling::Concurrent(_))
+        | (Recording::Unrecorded, ..) => None,
     };
     let reading = recorded.as_ref().map(|_| Read {
         arena: arena.clone(),
@@ -2669,9 +2717,9 @@ where
         .as_deref()
         .zip(reading.as_ref())
         .and_then(|(recorded, reading)| recorded.answering(reading));
-    let (verdicts, read) = if let Some((judged, verdicts)) = answered {
+    let (verdicts, read, writers) = if let Some((judged, verdicts)) = answered {
         arena = judged;
-        (verdicts, None)
+        (verdicts, None, Writers::NONE)
     }
     else {
         let (opening, mut run, judged) = after.map_or_else(
@@ -2697,6 +2745,9 @@ where
             run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
         }
+        if let Scheduling::Concurrent(_) = scheduling {
+            run.keep_typings();
+        }
         if let Polled::Retired(retired, ()) =
             run.judge_retiring(&mut context, judged, |_, _, _| {}, retirement)
         {
@@ -2707,13 +2758,17 @@ where
         // families as forming.
         let typings = run.take_typings();
         let verdicts = run.finish(&mut context);
+        let writers = match (scheduling, typings.as_ref()) {
+            (Scheduling::Concurrent(_), Some(typed)) => independent(context.arena(), typed),
+            (Scheduling::Concurrent(_), None) | (Scheduling::Sequential, _) => Writers::NONE,
+        };
         let read = typings
             .zip(written)
             .map(|(typed, written)| TypedRun::read(&context, typed, written));
         if let (Some(recorded), Some(reading)) = (recorded, reading) {
             recorded.keep(reading, (arena.clone(), verdicts.clone()));
         }
-        (verdicts, read)
+        (verdicts, read, writers)
     };
     if let Demand::Retired(retired) = retirement.demand() {
         return Polled::Retired(retired, ());
@@ -2731,19 +2786,33 @@ where
     };
     let names = module.structured_names();
     let mut program = after.map_or_else(
-        || Program::new(&arena, &module, &verdicts),
-        |closure| Program::after(closure.program.clone(), &arena, &module, &verdicts),
+        || Program::after(Focused::default(), &arena, &module, &verdicts, &writers),
+        |closure| {
+            Program::after(
+                closure.program.clone(),
+                &arena,
+                &module,
+                &verdicts,
+                &writers,
+            )
+        },
     );
     let laid = Laid { earlier, last };
+    let mut concurrent;
+    let runner: &mut dyn Runner = match scheduling {
+        Scheduling::Sequential => &mut program,
+        Scheduling::Concurrent(pool) => {
+            concurrent = ScheduledRuns::new(&mut program, pool);
+            &mut concurrent
+        },
+    };
     let settled_report = match after {
         Some(closure) => closure
             .settled
             .as_ref()
             .map_err(|&fault| fault)
-            .and_then(|earlier| {
-                settle_after(laid, &arena, &module, &verdicts, &mut program, earlier)
-            }),
-        None => settle(laid, &arena, &module, &verdicts, &mut program),
+            .and_then(|earlier| settle_after(laid, &arena, &module, &verdicts, runner, earlier)),
+        None => settle(laid, &arena, &module, &verdicts, runner),
     };
     let projected = match settled_report {
         Ok(report) => {
@@ -3310,7 +3379,12 @@ pub fn judge_component<'source>(
                 arena,
                 (grant, checking),
                 (earlier, last),
-                (spelled, Tabling::Untabled, Recording::Unrecorded),
+                (
+                    spelled,
+                    Tabling::Untabled,
+                    Recording::Unrecorded,
+                    Scheduling::Sequential,
+                ),
                 &Unretired,
             )
             .whole();
@@ -3614,13 +3688,59 @@ pub fn compose<'source>(
     lowerings: &mut LoweringCount,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
-    let lowering = lower_source(grammar, source, lowerings)?;
-    judge_lowering(
-        root,
-        (lowering, source),
-        &HostGrant::UNBOUNDED,
-        ByteOffset::from(0_usize),
-    )
+    compose_on(grammar, root, source, lowerings, Scheduling::Sequential)
+}
+
+/// [`compose()`], the runs of its settlement on the schedule `scheduling`
+/// names.
+///
+/// Under [`Scheduling::Concurrent`], the judgement keeps its typings, and
+/// each later accepted body focuses each writer [`independent`] names apart.
+/// Each `runs` item then starts the independent writers its definitions hold
+/// as jobs of the pool.
+///
+/// # Specification
+/// - requires: as [`compose()`].
+/// - ensures: as [`compose()`]. A writer performs nothing, so each `runs` item
+///   settles under either schedule as it settles under the other.
+/// - fails: as [`compose()`].
+/// - panics: a writer's panic, where its read or its scope ends.
+/// - executable: none — the agreement of the two schedules is a claim about a
+///   second composition the call never makes; the witness makes it over the
+///   corpus.
+///
+/// # Errors
+/// As [`compose()`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — every corpus source composed on the concurrent schedule,
+///   at four threads, settles each declaration as the sequential composition
+///   settles it. A writer named that performs, a capture read off the wrong
+///   level, or a read that copies the wrong answer changes a `runs` item's
+///   outcome.
+/// - witness: `tests::corpus::sweeps::the_concurrent_schedule_settles_the_corpus_alike_2954`
+#[inline]
+pub fn compose_on<'source>(
+    grammar: &Pbg,
+    root: CorpusRoot,
+    source: SourceText<'source>,
+    lowerings: &mut LoweringCount,
+    scheduling: Scheduling<'_>,
+) -> Result<Composed<'source>, ComposeFault<'source>>
+{
+    match lower_source(grammar, source, lowerings)?.into_lowered() {
+        Lowered::Module { module, arena } => judge_member_on(
+            root,
+            (module, source),
+            arena,
+            (&HostGrant::UNBOUNDED, Checking::Whole),
+            ByteOffset::from(0_usize),
+            (&Unretired, Recording::Unrecorded, scheduling),
+        )
+        .whole()
+        .admit(),
+        Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
+    }
 }
 
 /// Judge what the lowering made of one source, its obligations given up.

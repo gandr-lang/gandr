@@ -257,27 +257,31 @@ fn a_marked_cut_in_a_definition_spawns_there()
     let defined = definitions.push(Definition::Transparent(thunk));
     let opaque = definitions.push(Definition::Opaque);
     let root = focused(&core, first, &mut arena, &Writers::NONE);
-    let (_root, definitions) =
+    let (_root, beside) =
         spawn_independent(&mut arena, (root, &definitions)).expect("the program schedules");
+    let alone =
+        spawn_independent_definitions(&mut arena, &definitions).expect("the definitions schedule");
 
-    let Some(Definition::Transparent(thunk)) = definitions.get(defined)
-    else {
-        panic!("the definition stays transparent");
-    };
-    let Some(&ProducerNode::Thunk { body }) = arena.producer(thunk)
-    else {
-        panic!("the definition stays a thunk");
-    };
-    assert_eq!(
-        written(&core, by_hand),
-        render_command(&arena, body),
-        "the definition's cut spawns its writer"
-    );
-    assert_eq!(
-        Some(Definition::Opaque),
-        definitions.get(opaque),
-        "an opaque definition stays opaque"
-    );
+    for (scheduled, how) in [(beside, "beside a root"), (alone, "alone")] {
+        let Some(Definition::Transparent(thunk)) = scheduled.get(defined)
+        else {
+            panic!("the definition stays transparent {how}");
+        };
+        let Some(&ProducerNode::Thunk { body }) = arena.producer(thunk)
+        else {
+            panic!("the definition stays a thunk {how}");
+        };
+        assert_eq!(
+            written(&core, by_hand),
+            render_command(&arena, body),
+            "the definition's cut spawns its writer {how}"
+        );
+        assert_eq!(
+            Some(Definition::Opaque),
+            scheduled.get(opaque),
+            "an opaque definition stays opaque {how}"
+        );
+    }
 }
 
 /// An arena with no marked binder is given back as it was: the root, the
@@ -307,4 +311,10 @@ fn an_unmarked_arena_is_given_back_unchanged()
         "nothing is rewritten"
     );
     assert_eq!(mark, arena.watermark(), "nothing is minted");
+    assert_eq!(
+        Ok(definitions.clone()),
+        spawn_independent_definitions(&mut arena, &definitions),
+        "nothing is rewritten alone"
+    );
+    assert_eq!(mark, arena.watermark(), "nothing is minted alone");
 }
