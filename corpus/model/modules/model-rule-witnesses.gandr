@@ -1,0 +1,93 @@
+// A theory's rule is a cell conversion decides, and a model witnesses it as a
+// path in its carrier.
+//
+// A `Path` is a cell a program carries. A model owes one `Path` component per
+// rule, between the rule's two sides read in its carrier. Where the carrier
+// converts the two sides, `here` witnesses the rule. Where it does not, the
+// model writes the path. The presented type is the initial model, where every
+// witness is `here`.
+//
+// Two models of one left unit law over the naturals show both witnesses. The
+// one joining on the left argument converts the law's sides, and `here`
+// witnesses it. The one joining on the right argument leaves them apart, and
+// an induction witnesses it.
+//
+// - see: `model-ascription.gandr` — a rule `here` witnesses at each case
+// - see: `model-laws.gandr` — a law stated as its path type
+
+/// The naturals, apart from any theory.
+data Ticks : Type {
+  /// No tick.
+  NoTick : Ticks;
+  /// One tick more.
+  Tick : (n : Ticks) --> Ticks;
+}
+
+/// A carrier with a unit and a product, and one rule: the unit is a left unit.
+theory LeftUnit {
+  /// The carrier.
+  sort M : Type;
+  /// The unit.
+  oper e : () --> M;
+  /// The product.
+  oper mul : (x : M, y : M) --> M;
+  /// The unit on the left leaves the other factor.
+  rule unitL : mul(e(), x) <=> x;
+}
+
+/// One more tick, as a function `cong` can take.
+def tick(n : Ticks) -> Ticks { Tick(n) }
+
+/// Joins two counts by recursion on the left one.
+def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
+  case m {
+    NoTick => n,
+    Tick(k) => Tick(joinLeft[<](k, n))
+  }
+}
+
+/// Joins two counts by recursion on the right one.
+def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
+  case n {
+    NoTick => m,
+    Tick(k) => Tick(joinRight[<](m, k))
+  }
+}
+
+/// Joining no tick on the left leaves a count as it is, by induction on it.
+def rec noTickJoinsRight(n : Ticks) -> Path(Ticks, joinRight(NoTick, n), n) {
+  case n {
+    NoTick => here(NoTick),
+    Tick(k) => cong(tick, noTickJoinsRight[<](k))
+  }
+}
+
+/// Joining on the left as a model: its carrier converts the rule's sides.
+module ByLeft : Model(LeftUnit) {
+  /// The naturals carry it.
+  type M = Ticks;
+
+  /// No tick is the unit.
+  def e() -> Ticks { NoTick }
+
+  /// The product joins on the left.
+  def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft(x, y) }
+
+  /// `mul(e(), x)` computes to `x`, so `here` witnesses the rule.
+  def unitL(x : Ticks) -> Path(Ticks, mul(e(), x), x) { here(x) }
+}
+
+/// Joining on the right as a model: its carrier leaves the rule's sides apart.
+module ByRight : Model(LeftUnit) {
+  /// The naturals carry it.
+  type M = Ticks;
+
+  /// No tick is the unit.
+  def e() -> Ticks { NoTick }
+
+  /// The product joins on the right.
+  def mul(x : Ticks, y : Ticks) -> Ticks { joinRight(x, y) }
+
+  /// `mul(e(), x)` waits on `x`, so the induction witnesses the rule.
+  def unitL(x : Ticks) -> Path(Ticks, mul(e(), x), x) { noTickJoinsRight(x) }
+}

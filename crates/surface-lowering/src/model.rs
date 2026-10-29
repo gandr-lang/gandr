@@ -21,6 +21,13 @@
 //! typed fields, so two models with equal operations and different laws are
 //! different models (Ahrens, North, Shulman and Tsementzis).
 //!
+//! A rule is a cell its theory decides by conversion, and its law is the cell
+//! the model carries: `here` where the carrier converts the two sides, a
+//! written path otherwise. The checker reads the same law at two more sites. A
+//! fold out of the presented type rests on it (`gandr-core-checker`'s
+//! `respect`), and a handler of the theory owes it by conversion
+//! (`gandr-core-checker`'s `handler`).
+//!
 //! - Choice: derive the signature from the block's `Theory` value
 //!   (`gandr_theory_levitation::TheoryValue`), the presentation the block
 //!   defines — each port's sort a sort name over index terms, each rule with

@@ -20,6 +20,8 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states the decisions that shape it, and each module the boundary it owns.
 
+**Cells.** A rule `a <=> b` is a cell its theory decides by conversion, and a `Path` is a cell a program carries. A model witnesses each rule as a `Path` in its carrier: `here` where the carrier converts, a written path otherwise. The presented type is the initial model, where every witness is `here`. Three sites read this: a model's law component (`gandr-surface-lowering`'s `model`), a fold's respect obligation ([`respect`](src/respect.rs)) and a handler's lawfulness ([`handler`](src/handler.rs)). The corpus source `model/modules/model-rule-witnesses.gandr` pairs both witnesses of one law.
+
 ## Provided features
 
 - `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces.
@@ -62,48 +64,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 ## Examples
 
-```rust
-use gandr_core_checker::CheckBudget;
-use gandr_core_checker::CheckingContext;
-use gandr_core_checker::Declaration;
-use gandr_core_checker::OriginToken;
-use gandr_core_checker::Verdict;
-use gandr_core_checker::body;
-use gandr_core_checker::bridge;
-use gandr_core_checker::check_module;
-use gandr_core_term::CoreArena;
-use gandr_kernel_term::BaseType;
-use gandr_kernel_term::ConstantIndex;
-use quenchant_shape::shape::Maybe;
-
-// def owed : Integer ;
-let mut arena = CoreArena::new();
-let integer = arena.value_type_base(BaseType::Integer);
-let declarations = [Declaration::new(
-    ConstantIndex::from(0_usize),
-    Maybe::Present(integer),
-    Maybe::Absent(body::Absent::Hole),
-    OriginToken::from(7_usize),
-)];
-
-let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-let report = check_module(&mut context, &declarations);
-
-let [entry] = report.ledger().entries()
-else {
-    unreachable!("one hole is owed");
-};
-assert_eq!(entry.absence().origin(), OriginToken::from(7_usize));
-assert!(matches!(report.judged()[0].verdict(), Verdict::Owed(_)));
-
-// The kernel assumes the owed hole as an axiom, and the artifact rests on it.
-let readmission = bridge::readmit(&mut arena, &report);
-assert!(matches!(
-    readmission.readmitted()[0].outcome(),
-    &bridge::Outcome::Assumed { .. }
-));
-assert_eq!(readmission.audit().axioms().len(), 1_usize);
-```
+The crate rustdoc's example ([`src/lib.rs`](src/lib.rs)) judges `def answer : Integer = 0 ; def owed : Integer ; def copy = answer ;`. Each declaration takes its verdict, the ledger owes the hole, and the kernel readmits all three, the artifact resting on the hole alone.
 
 ## Where the detail lives
 
