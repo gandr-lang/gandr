@@ -11,9 +11,11 @@ use core::fmt;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::codecov::CommitSha;
 use crate::codecov::CrateName;
 use crate::codecov::MeasuredFile;
 use crate::codecov::Repository;
+use crate::codecov::Skipped;
 use crate::codecov::Upload;
 use crate::measure::Change;
 use crate::measure::Coverage;
@@ -23,6 +25,15 @@ use crate::measure::Points;
 /// The prefix every title the guard files starts with, by which it finds
 /// the one open issue.
 pub const TITLE_PREFIX: &str = "coverage: main dropped from ";
+
+/// The prefix of the title the guard files unprocessed uploads on, by which
+/// it finds that one open issue.
+pub const UNPROCESSED_PREFIX: &str = "coverage: Codecov left ";
+
+/// The fewest unprocessed uploads in a row, from the head down, that the
+/// guard files: one is a finding on the summary, and the next run finding
+/// another obligates triage.
+const FILED_IN_A_ROW: usize = 2;
 
 /// Why a crate has no lines on one side of the comparison.
 ///
@@ -346,6 +357,158 @@ impl fmt::Display for IssueTitle
     }
 }
 
+/// The README's coverage badge: main's newest processed upload, as the
+/// shields.io endpoint JSON the badges branch serves.
+///
+/// # Specification
+/// - provides: the badge an unprocessed upload never turns `unknown`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Badge(Coverage);
+
+impl Badge
+{
+    /// The badge of `upload`, which Codecov processed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn of(upload: &Upload) -> Self
+    {
+        Self(overall(upload))
+    }
+}
+
+impl fmt::Display for Badge
+{
+    /// Writes the endpoint JSON: schema version 1, the label `coverage`, the
+    /// coverage with two decimals and its colour, and a newline.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each colour step's lowest coverage and the one below
+    ///   it; an off-by-one step changes a colour.
+    /// - witness: `report::tests::a_badge_steps_its_colour_every_ten_points`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        writeln!(
+            f,
+            r#"{{"schemaVersion":1,"label":"coverage","message":"{} %","color":"{}"}}"#,
+            self.0,
+            self.0.colour()
+        )
+    }
+}
+
+/// Uploads of `main` Codecov left unprocessed, from the head down, and the
+/// processed upload the guard compared instead.
+///
+/// # Specification
+/// - provides: what the guard files when unprocessed uploads repeat.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Unprocessed
+{
+    /// The unprocessed uploads, newest first: at least [`FILED_IN_A_ROW`].
+    skipped: Vec<Skipped>,
+    /// The newest processed upload, compared in their place.
+    compared: CommitSha,
+}
+
+impl Unprocessed
+{
+    /// The filing of `skipped`, the uploads above `compared`, when they are
+    /// [`FILED_IN_A_ROW`] or more.
+    ///
+    /// # Specification
+    /// - requires: `skipped` lists the unprocessed uploads above `compared`,
+    ///   newest first.
+    /// - ensures: `Some` exactly when `skipped` holds at least
+    ///   [`FILED_IN_A_ROW`] uploads.
+    /// - provides: the one decision whether unprocessed uploads are filed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one unprocessed upload and two; filing the one, or
+    ///   not the two, changes the recorded `gh` invocations.
+    /// - witness: `tests::cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978`
+    /// - witness: `tests::cli::two_unprocessed_uploads_in_a_row_open_their_issue`
+    #[spec(ensures: |ret| ret.is_some() == (skipped.len() >= FILED_IN_A_ROW))]
+    #[must_use]
+    #[inline]
+    pub fn filed(
+        skipped: &[Skipped],
+        compared: &CommitSha,
+    ) -> Option<Self>
+    {
+        (skipped.len() >= FILED_IN_A_ROW).then(|| Self {
+            skipped: skipped.to_vec(),
+            compared: compared.clone(),
+        })
+    }
+
+    /// The issue's title: `coverage: Codecov left N uploads of main
+    /// unprocessed (<sha>)`, the newest's commit in parentheses.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`UNPROCESSED_PREFIX`], the count, and the newest unprocessed
+    ///   commit's short form in parentheses.
+    /// - provides: the title the issue is opened or retitled with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two unprocessed uploads' title; the oldest commit or
+    ///   a lost count changes it.
+    /// - witness: `tests::cli::two_unprocessed_uploads_in_a_row_open_their_issue`
+    #[spec(ensures: |ret| ret.0.starts_with(UNPROCESSED_PREFIX))]
+    #[must_use]
+    #[inline]
+    pub fn title(&self) -> IssueTitle
+    {
+        let newest = self
+            .skipped
+            .first()
+            .map_or_else(String::new, |skipped| format!(" ({})", skipped.sha.short()));
+        IssueTitle(format!(
+            "{UNPROCESSED_PREFIX}{} uploads of main unprocessed{newest}",
+            self.skipped.len()
+        ))
+    }
+}
+
+impl fmt::Display for Unprocessed
+{
+    /// Writes the issue's body: one line per unprocessed upload, then the
+    /// upload compared instead.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        for skipped in &self.skipped {
+            writeln!(f, "- {skipped}")?;
+        }
+        writeln!(
+            f,
+            "\nThe guard compares main's newest processed upload, {}, in their place, until Codecov processes a newer one.",
+            self.compared
+        )
+    }
+}
+
 /// A cell of the table: a side's coverage, or `—` when it has none.
 #[repr(transparent)]
 struct CoverageCell(Maybe<Lines, Absent>);
@@ -516,6 +679,7 @@ impl fmt::Display for Comparison
 #[cfg(test)]
 mod tests
 {
+    use super::Badge;
     use super::Comparison;
     use super::Standing;
     use crate::codecov::MeasuredFile;
@@ -591,5 +755,31 @@ mod tests
         assert_eq!(compare(10, 8_951), Standing::Steady, "0.49 points");
         assert_eq!(compare(10, 9_100), Standing::Steady, "a rise");
         assert_eq!(compare(9, 9_100), Standing::Dropped, "a file lost");
+    }
+
+    #[test]
+    fn a_badge_steps_its_colour_every_ten_points()
+    {
+        let badge = |hits: u64| Badge::of(&upload!("aaaaaaa", 1, 10_000, hits)).to_string();
+        for (hits, coverage, colour) in [
+            (10_000, "100.00", "brightgreen"),
+            (9_000, "90.00", "brightgreen"),
+            (8_999, "89.99", "green"),
+            (8_000, "80.00", "green"),
+            (7_999, "79.99", "yellow"),
+            (7_000, "70.00", "yellow"),
+            (6_999, "69.99", "orange"),
+            (6_000, "60.00", "orange"),
+            (5_999, "59.99", "red"),
+            (0, "0.00", "red"),
+        ] {
+            assert_eq!(
+                badge(hits),
+                format!(
+                    "{{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"{coverage} %\",\"color\":\"{colour}\"}}\n"
+                ),
+                "{hits}"
+            );
+        }
     }
 }

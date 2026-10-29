@@ -431,11 +431,44 @@ awk '
 # `--file-issue`, a drop over the threshold or fewer files opens or updates
 # one issue (crates/workflow-coverage-guard/README.md). The coverage
 # workflow passes codecov.yml's project threshold. Arguments pass through:
-# `--repository`, `--sha`, `--threshold`, optionally `--wait` and
-# `--file-issue`.
+# `--repository`, `--sha`, `--threshold`, optionally `--wait`,
+# `--file-issue` and `--badge`.
 ["ci:coverage-guard"]
 description = "Main's coverage upload against the one before it, filed when it drops"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-coverage-guard --"
+
+# The README's coverage badge (#3978): the guard's `--badge` file, the newest
+# processed upload as shields.io endpoint JSON, published as `coverage.json`
+# on the orphan `badges` branch. Codecov's own badge reads its branch head,
+# which an unprocessed upload turns `unknown`. The commit goes through the
+# Git data API with GH_TOKEN, so the checkout keeps no credential, and it
+# has no parent: the branch holds one commit, replaced when the badge
+# changes. GH_REPO names the repository.
+["ci:coverage-badge"]
+description = "Publish the coverage badge's endpoint JSON on the orphan badges branch"
+usage = 'arg "<file>" help="the badge the guard wrote with --badge"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+file=${usage_file:?}
+repo=${GH_REPO:?ci:coverage-badge needs GH_REPO}
+blob=$(gh api "repos/$repo/git/blobs" -f content="$(base64 -w0 "$file")" -f encoding=base64 --jq .sha)
+tree=$(gh api "repos/$repo/git/trees" -f 'tree[][path]=coverage.json' -f 'tree[][mode]=100644' \
+  -f 'tree[][type]=blob' -f "tree[][sha]=$blob" --jq .sha)
+# matching-refs answers an empty list, not an error, when the branch is new.
+head=$(gh api "repos/$repo/git/matching-refs/heads/badges" --jq '.[] | select(.ref == "refs/heads/badges") | .object.sha')
+if [[ -n $head && $(gh api "repos/$repo/git/commits/$head" --jq .tree.sha) == "$tree" ]]; then
+  echo "the badge is unchanged: $(< "$file")"
+  exit 0
+fi
+commit=$(gh api "repos/$repo/git/commits" -f message="chore(ci): publish main's coverage badge" -f tree="$tree" --jq .sha)
+if [[ -n $head ]]; then
+  gh api -X PATCH "repos/$repo/git/refs/heads/badges" -f sha="$commit" -F force=true > /dev/null
+else
+  gh api "repos/$repo/git/refs" -f ref=refs/heads/badges -f sha="$commit" > /dev/null
+fi
+echo "published the badge as $commit: $(< "$file")"
+'''
 
 # Each test's enforcing time over its plain time, from a run's enforcing JUnit
 # report and a plain baseline's; the enforcing lane reports it on every run

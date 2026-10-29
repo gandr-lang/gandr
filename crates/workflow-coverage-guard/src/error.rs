@@ -72,6 +72,14 @@ pub enum GuardError
         /// The writer's description of the failure.
         message: String,
     },
+    /// The badge file could not be written.
+    Badge
+    {
+        /// The file, as given.
+        path: String,
+        /// The writer's description of the failure.
+        message: String,
+    },
 }
 
 impl fmt::Display for GuardError
@@ -123,6 +131,10 @@ impl fmt::Display for GuardError
             },
             Self::Gh(ref error) => error.fmt(f),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Badge {
+                ref path,
+                ref message,
+            } => write!(f, "the badge `{path}`: {message}"),
         }
     }
 }
@@ -202,6 +214,13 @@ mod tests
                     message: "broken pipe".into(),
                 },
                 "standard output: broken pipe",
+            ),
+            (
+                GuardError::Badge {
+                    path: "badge/coverage.json".into(),
+                    message: "permission denied".into(),
+                },
+                "the badge `badge/coverage.json`: permission denied",
             ),
         ];
         for (error, expected) in cases {

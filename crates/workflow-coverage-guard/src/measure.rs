@@ -217,6 +217,63 @@ impl Coverage
             Ordering::Equal => Change::Held,
         }
     }
+
+    /// The colour a badge paints this coverage in, over Codecov's default
+    /// range of 60 % to 100 %: red below it, then a step every ten points up
+    /// to bright green.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn colour(self) -> Colour
+    {
+        match self.0.0.div_euclid(HUNDRED) {
+            90 .. => Colour::BrightGreen,
+            80 .. => Colour::Green,
+            70 .. => Colour::Yellow,
+            60 .. => Colour::Orange,
+            _ => Colour::Red,
+        }
+    }
+}
+
+/// A badge's colour, as shields.io names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Colour
+{
+    /// Under 60 %.
+    Red,
+    /// From 60 %.
+    Orange,
+    /// From 70 %.
+    Yellow,
+    /// From 80 %.
+    Green,
+    /// From 90 %.
+    BrightGreen,
+}
+
+impl fmt::Display for Colour
+{
+    /// Writes shields.io's name of the colour.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Red => "red",
+            Self::Orange => "orange",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::BrightGreen => "brightgreen",
+        })
+    }
 }
 
 impl fmt::Display for Coverage

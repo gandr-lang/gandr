@@ -115,6 +115,8 @@ jobs:
             target/coverage
             target/coverage-plain
           key: ${{ steps.coverage-state-restore.outputs.cache-primary-key }}
+      # The upload runs only after the measure succeeds, so a failed measure
+      # uploads nothing, and the last processed upload stays main's (#3978).
       - &upload-coverage
         name: upload coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -201,16 +203,21 @@ jobs:
   # or an upload covering fewer files opens or updates the one issue
   # `coverage: main dropped from X to Y (<sha>)` with each crate's delta,
   # for triage. Alerting, never a gate. Its own job, so `issues: write`
-  # never reaches the job that runs the test suite. A sweep that reached the
-  # coverage run's 600 s limit is filed on its own collector, as the nightly
-  # files one (`mise run ci:slow-file`, #3975).
+  # never reaches the job that runs the test suite. An upload Codecov leaves
+  # unprocessed is named on the summary and skipped for the newest processed
+  # one. Two in a row open one issue (#3978). The guard writes the newest
+  # processed upload as the README's badge, and `mise run
+  # ci:coverage-badge` publishes it on the orphan `badges` branch, so a
+  # failed or unprocessed run never turns the badge `unknown`. A sweep that
+  # reached the coverage run's 600 s limit is filed on its own collector, as
+  # the nightly files one (`mise run ci:slow-file`, #3975).
   guard:
     name: file a coverage drop
     needs: [ci-image-ref, coverage]
     if: ${{ !cancelled() && needs.coverage.result == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: *linux
     permissions:
-      contents: read
+      contents: write
       packages: read
       actions: read
       issues: write
@@ -225,7 +232,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: mise run ci:coverage-guard --threshold 0.5 --file-issue >> "$GITHUB_STEP_SUMMARY"
+        run: mise run ci:coverage-guard --threshold 0.5 --file-issue --badge coverage-badge.json >> "$GITHUB_STEP_SUMMARY"
+      - name: publish the coverage badge
+        if: ${{ !cancelled() && hashFiles('coverage-badge.json') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run ci:coverage-badge coverage-badge.json >> "$GITHUB_STEP_SUMMARY"
       - name: download the coverage run's test report
         id: tested
         if: ${{ !cancelled() }}

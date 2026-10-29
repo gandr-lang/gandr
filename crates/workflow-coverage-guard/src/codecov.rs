@@ -478,7 +478,7 @@ where
 ///   pending upload read as complete, or one refused while complete, changes
 ///   the observed result.
 /// - witness: `tests::cli::a_drop_opens_the_issue`
-/// - witness: `tests::cli::a_pending_upload_is_refused_once_the_wait_ends`
+/// - witness: `tests::cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978`
 #[inline]
 pub fn upload(
     repository: &Repository,
@@ -519,6 +519,95 @@ pub fn upload(
     }
 }
 
+/// One upload of `main` Codecov has not processed: its commit and the state
+/// Codecov lists it in.
+///
+/// # Specification
+/// - provides: the line the report names a skipped upload by.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Skipped
+{
+    /// The commit measured.
+    pub sha: CommitSha,
+    /// Codecov's state of its upload: never [`State::Complete`] with totals.
+    state: State,
+}
+
+impl fmt::Display for Skipped
+{
+    /// Writes one sentence naming the commit and its state.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "Codecov has not processed the upload of {}: its state is `{}`. The comparison skips it.",
+            self.sha, self.state
+        )
+    }
+}
+
+/// The newest processed upload of `main` at or before a commit's, and every
+/// unprocessed upload above it.
+///
+/// # Specification
+/// - provides: the later side of the comparison when the head's upload is
+///   unprocessed, and the uploads the report names as skipped.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Newest
+{
+    /// The newest processed upload.
+    pub upload: Upload,
+    /// The unprocessed uploads above it, newest first.
+    pub skipped: Vec<Skipped>,
+}
+
+/// `main`'s uploads from `sha`'s on, newest first, as Codecov lists them.
+///
+/// # Specification
+/// - requires: `curl` on the path.
+/// - ensures: the listing's entries from `sha`'s, which comes first.
+/// - provides: the listing [`previous`] and [`newest`] walk.
+/// - fails: [`GuardError::Unlisted`] when `sha` is not among the newest fifty
+///   of `main`'s uploads; every refusal of the request.
+/// - panics: none.
+/// - executable: none — the outcome is the external service's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`previous`].
+/// - witness: `tests::cli::an_unlisted_head_or_a_missing_baseline_is_refused`
+fn listed_from(
+    repository: &Repository,
+    sha: &CommitSha,
+) -> Result<Vec<Listed>, GuardError>
+{
+    let route = Route(format!(
+        "{API}/{}/repos/{}/commits/?branch=main&page_size={LISTED}",
+        repository.owner, repository.name
+    ));
+    let listing: Listing = get(&route)?;
+    let from: Vec<Listed> = listing
+        .results
+        .into_iter()
+        .skip_while(|listed| listed.commitid != *sha)
+        .collect();
+    if from.is_empty() {
+        return Err(GuardError::Unlisted {
+            sha: sha.to_string(),
+        });
+    }
+    Ok(from)
+}
+
 /// The processed upload of `main` that precedes `sha`'s.
 ///
 /// # Specification
@@ -548,21 +637,9 @@ pub fn previous(
     sha: &CommitSha,
 ) -> Result<Upload, GuardError>
 {
-    let route = Route(format!(
-        "{API}/{}/repos/{}/commits/?branch=main&page_size={LISTED}",
-        repository.owner, repository.name
-    ));
-    let listing: Listing = get(&route)?;
-    let mut after = listing
-        .results
+    listed_from(repository, sha)?
         .into_iter()
-        .skip_while(|listed| listed.commitid != *sha);
-    if after.next().is_none() {
-        return Err(GuardError::Unlisted {
-            sha: sha.to_string(),
-        });
-    }
-    after
+        .skip(1)
         .find_map(|listed| match (listed.state, listed.totals) {
             (State::Complete, Some(totals)) => Some(Upload {
                 sha: listed.commitid,
@@ -573,6 +650,60 @@ pub fn previous(
         .ok_or_else(|| GuardError::NoBaseline {
             sha: sha.to_string(),
         })
+}
+
+/// The newest processed upload of `main` at or before `sha`'s, and every
+/// unprocessed upload above it.
+///
+/// # Specification
+/// - requires: `curl` on the path.
+/// - ensures: the first processed upload from `sha`'s on in Codecov's listing
+///   of `main`'s uploads, newest first, and every entry before it, `sha`'s
+///   included, as skipped.
+/// - provides: the later side of the comparison when `sha`'s upload is
+///   unprocessed, so an unprocessed upload never stands in for main's coverage.
+/// - fails: [`GuardError::Unlisted`] when `sha` is not among the newest fifty
+///   of `main`'s uploads; [`GuardError::NoBaseline`] when no processed upload
+///   is listed from it on; every refusal of the request.
+/// - panics: none.
+/// - executable: none — the outcome is the external service's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pending head above a processed upload, and a pending
+///   head above another pending upload; taking the head, the head's neighbour
+///   regardless of state, or dropping a skipped upload changes the report.
+/// - witness: `tests::cli::a_pending_head_is_skipped_for_the_newest_processed_upload_3978`
+/// - witness: `tests::cli::two_unprocessed_uploads_in_a_row_open_their_issue`
+#[inline]
+pub fn newest(
+    repository: &Repository,
+    sha: &CommitSha,
+) -> Result<Newest, GuardError>
+{
+    let mut skipped = Vec::new();
+    for listed in listed_from(repository, sha)? {
+        match (listed.state, listed.totals) {
+            (State::Complete, Some(totals)) => {
+                return Ok(Newest {
+                    upload: Upload {
+                        sha: listed.commitid,
+                        totals,
+                    },
+                    skipped,
+                });
+            },
+            (state, _) => skipped.push(Skipped {
+                sha: listed.commitid,
+                state,
+            }),
+        }
+    }
+    Err(GuardError::NoBaseline {
+        sha: sha.to_string(),
+    })
 }
 
 /// Every source file `sha`'s upload covers, with its lines.
