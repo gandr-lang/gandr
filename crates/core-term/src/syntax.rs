@@ -1497,6 +1497,41 @@ pub fn equal_comp_type_syntax(
     )
 }
 
+/// Compare computation syntax as [`equal_certificate_syntax`] compares
+/// values: every constructor, leaf and child but path evidence, with no
+/// reduction.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: equal roots have the same former and structurally equal children.
+/// - provides: the comparison of two computations written apart, such as two
+///   thunks' bodies a caller reads under one environment.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two allocations of one lambda compare equal, and the same
+///   lambda returning another variable compares different.
+/// - witness: `syntax::tests::computation_syntax_ignores_allocation_identity`
+#[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.computation(left), arena.computation(right)) {
+    (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
+    _ => false,
+})]
+#[inline]
+#[must_use]
+pub fn equal_computation_syntax(
+    arena: &crate::CoreArena,
+    left: ComputationId,
+    right: ComputationId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Syntax,
+        StructuralGoal::Computation(left, right),
+    )
+}
+
 /// Compare type syntax as [`equal_type_syntax`] does, as a printed type reads.
 ///
 /// Those read as one are the types every checker reads alike — a
@@ -3758,6 +3793,33 @@ mod tests
             equal_comp_type_syntax(&arena, first, other),
             CertificateEquality::Different,
             "a different argument is a different type"
+        );
+    }
+
+    #[test]
+    fn computation_syntax_ignores_allocation_identity()
+    {
+        let mut arena = crate::CoreArena::new();
+        let returning = |arena: &mut crate::CoreArena, index: u32| {
+            let variable = arena.value_variable(
+                crate::Zone::Intuitionistic,
+                gandr_kernel_term::DeBruijnIndex::from(index),
+            );
+            let returned = arena.computation_return(variable);
+            arena.computation_lambda(returned)
+        };
+        let first = returning(&mut arena, 0);
+        let twin = returning(&mut arena, 0);
+        let other = returning(&mut arena, 1);
+        assert_eq!(
+            equal_computation_syntax(&arena, first, twin),
+            CertificateEquality::Equal,
+            "two allocations of one lambda are one computation"
+        );
+        assert_eq!(
+            equal_computation_syntax(&arena, first, other),
+            CertificateEquality::Different,
+            "a lambda returning another variable is another computation"
         );
     }
 

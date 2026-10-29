@@ -1,0 +1,64 @@
+/// An action over a lambda written twice.
+///
+/// One action on a path, over a lambda that closes over a variable, is one
+/// path wherever the source writes it. Two definitions whose bodies write the
+/// action unfold to it, and a reflexivity relates them.
+///
+/// The action unfolds to a transport whose motive calls the lambda. The two
+/// motives hold two thunks of the lambda, each closing its own copy of the
+/// body over one capture. They compare by those bodies, read as written, and
+/// by the captures pair by pair, and the kernel agrees.
+///
+/// - see: #3807 — the code walk pairs two written calls by function and argument
+/// - see: #3920 — the checker declined two motives calling a lambda written twice
+
+/// The action of `F` on `p`.
+def act(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+  cong(F, p)
+}
+
+/// The action on `fa` of composing with `g`.
+def apThen(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), fm then g, fp then g) {
+  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa)
+}
+
+/// The same action, the lambda written again.
+def apThenAgain(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), fm then g, fp then g) {
+  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa)
+}
+
+/// The action over the lambda written twice: a reflexivity relates the two.
+def writtenTwice(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  apThen(A, x, y, z, fm, fp, fa, g),
+  apThenAgain(A, x, y, z, fm, fp, fa, g)
+) {
+  here(apThen(A, x, y, z, fm, fp, fa, g))
+}

@@ -5156,9 +5156,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// the presentations ([`Self::present`]), as a goal's root reads before
     /// its shape; no definition unfolds, as no decision names one. A pair that
     /// read to something is walked again, its own set-aside pairs read in
-    /// turn; two thunks neither of which reads to anything walk their
-    /// computations the same way; any other pair neither side of which reads
-    /// to anything compares by [`equal_weakened`].
+    /// turn. A pair neither side of which reads to anything compares by
+    /// [`equal_weakened`]; two thunks, or two returned values, it leaves apart
+    /// walk their computations the same way.
     ///
     /// # Specification
     /// - requires: every pair's values live in the arena.
@@ -5178,8 +5178,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - measure: the budget left: a side reads one step of its chain per
     ///   charge, its rewriting charges every node it compares or copies, and a
     ///   pair returns to the worklist only after one of its sides read to
-    ///   something — a normal form reads to itself — and a thunk pair's walk
-    ///   adds only pairs inside its two computations.
+    ///   something — a normal form reads to itself — and a thunk or returned
+    ///   pair's walk adds only pairs inside its two computations.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call over an endpoint returning the other side's
@@ -5187,9 +5187,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   leaving the endpoints unread changes the first, and answering every
     ///   read pair alike the second. Two points one presented rule relates are
     ///   alike, and two no rule relates are not (#1723); leaving the rules
-    ///   unread changes the first.
+    ///   unread changes the first. A call through a lambda and the same call
+    ///   through its ascription's fold, neither returning, are alike, and
+    ///   through a lambda calling another rigid are not (#3920); comparing an
+    ///   unread returned pair by α-equality changes the first.
     /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
     /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
+    /// - witness: `replay::tests::an_unread_pair_of_returned_calls_walks_their_computations_3920`
     #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
         && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget))]
     fn endpoints_alike(
@@ -5228,26 +5232,38 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             }
             let [one, other] = read;
             let unread = (one, other) == (left, right);
-            let walked = match (self.arena.value(one), self.arena.value(other)) {
-                // The walk sets a thunk pair aside for the redex one of its
-                // computations forces, which this reading does not contract:
-                // walk the two computations, their own set-aside pairs read
-                // in turn.
-                (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) if unread => {
-                    pending_endpoints(
-                        self.arena,
-                        self.unfoldings.presentations(),
-                        ConversionGoal::Computation(one, other),
-                        &mut pending,
-                    )
-                },
-                _ if unread => equal_weakened(self.arena, ConversionGoal::Value(one, other)),
-                _ => pending_endpoints(
+            let walked = if !unread {
+                pending_endpoints(
                     self.arena,
                     self.unfoldings.presentations(),
                     ConversionGoal::Value(one, other),
                     &mut pending,
-                ),
+                )
+            }
+            else if equal_weakened(self.arena, ConversionGoal::Value(one, other))
+                == Convertibility::Convertible
+            {
+                Convertibility::Convertible
+            }
+            else {
+                match (self.arena.value(one), self.arena.value(other)) {
+                    // The walk sets a thunk pair aside for the redex one of
+                    // its computations forces, which this reading does not
+                    // contract, and two returned calls that return nothing
+                    // alike, a lambda against its ascription's fold (#3920):
+                    // walk the two computations, their own set-aside pairs
+                    // read in turn.
+                    (Some(&Value::Thunk(one)), Some(&Value::Thunk(other)))
+                    | (Some(&Value::Returned(one)), Some(&Value::Returned(other))) => {
+                        pending_endpoints(
+                            self.arena,
+                            self.unfoldings.presentations(),
+                            ConversionGoal::Computation(one, other),
+                            &mut pending,
+                        )
+                    },
+                    _ => Convertibility::Distinct,
+                }
             };
             if walked == Convertibility::Distinct {
                 return Ok(Convertibility::Distinct);

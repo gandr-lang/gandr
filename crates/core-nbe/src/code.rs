@@ -12,14 +12,16 @@
 //!   binder it names, a variable free in the quote is read through the quote's
 //!   environment, a constant by its position, a static application by its
 //!   operator and its argument — whether written in the quote or held as a
-//!   neutral's static spine — and a nested code by the same walk over its own
-//!   closure. A decode whose code reads as a quote is the quoted type, read at
-//!   the quote's place: core-term and the kernel fire that rule when they mint
-//!   a decode, and an environment holds codes no mint saw, so the walk fires it
-//!   too. Equal walks are [`CodeComparison::Equal`]. A dependent arrow against
-//!   a plain one crosses the dependent binder on its side alone, so the two
-//!   agree exactly when the dependent codomain does not name that binder: `(x :
-//!   A) -> B` with `x` absent from `B` is `A -> B` (#577).
+//!   neutral's static spine — a nested code by the same walk over its own
+//!   closure, and a held thunk by its closure: its source body as syntax and
+//!   its environment entry by entry. A decode whose code reads as a quote is
+//!   the quoted type, read at the quote's place: core-term and the kernel fire
+//!   that rule when they mint a decode, and an environment holds codes no mint
+//!   saw, so the walk fires it too. Equal walks are [`CodeComparison::Equal`].
+//!   A dependent arrow against a plain one crosses the dependent binder on its
+//!   side alone, so the two agree exactly when the dependent codomain does not
+//!   name that binder: `(x : A) -> B` with `x` absent from `B` is `A -> B`
+//!   (#577).
 //! - **Rigidity.** Two codes that are not α-equal are [`CodeComparison::Apart`]
 //!   only when neither holds anything that could still unfold: a constant with
 //!   a body, a neutral stuck on an elimination, or a value no code can be. A
@@ -158,6 +160,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -168,6 +171,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::equal_computation_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -176,6 +180,7 @@ use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
 use crate::arena::ValueClosureId;
+use crate::closure::CompBody;
 use crate::conv::ConversionFault;
 use crate::domain::BinderLevel;
 use crate::domain::DomainValue;
@@ -2295,7 +2300,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - requires: roots belong to the held arenas.
     /// - ensures: equal live roots compare reflexively; every queued child must
     ///   also agree. Two written pure calls agree when their functions and
-    ///   their arguments do, each read through its own side's closure.
+    ///   their arguments do, each read through its own side's closure. Two held
+    ///   thunks agree when their source bodies are equal as syntax and their
+    ///   environments' entries agree pair by pair.
     /// - fails: a dangling child or malformed source.
     /// - panics: none.
     ///
@@ -2303,10 +2310,14 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - hypothesis: L3 — nominal identities and unequal ordinary arguments
     ///   separate. Two lowerings of one call of a variable agree, at one depth
     ///   or two, and a call of another variable does not; comparing calls by
-    ///   their nodes changes the first answer.
+    ///   their nodes changes the first answer. Two thunks of one lambda written
+    ///   apart agree over one environment, and not over another environment or
+    ///   another body; comparing thunks by their nodes changes the first
+    ///   answer.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
     /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
     /// - witness: `code::tests::motives_calling_one_variable_family_are_alike_3802`
+    /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
     #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
     fn equal_atoms(
         &mut self,
@@ -2410,6 +2421,13 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
                         if (zone, first) == (other_zone, second) => {},
                     (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {},
+                    (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
+                        if first != second =>
+                    {
+                        if self.held_thunks(first, second, &mut atoms)? == Alike::Different {
+                            return Ok(Alike::Different);
+                        }
+                    },
                     (Atom::Other(first), Atom::Other(second)) if first == second => {},
                     (
                         Atom::Local(_)
@@ -2435,6 +2453,84 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 return Ok(Alike::Different);
             }
         }
+    }
+
+    /// Compare two held thunks by their closures, queueing their
+    /// environments' entries pair by pair.
+    ///
+    /// # Specification
+    /// - requires: both values belong to the held domain arena.
+    /// - ensures: [`Alike::Same`] with one atom pair queued per binding when
+    ///   both values are thunks whose closures hold source bodies equal as
+    ///   syntax over environments of one depth in each zone, and
+    ///   [`Alike::Different`] with nothing queued otherwise.
+    /// - provides: the reading of a function value a written call reaches
+    ///   through its closure, such as a lambda written twice.
+    /// - fails: [`DomainFault::Dangling`] when a thunk names no closure.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above, and as [`Walk::atom`].
+    ///
+    /// # Termination
+    /// - reason: each loop walks one zone of a finite environment once, and a
+    ///   closure captures its environment before its thunk is minted, so every
+    ///   queued entry is older than the thunk that holds it.
+    /// - measure: the bindings left in the zone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — thunks of one lambda written apart agree over one
+    ///   environment, and differ over another environment or another body.
+    /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
+    #[spec(
+        captures: [entry_atoms = atoms.len()],
+        ensures: |ret| match ret {
+            | Ok(Alike::Different) => atoms.len() == entry_atoms,
+            | Ok(Alike::Same) | Err(_) => atoms.len() >= entry_atoms,
+        },
+    )]
+    fn held_thunks(
+        &self,
+        first: DomainValueId,
+        second: DomainValueId,
+        atoms: &mut Vec<(Atom, Atom)>,
+    ) -> Result<Alike, ConversionFault>
+    {
+        let domain = self.domain;
+        let (
+            Some(&DomainValue::Thunk { body: one, .. }),
+            Some(&DomainValue::Thunk { body: other, .. }),
+        ) = (domain.value(first), domain.value(second))
+        else {
+            return Ok(Alike::Different);
+        };
+        let (Some(one), Some(other)) = (domain.comp_closure(one), domain.comp_closure(other))
+        else {
+            return Err(ConversionFault::Domain(DomainFault::Dangling));
+        };
+        let (CompBody::Source(left), CompBody::Source(right)) = (one.body(), other.body())
+        else {
+            return Ok(Alike::Different);
+        };
+        let zones = [Zone::Intuitionistic, Zone::Linear];
+        if zones
+            .iter()
+            .any(|&zone| one.environment().depth(zone) != other.environment().depth(zone))
+            || equal_computation_syntax(self.core, left, right) != CertificateEquality::Equal
+        {
+            return Ok(Alike::Different);
+        }
+        for zone in zones {
+            let pairs = one
+                .environment()
+                .bindings(zone)
+                .iter()
+                .zip(other.environment().bindings(zone));
+            for (&near, &far) in pairs {
+                atoms.push((self.atom(Node::Held(near))?, self.atom(Node::Held(far))?));
+            }
+        }
+        Ok(Alike::Same)
     }
 
     /// Inspect every structural type or ordinary argument below a root.
