@@ -65,9 +65,9 @@ quenchant_shape::reason_enum! {
             /// constructors fix: its terms carry no indices.
             Generated,
             /// A port binds or abstracts a variable, an operation has other
-            /// than one output, an index names an operation that has indices
-            /// of its own, or a law has no sorting, instantiates a variable
-            /// or fires under a row: the reading carries none of them.
+            /// than one output, or a law has no sorting, instantiates a
+            /// variable or fires under a row: the reading carries none of
+            /// them.
             Unsupported,
         }
     }
@@ -84,6 +84,9 @@ pub enum Unsorted
     Clash,
     /// The right side names an index its left side's sorting does not fix.
     Unfixed,
+    /// An index the term's sorting fixes applies an operation with indices
+    /// of its own, which the reading does not carry (#1510).
+    Nested,
 }
 
 /// One operation's sorting: the indices it is implicitly applied at, each
@@ -286,8 +289,9 @@ impl Indexing
     ///   occurrence.
     /// - fails: [`indexed_reading::Absent::Unindexed`] when no sort is indexed;
     ///   [`indexed_reading::Absent::Unsupported`] when a port binds or
-    ///   abstracts, an operation has other than one output, or an index term
-    ///   applies an operation with implicit indices of its own.
+    ///   abstracts, or an operation has other than one output. An index term
+    ///   applying an operation with indices of its own leaves the reading
+    ///   whole: a term whose sorting meets it is refused [`Unsorted::Nested`].
     /// - panics: none.
     ///
     /// # Adequacy
@@ -347,23 +351,6 @@ impl Indexing
                 output,
             });
         }
-        let indexed_in_an_index = operations.values().any(|sorting| {
-            sorting
-                .inputs
-                .iter()
-                .map(|&(_, ref sort)| sort)
-                .chain([&sorting.output])
-                .any(|sort| {
-                    applied(sort).iter().any(|name| {
-                        operations
-                            .get(name)
-                            .is_some_and(|inner| !inner.implicits.is_empty())
-                    })
-                })
-        });
-        if indexed_in_an_index {
-            return Maybe::Absent(indexed_reading::Absent::Unsupported);
-        }
         Maybe::Present(Self { operations })
     }
 
@@ -379,7 +366,9 @@ impl Indexing
     ///   declared operation at its port count, or naming a variable no other
     ///   way; [`Unsorted::Clash`] when two sorts asked of one subterm do not
     ///   unify; [`Unsorted::Unfixed`] when the right side names an index the
-    ///   left side's sorting does not fix.
+    ///   left side's sorting does not fix; [`Unsorted::Nested`] when an index
+    ///   either side's sorting fixes applies an operation with indices of its
+    ///   own.
     /// - panics: none.
     /// - executable: none — the strip-back clause compares terms built from the
     ///   receiver's sorting, which a clause may not read.
@@ -402,6 +391,8 @@ impl Indexing
         let (right, right_sort) = solving.infer(&face.rhs)?;
         solving.unify(&left_sort, &right_sort)?;
         let (lhs, rhs) = (solving.resolved(&left), solving.resolved(&right));
+        self.unnested(&lhs)?;
+        self.unnested(&rhs)?;
         let fixed: BTreeSet<&Name> = lhs.to_node().vars().collect();
         if rhs
             .to_node()
@@ -444,6 +435,7 @@ impl Indexing
         let mut solving = Solving::new(self);
         let (indexed, _sort) = solving.infer(term)?;
         let indexed = solving.resolved(&indexed);
+        self.unnested(&indexed)?;
         if indexed
             .to_node()
             .vars()
@@ -476,31 +468,67 @@ impl Indexing
     {
         rebuilt(term, |_| None, Substitution::Once, Dropping::Indices(self))
     }
-}
 
-/// The names `sort`'s index terms apply, outermost first.
-///
-/// # Specification
-/// trivial.
-fn applied(sort: &FreeTerm) -> BTreeSet<Name>
-{
-    let mut names = BTreeSet::new();
-    let mut pending = Vec::from([sort.clone()]);
-    while let Some(next) = pending.pop() {
-        match next.view() {
-            TermView::Op { name, args } => {
-                let _fresh = names.insert(name.clone());
-                pending.extend(args.map(TermNode::to_term));
-            },
-            TermView::Ctor { args, .. }
-            | TermView::Results { args }
-            | TermView::Inst { args, .. }
-            | TermView::Abs { args, .. }
-            | TermView::Lam { args, .. } => pending.extend(args.map(TermNode::to_term)),
-            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
+    /// `term` checked for an index, one of an application's implicit indices
+    /// first, that applies an operation with indices of its own.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` when no application of a declared operation at its
+    ///   implicit indices and port count together has, within one of its
+    ///   implicit indices, an application of an operation whose sorting has
+    ///   implicit indices.
+    /// - fails: [`Unsorted::Nested`] otherwise.
+    /// - panics: none.
+    /// - executable: none — the answer reads the receiver's sorting, which a
+    ///   clause may not read.
+    /// - intension: one walk of the term from a worklist.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a whisker's composite index nests a composition, and
+    ///   a category's laws nest none.
+    /// - witness: `indexing::tests::a_whiskers_composite_index_leaves_the_other_laws_indexed_1510`
+    fn unnested(
+        &self,
+        term: &FreeTerm,
+    ) -> Result<(), Unsorted>
+    {
+        let mut pending = Vec::from([(term.clone(), false)]);
+        while let Some((next, in_index)) = pending.pop() {
+            match next.view() {
+                TermView::Op { name, args } => {
+                    let sorting = self.operations.get(name);
+                    if in_index && sorting.is_some_and(|sorting| !sorting.implicits.is_empty()) {
+                        return Err(Unsorted::Nested);
+                    }
+                    let indices = sorting.map_or(0, |sorting| {
+                        let implicit = sorting.implicits.len();
+                        if args.len() == implicit.saturating_add(sorting.inputs.len()) {
+                            implicit
+                        }
+                        else {
+                            0
+                        }
+                    });
+                    pending.extend(
+                        args.enumerate()
+                            .map(|(place, arg)| (arg.to_term(), in_index || place < indices)),
+                    );
+                },
+                TermView::Ctor { args, .. }
+                | TermView::Results { args }
+                | TermView::Inst { args, .. }
+                | TermView::Abs { args, .. }
+                | TermView::Lam { args, .. } => {
+                    pending.extend(args.map(|arg| (arg.to_term(), in_index)));
+                },
+                TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
+            }
         }
+        Ok(())
     }
-    names
 }
 
 /// One sorting problem: the unknowns solved so far and the sort each written
@@ -1009,6 +1037,83 @@ mod tests
             indexing.call(&op("orBot", [op("fail", []), op("cut", [])])),
             Err(Unsorted::Clash),
             "a failure where a cut is asked is ill sorted"
+        );
+    }
+
+    /// A theory of 2-cells between homs: vertical composition, and a whisker
+    /// whose output's indices compose homs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_cells() -> TheoryDesc<Ungraded>
+    {
+        let mut description = category();
+        description.sorts = [
+            SortDesc::new("Ob", DeclPolarity::Data),
+            SortDesc::family("Hom", DeclPolarity::Data, [
+                SortIndex::new("dom", "Ob"),
+                SortIndex::new("cod", "Ob"),
+            ]),
+            SortDesc::family("Two", DeclPolarity::Data, [
+                SortIndex::new("src", "Hom"),
+                SortIndex::new("tgt", "Hom"),
+            ]),
+        ]
+        .into();
+        let mut opers = Vec::from(core::mem::take(&mut description.opers));
+        opers.extend([
+            oper(
+                "vcomp",
+                [
+                    port("s", "Two", [var("f"), var("g")]),
+                    port("t", "Two", [var("g"), var("k")]),
+                ],
+                port("out", "Two", [var("f"), var("k")]),
+            ),
+            oper(
+                "whiskerR",
+                [
+                    port("s", "Two", [var("f"), var("g")]),
+                    SortRef::new("h", "Hom").applied([var("b"), var("c")]),
+                ],
+                port("out", "Two", [
+                    op("comp", [var("f"), var("h")]),
+                    op("comp", [var("g"), var("h")]),
+                ]),
+            ),
+        ]);
+        description.opers = opers.into();
+        description
+    }
+
+    /// A whisker whose output's indices apply composition leaves the reading
+    /// whole: vertical associativity reads with its 1-cells and strips back,
+    /// and only a law whose sorting meets the composite index is refused
+    /// (#1510).
+    #[test]
+    fn a_whiskers_composite_index_leaves_the_other_laws_indexed_1510()
+    {
+        let Maybe::Present(indexing) = Indexing::of(&two_cells())
+        else {
+            panic!("a whisker's composite index leaves the reading whole");
+        };
+        let associativity = face(
+            op("vcomp", [op("vcomp", [var("s"), var("t")]), var("u")]),
+            op("vcomp", [var("s"), op("vcomp", [var("t"), var("u")])]),
+        );
+        let indexed = indexing
+            .face(&associativity)
+            .expect("vertical associativity is well sorted");
+        assert_eq!(
+            (indexing.strip(&indexed.lhs), indexing.strip(&indexed.rhs)),
+            (associativity.lhs, associativity.rhs),
+            "it strips back to the law as written"
+        );
+        let whiskered = op("vcomp", [op("whiskerR", [var("s"), var("h")]), var("t")]);
+        assert_eq!(
+            indexing.face(&face(whiskered.clone(), whiskered)),
+            Err(Unsorted::Nested),
+            "a whiskered composite's index applies composition, which the reading does not carry"
         );
     }
 }

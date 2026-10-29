@@ -1150,9 +1150,10 @@ fn elaborate_desc<G>(
     // calls for the term reading. A law over an indexed sort is read with the
     // indices its sorting fixes (`Indexing::face`), which the kernel's
     // decision of the presentation re-derives. Where one law's sides do not
-    // sort, or a law instantiates a variable or fires under a row, the block
-    // has no indexed reading, as the kernel then has none, and its laws over
-    // an indexed sort stay declined.
+    // sort, an index they fix applies an operation with indices of its own,
+    // or a law instantiates a variable or fires under a row, the block has no
+    // indexed reading, as the kernel then has none, and its laws over an
+    // indexed sort stay declined.
     let mut indexing = match reading {
         DescReading::Shape => Indexing::of(desc),
         DescReading::Generative => Maybe::Absent(indexed_reading::Absent::Generated),

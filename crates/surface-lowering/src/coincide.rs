@@ -1549,7 +1549,8 @@ impl fmt::Display for NormalFormFault
     ///   a call that does not elaborate is named by its reason, a shape the
     ///   cell layer does not read yet with the issue that owes a nested
     ///   operation, a reason [`elaborate_call`] never returns as a call that
-    ///   does not elaborate, and an ill-sorted call as one.
+    ///   does not elaborate, an index nesting an indexed operation with that
+    ///   issue too, and an ill-sorted call as one.
     /// - fails: the formatting sink's error when it refuses the text.
     /// - panics: none.
     /// - executable: none — a formatter exposes no readback of the written
@@ -1604,7 +1605,13 @@ impl fmt::Display for NormalFormFault
                 "no normal form: the second-order reading forms no term of the call or of a \
                  rule's instance",
             ),
-            Self::Unsorted(_) => f.write_str(
+            Self::Unsorted(Unsorted::Nested) => write!(
+                f,
+                "no normal form: an index the call's sorting fixes applies an operation with \
+                 indices of its own; a nested index is tracked by {}",
+                TrackingIssue::NESTED_OPERATION
+            ),
+            Self::Unsorted(Unsorted::Unread | Unsorted::Clash | Unsorted::Unfixed) => f.write_str(
                 "no normal form: the call is ill sorted, its operations asking one argument at \
                  two sorts or leaving an index no argument fixes",
             ),
