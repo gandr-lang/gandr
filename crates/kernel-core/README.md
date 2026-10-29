@@ -29,6 +29,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, a refused trace's `ReplayRefusal` classed by `RefusalClass`; `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
+- **The descent skeleton.** `Descent` and `descent::replay`: one replay for a conversion trace and a guarded family with its rows.
 - **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`: `Flow`, `stay`, `then`, `ride` and its telescope form, with forward, function and session certificates replayed on readmission), all through ordinary admission.
 - **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
 - **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests. A key names the constants it reaches by content (`encoding`) and the binders the goal's judgement read, gathered as the check runs, with no walk over the term.
@@ -41,7 +42,6 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it.
 - **Receipt scope.** A `CheckedId` names a position, not an environment identity. Use it only with the corresponding admission history.
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, and `audit` reports every declaration that rests on it.
-- **A trace in the kernel's terms.** A replay's caller translates its sides and the bodies it allows unfolding into the replay's arena, maps each trace identifier to the constant it names or `ReplayNode::Other`, and maps its engine's verdict to an `EngineClaim`. A body is a closed value, an operator's body is closed beyond its parameters, and a constant given neither is opaque.
 - **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
@@ -101,6 +101,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The seal rule: a manifest atom read as its representation | [`src/seal.rs`](src/seal.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |
 | Conversion replay, its decisions and laws | [`src/replay.rs`](src/replay.rs) |
+| The descent skeleton and its two instances | [`src/descent.rs`](src/descent.rs) |
 | The content table, the memo key and the binders a goal reads | [`src/encoding.rs`](src/encoding.rs), [`src/support.rs`](src/support.rs) |
 | Shifting and substitution | [`src/rewrite.rs`](src/rewrite.rs) |
 | Universe paths | [`src/path_universe.rs`](src/path_universe.rs) |
@@ -114,7 +115,8 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 
 ## References
 
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1–3, 6 and 10) — a key names the constants it reaches by content; the kernel derives every support from its own nodes and judgement, taking none across the bridge; a replay step enters the trusted base on a test against its reference.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1–3, 6, 7 and 10) — a key names the constants it reaches by content; the kernel derives every support from its own nodes and judgement, taking none across the bridge; a replay step enters the trusted base on a test against its reference; one skeleton replays every certificate.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as descent (§ sharing-rule-descent, § sharing-rule-probe) — a cover glued once and replayed.
 - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement, § codebruijn-carrier, § footprint-from-support) — the judgement returns the binders it read as its output.
 - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.

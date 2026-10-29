@@ -5,7 +5,9 @@
 //! Materialized consumer sides are compared exactly; hashes confer no
 //! authority. Classifiers belong to a canonical vocabulary, not to an inferred
 //! typing judgment for open equations. The [`stage`](crate::stage) module
-//! defines the local equations admitted here.
+//! defines the local equations admitted here. [`Family`] replays a family
+//! through the descent skeleton ([`crate::descent::replay`]): the schema is
+//! the gluing of its one class, and each member under its row is a position.
 //!
 //! # The judgments and their boundary
 //!
@@ -201,7 +203,9 @@
 //! - zero/positive rule changes and the schema work ceiling;
 //! - shared-base replay against fresh probes, and fanout;
 //! - scheduling independence, foreign-schema bindings, future coordinates, and
-//!   reuse after partial work exhaustion.
+//!   reuse after partial work exhaustion;
+//! - a family replayed through the descent skeleton, up to its first refused
+//!   member.
 //!
 //! [`stage::replay`]: crate::stage::replay
 
@@ -225,6 +229,8 @@ use gandr_kernel_term::stage::Term;
 use gandr_kernel_term::stage::TermId;
 use gandr_kernel_term::stage::Type;
 use gandr_kernel_term::stage::TypeId;
+
+use crate::descent::Descent;
 
 /// A point in a schema's dense entry order.
 #[repr(transparent)]
@@ -1331,6 +1337,139 @@ impl Substitution<'_, '_>
             budget,
             work,
         )
+    }
+}
+
+/// A guarded family replayed as a descent datum.
+///
+/// The [`Proposal`] is the class, glued by [`Schema::check`] and bound once by
+/// [`Schema::bind`] to the consumer arena. Each member is a position: its
+/// equation and its row, agreed by [`Schema::substitute`] and
+/// [`Substitution::admit`].
+#[derive(Debug)]
+pub struct Family<'run>
+{
+    /// The consumer arena every member's sides live in.
+    arena: &'run Arena,
+    /// The row buffers each member's substitution rewrites.
+    row: &'run mut Row,
+    /// The allowance the schema, the binding and every member draw on.
+    budget: &'run mut Budget,
+}
+
+impl<'run> Family<'run>
+{
+    /// A family replay over `arena` that rewrites `row` and draws on
+    /// `budget`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        arena: &'run Arena,
+        row: &'run mut Row,
+        budget: &'run mut Budget,
+    ) -> Self
+    {
+        Self { arena, row, budget }
+    }
+}
+
+impl<'run> Descent<Proposal> for Family<'run>
+{
+    type Bound<'glued>
+        = Consumer<'glued>
+    where
+        Self: 'glued;
+    type Gluing = Schema;
+    type Position = (Step, &'run [Choice]);
+    type Refusal = Refusal;
+
+    /// Check the family's schema once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the schema or the refusal [`Schema::check`] answers.
+    /// - fails: the proposal's refusal.
+    /// - panics: none.
+    /// - executable: none — [`Schema::check`]'s attribute checks the schema it
+    ///   answers.
+    ///
+    /// # Errors
+    /// Returns the refusal of the proposal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a corrupted proposal is refused before any member is
+    ///   read.
+    /// - witness: `admission::tests::a_family_replays_through_the_descent_skeleton`
+    #[inline]
+    fn glue(
+        &mut self,
+        class: Proposal,
+    ) -> Result<Schema, Refusal>
+    {
+        Schema::check(class, self.budget)
+    }
+
+    /// Bind the schema to the consumer arena once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the consumer or the refusal [`Schema::bind`] answers.
+    /// - fails: the binding's refusal.
+    /// - panics: none.
+    /// - executable: none — [`Schema::bind`]'s attribute checks that the
+    ///   consumer holds this schema.
+    ///
+    /// # Errors
+    /// Returns the refusal of the binding.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every member of an accepted family is admitted
+    ///   against the one consumer.
+    /// - witness: `admission::tests::a_family_replays_through_the_descent_skeleton`
+    #[inline]
+    fn bind<'glued>(
+        &mut self,
+        gluing: &'glued Schema,
+    ) -> Result<Consumer<'glued>, Refusal>
+    {
+        gluing.bind(self.arena.clone(), self.budget)
+    }
+
+    /// Admit one member under its row.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: success exactly when the row substitutes into the consumer's
+    ///   schema and the member's equation is admitted under it; otherwise the
+    ///   first refusal.
+    /// - fails: the row's or the member's refusal.
+    /// - panics: none.
+    /// - executable: none — [`Schema::substitute`]'s and
+    ///   [`Substitution::admit`]'s attributes check each step.
+    ///
+    /// # Errors
+    /// Returns the refusal of the row or of the member.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member whose sides differ from its row's instance
+    ///   is refused, and the members before it are admitted.
+    /// - witness: `admission::tests::a_family_replays_through_the_descent_skeleton`
+    #[inline]
+    fn agree(
+        &mut self,
+        bound: &Consumer<'_>,
+        position: (Step, &'run [Choice]),
+    ) -> Result<(), Refusal>
+    {
+        let (equation, choices) = position;
+        let schema = bound.schema;
+        let mut substitution = schema.substitute(schema.classifiers(), choices, self.row)?;
+        substitution
+            .admit(bound, equation, self.budget)
+            .map(|_work| ())
     }
 }
 

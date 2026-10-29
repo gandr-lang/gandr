@@ -953,6 +953,7 @@ INSERT INTO purpose VALUES('kernel-conversion-trace','sink::TraceSink','trait','
 INSERT INTO purpose VALUES('kernel-core','admission::Admission','struct','Work charged by exact instance admission.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Choice','struct','A point occurrence''s explicit selection, including repeated correlations.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Consumer','struct','Schema-bound consumer syntax, immutable after binding and shared by reference across rows; no mutable arena replacement is exposed.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','admission::Family','struct','A guarded family replayed as a descent datum: the proposal glued by the schema check, each member agreed under its row.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Guard','struct','An arm in one point''s dense guard order.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Node','enum','A backward-referencing pattern node; term children index this node table.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Point','struct','A point in a schema''s dense entry order.','sharing','fits','sound',NULL);
@@ -977,6 +978,8 @@ INSERT INTO purpose VALUES('kernel-core','conv::convert_comp_type','function','C
 INSERT INTO purpose VALUES('kernel-core','conv::convert_value_type','function','Convert a synthesized value type against an expected one, building the mismatch on divergence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','conv::convertible_comp_types','function','Decide convertibility of two computation types in one arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','conv::convertible_value_types','function','Decide convertibility of two value types in one arena.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','descent::Descent','trait','A certificate''s local checker, read as a descent datum that glues a class once and agrees each position with that gluing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','descent::replay','function','Replay one class of a descent datum: glue it once, bind the gluing once and agree each position with it, in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','element_identity::EndpointSide','enum','The endpoint of an identity a reflexivity refusal names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','element_identity::GoalReading','enum','How a checking goal against an identity or a bridge reads its value.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','element_identity::IdentityError','enum','A refusal of the element-identity rules.',NULL,'fits','sound',NULL);
