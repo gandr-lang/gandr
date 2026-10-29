@@ -6285,6 +6285,60 @@ fn a_typed_bind_spells_as_written()
     );
 }
 
+/// A typed bind returned where a type reads a value, as a `cong`'s image is
+/// at a point under a binder that states its type, is the block of its
+/// statements: an argument takes no statement bare (#3942). The block's
+/// statements are read as an expression, so a type code bound there is
+/// quoted as an expression quotes it.
+#[test]
+fn a_returned_typed_bind_in_an_argument_is_a_block_3942()
+{
+    let mut core = CoreArena::new();
+    let block = |core: &mut CoreArena, value: ValueId, ty: ValueTypeId| {
+        let returns = core.comp_type_returner(ty);
+        let pure_value = core.computation_return(value);
+        let ascribed = core.computation_ascribe(pure_value, returns);
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = core.computation_return(bound);
+        let typed = core.computation_bind(ascribed, returned);
+        core.value_returned(typed)
+    };
+    let integer = core.value_type_base(BaseType::Integer);
+    let held = core.value_constant(ConstantIndex::from(0_usize));
+    let image = block(&mut core, held, integer);
+    let over_integer = core.value_type_path(integer, image, held);
+    let unit = core.value_type_product(&[]);
+    let pair = core.value_type_product(&[unit, integer]);
+    let code = core.value_quote(pair);
+    let universe = small_universe(&mut core);
+    let image = block(&mut core, code, universe);
+    let over_universe = core.value_type_path(universe, image, code);
+    let names = [Name::from("held")];
+    let source = CoreSource::new(&core, &names);
+    for (root, sugared, explicit) in [
+        (
+            over_integer,
+            "Path(Integer, { run a : Integer <- pure held ; pure a }, held)",
+            "Path(Integer, { run a : Integer <- pure held ; pure a }, held)",
+        ),
+        (
+            over_universe,
+            "Path(Type, { run a : Type <- pure type(Unit * Integer) ; pure a }, Unit * Integer)",
+            "Path(Type, { run a : Type <- pure #{Unit, Integer} ; pure a }, #{Unit, Integer})",
+        ),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented =
+                presented_in(&source, Root::Type(CoreNode::ValueType(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{form:?}"
+            );
+        }
+    }
+}
+
 /// An annotated return spells as the annotated value it lowered from, `(v :
 /// T)`, where a body ends, alone and as a lambda's body (#1107).
 #[test]

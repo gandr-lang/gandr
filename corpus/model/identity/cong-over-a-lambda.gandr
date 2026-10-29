@@ -9,6 +9,7 @@
 //
 // - see: #3773 — a lambda as `cong`'s function, refused before
 // - see: #3829 — a lambda where no path type is stated, refused before
+// - see: #3919 — a lambda stating its binder's type, refused before
 
 /// Whiskering a path of paths on the right.
 def whiskerRight(
@@ -55,4 +56,23 @@ def whiskerHere(
   cong(fn (q) { q then g }, a)
 ) {
   here(cong(fn (q) { q then g }, a))
+}
+
+/// The whisker's reflexivity again, its binder stating the type of the path's
+/// points.
+def whiskerStatedHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(
+  Path(Path(A, x, z), f1 then g, f2 then g),
+  cong(fn (q : Path(A, x, y)) { q then g }, a),
+  cong(fn (q : Path(A, x, y)) { q then g }, a)
+) {
+  here(cong(fn (q : Path(A, x, y)) { q then g }, a))
 }

@@ -1712,13 +1712,14 @@ enum Surface
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an expression for a thunk's body, which the grammar reads between
-///   the thunk's braces as an expression in either sort, so a type argument of
-///   a call there is quoted (#1102); a type for a type slot of a value or a
+/// - ensures: an expression for a thunk's body and for the statements of a
+///   nested or returned computation over a bind, which the grammar reads
+///   between their braces as an expression in either sort, so a type argument
+///   of a call there is quoted (#1102); a type for a type slot of a value or a
 ///   computation that writes itself — an annotation, a binder's type, a typed
 ///   bind's result — where the expression grammar embeds a type, and for a
 ///   static abstraction's body, which the grammar reads as a type; `surface`
-///   itself otherwise. A quote, a nested or returned computation and an
+///   itself otherwise. A quote, any other nested or returned computation and an
 ///   ascription, elided or written as the match that answers it, write nothing
 ///   of their own around a slot, so their slot is read as they are; a type
 ///   former's value slot is read as the type is, since every type application
@@ -1732,13 +1733,15 @@ enum Surface
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a quote as an argument, as a definition's body, as a
-///   static abstraction's body, as a decoded code in a type position and as a
-///   call's argument in a thunk a path type's endpoint writes distinguish the
-///   slots an expression reads from those a type reads.
+///   static abstraction's body, as a decoded code in a type position, as a
+///   call's argument in a thunk a path type's endpoint writes and as a value a
+///   block in a path type's endpoint binds distinguish the slots an expression
+///   reads from those a type reads.
 /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
 /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
-#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_)) {
+/// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_)) || braced(source, former).is_some() {
     Surface::Expression
 } else if matches!(*former, Former::StaticLambda(_)) || (!matches!(*former,
     Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
@@ -1749,15 +1752,18 @@ enum Surface
 } else {
     surface
 })]
-fn surface_below<Node>(
+fn surface_below<S>(
+    source: &S,
     surface: Surface,
-    former: &Former<'_, Node>,
+    former: &Former<'_, S::Node>,
     admits: Admits,
 ) -> Surface
+where
+    S: Source + ?Sized,
 {
-    // A thunk's body is written between braces, which either grammar reads
-    // as an expression.
-    if matches!(*former, Former::Thunk(_)) {
+    // A thunk's body and a block's statements are written between braces,
+    // which either grammar reads as an expression.
+    if matches!(*former, Former::Thunk(_)) || braced(source, former).is_some() {
         return Surface::Expression;
     }
     let writes_nothing = matches!(
@@ -2835,6 +2841,45 @@ where
         }
     }
     Some((bound, rest))
+}
+
+/// The bind `former` holds when it is a nested or returned computation the
+/// walk writes as a block, `{ run x <- c ; rest }`: one over a bind that
+/// [`nested_call`] does not write as the call it binds. No argument reads a
+/// statement bare.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the body exactly when `former` is a nested or returned
+///   computation whose body reads as a bind and [`nested_call`] finds no nested
+///   call there; absent otherwise.
+/// - provides: the block [`Walk::visit`] and [`Walk::form`] write, and the
+///   expression surface [`surface_below`] reads its statements in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned typed bind in a path type's endpoint and a run
+///   bound by a run in a type distinguish a block from a nested call.
+/// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
+/// - witness: `tests::goldens::a_run_bound_by_a_run_in_a_type_prints_nested_3280`
+#[spec(ensures: |ret| ret.is_none() || matches!(*former, Former::Nested(_) | Former::Returned(_)))]
+fn braced<S>(
+    source: &S,
+    former: &Former<'_, S::Node>,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    if let Former::Nested(body) | Former::Returned(body) = *former
+        && matches!(source.read(body), Former::Bind(..))
+        && nested_call(source, body).is_none()
+    {
+        Some(body)
+    }
+    else {
+        None
+    }
 }
 
 /// The calls a block's `run` statements bind from `node` on, in order, and
@@ -7393,24 +7438,26 @@ impl Walk<'_, '_>
     ///   ascription outside a typed bind pushes its body's visit alone, noted
     ///   as elided; a static application schedules its spine as [`Self::spine`]
     ///   does and any other application its call as [`Self::call`] does, under
-    ///   `become` where it ends a loop's pass; a decode, a quote, a returner
-    ///   where the body ends, a nested computation, a returned value and a
-    ///   reset where a body ends push their child's visit alone, so the child's
-    ///   piece is theirs, the reset's child inside the body it delimits; there,
-    ///   in a handler's subject, a shift over a returner where a body or a pass
-    ///   ends is `return v`, the stack's binder unwritten; the loop's own
-    ///   binder forced at the end of a pass, or applied to what the pass hands
-    ///   on, finishes as `continue`, a returner ending a pass is `break(v)` or
-    ///   `return v` and a loop ending a pass is written with its rest, as
-    ///   [`Self::pass_end`] reads them, and a computation the end of a pass
-    ///   cannot write is noted as the fixpoint's notation; a returner anywhere
-    ///   else is `pure v` and a run `run c`; a projection out of a forced
-    ///   variable naming a context binder is the observation `a.i`, the
-    ///   binder's name its one piece; a decode of a positional projection,
-    ///   which the type grammar writes no spelling of, is noted as the
-    ///   printer's notation, and so is a row as a term, written as the bracket
-    ///   of its interfaces that the surface reads as a list where a term
-    ///   stands, its tail after a bar when it is open.
+    ///   `become` where it ends a loop's pass; a nested computation or a
+    ///   returned value over a bind binding no call is the block of its
+    ///   statements, `{ run x <- c ; rest }`, as [`Self::form`] writes it; a
+    ///   decode, a quote, a returner where the body ends, any other nested
+    ///   computation or returned value and a reset where a body ends push their
+    ///   child's visit alone, so the child's piece is theirs, the reset's child
+    ///   inside the body it delimits; there, in a handler's subject, a shift
+    ///   over a returner where a body or a pass ends is `return v`, the stack's
+    ///   binder unwritten; the loop's own binder forced at the end of a pass,
+    ///   or applied to what the pass hands on, finishes as `continue`, a
+    ///   returner ending a pass is `break(v)` or `return v` and a loop ending a
+    ///   pass is written with its rest, as [`Self::pass_end`] reads them, and a
+    ///   computation the end of a pass cannot write is noted as the fixpoint's
+    ///   notation; a returner anywhere else is `pure v` and a run `run c`; a
+    ///   projection out of a forced variable naming a context binder is the
+    ///   observation `a.i`, the binder's name its one piece; a decode of a
+    ///   positional projection, which the type grammar writes no spelling of,
+    ///   is noted as the printer's notation, and so is a row as a term, written
+    ///   as the bracket of its interfaces that the surface reads as a list
+    ///   where a term stands, its tail after a bar when it is open.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -8430,6 +8477,13 @@ impl Walk<'_, '_>
                 Self::inlined(source, body, below(depth, kind), tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
+            // Any other run where a value is read is a block of its own,
+            // `{ run x <- c ; rest }`: an argument takes no statement bare,
+            // and a `cong`'s image at a point keeps the bind a typed binder
+            // checks the point with (#3942).
+            Former::Nested(_) | Former::Returned(_) if braced(source, &former).is_some() => {
+                Some(self.form(source, node, &former, admits))
+            },
             // A quoted type whose head no expression reads, standing where an
             // expression is read, is written in the quote's own spelling,
             // `type(T)`; every other one stands bare, as the lowering quotes a
@@ -8575,7 +8629,7 @@ impl Walk<'_, '_>
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
             }
-            let surface = surface_below(self.surface, &former, slot.admits);
+            let surface = surface_below(source, self.surface, &former, slot.admits);
             if surface != self.surface {
                 tasks.push(Task::Surface(self.surface));
             }
@@ -9906,11 +9960,13 @@ impl Walk<'_, '_>
     ///   ascription as `(v : T)`, its two pieces the value and the type, but a
     ///   binary natural ascribed `Nat` as its numeral, `(5 : Nat)`, its one
     ///   piece the type; a truth value ascribed `Bool` the visit writes as its
-    ///   word. The forms the grammar does not write — native transport, a
-    ///   fixpoint `rec f { c }`, a fold, any other resumption `resume(k, c)`,
-    ///   `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
-    ///   observation `c.0`, and a positional projection off anything but a
-    ///   name, `(v.1).0` — make the presentation approximate.
+    ///   word; a nested computation or a returned value as the block of its
+    ///   statements, `{ run x <- c ; rest }`, its one piece the run. The forms
+    ///   the grammar does not write — native transport, a fixpoint `rec f { c
+    ///   }`, a fold, any other resumption `resume(k, c)`, `reset { c }`, `shift
+    ///   k { c }`, a lazy product `&{c, …}` and its observation `c.0`, and a
+    ///   positional projection off anything but a name, `(v.1).0` — make the
+    ///   presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -9925,6 +9981,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
     /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -10879,15 +10936,23 @@ impl Walk<'_, '_>
             | Former::Force(_)
             | Former::Application(..)
             | Former::Lambda(_)
-            | Former::Nested(_)
             | Former::Run(_)
             | Former::Ua { .. }
-            | Former::Returned(_)
             | Former::Unreadable(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(Unspelled::Misplaced);
                 let _ = parts.text("?");
                 Binding::Atom
+            },
+            // A run where a value is read, the visit's one way here: the
+            // block of its statements.
+            Former::Nested(_) | Former::Returned(_) => {
+                let _ = parts
+                    .text("{")
+                    .part(Part::Open)
+                    .piece(Binding::Sequence)
+                    .part(Part::Close);
+                writes(Production("block"), Binding::Atom)
             },
         };
         let pieces = Arity(parts.pieces);
