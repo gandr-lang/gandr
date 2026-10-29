@@ -1780,6 +1780,44 @@ fi
 echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/swept.json) nights their recovery rows, and the term map's $(jq length <<< "$terms") rows read whole"
 '''
 
+# The debugger tasks read an enum's variant and pick their lldb as recorded
+# (#3778). Each case in `.config/debug/variants.json` holds the variant names
+# lldb gives an enum, the tag each reads, whether the names are Xcode's
+# truncated ones, and the variant or raw tag `variants.py` picks. On a stub
+# macOS, `.config/debug/lldb.bash` refuses with the install line when
+# Homebrew's `lldb` is absent and names its `lldb` when present.
+["check:debug"]
+description = "The lldb formatters pick each recorded enum's variant or raw tag, and lldb.bash refuses Xcode's lldb on macOS"
+tools.jq = "1.8.1"
+tools.python = "3.14.9"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python .config/debug/variants.py .config/debug/variants.json
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir -p "$scratch/bin" "$scratch/keg/bin"
+printf '%s\n' '#!/usr/bin/env bash' 'echo Darwin' > "$scratch/bin/uname"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "$STUB_PREFIX"' > "$scratch/bin/brew"
+chmod +x "$scratch/bin/uname" "$scratch/bin/brew"
+failed=0
+got=0
+PATH="$scratch/bin:$PATH" STUB_PREFIX="$scratch/keg" .config/debug/lldb.bash lldb > /dev/null 2> "$scratch/err" || got=$?
+if [[ $got != 2 ]] || ! grep -q 'brew install lldb' "$scratch/err"; then
+  printf 'debug case FAILED: macOS without LLVM lldb\n  exit %s, wanted 2 and the install line:\n%s\n' "$got" "$(cat "$scratch/err")" >&2
+  failed=1
+fi
+printf '%s\n' '#!/usr/bin/env bash' > "$scratch/keg/bin/lldb"
+chmod +x "$scratch/keg/bin/lldb"
+named=$(PATH="$scratch/bin:$PATH" STUB_PREFIX="$scratch/keg" .config/debug/lldb.bash lldb)
+if [[ $named != "$scratch/keg/bin/lldb" ]]; then
+  printf 'debug case FAILED: macOS with LLVM lldb\n  named %s, wanted %s\n' "$named" "$scratch/keg/bin/lldb" >&2
+  failed=1
+fi
+(( failed == 0 )) || exit 1
+echo "debug check OK: $(jq length .config/debug/variants.json) enums their variant, and lldb.bash its two macOS cases"
+'''
+
 # Every `Where` of a body's `## Refactoring` names something the workspace
 # carries (#2884). With a body, the task reads the rustdoc JSON
 # `evidence:rustdoc` wrote under `target/evidence/doc/` and the tracked files,

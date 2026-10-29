@@ -1,0 +1,62 @@
+[
+  {
+    "name": "#3778: Xcode's names over an 8-byte niche tag give the raw tag, never a variant",
+    "truncated": true,
+    "variants": [
+      { "name": "$variant$" },
+      { "name": "$variant$4294967295", "tag": 18446744073709551615, "width": 8 }
+    ],
+    "index": 1,
+    "raw": 18446744073709551615
+  },
+  {
+    "name": "#3778: a dataful capacity that matches a truncated name gives the raw tag",
+    "truncated": true,
+    "variants": [
+      { "name": "$variant$0", "tag": 4, "width": 8 },
+      { "name": "$variant$4", "tag": 4, "width": 8 },
+      { "name": "$variant$" }
+    ],
+    "index": 1,
+    "raw": 4
+  },
+  {
+    "name": "#3778: a dataful capacity that matches no truncated name is the dataful variant",
+    "truncated": true,
+    "variants": [
+      { "name": "$variant$0", "tag": 9, "width": 8 },
+      { "name": "$variant$4", "tag": 9, "width": 8 },
+      { "name": "$variant$" }
+    ],
+    "index": 2
+  },
+  {
+    "name": "Xcode's names over a 4-byte tag keep every bit and give the variant",
+    "truncated": true,
+    "variants": [
+      { "name": "$variant$" },
+      { "name": "$variant$1", "tag": 1, "width": 4 },
+      { "name": "$variant$2", "tag": 1, "width": 4 }
+    ],
+    "index": 1
+  },
+  {
+    "name": "full names over an 8-byte niche tag give the variant",
+    "truncated": false,
+    "variants": [
+      { "name": "$variant$" },
+      { "name": "$variant$18446744073709551615", "tag": 18446744073709551615, "width": 8 }
+    ],
+    "index": 1
+  },
+  {
+    "name": "full names over a dataful capacity give the dataful variant",
+    "truncated": false,
+    "variants": [
+      { "name": "$variant$9223372036854775808", "tag": 4, "width": 8 },
+      { "name": "$variant$9223372036854775812", "tag": 4, "width": 8 },
+      { "name": "$variant$" }
+    ],
+    "index": 2
+  }
+]
