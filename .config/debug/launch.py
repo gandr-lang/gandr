@@ -16,6 +16,13 @@ so a case runs alike on every host (#3867); a case naming a `host` puts a
 `PATH`. The debugger is a stub that prints its arguments, its `ulimit -v` and
 its cgroup's `memory.max`. On a stub macOS, `systemd-run` is a stub that
 records its call and fails.
+
+The 8 GiB bound is the host's own: a stub reads it but cannot set it. So a
+case that records the bound runs only where the host bounds a process, by a
+systemd scope or by `ulimit -v`, and elsewhere it is reported skipped, never
+failed: a macOS host bounds none (#3894). A case with `bounds` false puts
+such a host behind the stubs, a `systemd-run` that fails and a `ulimit` that
+refuses to lower `-v`, as macOS's kernel does.
 """
 
 import json
@@ -50,8 +57,18 @@ def bound(lines: list[str], caller: str, scoped: bool) -> str:
     return " ".join(lines[1:])
 
 
-def launched(case: dict, scratch: pathlib.Path) -> str | None:
-    """Why `case` launches otherwise than it records, or nothing."""
+def can_bound(environment: dict) -> bool:
+    """Whether the host under `environment` bounds a process to 8 GiB, as `lldb.bash` bounds lldb."""
+    probe = (
+        f"systemd-run --user --scope --quiet -p MemoryMax={BOUND_KIB}K -p MemorySwapMax=0 -- true 2> /dev/null"
+        f" || {{ limit=$(ulimit -v); [[ $limit != unlimited ]] && ((limit <= {BOUND_KIB})); }}"
+        f" || ulimit -v {BOUND_KIB} 2> /dev/null"
+    )
+    return subprocess.run(["bash", "-c", probe], env=environment, capture_output=True, check=False).returncode == 0
+
+
+def launched(case: dict, scratch: pathlib.Path) -> tuple[str, str] | None:
+    """Why `case` launches otherwise than it records, `FAILED` or `SKIPPED`, or nothing."""
     bin_dir = scratch / "bin"
     host_dir = scratch / "host"
     keg = scratch / "keg"
@@ -67,6 +84,13 @@ def launched(case: dict, scratch: pathlib.Path) -> str | None:
     elif case["lldb"]:
         stub(bin_dir / "lldb", STUB_LLDB)
     environment = dict(os.environ, PATH=f"{bin_dir}:{host_dir}:{os.environ['PATH']}")
+    if not case.get("bounds", True):
+        stub(host_dir / "systemd-run", "#!/usr/bin/env bash\nexit 1\n")
+        environment["BASH_FUNC_ulimit%%"] = (
+            '() { if [[ $1 == -v && $# == 2 ]]; then echo "ulimit: cannot modify limit" >&2; return 1; fi; builtin ulimit "$@"; }'
+        )
+    if case["system"] != "Darwin" and case.get("bound") == "8 GiB" and not can_bound(environment):
+        return "SKIPPED", "this host bounds no process, by a systemd scope or by `ulimit -v`"
     caller = subprocess.run(["bash", "-c", "ulimit -v"], capture_output=True, text=True, check=True).stdout.strip()
     run = subprocess.run(
         [str(LLDB_BASH), "lldb", "--batch", "--", "program"],
@@ -76,16 +100,16 @@ def launched(case: dict, scratch: pathlib.Path) -> str | None:
         check=False,
     )
     if run.returncode != case["exit"]:
-        return f"exit {run.returncode}, wanted {case['exit']}: {run.stderr.strip()}"
+        return "FAILED", f"exit {run.returncode}, wanted {case['exit']}: {run.stderr.strip()}"
     if "error" in case and case["error"] not in run.stderr:
-        return f"error {run.stderr.strip()!r}, wanted one holding {case['error']!r}"
+        return "FAILED", f"error {run.stderr.strip()!r}, wanted one holding {case['error']!r}"
     if "bound" in case:
         lines = run.stdout.splitlines()
         if not lines or lines[0] != "--batch -- program":
-            return f"ran with {lines[:1]}, wanted its arguments"
+            return "FAILED", f"ran with {lines[:1]}, wanted its arguments"
         got = bound(lines, caller, marker.exists())
         if got != case["bound"]:
-            return f"bound {got}, wanted {case['bound']}"
+            return "FAILED", f"bound {got}, wanted {case['bound']}"
     return None
 
 
@@ -97,8 +121,9 @@ def main(path: str) -> int:
         with tempfile.TemporaryDirectory() as scratch:
             why = launched(case, pathlib.Path(scratch))
         if why is not None:
-            print(f"launch case FAILED: {case['name']}\n  {why}", file=sys.stderr)
-            failed = 1
+            verdict, reason = why
+            print(f"launch case {verdict}: {case['name']}\n  {reason}", file=sys.stderr)
+            failed = int(failed or verdict == "FAILED")
     return failed
 
 

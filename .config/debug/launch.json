@@ -27,5 +27,13 @@
     "lldb": true,
     "exit": 0,
     "bound": "8 GiB"
+  },
+  {
+    "name": "#3894: Linux refuses its lldb on a host that bounds no process, as macOS's kernel bounds none",
+    "system": "Linux",
+    "bounds": false,
+    "lldb": true,
+    "exit": 2,
+    "error": "it never runs unbounded"
   }
 ]
