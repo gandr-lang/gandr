@@ -522,18 +522,16 @@ fn bridged(
 #[spec(
     captures: [before = *rows],
     ensures: |_| {
-        let selected = match refusal {
-            CheckRefusal::ShapeMismatch { wanted: ExpectedShape::Returner, .. } => Some(Row::ShapeRefusal),
-            CheckRefusal::NotSynthesisable { form: CheckingForm::Lambda(_) } => Some(Row::NonSynthesisableHead),
-            CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(thunk) }
-                if matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk)
-                => Some(Row::NonSynthesisableDefinition),
-            CheckRefusal::StagesDisagree { .. } | CheckRefusal::StageNotCarried { .. } | CheckRefusal::ImplicitUnsolved { .. } |
-            CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } |
-            CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } |
-            CheckRefusal::AtomTransport { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
-            CheckRefusal::HandlerUnlawful { .. } | CheckRefusal::BridgeAtSealedType { .. } | CheckRefusal::OutsideFold { .. } |
-            CheckRefusal::NotADataType(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::DataFieldLevel { .. } | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::NotAnAbstractType(_) | CheckRefusal::SealSiteRepeated(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::MissingRecordField { .. } | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::EndpointMismatch { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. } | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::NotOver { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::TypeMismatch(_) | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::ShapeMismatch { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::AdmissionOrder { .. } | CheckRefusal::MachineInvariant | CheckRefusal::SortMismatch { .. } | CheckRefusal::LevelMismatch { .. } | CheckRefusal::DependentBind { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::FamilyArgumentClassifier { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_) | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_) | CheckRefusal::CrossBlockReference { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::SessionMismatch { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::CapabilityUngranted { .. } | CheckRefusal::FootprintsOverlap { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Located { .. } => None,
+        let selected = if let CheckRefusal::ShapeMismatch { wanted: ExpectedShape::Returner, .. } = refusal {
+            Some(Row::ShapeRefusal)
+        } else if let CheckRefusal::NotSynthesisable { form: CheckingForm::Lambda(_) } = refusal {
+            Some(Row::NonSynthesisableHead)
+        } else if let CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(thunk) } = refusal
+            && matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk)
+        {
+            Some(Row::NonSynthesisableDefinition)
+        } else {
+            None
         };
         Row::ALL.into_iter().all(|row| rows.count(row)
             == if selected == Some(row) { DeclarationCount::from(1_usize) } else { before.count(row) })
@@ -545,159 +543,25 @@ fn checking_row(
     rows: &mut Exercised,
 )
 {
-    match refusal {
-        CheckRefusal::ShapeMismatch {
-            wanted: ExpectedShape::Returner,
-            ..
-        } => rows.mark(Row::ShapeRefusal),
-        CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Lambda(_),
-        } => rows.mark(Row::NonSynthesisableHead),
-        CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Thunk(thunk),
-        } => {
-            if is_whole_unsigned_body(lowered, thunk) == WholeBody::Whole {
-                rows.mark(Row::NonSynthesisableDefinition);
-            }
-        },
-        CheckRefusal::NotADataType(_)
-        | CheckRefusal::DataKindNotUniverse(_)
-        | CheckRefusal::DataFieldLevel { .. }
-        | CheckRefusal::RuleNotPresentable { .. }
-        | CheckRefusal::RuleNotRespected { .. }
-        | CheckRefusal::NotApart { .. }
-        | CheckRefusal::LoopNotRespected { .. }
-        | CheckRefusal::LoopUndecided { .. }
-        | CheckRefusal::AbstractKindNotUniverse(_)
-        | CheckRefusal::RepresentationAboveKind { .. }
-        | CheckRefusal::NotAnAbstractType(_)
-        | CheckRefusal::AtomTransport { .. }
-        | CheckRefusal::BridgeAtSealedType { .. }
-        | CheckRefusal::OutsideFold { .. }
-        | CheckRefusal::SealSiteRepeated(_)
-        | CheckRefusal::DataArgumentArity(_)
-        | CheckRefusal::UnknownConstructor { .. }
-        | CheckRefusal::ConstructorArity(_)
-        | CheckRefusal::NonExhaustiveDataCase(_)
-        | CheckRefusal::UndecidedCoverage(_)
-        | CheckRefusal::AbsentRecordField(_)
-        | CheckRefusal::AbsentTupleComponent(_)
-        | CheckRefusal::MissingRecordField { .. }
-        | CheckRefusal::ShapeMismatch {
-            wanted: ExpectedShape::Data | ExpectedShape::Record,
-            ..
-        }
-        | CheckRefusal::ShapeMismatch {
-            wanted:
-                ExpectedShape::PathUniverse
-                | ExpectedShape::Stack
-                | ExpectedShape::With
-                | ExpectedShape::Sum
-                | ExpectedShape::Summand
-                | ExpectedShape::EmptySum
-                | ExpectedShape::List
-                | ExpectedShape::Thunk
-                | ExpectedShape::Arrow
-                | ExpectedShape::Product
-                | ExpectedShape::Sigma
-                | ExpectedShape::StaticPi
-                | ExpectedShape::Path
-                | ExpectedShape::Telescope
-                | ExpectedShape::Session
-                | ExpectedShape::Capability
-                | ExpectedShape::Flow
-                | ExpectedShape::Run
-                | ExpectedShape::Dialogue,
-            ..
-        }
-        | CheckRefusal::NotSynthesisable {
-            form:
-                CheckingForm::Injection(_)
-                | CheckingForm::Reify(_)
-                | CheckingForm::Handle(_)
-                | CheckingForm::Reset(_)
-                | CheckingForm::Shift(_)
-                | CheckingForm::With(_)
-                | CheckingForm::Case(_)
-                | CheckingForm::List(_)
-                | CheckingForm::Hole(_)
-                | CheckingForm::StaticLambda(_)
-                | CheckingForm::Fixpoint(_)
-                | CheckingForm::Nested(_)
-                | CheckingForm::Offer(_)
-                | CheckingForm::Scope(_)
-                | CheckingForm::Run(_),
-        }
-        | CheckRefusal::PathCode(_)
-        | CheckRefusal::EndpointMismatch { .. }
-        | CheckRefusal::CompoundEndpoint { .. }
-        | CheckRefusal::FunextUnsupported { .. }
-        | CheckRefusal::PointwiseDistinct { .. }
-        | CheckRefusal::EquivUnsupported { .. }
-        | CheckRefusal::UncertifiedStratum { .. }
-        | CheckRefusal::RoundTripDistinct { .. }
-        | CheckRefusal::NotOver { .. }
-        | CheckRefusal::UaUncertified { .. }
-        | CheckRefusal::UaInequivalent { .. }
-        | CheckRefusal::UnenclosedRun { .. }
-        | CheckRefusal::ImplicitUnsolved { .. }
-        | CheckRefusal::ModelUnanswered { .. }
-        | CheckRefusal::ModelAmbiguous { .. }
-        | CheckRefusal::TacticRefused { .. }
-        | CheckRefusal::EffectSignatureConflict { .. }
-        | CheckRefusal::UnknownOperation { .. }
-        | CheckRefusal::HandlerCoverage { .. }
-        | CheckRefusal::HandlerUnlawful { .. }
-        | CheckRefusal::ShiftWithoutReset { .. }
-        | CheckRefusal::DependentStack { .. }
-        | CheckRefusal::TypeMismatch(_)
-        | CheckRefusal::UnknownConstant { .. }
-        | CheckRefusal::OutOfFragment { .. }
-        | CheckRefusal::UnboundIndex { .. }
-        | CheckRefusal::BudgetExceeded { .. }
-        | CheckRefusal::DanglingNode { .. }
-        | CheckRefusal::AdmissionOrder { .. }
-        | CheckRefusal::MachineInvariant
-        | CheckRefusal::SortMismatch { .. }
-        | CheckRefusal::LevelMismatch { .. }
-        | CheckRefusal::DependentBind { .. }
-        | CheckRefusal::Undecided { .. }
-        | CheckRefusal::FamilyArity { .. }
-        | CheckRefusal::FamilyArgumentClassifier { .. }
-        | CheckRefusal::StaticLambdaArgument { .. }
-        | CheckRefusal::StaticClassifierExpected { .. }
-        | CheckRefusal::NegativeOccurrence(_)
-        | CheckRefusal::NestedOccurrence(_)
-        | CheckRefusal::IndexOccurrence(_)
-        | CheckRefusal::NonUniformOccurrence(_)
-        | CheckRefusal::CrossBlockReference { .. }
-        | CheckRefusal::StageNotBelow { .. }
-        | CheckRefusal::StagesDisagree { .. }
-        | CheckRefusal::StageNotCarried { .. }
-        | CheckRefusal::SessionMismatch { .. }
-        | CheckRefusal::Linearity { .. }
-        | CheckRefusal::Access { .. }
-        | CheckRefusal::Codata { .. }
-        | CheckRefusal::CapabilityForged { .. }
-        | CheckRefusal::CapabilityAmplified(_)
-        | CheckRefusal::CapabilityOutsideAuthority { .. }
-        | CheckRefusal::CapabilityEscaped { .. }
-        | CheckRefusal::CapabilityConsumable(_)
-        | CheckRefusal::CapabilityUngranted { .. }
-        | CheckRefusal::FootprintsOverlap { .. }
-        | CheckRefusal::SessionNotEquivalent { .. }
-        | CheckRefusal::SessionNotSubtype { .. }
-        | CheckRefusal::SessionCodeExpected { .. }
-        | CheckRefusal::OpenSessionPayload { .. }
-        | CheckRefusal::UnassertedLaw { .. }
-        | CheckRefusal::NonCovariantMotive { .. }
-        | CheckRefusal::RideUnsupported { .. }
-        | CheckRefusal::RunNotAdmitted { .. }
-        | CheckRefusal::DialogueUnmatched { .. }
-        | CheckRefusal::DialogueInverted { .. }
-        | CheckRefusal::ForwardUnsupported { .. }
-        | CheckRefusal::Boundary { .. }
-        | CheckRefusal::Located { .. } => {},
+    if let CheckRefusal::ShapeMismatch {
+        wanted: ExpectedShape::Returner,
+        ..
+    } = refusal
+    {
+        rows.mark(Row::ShapeRefusal);
+    }
+    else if let CheckRefusal::NotSynthesisable {
+        form: CheckingForm::Lambda(_),
+    } = refusal
+    {
+        rows.mark(Row::NonSynthesisableHead);
+    }
+    else if let CheckRefusal::NotSynthesisable {
+        form: CheckingForm::Thunk(thunk),
+    } = refusal
+        && is_whole_unsigned_body(lowered, thunk) == WholeBody::Whole
+    {
+        rows.mark(Row::NonSynthesisableDefinition);
     }
 }
 
