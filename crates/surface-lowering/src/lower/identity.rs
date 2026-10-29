@@ -268,6 +268,7 @@ use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Block;
 use super::Carrier;
 use super::Code;
 use super::Former;
@@ -676,7 +677,8 @@ struct Typings
 /// - ensures: nothing for `back` and `then`; for `cong`, the written result
 ///   type of the function it maps by, or, for a parameter, its written type
 ///   until [`Lowerer::refuse_unsynthesised`] reads its arrow's codomain, and
-///   then that codomain with the frame it is carried from.
+///   then that codomain with the frame it is carried from; for a lambda, the
+///   lambda, whose body's path type is its codomain.
 /// - executable: none — a tag holds no tree to check its reading against.
 ///
 /// # Adequacy
@@ -726,6 +728,14 @@ enum Synthesis
         frame: Frame,
         /// The frame the map's use stands under in a type; none in a body.
         in_type: Option<Frame>,
+    },
+    /// A lambda `fn (q) { e }` over the path's points, its binder typed by
+    /// the path's carrier: `cong` reads its codomain off the path type its
+    /// body `e` synthesises under that binder.
+    Lambda
+    {
+        /// The lambda's node.
+        lambda: NodeIndex,
     },
 }
 
@@ -2258,17 +2268,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   the returned composite of the two flows, and `back(f)` there against
     ///   the flow type, as the symmetry ride the checker refuses. Where it
     ///   answers none, the operation is planned as synthesised from its
-    ///   operands, `cong` reading its codomain off the written result of the
-    ///   function definition its first operand names, and recorded for
-    ///   [`Self::refuse_unsynthesised`]. An operation read where a value is
-    ///   read is the value its transport returns.
+    ///   operands, `cong` reading its codomain as [`Self::mapped`] reads it —
+    ///   off its function's written result, or off the body of a lambda over
+    ///   its path's points — and recorded for [`Self::refuse_unsynthesised`].
+    ///   An operation read where a value is read is the value its transport
+    ///   returns.
     /// - fails: [`FragmentBoundary::NotAFunction`] for `cong` at a constructor
     ///   or at a static abstraction `\q. e`; the unannotated refusal where the
     ///   position answers a type that is not a written path type, or for `then`
     ///   and `back` a written flow type, under at most a returner and
-    ///   parentheses, and for a synthesised `cong` whose first operand names no
-    ///   function definition with a written result; the allowance refusal from
-    ///   that walk; the function name's own refusal.
+    ///   parentheses, and for a synthesised `cong` whose first operand
+    ///   [`Self::mapped`] refuses; the allowance refusal from that walk; the
+    ///   function name's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2281,6 +2292,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -2495,8 +2507,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   `function` is a bare name resolving to an earlier declaration written
     ///   as a function tail with a result type, or to one whose signature
     ///   states a map, `+U (A -> C)` or `A => B`, or to a binder whose written
-    ///   type is the thunk of an arrow, `+U (A -> C)`, under any parentheses.
-    /// - fails: the unannotated refusal for any other operand; the name's own
+    ///   type is the thunk of an arrow, `+U (A -> C)`, under any parentheses;
+    ///   the lambda itself when `function` is a lambda [`Self::cong_map`]
+    ///   pointed at its path's points.
+    /// - fails: the unannotated refusal for any other operand, a lambda over a
+    ///   path whose type the source does not write among them; the name's own
     ///   refusal from its resolution.
     /// - panics: none.
     ///
@@ -2507,13 +2522,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a function definition gives its codomain, a parameter
     ///   thunking an arrow gives the arrow's, and a parameter of another type
     ///   gives none; a declaration whose signature states a map gives the map's
-    ///   codomain.
+    ///   codomain; a pointed lambda gives itself.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::cong_reads_a_map_its_signature_states_778`
+    /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
     #[spec(ensures: |ret| match ret {
         | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain.node()).frame() == read,
         | Ok(Synthesis::Thunked { .. } | Synthesis::Stated { .. }) | Err(_) => true,
+        | Ok(Synthesis::Lambda { lambda }) => lambda == function && self.over_points.contains_key(&function),
         | Ok(Synthesis::Paths | Synthesis::Bound { .. }) => false,
     })]
     fn mapped(
@@ -2529,12 +2546,27 @@ impl<'source> Lowerer<'_, 'source>
             return Err(unannotated);
         };
         let named = Placed::of(function, node);
+        let shape = shape_of(self.pbg, node)?;
+        // A lambda `cong_map` pointed at its path's points reads its codomain
+        // off its body once the sweep has classified it.
+        if let Shape::Form {
+            former: Former::Lambda,
+            ..
+        } = shape
+        {
+            return if self.over_points.contains_key(&function) {
+                Ok(Synthesis::Lambda { lambda: function })
+            }
+            else {
+                Err(unannotated)
+            };
+        }
         // A capitalised name is read as a constructor; `derive` refuses one
         // that names a constructor, so here it names a function (#3772).
         let Shape::Form {
             former: Former::Name | Former::Constructor,
             ..
-        } = shape_of(self.pbg, node)?
+        } = shape
         else {
             return Err(unannotated);
         };
@@ -2737,10 +2769,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   and `cong`'s codomain is read in a declaration that lowers: a declared
     ///   function's, or a map's a signature states, under no binder of its
     ///   telescope, a parameter's arrow's under the frame its written type is
-    ///   read under, whose binders all stand where the operation does. An
-    ///   admitted operation reads its own type when every path it reads does,
-    ///   `then`'s second included. The record keeps every site, the innermost
-    ///   first, for the mint sweep to read `cong`'s codomain.
+    ///   read under, whose binders all stand where the operation does, or a
+    ///   lambda's whose body, with no statement before it, is an operation this
+    ///   walk admitted with its own type read. An admitted operation reads its
+    ///   own type when every path it reads does, `then`'s second included. The
+    ///   record keeps every site, the innermost first, for the mint sweep to
+    ///   read `cong`'s codomain.
     /// - provides: the classification-time guarantee that a synthesised
     ///   operation mints its motive.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
@@ -2824,7 +2858,8 @@ impl<'source> Lowerer<'_, 'source>
                     | Synthesis::Stated { .. }
                     | Synthesis::Paths
                     | Synthesis::Mapped { .. }
-                    | Synthesis::Bound { .. },
+                    | Synthesis::Bound { .. }
+                    | Synthesis::Lambda { .. },
                     _,
                 ) => synthesis,
             };
@@ -2835,6 +2870,13 @@ impl<'source> Lowerer<'_, 'source>
                         && self.scope.telescope_binders(frame).all(|binds| !binds)
                 },
                 Synthesis::Bound { codomain, .. } => !self.collected.refused(codomain.node()).0,
+                // The lambda's body is a synthesised operation the walk
+                // admitted, innermost first, with every path it reads typed.
+                Synthesis::Lambda { lambda } => matches!(
+                    self.plans.get(lambda),
+                    Some(&Plan::Lambda(Block { statements, last }, _))
+                        if statements.start == statements.end && read.contains(&last)
+                ),
                 Synthesis::Thunked { .. } | Synthesis::Stated { .. } => false,
             };
             let transported = self.reads_path(path, &read)?;
@@ -3927,18 +3969,22 @@ impl<'source> Lowerer<'_, 'source>
     ///   absent otherwise; for `cong(f, p)`, `Path(B, ⟨force f a⟩, ⟨force f
     ///   b⟩)` with `B` the returner's result the codomain mints: closed for a
     ///   declared function, carried as [`Self::carried`] carries it for a bound
-    ///   map. Each path's type is read as [`Self::identity_of`] reads it under
-    ///   `frame`.
+    ///   map, and for a lambda the path type its body stands at, read out from
+    ///   under the lambda's binder ([`Self::lambda_codomain`]). Each path's
+    ///   type is read as [`Self::identity_of`] reads it under `frame`.
     /// - fails: the unminted absence when the motive's path's type is not read;
     ///   the codomain's absence, or the other-sort absence when it mints no
-    ///   returner.
+    ///   returner; the unminted absence for a lambda whose body's path type
+    ///   names its binder.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each operation over a word, over another, over a
-    ///   parameter and over a call, and `cong` at a bound map.
+    ///   parameter and over a call, `cong` at a bound map, and `cong` at a
+    ///   lambda where no path type is answered.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(stood) => stood.answered == Answered::Path,
         | Maybe::Absent(_) => true,
@@ -3975,45 +4021,66 @@ impl<'source> Lowerer<'_, 'source>
                     .map(|onward| onward.right),
             },
             (
-                Derivation::Cong { .. },
-                Synthesis::Mapped { codomain, .. } | Synthesis::Bound { codomain, .. },
+                Derivation::Cong {
+                    function: written, ..
+                },
+                Synthesis::Mapped { .. } | Synthesis::Bound { .. } | Synthesis::Lambda { .. },
             ) => {
-                let result = match codomain {
-                    Codomain::Returner(codomain) => {
-                        let written = match self.comp_type_at(codomain) {
-                            Maybe::Present(written) => written,
-                            Maybe::Absent(reason) => return Maybe::Absent(reason),
-                        };
-                        let Some(&CompType::Returner { result, .. }) =
-                            sink.arena.comp_type(written)
-                        else {
-                            return Maybe::Absent(lowered::Absent::OtherSort);
-                        };
-                        result
-                    },
-                    Codomain::Returned(codomain) => match self.value_type_at(codomain) {
-                        Maybe::Present(result) => result,
-                        Maybe::Absent(reason) => return Maybe::Absent(reason),
-                    },
-                };
                 let carrier = match synthesis {
+                    Synthesis::Mapped { codomain, .. } => {
+                        match self.codomain_result(codomain, sink) {
+                            Maybe::Present(result) => result,
+                            Maybe::Absent(reason) => return Maybe::Absent(reason),
+                        }
+                    },
                     Synthesis::Bound {
+                        codomain,
                         frame: from,
                         in_type,
-                        ..
-                    } => match self.carried(result, from, in_type, frame, sink) {
-                        Maybe::Present(carried) => carried,
-                        Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                    } => {
+                        let result = match self.codomain_result(codomain, sink) {
+                            Maybe::Present(result) => result,
+                            Maybe::Absent(reason) => return Maybe::Absent(reason),
+                        };
+                        match self.carried(result, from, in_type, frame, sink) {
+                            Maybe::Present(carried) => carried,
+                            Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                        }
                     },
+                    Synthesis::Lambda { lambda } => match self.lambda_codomain(lambda, sink) {
+                        Maybe::Present(codomain) => codomain,
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
+                    Synthesis::Paths | Synthesis::Thunked { .. } | Synthesis::Stated { .. } => {
+                        return Maybe::Absent(lowered::Absent::Unminted);
+                    },
+                };
+                // A lambda's image at a point is its body there, `⟨e[a/q]⟩`, so
+                // no lambda stands in the path type for the checker to
+                // synthesise (#3773); any other map is forced and applied.
+                let body = match synthesis {
+                    Synthesis::Lambda { .. } => self.lambda_body(written, function, sink),
                     Synthesis::Paths
                     | Synthesis::Mapped { .. }
                     | Synthesis::Thunked { .. }
-                    | Synthesis::Stated { .. } => result,
+                    | Synthesis::Stated { .. }
+                    | Synthesis::Bound { .. } => None,
                 };
                 let mut image = |point| {
-                    let forced = sink.arena.computation_force(function);
-                    let applied = sink.arena.computation_application(forced, point);
-                    sink.arena.value_returned(applied)
+                    let at = if let Some(body) = body {
+                        let mut carried = Vec::new();
+                        gandr_core_term::instantiate_computation_traced(
+                            sink.arena,
+                            body,
+                            point,
+                            &mut carried,
+                        )
+                    }
+                    else {
+                        let forced = sink.arena.computation_force(function);
+                        sink.arena.computation_application(forced, point)
+                    };
+                    sink.arena.value_returned(at)
                 };
                 let left = image(read.left);
                 let right = image(read.right);
@@ -4033,6 +4100,97 @@ impl<'source> Lowerer<'_, 'source>
         };
 
         Maybe::Present(stood)
+    }
+
+    /// The type a `cong`'s written codomain `codomain` returns: a returner's
+    /// result, or a value function's codomain itself.
+    ///
+    /// # Specification
+    /// - requires: `codomain` is minted or absent.
+    /// - ensures: `B` for a returner `-F B` and for a value function's `B`.
+    /// - fails: the codomain's absence; the other-sort absence for a written
+    ///   computation type that is no returner.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::synthesised_at`].
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    /// - witness: `lower::identity::tests::cong_reads_a_map_stated_as_a_value_function_791`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(result) => sink.arena.value_type(result).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn codomain_result(
+        &self,
+        codomain: Codomain,
+        sink: &Sink<'_>,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        match codomain {
+            Codomain::Returner(codomain) => {
+                let written = match self.comp_type_at(codomain) {
+                    Maybe::Present(written) => written,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(written)
+                else {
+                    return Maybe::Absent(lowered::Absent::OtherSort);
+                };
+                Maybe::Present(result)
+            },
+            Codomain::Returned(codomain) => self.value_type_at(codomain),
+        }
+    }
+
+    /// The type a `cong` by the lambda at `lambda` maps its path's points
+    /// into: the path type the lambda's body stands at, read out from under
+    /// the lambda's binder.
+    ///
+    /// # Specification
+    /// - requires: [`Self::refuse_unsynthesised`] admitted the `cong`, so the
+    ///   lambda's body, a synthesised operation, is minted before it.
+    /// - ensures: `Path(A, a, b)` where the body stands at `Path(A, a, b)`
+    ///   under the lambda's binder and none of `A`, `a` and `b` names it,
+    ///   lowered out from under it.
+    /// - fails: the unminted absence when the body's path type is not recorded
+    ///   or names the binder; the body's own absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda whose body composes its binder with a
+    ///   parameter maps into the composite's path type.
+    /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(codomain) => matches!(sink.arena.value_type(codomain), Some(&ValueType::Path { .. })),
+        | Maybe::Absent(_) => true,
+    })]
+    fn lambda_codomain(
+        &self,
+        lambda: NodeIndex,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let Some(&Plan::Lambda(Block { last, .. }, _)) = self.plans.get(lambda)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let body = match self.computation_at(last) {
+            Maybe::Present(body) => body,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(&Identity {
+            carrier,
+            left,
+            right,
+        }) = sink.identities.get(&body)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let under = sink.arena.value_type_path(carrier, left, right);
+        match gandr_core_term::strengthen_value_type(sink.arena, under, Binders::ONE) {
+            Maybe::Present(outside) => Maybe::Present(outside.settle(sink.arena)),
+            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+        }
     }
 
     /// The path type the derived operation's operand `path` stands at, read

@@ -540,6 +540,7 @@ corpus/model/identity/circle-rotation.gandr Tense 55a83e4bf2679304
 corpus/model/identity/circle.gandr Passive 96dd4374b9a7f198
 corpus/model/identity/circle.gandr Tense c6b0c35263ef02df
 corpus/model/identity/circle.gandr Tense fb8c562e8c86aeab
+corpus/model/identity/cong-over-a-lambda.gandr Passive bb996c0931c6dc09
 corpus/model/identity/cong-over-a-lambda.gandr IngMain 8b5e4876054a9430
 corpus/model/identity/cong-thunk.gandr Tense 500a82cec4766ad9
 corpus/model/identity/cong-thunk.gandr Tense eb48fa6cb4a260a2
