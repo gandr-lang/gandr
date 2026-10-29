@@ -309,6 +309,11 @@ pub enum ConversionDecision<Id>
     /// The goal was closed by the consumer's own evaluation of two closed
     /// sides, compared at their normal forms.
     Evaluate,
+    /// The goal was answered by a tier outside the kernel, which ran two
+    /// closed sides to one normal form. A kernel under an admission policy
+    /// takes the answer without deriving it; one under none converts the
+    /// sides by its own evaluation, as it does for [`Self::Evaluate`].
+    Admitted,
 }
 
 impl<Id> ConversionDecision<Id>
@@ -383,6 +388,7 @@ impl<Id> ConversionDecision<Id>
             Self::Decompose => ConversionDecision::Decompose,
             Self::NegativeSubgoal { position } => ConversionDecision::NegativeSubgoal { position },
             Self::Evaluate => ConversionDecision::Evaluate,
+            Self::Admitted => ConversionDecision::Admitted,
         }
     }
 }
@@ -432,6 +438,7 @@ mod tests
                 position: SubgoalPosition::from(11),
             },
             ConversionDecision::Evaluate,
+            ConversionDecision::Admitted,
         ];
         let mut seen = Vec::new();
         let shifted: Vec<_> = trace
@@ -484,6 +491,7 @@ mod tests
                 position: SubgoalPosition::from(11),
             },
             ConversionDecision::Evaluate,
+            ConversionDecision::Admitted,
         ];
         assert_eq!(
             shifted.as_slice(),

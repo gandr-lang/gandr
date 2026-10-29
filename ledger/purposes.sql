@@ -980,6 +980,8 @@ INSERT INTO purpose VALUES('kernel-core','admission::Row','struct','Reusable buf
 INSERT INTO purpose VALUES('kernel-core','admission::Schema','struct','Kernel-owned evidence for one local derivation schema.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Substitution','struct','An admissible point-ordered substitution, tied to its checked schema and held in the caller''s row buffers.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','admission::Work','struct','Observed node operations, independent of elapsed time.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','admitted::AdmissionPolicy','enum','Says whether the kernel takes a closed pair''s admitted result from the native conversion tier or derives every one itself.','oracle','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','admitted::AdmittedCount','struct','Counts the admitted results the kernel took.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','census::ExpansionCensus','struct','The per-plane expansion and recall counts of one check call.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','census::ExpansionCount','struct','How many goal expansions one plane performed, or was served.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','census::ExpansionKind','enum','Whether a goal was expanded or served from the memo.',NULL,'fits','sound',NULL);
@@ -2205,6 +2207,10 @@ INSERT INTO purpose VALUES('surface-dispatcher','stage::StageRun','struct','A ru
 INSERT INTO purpose VALUES('surface-dispatcher','stage::StageVerdict','enum','The verb''s verdict over its whole run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','stage::Staged','struct','One program of a run, checked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','stage::Staging','struct','The `stage` verb''s run, not yet started: its programs, in order, and the width the driver''s pool runs them at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','tier::AdmittedTally','struct','Counts what a process under an admission policy took from the emitter tier, beside the policy.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','tier::Admitting','struct','Names the policy and the tier a verdict that took admitted results stands on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','tier::admitted_tally','function','Reads what the installed admission policy took, when it takes admitted results.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','tier::install_admission_policy','function','Installs a process''s admission policy before its walk, once.','oracle','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::Applied','struct','A map the checker applies at a term, as the explicit form writes it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::Binding','enum','Whether a written name binds there or uses what binds elsewhere.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::ChosenDirection','enum','The direction the order chose for a written rule.',NULL,'fits','sound',NULL);
@@ -2221,7 +2227,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::DeclaredHalf',
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::NameKind','enum','What a declared name names, which decides where it may be written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::referent::Referent','struct','Where the unit writes what a use refers to: the source holding it, the name, and the whole binder or declaration form, each span in that source''s own text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::unrefused::Absent','enum','Why the table holds no refusal for a declaration.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','verdicts::AlreadyInstalled','struct','Says a process already installed its verdict cache.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::AlreadyInstalled','struct','Says a process already installed its verdict cache or its admission policy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct','Holds the policy, store, key and counts every readmission of a process recalls and records under.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictTally','struct','Counts what a process''s verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_verdict_cache','function','Installs a process''s verdict cache before its walk, once.',NULL,'fits','sound',NULL);

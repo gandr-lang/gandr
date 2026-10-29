@@ -10274,9 +10274,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   to the solver against the other side and refuted only when the solver
     ///   refutes it, each with the empty dialogue; a pair the context's tier
     ///   meets ([`CheckingContext::decide_endpoints_on`]), with the one
-    ///   decision `Evaluate`; and otherwise by the normaliser's conversion with
-    ///   every definition admitted so far unfolding, returned endpoints held
-    ///   and an unread call of a binder whose calls return
+    ///   decision [`CheckingContext::met_decision`] gives it: `Admitted` for a
+    ///   closed pair under the native conversion policy, and `Evaluate`
+    ///   otherwise; and otherwise by the normaliser's conversion with every
+    ///   definition admitted so far unfolding, returned endpoints held and an
+    ///   unread call of a binder whose calls return
     ///   ([`crate::divergence::returning`]) discarded
     ///   ([`crate::code::CodeDefinitions::relation`]), with the trace it
     ///   recorded. A conversion that waits for a fill
@@ -10349,8 +10351,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 continue;
             }
             if self.context.meet_endpoints(point, endpoint) == crate::tier::Meeting::Met {
-                *dialogue =
-                    Vec::from([gandr_kernel_conversion_trace::ConversionDecision::Evaluate]);
+                *dialogue = Vec::from([self.context.met_decision(point, endpoint)]);
                 continue;
             }
             if returning.is_none() {

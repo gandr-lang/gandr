@@ -495,6 +495,10 @@ pub struct CheckingContext<'arena>
     /// handed one. A checkpoint does not keep it: a resumed context takes its
     /// own.
     tier: Option<alloc::boxed::Box<dyn crate::tier::EndpointTier>>,
+    /// Whether a closed pair the tier meets crosses as an admitted result the
+    /// kernel takes, or as an evaluation it derives. A checkpoint does not
+    /// keep it, as it does not keep the tier.
+    admitting: gandr_kernel_core::AdmissionPolicy,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -545,6 +549,19 @@ enum First
     Kept,
 }
 
+/// Whether a value selects a variable in either zone.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Closure
+{
+    /// It selects none.
+    Closed,
+    /// It selects one, or the arena records no support for it.
+    Open,
+}
+
 /// A checking context's state between two judgements, its arena released.
 ///
 /// A later run continues from it over the arena the state was reached in, or
@@ -554,8 +571,9 @@ enum First
 /// - requires: taken between two judgements, no supported judgement logging and
 ///   no term-producing run recording ([`CheckingContext::checkpoint`]).
 /// - ensures: [`CheckingContext::resume`] over such an arena, handed the tier
-///   the context held ([`CheckingContext::decide_endpoints_on`]), judges what
-///   the context it was taken from would have judged next.
+///   and the admission policy the context held
+///   ([`CheckingContext::decide_endpoints_on`]), judges what the context it was
+///   taken from would have judged next.
 /// - executable: none — a data type; the witness judges a module in two runs
 ///   with a checkpoint between and compares the report with one run's.
 ///
@@ -806,6 +824,7 @@ impl<'arena> CheckingContext<'arena>
             pattern_holes: BTreeSet::new(),
             reducts: Vec::new(),
             tier: None,
+            admitting: gandr_kernel_core::AdmissionPolicy::Derive,
         }
     }
 
@@ -883,6 +902,7 @@ impl<'arena> CheckingContext<'arena>
             ref pattern_holes,
             ref reducts,
             tier: _,
+            admitting: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1075,16 +1095,17 @@ impl<'arena> CheckingContext<'arena>
             pattern_holes,
             reducts,
             tier: None,
+            admitting: gandr_kernel_core::AdmissionPolicy::Derive,
         }
     }
 
     /// Decide each endpoint pair the `here` rule meets on `tier` before the
-    /// machine.
+    /// machine, a closed pair it meets crossing as `policy` states.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: every later endpoint pair is offered to `tier` first; a
-    ///   context holds one tier, the last handed.
+    ///   context holds one tier and one policy, the last handed.
     /// - provides: the driver's hand-in of its tier, as a staging check is
     ///   handed its [`gandr_core_fork::Fork`].
     /// - panics: none.
@@ -1093,15 +1114,31 @@ impl<'arena> CheckingContext<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a context handed a tier that meets every pair records
     ///   `Evaluate` for a closed pair and for an open one; a context handed
-    ///   none records the machine's dialogue for both.
+    ///   none records the machine's dialogue for both. Under the native
+    ///   conversion policy the closed pair records `Admitted` and the open one
+    ///   `Evaluate`.
     /// - witness: `judgement::tests::a_pair_the_tier_meets_carries_its_evaluation_3557`
+    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_is_admitted_under_the_policy_3558`
     #[inline]
     pub fn decide_endpoints_on(
         &mut self,
         tier: alloc::boxed::Box<dyn crate::tier::EndpointTier>,
+        policy: gandr_kernel_core::AdmissionPolicy,
     )
     {
         self.tier = Some(tier);
+        self.admitting = policy;
+    }
+
+    /// The policy a closed pair the tier meets crosses under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn admitting(&self) -> gandr_kernel_core::AdmissionPolicy
+    {
+        self.admitting
     }
 
     /// Offer `point` and `endpoint` to the context's tier.
@@ -1129,6 +1166,63 @@ impl<'arena> CheckingContext<'arena>
         };
         let arena: &CoreArena = self.arena;
         tier.meet(arena, &self.definitions, (point, endpoint))
+    }
+
+    /// The one decision a pair the tier met crosses with: `Admitted` under
+    /// the native conversion policy when both sides are closed, and
+    /// `Evaluate` otherwise.
+    ///
+    /// # Specification
+    /// - requires: both values live in the context's arena.
+    /// - ensures: `Admitted` exactly when the policy is
+    ///   [`gandr_kernel_core::AdmissionPolicy::NativeConversion`] and neither
+    ///   value selects a variable in either zone; `Evaluate` otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::decide_endpoints_on`].
+    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_is_admitted_under_the_policy_3558`
+    #[spec(ensures: |ret| (ret == gandr_kernel_conversion_trace::ConversionDecision::Admitted)
+        == (self.admitting == gandr_kernel_core::AdmissionPolicy::NativeConversion
+            && [point, endpoint].into_iter().all(|side| self.closure(side) == Closure::Closed)))]
+    pub(crate) fn met_decision(
+        &self,
+        point: ValueId,
+        endpoint: ValueId,
+    ) -> gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>
+    {
+        let taken = self.admitting == gandr_kernel_core::AdmissionPolicy::NativeConversion
+            && [point, endpoint]
+                .into_iter()
+                .all(|side| self.closure(side) == Closure::Closed);
+        if taken {
+            gandr_kernel_conversion_trace::ConversionDecision::Admitted
+        }
+        else {
+            gandr_kernel_conversion_trace::ConversionDecision::Evaluate
+        }
+    }
+
+    /// Whether `value` selects no variable in either zone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn closure(
+        &self,
+        value: ValueId,
+    ) -> Closure
+    {
+        let closed = self.arena.value_support(value).is_some_and(|support| {
+            [Zone::Intuitionistic, Zone::Linear]
+                .into_iter()
+                .all(|zone| support.indices(zone).next().is_none())
+        });
+        if closed {
+            Closure::Closed
+        }
+        else {
+            Closure::Open
+        }
     }
 
     /// Keep `typing`, when a typed run is recording: the one point every

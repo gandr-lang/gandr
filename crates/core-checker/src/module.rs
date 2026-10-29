@@ -565,10 +565,24 @@ pub struct ModuleReport
     worlds: alloc::collections::BTreeSet<ConstantIndex>,
     /// What each suspended declaration waits on, by position.
     suspensions: BTreeMap<ConstantIndex, Suspension>,
+    /// The policy the run's closed pairs the tier met crossed under, which
+    /// the kernel readmitting the report admits them under.
+    admitting: gandr_kernel_core::AdmissionPolicy,
 }
 
 impl ModuleReport
 {
+    /// The policy the run's closed pairs the tier met crossed under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn admitting(&self) -> gandr_kernel_core::AdmissionPolicy
+    {
+        self.admitting
+    }
+
     /// The successfully formed nominal signatures.
     ///
     /// # Specification
@@ -2666,6 +2680,7 @@ impl ModuleRun
             nested_elaborations,
             worlds: context.worlds().declared().clone(),
             suspensions,
+            admitting: context.admitting(),
         }
     }
 }

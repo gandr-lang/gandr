@@ -3743,7 +3743,8 @@ where
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
             | ConversionDecision::NegativeSubgoal { .. }
-            | ConversionDecision::Evaluate => Err(self.refuse(next)),
+            | ConversionDecision::Evaluate
+            | ConversionDecision::Admitted => Err(self.refuse(next)),
         }
     }
 

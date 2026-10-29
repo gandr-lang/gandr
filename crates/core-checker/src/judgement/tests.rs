@@ -3055,11 +3055,27 @@ impl crate::tier::EndpointTier for Agreeing
     }
 }
 
-/// A context handed a tier offers it every endpoint pair: `here(5)` against
-/// `id 5` and `here(y)` against `id y` each carry `Evaluate`, and with no tier
-/// the machine relates both.
-#[test]
-fn a_pair_the_tier_meets_carries_its_evaluation_3557()
+/// What a context in [`tier_dialogues`] is handed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+enum Handed
+{
+    /// No tier: the machine relates every pair.
+    Nothing,
+    /// [`Agreeing`], a closed pair it meets crossing under the policy.
+    Tier(gandr_kernel_core::AdmissionPolicy),
+}
+
+/// The right dialogues `here(5)` against `id 5` and `here(y)` against `id y`
+/// record in a context handed `handed`, in that order.
+///
+/// # Specification
+/// trivial.
+fn tier_dialogues(
+    handed: Handed
+) -> [Vec<gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>>; 2]
 {
     // def id : U (Integer -> F Integer) = thunk { \x. return x } ;
     let mut arena = CoreArena::new();
@@ -3091,37 +3107,64 @@ fn a_pair_the_tier_meets_carries_its_evaluation_3557()
     let open_path = arena.value_type_path(integer_type, bound, open_endpoint);
     let returns_path = arena.comp_type_returner(open_path);
     let pi = arena.comp_type_pi(integer_type, returns_path);
-    let [tiered, untiered] = [true, false].map(|handed| {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        if handed {
-            context.decide_endpoints_on(alloc::boxed::Box::new(Agreeing));
-        }
-        seed(&mut context, &[thunk_arrow]);
-        let declared = form_value_type(&mut context, thunk_arrow).unwrap();
-        context.define(ConstantIndex::from(0_usize), declared, identity_body);
-        let closed_path = form_value_type(&mut context, closed_path).unwrap();
-        check_value(&mut context, closed, closed_path).expect("`id 5` is `5`");
-        let pi = form_comp_type(&mut context, pi).unwrap();
-        check_comp(&mut context, reflexive, pi).expect("`id y` is `y`");
-        [closed, open].map(|at| {
-            context
-                .reflexivities()
-                .get(&at)
-                .map(|reflexivity| reflexivity.right().to_vec())
-                .expect("each reflexivity records its dialogues")
-        })
-    });
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    if let Handed::Tier(policy) = handed {
+        context.decide_endpoints_on(alloc::boxed::Box::new(Agreeing), policy);
+    }
+    seed(&mut context, &[thunk_arrow]);
+    let declared = form_value_type(&mut context, thunk_arrow).unwrap();
+    context.define(ConstantIndex::from(0_usize), declared, identity_body);
+    let closed_path = form_value_type(&mut context, closed_path).unwrap();
+    check_value(&mut context, closed, closed_path).expect("`id 5` is `5`");
+    let pi = form_comp_type(&mut context, pi).unwrap();
+    check_comp(&mut context, reflexive, pi).expect("`id y` is `y`");
+    [closed, open].map(|at| {
+        context
+            .reflexivities()
+            .get(&at)
+            .map(|reflexivity| reflexivity.right().to_vec())
+            .expect("each reflexivity records its dialogues")
+    })
+}
+
+/// A context handed a tier offers it every endpoint pair: `here(5)` against
+/// `id 5` and `here(y)` against `id y` each carry `Evaluate`, and with no tier
+/// the machine relates both.
+#[test]
+fn a_pair_the_tier_meets_carries_its_evaluation_3557()
+{
     let evaluated = Vec::from([gandr_kernel_conversion_trace::ConversionDecision::Evaluate]);
-    let [ref closed_tiered, ref open_tiered] = tiered;
-    let [ref closed_untiered, ref open_untiered] = untiered;
-    assert_eq!(closed_tiered, &evaluated, "the tier meets the closed pair");
-    assert_eq!(open_tiered, &evaluated, "the tier meets the open pair");
-    for untiered in [closed_untiered, open_untiered] {
+    let [closed_tiered, open_tiered] =
+        tier_dialogues(Handed::Tier(gandr_kernel_core::AdmissionPolicy::Derive));
+    assert_eq!(closed_tiered, evaluated, "the tier meets the closed pair");
+    assert_eq!(open_tiered, evaluated, "the tier meets the open pair");
+    for untiered in tier_dialogues(Handed::Nothing) {
         assert!(
-            !untiered.is_empty() && untiered != &evaluated,
+            !untiered.is_empty() && untiered != evaluated,
             "with no tier the machine relates it: {untiered:?}"
         );
     }
+}
+
+/// Under the native conversion policy the closed pair the tier meets crosses
+/// as the admitted result `Admitted`, which the kernel takes, and the open
+/// pair still crosses as `Evaluate`, which the kernel derives.
+#[test]
+fn a_closed_pair_the_tier_meets_is_admitted_under_the_policy_3558()
+{
+    let [closed, open] = tier_dialogues(Handed::Tier(
+        gandr_kernel_core::AdmissionPolicy::NativeConversion,
+    ));
+    assert_eq!(
+        closed,
+        Vec::from([gandr_kernel_conversion_trace::ConversionDecision::Admitted]),
+        "the closed pair crosses as an admitted result"
+    );
+    assert_eq!(
+        open,
+        Vec::from([gandr_kernel_conversion_trace::ConversionDecision::Evaluate]),
+        "the open pair stays the kernel's to derive"
+    );
 }
 
 /// A point the normaliser cannot run meets its endpoints by syntax alone:

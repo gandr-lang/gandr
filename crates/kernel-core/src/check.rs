@@ -745,10 +745,11 @@ const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
 /// The read-only inputs every judgement of one declaration stands on.
 ///
 /// They are the environment's admission log, this declaration's admitted
-/// level context, the atoms whose minting admission is open, and the block a
-/// data declaration's own fields may name. Grouped because they travel
-/// together through both machines and are constant for the whole of one
-/// check, which is also why none is in a memo key.
+/// level context, the atoms whose minting admission is open, the block a
+/// data declaration's own fields may name, and where the check stands on
+/// admitted results. Grouped because they travel together through both
+/// machines and are constant for the whole of one check, which is also why
+/// none is in a memo key.
 #[derive(Clone, Copy, Debug)]
 pub struct Judgement<'session>
 {
@@ -782,6 +783,9 @@ pub struct Judgement<'session>
     /// Whether a fixpoint without termination evidence may recurse at a
     /// returner.
     partial: Partiality,
+    /// Whether the check takes a closed pair's admitted result or derives
+    /// it, and where it counts what it takes.
+    taking: crate::admitted::Taking<'session>,
 }
 
 /// Whether a fixpoint without termination evidence may recurse at a type that
@@ -898,6 +902,7 @@ impl<'session> Judgement<'session>
             own: Maybe::Absent(recursion::Unowned::Outside),
             following: Maybe::Absent(recursion::Unowned::Outside),
             partial: Partiality::Refused,
+            taking: crate::admitted::Taking::Deriving,
         }
     }
 
@@ -1054,6 +1059,20 @@ impl<'session> Judgement<'session>
     ) -> Self
     {
         Self { manifest, ..self }
+    }
+
+    /// The same judgement standing on admitted results as `taking` does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn taking(
+        self,
+        taking: crate::admitted::Taking<'session>,
+    ) -> Self
+    {
+        Self { taking, ..self }
     }
 
     /// The same judgement reading `related` where a mode switch's forced
@@ -5241,6 +5260,7 @@ where
                     crate::element_identity::reflexive_endpoints(
                         arena,
                         &admitted_unfoldings(judgement),
+                        judgement.taking,
                         point,
                         (left, right),
                         &dialogues,

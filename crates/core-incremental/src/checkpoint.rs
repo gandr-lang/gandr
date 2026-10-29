@@ -2569,8 +2569,8 @@ where
         Start::Fresh(budget) => CheckingContext::new(arena, budget),
         Start::After(leading) => CheckingContext::resume(arena, leading.context.clone()),
     };
-    if let Some(make) = tier {
-        context.decide_endpoints_on(make());
+    if let Some((make, policy)) = tier {
+        context.decide_endpoints_on(make(), policy);
     }
     let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or

@@ -1175,7 +1175,7 @@ fn a_pass_hands_its_context_the_program_s_tier_2282()
     let program = |arena: CoreArena, items: Vec<Item>, tiered: bool| {
         let mut program = Program::new(arena, items).expect("positions ascend");
         if tiered {
-            program.decide_endpoints_on(agreeing);
+            program.decide_endpoints_on(agreeing, gandr_kernel_core::AdmissionPolicy::Derive);
         }
         program
     };

@@ -2039,7 +2039,7 @@ where
             recall.environment(),
         ),
     };
-    let (mut environment, mut positions, mut readmitted) = offered
+    let (environment, mut positions, mut readmitted) = offered
         .and_then(|crossed| crossed.resume(report))
         .unwrap_or_else(|| {
             (
@@ -2048,6 +2048,9 @@ where
                 Vec::with_capacity(judged_all.len()),
             )
         });
+    // The kernel takes an admitted result exactly where the run that recorded
+    // it ran under the policy: fresh, recalled or handed on.
+    let mut environment = environment.admitting(report.admitting());
     let from = readmitted.len();
     let mut recorded = Maybe::Absent(if boundary.is_some() {
         crossed::Absent::Unaligned

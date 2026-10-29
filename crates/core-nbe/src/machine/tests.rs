@@ -2774,6 +2774,7 @@ impl Kernel
          ConversionDecision::ComparedShared{left,right} => ConversionDecision::ComparedShared{left:node(left),right:node(right)},
          ConversionDecision::NegativeSubgoal{position} => ConversionDecision::NegativeSubgoal{position},
          ConversionDecision::Evaluate => ConversionDecision::Evaluate,
+         ConversionDecision::Admitted => ConversionDecision::Admitted,
          }
         }
     )]
@@ -3898,7 +3899,8 @@ fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361()
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
             | ConversionDecision::NegativeSubgoal { .. }
-            | ConversionDecision::Evaluate => None,
+            | ConversionDecision::Evaluate
+            | ConversionDecision::Admitted => None,
         })
         .collect();
     assert_eq!(
