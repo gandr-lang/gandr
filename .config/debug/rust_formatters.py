@@ -30,6 +30,12 @@ lldb's memory, and the one that lets a summary recurse without end:
   recursion limit, so a backtrace prints thousands of tracebacks or never
   returns (#3809). The correction cuts both summaries at lldb's
   `target.max-children-depth` (`depths.py`).
+- rustc's formatters print a string's bytes raw between quotes, and the `&str`
+  summary refuses bytes that are not UTF-8. A string holding a newline
+  breaks the summary of every value that holds it, a frame's arguments among
+  them, and a frame line broken so reads as no frame (#3783). The correction
+  prints every string quoted as Rust's `Debug` does, on one line
+  (`strings.py`), with bytes that are not UTF-8 as replacement characters.
 """
 
 import functools
@@ -43,6 +49,7 @@ import lldb
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import depths  # noqa: E402
 from extents import Region, covered  # noqa: E402
+from strings import quoted  # noqa: E402
 from variants import pick  # noqa: E402
 
 VARIANTS = "$variants$"
@@ -262,30 +269,41 @@ def bounded_size_summary(summary: Callable[[lldb.SBValue, dict], str]) -> Callab
     return bounded
 
 
-def bounded_str_summary(summary: Callable[[lldb.SBValue, dict], str]) -> Callable[[lldb.SBValue, dict], str]:
-    """rustc's `&str` summary, the raw length in place of a read past memory."""
+def str_summary(valobj: lldb.SBValue, _dict: dict) -> str:
+    """A `&str` quoted on one line, its length checked against memory before the read."""
+    raw = valobj.GetNonSyntheticValue()
+    length = raw.GetChildMemberWithName("length").GetValueAsUnsigned()
+    address = raw.GetChildMemberWithName("data_ptr").GetValueAsUnsigned()
+    return read_string(raw.GetProcess(), address, length)
+
+
+def read_string(process: lldb.SBProcess, address: int, length: int, error: Optional[lldb.SBError] = None) -> str:
+    """A string's bytes read and quoted on one line, never past memory.
+
+    Bytes that are not UTF-8 read as replacement characters.
+    """
+    if length == 0:
+        return '""'
+    if process.IsValid() and not covered(region_at(process), address, length):
+        return f"<error: length {length:#x} past mapped memory>"
+    error = error or lldb.SBError()
+    data = process.ReadMemory(address, length, error)
+    if not error.Success():
+        return f"<error: {error.GetCString()}>"
+    return quoted(data.decode("utf-8", "replace"))
+
+
+def one_line(summary: Callable[[lldb.SBValue, dict], str]) -> Callable[[lldb.SBValue, dict], str]:
+    """rustc's quoted summary, its text escaped onto one line."""
 
     @functools.wraps(summary)
-    def bounded(valobj: lldb.SBValue, internal_dict: dict) -> str:
-        raw = valobj.GetNonSyntheticValue()
-        length = raw.GetChildMemberWithName("length").GetValueAsUnsigned()
-        address = raw.GetChildMemberWithName("data_ptr").GetValueAsUnsigned()
-        reading = past(raw, "length", length, address, length)
-        return f"<{reading}>" if reading else summary(valobj, internal_dict)
+    def escaping(valobj: lldb.SBValue, internal_dict: dict) -> str:
+        text = summary(valobj, internal_dict)
+        if len(text) >= 2 and text[0] == text[-1] == '"':
+            return quoted(text[1:-1])
+        return text
 
-    return bounded
-
-
-def bounded_read_string(read: Callable[..., str]) -> Callable[..., str]:
-    """rustc's string read, refusing a length past memory before lldb allocates for it."""
-
-    @functools.wraps(read)
-    def bounded(process: lldb.SBProcess, address: int, length: int, error: Optional[lldb.SBError] = None) -> str:
-        if process.IsValid() and not covered(region_at(process), address, length):
-            return f"<error: length {length:#x} past mapped memory>"
-        return read(process, address, length, error)
-
-    return bounded
+    return escaping
 
 
 def __lldb_init_module(debugger: lldb.SBDebugger, _dict) -> None:
@@ -311,9 +329,10 @@ def __lldb_init_module(debugger: lldb.SBDebugger, _dict) -> None:
     if TRUNCATED_NAMES:
         lookup.ClangEncodedEnumSummaryProvider = refusing_summary(lookup.ClangEncodedEnumSummaryProvider)
         providers.ClangEncodedEnumProvider.update = refusing_update(providers.ClangEncodedEnumProvider.update)
-    lookup.StdStrSummaryProvider = bounded_str_summary(lookup.StdStrSummaryProvider)
+    lookup.StdStrSummaryProvider = str_summary
     lookup.SizeSummaryProvider = bounded_size_summary(lookup.SizeSummaryProvider)
-    providers.read_string = bounded_read_string(providers.read_string)
+    providers.read_string = read_string
+    providers.StdOsStringSummaryProvider = lookup.StdOsStringSummaryProvider = one_line(providers.StdOsStringSummaryProvider)
     for name, provider in bounded_providers(providers).items():
         setattr(lookup, name, provider)
     depth = depths.Depth()
