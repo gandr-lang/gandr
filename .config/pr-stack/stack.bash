@@ -145,6 +145,45 @@ stack_on_top() {
   done
 }
 
+# Read the top again once the change is measured on the top `$2` from the
+# fork `$3` (#3849): the checked-out branch `$1` stays on `$2`, or restacks
+# onto a new top above it that changes none of its paths (`moved.jq`), and
+# leaves the top it now stands on in `stacked_top`. A top restacked under
+# the branch, gone, beside the fork or sharing a path is refused, as is a
+# restack that conflicts.
+restack_moved() {
+  local own=$1 top=$2 fork=$3 now onto kept=true builds=false shared='[]' moved
+  now=$(await_top "$own") || return 2
+  stacked_top=$top
+  if [[ $top != null ]]; then
+    git fetch --quiet origin "$(jq -r .head <<< "$top")"
+    git merge-base --is-ancestor "origin/$(jq -r .head <<< "$top")" HEAD || kept=false
+  fi
+  onto=$(jq -r '.head // empty' <<< "$now")
+  if [[ -n $onto && $(jq -r .number <<< "$now") != $(jq -r '.number // empty' <<< "$top") ]]; then
+    git fetch --quiet origin "$onto"
+    if git merge-base --is-ancestor "$fork" "origin/$onto"; then builds=true; fi
+    shared=$(comm -12 <(git diff --no-renames --name-only "$fork" "origin/$onto" | sort) \
+      <(git diff --no-renames --name-only "$fork" HEAD | sort) | jq -R . | jq -sc .)
+  fi
+  moved=$(jq -nc --argjson top "$top" --argjson now "$now" --argjson kept "$kept" --argjson builds "$builds" --argjson shared "$shared" \
+    '{top: $top, now: $now, kept: $kept, builds: $builds, shared: $shared}' | jq -c -f "$pr_stack_dir/moved.jq")
+  case $(jq -r .act <<< "$moved") in
+    stay) return 0 ;;
+    refuse)
+      echo "$(jq -r .why <<< "$moved"); run \`pr:open\` again" >&2
+      return 2
+      ;;
+  esac
+  if ! git rebase --quiet --update-refs --onto "origin/$onto" "$fork" > /dev/null 2>&1; then
+    git rebase --abort
+    echo "the stack top moved to #$(jq -r .number <<< "$now"), and the rebase of $own onto $onto conflicts; run \`pr:open\` again" >&2
+    return 2
+  fi
+  stacked_top=$now
+  echo "the stack top moved to #$(jq -r .number <<< "$now") while the obligations were measured; $own restacks onto it, its own change measured as it was"
+}
+
 # The revision the checked-out change is measured from (#3148), on a trunk
 # fetched first: a pull request below that merged since the seat last
 # fetched is the trunk's, never read as this change's own paths.

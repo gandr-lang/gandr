@@ -3083,5 +3083,89 @@
       }
     },
     "output": "[\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
+  },
+  {
+    "name": "#3849: a new top opened above the measured one, sharing no path with the branch, takes the branch without measuring again",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": true,
+      "shared": []
+    },
+    "output": "{\"act\":\"restack\",\"onto\":{\"number\":3845,\"head\":\"theory-3712-sigma-transport\"}}"
+  },
+  {
+    "name": "#3849: the top read again as measured keeps the branch where it stands",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "kept": true,
+      "builds": false,
+      "shared": []
+    },
+    "output": "{\"act\":\"stay\"}"
+  },
+  {
+    "name": "#3849: with nothing open when it measured, a pull request opened above the fork takes the branch",
+    "program": "moved.jq",
+    "input": {
+      "top": null,
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": true,
+      "shared": []
+    },
+    "output": "{\"act\":\"restack\",\"onto\":{\"number\":3845,\"head\":\"theory-3712-sigma-transport\"}}"
+  },
+  {
+    "name": "#3849: a new top that changes a path the branch changes is refused, naming the path",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": true,
+      "shared": ["crates/kernel-core/src/replay.rs"]
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top moved from #3842 to #3845, which changes `crates/kernel-core/src/replay.rs` as this branch does\"}"
+  },
+  {
+    "name": "#3849: a new top beside the measured fork is refused",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": false,
+      "shared": []
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top moved from #3842 to #3845, which does not stack on the measured fork\"}"
+  },
+  {
+    "name": "#3849: a measured top restacked under the branch is refused, though a new top shares no path",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": false,
+      "builds": true,
+      "shared": []
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top #3842 was restacked while the obligations were measured\"}"
+  },
+  {
+    "name": "#3849: a measured top that left the stack, nothing open after it, is refused",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": null,
+      "kept": true,
+      "builds": false,
+      "shared": []
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top #3842 left the stack while the obligations were measured\"}"
   }
 ]

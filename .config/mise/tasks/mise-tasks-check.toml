@@ -1454,9 +1454,10 @@ FROM reference;"); keys read $resolved"
 # `DIRTY` reading is a conflict (#2854), `heal.jq` whether its heal restacks
 # or waits on a queued member (#3615), `superseded.jq` whether a cancelled
 # check's run was superseded on its head (#2829), `prefix.jq` what a landing
-# queues (#1988), `sweep.jq` which worktrees `wt:sweep` removes, and
-# `triggers.jq` whether the landing watcher reads on the events that change
-# what lands, never a schedule (#2984). Each case in
+# queues (#1988), `sweep.jq` which worktrees `wt:sweep` removes, `moved.jq`
+# whether `pr:open` restacks onto a top that moved while it measured (#3849),
+# and `triggers.jq` whether the landing watcher reads on the events that
+# change what lands, never a schedule (#2984). Each case in
 # `.config/pr-stack/cases.json` names its program, its arguments and input,
 # and the output it must give; `prefix.jq`'s and `state.jq`'s output is its
 # raw line, the others' compact JSON. `triggers.jq` also reads
