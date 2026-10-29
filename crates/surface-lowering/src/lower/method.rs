@@ -458,10 +458,15 @@ impl<'source> Lowerer<'_, 'source>
     /// Refuse a moded type `m T` read as a type: a mode variable stands only
     /// on a method's receiver, whose parameter reads it before its type.
     ///
+    /// The refusal marks the whole moded type. A type variable alone is a
+    /// type, so the variable becomes a mode only beside the type after it,
+    /// and either word may be the mistake: `x wit` for `x with` misspells the
+    /// second.
+    ///
     /// # Specification
     /// - requires: `cursor` stands at the form's first piece.
     /// - ensures: never `Ok`.
-    /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the variable; a
+    /// - fails: [`LoweringRefusal::StrayReceiverMode`] over the moded type; a
     ///   misplaced tile when the form opens on none.
     /// - panics: none.
     ///
@@ -469,9 +474,11 @@ impl<'source> Lowerer<'_, 'source>
     /// As `fails`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a moded type inside a parameter's type, refused at
-    ///   its variable.
+    /// - hypothesis: L3 — a moded type inside a parameter's type and one a
+    ///   misspelt `with` leaves in a type, each refused over the whole moded
+    ///   type; marking the variable alone misses the second word.
     /// - witness: `lower::method::tests::a_mode_word_off_a_receiver_is_refused`
+    /// - witness: `lower::method::tests::a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813`
     #[spec(ensures: |ret| ret.is_err())]
     pub(super) fn moded_type(
         &self,
@@ -485,7 +492,7 @@ impl<'source> Lowerer<'_, 'source>
         };
 
         Err(LoweringRefusal::StrayReceiverMode {
-            span: written.span,
+            span: site.at.span,
             mode: self.name_at(written),
         })
     }

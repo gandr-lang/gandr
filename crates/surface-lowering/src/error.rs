@@ -1442,7 +1442,9 @@ pub enum LoweringRefusal<'source>
     /// `self`, takes one.
     StrayReceiverMode
     {
-        /// The bytes of the mode word.
+        /// The bytes of the mode word, or of the whole moded type a mode
+        /// variable heads: a type variable alone is no mode, so the pair is
+        /// what is wrong.
         span: ByteSpan,
         /// The mode word as written.
         mode: SurfaceName<'source>,
