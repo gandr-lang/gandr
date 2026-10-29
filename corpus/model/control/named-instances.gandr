@@ -80,6 +80,42 @@ def sayLineRuns() -> Integer {
   }
 }
 
+/// Steps down to the ground, which a recursion takes apart one by one.
+data Steps : Type {
+  /// The ground, where the recursion stops.
+  Ground : Steps;
+  /// One step above the rest.
+  Step : (rest : Steps) --> Steps;
+}
+
+/// A recursion under its row: each level prints through `out`, and the
+/// recursive call passes `out` on, as a call that omits its instance does.
+def rec descend(s : Steps) -> [out : Console] Unit {
+  case s {
+    Ground => pure unit,
+    Step(rest) => {
+      out.print("step");
+      descend[<](rest)
+    }
+  }
+}
+
+/// `descend` over three steps, each line counted as it resumes: the
+/// handler answers every level's line.
+@[ runs("3") ]
+def descendRuns() -> Integer {
+  handle a : Console {
+    descend(Step(Step(Step(Ground))));
+    pure 0
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => {
+      run n <- k(unit);
+      pure (n + 1)
+    }
+  }
+}
+
 /// Two instances of `Console` in one row, `first` printed through before
 /// `second`.
 def both() -> [first : Console, second : Console] Unit {
