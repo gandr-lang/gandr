@@ -784,37 +784,38 @@ pub fn evaluate_closed_on(
     .hostless()
 }
 
-/// As [`evaluate_closed_on`], an operation no handler of the run claims
-/// offered to `host`: a writer's run, which answers its own spawns and reads.
+/// As [`evaluate_closed_on`], over `lowered`, the function [`lower_suspended`]
+/// or a schedule lowered from its body, an operation no handler of the run
+/// claims offered to `host`: a writer's run, which answers its own spawns and
+/// reads.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
 /// As [`evaluate_closed_on`] and [`evaluate_on_with_host`].
-pub fn evaluate_closed_on_with_host<Host>(
+pub fn closed_on_with_host<Host>(
     tier: Tier,
-    (arena, definitions): (&CommandArena, &Definitions),
-    (body, environment): (CommandId, Environment),
+    lowered: &Lowered,
+    source: (&CommandArena, &Definitions),
+    environment: Environment,
     (fuel, inputs): (Fuel, RunInputs<'_, '_>),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
     Host: HostHandler,
 {
-    let (lowered, captured) = closed(arena, definitions, (body, environment), inputs.store)?;
-    let mut adapter = Adapter {
-        host,
-        aborted: None,
-    };
-    let ran = on_tier(
+    let captured: Vec<HeapValueId> = inputs.store.bound_values(environment).collect();
+    if captured.len() != lowered.captures.len() {
+        return Err(Declined::Environment);
+    }
+    lowered_on_with_host(
         tier,
-        &lowered,
-        (arena, definitions),
-        fuel,
-        inputs.closed_over(&captured).offered(&mut adapter),
-    )?;
-    hosted(ran, adapter)
+        lowered,
+        source,
+        (fuel, inputs.closed_over(&captured)),
+        host,
+    )
 }
 
 /// `body` lowered as a thunk's body, beside the values `environment` binds in
@@ -913,17 +914,32 @@ where
     Host: HostHandler,
 {
     let lowered = lower(arena, definitions, root)?;
+    lowered_on_with_host(tier, &lowered, (arena, definitions), (fuel, inputs), host)
+}
+
+/// As [`evaluate_on_with_host`], over `lowered`, the function lowered from
+/// the root: a scheduled run's reader, lowered once with its writers.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`evaluate_on_with_host`].
+pub fn lowered_on_with_host<Host>(
+    tier: Tier,
+    lowered: &Lowered,
+    source: (&CommandArena, &Definitions),
+    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    host: &mut Host,
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
     let mut adapter = Adapter {
         host,
         aborted: None,
     };
-    let ran = on_tier(
-        tier,
-        &lowered,
-        (arena, definitions),
-        fuel,
-        inputs.offered(&mut adapter),
-    )?;
+    let ran = on_tier(tier, lowered, source, fuel, inputs.offered(&mut adapter))?;
     hosted(ran, adapter)
 }
 

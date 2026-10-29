@@ -8,16 +8,17 @@
 //! payload is the writer suspended as a thunk. Its binder reads the writer's
 //! answer by a perform of [`READ`] of the handle the spawn replied with. No
 //! source can claim either operation, so the run offers both to its host.
-//! [`evaluate_scheduled_on`] answers them inside a scope of the caller's fork:
+//! [`evaluate_scheduled_on`] lowers the root and every writer once, then
+//! answers both operations inside a scope of the caller's fork:
 //!
-//! - A spawn crosses the thunk into a store of its own through the process's
-//!   chunk store, and starts its writer as a job of the scope. The job runs the
-//!   thunk's body closed over that store with a host of its own, so a writer
-//!   spawns and reads the writers inside it. The reply is the writer's handle:
-//!   an integer that names the writer's place in the host's table.
+//! - A spawn copies the thunk into a store of its own, in the process
+//!   ([`Store::copy`]), and starts its writer as a job of the scope. The job
+//!   runs the thunk's body closed over that store with a host of its own, so a
+//!   writer spawns and reads the writers inside it. The reply is the writer's
+//!   handle: an integer that names the writer's place in the host's table.
 //! - A read waits for the job behind its handle. A job that no worker took runs
 //!   on the waiting thread. While another worker runs it, the waiting worker
-//!   runs the pool's other jobs. Then the read crosses the writer's answer into
+//!   runs the pool's other jobs. Then the read copies the writer's answer into
 //!   the reader's store, and resumes with it.
 //!
 //! Every other operation, and every migration, goes to the host the caller
@@ -25,19 +26,23 @@
 //!
 //! # Boundaries
 //!
-//! - **A thunk that does not cross runs at its read.** Its writer then runs on
-//!   the reader's thread, over the reader's store, as a run nested in the
-//!   read's reply.
-//! - **The answer crosses by content.** Each writer's store is its own, so the
-//!   reply is a fresh copy in the reader's store. A value that does not cross
-//!   leaves the read unanswered.
+//! - **Code copies as code.** Every run of a schedule shares one arena, so a
+//!   thunk, a fixpoint or a closure in a capture or an answer keeps its
+//!   command. A writer's function records a site for each closure the root's
+//!   function builds, and so lays out any closure its captures hold.
+//! - **No lock and no chunk on the way.** A copy goes from store to store, so a
+//!   cut takes no lock and writes nothing to the process's chunk store.
+//! - **A thunk that does not copy declines its spawn.** A capture holding a
+//!   capability does not copy, since a capability's address is its identity.
+//!   The run then stops stuck at the spawn. Focus's caller marks no writer that
+//!   captures one.
 //! - **A read without an answer is declined.** A writer that ends with no
 //!   answer, or that panics on another worker, leaves the reader stuck at its
 //!   read.
 //! - **A writer's own host declines every other operation.** A marked writer
 //!   performs nothing: the mark is the claim of focus's caller.
 //! - **A handle read twice answers twice.** A continuation resumed twice reads
-//!   its handle again, and the host crosses the answer it kept.
+//!   its handle again, and the host copies the answer it kept.
 //! - **Waits stack native frames.** A wait that runs a job on its own thread
 //!   runs it on top of its frames, so nested waits stack as deep as the spawn
 //!   tree.
@@ -78,11 +83,13 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_runtime_stencils::Fuel;
 
+use crate::lower::Schedule;
+use crate::lower::lower_scheduled;
 use crate::run::Declined;
 use crate::run::RunInputs;
 use crate::run::Tier;
-use crate::run::evaluate_closed_on_with_host;
-use crate::run::evaluate_on_with_host;
+use crate::run::closed_on_with_host;
+use crate::run::lowered_on_with_host;
 use crate::seam::HostHandler;
 use crate::seam::HostOutcome;
 use crate::seam::HostReply;
@@ -101,14 +108,17 @@ use crate::seam::MigrationRequest;
 ///   [`gandr_core_sequent::spawn_independent`] or written so: every perform of
 ///   [`READ`] of [`CELL`] reads a handle a perform of [`SPAWN`] of [`CELL`]
 ///   replied with, in the same run.
-/// - ensures: the reader runs as [`evaluate_on_with_host`] runs it, with a host
-///   that answers each spawn with a handle and each read with a fresh copy of
-///   the writer's answer in `store`, or a decline when the writer ended with no
-///   answer. Each writer runs as [`evaluate_closed_on`] runs it, over a store
-///   of its own, with a host that answers its own spawns and reads and declines
-///   every other operation. Every other operation and every migration of the
-///   reader goes to `host`. So a run whose writers halt answers as the
-///   sequential schedule does.
+/// - ensures: the root and each writer's body are lowered once, before the
+///   scope starts ([`crate::lower::lower_scheduled`]). The reader runs as
+///   [`evaluate_on_with_host`] runs it, with a host that answers each spawn
+///   with a handle and each read with a fresh copy of the writer's answer in
+///   `store`. A read declines when the writer ended with no answer, and a spawn
+///   declines when its thunk does not copy. Each writer runs as
+///   [`evaluate_closed_on`] runs it, over the function the schedule lowered for
+///   its body and a store of its own, with a host that answers its own spawns
+///   and reads and declines every other operation. Every other operation and
+///   every migration of the reader goes to `host`. So a run whose writers halt
+///   answers as the sequential schedule does.
 /// - panics: a panic of a writer that ran on this thread, or of the reader; a
 ///   writer's panic on another worker where the scope ends.
 /// - executable: none — the answer is observed by running the schedule.
@@ -118,19 +128,23 @@ use crate::seam::MigrationRequest;
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a writer over a capture, read after the reader asks the
-///   caller's host, and nested writers read before their reader's own spawn,
-///   answer on each tier what their sequential schedule answers, on the serial
-///   fork; a reply crossed from the wrong store, a handle naming another
-///   writer, or another operation not passed on changes an answer. L3 — a
-///   writer stuck at an operation leaves the reader stuck at its read, and a
-///   writer whose thunk does not cross runs at its read. The driver's pool, at
-///   one thread and at four, is `gandr-surface-dispatcher`'s witness.
+///   caller's host, nested writers read before their reader's own spawn, a
+///   writer over an opaque constant, a writer whose capture is a function, and
+///   a recursive writer whose captures hold its own fixpoint answer on each
+///   tier what their sequential schedule answers, on the serial fork. A reply
+///   copied from the wrong store, a handle naming another writer, or another
+///   operation not passed on changes an answer. L3 — a writer stuck at an
+///   operation leaves the reader stuck at its read. The driver's pool, at one
+///   thread and at four, is `gandr-surface-dispatcher`'s witness.
 /// - witness: `tests::cut::a_read_answers_what_its_writer_halts_with`
 /// - witness: `tests::cut::nested_writers_answer_as_their_sequential_schedule`
 /// - witness: `tests::cut::a_writer_with_no_answer_leaves_its_read_stuck`
-/// - witness: `tests::cut::a_writer_that_does_not_cross_runs_at_its_read`
+/// - witness: `tests::cut::a_writer_over_an_opaque_constant_answers_as_its_sequential_schedule`
+/// - witness: `tests::cut::a_writer_over_a_captured_function_answers_as_its_sequential_schedule`
+/// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`
 ///
 /// [`evaluate_closed_on`]: crate::evaluate_closed_on
+/// [`evaluate_on_with_host`]: crate::evaluate_on_with_host
 #[inline]
 pub fn evaluate_scheduled_on<Forking, Host>(
     fork: &Forking,
@@ -144,21 +158,22 @@ where
     Host: HostHandler + Send,
     Host::Abort: Send,
 {
+    let schedule = lower_scheduled(arena, definitions, root)?;
     fork.scope(Reading {
         program: Program {
             tier,
             arena,
             definitions,
+            schedule: &schedule,
             fuel,
         },
-        root,
         store,
         host,
     })
 }
 
-/// What every run of a schedule reads besides its command and its store: the
-/// tier, the program, and the fuel.
+/// What every run of a schedule reads besides its store: the tier, the
+/// program, its code, and the fuel.
 #[derive(Clone, Copy, Debug)]
 struct Program<'scope>
 {
@@ -168,6 +183,8 @@ struct Program<'scope>
     arena: &'scope CommandArena,
     /// The definitions every run unfolds.
     definitions: &'scope Definitions,
+    /// The reader's function and each writer's, lowered once for the run.
+    schedule: &'scope Schedule,
     /// The jumps each run may take.
     fuel: Fuel,
 }
@@ -179,8 +196,6 @@ struct Reading<'scope, 'run, Host>
 {
     /// The program the root belongs to.
     program: Program<'scope>,
-    /// The scheduled root.
-    root: CommandId,
     /// The caller's store.
     store: &'run mut Store,
     /// The caller's host.
@@ -206,7 +221,6 @@ where
     {
         let Self {
             program,
-            root,
             store,
             host,
         } = self;
@@ -216,9 +230,10 @@ where
             cells: Vec::new(),
             host,
         };
-        evaluate_on_with_host(
+        lowered_on_with_host(
             program.tier,
-            (program.arena, program.definitions, root),
+            &program.schedule.reader,
+            (program.arena, program.definitions),
             (program.fuel, RunInputs::new(store)),
             &mut scheduling,
         )
@@ -277,7 +292,8 @@ impl<'scope> Scoped<'scope> for Writing<'scope>
 }
 
 /// Run a writer's `body` over `store` with a host that starts its spawns on
-/// `spawner`, and answer the value it halts with there.
+/// `spawner`, and answer the value it halts with there; none for a body the
+/// schedule did not lower.
 ///
 /// # Specification
 /// trivial.
@@ -290,6 +306,7 @@ fn closed<'scope, Spawner>(
 where
     Spawner: Spawn<'scope>,
 {
+    let lowered = program.schedule.writers.get(&body)?;
     let mut declining = Declining;
     let mut scheduling = Scheduling {
         program,
@@ -297,10 +314,11 @@ where
         cells: Vec::new(),
         host: &mut declining,
     };
-    match evaluate_closed_on_with_host(
+    match closed_on_with_host(
         program.tier,
+        lowered,
         (program.arena, program.definitions),
-        (body, environment),
+        environment,
         (program.fuel, RunInputs::new(store)),
         &mut scheduling,
     ) {
@@ -377,20 +395,8 @@ where
 {
     /// The writer runs as a job of the scope.
     Started(Spawner::Spawned<Writing<'scope>>),
-    /// The writer's thunk did not cross, so it runs at its read, over the
-    /// reader's store.
-    Suspended
-    {
-        /// The thunk's body.
-        body: CommandId,
-        /// The thunk's environment in the reader's store.
-        environment: Environment,
-    },
     /// The writer's job ended, and its store keeps its answer.
     Ended(Written),
-    /// The writer ran at its read, and halted with this value of the reader's
-    /// store.
-    Here(HeapValueId),
     /// The writer ended with no answer.
     Unanswered,
 }
@@ -416,7 +422,8 @@ where
     Spawner: Spawn<'scope>,
     Host: HostHandler,
 {
-    /// Start the writer `payload` suspends, and resume with its handle.
+    /// Start the writer `payload` suspends, and resume with its handle; a
+    /// thunk that does not copy declines.
     ///
     /// # Specification
     /// trivial.
@@ -426,7 +433,12 @@ where
         values: &mut HostValues<'_>,
     ) -> HostReply<Host::Abort>
     {
-        let Some(&HeapValue::Thunk { body, environment }) = values.value(payload)
+        let mut store = Store::new();
+        let Ok(copied) = store.copy(values.store(), payload)
+        else {
+            return HostReply::Decline;
+        };
+        let Some(&HeapValue::Thunk { body, environment }) = store.value(copied)
         else {
             return HostReply::Decline;
         };
@@ -438,32 +450,17 @@ where
         else {
             return HostReply::Decline;
         };
-        let mut store = Store::new();
-        let crossed = values
-            .cross_to(payload, &mut store)
-            .ok()
-            .and_then(|crossed| {
-                let Some(&HeapValue::Thunk { body, environment }) = store.value(crossed)
-                else {
-                    return None;
-                };
-                Some((body, environment))
-            });
-        let cell = match crossed {
-            Some((body, environment)) => Cell::Started(self.spawner.spawn(Writing {
-                program: self.program,
-                body,
-                environment,
-                store,
-            })),
-            None => Cell::Suspended { body, environment },
-        };
-        self.cells.push(cell);
+        self.cells.push(Cell::Started(self.spawner.spawn(Writing {
+            program: self.program,
+            body,
+            environment,
+            store,
+        })));
         HostReply::Resume(handle)
     }
 
     /// Wait for the writer `payload` names, and resume with its answer
-    /// crossed into the reader's store.
+    /// copied into the reader's store.
     ///
     /// # Specification
     /// trivial.
@@ -481,36 +478,19 @@ where
         else {
             return HostReply::Decline;
         };
-        let (kept, answer) = match mem::replace(cell, Cell::Unanswered) {
-            Cell::Started(started) => {
-                self.spawner
-                    .wait(started)
-                    .map_or((Cell::Unanswered, None), |written| {
-                        let answer = written
-                            .answer
-                            .and_then(|answer| values.cross_from(&written.store, answer).ok());
-                        (Cell::Ended(written), answer)
-                    })
-            },
-            Cell::Ended(written) => {
-                let answer = written
-                    .answer
-                    .and_then(|answer| values.cross_from(&written.store, answer).ok());
-                (Cell::Ended(written), answer)
-            },
-            Cell::Suspended { body, environment } => {
-                let answer = closed(
-                    self.program,
-                    self.spawner,
-                    (body, environment),
-                    values.store(),
-                );
-                (answer.map_or(Cell::Unanswered, Cell::Here), answer)
-            },
-            Cell::Here(answer) => (Cell::Here(answer), Some(answer)),
-            Cell::Unanswered => (Cell::Unanswered, None),
+        let written = match mem::replace(cell, Cell::Unanswered) {
+            Cell::Started(started) => self.spawner.wait(started).ok(),
+            Cell::Ended(written) => Some(written),
+            Cell::Unanswered => None,
         };
-        *cell = kept;
+        let Some(written) = written
+        else {
+            return HostReply::Decline;
+        };
+        let answer = written
+            .answer
+            .and_then(|answer| values.store().copy(&written.store, answer).ok());
+        *cell = Cell::Ended(written);
         answer.map_or(HostReply::Decline, HostReply::Resume)
     }
 }

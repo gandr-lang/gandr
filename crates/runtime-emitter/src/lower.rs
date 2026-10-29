@@ -152,9 +152,11 @@
 //! What the lowering refuses is named by [`Form`], and the run declines with
 //! it.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::ops::Range;
 
+use gandr_core_sequent::CELL;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
@@ -173,6 +175,7 @@ use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Route;
+use gandr_core_sequent::SPAWN;
 use gandr_core_sequent::Selector;
 use gandr_core_sequent::Suspension;
 use gandr_core_sequent::command_children;
@@ -881,6 +884,17 @@ enum Entry
     Unfold(ProducerId, Immediate),
 }
 
+/// How a closure is opened when it is observed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opening
+{
+    /// Its body is entered as the entry states.
+    Entered(Entry),
+    /// Its code is a dispatch on the observation, as a copattern object's
+    /// is.
+    Dispatched,
+}
+
 /// A closure body awaiting its own window.
 #[derive(Clone, Copy, Debug)]
 struct Body
@@ -1358,6 +1372,9 @@ pub struct Lowered
     /// ([`lower_suspended`]), innermost first, as the store environment it
     /// runs under binds them; none for a closed command.
     pub captures: Vec<Slot>,
+    /// The body of each thunk a spawn of [`CELL`] suspends, in the order the
+    /// lowering meets them, each once: the writers a scheduled run starts.
+    pub spawned: Vec<CommandId>,
     /// Every fold cell closure the function creates.
     pub cells: Vec<Cell>,
     /// Every bind frame of a reified stack, in creation order.
@@ -1600,6 +1617,8 @@ struct Lowering<'run>
     stand_in: Option<Constant>,
     /// The resumptions that pop the marker instead of replaying a stack.
     rejoins: BTreeSet<CommandId>,
+    /// The body of each thunk a spawn of the cell suspends, each once.
+    spawned: Vec<CommandId>,
 }
 
 impl Lowering<'_>
@@ -1759,12 +1778,12 @@ impl Lowering<'_>
         Ok(())
     }
 
-    /// Record a site for the thunk `producer` suspending `body`, which a
-    /// migration's body holds: its body queued over its captures alone, and
-    /// nothing allocated. A thunk the migration's world answers crosses back
-    /// as its body's command, and the host lays it out at this site's code. A
-    /// thunk capturing a linear binder records none, as no crossing carries
-    /// it.
+    /// Record a site for the closure over `producer`, with nothing allocated:
+    /// its body queued over its captures alone, or its dispatch laid out over
+    /// them. A thunk a migration's world answers crosses back as its body's
+    /// command, and a closure a writer's captures hold is copied in. The host
+    /// lays either out at this site's code. A producer no closure stands for,
+    /// or one capturing a linear binder, records none, as no store holds it.
     ///
     /// # Specification
     /// trivial.
@@ -1775,11 +1794,15 @@ impl Lowering<'_>
     fn apart(
         &mut self,
         producer: ProducerId,
-        body: CommandId,
     ) -> Result<(), Form>
     {
-        let support = self
-            .arena
+        let arena = self.arena;
+        let node = arena.producer(producer).ok_or(Form::Dangling)?;
+        let Some((opening, _)) = suspension(node)
+        else {
+            return Ok(());
+        };
+        let support = arena
             .node_scope(NodeAddress::Producer(producer))
             .ok_or(Form::Dangling)?;
         if support.producers().indices(Zone::Linear).next().is_some() {
@@ -1795,11 +1818,14 @@ impl Lowering<'_>
         };
         let base = self.scopes.apart(&captured);
         let label = self.function.label();
-        self.bodies.push(Body {
-            label,
-            entry: Entry::Force(body),
-            scope: base,
-        });
+        match opening {
+            Opening::Entered(entry) => self.bodies.push(Body {
+                label,
+                entry,
+                scope: base,
+            }),
+            Opening::Dispatched => self.blocks.push((label, Task::Dispatch(producer, base))),
+        }
         let captures = self.captured(Suspension::Producer(producer), base)?;
         self.sites.push(Site {
             label,
@@ -2639,6 +2665,15 @@ impl Lowering<'_>
                 payload,
                 continuation,
             } => {
+                // A spawn's payload is a writer's thunk, which a scheduled
+                // run lowers apart, once.
+                if signature.name().as_ref() == CELL
+                    && operation.as_ref() == SPAWN
+                    && let Some(&ProducerNode::Thunk { body }) = arena.producer(payload)
+                    && !self.spawned.contains(&body)
+                {
+                    self.spawned.push(body);
+                }
                 let (reach, count) = match route {
                     Route::Nearest => (Reach::Nearest, Immediate::from(1_u32)),
                     Route::Capability(_) => (Reach::Capability, Immediate::from(2_u32)),
@@ -3048,10 +3083,10 @@ impl Lowering<'_>
                 .map_err(|_dangling| Form::Dangling)?;
                 for node in reached {
                     if let NodeAddress::Producer(thunk) = node
-                        && let ProducerNode::Thunk { body: suspended } =
+                        && let ProducerNode::Thunk { .. } =
                             *arena.producer(thunk).ok_or(Form::Dangling)?
                     {
-                        self.apart(thunk, suspended)?;
+                        self.apart(thunk)?;
                     }
                 }
                 let captures = self.captured(Suspension::Thunk(body), scope)?;
@@ -3946,23 +3981,14 @@ impl Lowering<'_>
                     self.tasks.push(Task::Producer(field, scope));
                 }
             },
-            ProducerNode::Mu { body } => {
-                self.closure(id, scope, Entry::Force(body), Flavour::Capture)?;
-            },
-            ProducerNode::Thunk { body } => {
-                self.closure(id, scope, Entry::Force(body), Flavour::Thunk)?;
-            },
-            ProducerNode::Fixpoint { body, .. } => {
-                self.closure(id, scope, Entry::Fixpoint(body), Flavour::Fixpoint)?;
-            },
-            ProducerNode::Cocase { ref arms } => match **arms {
-                [arm] if arm.destructor == DestructorTag::Apply => {
-                    self.closure(id, scope, Entry::Apply(arm.body), Flavour::Apply)?;
+            ref suspended @ (ProducerNode::Mu { .. }
+            | ProducerNode::Thunk { .. }
+            | ProducerNode::Fixpoint { .. }
+            | ProducerNode::Cocase { .. }) => match suspension(suspended).ok_or(Form::Dangling)? {
+                (Opening::Entered(entry), flavour) => {
+                    self.closure(id, scope, entry, flavour)?;
                 },
-                [arm] if arm.destructor == DestructorTag::Force => {
-                    self.closure(id, scope, Entry::Force(arm.body), Flavour::Force)?;
-                },
-                _ => self.object(id, scope)?,
+                (Opening::Dispatched, _) => self.object(id, scope)?,
             },
             ProducerNode::Closure {
                 ref environment,
@@ -4765,7 +4791,123 @@ pub fn lower_suspended(
     body: CommandId,
 ) -> Result<Lowered, Form>
 {
-    Ok(fused(lowered(arena, definitions, Root::Suspended(body))?))
+    Ok(fused(lowered(arena, definitions, Root::Suspended {
+        body,
+        held: &[],
+    })?))
+}
+
+/// A scheduled run's code, lowered once for the run: the root's function, and
+/// each writer's.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Schedule
+{
+    /// The root's function.
+    pub reader: Lowered,
+    /// The function of each body a spawn of the run suspends, by its body.
+    pub writers: BTreeMap<CommandId, Lowered>,
+}
+
+/// Lower the scheduled `root`, then each writer a spawn of it suspends, each
+/// once for the run.
+///
+/// The root's function or a writer's builds every closure of the run, and
+/// every writer's body is code the root's function lowers. So a writer's
+/// function records a site for each producer the root's function records one
+/// for, and any closure its captures hold lays out.
+///
+/// # Specification
+/// - ensures: `reader` as [`lower`] lowers `root`. `writers` holds one function
+///   per body of `reader.spawned`, lowered as [`lower_suspended`] lowers it,
+///   with a site recorded apart for each producer `reader.sites` names.
+/// - executable: none — as [`lower`].
+///
+/// # Errors
+/// As [`lower`] and [`lower_suspended`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — a recursive writer whose captures hold its own fixpoint,
+///   and a writer whose capture is a function, answer what their sequential
+///   schedule answers on each tier. A writer lowered without the root's sites
+///   leaves its read declined.
+/// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`
+/// - witness: `tests::cut::a_writer_over_a_captured_function_answers_as_its_sequential_schedule`
+#[inline]
+pub fn lower_scheduled(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> Result<Schedule, Form>
+{
+    let reader = lower(arena, definitions, root)?;
+    let held: Vec<ProducerId> = reader
+        .sites
+        .iter()
+        .map(|site| site.producer)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut writers = BTreeMap::new();
+    for &body in &reader.spawned {
+        let writer = fused(lowered(arena, definitions, Root::Suspended {
+            body,
+            held: &held,
+        })?);
+        let _first = writers.insert(body, writer);
+    }
+    Ok(Schedule { reader, writers })
+}
+
+/// How the lowering suspends `node` as a closure: how the closure is opened,
+/// and the flavour its header carries; none for a producer no closure stands
+/// for.
+///
+/// # Specification
+/// trivial.
+fn suspension(node: &ProducerNode) -> Option<(Opening, Flavour)>
+{
+    match *node {
+        ProducerNode::Mu { body } => Some((Opening::Entered(Entry::Force(body)), Flavour::Capture)),
+        ProducerNode::Thunk { body } => {
+            Some((Opening::Entered(Entry::Force(body)), Flavour::Thunk))
+        },
+        ProducerNode::Fixpoint { body, .. } => {
+            Some((Opening::Entered(Entry::Fixpoint(body)), Flavour::Fixpoint))
+        },
+        ProducerNode::Cocase { ref arms } => Some(match **arms {
+            [arm] if arm.destructor == DestructorTag::Apply => {
+                (Opening::Entered(Entry::Apply(arm.body)), Flavour::Apply)
+            },
+            [arm] if arm.destructor == DestructorTag::Force => {
+                (Opening::Entered(Entry::Force(arm.body)), Flavour::Force)
+            },
+            _ => (Opening::Dispatched, Flavour::Object),
+        }),
+        ProducerNode::Constant(_)
+        | ProducerNode::Primitive { .. }
+        | ProducerNode::Decompose(_)
+        | ProducerNode::Variable { .. }
+        | ProducerNode::Literal(_)
+        | ProducerNode::Code(_)
+        | ProducerNode::Constructor { .. }
+        | ProducerNode::Closure { .. }
+        | ProducerNode::Reify(_) => None,
+    }
+}
+
+/// The flavour the header of a closure over `node` carries, as the lowering
+/// allocates it; none for a producer no closure stands for.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn flavour(node: &ProducerNode) -> Option<Flavour>
+{
+    suspension(node).map(|(_, flavour)| flavour)
 }
 
 /// `lowered` with its adjacent pairs fused, the trace recorded.
@@ -4827,13 +4969,20 @@ pub fn lower_unfused(
 
 /// What a lowering opens at its entry.
 #[derive(Clone, Copy, Debug)]
-enum Root
+enum Root<'held>
 {
     /// A closed command, delivering to `★`.
     Closed(CommandId),
     /// A command binding one covariable, over the producer bindings its
     /// support selects.
-    Suspended(CommandId),
+    Suspended
+    {
+        /// The command.
+        body: CommandId,
+        /// The producers a closure among the captures may suspend, each given
+        /// a site apart.
+        held: &'held [ProducerId],
+    },
 }
 
 /// Lower `root` unfused: [`lower_unfused`] for a closed command, the
@@ -4856,11 +5005,14 @@ enum Root
 fn lowered(
     arena: &CommandArena,
     definitions: &Definitions,
-    root: Root,
+    root: Root<'_>,
 ) -> Result<Lowered, Form>
 {
-    let (Root::Closed(command) | Root::Suspended(command)) = root;
-    let survey = survey(arena, definitions, command)?;
+    let (command, held) = match root {
+        Root::Closed(command) => (command, &[][..]),
+        Root::Suspended { body, held } => (body, held),
+    };
+    let survey = survey(arena, definitions, command, held)?;
     let ownership =
         Ownership::of(arena, &survey.roots, &survey.reached).map_err(|_dangling| Form::Dangling)?;
     let mut reuses = Vec::with_capacity(ownership.reuses().len());
@@ -4903,13 +5055,20 @@ fn lowered(
         marker: None,
         stand_in: None,
         rejoins: BTreeSet::new(),
+        spawned: Vec::new(),
     };
     let captures = match root {
         Root::Closed(command) => {
             lowering.tasks.push(Task::Command(command, Scope::Empty));
             Vec::new()
         },
-        Root::Suspended(body) => lowering.suspended(body)?,
+        Root::Suspended { body, .. } => {
+            let captures = lowering.suspended(body)?;
+            for &producer in held {
+                lowering.apart(producer)?;
+            }
+            captures
+        },
     };
     let mut entry: Option<Position> = None;
     loop {
@@ -4986,6 +5145,7 @@ fn lowered(
         fused: Vec::new(),
         sites: lowering.sites,
         captures,
+        spawned: lowering.spawned,
         cells: lowering.cells,
         bounds: lowering.bounds,
         heads: lowering.heads,
@@ -5021,15 +5181,17 @@ struct Survey
     /// `μ` cut negatively against a binder does ([`Lowering::command`]); a `μ`
     /// cut any other way runs where it stands and suspends nothing.
     checked: bool,
-    /// The roots its ownership is read from: the command, then each
-    /// transparent constant's definition in the order the visit meets it.
+    /// The roots its ownership is read from: the command, each producer held,
+    /// then each transparent constant's definition no earlier root is, in the
+    /// order the visit meets it.
     roots: Vec<NodeAddress>,
     /// Every node the roots reach, each once, in first-visit order.
     reached: Vec<NodeAddress>,
 }
 
-/// Visit each node `root` reaches, and each node the definition of a
-/// transparent constant it reads reaches, once, in first-visit order.
+/// Visit each node `root` and the producers `held` reach, and each node the
+/// definition of a transparent constant they read reaches, once, in
+/// first-visit order.
 ///
 /// The visit reads at least every node the lowering does, and its walk is
 /// the one the ownership reading reads over.
@@ -5052,13 +5214,16 @@ fn survey(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
+    held: &[ProducerId],
 ) -> Result<Survey, Form>
 {
     let mut captured = false;
     let mut seen = BTreeSet::new();
-    let mut unfolded = BTreeSet::new();
+    let mut unfolded: BTreeSet<ProducerId> = held.iter().copied().collect();
     let mut reached = Vec::new();
-    let mut roots = Vec::from([NodeAddress::Command(root)]);
+    let mut roots = Vec::with_capacity(held.len().saturating_add(1));
+    roots.push(NodeAddress::Command(root));
+    roots.extend(held.iter().map(|&producer| NodeAddress::Producer(producer)));
     let mut walked = 0;
     while walked < roots.len() {
         let from = reached.len();

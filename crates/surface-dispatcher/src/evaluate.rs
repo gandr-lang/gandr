@@ -4966,6 +4966,143 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         }
     }
 
+    /// `(fix self. λd. b ← d == 0; case b of true ⇒ return 1 | false ⇒
+    /// p ← d - 1; x ← (force self) p; y ← (force self) p; return x + y) 10`,
+    /// both recursive calls named and scheduled on the driver's pool, at four
+    /// threads and at one. Each writer captures the fixpoint it runs in and
+    /// spawns writers of its own, so the spawns nest ten deep. The crossing
+    /// refused that fixpoint, so the read stuck. On each tier the run answers
+    /// the sequential schedule's count of leaves, 1024.
+    #[test]
+    fn a_recursive_writer_scheduled_on_the_drivers_pool_answers_as_the_sequential_schedule_2954()
+    {
+        use gandr_core_term::Zone::Intuitionistic;
+        use gandr_core_term::primitive::Arguments;
+
+        let mut terms = gandr_core_term::CoreArena::new();
+        let prelude = |name: &str| {
+            gandr_core_term::primitive::PRELUDE
+                .iter()
+                .copied()
+                .find(|primitive| primitive.name().as_ref() == name)
+                .expect("the prelude holds the primitive")
+        };
+        let integer = |terms: &mut gandr_core_term::CoreArena, digits: &str| {
+            terms.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits))
+                        .expect("decimal digits"),
+                ),
+            ))
+        };
+        let (zero, one, ten) = (
+            integer(&mut terms, "0"),
+            integer(&mut terms, "1"),
+            integer(&mut terms, "10"),
+        );
+        // Under `self, d, b, _`: the predecessor, then the two calls on it.
+        let d = terms.value_variable(Intuitionistic, 2_u32.into());
+        let predecessor = terms.computation_primitive(prelude("sub"), Arguments::Binary([d, one]));
+        let own = terms.value_variable(Intuitionistic, 4_u32.into());
+        let forced = terms.computation_force(own);
+        let p = terms.value_variable(Intuitionistic, 0_u32.into());
+        let first = terms.computation_application(forced, p);
+        let own = terms.value_variable(Intuitionistic, 5_u32.into());
+        let forced = terms.computation_force(own);
+        let p = terms.value_variable(Intuitionistic, 1_u32.into());
+        let second = terms.computation_application(forced, p);
+        let operands = [
+            terms.value_variable(Intuitionistic, 1_u32.into()),
+            terms.value_variable(Intuitionistic, 0_u32.into()),
+        ];
+        let added = terms.computation_primitive(prelude("add"), Arguments::Binary(operands));
+        let then = terms.computation_bind(second, added);
+        let then = terms.computation_bind(first, then);
+        let recursing = terms.computation_bind(predecessor, then);
+        let ending = terms.computation_return(one);
+        let b = terms.value_variable(Intuitionistic, 0_u32.into());
+        let case = terms.computation_case(b, &[ending, recursing]);
+        let d = terms.value_variable(Intuitionistic, 0_u32.into());
+        let tested = terms.computation_primitive(prelude("eq"), Arguments::Binary([d, zero]));
+        let body = terms.computation_bind(tested, case);
+        let function = terms.computation_lambda(body);
+        let fixpoint =
+            terms.computation_fixpoint(function, gandr_kernel_term::FixpointEvidence::Partial);
+        let root = terms.computation_application(fixpoint, ten);
+        let mut arena = CommandArena::new();
+        let mut provenance = gandr_core_sequent::Provenance::new();
+        let sequential = gandr_core_sequent::focus_computation(
+            &terms,
+            root,
+            &mut arena,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
+        let named = gandr_core_sequent::focus_computation(
+            &terms,
+            root,
+            &mut arena,
+            &mut provenance,
+            &[first, second].into_iter().collect(),
+        )
+        .expect("the program focuses with its writers named");
+        let (scheduled, definitions) =
+            gandr_core_sequent::spawn_independent(&mut arena, (named, &Definitions::new()))
+                .expect("the program schedules");
+        assert_ne!(
+            sequential, scheduled,
+            "the named writers are scheduled apart"
+        );
+        let fuel = Fuel::from(super::RUN_BUDGET);
+        let wide =
+            crate::pool::Pool::new(crate::width::Width::Threads(crate::width::Threads::from(
+                core::num::NonZeroUsize::new(4_usize).expect("four threads"),
+            )));
+        let serial = crate::pool::Pool::default();
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let mut whole = Store::new();
+            let answered = gandr_runtime_emitter::evaluate_on(
+                tier,
+                &arena,
+                &Definitions::new(),
+                sequential,
+                fuel,
+                gandr_runtime_emitter::RunInputs::new(&mut whole),
+            );
+            let answered = summed(&whole, &answered);
+            assert_eq!(
+                answered,
+                Some(Sum(1024_u64)),
+                "the sequential schedule counts the leaves on {tier:?}"
+            );
+            for pool in [&wide, &serial] {
+                let mut store = Store::new();
+                let run = gandr_runtime_emitter::evaluate_scheduled_on(
+                    pool,
+                    tier,
+                    (&arena, &definitions, scheduled),
+                    (fuel, &mut store),
+                    &mut Declining,
+                )
+                .map(|ended| match ended {
+                    gandr_runtime_emitter::HostOutcome::Completed(outcome) => outcome,
+                    gandr_runtime_emitter::HostOutcome::Aborted(never) => match never {},
+                });
+                assert_eq!(
+                    summed(&store, &run),
+                    answered,
+                    "the scheduled run answers the sequential schedule's count on {tier:?} at {:?}",
+                    pool.width()
+                );
+            }
+        }
+    }
+
     /// The command a sweep answered for a command.
     ///
     /// # Specification

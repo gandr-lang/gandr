@@ -231,6 +231,7 @@ pub use crate::readback::read_back_value;
 pub use crate::spawn::ScheduleRefusal;
 pub use crate::spawn::spawn_independent;
 pub use crate::store::ClosedCommand;
+pub use crate::store::CopyRefusal;
 pub use crate::store::Environment;
 pub use crate::store::HeapFamily;
 pub use crate::store::HeapValue;

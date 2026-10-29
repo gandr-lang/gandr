@@ -42,6 +42,8 @@
 //!   representation, which this store and the emitter's regions state.
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
@@ -222,6 +224,48 @@ impl fmt::Display for StoreFault
 }
 
 impl core::error::Error for StoreFault
+{
+}
+
+/// Why a value did not copy into another store.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CopyRefusal
+{
+    /// The source store holds no value at this address, or the value closes
+    /// over a chain that dangles.
+    Dangling(HeapValueId),
+    /// A capability, whose address is its identity: a copy would be another
+    /// capability.
+    Capability(HeapValueId),
+    /// The destination store refused an allocation.
+    Full(StoreFault),
+}
+
+impl fmt::Display for CopyRefusal
+{
+    /// Names the refused value, or the full family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Dangling(value) => {
+                write!(f, "the store holds no value {} reaches", u32::from(value))
+            },
+            Self::Capability(value) => {
+                write!(f, "the value {} is a capability", u32::from(value))
+            },
+            Self::Full(fault) => write!(f, "the copy's store refused: {fault}"),
+        }
+    }
+}
+
+impl core::error::Error for CopyRefusal
 {
 }
 
@@ -406,6 +450,238 @@ impl Store
             scope = binding.outer;
             Some(binding.value)
         })
+    }
+
+    /// Copy the value `from` holds at `value` into this store, at addresses
+    /// fresh here, with every value it reaches and every chain they close
+    /// over.
+    ///
+    /// A thunk, a fixpoint and a closure keep the command they name, so the
+    /// copy is read beside the same command arena, in the same process. A
+    /// cut's writer takes its captures so, and its reader takes the answer.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling address is refused.
+    /// - ensures: on `Ok`, an address here whose value reads as `value` reads
+    ///   in `from`, field by field and binding by binding. Each value reached
+    ///   is copied once however many hold it, and each link of a chain once
+    ///   however many environments share it. On `Err`, the values copied before
+    ///   the refusal stay, and no address the caller holds reaches them.
+    /// - provides: the one move of a value between two stores of one process.
+    /// - fails: as Errors.
+    /// - panics: none.
+    /// - executable: none — "reads as" quantifies over the reached graph.
+    ///
+    /// # Errors
+    /// [`CopyRefusal::Dangling`] for a value or a chain `from` does not hold;
+    /// [`CopyRefusal::Capability`] for a capability reached;
+    /// [`CopyRefusal::Full`] when this store refuses an allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a fixpoint whose chain binds a pair holding one value
+    ///   twice, beside a closure sharing that chain and a stack whose bind
+    ///   frame closes over it, copies into a store holding other values. It
+    ///   reads back equal, with the shared value and the shared link each
+    ///   copied once. A capability and a dangling address are refused.
+    /// - witness: `store::tests::a_copy_reads_as_its_source_and_keeps_its_sharing`
+    /// - witness: `store::tests::a_capability_and_a_dangling_address_do_not_copy`
+    #[inline]
+    pub fn copy(
+        &mut self,
+        from: &Self,
+        value: HeapValueId,
+    ) -> Result<HeapValueId, CopyRefusal>
+    {
+        let mut copied: BTreeMap<HeapValueId, HeapValueId> = BTreeMap::new();
+        let mut links: BTreeMap<ValueBindingId, Environment> = BTreeMap::new();
+        // A value names only addresses allocated before it, so the graph has
+        // no cycle and each value is entered, then left, once.
+        let mut pending = Vec::from([(value, false)]);
+        while let Some((id, entered)) = pending.pop() {
+            if copied.contains_key(&id) {
+                continue;
+            }
+            let held = from.value(id).ok_or(CopyRefusal::Dangling(id))?;
+            if !entered {
+                pending.push((id, true));
+                pending.extend(
+                    from.reached(held)
+                        .into_iter()
+                        .filter(|reached| !copied.contains_key(reached))
+                        .map(|reached| (reached, false)),
+                );
+                continue;
+            }
+            let image = self.image(from, (id, held), (&copied, &mut links))?;
+            let _fresh = copied.insert(id, self.allocate(image).map_err(CopyRefusal::Full)?);
+        }
+        copied
+            .get(&value)
+            .copied()
+            .ok_or(CopyRefusal::Dangling(value))
+    }
+
+    /// The values `value` names: its fields, the values its chains bind, and
+    /// a stack frame's argument.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reached(
+        &self,
+        value: &HeapValue,
+    ) -> Vec<HeapValueId>
+    {
+        match *value {
+            HeapValue::Constructed { ref fields, .. } => fields.to_vec(),
+            HeapValue::Thunk { environment, .. }
+            | HeapValue::Fixpoint { environment, .. }
+            | HeapValue::Closure { environment, .. } => self.bound_values(environment).collect(),
+            HeapValue::Stack { ref frames } => {
+                let mut reached = Vec::new();
+                for frame in frames {
+                    match *frame {
+                        StackFrame::Apply(argument) => reached.push(argument),
+                        StackFrame::Bind(closed) => {
+                            reached.extend(self.bound_values(closed.environment));
+                        },
+                        StackFrame::Project(_) => {},
+                    }
+                }
+                reached
+            },
+            HeapValue::Literal(_)
+            | HeapValue::Opaque(_)
+            | HeapValue::Code(_)
+            | HeapValue::Capability => Vec::new(),
+        }
+    }
+
+    /// The image here of `from`'s value `id`, `held`, over the images
+    /// `copied` already holds of what it reaches.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::copy`].
+    fn image(
+        &mut self,
+        from: &Self,
+        (id, held): (HeapValueId, &HeapValue),
+        (copied, links): (
+            &BTreeMap<HeapValueId, HeapValueId>,
+            &mut BTreeMap<ValueBindingId, Environment>,
+        ),
+    ) -> Result<HeapValue, CopyRefusal>
+    {
+        let at = |field: HeapValueId| {
+            copied
+                .get(&field)
+                .copied()
+                .ok_or(CopyRefusal::Dangling(field))
+        };
+        Ok(match *held {
+            HeapValue::Literal(ref literal) => HeapValue::Literal(literal.clone()),
+            HeapValue::Constructed {
+                ref tag,
+                ref fields,
+            } => HeapValue::Constructed {
+                tag: tag.clone(),
+                fields: fields
+                    .iter()
+                    .map(|&field| at(field))
+                    .collect::<Result<_, _>>()?,
+            },
+            HeapValue::Thunk { body, environment } => HeapValue::Thunk {
+                body,
+                environment: self.linked(from, (id, environment), (copied, links))?,
+            },
+            HeapValue::Fixpoint {
+                body,
+                environment,
+                evidence,
+            } => HeapValue::Fixpoint {
+                body,
+                environment: self.linked(from, (id, environment), (copied, links))?,
+                evidence,
+            },
+            HeapValue::Closure {
+                producer,
+                environment,
+            } => HeapValue::Closure {
+                producer,
+                environment: self.linked(from, (id, environment), (copied, links))?,
+            },
+            HeapValue::Stack { ref frames } => {
+                let mut images = Vec::with_capacity(frames.len());
+                for frame in frames {
+                    images.push(match *frame {
+                        StackFrame::Apply(argument) => StackFrame::Apply(at(argument)?),
+                        StackFrame::Bind(closed) => StackFrame::Bind(ClosedCommand {
+                            body: closed.body,
+                            environment: self.linked(
+                                from,
+                                (id, closed.environment),
+                                (copied, links),
+                            )?,
+                        }),
+                        StackFrame::Project(component) => StackFrame::Project(component),
+                    });
+                }
+                HeapValue::Stack {
+                    frames: images.into_boxed_slice(),
+                }
+            },
+            HeapValue::Opaque(constant) => HeapValue::Opaque(constant),
+            HeapValue::Code(code) => HeapValue::Code(code),
+            HeapValue::Capability => return Err(CopyRefusal::Capability(id)),
+        })
+    }
+
+    /// The image here of the chain `environment` binds in `from`, which the
+    /// value `holder` closes over: each link not yet linked is bound once,
+    /// outermost first, over the image of the first link `links` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`CopyRefusal::Dangling`] naming `holder` for a link `from` does not
+    /// hold, or naming a bound value `copied` holds no image of;
+    /// [`CopyRefusal::Full`] as [`Self::bind_value`].
+    fn linked(
+        &mut self,
+        from: &Self,
+        (holder, environment): (HeapValueId, Environment),
+        (copied, links): (
+            &BTreeMap<HeapValueId, HeapValueId>,
+            &mut BTreeMap<ValueBindingId, Environment>,
+        ),
+    ) -> Result<Environment, CopyRefusal>
+    {
+        let mut unlinked = Vec::new();
+        let mut scope = environment.values;
+        let mut base = Environment::EMPTY;
+        while let ValueScope::Innermost(link) = scope {
+            if let Some(&image) = links.get(&link) {
+                base = image;
+                break;
+            }
+            let binding = link
+                .read_in(&from.value_bindings)
+                .ok_or(CopyRefusal::Dangling(holder))?;
+            unlinked.push((link, binding.value));
+            scope = binding.outer;
+        }
+        for (link, value) in unlinked.into_iter().rev() {
+            let value = copied
+                .get(&value)
+                .copied()
+                .ok_or(CopyRefusal::Dangling(value))?;
+            base = self.bind_value(base, value).map_err(CopyRefusal::Full)?;
+            let _fresh = links.insert(link, base);
+        }
+        Ok(base)
     }
 }
 

@@ -335,45 +335,9 @@ impl<'run> HostValues<'run>
         crossing::deref(manifest, params, chunks, self.store)
     }
 
-    /// Cross the value `from` binds at `value` into the store, at addresses
-    /// fresh there, through the process's chunk store: a reply the host may
-    /// resume with.
-    ///
-    /// # Specification
-    /// trivial.
-    ///
-    /// # Errors
-    /// [`crossing::commit`]'s and [`crossing::deref()`]'s refusals: a value
-    /// that does not cross is named, and the store gains nothing.
-    pub(crate) fn cross_from(
-        &mut self,
-        from: &Store,
-        value: HeapValueId,
-    ) -> Result<HeapValueId, CrossingRefusal>
-    {
-        crate::world::cross(from, value, self.store)
-    }
-
-    /// Cross the value the store binds at `value` into `to`, at addresses
-    /// fresh there, through the process's chunk store: a spawned writer's
-    /// thunk, moved into the writer's own store.
-    ///
-    /// # Specification
-    /// trivial.
-    ///
-    /// # Errors
-    /// As [`Self::cross_from`]: a value that does not cross is named, and `to`
-    /// gains nothing.
-    pub(crate) fn cross_to(
-        &self,
-        value: HeapValueId,
-        to: &mut Store,
-    ) -> Result<HeapValueId, CrossingRefusal>
-    {
-        crate::world::cross(self.store, value, to)
-    }
-
-    /// The caller's store, for a run nested in the host's reply.
+    /// The caller's store: a cut copies a writer's thunk out of it and the
+    /// writer's answer into it, and a run nested in the host's reply runs over
+    /// it.
     ///
     /// # Specification
     /// trivial.

@@ -32,10 +32,12 @@ use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::Summand;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
@@ -45,7 +47,6 @@ use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
-use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
 use gandr_runtime_emitter::evaluate_scheduled_on;
 
@@ -407,11 +408,11 @@ fn a_writer_with_no_answer_leaves_its_read_stuck()
 }
 
 /// `c ← return k; x ← return (c, 9); return x`, its second writer named,
-/// where `k` is an opaque constant: the writer's thunk captures a value that
-/// does not cross, so the writer runs at its read over the reader's store,
-/// and the run answers `(k, 9)` on each tier, as the sequential schedule does.
+/// where `k` is an opaque constant: the writer's thunk captures it, and the
+/// copy carries it into the writer's store. On each tier the run answers
+/// `(k, 9)`, as the sequential schedule does.
 #[test]
-fn a_writer_that_does_not_cross_runs_at_its_read()
+fn a_writer_over_an_opaque_constant_answers_as_its_sequential_schedule()
 {
     let mut core = CoreArena::new();
     let mut definitions = Definitions::new();
@@ -434,44 +435,105 @@ fn a_writer_that_does_not_cross_runs_at_its_read()
     );
     let expected = core.value_tuple(&[constant, nine]);
     for &tier in tiers() {
-        let mut store = Store::new();
-        let outcome = evaluate_on(
-            tier,
-            &program.arena,
-            &program.definitions,
-            program.sequential,
-            budget(),
-            RunInputs::new(&mut store),
-        );
-        let Ok(Outcome::Halted(answer)) = outcome
-        else {
-            panic!("the sequential schedule halts on {tier:?}: {outcome:?}");
-        };
-        let Some(&gandr_core_sequent::HeapValue::Constructed { ref fields, .. }) =
-            store.value(answer)
-        else {
-            panic!("the sequential schedule answers a pair on {tier:?}");
-        };
-        let &[captured, _] = &**fields
-        else {
-            panic!("the pair has two fields on {tier:?}");
-        };
-        assert!(
-            gandr_runtime_emitter::crossing::commit(
-                &store,
-                captured,
-                gandr_runtime_emitter::world::chunking(),
-                &mut gandr_storage_values::InMemoryChunkStore::new(),
-            )
-            .is_err(),
-            "the opaque constant does not cross on {tier:?}"
-        );
         let (sequential, scheduled) = answers(&mut core, &program, tier, &mut Answering);
         for (schedule, actual) in [("sequential", sequential), ("scheduled", scheduled)] {
             assert_eq!(
                 CertificateEquality::Equal,
                 equal_certificate_syntax(&core, actual, expected),
                 "the {schedule} run answers the constant beside nine on {tier:?}"
+            );
+        }
+    }
+}
+
+/// `(λf. x ← (force f) 7; return (x, 9)) (thunk { λy. return y })`, its
+/// writer `(force f) 7` named: the writer's capture is a function, which the
+/// copy carries as code. On each tier the run answers `(7, 9)`, as the
+/// sequential schedule does.
+#[test]
+fn a_writer_over_a_captured_function_answers_as_its_sequential_schedule()
+{
+    let mut core = CoreArena::new();
+    let (seven, nine) = (
+        integer(&mut core, Digits("7")),
+        integer(&mut core, Digits("9")),
+    );
+    let y = variable(&mut core, Outward(0));
+    let identity = core.computation_return(y);
+    let identity = core.computation_lambda(identity);
+    let identity = core.value_thunk(identity);
+    let f = variable(&mut core, Outward(0));
+    let forced = core.computation_force(f);
+    let writer = core.computation_application(forced, seven);
+    let x = variable(&mut core, Outward(0));
+    let pair = core.value_tuple(&[x, nine]);
+    let returned = core.computation_return(pair);
+    let read = core.computation_bind(writer, returned);
+    let function = core.computation_lambda(read);
+    let program = core.computation_application(function, identity);
+    let program = scheduled(
+        &core,
+        program,
+        &core::iter::once(writer).collect(),
+        &Definitions::new(),
+    );
+    let expected = core.value_tuple(&[seven, nine]);
+    for &tier in tiers() {
+        let (sequential, scheduled) = answers(&mut core, &program, tier, &mut Answering);
+        for (schedule, actual) in [("sequential", sequential), ("scheduled", scheduled)] {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, actual, expected),
+                "the {schedule} run answers what the function answers beside nine on {tier:?}"
+            );
+        }
+    }
+}
+
+/// `(fix self. λb. case b of inl _ ⇒ x ← (force self) (inr ()); return (x, 1)
+/// | inr _ ⇒ return 7) (inl ())`, its writer `(force self) (inr ())` named:
+/// the writer captures the fixpoint it runs in. The crossing refused that
+/// fixpoint, so the read stuck where the sequential run answers. On each tier
+/// the run answers `(7, 1)`, as the sequential schedule does.
+#[test]
+fn a_recursive_writer_capturing_its_own_fixpoint_answers_2954()
+{
+    let mut core = CoreArena::new();
+    let (one, seven) = (
+        integer(&mut core, Digits("1")),
+        integer(&mut core, Digits("7")),
+    );
+    let unit = core.value_unit();
+    let left = core.value_injection(Summand::from(0_usize), unit);
+    let right = core.value_injection(Summand::from(1_usize), unit);
+    // Under `self, b, _`: the recursive call, then the pair it answers into.
+    let own = variable(&mut core, Outward(2));
+    let forced = core.computation_force(own);
+    let writer = core.computation_application(forced, right);
+    let x = variable(&mut core, Outward(0));
+    let pair = core.value_tuple(&[x, one]);
+    let returned = core.computation_return(pair);
+    let recursing = core.computation_bind(writer, returned);
+    let ending = core.computation_return(seven);
+    let b = variable(&mut core, Outward(0));
+    let case = core.computation_case(b, &[recursing, ending]);
+    let function = core.computation_lambda(case);
+    let fixpoint = core.computation_fixpoint(function, FixpointEvidence::Partial);
+    let program = core.computation_application(fixpoint, left);
+    let program = scheduled(
+        &core,
+        program,
+        &core::iter::once(writer).collect(),
+        &Definitions::new(),
+    );
+    let expected = core.value_tuple(&[seven, one]);
+    for &tier in tiers() {
+        let (sequential, scheduled) = answers(&mut core, &program, tier, &mut Answering);
+        for (schedule, actual) in [("sequential", sequential), ("scheduled", scheduled)] {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, actual, expected),
+                "the {schedule} run answers seven beside one on {tier:?}"
             );
         }
     }

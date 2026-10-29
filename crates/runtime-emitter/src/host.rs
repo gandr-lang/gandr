@@ -93,7 +93,6 @@ use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::COUNT_ONE;
 use gandr_runtime_stencils::Family;
-use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::RELEASE;
@@ -1915,8 +1914,8 @@ struct Laying<'laying>
     literals: &'laying mut Vec<Literal>,
     /// The run's objects already moved into the store.
     moved: &'laying Moved,
-    /// The function's closure sites, a thunk crossed into the run is laid
-    /// out at.
+    /// The function's closure sites, a thunk, a fixpoint or a closure moved
+    /// into the run is laid out at.
     sites: &'laying Sites<'laying>,
     /// The commands the function was lowered from, which name each site's
     /// thunk.
@@ -1940,15 +1939,15 @@ impl Laying<'_>
     ///   datatype's constructor over its fields, any other head as a head
     ///   object naming its row in the run's head table, which it joins when the
     ///   function's lacks it, an opaque constant as an opaque object, and a
-    ///   thunk as a closure at the function's site for its body, its captures
-    ///   its fields.
+    ///   thunk, a fixpoint or a closure as a closure at the function's site for
+    ///   its code, of the flavour that site allocates, its captures its fields.
     /// - executable: none — the objects are memory no predicate reads.
     ///
     /// # Errors
     /// [`Unlaid::Value`] naming a value the store does not hold, or code, a
-    /// capability, a closure, a stack, or a thunk whose body has no site or
-    /// whose captures its site does not take, that the run did not move out;
-    /// [`Unlaid::Run`] past the heap's limit.
+    /// capability, a stack, or a thunk, a fixpoint or a closure whose code has
+    /// no site or whose captures its site does not take, that the run did not
+    /// move out; [`Unlaid::Run`] past the heap's limit.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — replies of an integer, the unit, the payload itself,
@@ -1957,10 +1956,12 @@ impl Laying<'_>
     ///   run as it states; a second holder left uncounted frees the value while
     ///   it is read. A record a migration answers, which the caller's function
     ///   never builds, is laid out under the head it joins to the table. A
-    ///   thunk a migration answers runs at the caller's site for its body. Two
-    ///   holders count alike whichever is counted, and an owner too many shows
-    ///   in no answer, so the counts of a value under three holders, two roots
-    ///   and a field, and of values under one are read where they are laid.
+    ///   thunk a migration answers runs at the caller's site for its body. A
+    ///   fixpoint and a function a writer's captures hold run at the writer's
+    ///   sites for their code. Two holders count alike whichever is counted,
+    ///   and an owner too many shows in no answer, so the counts of a value
+    ///   under three holders, two roots and a field, and of values under one
+    ///   are read where they are laid.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
@@ -1968,6 +1969,8 @@ impl Laying<'_>
     /// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
     /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
     /// - witness: `tests::world::a_thunk_a_migration_returns_runs_at_the_caller_3265`
+    /// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`
+    /// - witness: `tests::cut::a_writer_over_a_captured_function_answers_as_its_sequential_schedule`
     /// - witness: `host::tests::a_laying_counts_one_owner_per_holder`
     fn laid(
         &mut self,
@@ -1993,13 +1996,13 @@ impl Laying<'_>
                 let value = store.value(id).ok_or(Unlaid::Value(id))?;
                 let fields: Cow<'_, [HeapValueId]> = match *value {
                     HeapValue::Constructed { ref fields, .. } => Cow::Borrowed(fields),
-                    HeapValue::Thunk { environment, .. } => {
+                    HeapValue::Thunk { environment, .. }
+                    | HeapValue::Fixpoint { environment, .. }
+                    | HeapValue::Closure { environment, .. } => {
                         Cow::Owned(store.bound_values(environment).collect())
                     },
                     HeapValue::Literal(_)
                     | HeapValue::Stack { .. }
-                    | HeapValue::Fixpoint { .. }
-                    | HeapValue::Closure { .. }
                     | HeapValue::Opaque(_)
                     | HeapValue::Code(_)
                     | HeapValue::Capability => Cow::Borrowed(&[]),
@@ -2057,7 +2060,8 @@ impl Laying<'_>
             )
             .word())
         };
-        let words = match *self.store.value(id).ok_or(Unlaid::Value(id))? {
+        let value = self.store.value(id).ok_or(Unlaid::Value(id))?;
+        let words = match *value {
             HeapValue::Literal(ref literal) => {
                 let bits = match *literal {
                     Literal::Integer(ref integer) => integer_word(integer),
@@ -2133,10 +2137,12 @@ impl Laying<'_>
                     Family::try_from(row).map_err(width)?,
                 )?])
             },
-            HeapValue::Thunk { body, environment } => {
-                let (code, site) = self
+            HeapValue::Thunk { environment, .. }
+            | HeapValue::Fixpoint { environment, .. }
+            | HeapValue::Closure { environment, .. } => {
+                let (code, site, flavour) = self
                     .sites
-                    .thunk(self.arena, body)
+                    .closure(self.arena, value)
                     .ok_or(Unlaid::Value(id))?;
                 let captures: Vec<HeapValueId> = self.store.bound_values(environment).collect();
                 if captures.len() != site.captures.len() {
@@ -2145,7 +2151,7 @@ impl Laying<'_>
                 let mut words = Vec::from([
                     Header::new(
                         Kind::Closure,
-                        Tag::from(Flavour::Thunk),
+                        Tag::from(flavour),
                         Arity::try_from(captures.len()).map_err(width)?,
                         Family::UNNAMED,
                     )
@@ -2164,10 +2170,7 @@ impl Laying<'_>
                 }
                 words
             },
-            HeapValue::Capability
-            | HeapValue::Fixpoint { .. }
-            | HeapValue::Closure { .. }
-            | HeapValue::Stack { .. } => return Err(Unlaid::Value(id)),
+            HeapValue::Capability | HeapValue::Stack { .. } => return Err(Unlaid::Value(id)),
         };
         allocate(runtime, &words).map_err(Unlaid::Run)
     }

@@ -36,7 +36,6 @@ use alloc::collections::BTreeMap;
 
 use gandr_core_sequent::ClosedCommand;
 use gandr_core_sequent::CommandArena;
-use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Environment;
 use gandr_core_sequent::HeapValue;
@@ -50,6 +49,7 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
+use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::Word;
@@ -62,6 +62,7 @@ use crate::lower::Bound;
 use crate::lower::Lowered;
 use crate::lower::Site;
 use crate::lower::Slot;
+use crate::lower::flavour;
 
 /// Why an answer could not be moved into the store.
 ///
@@ -266,35 +267,53 @@ impl<'lowered> Sites<'lowered>
         self.linears.get(&code).copied().unwrap_or_default()
     }
 
-    /// The code word and site of a thunk suspending `body` in this function,
-    /// which a thunk crossed into the run is laid out at; none when the
-    /// function holds no such thunk.
+    /// The code word, the site and the header's flavour of the closure the
+    /// store's `value` is laid out as: a thunk or a fixpoint at a site
+    /// suspending its body, a closure at its producer's site. None when
+    /// `value` names no code or the function holds no such site.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — a thunk a migration answers, forced at its caller,
-    ///   answers what forcing it in place answers on both tiers; a site found
-    ///   for another body runs other code.
+    ///   answers what forcing it in place answers on both tiers. A recursive
+    ///   writer's captured fixpoint and a writer's captured function answer
+    ///   what their sequential schedule answers. A site found for another body
+    ///   or producer runs other code.
     /// - witness: `tests::world::a_thunk_a_migration_returns_runs_at_the_caller_3265`
+    /// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`
+    /// - witness: `tests::cut::a_writer_over_a_captured_function_answers_as_its_sequential_schedule`
     #[inline]
     #[must_use]
-    pub fn thunk(
+    pub fn closure(
         &self,
         arena: &CommandArena,
-        body: CommandId,
-    ) -> Option<(Word, &'lowered Site)>
+        value: &HeapValue,
+    ) -> Option<(Word, &'lowered Site, Flavour)>
     {
-        self.by_code
-            .iter()
-            .find(|&(_, site)| {
-                matches!(
-                    arena.producer(site.producer),
-                    Some(&ProducerNode::Thunk { body: suspended }) if suspended == body
-                )
-            })
-            .map(|(&code, &site)| (code, site))
+        self.by_code.iter().find_map(|(&code, &site)| {
+            let node = arena.producer(site.producer)?;
+            let found = match *value {
+                HeapValue::Thunk { body, .. } => {
+                    matches!(*node, ProducerNode::Thunk { body: suspended } if suspended == body)
+                },
+                HeapValue::Fixpoint { body, .. } => {
+                    matches!(*node, ProducerNode::Fixpoint { body: suspended, .. } if suspended == body)
+                },
+                HeapValue::Closure { producer, .. } => producer == site.producer,
+                HeapValue::Stack { .. }
+                | HeapValue::Literal(_)
+                | HeapValue::Constructed { .. }
+                | HeapValue::Opaque(_)
+                | HeapValue::Code(_)
+                | HeapValue::Capability => false,
+            };
+            if !found {
+                return None;
+            }
+            Some((code, site, flavour(node)?))
+        })
     }
 }
 
