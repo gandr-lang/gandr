@@ -61,3 +61,121 @@ fn serial_runs_the_left_half_before_the_right()
         "the left half runs first, and the pair is in argument order"
     );
 }
+
+/// How many runs a counted job found before its own.
+#[derive(Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Runs(usize);
+
+/// A job that counts its runs, and answers the count it found.
+#[repr(transparent)]
+struct Counted<'count>(&'count AtomicUsize);
+
+impl<'scope, 'count: 'scope> Scoped<'scope> for Counted<'count>
+{
+    type Output = Runs;
+
+    /// Count this run.
+    ///
+    /// # Specification
+    /// trivial.
+    fn run<Spawner>(
+        self,
+        _spawner: &Spawner,
+    ) -> Runs
+    where
+        Spawner: Spawn<'scope>,
+    {
+        Runs(self.0.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+/// The sum of a spawn tree's leaves.
+#[derive(Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Sum(u64);
+
+/// A leaf of a spawn tree: its own value.
+#[repr(transparent)]
+struct Leaf(u64);
+
+impl<'scope> Scoped<'scope> for Leaf
+{
+    type Output = Sum;
+
+    /// The leaf's value.
+    ///
+    /// # Specification
+    /// trivial.
+    fn run<Spawner>(
+        self,
+        _spawner: &Spawner,
+    ) -> Sum
+    where
+        Spawner: Spawn<'scope>,
+    {
+        Sum(self.0)
+    }
+}
+
+/// A node of a spawn tree: two subtrees, each spawned before either is waited
+/// for.
+struct Pair<Tree>(Tree, Tree);
+
+impl<'scope, Tree> Scoped<'scope> for Pair<Tree>
+where
+    Tree: Scoped<'scope, Output = Sum> + Send + 'scope,
+{
+    type Output = Sum;
+
+    /// Spawn both subtrees, wait for the right one and then the left one, and
+    /// add their sums.
+    ///
+    /// # Specification
+    /// trivial.
+    fn run<Spawner>(
+        self,
+        spawner: &Spawner,
+    ) -> Sum
+    where
+        Spawner: Spawn<'scope>,
+    {
+        let Self(left, right) = self;
+        let left = spawner.spawn(left);
+        let Sum(right) = spawner.wait(spawner.spawn(right)).unwrap();
+        let Sum(left) = spawner.wait(left).unwrap();
+        Sum(left.checked_add(right).unwrap())
+    }
+}
+
+#[test]
+fn serial_runs_a_spawned_job_at_its_wait()
+{
+    let count = AtomicUsize::new(0);
+    let spawned = Serial.spawn(Counted(&count));
+    assert_eq!(count.load(Ordering::Relaxed), 0, "a spawn starts nothing");
+    assert_eq!(Serial.wait(spawned), Ok(Runs(0)), "the wait runs the job");
+    assert_eq!(count.load(Ordering::Relaxed), 1, "the job ran once");
+    {
+        let _unwaited = Serial.spawn(Counted(&count));
+    }
+    assert_eq!(
+        count.load(Ordering::Relaxed),
+        1,
+        "a job whose handle was dropped never runs"
+    );
+}
+
+#[test]
+fn a_nested_serial_spawn_sums_the_leaves()
+{
+    let tree = Pair(
+        Pair(Pair(Leaf(1), Leaf(2)), Pair(Leaf(3), Leaf(4))),
+        Pair(Pair(Leaf(5), Leaf(6)), Pair(Leaf(7), Leaf(8))),
+    );
+    assert_eq!(
+        Serial.scope(tree),
+        Sum(36),
+        "the serial scope sums the leaves"
+    );
+}

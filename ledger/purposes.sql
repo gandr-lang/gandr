@@ -260,8 +260,12 @@ INSERT INTO purpose VALUES('core-checker','worlds::Mobility','enum','Whether a s
 INSERT INTO purpose VALUES('core-checker','worlds::Predicate','enum','Which of the two crossing predicates a former fails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldMove','enum','One move of the world register a typed run keeps: a migration''s push, with the linear zone before and after its capability was spent, and its pop.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldName','struct','The name of a world, as a host names one before any source declares it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Deferred','struct','A job the serial spawner holds until its wait.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run inside a fork''s scope, handed the scope''s spawner.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Spawn','trait','Starts jobs inside a fork''s scope, and waits for each job it started.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','Unwound','struct','A spawned job panicked on another worker, so its waiter only stops waiting.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemCount','struct','Names a count of items or of the steps a resume took over them, so it cannot be passed where an ordinal or record count is wanted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemOrdinal','struct','Names where an item sits in its program''s source order, so a resume can count it and a stream report it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::LivenessEmpty','struct','Names whether a liveness map publishes nothing, so a consumer can test emptiness without opening the map.',NULL,'fits','sound',NULL);
