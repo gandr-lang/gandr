@@ -658,6 +658,92 @@ fn motives_calling_one_variable_family_are_alike_3802()
 }
 
 #[test]
+fn motives_calling_thunks_written_apart_are_alike_3920()
+{
+    // #3920: `z. El(⟨force f z⟩)`, `f` bound to a thunk of `λq. return g`
+    // closed over `g`. Each side writes the lambda in its own place, so the
+    // two thunks close two body nodes over one capture. The walk reads them
+    // by their bodies as syntax and their captures pair by pair. A thunk over
+    // another capture, or of another body, stays undecided, never apart.
+    let mut core = CoreArena::new();
+    let family = |core: &mut CoreArena| {
+        let function = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = core.computation_force(function);
+        let call = core.computation_application(forced, endpoint);
+        let code = core.value_returned(call);
+        core.value_type_element(code, Level::zero())
+    };
+    let lambda = |core: &mut CoreArena, index: u32| {
+        let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        let returned = core.computation_return(read);
+        core.computation_lambda(returned)
+    };
+    let (near, again) = (family(&mut core), family(&mut core));
+    let (body, rewritten, other_body) = (
+        lambda(&mut core, 1),
+        lambda(&mut core, 1),
+        lambda(&mut core, 0),
+    );
+
+    let mut domain = DomainArena::new();
+    let g = variable(&mut domain, BinderLevel::from(0_u32));
+    let h = variable(&mut domain, BinderLevel::from(1_u32));
+    let endpoint = variable(&mut domain, BinderLevel::from(2_u32));
+    let thunk = |domain: &mut DomainArena, body, capture| {
+        let mut environment = Environment::new();
+        environment.extend(Zone::Intuitionistic, capture);
+        let closure = domain.comp_closure_node(body, environment);
+        domain.value_thunk(closure, TermFace::Reduced)
+    };
+    let f = thunk(&mut domain, body, g);
+    let f_rewritten = thunk(&mut domain, rewritten, g);
+    let f_over_h = thunk(&mut domain, rewritten, h);
+    let f_other = thunk(&mut domain, other_body, g);
+    let motive = |domain: &mut DomainArena, body, bound: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &value in bound {
+            environment.extend(Zone::Intuitionistic, value);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+
+    let quoted = motive(&mut domain, near, &[f, endpoint]);
+    let quoted_rewritten = motive(&mut domain, again, &[f_rewritten, endpoint]);
+    let quoted_over_h = motive(&mut domain, again, &[f_over_h, endpoint]);
+    let quoted_other = motive(&mut domain, again, &[f_other, endpoint]);
+    assert_eq!(
+        CodeComparison::Equal,
+        compare_rigidly(&core, &domain, quoted, quoted_rewritten),
+        "a call of one lambda written twice over one capture is one code"
+    );
+    assert_eq!(
+        CodeComparison::Undecided,
+        compare_rigidly(&core, &domain, quoted, quoted_over_h),
+        "the lambda over another capture stays undecided, never apart"
+    );
+    assert_eq!(
+        CodeComparison::Undecided,
+        compare_rigidly(&core, &domain, quoted, quoted_other),
+        "and so does another lambda over the same capture"
+    );
+
+    let over_f = motive(&mut domain, near, &[f]);
+    let over_f_rewritten = motive(&mut domain, again, &[f_rewritten]);
+    let over_f_other = motive(&mut domain, again, &[f_other]);
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_f, over_f_rewritten).expect("both motives resolve"),
+        "two motives calling the lambda written twice are one family"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over_f, over_f_other).expect("both motives resolve"),
+        "but a motive calling another lambda is not"
+    );
+}
+
+#[test]
 fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
 {
     // #577: `⌜U(Π(_ : Unit). F Unit)⌝` is `⌜U(Unit -> F Unit)⌝`, in either

@@ -274,6 +274,81 @@ fn a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695()
     assert_eq!(arena.watermark(), mark);
 }
 
+/// Two returned calls neither of which reads to a `return` walk their
+/// computations (#3920). A lambda the source ascribes crosses as a typed
+/// position, the fold `⟨fold(nil; return thunk λ)⟩`. A call through it,
+/// `⟨force ⟨fold⟩ x⟩`, and the same call through the lambda itself,
+/// `⟨force (thunk λ) x⟩`, each run to a call of the rigid `r` and return
+/// nothing. The walk sets the fold aside, reads it to its thunk, and finds
+/// the two alike; a fold of a lambda calling another rigid `s` stays apart.
+#[test]
+fn an_unread_pair_of_returned_calls_walks_their_computations_3920()
+{
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let x = arena.value_variable(DeBruijnIndex::from(0));
+    let lambda = |arena: &mut TermArena, rigid: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(rigid));
+        let forced = arena.computation_force(head);
+        let bound = arena.value_variable(DeBruijnIndex::from(0));
+        let call = arena.computation_application(forced, bound);
+        let lambda = arena.computation_lambda(call);
+        arena.value_thunk(lambda)
+    };
+    let ascribed = |arena: &mut TermArena, function| {
+        let element = arena.value_type_unit();
+        let nil = arena.value_list_nil();
+        let on_nil = arena.computation_return(function);
+        let folded = arena.value_variable(DeBruijnIndex::from(0));
+        let on_cons = arena.computation_return(folded);
+        let fold = arena.computation_list_fold(element, element, nil, on_nil, on_cons);
+        arena.value_returned(fold)
+    };
+    let call = |arena: &mut TermArena, function| {
+        let forced = arena.computation_force(function);
+        let applied = arena.computation_application(forced, x);
+        arena.value_returned(applied)
+    };
+    let plain = lambda(&mut arena, 2);
+    let left = call(&mut arena, plain);
+    let rewritten = lambda(&mut arena, 2);
+    let through_fold = ascribed(&mut arena, rewritten);
+    let alike = call(&mut arena, through_fold);
+    let other = lambda(&mut arena, 3);
+    let other_fold = ascribed(&mut arena, other);
+    let apart = call(&mut arena, other_fold);
+    let read = |arena: &mut TermArena, right| {
+        let mut run = super::Replay {
+            arena,
+            unfoldings: &none,
+            evaluator: &none,
+            trace: core::iter::empty().peekable(),
+            reading: super::Reading::Recorded,
+            position: 0,
+            spent: 0,
+            budget: u64::from(ReplayBudget::DEFAULT),
+            table: crate::ContentTable::new(),
+            memo: gandr_kernel_check_memo::NullMemo,
+            owed: Vec::new(),
+        };
+        run.endpoints_alike(
+            Vec::from([crate::conv::SetAside::Values(left, right)]),
+            super::Reduction::Endpoint,
+        )
+    };
+
+    assert_eq!(
+        read(&mut arena, alike),
+        Ok(crate::conv::Convertibility::Convertible),
+        "the two calls are alike once the fold reads to its thunk"
+    );
+    assert_eq!(
+        read(&mut arena, apart),
+        Ok(crate::conv::Convertibility::Distinct),
+        "and a fold of a lambda calling another rigid stays apart"
+    );
+}
+
 #[test]
 fn the_replay_reduces_before_it_reads_a_decision()
 {
