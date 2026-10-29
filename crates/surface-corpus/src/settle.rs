@@ -87,6 +87,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::RegisteredAttribute;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::UnitKey;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
@@ -1298,9 +1299,11 @@ where
 /// - hypothesis: L3 — a module settled after its leading declarations' report
 ///   answers what settling it whole answers; a refused name an application
 ///   binds reads the application's attribute, and a refused declaration writing
-///   its own halves keeps its own.
+///   its own halves keeps its own; a witness that checks beside its refused
+///   function keeps the default.
 /// - witness: `settle::tests::a_module_settled_after_its_leading_report_settles_as_a_whole_one_776`
 /// - witness: `settle::tests::an_application_s_attribute_states_its_refused_names_1274`
+/// - witness: `settle::tests::a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
@@ -1358,12 +1361,20 @@ where
         };
         // A name an application or a module's header binds writes no half:
         // when it is refused, the attributes before that form state its
-        // expectation, and a witness that checks keeps the default.
+        // expectation, and a witness that checks keeps the default. A witness
+        // of a written signature reads its function's form, and when it
+        // checks the function alone states that form's expectation.
         let expectations = match produced {
             Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
                 if !header(module.attributes(), lowered).is_empty() =>
             {
                 refused_expected(root, arena, module, lowered)?
+            },
+            Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. })
+                if expectations.membership == Membership::Fixture
+                    && function_s_form(module, lowered).is_some() =>
+            {
+                Expectations::unattributed()
             },
             Produced::Unlowered(_)
             | Produced::Judged(
@@ -1838,6 +1849,57 @@ fn header<'table>(
         },
         _ => &[],
     }
+}
+
+/// The form whose attributes the witness `lowered` reads and another
+/// declaration of `module` reads as its own: the witness that checks a
+/// function's written signature against the one another form states reads the
+/// form the function is defined by.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: present only when `lowered` is a [`Role::Witness`]: then the
+///   first of its signature, definition and refused-form keys that files an
+///   entry and is a signature, definition or refused-form key of a declaration
+///   at another admission position.
+/// - provides: which witness that checks keeps the default beside its refused
+///   function.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function signed twice and a model's law component each
+///   settle their refusal beside the witness that checks, and a component's one
+///   witness keeps its member's expectation.
+/// - witness: `settle::tests::a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706`
+#[spec(ensures: |ret| ret.is_none() || lowered.role() == Role::Witness)]
+fn function_s_form(
+    module: &LoweredModule<'_>,
+    lowered: &LoweredDeclaration<'_>,
+) -> Option<UnitKey>
+{
+    let keys = |declaration: &LoweredDeclaration<'_>| {
+        [
+            declaration.signature(),
+            declaration.definition(),
+            declaration.refused_form(),
+        ]
+        .into_iter()
+        .filter_map(|key| match key {
+            Maybe::Present(key) => Some(key),
+            Maybe::Absent(_) => None,
+        })
+    };
+    if lowered.role() != Role::Witness {
+        return None;
+    }
+    keys(lowered)
+        .filter(|&key| !module.attributes().entries(key).is_empty())
+        .find(|&key| {
+            module.declarations().iter().any(|other| {
+                other.constant() != lowered.constant() && keys(other).any(|held| held == key)
+            })
+        })
 }
 
 /// What the declaration `lowered` of `module` states under `root`: the
