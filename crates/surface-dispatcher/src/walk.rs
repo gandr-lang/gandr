@@ -342,6 +342,12 @@ pub struct Traversal
 {
     /// The paths not yet started, the next on top.
     arguments: Vec<PathBuf>,
+    /// How many paths were given.
+    count: usize,
+    /// Each path given, canonical, in the order given, or `None` for one that
+    /// does not canonicalize; read when the first path starts, so a tree
+    /// written after the traversal is built is read as it stands then.
+    given: Vec<Option<PathBuf>>,
     /// The path being walked.
     argument: PathBuf,
     /// Whether the path being walked has answered yet.
@@ -1082,7 +1088,9 @@ impl Traversal
         let mut arguments = paths;
         arguments.reverse();
         Self {
+            count: arguments.len(),
             arguments,
+            given: Vec::new(),
             argument: PathBuf::new(),
             answered: Answered::Yes,
             entries: Vec::new(),
@@ -1119,28 +1127,37 @@ impl Traversal
     /// - ensures: each path given is reached in order. A directory is walked
     ///   depth-first in byte order, reaching its directories and non-symlink
     ///   `.gandr` entries without following links found in the listing. An
-    ///   explicit path may be a link; a non-directory argument is one source,
-    ///   whatever its name. A path that cannot be listed, or whose kind cannot
-    ///   be read, is [`Reached::Unreadable`]; a path that reached no source and
-    ///   no fault is [`Reached::NoSource`] after its last entry, at that path.
-    ///   Anything reached marks the path given answered. Nothing is read and
-    ///   nothing is counted. Exhaustion is stable.
+    ///   entry another path given names, by its canonical path, is not reached
+    ///   under this path: that path reaches it in its turn, and the entry
+    ///   answers this path (#3889), so a path every entry of which another path
+    ///   names reaches nothing of its own. A path given twice is reached twice.
+    ///   An explicit path may be a link; a non-directory argument is one
+    ///   source, whatever its name. A path that cannot be listed, or whose kind
+    ///   cannot be read, is [`Reached::Unreadable`]; a path that reached no
+    ///   source and no fault is [`Reached::NoSource`] after its last entry, at
+    ///   that path. Anything reached marks the path given answered. Nothing is
+    ///   read and nothing is counted. Exhaustion leaves no path and no entry
+    ///   pending, and is stable.
     /// - fails: never; a fault is reached like a source.
     /// - panics: none.
-    /// - intension: lists each directory once; recursion-free, the pending
-    ///   entries an explicit stack.
+    /// - intension: lists each directory once within one path given, and a
+    ///   directory another path given names under none but that one;
+    ///   recursion-free, the pending entries an explicit stack.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the walk's ordered rows observe every outcome reached
     ///   here; a tree written after the walk is built is listed when it is
-    ///   visited, an empty directory in it listing nothing.
+    ///   visited, an empty directory in it listing nothing; a package root
+    ///   given beside its sources, and a directory given beside a source in it,
+    ///   reach each source once.
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
     /// - witness: `walk::tests::every_path_answers_in_order`
     /// - witness: `walk::tests::a_tree_is_read_when_visited`
+    /// - witness: `walk::tests::a_path_another_path_names_is_walked_once_3889`
     #[spec(
         captures: [pending_arguments = self.arguments.len(), was_answered = self.answered == Answered::Yes],
         ensures: |ref ret| match *ret {
-            Maybe::Absent(walk_step::Absent::Exhausted) => pending_arguments == 0 && self.entries.is_empty(),
+            Maybe::Absent(walk_step::Absent::Exhausted) => self.arguments.is_empty() && self.entries.is_empty(),
             Maybe::Present(Reached::NoSource) => !was_answered || pending_arguments != 0,
             Maybe::Present(Reached::Source | Reached::Unreadable(_)) => self.answered == Answered::Yes,
         },
@@ -1160,6 +1177,12 @@ impl Traversal
                 else {
                     return Maybe::Absent(walk_step::Absent::Exhausted);
                 };
+                if self.given.is_empty() && self.count > 1 {
+                    self.given = core::iter::once(&argument)
+                        .chain(self.arguments.iter().rev())
+                        .map(|path| path.canonicalize().ok())
+                        .collect();
+                }
                 self.argument = argument;
                 self.answered = Answered::Not;
                 self.entries.push(Entry::Argument);
@@ -1207,8 +1230,9 @@ impl Traversal
     /// # Specification
     /// - requires: nothing.
     /// - ensures: success appends the selected children in descending path
-    ///   order, leaving earlier pending entries in place; failure leaves the
-    ///   pending entries unchanged.
+    ///   order, leaving earlier pending entries in place, and marks the path
+    ///   given answered when it leaves out a child another path given names;
+    ///   failure leaves the pending entries unchanged.
     /// - fails: the I/O error listing the path or reading an entry's type.
     /// - panics: none.
     ///
@@ -1217,10 +1241,13 @@ impl Traversal
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested ordered files, an empty directory and an
-    ///   ignored link observe filtering and stack order; errors partway through
-    ///   directory iteration are outside these witnesses.
+    ///   ignored link observe filtering and stack order; a package root given
+    ///   beside its sources, and a directory given beside a source in it,
+    ///   observe the children another path names left out; errors partway
+    ///   through directory iteration are outside these witnesses.
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
     /// - witness: `walk::tests::a_tree_is_read_when_visited`
+    /// - witness: `walk::tests::a_path_another_path_names_is_walked_once_3889`
     #[spec(
         captures: [before = self.entries.len()],
         ensures: |ref ret| if ret.is_err() {
@@ -1242,16 +1269,47 @@ impl Traversal
     {
         let mut found = Vec::new();
         let listing = std::fs::read_dir(&self.path)?;
+        // Another path given may name a child (#3889): that path walks it,
+        // so this one leaves it out. A child's canonical path is the path
+        // being walked's, joined with the child's path below it, since the
+        // listing follows no link.
+        let walking = self
+            .count
+            .saturating_sub(self.arguments.len())
+            .saturating_sub(1);
+        let canonical = self.given.get(walking).and_then(Option::as_deref);
         for listed in listing {
             let listed = listed?;
             let kind = listed.file_type()?;
             let path = listed.path();
-            if kind.is_dir() {
-                found.push(Entry::Directory(path));
+            let entry = if kind.is_dir() {
+                Entry::Directory(path)
             }
             else if !kind.is_symlink() && path.extension() == Some(OsStr::new(EXTENSION)) {
-                found.push(Entry::Source(path));
+                Entry::Source(path)
             }
+            else {
+                continue;
+            };
+            let named = canonical.is_some_and(|canonical| {
+                entry_path(&entry)
+                    .strip_prefix(&self.argument)
+                    .is_ok_and(|below| {
+                        self.given.iter().enumerate().any(|(index, other)| {
+                            index != walking
+                                && other.as_deref().is_some_and(|other| {
+                                    other
+                                        .strip_prefix(canonical)
+                                        .is_ok_and(|rest| rest == below)
+                                })
+                        })
+                    })
+            });
+            if named {
+                self.answered = Answered::Yes;
+                continue;
+            }
+            found.push(entry);
         }
         found.sort_by(|left, right| entry_path(right).cmp(entry_path(left)));
         self.entries.append(&mut found);
@@ -2236,6 +2294,62 @@ pub mod tests
                 visited(&scratch.0, paths.clone(), width),
                 (seen.clone(), report),
                 "a visit at {width:?} answers every path in the serial visit's order"
+            );
+        }
+    }
+
+    /// #3889: an entry another path given names is reached once, by that
+    /// path: a directory given after its subdirectory and one of its sources
+    /// reaches neither again, answers through them, and reaches the rest.
+    #[test]
+    fn a_path_another_path_names_is_walked_once_3889()
+    {
+        let scratch = Scratch::new(Path::new("named-elsewhere"));
+        scratch.file(
+            Path::new("outer/inner/a.gandr"),
+            SourceText::from("def a = 1 ;"),
+        );
+        scratch.file(Path::new("outer/b.gandr"), SourceText::from("def b = 2 ;"));
+        scratch.file(Path::new("outer/c.gandr"), SourceText::from("def c = 3 ;"));
+        scratch.file(
+            Path::new("covered/inner/d.gandr"),
+            SourceText::from("def d = 4 ;"),
+        );
+        let paths = vec![
+            scratch.0.join("outer/inner"),
+            scratch.0.join("outer"),
+            scratch.0.join("outer/b.gandr"),
+            scratch.0.join("covered/inner"),
+            scratch.0.join("covered"),
+        ];
+        let (seen, report) = visited(&scratch.0, paths.clone(), Width::SERIAL);
+        assert_eq!(
+            seen,
+            rows(&[
+                (
+                    Path::new("outer/inner/a.gandr"),
+                    Seen::Source(Standing::Settled)
+                ),
+                (Path::new("outer/c.gandr"), Seen::Source(Standing::Settled)),
+                (Path::new("outer/b.gandr"), Seen::Source(Standing::Settled)),
+                (
+                    Path::new("covered/inner/d.gandr"),
+                    Seen::Source(Standing::Settled)
+                ),
+            ]),
+            "each source once, by the path naming it; a directory whose sources another path \
+             walks answers through it"
+        );
+        assert_eq!(
+            report.sources().faulted(),
+            SourceCount::from(0_usize),
+            "no path faults"
+        );
+        for width in widths() {
+            assert_eq!(
+                visited(&scratch.0, paths.clone(), width),
+                (seen.clone(), report),
+                "a visit at {width:?} reaches the serial visit's sources"
             );
         }
     }

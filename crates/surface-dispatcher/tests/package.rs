@@ -293,6 +293,42 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 
+/// #3889: a package's root given walks each source once. The root, kept
+/// beside the sources for its entries outside them, lists the sources
+/// directory no second time, answers through it, and walks a source under
+/// it outside them once.
+#[test]
+fn a_package_root_walks_each_source_once_3889()
+{
+    let directory = scratch(Path::new("root-once"), &[
+        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/text/greet.gandr"),
+        Path::new("hello/tests/smoke.gandr"),
+    ]);
+    let (walked, _packages) = packaged(Vec::from([directory.join("hello")]), &directory)
+        .expect("the root stands in a package");
+    let mut reached = Vec::new();
+    let ControlFlow::Continue(_report) =
+        Walk::new(walked.iter().map(|path| directory.join(path)).collect()).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let (Step::Source { path, .. } | Step::Fault { path, .. }) = step;
+                reached.push(path.strip_prefix(&directory).unwrap_or(path).to_path_buf());
+                ControlFlow::Continue(())
+            },
+        );
+    assert_eq!(
+        reached,
+        Vec::from([
+            PathBuf::from("hello/src/lib.gandr"),
+            PathBuf::from("hello/src/text/greet.gandr"),
+            PathBuf::from("hello/tests/smoke.gandr"),
+        ]),
+        "each source once, the sources first, and the root faults nowhere"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
 /// #2687: a workspace is found from any directory below it, names its
 /// members by its `members` list in order, and a verb given no path in it
 /// outside every package, or given its directory, walks its source and each
