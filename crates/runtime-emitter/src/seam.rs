@@ -353,6 +353,34 @@ impl<'run> HostValues<'run>
     {
         crate::world::cross(from, value, self.store)
     }
+
+    /// Cross the value the store binds at `value` into `to`, at addresses
+    /// fresh there, through the process's chunk store: a spawned writer's
+    /// thunk, moved into the writer's own store.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::cross_from`]: a value that does not cross is named, and `to`
+    /// gains nothing.
+    pub(crate) fn cross_to(
+        &self,
+        value: HeapValueId,
+        to: &mut Store,
+    ) -> Result<HeapValueId, CrossingRefusal>
+    {
+        crate::world::cross(self.store, value, to)
+    }
+
+    /// The caller's store, for a run nested in the host's reply.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn store(&mut self) -> &mut Store
+    {
+        self.store
+    }
 }
 
 /// A host's decision with its abort result kept by the adapter: what the

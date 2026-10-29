@@ -192,12 +192,7 @@ pub mod world;
 pub use gandr_runtime_stencils::Fuel;
 pub use gandr_runtime_stencils::Status;
 
-pub use crate::cut::CELL;
-pub use crate::cut::Forked;
-pub use crate::cut::READ;
-pub use crate::cut::Reader;
-pub use crate::cut::Writer;
-pub use crate::cut::evaluate_cut_on;
+pub use crate::cut::evaluate_scheduled_on;
 pub use crate::function::Function;
 pub use crate::function::Position;
 pub use crate::fuse::Dispatches;

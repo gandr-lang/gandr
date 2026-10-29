@@ -773,11 +773,7 @@ pub fn evaluate_closed_on(
     (fuel, inputs): (Fuel, RunInputs<'_, '_>),
 ) -> Result<Outcome, Declined>
 {
-    let lowered = lower_suspended(arena, definitions, body)?;
-    let captured: Vec<HeapValueId> = inputs.store.bound_values(environment).collect();
-    if captured.len() != lowered.captures.len() {
-        return Err(Declined::Environment);
-    }
+    let (lowered, captured) = closed(arena, definitions, (body, environment), inputs.store)?;
     on_tier(
         tier,
         &lowered,
@@ -786,6 +782,63 @@ pub fn evaluate_closed_on(
         inputs.closed_over(&captured),
     )?
     .hostless()
+}
+
+/// As [`evaluate_closed_on`], an operation no handler of the run claims
+/// offered to `host`: a writer's run, which answers its own spawns and reads.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`evaluate_closed_on`] and [`evaluate_on_with_host`].
+pub fn evaluate_closed_on_with_host<Host>(
+    tier: Tier,
+    (arena, definitions): (&CommandArena, &Definitions),
+    (body, environment): (CommandId, Environment),
+    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    host: &mut Host,
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
+    let (lowered, captured) = closed(arena, definitions, (body, environment), inputs.store)?;
+    let mut adapter = Adapter {
+        host,
+        aborted: None,
+    };
+    let ran = on_tier(
+        tier,
+        &lowered,
+        (arena, definitions),
+        fuel,
+        inputs.closed_over(&captured).offered(&mut adapter),
+    )?;
+    hosted(ran, adapter)
+}
+
+/// `body` lowered as a thunk's body, beside the values `environment` binds in
+/// `store`, one per capture.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The lowering's refusal, and [`Declined::Environment`] for an environment
+/// binding other than `body`'s captures.
+fn closed(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    (body, environment): (CommandId, Environment),
+    store: &Store,
+) -> Result<(Lowered, Vec<HeapValueId>), Declined>
+{
+    let lowered = lower_suspended(arena, definitions, body)?;
+    let captured: Vec<HeapValueId> = store.bound_values(environment).collect();
+    if captured.len() != lowered.captures.len() {
+        return Err(Declined::Environment);
+    }
+    Ok((lowered, captured))
 }
 
 /// As [`evaluate`], an operation no handler of the run claims offered to

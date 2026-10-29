@@ -14,7 +14,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 ## Synopsis
 
-**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `gandr-runtime-emitter` runs a command, natively or on the portable executor, and answers in this crate's terms: `Outcome` and `Stuck` say how a run ended, `Definitions` hold the constants it unfolds, and `Store` holds what it moved out of its regions, which `read_back_terminal` reads back as a core term.
+**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `gandr-runtime-emitter` runs a command and answers in this crate's terms: `Outcome` and `Stuck` say how a run ended, `Definitions` hold the constants it unfolds, and `Store` holds what it moved out of its regions, which `read_back_terminal` reads back as a core term.
 
 **Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit as a cut whose two sides say what is sent where. The L machine's transitions step that structure directly, cell rules reify into it, and effect handlers walk its frames without inspecting opaque host closures.
 
@@ -28,7 +28,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
 - `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack held innermost frame first with each bind frame closed over its environment, and the full-family refusal.
 - `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first.
-- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. A writer the caller names in `Writers` is focused apart from its binder, which carries an `Independence` mark (`MarkRefusal`). `src/focus.rs` states how each former focuses. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
+- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. A writer the caller names in `Writers` is focused apart from its binder, which carries an `Independence` mark (`MarkRefusal`). `spawn_independent` (`ScheduleRefusal`) spawns each marked writer and reads it before its binder's first use. `src/focus.rs` states how each former focuses. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer, whose annotations the command arena owns.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures — no thunk, recursive thunk, copattern object, `μ` a negative cut binds by name, or fold cell branch names a covariable outside its own binders — and the free variables and covariables of a command read off the support minting stored at its root.
@@ -121,11 +121,12 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Abstract closures, their conversion and their β | [`closure`](src/closure.rs) |
 | Readback | [`readback`](src/readback.rs) |
 | The store a run's answer moves into, and the LAM it is | [`store`](src/store.rs) |
+| Spawning marked writers | [`spawn`](src/spawn.rs) |
 | How a run ended | [`outcome`](src/outcome.rs) |
 | The bridge from cells and its polarity | [`bridge`](src/bridge.rs) |
 | The differential against normalisation by evaluation, references | [`src/lib.rs`](src/lib.rs) |
 
-Running a command — marks, fixpoints, effects, delimited control and temporary access — is `gandr-runtime-emitter`'s, whose `src/lower.rs` states the linear form and `src/host.rs` the control.
+Running a command is `gandr-runtime-emitter`'s: `src/lower.rs` states the linear form and `src/host.rs` the control.
 
 ## References
 
