@@ -815,6 +815,35 @@ fn a_parameterless_recursive_tail_binds_its_own_name_1499()
 }
 
 #[test]
+fn a_recursion_under_an_instance_row_binds_its_own_name_3699()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}theory Tick {{ sort C : Type; oper tick : (k : C) --> C; }}\n\
+         def rec quiet(h : Nat) -> [t : Tick] Integer {{ case h {{ Zero => pure 0, Succ(p) => quiet[<](p) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("quiet"));
+    assert_eq!(
+        outside,
+        ParameterAt(0),
+        "the scrutinised first parameter leaves none outside the fixpoint"
+    );
+    assert!(
+        matches!(
+            arena.computation(fixpoint),
+            Some(&Computation::Fixpoint {
+                evidence: FixpointEvidence::StructuralDescent,
+                ..
+            })
+        ),
+        "`quiet` closes a structural fixpoint over its first parameter: {:?}",
+        arena.computation(fixpoint)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
 fn a_definition_descends_on_the_parameter_its_cases_scrutinise()
 {
     let mut arena = CoreArena::new();

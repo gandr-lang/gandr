@@ -2312,6 +2312,21 @@ struct Function
     receiver: Maybe<method::HeldReceiver, method::unheld::Absent>,
 }
 
+/// A recursive tail's own name, from the reading of its body to the frame
+/// that binds it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct OwnName
+{
+    /// The name's tile, the tail's staging and the parameter store's length
+    /// before the tail's first parameter, until the name binds.
+    pending: Option<(Placed, native::Staging, usize)>,
+    /// The frame binding the name, once it binds.
+    bound: Maybe<ScopeId, recursion::Absent>,
+}
+
 /// The continuation type's head, resolved after every binder and earlier
 /// declaration at two arguments.
 const STACK: &str = "Stack";
@@ -9906,12 +9921,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let receiver = self.receiver_mode(site);
         self.stray_modes(&cursor, receiver)?;
         let start = self.parameters.len();
-        let mut frame = self.merged_parameters(site, function, &mut cursor, Frame::Outermost)?;
-        let mut recursion = Maybe::Absent(recursion::Absent::Plain);
         // The mode variable a deduced receiver is written at, `self : m T`.
         let mut deduced: Option<SurfaceName<'source>> = None;
         // A recursive tail stages the parameter its body's matches take
-        // apart, read off the syntax ahead before anything binds.
+        // apart, read off the syntax ahead before anything binds, a merged
+        // telescope's parameters among it.
         let staged = match (recursive, named) {
             (Maybe::Present(_), Maybe::Present(own)) => {
                 let mut ahead = cursor.clone();
@@ -9941,6 +9955,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             _ => None,
         };
+        let mut own = OwnName {
+            pending: match (named, staged) {
+                (Maybe::Present(named), Some(staging)) => Some((named, staging, start)),
+                _ => None,
+            },
+            bound: Maybe::Absent(recursion::Absent::Plain),
+        };
+        let mut frame =
+            self.merged_parameters(site, function, &mut cursor, Frame::Outermost, &mut own)?;
         loop {
             let binder = match cursor.peek() {
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
@@ -9975,17 +9998,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let name = self.name_at(binder);
             self.note_binder(binder, name)?;
-            if let (Maybe::Present(own), Some(staging)) = (named, staged)
-                && self.parameters.len().saturating_sub(start) == staging.kept.0
-            {
-                let uniform = Stretch {
-                    start,
-                    end: self.parameters.len(),
-                };
-                let bound = self.bind_own(site, own, frame, uniform, staging.staged);
-                recursion = Maybe::Present(bound);
-                frame = Frame::Inner(bound);
-            }
+            frame = self.bind_kept(site, &mut own, frame);
             let written = Maybe::Present(binder.span);
             let bound = match declared {
                 Maybe::Present(declared) => self.scope.extend_typed(frame, name, declared, written),
@@ -10004,19 +10017,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
             }
         }
-        // A tail of no parameter binds its own name after its empty list: the
-        // loop above met no parameter to bind it before.
-        if let (Maybe::Absent(_), Maybe::Present(own), Some(staging)) = (recursion, named, staged)
-            && self.parameters.len().saturating_sub(start) == staging.kept.0
-        {
-            let uniform = Stretch {
-                start,
-                end: self.parameters.len(),
-            };
-            let bound = self.bind_own(site, own, frame, uniform, staging.staged);
-            recursion = Maybe::Present(bound);
-            frame = Frame::Inner(bound);
-        }
+        // A tail that keeps every parameter binds its own name after its
+        // list: the loop above met no parameter to bind it before.
+        frame = self.bind_kept(site, &mut own, frame);
+        let recursion = own.bound;
         let parameters = Stretch {
             start,
             end: self.parameters.len(),
@@ -10146,6 +10150,53 @@ impl<'run, 'source> Lowerer<'run, 'source>
         });
 
         bound
+    }
+
+    /// Bind a recursive tail's own name over `frame` once the parameter store
+    /// holds exactly the parameters every recursive call keeps.
+    ///
+    /// # Specification
+    /// - requires: `own` is the tail's own name, read before its parameters
+    ///   bind; `site` is the declaration form the tail writes.
+    /// - ensures: when `own` is pending and the store holds its kept count of
+    ///   parameters past its start, the name binds over `frame`
+    ///   ([`Self::bind_own`]), `own` holds the binding and its frame is
+    ///   returned; otherwise nothing changes and `frame` is returned.
+    /// - provides: the one check both parameter lists — the written one and a
+    ///   merged telescope's — read the own name's place by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::function`]; a tail under a row that names
+    ///   an instance binds its own name before its first parameter.
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_parameterless_recursive_tail_binds_its_own_name_1499`
+    /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
+    #[spec(ensures: |ret| own.pending.is_none() || ret == frame)]
+    fn bind_kept(
+        &mut self,
+        site: Site,
+        own: &mut OwnName,
+        frame: Frame,
+    ) -> Frame
+    {
+        let Some((named, staging, start)) = own.pending
+        else {
+            return frame;
+        };
+        if self.parameters.len().saturating_sub(start) != staging.kept.0 {
+            return frame;
+        }
+        let uniform = Stretch {
+            start,
+            end: self.parameters.len(),
+        };
+        let bound = self.bind_own(site, named, frame, uniform, staging.staged);
+        own.pending = None;
+        own.bound = Maybe::Present(bound);
+
+        Frame::Inner(bound)
     }
 
     /// Read a block, `{ s… c }`, whose first statement reads under `frame`.
@@ -11050,10 +11101,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let head = site.one(cursor.operands())?;
         let start = self.operands.len();
         arguments(site, &mut cursor, &mut self.operands)?;
-        let written = Stretch {
-            start,
-            end: self.operands.len(),
-        };
         let descends = self.tree.node(head.node).is_some_and(|node| {
             matches!(
                 shape_of(self.pbg, node),
@@ -11063,6 +11110,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             )
         });
+        // A descent omits its function's instances, as any call may.
+        if descends {
+            let omitted = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            self.omitted_instances(site, frame, head, omitted)?;
+        }
+        let written = Stretch {
+            start,
+            end: self.operands.len(),
+        };
         let applied = if descends {
             let _first = self.descents.insert(head.node, native::Descent {
                 call: site,
@@ -11087,6 +11146,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.parameters_classify(site, frame, head, written)?;
         self.read(head.node, Reading::Head(frame));
         for position in written.start .. written.end {
+            if self.instanced.contains_key(&position) {
+                continue;
+            }
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
             }

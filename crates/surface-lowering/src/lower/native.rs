@@ -12694,6 +12694,89 @@ impl<'source> Lowerer<'_, 'source>
         ))
     }
 
+    /// Pass the instances a recursive call headed by the instantiation `head`
+    /// omits: each label of its function's result row, after the arguments
+    /// `written`, as the one instance of its interface in scope.
+    ///
+    /// # Specification
+    /// - requires: `head` is an instantiation form read under `frame`;
+    ///   `written` is the call's arguments, the last the operand store holds.
+    /// - ensures: when the head names the recursive function `site` stands in,
+    ///   and `written` holds one argument per explicit parameter of its merged
+    ///   telescope, one operand per instance entry is pushed after them, in
+    ///   order, each resolved as a call's omitted instance
+    ///   ([`Self::resolved_instance`]); otherwise nothing changes, and the
+    ///   claim's arity check reads the call ([`Self::uniform_descent`]).
+    /// - fails: [`Self::resolved_instance`]'s refusals; the head's, as
+    ///   [`Self::instantiated_recursion`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a descent under a row that labels a theory's instance
+    ///   passes the function's own instance.
+    /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
+    #[spec(
+        captures: before = self.operands.len(),
+        ensures: |ret| ret.is_err() || self.operands.len() >= before,
+    )]
+    pub(super) fn omitted_instances(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+        written: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(binder) = self.instantiated_recursion(frame, head)?
+        else {
+            return Ok(());
+        };
+        let Some(named) = self
+            .recursions
+            .get(&binder)
+            .map(|recursion| recursion.named)
+        else {
+            return Ok(());
+        };
+        let Maybe::Present(owner) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(());
+        };
+        let Some(function) = self
+            .collected
+            .slots
+            .get(usize::from(owner))
+            .filter(|slot| slot.named.node == named)
+            .map(|slot| slot.name)
+        else {
+            return Ok(());
+        };
+        let Some(Ok(entries)) = self.collected.plicities.get(&owner).cloned()
+        else {
+            return Ok(());
+        };
+        let explicit = entries
+            .iter()
+            .filter(|entry| entry.plicity == crate::module::Plicity::Explicit)
+            .count();
+        if written.end.saturating_sub(written.start) != explicit {
+            return Ok(());
+        }
+        for entry in entries
+            .into_iter()
+            .filter(|entry| entry.plicity == crate::module::Plicity::Instance)
+        {
+            let index = self.resolved_instance(site, frame, function, entry)?;
+            let _first = self.instanced.insert(self.operands.len(), index);
+            self.operands.push(site.at.node);
+        }
+
+        Ok(())
+    }
+
     /// The frame binding the recursive function's own name the instantiation
     /// `head`, read under `frame`, names.
     ///
