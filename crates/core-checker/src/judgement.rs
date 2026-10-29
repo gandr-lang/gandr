@@ -1815,10 +1815,14 @@ enum Frame
     /// then checks against the motive at the left endpoint.
     ElementTransportMotive
     {
+        /// The transport.
+        at: ComputationId,
         /// The motive, under one binder.
         motive: ValueTypeId,
         /// The transported operand.
         value: ValueId,
+        /// The path's carrier, which a stage crosses only as a set.
+        carrier: ValueTypeId,
         /// The path's left endpoint.
         left: ValueId,
         /// The path's right endpoint.
@@ -6276,7 +6280,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Lambda(body) => {
                 let (domain, codomain) = self.arrow_expected(term, expected)?;
                 self.context.binders().open(Zone::Intuitionistic, domain);
-                self.context.open_lambda(term);
+                self.context.open_copy(term);
                 self.wait(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
                     term: body,
@@ -8125,9 +8129,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   application whose head opens fewer static Pis than it has arguments;
     ///   [`CheckRefusal::FamilyArgumentClassifier`] for an argument whose type
     ///   does not cross to its domain; [`CheckRefusal::StaticLambdaArgument`]
-    ///   for an argument at a dynamic application that normalizes away; the
-    ///   bridges' refusals; [`CheckRefusal::MachineInvariant`] when `produced`
-    ///   is not the kind the frame awaits.
+    ///   for an argument at a dynamic application that normalizes away;
+    ///   [`CheckRefusal::StageNotCarried`] for a transport of a staged variable
+    ///   along a path whose carrier is not a set; the bridges' refusals;
+    ///   [`CheckRefusal::MachineInvariant`] when `produced` is not the kind the
+    ///   frame awaits.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -8782,8 +8788,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let motive = crate::flow::levelled(self.context, at, motive, carrier)?;
                 self.context.binders().open(Zone::Intuitionistic, carrier);
                 self.wait(Frame::ElementTransportMotive {
+                    at,
                     motive,
                     value,
+                    carrier,
                     left,
                     right,
                 });
@@ -8792,8 +8800,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             (
                 Frame::ElementTransportMotive {
+                    at,
                     motive,
                     value,
+                    carrier,
                     left,
                     right,
                 },
@@ -8802,7 +8812,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let arena = self.context.arena_mut();
                 let source = instantiate_value_type(arena, motive, left);
                 let target = instantiate_value_type(arena, motive, right);
-                let result = arena.comp_type_returner(target);
+                let target =
+                    crate::recursion::carried_stage(self.context, at, value, (carrier, target))?;
+                let result = self.context.arena_mut().comp_type_returner(target);
                 self.wait(Frame::TransportOperand { result });
                 Ok(Step::Descend(Goal::Value {
                     term: value,
@@ -9510,6 +9522,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                 };
                 self.context.binders().open(Zone::Intuitionistic, result);
+                self.context.open_copy(at);
                 self.wait(Frame::BindBody { at, bound: read });
                 Ok(Step::Descend(Goal::Computation {
                     term: body,
@@ -9709,6 +9722,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::CrossBlockReference { .. }
                     | CheckRefusal::StageNotBelow { .. }
                     | CheckRefusal::StagesDisagree { .. }
+                    | CheckRefusal::StageNotCarried { .. }
                     | CheckRefusal::SessionMismatch { .. }
                     | CheckRefusal::Linearity { .. }
                     | CheckRefusal::UnenclosedRun { .. }

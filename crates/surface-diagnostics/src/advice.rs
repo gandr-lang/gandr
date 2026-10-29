@@ -541,6 +541,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StagesDisagree { .. }
+        | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Access { .. }

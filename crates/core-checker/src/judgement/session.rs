@@ -1310,6 +1310,7 @@ impl Machine<'_, '_>
             | CheckRefusal::CrossBlockReference { .. }
             | CheckRefusal::StageNotBelow { .. }
             | CheckRefusal::StagesDisagree { .. }
+            | CheckRefusal::StageNotCarried { .. }
             | CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { .. }
             | CheckRefusal::UnenclosedRun { .. }

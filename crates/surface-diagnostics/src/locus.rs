@@ -821,7 +821,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
+        CheckRefusal::StagesDisagree { .. } | CheckRefusal::StageNotCarried { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
         CheckRefusal::HandlerUnlawful { .. } | CheckRefusal::BridgeAtSealedType { .. } | CheckRefusal::OutsideFold { .. } |
         CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::FootprintsOverlap { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
@@ -989,6 +989,7 @@ fn checked(
         | CheckRefusal::HandlerCoverage { at }
         | CheckRefusal::HandlerUnlawful { at, .. }
         | CheckRefusal::ShiftWithoutReset { at }
+        | CheckRefusal::StageNotCarried { at }
         | CheckRefusal::NotSynthesisable {
             form:
                 CheckingForm::Handle(at)
@@ -1298,6 +1299,7 @@ impl fmt::Display for Checked
             | CheckRefusal::HandlerCoverage { .. } => f.write_str("handler clauses must cover their interface exactly once"),
             | CheckRefusal::HandlerUnlawful { rule, .. } => write!(f, "the handler is not shown to satisfy law {} of its theory", usize::from(rule)),
             | CheckRefusal::ShiftWithoutReset { .. } => f.write_str("shift requires an enclosing reset answer type"),
+            | CheckRefusal::StageNotCarried { .. } => f.write_str("a transport along a path whose carrier is not a set carries no stage"),
             | CheckRefusal::DependentStack { .. } => f.write_str("the stack frame's result type mentions its discharged value binder"),
             | CheckRefusal::EffectSignatureConflict { .. } => f.write_str("two accumulated effect rows disagree on the operation types of a shared interface"),
             | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
@@ -3481,6 +3483,7 @@ mod tests
                         | CheckRefusal::HandlerCoverage { .. }
                         | CheckRefusal::HandlerUnlawful { .. }
                         | CheckRefusal::ShiftWithoutReset { .. }
+                        | CheckRefusal::StageNotCarried { .. }
                         | CheckRefusal::CapabilityOutsideAuthority { .. }
                         | CheckRefusal::FootprintsOverlap { .. }
                         | CheckRefusal::NonExhaustiveDataCase(_)

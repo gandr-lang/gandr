@@ -617,7 +617,7 @@ fn parallel_in_a_set(
     else {
         return Related::Apart;
     };
-    if sethood(arena, (entries, unfoldings), carrier) == Sethood::Unread
+    if sethood(arena, (entries, unfoldings.presentations()), carrier) == Sethood::Unread
         || crate::conv::convert_value_type(arena, carrier, other).is_err()
     {
         return Related::Apart;
@@ -643,7 +643,7 @@ fn parallel_in_a_set(
 
 /// Whether a type is read as a set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Sethood
+pub(super) enum Sethood
 {
     /// A parameterless data type with no cells and no loop at it, whose
     /// fields are such types.
@@ -676,13 +676,12 @@ enum Sethood
 ///   circle is not.
 /// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(arena.value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
-fn sethood(
+pub(super) fn sethood(
     arena: &TermArena,
-    (entries, unfoldings): (&Entries, &Unfoldings),
+    (entries, presentations): (&Entries, &crate::presented::Presentations),
     carrier: ValueTypeId,
 ) -> Sethood
 {
-    let presentations = unfoldings.presentations();
     let mut expanded = BTreeSet::new();
     let mut pending = Vec::from([carrier]);
     while let Some(next) = pending.pop() {

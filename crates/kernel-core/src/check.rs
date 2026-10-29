@@ -2842,6 +2842,60 @@ fn lookup(
     ))
 }
 
+/// The type a transport returns at: `target`, at the stage of the variable
+/// `value` when `context` binds it at a stage.
+///
+/// A transport along a path in a set runs as the identity, so the value keeps
+/// its stage. A transport along any other path may run an equivalence that
+/// grows the value, so it carries no stage ([`KernelError::StageNotCarried`]
+/// states the counterexample).
+///
+/// # Specification
+/// - requires: `carrier` is the path's carrier and `target` the motive at the
+///   path's target, both read in `context`.
+/// - ensures: `target` at the variable's stage when `value` is a variable that
+///   `context` binds at a stage and `carrier` is a set as [`respect::sethood`]
+///   reads it; `target` itself when `value` is no variable at a stage.
+/// - fails: [`KernelError::StageNotCarried`] when `value` is a variable at a
+///   stage and `carrier` is not a set.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field moved along a path in the naturals keeps its
+///   stage, and its recursive call is admitted; along the circle's loop the
+///   transport is refused by name.
+/// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| ty == target || matches!(arena.value_type(ty), Some(&ValueType::Staged { .. }))))]
+fn carried_stage(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    context: &[ValueTypeId],
+    (value, carrier, target): (ValueId, ValueTypeId, ValueTypeId),
+) -> Result<ValueTypeId, KernelError>
+{
+    let Some(&Value::Variable(index)) = arena.value(value)
+    else {
+        return Ok(target);
+    };
+    let Maybe::Present(bound) = slot(context, index)
+    else {
+        return Ok(target);
+    };
+    let Some(&ValueType::Staged { stage, .. }) = arena.value_type(bound)
+    else {
+        return Ok(target);
+    };
+    if respect::sethood(arena, (judgement.entries, judgement.presentations), carrier)
+        != respect::Sethood::Set
+    {
+        return Err(KernelError::StageNotCarried);
+    }
+    Ok(arena.value_type_staged(target, stage))
+}
+
 /// `subject`, written outside one binder, read under it.
 ///
 /// # Specification
@@ -5233,7 +5287,9 @@ where
                 // source endpoint, and it returns at the motive instantiated
                 // at the target: instantiation is the rewrite machine's
                 // substitution, so the law holds of every motive. A word
-                // written as the path is followed as the path it is.
+                // written as the path is followed as the path it is. A
+                // variable at a stage keeps its stage across a set
+                // ([`carried_stage`]).
                 Frame::ElementTransport(transport) => {
                     let path_type = produced.value_type()?;
                     let Some(&Computation::PathTransport { motive, value, .. }) =
@@ -5260,6 +5316,8 @@ where
                     let (table, rewrites) = session.rewrite_parts();
                     let source = substitute_value_type(arena, table, rewrites, motive, left);
                     let target = substitute_value_type(arena, table, rewrites, motive, right);
+                    let target =
+                        carried_stage(arena, judgement, &context, (value, domain, target))?;
                     frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
                     goal = Goal::CheckValue(value, source);
                     continue 'expand;

@@ -457,7 +457,7 @@ fn parallel_in_a_set(
 
 /// Whether a type is read as a set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Sethood
+pub enum Sethood
 {
     /// A parameterless data type with no cells and no loop at it, whose
     /// fields are such types.
@@ -490,7 +490,7 @@ enum Sethood
 ///   into the integers' paths is admitted and one into the circle's refused.
 /// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(context.arena().value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
-fn sethood(
+pub fn sethood(
     context: &mut CheckingContext<'_>,
     carrier: ValueTypeId,
 ) -> Sethood

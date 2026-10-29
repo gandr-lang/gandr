@@ -1201,6 +1201,10 @@ fn checked(
             "the call's arguments stand at stages that no single stage of the callee's stage \
              parameter fits",
         ),
+        CheckRefusal::StageNotCarried { .. } => f.write_str(
+            "the transport moves a value of the recursion along a path whose type is not a set, \
+             so the value loses its stage",
+        ),
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { expected, observed } => write!(
                 f,
@@ -2062,6 +2066,7 @@ pub mod tests
                 at: value,
                 binder: gandr_kernel_term::StageBinder::from(0_usize),
             },
+            CheckRefusal::StageNotCarried { at: computation },
             CheckRefusal::EndpointMismatch {
                 at: value,
                 left: value,

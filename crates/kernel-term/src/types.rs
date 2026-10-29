@@ -435,9 +435,10 @@ pub enum ValueType
     Abstract(ConstantIndex),
     /// `A^s`: the values of `base` at the stage `s` of a recursion. Admission
     /// alone mints it — at a fixpoint's staged parameter, its self-reference's
-    /// domain and the recursive fields of a case on a staged value — so it is
-    /// no wire former: the decoder never produces it, formation refuses it in
-    /// a presented type, and the encoder writes its base. A stage refines the
+    /// domain, the recursive fields of a case on a staged value and the result
+    /// of a transport of a staged variable along a path in a set — so it is no
+    /// wire former: the decoder never produces it, formation refuses it in a
+    /// presented type, and the encoder writes its base. A stage refines the
     /// type's values and never its identity: `A^s` is assignable where `A` is
     /// wanted, and every other comparison takes it for itself. The base is
     /// never itself staged.

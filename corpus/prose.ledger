@@ -1282,6 +1282,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/SessionNot
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ShadowedBuiltin.txt Procedure d0178ac867679784
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ShapeMismatch.txt Procedure ba4f1574913f02c6
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/SortMismatch.txt Procedure 784271ba025c47f9
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/StageNotCarried.txt Procedure 416f6bc479cdbb7d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/StagesDisagree.txt Procedure 1554db5ca06905eb
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/StaticClassifierExpected.txt Procedure d3e653e5e32ebe66
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/StaticLambdaArgument.txt Procedure b307572cbfb450ab

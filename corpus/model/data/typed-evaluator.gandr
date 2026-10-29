@@ -1,18 +1,16 @@
-// A typed evaluator as it should read, and what refuses it.
+// A typed evaluator indexes each expression by the object type of its value.
 //
-// Each expression's index is the object type it evaluates to, and its value is
-// the meaning of that index. A case on an expression solves each arm's index
-// equation, so an arm's goal reads the arm's own index. A binder of the
-// recursion's stage is not generalised, so a branch of that stage keeps the
-// scrutinee's index.
+// The evaluator then returns the meaning of that type. No check at run time
+// reads a tag. The type of each arm states its result.
 //
-// The checker refuses each declaration below that states a refusal, by the
-// name its attribute states. Each turns to `checks` as its rung lands, and the
-// source then moves to the model root.
+// A case on an expression solves each arm's index equation. An arm's goal then
+// reads the arm's own index. A branch of the recursion's stage moves along that
+// equation by its own transport. The object types form a set. So the transport
+// keeps the branch's stage.
 //
-// - see: #3631 — not implemented: a transport's motive that names a
-//   recursion's stage, for `evalInt`
 // - see: #3483 — refinement by solution, by which `eval` checks
+// - see: #3631 — a staged branch keeps its stage across its index equation, by
+//   which `evalInt` checks
 // - see: #3481 — the spike that wrote these programs
 
 /// The object language's types.
@@ -54,9 +52,8 @@ def rec eval(t : Ty, e : Expr(t)) -> meaning(t) {
   }
 }
 
-/// The evaluator at integers alone. Its `If` branch `y` stands in the stage
-/// below `e`, so it stays at `u` where the recursive call reads `TInt`.
-@[ refuses("TypeMismatch") ]
+/// The evaluator at integers alone. Its `If` branch `y` keeps its stage below
+/// `e` across the path from `u` to `TInt`.
 def rec evalInt(e : Expr(TInt)) -> Integer {
   case e {
     Lit(i) => i,
@@ -64,3 +61,8 @@ def rec evalInt(e : Expr(TInt)) -> Integer {
     If(u, _, y, _) => evalInt[<](y)
   }
 }
+
+/// The integer evaluator at a choice between a sum and a literal. It runs the
+/// sum.
+@[ runs("3") ]
+def evalSample() -> Integer { evalInt(If(TInt, BoolLit(true), Add(Lit(1), Lit(2)), Lit(0))) }

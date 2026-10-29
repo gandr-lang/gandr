@@ -2964,6 +2964,304 @@ fn a_refined_arm_types_its_written_terms_in_their_own_context_3483()
 }
 
 #[test]
+fn a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631()
+{
+    let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let wrapped = ConstantIndex::from(2_usize);
+    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let no = arena.value_constructor(code, ConstructorTag::from(1_usize), vec![]);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    // `E : T -> Type { Leaf : E(Yes); Wrap : (t : T, e : E(t)) --> E(t); Off
+    // : E(No) }`: `Wrap` states its index as its first field.
+    let under_one = variable(&mut arena, 0);
+    let nested = arena.value_type_data(wrapped, vec![under_one]);
+    let under_both = variable(&mut arena, 1);
+    let family = Declaration::data(
+        wrapped,
+        DataSignature::new(vec![], vec![vec![], vec![code, nested], vec![]], kind)
+            .indexed(vec![code], vec![vec![yes], vec![under_both], vec![no]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    let fields = |counts: [usize; 3]| counts.map(gandr_kernel_term::FieldCount::from).to_vec();
+    let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let answer = arena.comp_type_returner(unit_type);
+    let returned = arena.computation_return(unit);
+    let bare = arena.computation_lambda(returned);
+    let two_fields = arena.computation_lambda(bare);
+    let two_fields = arena.computation_lambda(two_fields);
+    // `fix f. λe. case e { Leaf ⇒ (); Wrap(t, e′) ⇒ f(e′); Off ⇒ () }` at
+    // `E(Yes) → F Unit`: the stated side. The call reads `e′ : E(t)` at
+    // `E(Yes)`, and it descends only if `e′` keeps its stage across `t = Yes`.
+    let at_yes = arena.value_type_data(wrapped, vec![yes]);
+    // Under `Wrap`'s arm: the equation 0, `e′` 1, `t` 2, `e` 3, `f` 4.
+    let recursive = variable(&mut arena, 4);
+    let forced = arena.computation_force(recursive);
+    let field = variable(&mut arena, 1);
+    let called = arena.computation_application(forced, field);
+    let descending = arena.computation_lambda(called);
+    let descending = arena.computation_lambda(descending);
+    let descending = arena.computation_lambda(descending);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        answer,
+        (vec![bare, descending, bare], fields([0, 2, 0])),
+        one_equation,
+    );
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(
+        lambda,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let dropped = arena.value_thunk(fixpoint);
+    let dropped_type = arena.comp_type_arrow(at_yes, answer);
+    let dropped_type = arena.value_type_thunk(dropped_type);
+    // `fix g. λt. λw. λe. case e { Leaf ⇒ case w { Leaf ⇒ (); Wrap(u, w′) ⇒
+    // g(u)(w′)(w′); Off ⇒ absurd }; Wrap(..) ⇒ (); Off ⇒ () }` at `(t : T) →
+    // E(t) → E(t) → F Unit`, staged at `w`: the scrutinee side. The inner
+    // case prunes `Off` only at `w : E(Yes)`, and its call descends only if
+    // `w` keeps its stage across `Yes = t`.
+    let t_outer = variable(&mut arena, 0);
+    let at_t = arena.value_type_data(wrapped, vec![t_outer]);
+    let t_under = variable(&mut arena, 1);
+    let at_t_under = arena.value_type_data(wrapped, vec![t_under]);
+    let walked_type = arena.comp_type_pi(at_t_under, answer);
+    let walked_type = arena.comp_type_pi(at_t, walked_type);
+    let walked_type = arena.comp_type_pi(code, walked_type);
+    let walked_type = arena.value_type_thunk(walked_type);
+    // Under the inner `Wrap` arm: the equation 0, `w′` 1, `u` 2, the outer
+    // equation 3, `e` 4, `w` 5, `t` 6, `g` 7.
+    let recursive = variable(&mut arena, 7);
+    let forced = arena.computation_force(recursive);
+    let index = variable(&mut arena, 2);
+    let called = arena.computation_application(forced, index);
+    let field = variable(&mut arena, 1);
+    let called = arena.computation_application(called, field);
+    let called = arena.computation_application(called, field);
+    let inner_descending = arena.computation_lambda(called);
+    let inner_descending = arena.computation_lambda(inner_descending);
+    let inner_descending = arena.computation_lambda(inner_descending);
+    let equation = variable(&mut arena, 0);
+    let absurd = arena.computation_data_case(equation, answer, vec![], vec![]);
+    let pruned = arena.computation_lambda(absurd);
+    // Under the outer `Leaf` arm: the equation 0, `e` 1, `w` 2.
+    let staged = variable(&mut arena, 2);
+    let inner = arena.computation_data_case_with_equations(
+        staged,
+        answer,
+        (vec![bare, inner_descending, pruned], fields([0, 2, 0])),
+        one_equation,
+    );
+    let leaf = arena.computation_lambda(inner);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        answer,
+        (vec![leaf, two_fields, bare], fields([0, 2, 0])),
+        one_equation,
+    );
+    let walked = arena.computation_lambda(case);
+    let walked = arena.computation_lambda(walked);
+    let walked = arena.computation_lambda(walked);
+    let walked = arena.computation_fixpoint(walked, gandr_kernel_term::FixpointEvidence::Staged {
+        position: gandr_kernel_term::StagedPosition::from(1_usize),
+    });
+    let walked = arena.value_thunk(walked);
+    let (report, crossed) = run(&mut arena, &[
+        codes,
+        boxes,
+        family,
+        definition(ConstantIndex::from(3_usize), dropped_type, dropped),
+        definition(ConstantIndex::from(4_usize), walked_type, walked),
+    ]);
+    for (position, what) in [(3, "the stated side"), (4, "the scrutinee side")] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "a staged binder keeps its stage across {what}'s equation: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits the transport that carries the stage on {what}: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    assert!(crossed.audit().axioms().is_empty());
+}
+
+#[test]
+fn a_stage_is_carried_across_a_set_and_not_along_a_loop_3631()
+{
+    let mut arena = CoreArena::new();
+    let (mut declarations, circle) = one_loop(&mut arena);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let naturals = ConstantIndex::from(3_usize);
+    let nat = arena.value_type_data(naturals, vec![]);
+    declarations.push(Declaration::data(
+        naturals,
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
+        OriginToken::from(3_usize),
+    ));
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    // `fix f. λn. λq. case n { Z ⇒ return Z; S(m) ⇒ f(transport(N, q,
+    // m))(q) }` at `N → P → F N`, `P` a path in the naturals or the circle.
+    let answer = arena.comp_type_returner(nat);
+    let returned = arena.computation_return(zero);
+    // Under the field: `m` 0, `q` 1, `n` 2, `f` 3.
+    let q = variable(&mut arena, 1);
+    let m = variable(&mut arena, 0);
+    let moved = arena.computation_path_transport(nat, q, m);
+    // Past the moved field: `m′` 0, `q` 2, `f` 4.
+    let recursive = variable(&mut arena, 4);
+    let forced = arena.computation_force(recursive);
+    let field = variable(&mut arena, 0);
+    let called = arena.computation_application(forced, field);
+    let q = variable(&mut arena, 2);
+    let called = arena.computation_application(called, q);
+    let descending = arena.computation_bind(moved, called);
+    let descending = arena.computation_lambda(descending);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_data_case(
+        scrutinee,
+        answer,
+        vec![returned, descending],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let body = arena.computation_lambda(case);
+    let body = arena.computation_lambda(body);
+    let fixpoint =
+        arena.computation_fixpoint(body, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+    let value = arena.value_thunk(fixpoint);
+    let along_set = arena.value_type_path(nat, zero, zero);
+    let along_loop = arena.value_type_path(circle.carrier, circle.point, circle.point);
+    for (position, path) in [(4_usize, along_set), (5, along_loop)] {
+        let declared = arena.comp_type_arrow(path, answer);
+        let declared = arena.comp_type_arrow(nat, declared);
+        let declared = arena.value_type_thunk(declared);
+        declarations.push(definition(ConstantIndex::from(position), declared, value));
+    }
+    // `C : S -> Type { Leaf : C(Base); Wrap : (s : S, c : C(s)) --> C(s) }`
+    // and `fix g. λs. λw. λc. case c { Leaf ⇒ case w { Leaf ⇒ (); Wrap(s′, w′)
+    // ⇒ g(s′)(w′)(w′) }; Wrap(..) ⇒ () }` at `(s : S) → C(s) → C(s) → F Unit`,
+    // staged at `w`: the outer `Leaf` arm checks as written, so `w` stays
+    // rather than move along a loop from `s` to `Base`.
+    let circled = ConstantIndex::from(6_usize);
+    let under_one = variable(&mut arena, 0);
+    let nested = arena.value_type_data(circled, vec![under_one]);
+    let under_both = variable(&mut arena, 1);
+    declarations.push(Declaration::data(
+        circled,
+        DataSignature::new(vec![], vec![vec![], vec![circle.carrier, nested]], kind)
+            .indexed(vec![circle.carrier], vec![vec![circle.point], vec![
+                under_both,
+            ]])
+            .into(),
+        OriginToken::from(6_usize),
+    ));
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let finished = arena.comp_type_returner(unit_type);
+    let returned = arena.computation_return(unit);
+    let leaf = arena.computation_lambda(returned);
+    let two_fields = arena.computation_lambda(leaf);
+    let two_fields = arena.computation_lambda(two_fields);
+    // Under the inner `Wrap` arm: the equation 0, `w′` 1, `s′` 2, the outer
+    // equation 3, `c` 4, `w` 5, `s` 6, `g` 7.
+    let recursive = variable(&mut arena, 7);
+    let forced = arena.computation_force(recursive);
+    let index = variable(&mut arena, 2);
+    let called = arena.computation_application(forced, index);
+    let field = variable(&mut arena, 1);
+    let called = arena.computation_application(called, field);
+    let called = arena.computation_application(called, field);
+    let descending = arena.computation_lambda(called);
+    let descending = arena.computation_lambda(descending);
+    let descending = arena.computation_lambda(descending);
+    let wrap_fields = [0_usize, 2]
+        .map(gandr_kernel_term::FieldCount::from)
+        .to_vec();
+    let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
+    // Under the outer `Leaf` arm: the equation 0, `c` 1, `w` 2.
+    let staged = variable(&mut arena, 2);
+    let inner = arena.computation_data_case_with_equations(
+        staged,
+        finished,
+        (vec![leaf, descending], wrap_fields.clone()),
+        one_equation,
+    );
+    let outer_leaf = arena.computation_lambda(inner);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        finished,
+        (vec![outer_leaf, two_fields], wrap_fields),
+        one_equation,
+    );
+    let walked = arena.computation_lambda(case);
+    let walked = arena.computation_lambda(walked);
+    let walked = arena.computation_lambda(walked);
+    let walked = arena.computation_fixpoint(walked, gandr_kernel_term::FixpointEvidence::Staged {
+        position: gandr_kernel_term::StagedPosition::from(1_usize),
+    });
+    let walked = arena.value_thunk(walked);
+    let at_s = arena.value_type_data(circled, vec![under_one]);
+    let at_s_under = arena.value_type_data(circled, vec![under_both]);
+    let walked_type = arena.comp_type_pi(at_s_under, finished);
+    let walked_type = arena.comp_type_pi(at_s, walked_type);
+    let walked_type = arena.comp_type_pi(circle.carrier, walked_type);
+    let walked_type = arena.value_type_thunk(walked_type);
+    declarations.push(definition(
+        ConstantIndex::from(7_usize),
+        walked_type,
+        walked,
+    ));
+    let (report, crossed) = run(&mut arena, &declarations);
+    assert!(
+        matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+        "a field moved along a path in a set keeps its stage: {:?}",
+        report.judged()[4].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[4].outcome(), Outcome::Defined { .. }),
+        "the kernel carries the stage across the set: {:?}",
+        crossed.readmitted()[4].outcome()
+    );
+    assert!(
+        matches!(
+            report.judged()[5].verdict(),
+            Verdict::Refused(CheckRefusal::StageNotCarried { .. })
+        ),
+        "a field moved along a path in the circle carries no stage, by name: {:?}",
+        report.judged()[5].verdict()
+    );
+    assert!(
+        matches!(report.judged()[7].verdict(), Verdict::Checked { .. }),
+        "a staged field indexed over the circle stays, and its arm checks as written: {:?}",
+        report.judged()[7].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[7].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the arm as written: {:?}",
+        crossed.readmitted()[7].outcome()
+    );
+}
+
+#[test]
 fn empty_data_elimination_preserves_the_ambient_scope()
 {
     let mut arena = CoreArena::new();
