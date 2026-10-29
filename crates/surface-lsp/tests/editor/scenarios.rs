@@ -4,9 +4,9 @@
 //!
 //! The corpus scenarios and the random scripts are sweeps, in [`sweeps`]: each
 //! visits its stated sample under every pull-request profile and every source
-//! and every script under the `sweeps` profile; nightly, the erasure visits
-//! the night's slice of the corpus and the typing the night's part of sixteen
-//! of every source.
+//! and every script under the `sweeps` profile; nightly, the erasure and the
+//! typing each visit the night's part of every source, and the hover sweep
+//! the night's slice of the corpus.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -1080,7 +1080,7 @@ fn an_importer_erased_cold_and_warm_answers_alike_776()
             Typing::Assisted,
             Oracle::Keystroke,
         );
-        session.erase_lines(Stride(6));
+        session.erase_lines(Stride(6), Offset(0));
         let answers = session.answers().to_vec();
         session.closes_over_streams();
         answers
@@ -1095,6 +1095,64 @@ fn an_importer_erased_cold_and_warm_answers_alike_776()
         erased(),
         cold,
         "the warm erasure answers as the cold one did"
+    );
+}
+
+/// #3850: the nightly erasure's parts of a source, over all the nights of its
+/// cover, check every text the whole erasure checks. Each line of the source
+/// names an unbound variable, so each text the erasure leaves publishes as
+/// many diagnostics as it holds lines, and no two texts answer alike. Each
+/// night opens the source up to its part's end and erases line by line down
+/// to the part's start; together the nights publish every count the whole
+/// erasure publishes.
+#[test]
+fn the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850()
+{
+    let text = "def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\n\
+                def held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\n\
+                def held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n";
+    let counts = |answers: &[Value]| -> BTreeSet<usize> {
+        answers
+            .iter()
+            .map(|answer| answer["diagnostics"].as_array().map_or(0_usize, Vec::len))
+            .collect()
+    };
+    let mut whole = Session::open(
+        String::from("file:///strict/erased-whole.gandr"),
+        Text(text),
+        Typing::Assisted,
+        Oracle::Keystroke,
+    );
+    whole.erase_lines(Stride(1), Offset(0));
+    let wanted = counts(whole.answers());
+    whole.closes_over_streams();
+    assert_eq!(
+        wanted,
+        (0_usize ..= 9_usize).collect::<BTreeSet<_>>(),
+        "each text the whole erasure leaves answers by its own count"
+    );
+    let nights = gandr_workflow_sweep::Nights(4);
+    let mut covered = BTreeSet::new();
+    for night in 0_u64 .. nights.0 {
+        let part = gandr_workflow_sweep::Rotation::Night(gandr_workflow_sweep::Night(night))
+            .part(gandr_workflow_sweep::Text(text), nights);
+        let mut session = Session::open(
+            String::from("file:///strict/erased-part.gandr"),
+            Text(text.get(.. part.end.0).expect("a part ends on a line")),
+            Typing::Assisted,
+            Oracle::Keystroke,
+        );
+        session.erase_lines(Stride(1), Offset(part.start.0));
+        assert!(
+            session.buffer().text().0.is_empty(),
+            "night {night} erases its part's text"
+        );
+        covered.extend(counts(session.answers()));
+        session.closes_over_streams();
+    }
+    assert_eq!(
+        covered, wanted,
+        "the nights check every text the whole erasure checks"
     );
 }
 
@@ -1491,10 +1549,12 @@ mod sweeps
         size: SampleSize(24),
     };
 
-    /// The nights the nightly erasure takes to erase every source: a seventh
-    /// a night, the count the nightly's sweeps share (#3013). A sixteenth
-    /// erased for 30 s on the nightly runner (run 40602657172), and an eighth
-    /// for 60 s before it.
+    /// The nights the nightly erasure takes to erase every source: the
+    /// night's part of each, a seventh of its erasure (#3850). A rotation by
+    /// source left a night to the costliest source alone: the buddy
+    /// allocator's model erased for 141.7 s locally and timed out at 240 s on
+    /// the nightly runner (run 40858957539). A seventh of the corpus erased
+    /// for 80 to 90 s there the nights before.
     const ERASED_NIGHTS: Nights = Nights(7);
 
     /// The most keystrokes a sampled erasure spends on one source. Each
@@ -1782,20 +1842,28 @@ mod sweeps
         });
     }
 
+    /// Every source of the run erased line by line: whole, or under the
+    /// `nightly` profile opened up to the end of the night's part of
+    /// [`ERASED_NIGHTS`] and erased line by line down to its start, so every
+    /// text the erasure checks is checked once every [`ERASED_NIGHTS`] nights.
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let (_rotation, sources) =
-            visited(ERASED, Some(ERASED_CEILING), Nightly::Slice(ERASED_NIGHTS));
+        let (rotation, sources) = visited(ERASED, Some(ERASED_CEILING), Nightly::Part);
         let grammar = built_in().expect("the built-in grammar builds");
         each_in_parallel(&sources, |source| {
+            let part = rotation.part(gandr_workflow_sweep::Text(&source.text), ERASED_NIGHTS);
+            let opening = source
+                .text
+                .get(.. part.end.0)
+                .expect("a part ends on a line");
             let mut session = Session::open(
                 source.uri.clone(),
-                Text(&source.text),
+                Text(opening),
                 Typing::Assisted,
                 Oracle::Keystroke,
             );
-            session.erase_lines(erased_stride(&grammar, source));
+            session.erase_lines(erased_stride(&grammar, source), Offset(part.start.0));
             assert!(
                 session.buffer().text().0.is_empty(),
                 "the document is erased"

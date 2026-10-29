@@ -139,17 +139,19 @@ impl Session
         self.verify();
     }
 
-    /// Delete the text's last `stride` lines, one keystroke at a time, until
-    /// the text is empty.
+    /// Delete the text's last `stride` lines, one keystroke at a time, down to
+    /// its first `floor` bytes, then those in one keystroke.
     ///
     /// # Specification
-    /// - requires: nothing; a stride of zero deletes one line.
-    /// - ensures: the text is empty; each keystroke deleted the last `stride`
-    ///   lines, or every line left when fewer remain, with the newline before
-    ///   them.
+    /// - requires: nothing; a stride of zero deletes one line, and a floor at
+    ///   or past the text's end deletes the whole text in one keystroke.
+    /// - ensures: the text is empty; each keystroke but the last deleted the
+    ///   last `stride` lines with the newline before them, or every line left
+    ///   past `floor` when fewer remain; the last deleted what was left.
     /// - provides: the replay of a writer deleting a document line by line, or
     ///   a bounded sample of that replay: the texts it checks are the ones the
-    ///   line-by-line replay checks every `stride` keystrokes.
+    ///   line-by-line replay checks every `stride` keystrokes, those longer
+    ///   than `floor`, and `floor`'s own when it is a line start.
     /// - panics: a keystroke's check fails.
     ///
     /// # Adequacy
@@ -161,15 +163,21 @@ impl Session
     pub fn erase_lines(
         &mut self,
         stride: Stride,
+        floor: Offset,
     )
     {
         while !self.buffer().text().0.is_empty() {
             let text = self.buffer().text().0;
-            let body = text.strip_suffix('\n').unwrap_or(text);
-            let start = body
-                .rmatch_indices('\n')
-                .nth(stride.0.saturating_sub(1))
-                .map_or(0_usize, |(newline, _)| newline.saturating_add(1));
+            let start = if text.len() <= floor.0 {
+                0_usize
+            }
+            else {
+                let body = text.strip_suffix('\n').unwrap_or(text);
+                body.rmatch_indices('\n')
+                    .nth(stride.0.saturating_sub(1))
+                    .map_or(0_usize, |(newline, _)| newline.saturating_add(1))
+                    .max(floor.0)
+            };
             let end = text.len();
             self.replace(Offset(start), Offset(end), Text(""));
         }
