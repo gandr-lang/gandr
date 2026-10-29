@@ -24,11 +24,12 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 - `CommandArena`, `ProducerNode`, `ConsumerNode`, `CommandNode`, `PatternArm`, `CopatternArm`: the IL's three families, minted only over resolving children, refusing with `MintRefusal`.
 - `SequentWatermark` with `CommandArena::watermark` and `CommandArena::truncate_to`: the rollback a refused build takes.
+- `CommandArena::mark_independent` with `Independence` and `MarkRefusal`: the binders whose writers perform no operation, which a run may start before the binder's body.
 - `ConstructorTag` and `DestructorTag` with their declared `ProducerArity`, `ConsumerArity` and, for a destructor, the polarity it observes.
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
 - `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack held innermost frame first with each bind frame closed over its environment, and the full-family refusal.
 - `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first.
-- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, every covariable the innermost one, a code refused by name, a record focused as the head of its labels and a tuple or record projection as a selection of its field, a split focused as a case on its one tuple pattern, and a refused translation leaving the arena and the table at their marks. A datatype's constructors, its nominal match and the fixpoint focus. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
+- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` and each bind's writer in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, a code refused by name, and a refused translation leaving the arena and the table at their marks. How each former focuses is stated in `src/focus.rs`. `focus_definition` focuses a declaration's body: a computed value `⟨c⟩` as the `μ` that runs `c`, which a run unfolding the constant runs once.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer, whose annotations the command arena owns.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, second-class closures — no thunk, recursive thunk, copattern object, `μ` a negative cut binds by name, or fold cell branch names a covariable outside its own binders — and the free variables and covariables of a command read off the support minting stored at its root.
@@ -37,7 +38,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `ProducerNode::Closure`, `convert_step`, `convert`, `convert_all`, `beta` and `enter_all` with `ClosureRefusal`: abstract closures over an environment of values, converted one captured variable at a time and entered against a frame, directly or at the end of a bind chain.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices.
 - `Definitions`, `Definition`, `Outcome` and `Stuck`: the constants a run unfolds by position, transparent or opaque, and how a run ended — halted with a value, or stuck at the command or value it names.
-- `read_back_terminal` and `read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks, recursive thunks and functions closed over their captured environments, a literal stack frame by frame, a record with its labels, a datatype's constructor at the unknown value type, a suspended capture refused with the core arena at its mark, and an environment that is not its command's support refused by name.
+- `read_back_terminal` and `read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, and each value closed over its captured environment. `src/readback.rs` states each case and each refusal.
 - `stats`, `Stats`, `origin_histogram` and `dump`: an arena's population, its commands counted by the core former each came from, and a root's rendering with both.
 - `reify_command` with `ConstructorResolver` and `ReifyRefusal`: a ground cell pattern reified node for node, a return-side frame as its `μ̃` definiens, a metavariable, an unresolved symbol, an arity mismatch and an operation frame refused with the arena at its mark.
 
@@ -135,6 +136,7 @@ Running a command — marks, fixpoints, effects, delimited control and temporary
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — the store as the LAM the runtime's value representation is specified against.
 - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime programme — the representation this store states.
+- `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut whose writer performs no operation is independent, so focus records each bind's writer and the arena marks its binder.
 
 ## License
 

@@ -293,6 +293,77 @@ fn truncation_drops_exactly_the_later_nodes()
     );
 }
 
+/// A mark names exactly the binders `μ̃x.c` it is given, in any order and any
+/// number of times. It refuses a consumer the arena does not hold and one that
+/// is not a binder. A truncation between two marked binders drops the later
+/// mark alone, so a node minted again at that address is not marked.
+#[test]
+fn a_mark_names_exactly_its_binders_and_truncates_with_them()
+{
+    let mut arena = CommandArena::new();
+    let top = arena
+        .mint_consumer(ConsumerNode::Top)
+        .expect("a leaf mints");
+    let unit = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+            producers: Box::from([]),
+            consumers: Box::from([]),
+        })
+        .expect("a leaf mints");
+    let body = arena
+        .mint_cut(Polarity::Positive, unit, top)
+        .expect("children resolve");
+    let mint_binder = |arena: &mut CommandArena| {
+        arena
+            .mint_consumer(ConsumerNode::MuTilde { body })
+            .expect("a binder mints")
+    };
+    let first = mint_binder(&mut arena);
+    let unmarked = mint_binder(&mut arena);
+    let mark = arena.watermark();
+    let last = mint_binder(&mut arena);
+    assert_eq!(Ok(()), arena.mark_independent(last));
+    assert_eq!(
+        Ok(()),
+        arena.mark_independent(first),
+        "a mark out of minting order"
+    );
+    assert_eq!(Ok(()), arena.mark_independent(last), "a repeated mark");
+    assert_eq!(
+        [
+            Independence::Independent,
+            Independence::Sequential,
+            Independence::Independent
+        ],
+        [first, unmarked, last].map(|binder| arena.independence(binder)),
+        "each binder answers its own mark"
+    );
+    assert_eq!(
+        Err(MarkRefusal::NotABinder(top)),
+        arena.mark_independent(top)
+    );
+    let dangling = ConsumerId::from(u32::MAX);
+    assert_eq!(
+        Err(MarkRefusal::Dangling(dangling)),
+        arena.mark_independent(dangling)
+    );
+    assert_eq!(
+        [Independence::Sequential, Independence::Sequential],
+        [top, dangling].map(|consumer| arena.independence(consumer)),
+        "a refused mark marks nothing"
+    );
+
+    arena.truncate_to(mark);
+    let reminted = mint_binder(&mut arena);
+    assert_eq!(last, reminted, "the truncated address is minted again");
+    assert_eq!(
+        [Independence::Independent, Independence::Sequential],
+        [first, reminted].map(|binder| arena.independence(binder)),
+        "the earlier mark is kept, and the later one does not mark the node minted at its address"
+    );
+}
+
 /// An arena frozen part way answers every read, mint, truncation and
 /// comparison as one built alike and never frozen does; a clone of it shares
 /// the frozen rows and owns only those minted after, and a truncation into the

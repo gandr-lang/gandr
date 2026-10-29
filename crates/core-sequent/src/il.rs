@@ -141,6 +141,7 @@
 //! second time.
 
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
@@ -948,6 +949,55 @@ impl core::error::Error for MintRefusal
 {
 }
 
+/// Whether a run may start the writer of a binder `μ̃x.c` before `c`.
+///
+/// A writer that performs no operation reorders no effect when it starts
+/// early, so its cut is independent. The mark licenses a schedule and never
+/// obliges one: a run that ignores it keeps the sequential schedule and the
+/// same answer.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Independence
+{
+    /// The writer performs no operation: a run may start it before the
+    /// binder's body.
+    Independent,
+    /// The writer ends before the binder's body starts.
+    Sequential,
+}
+
+/// Why the arena refused to mark a binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MarkRefusal
+{
+    /// The consumer names no consumer the arena holds.
+    Dangling(ConsumerId),
+    /// The consumer is not a binder `μ̃x.c`.
+    NotABinder(ConsumerId),
+}
+
+impl fmt::Display for MarkRefusal
+{
+    /// Names the consumer the mark could not take.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Dangling(id) => write!(f, "consumer {id} is not in the arena"),
+            Self::NotABinder(id) => write!(f, "consumer {id} is not a binder μ̃x.c"),
+        }
+    }
+}
+
+impl core::error::Error for MarkRefusal
+{
+}
+
 /// The address of a node of any of the three families.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NodeAddress
@@ -1347,6 +1397,8 @@ pub struct CommandArena
     words: WordArena,
     /// Portable type annotations; runtime transitions do not inspect them.
     annotations: gandr_core_term::CoreArena,
+    /// The binders `μ̃x.c` marked [`Independence::Independent`], ascending.
+    independent: Vec<ConsumerId>,
 }
 
 impl CommandArena
@@ -1436,7 +1488,8 @@ impl CommandArena
         }
     }
 
-    /// Truncate every family back to `watermark`, dropping later nodes.
+    /// Truncate every family back to `watermark`, dropping later nodes and
+    /// the marks on the binders among them.
     ///
     /// # Specification
     /// - requires: `watermark` was taken from this arena; no address minted
@@ -1445,7 +1498,8 @@ impl CommandArena
     ///   and its length on entry, so a mark above the current length leaves
     ///   that family as it was, each kept node with its scope. Every node kept
     ///   was minted before the mark and so names only kept children: truncation
-    ///   never leaves a dangling child inside the arena.
+    ///   never leaves a dangling child inside the arena. Every binder still
+    ///   marked is a kept consumer: the marks ascend, so the last one is kept.
     /// - provides: the rollback every fallible multi-node build takes on
     ///   refusal.
     /// - fails: never.
@@ -1455,15 +1509,19 @@ impl CommandArena
     /// - hypothesis: L3 — distinct populations and two successive marks
     ///   distinguish a skipped family, an off-by-one truncation and growth to a
     ///   future mark. Reads of retained and dropped nodes observe both
-    ///   preservation and removal; an empty mark closes the lower boundary.
+    ///   preservation and removal; an empty mark closes the lower boundary. A
+    ///   binder marked on each side of a truncation separates a kept mark from
+    ///   a stale one.
     /// - witness: `il::tests::truncation_drops_exactly_the_later_nodes`
     /// - witness: `il::tests::truncation_keeps_future_marks_and_drops_each_family`
+    /// - witness: `il::tests::a_mark_names_exactly_its_binders_and_truncates_with_them`
     #[inline]
     #[spec(
         captures: [entry = self.watermark()],
         ensures: self.producers.len() == usize::from(watermark.producers).min(usize::from(entry.producers))
             && self.consumers.len() == usize::from(watermark.consumers).min(usize::from(entry.consumers))
-            && self.commands.len() == usize::from(watermark.commands).min(usize::from(entry.commands)),
+            && self.commands.len() == usize::from(watermark.commands).min(usize::from(entry.commands))
+            && self.independent.last().is_none_or(|&binder| self.consumer(binder).is_some()),
     )]
     pub fn truncate_to(
         &mut self,
@@ -1478,6 +1536,80 @@ impl CommandArena
             .truncate(ArenaLength::from(usize::from(watermark.commands)));
         self.words.truncate(watermark.words);
         self.annotations.truncate_to(watermark.annotations);
+        let kept = self.independent.partition_point(|&binder| {
+            usize::try_from(u32::from(binder))
+                .is_ok_and(|offset| offset < usize::from(watermark.consumers))
+        });
+        self.independent.truncate(kept);
+    }
+
+    /// Mark the binder `μ̃x.c` independent: its writer performs no operation,
+    /// so a run may start the writer before `c`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling consumer and a consumer that is not a
+    ///   binder are admissible.
+    /// - ensures: on `Ok`, [`Self::independence`] answers
+    ///   [`Independence::Independent`] for `binder`, and the table grows by one
+    ///   only when `binder` was not marked. On `Err`, the table is as on entry.
+    /// - provides: the one write of the mark table. A second mark of the same
+    ///   binder changes nothing.
+    /// - fails: [`MarkRefusal::Dangling`] for a consumer the arena does not
+    ///   hold. [`MarkRefusal::NotABinder`] for a consumer that is not `μ̃x.c`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — marks out of minting order, a repeated mark, a
+    ///   dangling consumer, a consumer that is not a binder, and a truncation
+    ///   between two marked binders distinguish an append that loses the order,
+    ///   a duplicate, a mark on the wrong node and a stale mark.
+    /// - witness: `il::tests::a_mark_names_exactly_its_binders_and_truncates_with_them`
+    #[inline]
+    #[spec(
+        captures: [entry = self.independent.len(), held = self.independence(binder)],
+        ensures: |ret| match ret {
+            | Ok(()) => self.independence(binder) == Independence::Independent
+                && Some(self.independent.len()) == entry.checked_add(usize::from(held == Independence::Sequential)),
+            | Err(_) => self.independent.len() == entry,
+        },
+    )]
+    pub fn mark_independent(
+        &mut self,
+        binder: ConsumerId,
+    ) -> Result<(), MarkRefusal>
+    {
+        match self.consumer(binder) {
+            None => Err(MarkRefusal::Dangling(binder)),
+            Some(&ConsumerNode::MuTilde { .. }) => {
+                if let Err(at) = self.independent.binary_search(&binder) {
+                    self.independent.insert(at, binder);
+                }
+                Ok(())
+            },
+            Some(_) => Err(MarkRefusal::NotABinder(binder)),
+        }
+    }
+
+    /// Whether a run may start the writer of the binder `μ̃x.c` before `c`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn independence(
+        &self,
+        binder: ConsumerId,
+    ) -> Independence
+    {
+        if self.independent.binary_search(&binder).is_ok() {
+            Independence::Independent
+        }
+        else {
+            Independence::Sequential
+        }
     }
 
     /// Resolve a producer address, or `None` when it dangles.

@@ -76,6 +76,88 @@ fn a_refused_focusing_leaves_the_arena_at_its_mark()
     );
 }
 
+/// Focusing records each bind of the caller's arena beside the binder `μ̃x.c`
+/// it minted, the inner bind first. It records no bind of an identity
+/// combinator's own build, whose writers name nodes of another arena. A
+/// refusal after a bind is recorded drops that bind's entry.
+#[test]
+fn each_bind_records_its_binder_beside_its_writer()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let pair = core.value_tuple(&[unit, unit]);
+    let first = core.computation_return(unit);
+    let second = core.computation_return(pair);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let tail = core.computation_return(bound);
+    let inner = core.computation_bind(second, tail);
+    let nested = core.computation_bind(first, inner);
+    let binders = |arena: &CommandArena| {
+        (0_u32 ..)
+            .take(usize::from(arena.consumer_count()))
+            .map(ConsumerId::from)
+            .filter(|&consumer| {
+                matches!(
+                    arena.consumer(consumer),
+                    Some(&ConsumerNode::MuTilde { .. })
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let _root =
+        focus_computation(&core, nested, &mut arena, &mut provenance).expect("nested binds focus");
+    let recorded: Vec<(ConsumerId, ComputationId)> = provenance.binds().collect();
+    let minted = binders(&arena);
+    assert_eq!(
+        (minted, alloc::vec![second, first]),
+        (
+            recorded.iter().map(|&(binder, _)| binder).collect(),
+            recorded.iter().map(|&(_, writer)| writer).collect()
+        ),
+        "each binder minted stands beside its writer, the inner bind's first"
+    );
+
+    let code = core.value_static_lambda(unit);
+    let refused_head = core.computation_return(code);
+    let refused = core.computation_bind(refused_head, tail);
+    let outcome = focus_computation(&core, refused, &mut arena, &mut provenance);
+    assert!(
+        matches!(outcome, Err(FocusRefusal::Code(_))),
+        "the writer's static code is refused after its bind: {outcome:?}"
+    );
+    assert_eq!(
+        recorded,
+        provenance.binds().collect::<Vec<_>>(),
+        "the refused bind leaves no entry, and the kept ones stay"
+    );
+
+    let unit_type = core.value_type_unit();
+    let quoted = core.value_quote(unit_type);
+    let kept = core.value_stay(quoted);
+    let flow = core.value_flow_product(kept, kept);
+    let writer = core.computation_return(flow);
+    let program = core.computation_bind(writer, tail);
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let _root = focus_computation(&core, program, &mut arena, &mut provenance)
+        .expect("a flow product focuses");
+    assert!(
+        binders(&arena).len() > 1,
+        "the pairing combinator's build mints binders of its own"
+    );
+    assert_eq!(
+        alloc::vec![writer],
+        provenance
+            .binds()
+            .map(|(_, written)| written)
+            .collect::<Vec<_>>(),
+        "only the caller's bind is recorded"
+    );
+}
+
 /// A quote of either sort focuses to a code producer naming the same quote:
 /// `⌜Integer⌝` and `⌜F Integer⌝` each import back from the IL's annotations
 /// to the type they quote.

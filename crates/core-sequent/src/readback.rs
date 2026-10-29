@@ -5,9 +5,11 @@
 //! constructor at the unknown value type, since the IL carries no types — an
 //! opaque constant as the constant, and a thunk or a recursive thunk as its
 //! suspended command decoded back by the unfocusing walk and closed over its
-//! environment's readbacks. A run's terminal reads back as a computation:
-//! `return v` for a positive value, and the function itself for a copattern
-//! object, closed the same way. A suspended `μ` has no core reading.
+//! environment's readbacks. A record reads back with its labels. A run's
+//! terminal reads back as a computation: `return v` for a positive value, and
+//! the function itself for a copattern object, closed the same way. A literal
+//! stack reads back frame by frame. A suspended `μ` has no core reading: a
+//! suspended capture is refused with the core arena at its mark.
 //!
 //! A suspended command's environment binds exactly the intuitionistic
 //! variables its support selects, innermost first
