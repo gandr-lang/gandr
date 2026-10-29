@@ -8115,9 +8115,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   constructor's classifier and its fields before the field are minted or
     ///   absent.
     /// - ensures: the annotation's type — or the type a family's argument
-    ///   quotes — carried into the term's binders; the value type the answer's
-    ///   returner returns carried from the answer's frame to the constructor's;
-    ///   for a slot, the family's parameter at the constructor's place with the
+    ///   quotes — carried into the term's binders, or kept at the signature's
+    ///   when the constructor stands inside a signature type, whose terms count
+    ///   only the frames that bind there; the value type the answer's returner
+    ///   returns carried from the answer's frame to the constructor's; for a
+    ///   slot, the family's parameter at the constructor's place with the
     ///   parameters before it replaced by the arguments written for them; for a
     ///   declaration's parameter, its written type with the parameters before
     ///   it replaced by the call's arguments for them; for a field, its
@@ -8134,6 +8136,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    /// - witness: `lower::native::tests::an_annotation_inside_a_signature_type_counts_its_binders_there_3744`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn classifier_type(
         &self,
@@ -8145,8 +8148,10 @@ impl<'source> Lowerer<'_, 'source>
     {
         let classified = origin.inserted(Insertion::Classifier);
         // A field's classifier reads the classifier of the constructor around
-        // it: follow those out to the first that is no field's.
+        // it: follow those out to the first that is no field's, the
+        // constructor that owns it.
         let (mut classifier, mut family) = (classifier, family);
+        let mut owner = origin.node();
         let mut fields = Vec::new();
         while let Classifier::Field(field) = classifier {
             let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
@@ -8154,6 +8159,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             fields.push(field);
+            owner = field.around;
             (classifier, family) = (outer.classifier, outer.family);
         }
         let outermost = match classifier {
@@ -8173,8 +8179,15 @@ impl<'source> Lowerer<'_, 'source>
                     (Maybe::Absent(_), Some(quoted)) => quoted,
                     (Maybe::Absent(_), None) => return Maybe::Absent(lowered::Absent::Unminted),
                 };
-                let frame = self.reading(written).frame();
-                self.relocate_value_type(id, frame, Telescope::Signature, sink, classified)
+                // A constructor inside a signature type counts its fields in
+                // the signature's telescope: its annotation stays there too.
+                if self.in_type.contains(&owner) && !self.in_quote.contains(&owner) {
+                    id
+                }
+                else {
+                    let frame = self.reading(written).frame();
+                    self.relocate_value_type(id, frame, Telescope::Signature, sink, classified)
+                }
             },
             Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
                 Maybe::Present(id) => id,
