@@ -72,3 +72,19 @@ pub def rest(
     MkSig(y, r) => keep(d, f(y), x, t, r)
   }
 }
+
+/// Opens the arguments of a delta code. The rest has the arguments of the
+/// code that the first field's decodes pick.
+@[ checks ]
+pub def restDelta(
+  d : Type,
+  a : Type,
+  f : +U (+U (a -> -F d) -> -F IR(d)),
+  x : Type,
+  t : +U (x -> -F d),
+  v : args(d, (DeltaC(a, f) : IR(d)), x, t)
+) -> Unit {
+  case v {
+    MkSig(h, r) => keep(d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
+  }
+}

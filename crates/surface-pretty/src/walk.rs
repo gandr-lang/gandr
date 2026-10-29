@@ -9123,15 +9123,18 @@ impl Walk<'_, '_>
     /// definition's body against its signature and an argument against its
     /// parameter, and a value of a thunk type standing there is the thunk it
     /// inserts. Either form leaves it out, as either leaves out the exit the
-    /// lowering infers: the formatter writes neither back.
+    /// lowering infers: the formatter writes neither back. A function needs no
+    /// checker: the lowering thunks a function written as a value wherever it
+    /// stands, so its thunk is left out where a type is read as well.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the body when the walk writes an expression, thunks spelled,
-    ///   and `node` reads as a thunk whose body is one expression the checker
-    ///   wraps — a call, a forced value, a function or a lazy record; `None`
-    ///   otherwise, a thunk of a returned value, of a bind's statements or of
-    ///   anything else among them.
+    /// - ensures: the body when thunks are spelled and `node` reads as a thunk
+    ///   of a function, or, where the walk writes an expression, as a thunk
+    ///   whose body is one expression the checker wraps — a call, a forced
+    ///   value or a lazy record; `None` otherwise, a thunk of a returned value,
+    ///   of a bind's statements or of anything else among them, and a thunk of
+    ///   a call, a forced value or a lazy record where a type is read.
     /// - provides: the thunks the walk leaves out, as the formatter's
     ///   `inserted-thunk` rewrite leaves them out.
     /// - fails: never.
@@ -9140,10 +9143,15 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a call's thunk argument over a call and over a
     ///   returned value, and a definition's thunk over a function and over a
-    ///   statement block, distinguish a thunk left out from one kept.
+    ///   statement block, distinguish a thunk left out from one kept; a call's
+    ///   thunk argument over a function and over a call, where a type is read,
+    ///   distinguish the function's thunk left out from the call's kept.
     /// - witness: `tests::goldens::a_thunk_the_checker_inserts_is_left_out_1457`
+    /// - witness: `tests::goldens::a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933`
     #[spec(ensures: |ref ret| ret.is_none()
-        || (self.bodies == Bodies::Spelled && self.surface == Surface::Expression))]
+        || (self.bodies == Bodies::Spelled
+            && (self.surface == Surface::Expression
+                || matches!(*ret, Some(body) if matches!(source.read(body), Former::Lambda(_))))))]
     fn inserted<S>(
         &self,
         source: &S,
@@ -9152,18 +9160,19 @@ impl Walk<'_, '_>
     where
         S: Source + ?Sized,
     {
-        if self.bodies != Bodies::Spelled || self.surface != Surface::Expression {
+        if self.bodies != Bodies::Spelled {
             return None;
         }
         let Former::Thunk(body) = source.read(node)
         else {
             return None;
         };
-        matches!(
+        let function = matches!(source.read(body), Former::Lambda(_));
+        let wrapped = matches!(
             source.read(body),
-            Former::Application(..) | Former::Force(_) | Former::Lambda(_) | Former::Lazy(_)
-        )
-        .then_some(body)
+            Former::Application(..) | Former::Force(_) | Former::Lazy(_)
+        );
+        (function || (wrapped && self.surface == Surface::Expression)).then_some(body)
     }
 
     /// Schedules a computation whose runs bind calls as its last step with
