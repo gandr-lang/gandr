@@ -21,9 +21,9 @@
 //! an empty unfolding chain, and the definitions and settings are the run's.
 //! Agreement is identity of sides and level, so two goals over equal content
 //! under distinct ids miss rather than meet: a miss costs a recomputation and
-//! never a wrong answer. The digest is folded from content — a rigid side's
-//! guard, a flexible neutral's head — so agreeing supports always share a
-//! bucket.
+//! never a wrong answer. The digest is folded from the same sides and level,
+//! so agreeing supports always share a bucket, and supports that differ share
+//! one only by a hash collision.
 //!
 //! # Support edges
 //!
@@ -58,10 +58,12 @@
 //! **The key.** A `GoalSupport` is a fresh goal's whole input: its two sides,
 //! as weak heads in hand or as closures opened under the fresh variable, and
 //! the binder level. Agreement is identity of sides and level, and the digest
-//! is folded from content — a rigid side's guard, a flexible neutral's polarity
-//! and head, the level — so agreeing supports share a bucket and a collision
-//! costs one comparison. Two goals over equal content under distinct ids miss
-//! rather than meet, which costs a recomputation and never an answer.
+//! is folded from the same sides and level, so agreeing supports share a
+//! bucket and a recall scans only the supports that collide with it. Two goals
+//! over equal content under distinct ids miss rather than meet, which costs a
+//! recomputation and never an answer. A digest folded from content put every
+//! such copy in one bucket, and each recall scanned them all: the `shared-tree`
+//! row holds `2^k` copies at depth `k`, and its recalls grew with their square.
 //! Alternatives: content agreement, which would need structural equality over
 //! flexible nodes — the comparison the machine exists to make — and
 //! hash-consing the domain arena, which moves the decision into every mint.
@@ -74,8 +76,7 @@
 //! boundary is witnessed by
 //! `resharing::tests::opened_support_refuses_truncated_closures`;
 //! `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
-//! pins the separate identity agreement and content digest as a neutral is
-//! forced.
+//! pins the identity agreement and its digest as a neutral is forced.
 //!
 //! **The edges.** Each entry records what its answer was read from: the
 //! definitions its own derivation unfolded, including through its alternatives,
@@ -129,7 +130,6 @@ use crate::domain::BinderLevel;
 use crate::domain::DomainComp;
 use crate::domain::DomainValue;
 use crate::domain::Glued;
-use crate::domain::NeutralHead;
 use crate::guard::ContentHash;
 use crate::guard::Guard;
 use crate::machine::ProcessId;
@@ -186,33 +186,6 @@ pub struct GoalSupport
     digest: ContentDigest,
 }
 
-/// Which polarity a side stands in.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Polarity
-{
-    /// A value.
-    Value,
-    /// A computation.
-    Computation,
-}
-
-/// The content of one side a digest is folded from.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum SideContent
-{
-    /// A side whose guard is rigid: the guard's hash, which already folds the
-    /// polarity in through the node kind.
-    Rigid(ContentHash),
-    /// A flexible neutral, by its head.
-    Neutral(Polarity, NeutralHead),
-    /// A flexible former.
-    Former(Polarity),
-    /// A closure to be opened.
-    Opened,
-    /// A captured computation entered without a fresh binder.
-    Closed,
-}
-
 impl GoalSupport
 {
     /// The support of a goal comparing `sides` from `level`.
@@ -220,10 +193,8 @@ impl GoalSupport
     /// # Specification
     /// - requires: every node `sides` names lives in `domain`.
     /// - ensures: a support that agrees with another exactly when both name the
-    ///   same sides at the same level, with a digest folded from the sides'
-    ///   content: a rigid side's guard, a flexible neutral's polarity and head,
-    ///   a flexible former's polarity, a closure as opened or entered, and the
-    ///   level.
+    ///   same sides at the same level, with a digest folded from those sides
+    ///   and that level.
     /// - fails: [`ConversionFault::Domain`] for a node that does not resolve.
     /// - panics: none.
     ///
@@ -240,9 +211,9 @@ impl GoalSupport
     #[inline]
     #[spec(ensures: |ret| {
         let resolving = match sides {
-            SupportSides::Heads(left, right) => side_content(domain, left).is_ok() && side_content(domain, right).is_ok(),
+            SupportSides::Heads(left, right) => resolves(domain, left).is_ok() && resolves(domain, right).is_ok(),
             SupportSides::Opened(left, right) | SupportSides::Closed(left, right) | SupportSides::OpenedUnder(left, right, _) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
-            SupportSides::OpenedBeside(_, closure, head) => domain.comp_closure(closure).is_some() && side_content(domain, head).is_ok(),
+            SupportSides::OpenedBeside(_, closure, head) => domain.comp_closure(closure).is_some() && resolves(domain, head).is_ok(),
         };
         if resolving { ret.as_ref().is_ok_and(|support| support.sides == sides && support.level == level) }
         else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) }
@@ -253,21 +224,16 @@ impl GoalSupport
         level: BinderLevel,
     ) -> Result<Self, ConversionFault>
     {
-        let (left, right) = match sides {
+        match sides {
             SupportSides::Heads(left, right) => {
-                let left = side_content(domain, left)?;
-                let right = side_content(domain, right)?;
-                (left, right)
+                resolves(domain, left)?;
+                resolves(domain, right)?;
             },
-            SupportSides::OpenedBeside(side, closure, head) => {
+            SupportSides::OpenedBeside(_, closure, head) => {
                 domain
                     .comp_closure(closure)
                     .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
-                let head = side_content(domain, head)?;
-                match side {
-                    ConversionSide::Left => (SideContent::Opened, head),
-                    ConversionSide::Right => (head, SideContent::Opened),
-                }
+                resolves(domain, head)?;
             },
             SupportSides::Opened(left, right)
             | SupportSides::Closed(left, right)
@@ -280,18 +246,10 @@ impl GoalSupport
                         .comp_closure(right)
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
                 }
-                let content = match sides {
-                    SupportSides::Closed(..) => SideContent::Closed,
-                    SupportSides::Heads(..)
-                    | SupportSides::Opened(..)
-                    | SupportSides::OpenedUnder(..)
-                    | SupportSides::OpenedBeside(..) => SideContent::Opened,
-                };
-                (content, content)
             },
-        };
-        let high = DigestWord::from(u64::from(ContentHash::of(&left)));
-        let low = DigestWord::from(u64::from(ContentHash::of(&(right, level))));
+        }
+        let high = DigestWord::from(u64::from(ContentHash::of(&sides)));
+        let low = DigestWord::from(u64::from(ContentHash::of(&(sides, level))));
         Ok(Self {
             sides,
             level,
@@ -341,20 +299,19 @@ impl MemoKey for GoalSupport
     /// # Specification
     /// - requires: nothing.
     /// - ensures: equal for agreeing supports, because agreeing supports name
-    ///   the same nodes at the same level, whose content folds to the same
-    ///   words.
+    ///   the same sides at the same level, which fold to the same words.
     /// - provides: the bucket a recall scans.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — repeated supports and a support rebuilt after forcing
-    ///   the same neutral retain one digest, while identity agreement still
-    ///   distinguishes equal-content nodes and levels; changing a stable key
-    ///   word loses the shared bucket.
+    ///   the same neutral retain one digest, while supports over equal content
+    ///   at distinct ids or levels fall in distinct buckets; changing a stable
+    ///   key word loses the shared bucket.
     /// - witness: `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
     /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
-    /// - witness: `resharing::tests::supports_of_different_content_are_remembered_in_different_buckets`
+    /// - witness: `resharing::tests::supports_that_do_not_agree_are_remembered_in_different_buckets`
     #[inline]
     #[spec(ensures: |ret| ret == self.digest)]
     fn digest(&self) -> ContentDigest
@@ -399,56 +356,52 @@ impl MemoKey for GoalSupport
     }
 }
 
-/// The content of `glued` a digest folds.
+/// Whether `glued` resolves in `domain`: its guard reads, its node lives, and
+/// a flexible neutral's node lives.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the guard's hash for a rigid side; the polarity and head for a
-///   flexible neutral; the polarity for a flexible former.
-/// - provides: the per-side half of a support's digest.
+/// - ensures: `Ok` exactly when the guard reads, the node lives and, for a
+///   flexible neutral, its neutral node lives.
+/// - provides: the check a support's construction makes of each head.
 /// - fails: [`ConversionFault::Domain`] for a node that does not resolve.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — rigid equal-content values may share a digest without
-///   agreeing by identity, while forcing a flexible neutral preserves its key
-///   and value/computation polarity remains distinct; including the changing
-///   unfolding face or discarding polarity changes those observations.
+/// - hypothesis: L2 — a live head resolves, and a truncated one is refused;
+///   accepting a dangling head or refusing a live one changes construction.
 /// - witness: `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
-/// - witness: `machine::tests::the_memo_never_moves_a_verdict`
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a node does not resolve.
 #[spec(ensures: |ret| match glued {
     Glued::Value(id) => match domain.value_guard(id) {
-        Ok(Guard::Rigid(hash)) => ret == Ok(SideContent::Rigid(hash)),
+        Ok(Guard::Rigid(_)) => ret.is_ok(),
         Ok(Guard::Flexible) => match domain.value(id) {
-            Some(&DomainValue::Neutral { neutral, .. }) => domain.neutral(neutral).map_or_else(
-                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-                |node| ret == Ok(SideContent::Neutral(Polarity::Value, node.head()))),
-            Some(_) => ret == Ok(SideContent::Former(Polarity::Value)),
+            Some(&DomainValue::Neutral { neutral, .. }) => if domain.neutral(neutral).is_some() { ret.is_ok() }
+                else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) },
+            Some(_) => ret.is_ok(),
             None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
         },
         Err(fault) => ret == Err(ConversionFault::Domain(fault)),
     },
     Glued::Computation(id) => match domain.comp_guard(id) {
-        Ok(Guard::Rigid(hash)) => ret == Ok(SideContent::Rigid(hash)),
+        Ok(Guard::Rigid(_)) => ret.is_ok(),
         Ok(Guard::Flexible) => match domain.computation(id) {
-            Some(&DomainComp::Neutral { neutral, .. }) => domain.neutral(neutral).map_or_else(
-                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-                |node| ret == Ok(SideContent::Neutral(Polarity::Computation, node.head()))),
-            Some(_) => ret == Ok(SideContent::Former(Polarity::Computation)),
+            Some(&DomainComp::Neutral { neutral, .. }) => if domain.neutral(neutral).is_some() { ret.is_ok() }
+                else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) },
+            Some(_) => ret.is_ok(),
             None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
         },
         Err(fault) => ret == Err(ConversionFault::Domain(fault)),
     },
 })]
-fn side_content(
+fn resolves(
     domain: &DomainArena,
     glued: Glued,
-) -> Result<SideContent, ConversionFault>
+) -> Result<(), ConversionFault>
 {
-    let (guard, polarity, neutral) = match glued {
+    let (guard, neutral) = match glued {
         Glued::Value(value) => {
             let guard = domain.value_guard(value).map_err(ConversionFault::Domain)?;
             let neutral = match domain.value(value) {
@@ -456,7 +409,7 @@ fn side_content(
                 Some(_) => None,
                 None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
             };
-            (guard, Polarity::Value, neutral)
+            (guard, neutral)
         },
         Glued::Computation(comp) => {
             let guard = domain.comp_guard(comp).map_err(ConversionFault::Domain)?;
@@ -465,20 +418,15 @@ fn side_content(
                 Some(_) => None,
                 None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
             };
-            (guard, Polarity::Computation, neutral)
+            (guard, neutral)
         },
     };
-    if let Guard::Rigid(hash) = guard {
-        return Ok(SideContent::Rigid(hash));
+    if let (Guard::Flexible, Some(neutral)) = (guard, neutral) {
+        domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
     }
-    let Some(neutral) = neutral
-    else {
-        return Ok(SideContent::Former(polarity));
-    };
-    let held = domain
-        .neutral(neutral)
-        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
-    Ok(SideContent::Neutral(polarity, held.head()))
+    Ok(())
 }
 
 /// How many support edges a run's memo entries hold.
