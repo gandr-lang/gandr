@@ -712,6 +712,54 @@ fn a_lambda_endpoint_is_its_thunk_3767()
     }
 }
 
+/// #3787: `cong` lifts a suspended function into its motive, and only the
+/// lift's root carried the function's bytes, so the editor had no entry in
+/// the function. Each node of the lift carries the bytes of the node it
+/// copies.
+#[test]
+fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
+{
+    let source = "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
+                  a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {\n  \
+                  cong((thunk { fn (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n";
+    let spanned = |text: &str| {
+        let start = source.find(text).expect("the source writes the text");
+        (start, start.saturating_add(text.len()))
+    };
+    let thunk = spanned("thunk { fn (q : Path(A, x, y)) { q then g } }");
+    let function = spanned("fn (q : Path(A, x, y)) { q then g }");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let at =
+        |span: gandr_surface_syntax::ByteSpan| (usize::from(span.start()), usize::from(span.end()));
+    let lambdas: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| at(origin.span()) == thunk)
+        .filter_map(|&(id, _)| match arena.value(id) {
+            Some(&Value::Thunk(lambda)) => Some(lambda),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        lambdas.len() >= 2,
+        "the written function and its lift both answer at the thunk's bytes: {lambdas:?}"
+    );
+    for lambda in lambdas {
+        assert!(
+            matches!(
+                module.origins().computation(lambda),
+                Maybe::Present(origin) if at(origin.span()) == function
+                    && origin.provenance() != Provenance::Inserted(Insertion::Identity)
+            ),
+            "each lambda under the thunk answers at the function's bytes: {:?}",
+            module.origins().computation(lambda)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #3801: an annotation inside a type reads its names in the type's
 /// telescope, as the term it annotates does. A parameter no type names,
 /// `u`, binds nothing there, so the thunk's ascription, its typed
