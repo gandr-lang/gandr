@@ -18,6 +18,8 @@ mod differential;
 #[cfg(test)]
 mod entries;
 #[cfg(test)]
+mod measure;
+#[cfg(test)]
 mod package;
 #[cfg(test)]
 mod parity;

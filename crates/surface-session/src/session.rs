@@ -273,6 +273,18 @@
 //! loop unable to show a value. The choice reverses when the surface gains a
 //! top-level expression: that item is the one evaluated, and a definition
 //! returns to its type line alone.
+//!
+//! # References
+//!
+//! - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: one table per
+//!   artifact, which numbers only the declarations that cross, so an admission
+//!   asked to keeps each declaration's position in its artifact (`Admitted`).
+//! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and
+//!   § 6 give Catt's artifact sizes, which a composition's measured rows stand
+//!   beside, each read at the position its admission kept.
+//! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing
+//!   ratio of iterated composites, which a row read at its kept position
+//!   measures for the declaration it names.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -327,6 +339,7 @@ use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Produced;
 use gandr_surface_dispatcher::Admission;
+use gandr_surface_dispatcher::ArtifactPositions;
 use gandr_surface_dispatcher::Checking;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
@@ -354,6 +367,7 @@ use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_dispatcher::lower_parsed_unit;
 use gandr_surface_dispatcher::lower_resumed_unit;
 use gandr_surface_dispatcher::path_imports;
+use gandr_surface_dispatcher::positioned;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
@@ -840,6 +854,9 @@ pub struct Admitted
 {
     /// The kernel artifact the admission exported.
     kernel: EncodedArtifact,
+    /// Where each declaration that crossed stands in the artifact, when the
+    /// admission was asked to record it.
+    positions: Maybe<ArtifactPositions, positioned::Absent>,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
     /// How many declarations the readmission offered the kernel again; the
@@ -2252,9 +2269,12 @@ impl<Store, Blocks> Session<Store, Blocks>
             .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
         {
             let Admitted {
-                kernel, checkpoint, ..
+                kernel,
+                positions,
+                checkpoint,
+                ..
             } = admitted;
-            submission.composed = submission.composed.admitted(kernel);
+            submission.composed = submission.composed.admitted(kernel, positions);
             submission.kernel = Maybe::Present(checkpoint);
         }
         Ok(submission)
@@ -3243,6 +3263,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         };
         Ok(Maybe::Present(Admitted {
             kernel,
+            positions: resumption.positions,
             checkpoint,
             crossed: DeclarationCount::from(
                 usize::from(resumption.judged).saturating_sub(usize::from(resumption.resumed)),

@@ -325,6 +325,10 @@ INSERT INTO reference VALUES('doi:10.4230/lipics.types.2015.5','theory-shapes','
 INSERT INTO reference VALUES('doi:10.4230/lipics.types.2024.9','theory-shapes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4310/hha.2018.v20.n2.a11','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.46298/lmcs-18(1:10)2022','theory-circuit-algebras','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','kernel-term','decode','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','surface-dispatcher','measure','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','surface-driver','','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a051fd-25fd-7f24-a5d4-a72eca18a687','surface-session','session','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-check-memo','memo','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a05203-4468-7931-8246-761a8f853a27','kernel-term','support','lineage',NULL,NULL,NULL);
@@ -347,6 +351,10 @@ INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','2a6bd5457b0841455e1db0206b2e709077fe173c');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-dispatcher','measure','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-driver','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-session','session','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-checker','template::memo','lineage','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','21da273baaf8fa8b1851c07f04df073e5f74b03c');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','core-sequent','closure','lineage',NULL,NULL,NULL);
@@ -453,6 +461,10 @@ INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-
 INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-nbe','readback','exemplar','3ac0ff70e3c295db32ad698004431dd31f0601c6','2026-10-29','157acf4928483206c8d9f819971ec7e8284c5154');
 INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','kernel-core','replay::environment','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','09b037f2241cfe424dc51ce6595f10e36ed945af');
 INSERT INTO reference VALUES('vault:01a183de-4e71-7f03-aa71-7821123f3c40','core-sequent','closure','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','kernel-term','decode','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surface-dispatcher','measure','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surface-driver','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surface-session','session','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','core-term','syntax::shared','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','surface-dispatcher','tier','background',NULL,NULL,NULL);
 COMMIT;

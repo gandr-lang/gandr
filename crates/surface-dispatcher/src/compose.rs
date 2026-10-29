@@ -449,6 +449,10 @@ pub enum Composed<'source>
         /// once the module's admission ran; a composition read before its
         /// admission carries none.
         kernel: Maybe<EncodedArtifact, admitted::Absent>,
+        /// Where each declaration that crossed into the kernel stands in the
+        /// kernel artifact, by its module position, when the admission was
+        /// asked to record it.
+        positions: Maybe<ArtifactPositions, positioned::Absent>,
         /// The module's declarations focused into the command IL, ready to
         /// run any of them.
         program: Program<'source>,
@@ -510,13 +514,16 @@ type KeptComponent<'source> = (
 
 impl Composed<'_>
 {
-    /// This composition with `kernel` as its kernel artifact.
+    /// This composition with `kernel` as its kernel artifact, and `positions`
+    /// as where each declaration that crossed stands in it.
     ///
     /// # Specification
-    /// - requires: `kernel` is the export of this composition's admission.
-    /// - ensures: a settled composition carries `kernel` and is otherwise
-    ///   unchanged; a whole refusal, which offered the kernel nothing, is
-    ///   returned as it was.
+    /// - requires: `kernel` is the export of this composition's admission, and
+    ///   `positions` that admission's record of where each declaration stands,
+    ///   or why it kept none.
+    /// - ensures: a settled composition carries `kernel` and `positions` and is
+    ///   otherwise unchanged; a whole refusal, which offered the kernel
+    ///   nothing, is returned as it was.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -534,6 +541,7 @@ impl Composed<'_>
     pub fn admitted(
         self,
         kernel: EncodedArtifact,
+        positions: Maybe<ArtifactPositions, positioned::Absent>,
     ) -> Self
     {
         match self {
@@ -566,6 +574,7 @@ impl Composed<'_>
                 unused,
                 unreached,
                 kernel: Maybe::Present(kernel),
+                positions,
                 program,
             },
             Self::Refused(refusal) => Self::Refused(refusal),
@@ -624,7 +633,7 @@ impl<'source> Judged<'source>
     }
 
     /// Run the admission and complete the composition with its kernel
-    /// artifact.
+    /// artifact and where each declaration stands in it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -652,9 +661,17 @@ impl<'source> Judged<'source>
     })]
     pub fn admit(self) -> Result<Composed<'source>, ComposeFault<'source>>
     {
-        let kernel = self.admission.admit().map_err(ComposeFault::Readmission)?;
+        let Resumption {
+            artifact,
+            positions,
+            ..
+        } = self.admission.admit_resuming(
+            bridge::LeadingCount::NONE,
+            Maybe::Absent(bridge::crossed::Absent::Unasked),
+        );
+        let kernel = artifact.map_err(ComposeFault::Readmission)?;
         let composed = self.settled.map_err(ComposeFault::Settle)?;
-        Ok(composed.admitted(kernel))
+        Ok(composed.admitted(kernel, positions))
     }
 }
 
@@ -682,6 +699,9 @@ pub struct Admission
     verdicts: ModuleReport,
     /// The structured name of every declared name, by admission position.
     names: BTreeMap<ConstantIndex, StructuredName>,
+    /// Whether the admission records where each declaration stands in its
+    /// artifact.
+    positioning: Positioning,
 }
 
 impl Admission
@@ -866,20 +886,42 @@ impl Admission
             Polled::Whole(whole) => whole,
             Polled::Retired(retired, held) => return Polled::Retired(retired, held),
         };
+        let positioning = self.positioning;
         Polled::Whole(match readmission {
             Ok(readmission) => Resumption {
                 resumed: readmission.resumed(),
                 judged,
+                positions: match positioning {
+                    Positioning::Positioned => Maybe::Present(ArtifactPositions::of(&readmission)),
+                    Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
+                },
                 artifact: Ok(readmission.export_resuming(self.names, crossed, &mut recorded)),
                 crossed: recorded,
             },
             Err(fault) => Resumption {
                 artifact: Err(fault),
+                positions: Maybe::Absent(positioned::Absent::Disagreed),
                 resumed: bridge::LeadingCount::NONE,
                 judged,
                 crossed: recorded,
             },
         })
+    }
+
+    /// This admission, recording where each declaration stands in its
+    /// artifact as `positioning` asks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn positioning(
+        mut self,
+        positioning: Positioning,
+    ) -> Self
+    {
+        self.positioning = positioning;
+        self
     }
 }
 
@@ -901,6 +943,9 @@ pub struct Resumption
     /// The kernel artifact of every declaration that crossed, or the first
     /// declaration the kernel did not re-derive.
     pub artifact: Result<EncodedArtifact, bridge::Readmitted>,
+    /// Where each declaration that crossed stands in the artifact, when the
+    /// admission was asked to record it and the kernel re-derived every one.
+    pub positions: Maybe<ArtifactPositions, positioned::Absent>,
     /// How many leading declarations the readmission resumed rather than
     /// crossed again.
     pub resumed: bridge::LeadingCount,
@@ -908,6 +953,115 @@ pub struct Resumption
     pub judged: bridge::LeadingCount,
     /// The record of the first declarations, for a later admission to resume.
     pub crossed: Maybe<bridge::Crossed, bridge::crossed::Absent>,
+}
+
+/// Whether an admission records where each declaration stands in its
+/// artifact.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Positioning
+{
+    /// It records each crossed declaration's artifact position, which a
+    /// measure reads.
+    Positioned,
+    /// It records none, and pays nothing for them.
+    #[default]
+    Unpositioned,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a composition carries no artifact positions.
+    pub mod positioned {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The admission was not asked to record them.
+            Unasked,
+            /// The module's admission has not run yet.
+            Pending,
+            /// The kernel did not re-derive a declaration, so no artifact
+            /// exists.
+            Disagreed,
+        }
+    }
+}
+
+/// Where each declaration that crossed into the kernel stands in the artifact
+/// its admission exported: its kernel position, by its module position.
+///
+/// The kernel numbers only the declarations that cross, so a declaration's
+/// kernel position is not its module position.
+///
+/// # Specification
+/// - requires: read off a readmission by [`Admission::admit_resuming`] under
+///   [`Positioning::Positioned`].
+/// - ensures: one entry per declaration the kernel admitted as a definition, an
+///   axiom or a nominal declaration, and none for one it was not offered.
+/// - panics: none.
+/// - executable: none — a data declaration; [`ArtifactPositions::position`]
+///   reads it.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`crate::measure()`]: a row read at a declaration's
+///   module position reads another declaration's segment.
+/// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactPositions(BTreeMap<ConstantIndex, ConstantIndex>);
+
+impl ArtifactPositions
+{
+    /// The position `readmission` gave each declaration the kernel admitted.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per readmitted declaration whose outcome is a
+    ///   definition, an axiom or a nominal declaration, at the position its
+    ///   receipt names.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`ArtifactPositions`].
+    /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
+    #[spec(ensures: |ret| ret.0.len() <= readmission.readmitted().len())]
+    fn of(readmission: &bridge::Readmission) -> Self
+    {
+        Self(
+            readmission
+                .readmitted()
+                .iter()
+                .filter_map(|entry| match *entry.outcome() {
+                    bridge::Outcome::Data { admitted, .. }
+                    | bridge::Outcome::Defined { admitted, .. }
+                    | bridge::Outcome::Assumed { admitted, .. } => {
+                        Some((entry.constant(), admitted.position()))
+                    },
+                    bridge::Outcome::Marked(_)
+                    | bridge::Outcome::Suspended
+                    | bridge::Outcome::Static
+                    | bridge::Outcome::Refused(_)
+                    | bridge::Outcome::Rejected(_) => None,
+                })
+                .collect(),
+        )
+    }
+
+    /// The artifact position of the declaration at module position
+    /// `constant`, when the kernel admitted it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn position(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<ConstantIndex>
+    {
+        self.0.get(&constant).copied()
+    }
 }
 
 /// Why one source could not be carried through the pipeline: an engine
@@ -2889,6 +3043,7 @@ where
             arena,
             verdicts,
             names,
+            positioning: Positioning::Unpositioned,
         },
         table,
         after.map(|closure| bridge::LeadingCount::from(closure.declarations.len())),
@@ -3308,6 +3463,7 @@ fn settled<'source>(
         runs: share.runs,
         deprecated: share.deprecated,
         kernel: Maybe::Absent(admitted::Absent::Pending),
+        positions: Maybe::Absent(positioned::Absent::Pending),
         program,
     }
 }
@@ -3334,7 +3490,10 @@ fn settled<'source>(
 ///   the lowering read as it stood before the kernel was offered anything — its
 ///   arena, verdicts and names — or [`kept::Absent::Unjudged`] for a component
 ///   the lowering refused whole or that has no source; under
-///   [`Keeping::Composed`], [`kept::Absent::Unasked`] and no copy made.
+///   [`Keeping::Composed`], [`kept::Absent::Unasked`] and no copy made. Each
+///   admitted composition carries where each declaration stands in the artifact
+///   under [`Positioning::Positioned`], and [`positioned::Absent::Unasked`]
+///   under [`Positioning::Unpositioned`].
 /// - provides: the walk's verdict at each source of a component, the component
 ///   lowered, checked and spelled once, and a hold on its checked core for a
 ///   differential that evaluates it apart from the program.
@@ -3361,7 +3520,7 @@ pub fn judge_component<'source>(
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     (grant, checking): (&HostGrant, Checking<'source>),
     (members, spelled): (&[Member], &mut SpellingCount),
-    keeping: Keeping,
+    (keeping, positioning): (Keeping, Positioning),
 ) -> KeptComponent<'source>
 {
     let unkept = match keeping {
@@ -3392,26 +3551,42 @@ pub fn judge_component<'source>(
                 Keeping::Composed => Maybe::Absent(kept::Absent::Unasked),
                 Keeping::Admission => Maybe::Present(admission.clone()),
             };
+            let admission = admission.positioning(positioning);
             // A module judged after a closure leads with the closure's
             // declarations, judged as the closure's judgement judged them:
             // its readmission resumes them from the record the first such
             // admission kept.
-            let admitted = match (checking, after) {
+            let (admitted, positions) = match (checking, after) {
                 (Checking::After(closure), Some(boundary)) => {
                     let crossed = &closure.judgement().crossed;
-                    let resumption = admission.admit_resuming(
+                    let Resumption {
+                        artifact,
+                        positions,
+                        crossed: record,
+                        ..
+                    } = admission.admit_resuming(
                         boundary,
                         crossed.get().map_or(
                             Maybe::Absent(bridge::crossed::Absent::Unasked),
                             Maybe::Present,
                         ),
                     );
-                    if let Maybe::Present(record) = resumption.crossed {
+                    if let Maybe::Present(record) = record {
                         let _kept = crossed.set(record);
                     }
-                    resumption.artifact
+                    (artifact, positions)
                 },
-                (Checking::After(_) | Checking::Whole, _) => admission.admit(),
+                (Checking::After(_) | Checking::Whole, _) => {
+                    let Resumption {
+                        artifact,
+                        positions,
+                        ..
+                    } = admission.admit_resuming(
+                        bridge::LeadingCount::NONE,
+                        Maybe::Absent(bridge::crossed::Absent::Unasked),
+                    );
+                    (artifact, positions)
+                },
             };
             let composed = match admitted {
                 Ok(kernel) => {
@@ -3419,14 +3594,16 @@ pub fn judge_component<'source>(
                         .earlier
                         .into_iter()
                         .map(|held| {
-                            held.map(|composed| composed.admitted(kernel.clone()))
-                                .map_err(ComposeFault::Settle)
+                            held.map(|composed| {
+                                composed.admitted(kernel.clone(), positions.clone())
+                            })
+                            .map_err(ComposeFault::Settle)
                         })
                         .collect();
                     composed.push(
                         projected
                             .last
-                            .map(|composed| composed.admitted(kernel))
+                            .map(|composed| composed.admitted(kernel, positions))
                             .map_err(ComposeFault::Settle),
                     );
                     composed
@@ -3576,8 +3753,8 @@ fn elaborated(
 ///   rows its settled declarations carry, the refusals of the declarations
 ///   refused at their own form, which no expectation can state, the lowering's
 ///   origin table, moved rather than copied, the kernel artifact of every
-///   declaration that crossed, under the module's structured names, and the
-///   program.
+///   declaration that crossed, under the module's structured names, its
+///   positions absent as [`positioned::Absent::Unasked`], and the program.
 /// - provides: the verdict set [`compose()`] gives a module the lowering read.
 /// - fails: [`ComposeFault::Readmission`] for a declaration the checker
 ///   accepted that the kernel does not re-derive; else [`ComposeFault::Settle`]
@@ -5635,6 +5812,7 @@ def delivered() -> -F Unit {
                 unused,
                 unreached: Vec::new(),
                 kernel: Maybe::Present(kernel),
+                positions: Maybe::Absent(super::positioned::Absent::Unasked),
                 program,
             };
             let (module, arena) = lower(&mut lowerings);
@@ -5661,7 +5839,10 @@ def delivered() -> -F Unit {
                 panic!("the module settles after its readmission");
             };
             assert_eq!(
-                settled.clone().admitted(kernel.clone()),
+                settled.clone().admitted(
+                    kernel.clone(),
+                    Maybe::Absent(super::positioned::Absent::Unasked)
+                ),
                 readmitted_first,
                 "settling before the readmission reads what settling after it read"
             );
@@ -7157,7 +7338,7 @@ def delivered() -> -F Unit {
             (lowering, SourceText::from(text.as_str())),
             (&HostGrant::UNBOUNDED, crate::compose::Checking::Whole),
             (&members, &mut SpellingCount::default()),
-            Keeping::Composed,
+            (Keeping::Composed, super::Positioning::Unpositioned),
         )
         .0
         .into_iter()
@@ -7260,7 +7441,7 @@ def delivered() -> -F Unit {
             (lowering, SourceText::from(text.as_str())),
             (&HostGrant::UNBOUNDED, crate::compose::Checking::Whole),
             (&members, &mut SpellingCount::default()),
-            Keeping::Composed,
+            (Keeping::Composed, super::Positioning::Unpositioned),
         )
         .0
         .into_iter()

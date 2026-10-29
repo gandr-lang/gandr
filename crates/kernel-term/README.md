@@ -30,6 +30,9 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a presentation may declare a sort classified `Type[-]`.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a verdict key reads each declaration's canonical segment.
 - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: § module-sealing-landed-sealing-rung — an atom is fresh within its artifact alone, so a decoded artifact goes whole to one replay.
+- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing format (§ The representation) — one maximally shared table per artifact, bounded by expanded work, so a declaration's shared size is the entries its segment adds and its unshared size its roots' expanded work.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and § 6 give Catt's artifact sizes, which `decode_measured`'s per-declaration shares stand beside.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites grows with dimension, so `decode_measured` reports both sizes rather than one.
 
 ## Provided features
 
@@ -38,7 +41,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - **The admission watermark** (`ArenaWatermark`) and `DeclarationBuilder`, which ties content minting to it so an abandoned declaration truncates itself.
 - **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence, and `SegmentLayout` reporting each declaration segment's boundaries. `encode_prefix` and `encode_after` resume an encoding after a leading run of declarations (`EncodedPrefix`), and `decode_keeping` and `decode_after` a decode (`DecodedPrefix`), each answering as the whole one does; `SegmentEncoder` writes the segments one declaration at a time, as the kernel's verdict key reads them.
 - **Structured names** (`StructuredName`, `NameSegment`) on every declaration.
-- **Canonical form enforced by re-encoding**, and **the amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, with `DecodeMetrics` from the same scan.
+- **Canonical form enforced by re-encoding**, and **the amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, with `DecodeMetrics` from the same scan. `decode_measured` reads each declaration's share of both off that scan (`DeclarationMeasure`): the entries its segment adds and its roots' expanded work.
 - **The node-tag table** (`NODE_TAG_TABLE`): one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts.
 - **The experimental stage syntax** (`stage::Arena`): an append-only, interned rule-language arena for hypothesis-indexed staging, with no wire format.
 
