@@ -64,7 +64,10 @@
 //! apart, law `i` is instantiated at the fold of the rule's variables and its
 //! endpoints must convert with the two sides ([`lawful`]). The instance is
 //! fixed by the rule, so nothing is searched, and the fold rests on the laws
-//! it names: the kernel's audit names each owed one as an axiom.
+//! it names: the kernel's audit names each owed one as an axiom. The law is
+//! the rule's `Path` component in the model, which `gandr-surface-lowering`'s
+//! `model` derives, and a handler of the theory owes the same law by
+//! conversion ([`crate::handler`]).
 //!
 //! A case that respects every rule, by conversion or by its law, is admitted;
 //! one that does not is refused `RuleNotRespected`, naming the case, the
