@@ -87,7 +87,10 @@
 //! codomain of the map its signature states. An operation
 //! whose motive's path — `back`'s and `cong`'s path, `then`'s first — is read
 //! no such way, or whose function did not lower, is refused as unannotated,
-//! and `cong` at a constructor as [`FragmentBoundary::NotAFunction`]. The
+//! and `cong` at a constructor or a static abstraction `\q. e` as
+//! [`FragmentBoundary::NotAFunction`]. A lambda `fn (q) { e }` as `cong`'s
+//! function takes the carrier its path's written type states, and the
+//! motive reads its body `e` where `⟨f y⟩` would stand. The
 //! operation then stands as the value its pure transport returns, so it is an
 //! endpoint, a constant's value or an operand without a run. No core node is
 //! added: the transport is the one the answer would have given. The kernel
@@ -1867,6 +1870,17 @@ impl<'source> Lowerer<'_, 'source>
                 Some(value),
             ) => {
                 self.stated_motive(site, motive)?;
+                // A static motive ranges over its path's points, so an
+                // operation over its binder reads the path's carrier (#3773).
+                if matches!(operation, Operation::Transport)
+                    && let Some(node) = self.tree.node(motive)
+                    && let Shape::Form {
+                        former: Former::StaticAbstraction,
+                        ..
+                    } = shape_of(self.pbg, node)?
+                {
+                    self.point(site, frame, motive, path)?;
+                }
                 for operand in [motive, path, value] {
                     self.read(operand, Reading::Value(frame));
                 }
@@ -2248,13 +2262,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   function definition its first operand names, and recorded for
     ///   [`Self::refuse_unsynthesised`]. An operation read where a value is
     ///   read is the value its transport returns.
-    /// - fails: [`FragmentBoundary::NotAFunction`] for `cong` at a constructor;
-    ///   the unannotated refusal where the position answers a type that is not
-    ///   a written path type, or for `then` and `back` a written flow type,
-    ///   under at most a returner and parentheses, and for a synthesised `cong`
-    ///   whose first operand names no function definition with a written
-    ///   result; the allowance refusal from that walk; the function name's own
-    ///   refusal.
+    /// - fails: [`FragmentBoundary::NotAFunction`] for `cong` at a constructor
+    ///   or at a static abstraction `\q. e`; the unannotated refusal where the
+    ///   position answers a type that is not a written path type, or for `then`
+    ///   and `back` a written flow type, under at most a returner and
+    ///   parentheses, and for a synthesised `cong` whose first operand names no
+    ///   function definition with a written result; the allowance refusal from
+    ///   that walk; the function name's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2291,6 +2305,9 @@ impl<'source> Lowerer<'_, 'source>
             && let Maybe::Present(_) = self.constructor_head(site, Placed::of(function, node))?
         {
             return Err(site.out(FragmentBoundary::NotAFunction));
+        }
+        if let Derivation::Cong { function, path } = derivation {
+            self.cong_map(site, frame, function, path)?;
         }
         let stance = match self.answers.get(&site.at.node) {
             Some(&answer) => Stance::Answered(answer),
@@ -2356,6 +2373,113 @@ impl<'source> Lowerer<'_, 'source>
             }),
         );
 
+        Ok(())
+    }
+
+    /// Read the map of the `cong` at `site`, `function`, beside its path
+    /// `path`: a lambda takes the carrier the path's written type states, and
+    /// a static abstraction is refused.
+    ///
+    /// # Specification
+    /// - requires: `function` and `path` are the operands of the `cong` at
+    ///   `site`, which stands under `frame`; neither is classified yet.
+    /// - ensures: a lambda `fn (q) { e }` is pointed at its path
+    ///   ([`Self::point`]), so its binder takes the carrier and it is minted as
+    ///   its thunk; any other map is left as it is.
+    /// - fails: [`FragmentBoundary::NotAFunction`] for a static abstraction, a
+    ///   type operator and no function; the path name's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The map's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda over a path parameter lowers and checks, and
+    ///   `\q. e` is refused as no function.
+    /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
+    #[spec(ensures: |ret| ret.is_err() || self.over_points.get(&function).is_none_or(|&carrier| self.plans.get(carrier).is_some()))]
+    fn cong_map(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        function: NodeIndex,
+        path: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(function)
+        else {
+            return Ok(());
+        };
+        match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::StaticAbstraction,
+                ..
+            } => Err(site.out(FragmentBoundary::NotAFunction)),
+            Shape::Form {
+                former: Former::Lambda,
+                ..
+            } => self.point(site, frame, function, path),
+            Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => Ok(()),
+        }
+    }
+
+    /// Point the abstraction `abstraction` at the path `path`, beside it in
+    /// the operation at `site`: its binder ranges over the path's points.
+    ///
+    /// # Specification
+    /// - requires: `abstraction` and `path` are operands of the operation at
+    ///   `site`, which stands under `frame`; neither is classified yet.
+    /// - ensures: where `path` is a bare name of a binder written at a path
+    ///   type `Path(A, a, b)`, `abstraction` is recorded in
+    ///   [`Self::over_points`] with `A`'s node; nothing is recorded for any
+    ///   other path.
+    /// - fails: the path name's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The path name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda over a path parameter lowers and checks, and
+    ///   a motive's binder reads its path type.
+    /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
+    #[spec(ensures: |ret| ret.is_err() || self.over_points.get(&abstraction).is_none_or(|&carrier| self.plans.get(carrier).is_some()))]
+    fn point(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        abstraction: NodeIndex,
+        path: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(written) = self.tree.node(path)
+        else {
+            return Ok(());
+        };
+        let Shape::Form {
+            former: Former::Name,
+            ..
+        } = shape_of(self.pbg, written)?
+        else {
+            return Ok(());
+        };
+        let named = Placed::of(path, written);
+        let name = self.name_at(named);
+        let Maybe::Present(super::Resolved::Binder(bound)) =
+            self.resolve_name(Site { at: named, ..site }, frame, name)?
+        else {
+            return Ok(());
+        };
+        let Maybe::Present(declared) = self.scope.declared(bound.binder)
+        else {
+            return Ok(());
+        };
+        if let Some(&Plan::Path(_, Carrier::Written(carrier), ..)) = self
+            .path_written(declared)
+            .and_then(|at| self.plans.get(at))
+        {
+            let _first = self.over_points.insert(abstraction, carrier);
+        }
         Ok(())
     }
 
@@ -2810,10 +2934,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the ascending sweep has classified every node.
     /// - ensures: through transparent plans, a variable, or a binder named in a
     ///   type, whose binder's written type is a path type under any
-    ///   parentheses, as [`Typed::Parameter`]; a call whose head is a
-    ///   declaration whose tail or signature writes a path result, a recursive
-    ///   call's descent claim, or a bare name of a declaration whose signature
-    ///   states a path type ([`Self::stated_path`]), as [`Typed::Called`].
+    ///   parentheses, or whose binder writes no type and ranges over a path's
+    ///   points at such a type ([`Lowerer::binders_over_points`]), as
+    ///   [`Typed::Parameter`]; a call whose head is a declaration whose tail or
+    ///   signature writes a path result, a recursive call's descent claim, or a
+    ///   bare name of a declaration whose signature states a path type
+    ///   ([`Self::stated_path`]), as [`Typed::Called`].
     /// - fails: [`synthesised::Absent::Unread`] for any other path.
     /// - panics: none.
     ///
@@ -2824,9 +2950,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a path parameter in a body and in a type, a call of a
     ///   definition, of a signature and a recursive call each read, a parameter
-    ///   of no path type not; a named value declaration stating its path read.
+    ///   of no path type not; a named value declaration stating its path read;
+    ///   a transport motive's binder over a path parameter read.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_named_paths_stated_type_2995`
+    /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(typed) => self.path_written(typed.node()).is_some(),
         | Maybe::Absent(_) => true,
@@ -2841,12 +2969,19 @@ impl<'source> Lowerer<'_, 'source>
         while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
             at = inner;
         }
-        let parameter = |binder: ScopeId, in_type: Option<Frame>| match self.scope.declared(binder)
-        {
-            Maybe::Present(declared) if self.path_written(declared).is_some() => {
-                Maybe::Present(Typed::Parameter { declared, in_type })
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => unread,
+        // A static motive's binder states no type, and ranges over the points
+        // of its transport's path (#3773).
+        let parameter = |binder: ScopeId, in_type: Option<Frame>| {
+            let declared = match self.scope.declared(binder) {
+                Maybe::Present(declared) => Some(declared),
+                Maybe::Absent(_) => self.binders_over_points.get(&binder).copied(),
+            };
+            match declared {
+                Some(declared) if self.path_written(declared).is_some() => {
+                    Maybe::Present(Typed::Parameter { declared, in_type })
+                },
+                Some(_) | None => unread,
+            }
         };
         match self.plans.get(at) {
             Some(&Plan::Variable(_, binder)) => parameter(binder, None),
@@ -3422,7 +3557,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result type `f`'s definition
     ///   writes. `back(p)` is `tr(y. Path(A, y, b), p, here(b))`, `p then q` is
     ///   `tr(y. Path(A, a, y), q, p)` and `cong(f, p)` is `tr(y. Path(A, a,
-    ///   ⟨force f y⟩), p, here(a))`; `back(f)` under a flow answer is the
+    ///   ⟨force f y⟩), p, here(a))`, or `tr(y. Path(A, a, ⟨e⟩), p, here(a))`
+    ///   for a lambda `fn (q) { e }` [`Self::cong_map`] recorded, its body read
+    ///   under the motive's binder; `back(f)` under a flow answer is the
     ///   symmetry ride `ride(y. Flow(A, y, b), f, stay(b))`. The path type an
     ///   operation stands at is recorded against its transport when both its
     ///   endpoints are read. The operation carries the written origin, the lift
@@ -3514,15 +3651,36 @@ impl<'source> Lowerer<'_, 'source>
             (Answered::Path, Derivation::Then { .. }, _) => {
                 gandr_core_term::identity::then(sink.arena, carrier, left, first, second)
             },
-            (Answered::Path, Derivation::Cong { .. }, _) => {
-                // The transport reads the map only lifted under its motive's
-                // binder: the lift is the written map's copy, so it answers
-                // at the map's bytes.
-                let lifted = gandr_core_term::shift_value(sink.arena, first, Binders::ONE)
-                    .settle(sink.arena);
-                record_copies(sink, mark, &[Carried::Value(first, lifted)], inserted);
-                mark = sink.arena.watermark();
-                gandr_core_term::identity::cong_lifted(sink.arena, carrier, lifted, left, second)
+            (Answered::Path, Derivation::Cong { function, .. }, _) => {
+                // A lambda's body stands under its one binder, as the motive's
+                // right endpoint stands under the motive's, so the motive
+                // reads the body itself: `tr(y. Path(B↑, start↑, ⟨e⟩), p,
+                // here(start))`, and no lambda stands in a type (#3773).
+                if let Some(body) = self.lambda_body(function, first, sink) {
+                    let lifted_codomain =
+                        gandr_core_term::shift_value_type(sink.arena, carrier, Binders::ONE)
+                            .settle(sink.arena);
+                    let lifted_start = gandr_core_term::shift_value(sink.arena, left, Binders::ONE)
+                        .settle(sink.arena);
+                    let image = sink.arena.value_returned(body);
+                    let motive = sink
+                        .arena
+                        .value_type_path(lifted_codomain, lifted_start, image);
+                    let base = sink.arena.value_here(left);
+                    sink.arena.computation_path_transport(motive, second, base)
+                }
+                else {
+                    // The transport reads the map only lifted under its
+                    // motive's binder: the lift is the written map's copy, so
+                    // it answers at the map's bytes.
+                    let lifted = gandr_core_term::shift_value(sink.arena, first, Binders::ONE)
+                        .settle(sink.arena);
+                    record_copies(sink, mark, &[Carried::Value(first, lifted)], inserted);
+                    mark = sink.arena.watermark();
+                    gandr_core_term::identity::cong_lifted(
+                        sink.arena, carrier, lifted, left, second,
+                    )
+                }
             },
             (Answered::Path | Answered::Flow, Derivation::Back { .. }, Maybe::Absent(_))
             | (Answered::Flow, Derivation::Then { .. } | Derivation::Cong { .. }, _) => {
@@ -3547,6 +3705,45 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// The body of the lambda `cong` maps by, `function` its node and `map`
+    /// the thunk it is minted as: the computation that stands under the
+    /// lambda's one binder.
+    ///
+    /// # Specification
+    /// - requires: `map` is minted in `sink`'s arena as `function`'s value.
+    /// - ensures: `e` for a lambda [`Self::cong_map`] recorded, minted as
+    ///   `thunk { fn e }`; nothing for any other map.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda over a path parameter lowers and checks, and
+    ///   a named map keeps its forced application.
+    /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
+    /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    #[spec(ensures: |ret| ret.is_none_or(|body| matches!(sink.arena.value(map), Some(&Value::Thunk(lambda))
+        if sink.arena.computation(lambda) == Some(&Computation::Lambda(body)))))]
+    fn lambda_body(
+        &self,
+        function: NodeIndex,
+        map: ValueId,
+        sink: &Sink<'_>,
+    ) -> Option<ComputationId>
+    {
+        if !self.over_points.contains_key(&function) {
+            return None;
+        }
+        let &Value::Thunk(lambda) = sink.arena.value(map)?
+        else {
+            return None;
+        };
+        let &Computation::Lambda(body) = sink.arena.computation(lambda)?
+        else {
+            return None;
+        };
+        Some(body)
     }
 
     /// The empty word at `point` when `point` is a looped point: the

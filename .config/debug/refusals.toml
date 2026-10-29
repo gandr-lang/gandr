@@ -46,3 +46,8 @@ sites = [
 sites = [
   { file = "crates/surface-lowering/src/lower/identity.rs", pattern = '(Err\(unannotated\)|site\.out\(FragmentBoundary::Unannotated\)\))' },
 ]
+
+[refusal.StrayReceiverMode]
+sites = [
+  { file = "crates/surface-lowering/src/lower/method.rs", pattern = '(return )?Err\(LoweringRefusal::StrayReceiverMode \{' },
+]

@@ -1,0 +1,23 @@
+// A function written as `fn (q) { e }` acts on a path through `cong`.
+//
+// Whiskering composes each path of a path of paths with a fixed path. The
+// function that does it is short, and a stated type for it only repeats
+// the path's type.
+//
+// The binder takes the type of the path's points.
+//
+// - see: #3773 — a lambda as `cong`'s function, refused before
+
+/// Whiskering a path of paths on the right.
+def whiskerRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  cong(fn (q) { q then g }, a)
+}

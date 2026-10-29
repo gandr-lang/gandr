@@ -1,7 +1,7 @@
-error[OutOfFragment.NotAFunction]: `cong` maps a path by a function, and a constructor is not one; write a function definition that applies it
+error[OutOfFragment.NotAFunction]: `cong` maps a path by a function, and neither a constructor nor a type operator `\q. e` is one; write `fn (q) { e }`, or a function definition that applies the constructor
    ╭▸ corpus/ledger/diagnostics/OutOfFragment.NotAFunction.gandr:10:21
    │
 10 │ def cong_at_point = cong(Base, loop) ;
-   │                     ━━━━━━━━━━━━━━━━ a constructor, not a function
+   │                     ━━━━━━━━━━━━━━━━ no function `cong` maps a path by
    │
    ╰ note: `cong_at_point` is refused with OutOfFragment.NotAFunction, as its expectation states
