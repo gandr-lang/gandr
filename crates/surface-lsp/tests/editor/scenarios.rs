@@ -1742,10 +1742,10 @@ mod sweeps
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the rotation [`Sweep::asked`] reads, and the visited sources
-    ///   sorted longest first: under [`Nightly::Slice`] what
-    ///   [`Sweep::visit_rotating`] returns over its nights, under
-    ///   [`Nightly::Part`] what [`Sweep::visit`] returns.
+    /// - ensures: `sweep`'s rotation, and the visited sources sorted longest
+    ///   first: under [`Nightly::Slice`] what [`Sweep::visit_rotating`] returns
+    ///   over its nights, under [`Nightly::Part`] what [`Sweep::visit`]
+    ///   returns.
     /// - provides: the sources each corpus sweep visits.
     /// - panics: the corpus, the change or the night cannot be read.
     ///
@@ -1756,14 +1756,15 @@ mod sweeps
     ///   pin.
     /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     /// - witness: `tests::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
     #[spec(ensures: |ret| ret.1.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
     fn visited(
+        sweep: &Sweep,
         sample: Sample,
         ceiling: Option<Ceiling>,
         nightly: Nightly,
     ) -> (Rotation, Vec<Source>)
     {
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         eprintln!("{}", sweep.rotation());
         let grammar = built_in().expect("the built-in grammar builds");
         let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
@@ -1820,7 +1821,8 @@ mod sweeps
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
-        let (rotation, sources) = visited(TYPED, Some(TYPED_CEILING), Nightly::Part);
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let (rotation, sources) = visited(&sweep, TYPED, Some(TYPED_CEILING), Nightly::Part);
         each_in_parallel(&sources, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text), TYPED_NIGHTS);
             let opening = source
@@ -1849,7 +1851,8 @@ mod sweeps
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let (rotation, sources) = visited(ERASED, Some(ERASED_CEILING), Nightly::Part);
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let (rotation, sources) = visited(&sweep, ERASED, Some(ERASED_CEILING), Nightly::Part);
         let grammar = built_in().expect("the built-in grammar builds");
         each_in_parallel(&sources, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text), ERASED_NIGHTS);
@@ -1872,24 +1875,97 @@ mod sweeps
         });
     }
 
+    /// How much of the corpus a hover sweep's draw holds.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Drawn
+    {
+        /// Every source: the `sweeps` profile, so every counted kind must
+        /// keep a row.
+        Whole,
+        /// A night's slice or a sampled run's sample.
+        Slice,
+    }
+
+    /// The sources the hover sweep visits under `sweep`, and how much of the
+    /// corpus they are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: what [`visited`] draws for [`HOVERED`] over
+    ///   [`HOVERED_NIGHTS`] nights; [`Drawn::Whole`] exactly under
+    ///   [`Rotation::Whole`] with [`gandr_workflow_sweep::Coverage::Full`], the
+    ///   `sweeps` profile.
+    /// - provides: the hover sweep's sources, the nightly's slice of them
+    ///   included.
+    /// - panics: the corpus cannot be read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nightly sweep and a whole one; hovering the whole
+    ///   corpus nightly, as the sweep once did, changes the drawn count.
+    /// - witness: `tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974`
+    #[spec(ensures: |ret| (ret.0 == Drawn::Whole) == (sweep.rotation() == Rotation::Whole
+        && sweep.coverage() == gandr_workflow_sweep::Coverage::Full))]
+    fn hovered_sources(sweep: &Sweep) -> (Drawn, Vec<Source>)
+    {
+        let (rotation, sources) = visited(
+            sweep,
+            HOVERED,
+            Some(HOVERED_CEILING),
+            Nightly::Slice(HOVERED_NIGHTS),
+        );
+        let drawn = if rotation == Rotation::Whole
+            && sweep.coverage() == gandr_workflow_sweep::Coverage::Full
+        {
+            Drawn::Whole
+        }
+        else {
+            Drawn::Slice
+        };
+        (drawn, sources)
+    }
+
+    #[test]
+    fn the_nightly_hovers_its_slice_of_the_corpus_3974()
+    {
+        let corpus =
+            opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads")).len();
+        let nights = usize::try_from(HOVERED_NIGHTS.0).expect("the night count is small");
+        let full = |rotation| {
+            Sweep::new(
+                gandr_workflow_sweep::Coverage::Full,
+                gandr_workflow_sweep::Changed::default(),
+                rotation,
+            )
+        };
+        let (drawn, slice) =
+            hovered_sources(&full(Rotation::Night(gandr_workflow_sweep::Night(20_755))));
+        assert_eq!(
+            drawn,
+            Drawn::Slice,
+            "a night's slice is not the whole corpus"
+        );
+        assert!(
+            !slice.is_empty() && slice.len() < corpus.div_ceil(nights).saturating_mul(2),
+            "the night hovers about a {nights}th of {corpus} sources, not {}",
+            slice.len()
+        );
+        let (drawn, every) = hovered_sources(&full(Rotation::Whole));
+        assert_eq!(
+            drawn,
+            Drawn::Whole,
+            "the sweeps profile hovers the whole corpus"
+        );
+        assert_eq!(
+            every.len(),
+            corpus,
+            "the sweeps profile hovers every source"
+        );
+    }
+
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     {
-        let whole = gandr_workflow_sweep::Coverage::asked() == gandr_workflow_sweep::Coverage::Full;
-        let sources = if whole {
-            let mut sources =
-                opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads"));
-            sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
-            sources
-        }
-        else {
-            visited(
-                HOVERED,
-                Some(HOVERED_CEILING),
-                Nightly::Slice(HOVERED_NIGHTS),
-            )
-            .1
-        };
+        let (drawn, sources) = hovered_sources(&Sweep::asked().expect("the run's sweep resolves"));
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
         let unanswered = AtomicUsize::new(0_usize);
@@ -2014,7 +2090,7 @@ mod sweeps
         }
         // A sample need not hold every kind; only the whole corpus can show a
         // row whose kind is gone.
-        if whole {
+        if drawn == Drawn::Whole {
             for &kind in COUNTED {
                 if !by_kind.contains_key(kind) {
                     misses.push(format!("{kind}: a row for a kind the corpus no longer has"));
