@@ -903,6 +903,10 @@ pub enum InterfaceFault
     /// A law no handler's clauses read: one naming a constructor, an atom or
     /// a variable outside the position its sort takes.
     Law,
+    /// A value operation, every input and the output at a sort the manifest
+    /// fixes, which a scope writing its clauses has no clause for: only a
+    /// model the scope names answers it.
+    Value,
 }
 
 impl core::fmt::Display for InterfaceFault
@@ -932,6 +936,7 @@ impl core::fmt::Display for InterfaceFault
             },
             Self::Fixed => "is the sort the operations return, which the handler's answer fixes",
             Self::Law => "is a law no handler's clauses read",
+            Self::Value => "is a value operation, which only a model the scope names answers",
         })
     }
 }

@@ -564,6 +564,7 @@ fn each_interface_fault_reads_as_its_own_clause()
         InterfaceFault::Unfixed,
         InterfaceFault::Fixed,
         InterfaceFault::Law,
+        InterfaceFault::Value,
     ]
     .iter()
     .map(ToString::to_string)

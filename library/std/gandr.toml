@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: ab9fb960a08c9fb9f2777245b6f25e133fc2f9e9dd0ea90aeca2990bf2fc6d1e
+# blake3: c88dc41e885ce4e0dffb15e7cd6214c2ce43819048dee7332395301445b4ef43
 
 [package]
 name = "std"
@@ -12,6 +12,7 @@ modules = [
   "authority",
   "boundary",
   "console",
+  "cost",
   "grade",
   "layout",
   "manifold",

@@ -231,6 +231,7 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::model::InterfaceFault;
 use crate::module::ForeignInterface;
 use crate::module::ForeignType;
 use crate::module::Provider;
@@ -2007,11 +2008,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   interface of a scope over an extern block's interface, which the host
     ///   the run is offered to answers; the refusals of [`Self::handled`],
     ///   [`Self::theory_slot`], [`Self::named_model`] and
-    ///   [`Self::answering_model`]; [`LoweringRefusal::DuplicateDefinition`]
-    ///   for a second return clause; a missing-operand fault for a scope with
-    ///   none; a misplaced-tile fault for a scope out of shape, a minting
-    ///   clause naming no payload among them; the block's and each body's own
-    ///   refusal.
+    ///   [`Self::answering_model`]; [`LoweringRefusal::UninterfacedMember`] at
+    ///   the theory's name with [`InterfaceFault::Value`] for a scope writing
+    ///   its clauses over a theory with a value operation, which no clause
+    ///   answers; [`LoweringRefusal::DuplicateDefinition`] for a second return
+    ///   clause; a missing-operand fault for a scope with none; a
+    ///   misplaced-tile fault for a scope out of shape, a minting clause naming
+    ///   no payload among them; the block's and each body's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2026,6 +2029,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scoped_capability_cannot_escape`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `lower::capability::tests::a_model_answers_a_theory_s_value_operations_2288`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Scope(_))))]
     pub(super) fn capability_scope(
         &mut self,
@@ -2168,6 +2172,17 @@ impl<'source> Lowerer<'_, 'source>
                 }),
             );
             return Ok(());
+        }
+        // A value operation performs nothing, so no clause answers it: only a
+        // model the scope names does.
+        if let Interface::Theory(ref theory) = interface
+            && let Some(value) = theory.values.first()
+        {
+            return Err(LoweringRefusal::UninterfacedMember {
+                span: written.span,
+                name: self.name_at(value.named),
+                fault: InterfaceFault::Value,
+            });
         }
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut on_return: Maybe<(NodeIndex, Placed, NodeIndex), clause::Absent> =
@@ -2419,8 +2434,8 @@ impl<'source> Lowerer<'_, 'source>
             let _first = first.insert(key.clone(), sort);
             let _fixed = fixed.insert(key, ty);
         }
-        let read = theory::operations(&members, &fixed).and_then(|operations| {
-            theory::laws(&members, &operations).map(|laws| (operations, laws))
+        let read = theory::operations(&members, &fixed).and_then(|read| {
+            theory::laws(&members, &read.effects, &read.values).map(|laws| (read, laws))
         });
         // A law the order turned rewrites from its written right side; a
         // presentation coding no certificate turns none.
@@ -2428,7 +2443,7 @@ impl<'source> Lowerer<'_, 'source>
             .value
             .certificate()
             .map_or_else(|_uncertified| Vec::new(), |certificate| certificate.turns);
-        let (operations, laws) = match read {
+        let (theory::Operations { effects, values }, laws) = match read {
             Ok(read) => read,
             Err((member, fault)) => {
                 return Err(LoweringRefusal::UninterfacedMember {
@@ -2454,8 +2469,9 @@ impl<'source> Lowerer<'_, 'source>
             scope: at,
             name: EffectName::from(handled.as_ref()),
             theory,
-            rules: theory::rules(&members, &operations, &turns),
-            operations,
+            rules: theory::rules(&members, &effects, &turns),
+            operations: effects,
+            values,
             laws,
             owner,
             manifest: manifest
