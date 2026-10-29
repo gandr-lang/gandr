@@ -1,0 +1,30 @@
+// `math`: the mathematical library, a package like any other, built on
+// `std`. Its modules are mapped in `../README.md`. Until a package imports
+// another by name (#533 p3), a project imports a module of `math` by the
+// relative path to its source.
+// The manifest theories, from `std.package` by its path (#533 p3).
+import "../../std/src/package.gandr";
+
+/// The package: `math`, at the version `gandr.toml` records.
+pub module Package : Model(Gandr.Package) {
+  /// The package's name, `math`.
+  def name = "math";
+  /// The version `math` releases at.
+  def version = "0.1.0";
+  /// The authors of `math`.
+  def authors = "The gandr authors";
+  /// The licence `math` carries, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the documentation of `math` stands at.
+  def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/math";
+  /// The address a resolver may fetch `math` from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version `math` is written for.
+  def gandr = ">= 0.0";
+  /// The features `math` asks the toolchain for: none it names yet.
+  def features = "";
+  /// The systems `math` is built on: any.
+  def systems = "";
+  /// The spelling `math` asks for: the reader's own.
+  def spelling = "";
+}

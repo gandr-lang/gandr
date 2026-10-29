@@ -1,0 +1,88 @@
+// `math.path`: the algebra of paths, written as library definitions.
+//
+// The composites of naturality and coherence state their types in a
+// path's endpoints and its action under a function. The native forms
+// `then` and `cong` synthesise their types from their operands, so a
+// statement over a reflexivity or a variable function needs the endpoints
+// written. These definitions write them, and prove the groupoid laws of
+// composition beside them.
+//
+// Each law is a definition at its path type. The associator and the left
+// unitor go by based path induction on their last path, the telescope
+// form of `transport`. The right unitor holds by conversion, because a
+// composite with a reflexivity on the right reduces to its left operand.
+//
+// - see: #3711 — the naturality meta-operation these definitions serve
+// - see: #628 — `math` beside `std`, and the groupoid laws it holds
+
+/// The composite of two paths, whose type states its endpoints.
+pub def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+  p then q
+}
+
+/// A function's action on a path, whose type states its endpoints.
+pub def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+  cong(F, p)
+}
+
+/// A dependent function's action on a path: its value at the start carried along the path meets its value at the end.
+pub def apd(
+  A : Type,
+  P : A => Type,
+  F : (a : A) => P(a),
+  x : A,
+  y : A,
+  p : Path(A, x, y)
+) -> Path(P(y), transport(\a. P(a), p, F(x)), F(y)) {
+  transport(
+    (v : A, k : Path(A, x, v)) => Path(P(v), transport(\a. P(a), k, F(x)), F(v)),
+    p,
+    here(x),
+    here(p),
+    here(F(x))
+  )
+}
+
+/// The associator: composition is associative, by based path induction on the last path.
+pub def assoc(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  transport(
+    (v : A, k : Path(A, z, v)) => Path(Path(A, x, v), (f then g) then k, f then (g then k)),
+    h,
+    here(z),
+    here(h),
+    here(f then g)
+  )
+}
+
+/// The left unitor: a reflexivity composed on the left leaves a path, by based path induction on it.
+pub def leftUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
+  Path(A, x, y),
+  join(A, x, x, y, here(x), p),
+  p
+) {
+  transport(
+    (v : A, k : Path(A, x, v)) => Path(Path(A, x, v), join(A, x, x, v, here(x), k), k),
+    p,
+    here(x),
+    here(p),
+    here(here(x))
+  )
+}
+
+/// The right unitor: a reflexivity composed on the right leaves a path, by conversion.
+pub def rightUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
+  Path(A, x, y),
+  join(A, x, y, y, p, here(y)),
+  p
+) {
+  here(p)
+}
