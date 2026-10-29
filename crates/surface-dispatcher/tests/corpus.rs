@@ -1076,6 +1076,93 @@ mod sweeps
         );
     }
 
+    /// The concurrent schedule's sample: sixty-four sources, ranked by their
+    /// BLAKE3 digest under this name, at least one of each corpus class, and
+    /// every source the change adds or modifies (`gandr-workflow-sweep`). The
+    /// `sweeps` and nightly profiles visit the two roots whole.
+    const SCHEDULED: Sample = Sample {
+        name: SampleName("the_concurrent_schedule_settles_the_corpus_alike_2954"),
+        size: SampleSize(64),
+    };
+
+    /// #2954: every corpus source composed on the concurrent schedule, at
+    /// four threads, settles each declaration as its sequential composition
+    /// settles it. Each `runs` item then spells its run as the sequential
+    /// schedule spells it, though its independent writers ran as jobs of the
+    /// pool.
+    #[test]
+    fn the_concurrent_schedule_settles_the_corpus_alike_2954()
+    {
+        use gandr_surface_dispatcher::Scheduling;
+        use gandr_surface_dispatcher::compose_on;
+
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let (paths, least) = match sweep.coverage() {
+            gandr_workflow_sweep::Coverage::Full => {
+                (sources_under(&[strict_root(), fixture_root()]), 100_usize)
+            },
+            gandr_workflow_sweep::Coverage::Sampled => {
+                let visited = sweep.visit(
+                    SCHEDULED,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                );
+                assert!(
+                    visited.len() >= SCHEDULED.size.0,
+                    "the sample is drawn: {}",
+                    visited.len()
+                );
+                (
+                    visited.into_iter().map(|source| source.path).collect(),
+                    32_usize,
+                )
+            },
+        };
+        let grammar = built_in().expect("the built-in grammar builds");
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::MIN.saturating_add(3),
+        )));
+        let settled = |text: SourceText<'_>, scheduling| match compose_on(
+            &grammar,
+            CorpusRoot::Fixture,
+            text,
+            &mut LoweringCount::default(),
+            scheduling,
+        ) {
+            Ok(Composed::Settled { report, .. }) => Some(
+                report
+                    .declarations()
+                    .iter()
+                    .map(|declaration| {
+                        (
+                            declaration.name().to_string(),
+                            declaration.outcome(),
+                            declaration.settlement(),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            Ok(Composed::Refused(_)) | Err(_) => None,
+        };
+        let mut compared = 0_usize;
+        let mut differing = Vec::new();
+        for path in paths {
+            let own = std::fs::read_to_string(&path).expect("a corpus source reads");
+            let text = SourceText::from(own.as_str());
+            let sequential = settled(text, Scheduling::Sequential);
+            if sequential.is_some() {
+                compared = compared.saturating_add(1);
+            }
+            if settled(text, Scheduling::Concurrent(&pool)) != sequential {
+                differing.push(path);
+            }
+        }
+        assert!(
+            compared > least && differing.is_empty(),
+            "over {compared} sources, the concurrent schedule settles as the sequential one; \
+             differing: {differing:?}"
+        );
+    }
+
     /// The bytes of a step's `Debug` spelling, folded into one hash.
     #[repr(transparent)]
     #[derive(Default)]

@@ -211,6 +211,7 @@ pub use crate::lower::lower_open;
 pub use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
 pub use crate::native::EmitRefusal;
+pub use crate::run::Choice;
 pub use crate::run::Declined;
 pub use crate::run::POLICY_VARIABLE;
 pub use crate::run::Policy;

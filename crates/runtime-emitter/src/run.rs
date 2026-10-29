@@ -214,6 +214,45 @@ pub enum Tier
     Executor,
 }
 
+/// Which tier a run asks for: the one the process's policy picks, or one
+/// named.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Choice
+{
+    /// The tier the process's policy picks, the executor wherever native code
+    /// is not to be had.
+    Policy,
+    /// One tier.
+    Tier(Tier),
+}
+
+impl Choice
+{
+    /// Run `lowered` over `inputs` on the tier the choice names.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`by_policy`] or [`on_tier`].
+    fn ran(
+        self,
+        lowered: &Lowered,
+        source: (&CommandArena, &Definitions),
+        fuel: Fuel,
+        inputs: RunInputs<'_, '_>,
+    ) -> Result<Ran, Declined>
+    {
+        match self {
+            Self::Policy => by_policy(lowered, source, fuel, inputs),
+            Self::Tier(tier) => on_tier(tier, lowered, source, fuel, inputs),
+        }
+    }
+}
+
 /// Why a run gave no outcome.
 ///
 /// # Specification
@@ -741,9 +780,9 @@ pub fn evaluate_unfused_on(
     on_tier(tier, &lowered, (arena, definitions), fuel, inputs)?.hostless()
 }
 
-/// Run `lowered` on `tier` over the values `environment` binds in `inputs`'
-/// store, and move its outcome into that store. An operation no handler of
-/// the run claims is offered to `host`.
+/// Run `lowered` on the tier `choice` names over the values `environment` binds
+/// in `inputs`' store, and move its outcome into that store. An operation no
+/// handler of the run claims is offered to `host`.
 ///
 /// `lowered` is the function [`lower_suspended`] or a schedule lowers from a
 /// command binding one covariable. A cut's writer runs so, closed over a
@@ -754,15 +793,16 @@ pub fn evaluate_unfused_on(
 /// - requires: `environment` binds the producer bindings the body's support
 ///   selects, innermost first, as a transfer binds a thunk suspending the body;
 ///   every constant the body reaches is defined in `source`'s definitions.
-/// - ensures: as [`evaluate_on_with_host`] for the body with its covariable
-///   delivering to `★`, each bound value first laid out on the run's heap as a
-///   host's reply is.
+/// - ensures: as [`evaluate_on_with_host`] on the tier `choice` names, for the
+///   body with its covariable delivering to `★`, each bound value first laid
+///   out on the run's heap as a host's reply is.
 /// - executable: none — as [`evaluate_on_with_host`].
 ///
 /// # Errors
-/// As [`evaluate_on_with_host`]; [`Declined::Environment`] for an environment
-/// binding other than `lowered`'s captures, and [`Declined::Capture`] naming a
-/// bound value the run cannot hold.
+/// As [`evaluate_on_with_host`], and on the policy's tier never
+/// [`Declined::NoPatcher`] or an emission refusal; [`Declined::Environment`]
+/// for an environment binding other than `lowered`'s captures, and
+/// [`Declined::Capture`] naming a bound value the run cannot hold.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — thunks a run answered with, over no capture, one, two and
@@ -778,7 +818,7 @@ pub fn evaluate_unfused_on(
 ///
 /// [`lower_suspended`]: crate::lower::lower_suspended
 pub fn closed_on_with_host<Host>(
-    tier: Tier,
+    choice: Choice,
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     environment: Environment,
@@ -793,7 +833,7 @@ where
         return Err(Declined::Environment);
     }
     lowered_on_with_host(
-        tier,
+        choice,
         lowered,
         source,
         (fuel, inputs.closed_over(&captured)),
@@ -938,17 +978,13 @@ where
     Host: HostHandler,
 {
     let lowered = lower(arena, definitions, root)?;
-    let mut adapter = Adapter {
-        host,
-        aborted: None,
-    };
-    let ran = by_policy(
+    lowered_on_with_host(
+        Choice::Policy,
         &lowered,
         (arena, definitions),
-        fuel,
-        inputs.offered(&mut adapter),
-    )?;
-    hosted(ran, adapter)
+        (fuel, inputs),
+        host,
+    )
 }
 
 /// As [`evaluate_on`], an operation no handler of the run claims offered to
@@ -982,19 +1018,27 @@ where
     Host: HostHandler,
 {
     let lowered = lower(arena, definitions, root)?;
-    lowered_on_with_host(tier, &lowered, (arena, definitions), (fuel, inputs), host)
+    lowered_on_with_host(
+        Choice::Tier(tier),
+        &lowered,
+        (arena, definitions),
+        (fuel, inputs),
+        host,
+    )
 }
 
-/// As [`evaluate_on_with_host`], over `lowered`, the function lowered from
-/// the root: a scheduled run's reader, lowered once with its writers.
+/// As [`evaluate_on_with_host`] on the tier `choice` names, over `lowered`,
+/// the function lowered from the root: a scheduled run's reader, lowered once
+/// with its writers.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on_with_host`].
+/// As [`evaluate_on_with_host`]; on the policy's tier, never
+/// [`Declined::NoPatcher`] or an emission refusal.
 pub fn lowered_on_with_host<Host>(
-    tier: Tier,
+    choice: Choice,
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     (fuel, inputs): (Fuel, RunInputs<'_, '_>),
@@ -1007,7 +1051,7 @@ where
         host,
         aborted: None,
     };
-    let ran = on_tier(tier, lowered, source, fuel, inputs.offered(&mut adapter))?;
+    let ran = choice.ran(lowered, source, fuel, inputs.offered(&mut adapter))?;
     hosted(ran, adapter)
 }
 
@@ -1787,7 +1831,7 @@ mod tests
     {
         let lowered = lower_suspended(arena, definitions, body)?;
         match closed_on_with_host(
-            tier,
+            super::Choice::Tier(tier),
             &lowered,
             (arena, definitions),
             environment,

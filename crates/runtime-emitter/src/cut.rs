@@ -85,9 +85,9 @@ use gandr_runtime_stencils::Fuel;
 
 use crate::lower::Schedule;
 use crate::lower::lower_scheduled;
+use crate::run::Choice;
 use crate::run::Declined;
 use crate::run::RunInputs;
-use crate::run::Tier;
 use crate::run::closed_on_with_host;
 use crate::run::lowered_on_with_host;
 use crate::seam::HostHandler;
@@ -98,9 +98,9 @@ use crate::seam::HostValues;
 use crate::seam::Migrated;
 use crate::seam::MigrationRequest;
 
-/// Run `root`, its independent cuts scheduled, on `tier` inside a scope of
-/// `fork`: each spawn starts its writer as a job of the scope, and each read
-/// waits for the writer's answer.
+/// Run `root`, its independent cuts scheduled, on the tier `choice` names
+/// inside a scope of `fork`: each spawn starts its writer as a job of the
+/// scope, and each read waits for the writer's answer.
 ///
 /// # Specification
 /// - requires: `root` and every definition it reaches belong to `arena`, as
@@ -109,23 +109,24 @@ use crate::seam::MigrationRequest;
 ///   [`READ`] of [`CELL`] reads a handle a perform of [`SPAWN`] of [`CELL`]
 ///   replied with, in the same run.
 /// - ensures: the root and each writer's body are lowered once, before the
-///   scope starts ([`crate::lower::lower_scheduled`]). The reader runs as
-///   [`evaluate_on_with_host`] runs it, with a host that answers each spawn
-///   with a handle and each read with a fresh copy of the writer's answer in
-///   `store`. A read declines when the writer ended with no answer, and a spawn
-///   declines when its thunk does not copy. Each writer runs over the function
-///   the schedule lowered for its body and a store of its own, each value its
-///   environment binds first laid out on the run's heap as a host's reply is.
-///   Its host answers its own spawns and reads and declines every other
-///   operation. Every other operation and every migration of the reader goes to
-///   `host`. So a run whose writers halt answers as the sequential schedule
-///   does.
+///   scope starts ([`crate::lower::lower_scheduled`]). The reader runs on the
+///   tier `choice` names as [`evaluate_on_with_host`] runs it, with a host that
+///   answers each spawn with a handle and each read with a fresh copy of the
+///   writer's answer in `store`. A read declines when the writer ended with no
+///   answer, and a spawn declines when its thunk does not copy. Each writer
+///   runs over the function the schedule lowered for its body and a store of
+///   its own, each value its environment binds first laid out on the run's heap
+///   as a host's reply is. Its host answers its own spawns and reads and
+///   declines every other operation. Every other operation and every migration
+///   of the reader goes to `host`. So a run whose writers halt answers as the
+///   sequential schedule does.
 /// - panics: a panic of a writer that ran on this thread, or of the reader; a
 ///   writer's panic on another worker where the scope ends.
 /// - executable: none — the answer is observed by running the schedule.
 ///
 /// # Errors
-/// As [`evaluate_on_with_host`].
+/// As [`evaluate_on_with_host`], and on the policy's tier never
+/// [`Declined::NoPatcher`] or an emission refusal.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a writer over a capture, read after the reader asks the
@@ -148,7 +149,7 @@ use crate::seam::MigrationRequest;
 #[inline]
 pub fn evaluate_scheduled_on<Forking, Host>(
     fork: &Forking,
-    tier: Tier,
+    choice: Choice,
     (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
     (fuel, store): (Fuel, &mut Store),
     host: &mut Host,
@@ -161,7 +162,7 @@ where
     let schedule = lower_scheduled(arena, definitions, root)?;
     fork.scope(Reading {
         program: Program {
-            tier,
+            choice,
             arena,
             definitions,
             schedule: &schedule,
@@ -172,13 +173,13 @@ where
     })
 }
 
-/// What every run of a schedule reads besides its store: the tier, the
-/// program, its code, and the fuel.
+/// What every run of a schedule reads besides its store: the tier asked for,
+/// the program, its code, and the fuel.
 #[derive(Clone, Copy, Debug)]
 struct Program<'scope>
 {
-    /// The tier every run takes.
-    tier: Tier,
+    /// The tier every run asks for.
+    choice: Choice,
     /// The IL every run's command belongs to.
     arena: &'scope CommandArena,
     /// The definitions every run unfolds.
@@ -231,7 +232,7 @@ where
             host,
         };
         lowered_on_with_host(
-            program.tier,
+            program.choice,
             &program.schedule.reader,
             (program.arena, program.definitions),
             (program.fuel, RunInputs::new(store)),
@@ -315,7 +316,7 @@ where
         host: &mut declining,
     };
     match closed_on_with_host(
-        program.tier,
+        program.choice,
         lowered,
         (program.arena, program.definitions),
         environment,

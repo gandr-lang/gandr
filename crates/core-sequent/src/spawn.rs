@@ -189,6 +189,43 @@ pub fn spawn_independent(
     scheduled
 }
 
+/// [`spawn_independent`] over `definitions` alone: the definitions every run
+/// of a program shares, scheduled once for all of its roots.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on `Ok`, the definitions [`spawn_independent`] gives back beside
+///   any root, so a root that holds no marked cut runs over them as written. On
+///   `Err`, the arena is as on entry.
+/// - provides: a program's concurrent definitions, rewritten once and not on
+///   each run.
+/// - fails: as Errors.
+/// - panics: none.
+/// - executable: none — as [`spawn_independent`].
+///
+/// # Errors
+/// As [`spawn_independent`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — a marked cut inside a definition spawns there as it does
+///   beside a root, and an unmarked arena is given back unchanged with nothing
+///   minted.
+/// - witness: `spawn::tests::a_marked_cut_in_a_definition_spawns_there`
+/// - witness: `spawn::tests::an_unmarked_arena_is_given_back_unchanged`
+#[inline]
+pub fn spawn_independent_definitions(
+    arena: &mut CommandArena,
+    definitions: &Definitions,
+) -> Result<Definitions, ScheduleRefusal>
+{
+    let entry = arena.watermark();
+    let scheduled = Images::new().and_then(|mut images| images.definitions(arena, definitions));
+    if scheduled.is_err() {
+        arena.truncate_to(entry);
+    }
+    scheduled
+}
+
 /// The schedule, leaving a refusal's partial nodes for the caller to
 /// truncate.
 ///
@@ -203,27 +240,12 @@ fn schedule(
     definitions: &Definitions,
 ) -> Result<(CommandId, Definitions), ScheduleRefusal>
 {
-    let cell = EffectSig::new(EffectName::from(CELL), core::iter::empty())
-        .map_err(|_conflict| ScheduleRefusal::Interface)?;
-    let mut images = Images {
-        cell,
-        done: BTreeMap::new(),
-    };
+    let mut images = Images::new()?;
     let NodeAddress::Command(root) = images.image(arena, NodeAddress::Command(root))?
     else {
         return Err(ClosureRefusal::Dangling(NodeAddress::Command(root)).into());
     };
-    let mut scheduled = Definitions::new();
-    for position in 0 .. usize::from(definitions.len()) {
-        let definition = match definitions.get(ConstantIndex::from(position)) {
-            Some(Definition::Transparent(value)) => {
-                Definition::Transparent(images.producer(arena, value)?)
-            },
-            Some(Definition::Opaque) | None => Definition::Opaque,
-        };
-        scheduled.push(definition);
-    }
-    Ok((root, scheduled))
+    Ok((root, images.definitions(arena, definitions)?))
 }
 
 /// One step of the post-order walk.
@@ -248,6 +270,49 @@ struct Images
 
 impl Images
 {
+    /// No node reached yet.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`ScheduleRefusal::Interface`] when the cell's interface does not form.
+    fn new() -> Result<Self, ScheduleRefusal>
+    {
+        Ok(Self {
+            cell: EffectSig::new(EffectName::from(CELL), core::iter::empty())
+                .map_err(|_conflict| ScheduleRefusal::Interface)?,
+            done: BTreeMap::new(),
+        })
+    }
+
+    /// The image of each of `definitions`, by position: a transparent one's
+    /// producer rewritten, an opaque one kept.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`spawn_independent`].
+    fn definitions(
+        &mut self,
+        arena: &mut CommandArena,
+        definitions: &Definitions,
+    ) -> Result<Definitions, ScheduleRefusal>
+    {
+        let mut scheduled = Definitions::new();
+        for position in 0 .. usize::from(definitions.len()) {
+            let definition = match definitions.get(ConstantIndex::from(position)) {
+                Some(Definition::Transparent(value)) => {
+                    Definition::Transparent(self.producer(arena, value)?)
+                },
+                Some(Definition::Opaque) | None => Definition::Opaque,
+            };
+            scheduled.push(definition);
+        }
+        Ok(scheduled)
+    }
+
     /// The image of the producer `value`.
     ///
     /// # Specification

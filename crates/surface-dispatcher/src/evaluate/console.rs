@@ -292,11 +292,13 @@ impl Console for Captured
     captures: [streaming = stream(&request).is_some()],
     ensures: |ret| ret.is_none() || streaming,
 )]
-pub(super) fn served<Abort>(
-    console: &mut dyn Console,
+pub(super) fn served<Abort, Printer>(
+    console: &mut Printer,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>
+where
+    Printer: Console + ?Sized,
 {
     let met = stream(&request)?;
     if met == Stream::In {
@@ -335,27 +337,33 @@ pub(super) fn served<Abort>(
 }
 
 /// The host of a run that only meets the standard streams: each of their
-/// operations is served on its console, and every other one is declined.
+/// operations is served on its console, and every other one is declined. A
+/// host over a console that crosses threads crosses them too, so a
+/// concurrent run's reader may hold it.
 #[repr(transparent)]
-pub(super) struct PrintingHost<'console>
+pub(super) struct PrintingHost<'console, Printer: ?Sized = dyn Console>
 {
     /// Where the run's printed lines go.
-    console: &'console mut dyn Console,
+    console: &'console mut Printer,
 }
 
-impl<'console> PrintingHost<'console>
+impl<'console, Printer> PrintingHost<'console, Printer>
+where
+    Printer: Console + ?Sized,
 {
     /// The host writing to `console`.
     ///
     /// # Specification
     /// trivial.
-    pub(super) const fn new(console: &'console mut dyn Console) -> Self
+    pub(super) const fn new(console: &'console mut Printer) -> Self
     {
         Self { console }
     }
 }
 
-impl HostHandler for PrintingHost<'_>
+impl<Printer> HostHandler for PrintingHost<'_, Printer>
+where
+    Printer: Console + ?Sized,
 {
     type Abort = Infallible;
 
@@ -370,6 +378,6 @@ impl HostHandler for PrintingHost<'_>
         values: &mut HostValues<'_>,
     ) -> HostReply<Self::Abort>
     {
-        served(self.console, request, values).unwrap_or(HostReply::Decline)
+        served(&mut *self.console, request, values).unwrap_or(HostReply::Decline)
     }
 }

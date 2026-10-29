@@ -38,6 +38,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::Summand;
+use gandr_runtime_emitter::Choice;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
@@ -245,7 +246,7 @@ where
     let mut store = Store::new();
     let outcome = evaluate_scheduled_on(
         &Serial,
-        tier,
+        Choice::Tier(tier),
         (&program.arena, &program.definitions, program.spawning),
         (budget(), &mut store),
         host,
@@ -382,7 +383,7 @@ fn a_writer_with_no_answer_leaves_its_read_stuck()
         let mut store = Store::new();
         let outcome = evaluate_scheduled_on(
             &Serial,
-            tier,
+            Choice::Tier(tier),
             (&program.arena, &program.definitions, program.spawning),
             (budget(), &mut store),
             &mut Answering,
