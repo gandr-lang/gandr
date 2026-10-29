@@ -531,7 +531,7 @@ pub struct ModuleReport
     /// The nodes each accepted declaration checked in another form than
     /// written, by position, each beside the node the kernel reads in its
     /// place.
-    refinements: BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
+    restatements: BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
     /// The laws each lawful declaration's folds rest on, by position, in its
     /// folded type's rule order.
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
@@ -795,7 +795,7 @@ impl ModuleReport
 
     /// The nodes each accepted declaration checked in another form than
     /// written, by position, each beside the node the declaration crosses to
-    /// the kernel in its place, ascending by the refined node: an arm or a
+    /// the kernel in its place, ascending by the restated node: an arm or a
     /// case refined by a solved variable, and a constructor restated at its
     /// stated application.
     ///
@@ -803,9 +803,9 @@ impl ModuleReport
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn refinements(&self) -> &BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>
+    pub const fn restatements(&self) -> &BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>
     {
-        &self.refinements
+        &self.restatements
     }
 
     /// The laws each lawful declaration's folds rest on, by position, in its
@@ -1361,7 +1361,7 @@ fn decide(
     // variables refine, and the stages its recursion typing mints, are its
     // own: whatever an earlier declaration's typing pass left is dropped.
     let _earlier = context.take_relating();
-    let _earlier_refined = context.take_refining();
+    let _earlier_restated = context.take_restating();
     context.forget_stages();
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
@@ -1498,7 +1498,7 @@ fn decide(
     let mut typings = Maybe::Absent(untyped);
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let mut relating = Vec::new();
-    let mut refining = Vec::new();
+    let mut restating = Vec::new();
     let residue: Residue;
     let mut following = Maybe::Absent(crate::recursion::Unstaged::Plain);
     // The type the table takes: the declared one, filled with the solutions
@@ -1547,7 +1547,7 @@ fn decide(
                             // pairs it relates, the nodes it refines and what
                             // it leaves undecided.
                             let _first = context.take_relating();
-                            let _first_refined = context.take_refining();
+                            let _first_restated = context.take_restating();
                             context.forget_stages();
                             crate::quantified::mint(context.stages_mut(), declaration.stages());
                             context.deferrals_mut().open(Collecting::On);
@@ -1567,7 +1567,7 @@ fn decide(
                 },
             };
             relating = context.take_relating();
-            refining = context.take_refining();
+            restating = context.take_restating();
             residue = context.deferrals_mut().take();
             following = follows(
                 context,
@@ -1660,7 +1660,7 @@ fn decide(
             context.record(constant, declared);
             context.define(constant, declared, body);
             context.keep_relations(constant, relating);
-            context.keep_refinements(constant, refining);
+            context.keep_restatements(constant, restating);
             if let Maybe::Present(position) = following {
                 context.record_following(constant, position);
             }
@@ -1681,7 +1681,7 @@ fn decide(
             context.record(constant, synthesised.produced());
             context.define(constant, synthesised.produced(), body);
             context.keep_relations(constant, relating);
-            context.keep_refinements(constant, refining);
+            context.keep_restatements(constant, restating);
         },
         (Direction::Synthesise, Verdict::Suspended(supplied)) => {
             context.record(constant, supplied);
@@ -1836,7 +1836,7 @@ fn follows(
     let _nesting = context.take_nesting();
     let _updates = context.take_updates();
     let _relating = context.take_relating();
-    let _refining = context.take_refining();
+    let _restating = context.take_restating();
     let _residue = context.deferrals_mut().take();
     match (staged, read) {
         (Ok(_), crate::recursion::ResultStage::Staged(position)) => Maybe::Present(position),
@@ -2012,7 +2012,7 @@ fn implicits(
     let filled = fill(context.arena_mut(), body, &solutions);
     let direction = filled_direction(context.arena_mut(), direction, &solutions);
     let _first = context.take_relating();
-    let _first_refined = context.take_refining();
+    let _first_restated = context.take_restating();
     let _stale = context.take_nesting();
     let _stale_updates = context.take_updates();
     let _crossed = context.take_crossings();
@@ -2326,7 +2326,7 @@ pub fn check_declaration_supported(
     && &ret.handled == context.handled()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
-    && &ret.refinements == context.refinements()
+    && &ret.restatements == context.restatements()
     && &ret.natives == context.natives()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
         .eq(context.definitions().definitions())
@@ -2654,7 +2654,7 @@ impl ModuleRun
             handled: context.handled().clone(),
             reflexivities: context.reflexivities().clone(),
             relations: context.relations().clone(),
-            refinements: context.refinements().clone(),
+            restatements: context.restatements().clone(),
             laws: context.laws().clone(),
             operation_rules: context.operation_rules().clone(),
             stage_signatures: context.stage_signatures().clone(),
@@ -2773,7 +2773,7 @@ where
 /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
 #[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
     && context.relations().keys().all(|at| report.relations.contains_key(at))
-    && context.refinements().keys().all(|at| report.refinements.contains_key(at))
+    && context.restatements().keys().all(|at| report.restatements.contains_key(at))
     && context.motives().keys().all(|at| report.motives.contains_key(at))
     && context.payloads().keys().all(|at| report.payloads.contains_key(at))
     && context.handled().keys().all(|at| report.handled.contains_key(at)))]
@@ -2827,11 +2827,11 @@ pub fn absorb(
             .iter()
             .map(|(&at, relations)| (at, relations.clone())),
     );
-    report.refinements.extend(
+    report.restatements.extend(
         context
-            .refinements()
+            .restatements()
             .iter()
-            .map(|(&at, refined)| (at, refined.clone())),
+            .map(|(&at, restated)| (at, restated.clone())),
     );
     report
         .laws
