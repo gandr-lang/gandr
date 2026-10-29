@@ -8,9 +8,10 @@
 # later case reads what an earlier one fetched), a source (`upstream`, or
 # `absent` for none) and a command: `clone` is a driver build's clone of
 # rust-clippy, printing its `master` and the parent's `rust-toolchain.toml`;
-# `touch` marks that the command ran. The exit and output are compared, `{sets}`
-# and `{after}` standing for the commits, and a refused case must not run its
-# command. No network is read.
+# `touch` marks that the command ran. A case with `"mv": "bsd"` runs with an
+# `mv` that refuses `-T` as darwin's BSD `mv` does (#3601). The exit and
+# output are compared, `{sets}` and `{after}` standing for the commits, and a
+# refused case must not run its command. No network is read.
 set -euo pipefail
 root=$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd)
 scratch=$(mktemp -d)
@@ -29,6 +30,10 @@ commit() {
 commit nightly-2026-05-13 'an earlier channel' > /dev/null
 sets=$(commit nightly-2026-06-25 'set the channel')
 after=$(commit nightly-2026-06-25 'a later change')
+# darwin's `mv`, which has no `-T`: it refuses the option as BSD `mv` does.
+mkdir "$scratch/bsd"
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [[ $a == -T ]] && { echo "mv: illegal option -- T" >&2; exit 64; }; done\nexec %q "$@"\n' "$(command -v mv)" > "$scratch/bsd/mv"
+chmod +x "$scratch/bsd/mv"
 
 failed=0
 while IFS= read -r case; do
@@ -41,8 +46,10 @@ while IFS= read -r case; do
     touch) command=(touch "$scratch/ran") ;;
   esac
   rm -f "$scratch/ran"
+  path=$PATH
+  if [[ $(jq -r '.mv // "gnu"' <<< "$case") == bsd ]]; then path=$scratch/bsd:$PATH; fi
   status=0
-  output=$(RUST_CLIPPY_URL="file://$scratch/$(jq -r .source <<< "$case")" \
+  output=$(PATH=$path RUST_CLIPPY_URL="file://$scratch/$(jq -r .source <<< "$case")" \
     "$scratch/rust-clippy.bash" "$scratch/cache/$(jq -r .repository <<< "$case").git" "$(jq -r .channel <<< "$case")" "${command[@]}" 2>&1) || status=$?
   want=$(jq -r '.output | gsub("\\{sets\\}"; $sets) | gsub("\\{after\\}"; $after)' --arg sets "$sets" --arg after "$after" <<< "$case")
   if [[ $status != $(jq .exit <<< "$case") || $output != "$want" ]]; then

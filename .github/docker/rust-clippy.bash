@@ -23,7 +23,11 @@ repository=$1 channel=$2
 shift 2
 
 # A complete repository is renamed into place, so an interrupted fetch or a
-# concurrent caller never leaves a partial one at <repository>.
+# concurrent caller never leaves a partial one at <repository>. The rename is
+# rename(2) through Perl, which every host and the image carry: it fails on a
+# directory a concurrent caller placed first, as `mv -T` does, and darwin's
+# `mv` has no `-T` (#3601). A failed rename passes only when <repository>
+# then holds the pinned commit; otherwise it is refused with its cause.
 if ! git -C "$repository" rev-parse --quiet --verify "$rev^{commit}" > /dev/null 2>&1; then
   mkdir -p "$(dirname "$repository")"
   part=$(mktemp -d "$repository.part.XXXXXX")
@@ -33,7 +37,11 @@ if ! git -C "$repository" rev-parse --quiet --verify "$rev^{commit}" > /dev/null
   git -C "$part" update-ref refs/heads/master "$rev"
   git -C "$part" symbolic-ref HEAD refs/heads/master
   rm -rf "$repository"
-  mv -T "$part" "$repository" 2> /dev/null || [[ -d $repository ]]
+  if ! moved=$(perl -e 'rename $ARGV[0], $ARGV[1] or die "$!\n"' "$part" "$repository" 2>&1) \
+    && ! git -C "$repository" rev-parse --quiet --verify "$rev^{commit}" > /dev/null 2>&1; then
+    echo "rust-clippy.bash: the fetched repository does not move to $repository: $moved" >&2
+    exit 1
+  fi
   rm -rf "$part"
   trap - EXIT
 fi
