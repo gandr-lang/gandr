@@ -4804,13 +4804,15 @@ fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
         panic!("five components");
     };
     // The decode reading the binder binds the call ahead of its code; the one
-    // that does not is substituted plainly; the binder outside any code is the
-    // argument; under an inner binder the call rises past it; an endpoint
-    // holds the call in place, as the lowering writes one.
+    // that does not is substituted plainly; the decode of the binder itself
+    // reads the call returned, as a type written with the call does (#3937);
+    // under an inner binder the call rises past it; an endpoint holds the call
+    // in place, as the lowering writes one.
+    let returned = arena.value_returned(call);
     let expected = [
         bound(&mut arena, (1, 2), 1),
         decode(&mut arena, 0, 2),
-        arena.value_type_element(argument, Level::zero()),
+        arena.value_type_element(returned, Level::zero()),
     ];
     let unit = arena.value_type_unit();
     let deeper = bound(&mut arena, (2, 3), 2);
@@ -4821,7 +4823,7 @@ fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
     for (what, found, expected) in [
         ("a decode reading the binder", reads, expected[0]),
         ("a decode sparing it", spares, expected[1]),
-        ("the binder outside a code", bare, expected[2]),
+        ("the decode of the binder itself", bare, expected[2]),
         ("a decode under an inner binder", under, deeper),
         ("an endpoint reading the binder", ends, held),
     ] {
