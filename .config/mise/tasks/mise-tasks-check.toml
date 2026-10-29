@@ -1567,8 +1567,9 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # `shape:signed`, or none (`signed.jq`, #3134). Each
 # case in `.config/claims/unit.json` holds an issue body and the lines
 # `unit:check` prints for it, or none (`unit.jq`, #2532); each in
-# `.config/claims/next.json` the open issues and the claim `claim:next` takes
-# from them, or none (`next.jq`, #2533); each in `.config/claims/ledger.json`
+# `.config/claims/next.json` a lane's areas, the open issues and the claim
+# `claim:next` takes from them, or none (`next.jq`, #2533, #3736); each in
+# `.config/claims/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
 # prints for them, or none (`ledger.jq`, #2525); each in
 # `.config/claims/reserved.json` the syntax ledger's reserved rows, their

@@ -1,14 +1,15 @@
 # The claim order (#2533, `tracker.md` § tracker-claims): the next item a
-# seat on an area claims, as one `number<TAB>bucket<TAB>title` line, or none,
+# seat on a lane claims, as one `number<TAB>bucket<TAB>title` line, or none,
 # after one `collector: #n (k open rows)` line for each collector in the
-# area that is no defect and holds an open row (#3111, #3326), one
+# lane's areas that is no defect and holds an open row (#3111, #3326), one
 # `blocked: #n` line for each issue ranked ahead of it that waits on an open
 # issue, one `sections due: #n — <finding>` line for each section the pick
 # lacks (#3134), and one `restate: `<axis>`: <question>` line for each of the
 # pick's readings still the migration's `unstated` placeholder (#2955).
 #
 # Input:
-#   area     the area's label, `area:<name>`
+#   areas    the lane's area labels, `area:<name>`, in the lane's order
+#            (`.config/issues/lanes.toml`, #3736)
 #   issues   the open issues: [{number, title, labels: [name], parent, body,
 #            blocked}], parent the number of the issue's parent, or null; body
 #            the issue's body, or null; blocked how many open issues it is
@@ -17,25 +18,27 @@
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
-# is a candidate only as a `kind:defect` in the area holding an open row
+# is a candidate only as a `kind:defect` in a lane's area holding an open row
 # (#3326): it heads the order, ahead of every other bucket, and is claimed and
 # worked as the defect it is. Its rows carry no dates, so the oldest
-# collector, the lowest number, comes first. Any other collector in the area
-# holding an open row is printed with its open rows, so the carving due is
-# seen (#3111); a collector with no open row is neither picked nor printed.
-# The buckets after it, in order: a `kind:defect` in the area; a
-# `kind:refactor` in the area, the refactoring a landing's `## Refactoring`
-# verdict asked for (#2884); a `kind:performance` in the area, then any
-# `kind:performance`; a `kind:gap` in the area; then a planned unit, an issue
-# in the area whose parent is an open epic not itself deferred, the oldest
-# epic first and its sub-issues in the epic's order. A defect in another area
-# is not offered: its `area:` is its route to a seat, and one no seat holds is
-# the coordinator's to relabel (#3111). Within each bucket the `priority:`
-# label ranks first (`high`, `medium`, `backlog`, then none, #2902), so
-# defects stay first across buckets and a high one leads its own. Defects and
-# gaps then rank by `effort:`, cheapest first (`easy`, `medium`, `hard`,
-# `unknown`, then none): every defect is high by default, so effort is what
-# separates them (#3111). Then the oldest issue comes first. The pick is the
+# collector, the lowest number, comes first. Any other collector in the
+# lane's areas holding an open row is printed with its open rows, so the
+# carving due is seen (#3111); a collector with no open row is neither picked
+# nor printed. The buckets after it, in order: a `kind:defect` in the lane's
+# areas; a `kind:refactor` in them, the refactoring a landing's
+# `## Refactoring` verdict asked for (#2884); then a `kind:defect` or a
+# `kind:refactor` in any area, the oldest first, so a bucket no lane asks for
+# drains before planned work (#3736, reversing #3111's rule that a defect in
+# another area is not offered); a `kind:performance` in the lane's areas,
+# then any `kind:performance`; a `kind:gap` in the lane's areas; then a
+# planned unit, an issue in the lane's areas whose parent is an open epic not
+# itself deferred, the oldest epic first and its sub-issues in the epic's
+# order. Within each bucket of the lane the `priority:` label ranks first
+# (`high`, `medium`, `backlog`, then none, #2902), so defects stay first
+# across buckets and a high one leads its own. Defects and gaps then rank by
+# `effort:`, cheapest first (`easy`, `medium`, `hard`, `unknown`, then none):
+# every defect is high by default, so effort is what separates them (#3111).
+# Then the oldest issue comes first. The pick is the
 # first candidate no open issue blocks (#2902), sectioned or not: the seat
 # that claims an issue has its context, so sectioning is the claim's first
 # obligation (#3134, reversing #2744's pass-over and #3112's coordinator
@@ -53,6 +56,7 @@ include "sections";
 include "findings";
 
 def has($label): .labels | index($label) != null;
+def within($areas): .labels as $labels | any($areas[]; . as $area | $labels | index($area) != null);
 def unruled:
   (has("status:claimed") or has("status:deferred") or has("status:discarded") or has("kind:epic")) | not;
 def candidate: unruled and (has("collector") | not);
@@ -69,25 +73,26 @@ def blocked: (.blocked // 0) > 0;
 # A collector's open rows (#3111), as `collector_rows` reads them.
 def open_rows: .body // "" | collector_rows | length;
 
-.area as $area
+.areas as $areas
 | .order as $order
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
 | [.issues[] | select(candidate)] as $open
 | [
     (.issues
-      | map(select(has("collector") and has("kind:defect") and has($area) and unruled and open_rows > 0))
+      | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and open_rows > 0))
       | sort_by(.number) | .[] | [., "collector"]),
-    ($open | map(select(has("kind:defect") and has($area))) | sort_by(priority, effort, .number) | .[] | [., "defect"]),
-    ($open | map(select(has("kind:refactor") and has($area))) | sort_by(priority, .number) | .[] | [., "refactor"]),
-    ($open | map(select(has("kind:performance") and has($area))) | sort_by(priority, .number) | .[] | [., "performance"]),
+    ($open | map(select(has("kind:defect") and within($areas))) | sort_by(priority, effort, .number) | .[] | [., "defect"]),
+    ($open | map(select(has("kind:refactor") and within($areas))) | sort_by(priority, .number) | .[] | [., "refactor"]),
+    ($open | map(select(has("kind:defect") or has("kind:refactor"))) | sort_by(.number) | .[] | [., if has("kind:defect") then "defect" else "refactor" end]),
+    ($open | map(select(has("kind:performance") and within($areas))) | sort_by(priority, .number) | .[] | [., "performance"]),
     ($open | map(select(has("kind:performance"))) | sort_by(priority, .number) | .[] | [., "performance"]),
-    ($open | map(select(has("kind:gap") and has($area))) | sort_by(priority, effort, .number) | .[] | [., "gap"]),
+    ($open | map(select(has("kind:gap") and within($areas))) | sort_by(priority, effort, .number) | .[] | [., "gap"]),
     ($open
-      | map(select(has($area) and .parent != null) | .parent as $p | select($epics | index($p) != null))
+      | map(select(within($areas) and .parent != null) | .parent as $p | select($epics | index($p) != null))
       | sort_by(priority, .parent, (.number as $n | $order["\(.parent)"] // [] | index($n) // infinite), .number)
       | .[] | [., "planned"])
   ] as $ranked
-| ([.issues[] | select(has("collector") and has($area) and (has("kind:defect") | not))]
+| ([.issues[] | select(has("collector") and within($areas) and (has("kind:defect") | not))]
     | sort_by(.number) | .[] | open_rows as $k | select($k > 0)
     | "collector: #\(.number) (\($k) open row\(if $k == 1 then "" else "s" end))"),
   ([range(0; $ranked | length) | select($ranked[.][0] | blocked | not)] | first) as $at
