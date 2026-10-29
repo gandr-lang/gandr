@@ -6,8 +6,12 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::CoreNode;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::FrameRole;
+use gandr_core_checker::Mismatch;
 use gandr_core_checker::ModuleReport;
+use gandr_core_checker::Obligation;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge;
@@ -2759,6 +2763,99 @@ fn a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483()
         matches!(crossed.readmitted()[4].outcome(), Outcome::Defined { .. }),
         "the kernel admits the refined arm over the bound call: {:?}",
         crossed.readmitted()[4].outcome()
+    );
+}
+
+/// `carry(t : T, i : I(t), w : B(t)) -> B(No) { case i { Made => w } }`: the
+/// refined arm reads `w` at `B(Yes)`, which is refused against `B(No)`. The
+/// failure names the written `w`, stands the copy of `w` on the lambda that
+/// binds `w`, and keeps no frame of the transport, thunk or bind the
+/// refinement minted.
+#[test]
+fn a_refusal_inside_a_refined_arm_names_the_written_term_3694()
+{
+    let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
+    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let no = arena.value_constructor(code, ConstructorTag::from(1_usize), vec![]);
+    let family = Declaration::data(
+        indexed,
+        DataSignature::new(vec![], vec![vec![]], kind)
+            .indexed(vec![code], vec![vec![yes]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let t_outer = variable(&mut arena, 0);
+    let at_t = arena.value_type_data(indexed, vec![t_outer]);
+    let t_box = variable(&mut arena, 1);
+    let box_at_t = arena.value_type_data(boxed, vec![t_box]);
+    let box_at_no = arena.value_type_data(boxed, vec![no]);
+    let answer = arena.comp_type_returner(box_at_no);
+    let carry_type = arena.comp_type_pi(box_at_t, answer);
+    let carry_type = arena.comp_type_pi(at_t, carry_type);
+    let carry_type = arena.comp_type_pi(code, carry_type);
+    let carry_type = arena.value_type_thunk(carry_type);
+    let w = variable(&mut arena, 1);
+    let returned = arena.computation_return(w);
+    let arm = arena.computation_lambda(returned);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        answer,
+        (
+            vec![arm],
+            [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        ),
+        gandr_kernel_term::EquationCount::from(1_usize),
+    );
+    let binds_w = arena.computation_lambda(case);
+    let carry = arena.computation_lambda(binds_w);
+    let carry = arena.computation_lambda(carry);
+    let carry = arena.value_thunk(carry);
+    let constant = ConstantIndex::from(3_usize);
+    let (report, _) = run(&mut arena, &[
+        codes,
+        boxes,
+        family,
+        definition(constant, carry_type, carry),
+    ]);
+    assert!(
+        matches!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(Mismatch::Value { at, .. })) if at == w
+        ),
+        "the mismatch names the written `w`, not its copy: {:?}",
+        report.judged()[3].verdict()
+    );
+    let failure = &report.failures()[&constant];
+    let roles: Vec<FrameRole> = failure.obligations().iter().map(Obligation::role).collect();
+    for minted in [FrameRole::BindBound, FrameRole::TransportOperand] {
+        assert!(
+            !roles.contains(&minted),
+            "no frame of the refinement's {minted:?} stands: {roles:?}"
+        );
+    }
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|&&role| role == FrameRole::ThunkBody)
+            .count(),
+        1,
+        "the definition's thunk stands, and the refinement's thunk does not: {roles:?}"
+    );
+    let at_w = |obligation: &&Obligation| {
+        obligation.at() == CoreNode::Term(gandr_core_checker::TermNode::Computation(binds_w))
+    };
+    assert_eq!(
+        failure.obligations().iter().filter(at_w).count(),
+        2,
+        "the lambda that binds `w` and the copy of `w` both stand on it: {:?}",
+        failure.obligations()
     );
 }
 

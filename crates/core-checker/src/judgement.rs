@@ -4057,20 +4057,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   resuming; the pursuit of the goal started or the resumed frame's
     ///   owner; the types of the binders opened above `entry`, outermost first,
     ///   each attributed to the frame that opened it when the frames' binder
-    ///   counts add up to them, and to none otherwise. The frame stack is left
-    ///   empty and the binders are left open.
+    ///   counts add up to them, and to none otherwise. A node of a refined term
+    ///   reads as the written node it rewrites, in the pursuit, in each frame
+    ///   and as a type mismatch's term; a frame on a refinement's copy of a
+    ///   binder stands on the node of the frame that opened that binder; a
+    ///   frame on a node the refinement minted that opens no binder is left out
+    ///   (#3694). The frame stack is left empty and the binders are left open.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refusal inside a thunk's force, under a bind and at
     ///   an application head separate the frame order, the attribution of a
-    ///   binder and the resumed frame.
+    ///   binder and the resumed frame; a refusal inside a refined arm separates
+    ///   the written term, the copied binder and the minted frames.
     /// - witness: `judgement::tests::a_refusal_keeps_the_rules_it_stood_inside`
     /// - witness: `judgement::tests::a_refusal_under_a_bind_keeps_its_hypothesis`
+    /// - witness: `tests::native_formers::a_refusal_inside_a_refined_arm_names_the_written_term_3694`
     #[spec(
         requires: self.context.depth(Zone::Intuitionistic) >= entry,
-        ensures: |ret| self.frames.is_empty() && ret.refusal() == halt.refusal,
+        ensures: |ret| self.frames.is_empty() && core::mem::discriminant(&ret.refusal()) == core::mem::discriminant(&halt.refusal),
     )]
     fn failure(
         &mut self,
@@ -4088,6 +4094,50 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Control::Handing => (self.owner, Stage::Handing),
         };
         let (at, expected) = judged(stage.0);
+        // A node of a refined term reads as the written node it rewrites, so
+        // the refusal stands where the source wrote it (#3694).
+        let context = &*self.context;
+        let written = |term: TermNode| match context.standing(term) {
+            crate::solution::Standing::Written(written) => written,
+            crate::solution::Standing::Copy(_) | crate::solution::Standing::Minted => term,
+        };
+        let at = match at {
+            CoreNode::Term(term) => CoreNode::Term(written(term)),
+            CoreNode::Type(_) => at,
+        };
+        let refusal = if let CheckRefusal::TypeMismatch(mismatch) = halt.refusal {
+            match mismatch {
+                Mismatch::Value {
+                    at: value,
+                    synthesised,
+                    expected,
+                } => match written(TermNode::Value(value)) {
+                    TermNode::Value(value) => CheckRefusal::TypeMismatch(Mismatch::Value {
+                        at: value,
+                        synthesised,
+                        expected,
+                    }),
+                    TermNode::Computation(_) => halt.refusal,
+                },
+                Mismatch::Computation {
+                    at: computation,
+                    synthesised,
+                    expected,
+                } => match written(TermNode::Computation(computation)) {
+                    TermNode::Computation(computation) => {
+                        CheckRefusal::TypeMismatch(Mismatch::Computation {
+                            at: computation,
+                            synthesised,
+                            expected,
+                        })
+                    },
+                    TermNode::Value(_) => halt.refusal,
+                },
+            }
+        }
+        else {
+            halt.refusal
+        };
         let pursuit = Pursuit::new(at, expected, stage.1);
         let opened = usize::from(self.context.binders().depth(Zone::Intuitionistic))
             .saturating_sub(usize::from(entry));
@@ -4112,26 +4162,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .fold(0_usize, usize::saturating_add);
         let attributed = counted == hypotheses.len();
         let mut next = 0_usize;
-        let obligations = frames
-            .into_iter()
-            .map(|waiting| {
-                let binders = if attributed {
-                    let end = next.saturating_add(usize::from(waiting.frame.opens()));
-                    let binders = hypotheses
-                        .get(next .. end)
-                        .map_or_else(Vec::new, <[_]>::to_vec);
-                    next = end;
-                    binders
-                }
-                else {
-                    Vec::new()
-                };
-                let (at, expected) = judged(waiting.owner);
-                Obligation::new(waiting.frame.role(), at, expected, binders)
-            })
-            .collect();
+        // The node each hypothesis's frame stands on, outermost first, so a
+        // frame of a refinement's copy of a binder reads at the frame that
+        // opened the binder it copies (#3694).
+        let mut openers: Vec<CoreNode> = Vec::with_capacity(hypotheses.len());
+        let mut obligations = Vec::with_capacity(frames.len());
+        for waiting in frames {
+            let binders = if attributed {
+                let end = next.saturating_add(usize::from(waiting.frame.opens()));
+                let binders = hypotheses
+                    .get(next .. end)
+                    .map_or_else(Vec::new, <[_]>::to_vec);
+                next = end;
+                binders
+            }
+            else {
+                Vec::new()
+            };
+            let (at, expected) = judged(waiting.owner);
+            // A frame on a node a refinement minted adds nothing the source
+            // wrote. It is kept only when it opens a binder, so every
+            // hypothesis keeps a frame that names it.
+            let at = match at {
+                CoreNode::Term(term) => match self.context.standing(term) {
+                    crate::solution::Standing::Written(written) => CoreNode::Term(written),
+                    crate::solution::Standing::Copy(place) => usize::from(place)
+                        .checked_sub(usize::from(entry))
+                        .and_then(|position| openers.get(position))
+                        .copied()
+                        .unwrap_or(at),
+                    crate::solution::Standing::Minted
+                        if usize::from(waiting.frame.opens()) == 0 =>
+                    {
+                        continue;
+                    },
+                    crate::solution::Standing::Minted => at,
+                },
+                CoreNode::Type(_) => at,
+            };
+            openers.extend(core::iter::repeat_n(at, binders.len()));
+            obligations.push(Obligation::new(waiting.frame.role(), at, expected, binders));
+        }
         let endpoints = self.live_endpoints();
-        Failure::new(halt.refusal, obligations, pursuit, hypotheses, endpoints)
+        Failure::new(refusal, obligations, pursuit, hypotheses, endpoints)
     }
 
     /// Step from `goal` until no frame waits.
