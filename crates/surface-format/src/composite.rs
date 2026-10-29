@@ -223,12 +223,13 @@ impl Motives
 ///
 /// # Specification
 /// - requires: `module` was lowered from `text` into `arena`.
-/// - ensures: a motive for each transport the printer spells faithfully under
-///   the names the source writes for the binders around it, in a type or a body
-///   alike, read from a declaration a form of the source writes; none for one
-///   standing under a binder the source names nothing, outside every value
-///   declaration's roots, or only in a functor instantiation's copy of a
-///   member, which no form writes and whose names are the argument's.
+/// - ensures: a motive for each span's transport minted last, when the printer
+///   spells it faithfully under the names the source writes for the binders
+///   around it, in a type or a body alike, read from a declaration a form of
+///   the source writes; none for one standing under a binder the source names
+///   nothing, outside every value declaration's roots, or only in a functor
+///   instantiation's copy of a member, which no form writes and whose names are
+///   the argument's.
 /// - provides: the motives the explicit form writes.
 /// - fails: never.
 /// - panics: none.
@@ -237,9 +238,11 @@ impl Motives
 /// - hypothesis: L3 — a motive spelled outside its binders names them `?` and
 ///   is withheld, so the explicit form keeps `then`; the test spells one under
 ///   a declaration's parameter, in its type and its body, and one a functor's
-///   instantiation alone could spell.
+///   instantiation alone could spell; and a composite beside a call whose
+///   result type holds composites at the composite's own span.
 /// - witness: `tests::rewrite::a_composite_under_a_parameter_takes_its_motive_803`
 /// - witness: `tests::rewrite::a_functor_s_composite_takes_no_motive_from_its_instantiation_2166`
+/// - witness: `tests::rewrite::a_composite_beside_a_call_takes_its_own_motive_3772`
 #[spec(ensures: |ret| ret.reach == Reach::Derived)]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -316,7 +319,7 @@ pub fn motives(
         .map(LoweredDeclaration::constant)
         .collect();
     let naming = Naming::of(module, text);
-    let mut found = Vec::new();
+    let mut found: Vec<(ByteSpan, ComputationId, Option<Derived>)> = Vec::new();
     for (constant, roots) in naming.declarations() {
         if composites.is_empty() {
             break;
@@ -342,22 +345,37 @@ pub fn motives(
                 PageWidth::from(u32::MAX),
                 style,
             );
-            if let Ok(spelled) = spelled
-                && spelled.fidelity() == Fidelity::Faithful
-                && spelled.unspelled().is_empty()
-                && let Some((motive, value)) = arguments(SourceFragment::from(spelled.as_ref()))
-            {
-                found.push(Derived {
-                    span,
-                    motive,
-                    value,
-                });
-            }
+            let derived = match spelled {
+                Ok(spelled)
+                    if spelled.fidelity() == Fidelity::Faithful
+                        && spelled.unspelled().is_empty() =>
+                {
+                    arguments(SourceFragment::from(spelled.as_ref())).map(|(motive, value)| {
+                        Derived {
+                            span,
+                            motive,
+                            value,
+                        }
+                    })
+                },
+                Ok(_) | Err(_) => None,
+            };
+            found.push((span, transport, derived));
             false
         });
     }
+    // Everything a composite's lowering mints takes its span, the types it
+    // reads among them: a call's result type, instantiated at the call, holds
+    // the callee's composites. The composite's own transport is minted last,
+    // once those types are read, so each span takes its latest, or none when
+    // that one has no faithful spelling (#3772).
+    found.sort_unstable_by_key(|&(span, transport, _)| (span, core::cmp::Reverse(transport)));
+    found.dedup_by_key(|&mut (span, ..)| span);
     Motives {
-        derived: found,
+        derived: found
+            .into_iter()
+            .filter_map(|(.., derived)| derived)
+            .collect(),
         returned,
         flows,
         reach: Reach::Derived,
