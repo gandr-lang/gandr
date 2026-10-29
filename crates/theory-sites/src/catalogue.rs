@@ -1,4 +1,12 @@
-//! The site at a size bound: every shape class and every map between two.
+//! The site at a size bound: every shape class of a family and every map
+//! between two.
+//!
+//! A catalogue holds the shapes of one [`Family`], with every map of the class
+//! between two of them: the full sub-site on the family's shapes. The
+//! [`Family::Wirings`] are every stick-free wiring the carrier admits. The
+//! [`Family::Chains`] are the chains of one vertex or more, the pasting schemes
+//! of composable 1-cells, with the empty shape and the point.
+//! [`SegalStratum::certify`] reads a catalogue of either family alike.
 //!
 //! # What a bound proves
 //!
@@ -13,20 +21,29 @@
 //! key, pairs and triples by total size and then by index, and each condition
 //! stops at its first failing case, so the counter-example it reports has the
 //! least total size, ties broken by that order.
+//!
+//! [`SegalStratum::certify`]: crate::SegalStratum::certify
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_circuit_algebras::EdgeCount;
+use gandr_theory_circuit_algebras::WireCount;
 use quenchant_shape::shape::Maybe;
 
+use crate::map::Membership;
 use crate::map::SiteMap;
+use crate::map::VertexSet;
 use crate::map::homs;
+use crate::shape::End;
 use crate::shape::Shape;
 use crate::shape::ShapeKey;
 use crate::shape::ShapeObstruction;
 use crate::shape::ShapeSize;
+use crate::shape::WireKind;
 use crate::shape::shapes_up_to;
 
 wrapper! {
@@ -55,6 +72,97 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The shape's class is larger than the catalogue's bound.
             PastTheBound,
+            /// The shape lies outside the catalogue's family.
+            OutsideTheFamily,
+        }
+    }
+}
+
+/// Which shapes a catalogue holds.
+///
+/// # Specification
+/// - provides: the family's membership test, which [`Catalogue::find`] reads to
+///   name a class it does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the 3-chain, the empty shape and the point lie in the
+///   chains, and `C(2,1)`, the closed chain and two chains side by side do not.
+/// - witness: `tests::chains::the_chains_hold_the_chain_and_refuse_the_rest`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Family
+{
+    /// Every stick-free wiring the carrier admits.
+    Wirings,
+    /// The chains of one vertex or more, the empty shape and the point. A
+    /// chain of `n` vertices is the pasting scheme of `n` composable 1-cells.
+    /// The empty shape is the external product's unit, and the point is the
+    /// arity-zero corolla the [`corolla`](crate::corolla()) condition reads.
+    Chains,
+}
+
+impl Family
+{
+    /// Whether `shape` lies in the family.
+    ///
+    /// # Specification
+    /// - ensures: every shape lies in the wirings. A shape lies in the chains
+    ///   when it has no wire and at most one vertex, or when it has one wire
+    ///   more than vertices, one input leg, one output leg, and each vertex
+    ///   consumes one wire and produces one.
+    /// - panics: none.
+    /// - intension: one pass over the wires. An admitted shape has no directed
+    ///   cycle, so those legs leave no vertex off the one path from the open
+    ///   input to the open output.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type.
+    /// - witness: `tests::chains::the_chains_hold_the_chain_and_refuse_the_rest`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref membership| match self {
+        Self::Wirings => *membership == Membership::Inside,
+        Self::Chains => *membership == Membership::Outside
+            || (shape.ends().is_empty() && usize::from(shape.vertex_count()) <= 1)
+            || shape.ends().len() == usize::from(shape.vertex_count()).saturating_add(1),
+    })]
+    pub fn holds(
+        self,
+        shape: &Shape,
+    ) -> Membership
+    {
+        match self {
+            Self::Wirings => Membership::Inside,
+            Self::Chains => {
+                let vertices = shape.vertex_count();
+                if shape.ends().is_empty() && usize::from(vertices) <= 1 {
+                    return Membership::Inside;
+                }
+                let at = |end: End| match end {
+                    End::Open => VertexSet::EMPTY,
+                    End::Vertex(vertex) => VertexSet::single(vertex),
+                };
+                let (consumers, producers) = shape.ends().iter().fold(
+                    (VertexSet::EMPTY, VertexSet::EMPTY),
+                    |(consumers, producers), ends| {
+                        (
+                            consumers.union(at(ends.consumer())),
+                            producers.union(at(ends.producer())),
+                        )
+                    },
+                );
+                let one = WireCount::from(1_usize);
+                if shape.ends().len() == usize::from(vertices).saturating_add(1)
+                    && shape.count_of(WireKind::InputLeg) == one
+                    && shape.count_of(WireKind::OutputLeg) == one
+                    && consumers.count() == vertices
+                    && producers.count() == vertices
+                {
+                    Membership::Inside
+                }
+                else {
+                    Membership::Outside
+                }
+            },
         }
     }
 }
@@ -71,24 +179,28 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// Every shape class of size at most a bound, and every map of the class
-/// between any two of them.
+/// Every shape class of a family of size at most a bound, and every map of
+/// the class between any two of them.
 ///
 /// # Specification
-/// - ensures: the shapes are [`shapes_up_to`] of the bound in its order, and
-///   the hom set of a pair is [`homs`] of the pair.
+/// - ensures: the shapes are the family's classes of [`shapes_up_to`] of the
+///   bound, in its order, and the hom set of a pair is [`homs`] of the pair.
 /// - provides: the finite site the suites quantify over.
 /// - panics: none.
-/// - executable: none — a type carries no runtime predicate; the constructor's
-///   postcondition checks the counts it builds.
+/// - executable: none — a type carries no runtime predicate; the constructors'
+///   postconditions check the counts they build.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a pinned hom count read through the catalogue, a
-///   relabelled shape found at its class and the lookup refusals by variant.
+///   relabelled shape found at its class and the lookup refusals by variant;
+///   the chains at a bound are the wiring catalogue's classes the family holds.
 /// - witness: `tests::maps::the_catalogue_serves_pinned_hom_sets`
+/// - witness: `tests::chains::the_chain_catalogue_is_the_full_sub_site_on_the_chains`
 #[derive(Clone, Debug)]
 pub struct Catalogue
 {
+    /// The family the shapes lie in.
+    family: Family,
     /// The shapes, one per class, ordered by size and key.
     shapes: Box<[Shape]>,
     /// Each class's index.
@@ -99,7 +211,7 @@ pub struct Catalogue
 
 impl Catalogue
 {
-    /// The catalogue at `bound`.
+    /// The catalogue of the wirings at `bound`.
     ///
     /// # Specification
     /// - ensures: as the type states, one class index per shape.
@@ -123,7 +235,72 @@ impl Catalogue
     }))]
     pub fn build(bound: ShapeSize) -> Result<Self, ShapeObstruction>
     {
-        let shapes = shapes_up_to(bound)?;
+        Ok(Self::of(Family::Wirings, shapes_up_to(bound)?))
+    }
+
+    /// The catalogue of the chains at `bound`: the empty shape, the point and
+    /// each chain no larger than `bound`.
+    ///
+    /// # Specification
+    /// - ensures: as the type states, every shape in [`Family::Chains`] and one
+    ///   class index per shape.
+    /// - fails: as [`Shape::chain`], a chain past 64 vertices within `bound`.
+    /// - panics: none.
+    /// - intension: the chain of `n` vertices has size `2n + 1`, so the bound
+    ///   holds the chains to `(bound - 1) / 2` vertices.
+    ///
+    /// # Errors
+    /// [`ShapeObstruction::TooManyVertices`] for a bound past 129.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — at size 7 the shapes are the wiring catalogue's
+    ///   classes the family holds, with the same hom sets.
+    /// - witness: `tests::chains::the_chain_catalogue_is_the_full_sub_site_on_the_chains`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |catalogue| {
+        catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+            && catalogue.classes.len() == catalogue.shapes.len()
+            && catalogue.shapes.iter().all(|shape| shape.size() <= bound && Family::Chains.holds(shape) == Membership::Inside)
+    }))]
+    pub fn chains(bound: ShapeSize) -> Result<Self, ShapeObstruction>
+    {
+        let mut shapes = vec![
+            Shape::default(),
+            Shape::from_ends(EdgeCount::from(1_usize), Vec::new())?,
+        ];
+        let mut length = 1_usize;
+        loop {
+            let chain = Shape::chain(EdgeCount::from(length))?;
+            if chain.size() > bound {
+                break;
+            }
+            shapes.push(chain);
+            length = length.saturating_add(1);
+        }
+        shapes.retain(|shape| shape.size() <= bound);
+        Ok(Self::of(Family::Chains, shapes))
+    }
+
+    /// The catalogue of `family` over `shapes`, one per class, ordered by size
+    /// and key.
+    ///
+    /// # Specification
+    /// - requires: `shapes` lie in `family`, one per class, ordered by size and
+    ///   key.
+    /// - ensures: one class index per shape and one hom set per ordered pair.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the type, through both public builders.
+    /// - witness: `tests::maps::the_catalogue_serves_pinned_hom_sets`
+    /// - witness: `tests::chains::the_chain_catalogue_is_the_full_sub_site_on_the_chains`
+    #[spec(ensures: |ref catalogue| catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+        && catalogue.classes.len() == catalogue.shapes.len())]
+    fn of(
+        family: Family,
+        shapes: Vec<Shape>,
+    ) -> Self
+    {
         let classes = shapes
             .iter()
             .enumerate()
@@ -136,11 +313,23 @@ impl Catalogue
                 sets.push(homs(source, target).into_boxed_slice());
             }
         }
-        Ok(Self {
+        Self {
+            family,
             shapes: shapes.into_boxed_slice(),
             classes,
             homs: sets.into_boxed_slice(),
-        })
+        }
+    }
+
+    /// The family the shapes lie in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn family(&self) -> Family
+    {
+        self.family
     }
 
     /// The shapes, ordered by size and key.
@@ -187,31 +376,36 @@ impl Catalogue
     ///
     /// # Specification
     /// - ensures: the index whose shape has `shape`'s key, when the class is
-    ///   within the bound; absent exactly when no shape of the catalogue has
-    ///   that key.
+    ///   within the bound and the family; absent exactly when no shape of the
+    ///   catalogue has that key, as outside the family when the family does not
+    ///   hold `shape` and as past the bound otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a relabelled shape found at its class and a shape
-    ///   past the bound refused. The builder keys every shape it lists in the
-    ///   class index, one entry each, so the predicate reads absence from that
-    ///   index.
+    /// - hypothesis: L3 — a relabelled shape found at its class, a shape past
+    ///   the bound refused, and `C(2,1)` refused by the chains as outside the
+    ///   family. The builders key every shape they list in the class index, one
+    ///   entry each, so the predicate reads absence from that index.
     /// - witness: `tests::maps::the_catalogue_serves_pinned_hom_sets`
+    /// - witness: `tests::chains::the_chains_hold_the_chain_and_refuse_the_rest`
     #[inline]
     #[spec(ensures: |ref answer| match *answer {
         Maybe::Present(index) => self.shapes.get(index.0).is_some_and(|found| found.key() == shape.key()),
-        Maybe::Absent(_) => !self.classes.contains_key(&shape.key()),
+        Maybe::Absent(reason) => !self.classes.contains_key(&shape.key())
+            && (reason == shape_class::Absent::OutsideTheFamily) == (self.family.holds(shape) == Membership::Outside),
     })]
     pub fn find(
         &self,
         shape: &Shape,
     ) -> Maybe<ShapeIndex, shape_class::Absent>
     {
-        self.classes
-            .get(&shape.key())
-            .map_or(Maybe::Absent(shape_class::Absent::PastTheBound), |index| {
-                Maybe::Present(*index)
-            })
+        if let Some(index) = self.classes.get(&shape.key()) {
+            return Maybe::Present(*index);
+        }
+        Maybe::Absent(match self.family.holds(shape) {
+            Membership::Inside => shape_class::Absent::PastTheBound,
+            Membership::Outside => shape_class::Absent::OutsideTheFamily,
+        })
     }
 
     /// The maps from the shape at `source` to the shape at `target`.

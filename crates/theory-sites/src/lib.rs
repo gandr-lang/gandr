@@ -124,7 +124,9 @@
 //! [`Equivalence`] of species generated on its corollas, with its extension
 //! to the free algebras and the corolla restriction [`restrict`] that
 //! reflects a natural isomorphism back. The `segal` and `stratum` modules
-//! state the alphabet and the range each statement fixes.
+//! state the alphabet and the range each statement fixes. A catalogue of the
+//! chains alone, [`Family::Chains`], certifies the same way, and [`fills`]
+//! checks that a diagram's cells meet along a shape's inner wires.
 //!
 //! [`segal`]: crate::segal()
 //!
@@ -230,6 +232,7 @@ macro_rules! wrapper {
 mod catalogue;
 mod conditions;
 mod degree;
+mod diagram;
 mod map;
 #[cfg(test)]
 mod negatives;
@@ -241,6 +244,7 @@ mod stratum;
 mod units;
 
 pub use catalogue::Catalogue;
+pub use catalogue::Family;
 pub use catalogue::ShapeIndex;
 pub use catalogue::hom_lookup;
 pub use catalogue::shape_class;
@@ -267,6 +271,9 @@ pub use conditions::pushouts;
 pub use conditions::rigidity;
 pub use conditions::split_lowering;
 pub use degree::Degree;
+pub use diagram::Boundary;
+pub use diagram::Unfilled;
+pub use diagram::fills;
 pub use map::CompositionMismatch;
 pub use map::ImageForm;
 pub use map::Invertibility;
