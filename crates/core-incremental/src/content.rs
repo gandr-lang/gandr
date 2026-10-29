@@ -4,15 +4,18 @@
 //! # One minimal-scope table per item
 //!
 //! The encoder lists every node reachable from an item's roots as a de
-//! Bruijn table; `support::factor` then rebuilds it bottom-up as the
-//! carrier of `gandr_core_term::support` lays it out. Each entry is a
-//! [`SupportedNode`]: a compact former whose own variable, endpoint or slot,
-//! if it has one, is a rank in its scope; the scope itself, as wide in each
-//! zone as the variables free beneath the node; and a cover, one thinning
-//! per child, saying where each of the child's free variables sits in the
-//! node's scope or among the binders the child's slot crosses. Each root
-//! keeps its own thinning into the item's empty scope. A child is named by
-//! its number, a constant by the [`Reference`] its position resolves to.
+//! Bruijn table. It reads each node's children from
+//! `gandr_core_term::children`, the one enumeration core states, and writes
+//! the node as its content former over their numbers. `support::factor` then
+//! rebuilds the table bottom-up as the carrier of `gandr_core_term::support`
+//! lays it out. Each entry is a [`SupportedNode`]: a compact former whose own
+//! variable, endpoint or slot, if it has one, is a rank in its scope; the
+//! scope itself, as wide in each zone as the variables free beneath the node;
+//! and a cover, one thinning per child, saying where each of the child's free
+//! variables sits in the node's scope or among the binders the child's slot
+//! crosses. Each root keeps its own thinning into the item's empty scope. A
+//! child is named by its number, a constant by the [`Reference`] its position
+//! resolves to.
 //!
 //! Equal compact nodes are one entry: the table is hash-consed by former,
 //! cover and scope, so two equal subterms share whether the arena allocated
@@ -3859,6 +3862,9 @@ struct Encoder<'arena, 'layout>
     queue: VecDeque<ArenaNode>,
     /// The written nodes, in discovery order.
     nodes: Vec<ContentNode>,
+    /// The children of the node being read, by family. A read empties the
+    /// queues and leaves them here, so a read past the first allocates none.
+    found: Discovered,
 }
 
 impl<'arena, 'layout> Encoder<'arena, 'layout>
@@ -3878,6 +3884,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             seen: BTreeMap::new(),
             queue: VecDeque::new(),
             nodes: Vec::new(),
+            found: Discovered::new(),
         }
     }
 
@@ -4055,18 +4062,63 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         }
     }
 
+    /// The former `translate` makes of the children `of` hands over, each
+    /// discovered as it comes, or the unresolved node of `sort` when a family
+    /// runs out before the former's last slot.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every child `of` hands to the walk is discovered, and its
+    ///   number joins its family's list in the order `of` hands it over; the
+    ///   node `translate` makes of the lists, or the unresolved node of `sort`
+    ///   when it fails. The lists return to the encoder, and the next read
+    ///   empties them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::discover`]; a shared child hands over one
+    ///   number each time the enumeration meets it.
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    #[spec(
+        captures: [count = self.seen.len()],
+        ensures: |ret| self.seen.len() >= count
+            && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()),
+    )]
+    fn read_former<Of, Translate>(
+        &mut self,
+        sort: Sort,
+        of: Of,
+        translate: Translate,
+    ) -> ContentNode
+    where
+        Of: FnOnce(&mut Discovering<'_, 'arena, 'layout>),
+        Translate: FnOnce(&Discovered) -> Result<ContentNode, Short>,
+    {
+        let mut found = core::mem::replace(&mut self.found, Discovered::new());
+        found.clear();
+        let mut walk = Discovering {
+            encoder: self,
+            found,
+        };
+        of(&mut walk);
+        let found = walk.found;
+        let node = translate(&found).unwrap_or(ContentNode::Unresolved(sort));
+        self.found = found;
+        node
+    }
+
     /// The content node of a value.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the corresponding former with child ids replaced by their
-    ///   discovery indices; the predicate bounds the sort and child indices.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; the predicate bounds the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
-    ///   formers and sharing. The attribute does not independently reconstruct
-    ///   every payload.
+    ///   formers and sharing. [`value_content`] checks every child's place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::Value
         && !matches!(ret, ContentNode::Unresolved(_))
@@ -4076,228 +4128,29 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         value: &Value,
     ) -> ContentNode
     {
-        match *value {
-            Value::Constructor {
-                datatype,
-                tag,
-                ref fields,
-            } => ContentNode::Constructor {
-                datatype: self.discover(ArenaNode::ValueType(datatype)),
-                tag,
-                fields: fields
-                    .iter()
-                    .map(|&field| self.discover(ArenaNode::Value(field)))
-                    .collect(),
-            },
-            Value::Record(ref fields) => ContentNode::Record(
-                fields
-                    .iter()
-                    .map(|(label, &field)| (label.clone(), self.discover(ArenaNode::Value(field))))
-                    .collect(),
-            ),
-            Value::Reify(ref frames) => ContentNode::Reify(
-                frames
-                    .iter()
-                    .map(|frame| match *frame {
-                        gandr_core_term::control::StackFrame::Apply(value) => {
-                            gandr_core_term::control::StackFrame::Apply(
-                                self.discover(ArenaNode::Value(value)),
-                            )
-                        },
-                        gandr_core_term::control::StackFrame::Bind(body) => {
-                            gandr_core_term::control::StackFrame::Bind(
-                                self.discover(ArenaNode::Computation(body)),
-                            )
-                        },
-                        gandr_core_term::control::StackFrame::Project(side) => {
-                            gandr_core_term::control::StackFrame::Project(side)
-                        },
-                    })
-                    .collect(),
-            ),
-            Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
-            Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
-            Value::Here(point) => ContentNode::Here(self.discover(ArenaNode::Value(point))),
-            Value::SessionRelated {
-                relation,
-                source,
-                target,
-                payloads,
-            } => {
-                let source = self.discover(ArenaNode::Value(source));
-                let target = self.discover(ArenaNode::Value(target));
-                ContentNode::SessionRelated {
-                    relation,
-                    source,
-                    target,
-                    payloads: self.discover(ArenaNode::Value(payloads)),
-                }
-            },
-            Value::Stay(point) => ContentNode::Stay(self.discover(ArenaNode::Value(point))),
-            Value::Then(first, second) => {
-                let first = self.discover(ArenaNode::Value(first));
-                ContentNode::Then(first, self.discover(ArenaNode::Value(second)))
-            },
-            Value::FlowProduct(first, second) => {
-                let first = self.discover(ArenaNode::Value(first));
-                ContentNode::FlowProduct(first, self.discover(ArenaNode::Value(second)))
-            },
-            Value::Forward(translator) => {
-                ContentNode::Forward(self.discover(ArenaNode::Value(translator)))
-            },
-            Value::FunctionFlow(domain, codomain) => {
-                let domain = self.discover(ArenaNode::Value(domain));
-                ContentNode::FunctionFlow(domain, self.discover(ArenaNode::Value(codomain)))
-            },
-            Value::Row(ref row) => ContentNode::RowValue(
-                row.try_relocate(|ty| {
-                    Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                })
-                .unwrap_or_else(|never| match never {}),
-            ),
-            Value::Recorded(ref moves) => ContentNode::Recorded(
-                moves
-                    .iter()
-                    .map(|step| {
-                        step.try_map(|payload| {
-                            Ok::<_, core::convert::Infallible>(
-                                self.discover(ArenaNode::Value(payload)),
-                            )
-                        })
-                        .unwrap_or_else(|never| match never {})
-                    })
-                    .collect(),
-            ),
-            Value::Dialogue(ref turns) => ContentNode::Dialogue(
-                turns
-                    .iter()
-                    .map(|turn| gandr_core_term::session::DialogueMove {
-                        endpoint: turn.endpoint,
-                        movement: turn
-                            .movement
-                            .try_map(|payload| {
-                                Ok::<_, core::convert::Infallible>(
-                                    self.discover(ArenaNode::Value(payload)),
-                                )
-                            })
-                            .unwrap_or_else(|never| match never {}),
-                    })
-                    .collect(),
-            ),
-            Value::Web(ref pieces) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
-            Value::Returned(computation) => {
-                ContentNode::Returned(self.discover(ArenaNode::Computation(computation)))
-            },
-            Value::Nested(computation) => {
-                ContentNode::Nested(self.discover(ArenaNode::Computation(computation)))
-            },
-            Value::Run(computation) => {
-                ContentNode::Run(self.discover(ArenaNode::Computation(computation)))
-            },
-            Value::RecordUpdate { base, overlay } => {
-                let base = self.discover(ArenaNode::Value(base));
-                ContentNode::RecordUpdate(base, self.discover(ArenaNode::Value(overlay)))
-            },
-            Value::PathProduct(first, second) => {
-                let first = self.discover(ArenaNode::Value(first));
-                ContentNode::PathProduct(first, self.discover(ArenaNode::Value(second)))
-            },
-            Value::Funext(left, right) => {
-                let left = self.discover(ArenaNode::Value(left));
-                ContentNode::Funext(left, self.discover(ArenaNode::Value(right)))
-            },
-            Value::Equiv(forward, backward) => {
-                let forward = self.discover(ArenaNode::Value(forward));
-                ContentNode::Equiv(forward, self.discover(ArenaNode::Value(backward)))
-            },
-            Value::Univalence(record, forward) => {
-                let record = self.discover(ArenaNode::Value(record));
-                ContentNode::Univalence(record, self.discover(ArenaNode::Value(forward)))
-            },
-            Value::Ua {
-                stratum,
-                ref sides,
-                forward,
-                backward,
-            } => ContentNode::Ua {
-                stratum,
-                sides: alloc::sync::Arc::clone(sides),
-                forward: self.discover(ArenaNode::Value(forward)),
-                backward: self.discover(ArenaNode::Value(backward)),
-            },
-            Value::PathEquiv {
-                path_type,
-                forward,
-                backward,
-                ref evidence,
-            } => ContentNode::PathEquiv {
-                path_type: self.discover(ArenaNode::ValueType(path_type)),
-                forward: self.discover(ArenaNode::Value(forward)),
-                backward: self.discover(ArenaNode::Value(backward)),
-                evidence: alloc::sync::Arc::clone(evidence),
-            },
-            Value::Variable { zone, index } => ContentNode::Variable { zone, index },
-            Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
-            Value::ListNil => ContentNode::ListNil,
-            Value::ListCons(head, tail) => {
-                let head = self.discover(ArenaNode::Value(head));
-                ContentNode::ListCons(head, self.discover(ArenaNode::Value(tail)))
-            },
-            Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
-            Value::Tuple(ref components) => ContentNode::Tuple(
-                components
-                    .iter()
-                    .map(|&component| self.discover(ArenaNode::Value(component)))
-                    .collect(),
-            ),
-            Value::Injection(summand, body) => {
-                ContentNode::Injection(summand, self.discover(ArenaNode::Value(body)))
-            },
-            Value::Ascribe { value, ty } => {
-                let value = self.discover(ArenaNode::Value(value));
-                ContentNode::ValueAscribe {
-                    value,
-                    ty: self.discover(ArenaNode::ValueType(ty)),
-                }
-            },
-            Value::Thunk(body) => ContentNode::Thunk(self.discover(ArenaNode::Computation(body))),
-            Value::Lift { ref target, body } => ContentNode::ValueLift {
-                target: target.clone(),
-                body: self.discover(ArenaNode::Value(body)),
-            },
-            Value::Quote(quoted) => ContentNode::Quote(self.discover(ArenaNode::ValueType(quoted))),
-            Value::QuoteComputation(quoted) => {
-                ContentNode::QuoteComputation(self.discover(ArenaNode::CompType(quoted)))
-            },
-            Value::StaticLambda(body) => {
-                ContentNode::StaticLambda(self.discover(ArenaNode::Value(body)))
-            },
-            Value::StaticApplication(head, argument) => {
-                let head = self.discover(ArenaNode::Value(head));
-                ContentNode::StaticApplication(head, self.discover(ArenaNode::Value(argument)))
-            },
-            Value::Hole(hole) => ContentNode::Hole(hole),
-            Value::Mark { mark, body } => ContentNode::ValueMark {
-                mark,
-                body: self.discover(ArenaNode::Value(body)),
-            },
-        }
+        let layout = self.layout;
+        self.read_former(
+            Sort::Value,
+            |walk| gandr_core_term::children::of_value(value, walk),
+            |found| value_content(layout, value, found),
+        )
     }
 
     /// The content node of a computation.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the corresponding former with child ids replaced by their
-    ///   discovery indices; a world form has no content vocabulary and is
-    ///   listed by its sort, which makes the item opaque. The predicate bounds
-    ///   the sort and child indices.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; a world form has no content vocabulary, discovers no child
+    ///   and is listed by its sort, which makes the item opaque. The predicate
+    ///   bounds the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
-    ///   formers and sharing. The attribute does not independently reconstruct
-    ///   every payload.
+    ///   formers and sharing. [`computation_content`] checks every child's
+    ///   place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::Computation
         && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*computation, Computation::World(_)))
@@ -4307,328 +4160,32 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         computation: &Computation,
     ) -> ContentNode
     {
-        match *computation {
-            Computation::DataCase {
-                scrutinee,
-                motive,
-                ref branches,
-                ref arities,
-                equations,
-            } => ContentNode::DataCase {
-                scrutinee: self.discover(ArenaNode::Value(scrutinee)),
-                motive: self.discover(ArenaNode::CompType(motive)),
-                branches: branches
-                    .iter()
-                    .map(|&branch| self.discover(ArenaNode::Computation(branch)))
-                    .collect(),
-                arities: arities.clone(),
-                equations,
-            },
-            Computation::RecordProjection(record, ref label) => ContentNode::RecordProjection(
-                self.discover(ArenaNode::Value(record)),
-                label.clone(),
-            ),
-            Computation::TupleProjection(tuple, component) => {
-                ContentNode::TupleProjection(self.discover(ArenaNode::Value(tuple)), component)
-            },
-            Computation::Ride {
-                motive,
-                flow,
-                value,
-            } => {
-                let motive = self.discover(ArenaNode::ValueType(motive));
-                let flow = self.discover(ArenaNode::Value(flow));
-                ContentNode::Ride {
-                    motive,
-                    flow,
-                    value: self.discover(ArenaNode::Value(value)),
+        self.read_former(
+            Sort::Computation,
+            |walk| {
+                if !matches!(*computation, Computation::World(_)) {
+                    gandr_core_term::children::of_computation(computation, walk);
                 }
             },
-            Computation::Session(ref action) => ContentNode::Session(
-                action
-                    .try_map(
-                        gandr_core_term::session::ChildOrder::Forward,
-                        self,
-                        |reader, value| {
-                            Ok::<_, core::convert::Infallible>(
-                                reader.discover(ArenaNode::Value(value)),
-                            )
-                        },
-                        |reader, body| Ok(reader.discover(ArenaNode::Computation(body))),
-                        |reader, ty| Ok(reader.discover(ArenaNode::ValueType(ty))),
-                    )
-                    .unwrap_or_else(|never| match never {}),
-            ),
-            // A located judgement reads the world register and each constant's
-            // home, which no footprint records: content holding a world form
-            // has no identity to key on, and stays opaque.
-            Computation::World(_) => ContentNode::Unresolved(Sort::Computation),
-            Computation::Memory(ref form) => ContentNode::Memory(
-                form.try_map(
-                    gandr_core_term::session::ChildOrder::Forward,
-                    self,
-                    |reader, value| {
-                        Ok::<_, core::convert::Infallible>(reader.discover(ArenaNode::Value(value)))
-                    },
-                    |reader, body| Ok(reader.discover(ArenaNode::Computation(body))),
-                )
-                .unwrap_or_else(|never| match never {}),
-            ),
-            Computation::Perform {
-                ref signature,
-                ref operation,
-                payload,
-            } => {
-                let payload = self.discover(ArenaNode::Value(payload));
-                let signature = signature
-                    .try_relocate(|ty| {
-                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                    })
-                    .unwrap_or_else(|never| match never {});
-                ContentNode::Perform {
-                    signature,
-                    operation: operation.clone(),
-                    payload,
-                }
-            },
-            Computation::Handle {
-                ref signature,
-                subject,
-                on_return,
-                ref clauses,
-            }
-            | Computation::Scope {
-                ref signature,
-                subject,
-                on_return,
-                ref clauses,
-            } => {
-                let subject = self.discover(ArenaNode::Computation(subject));
-                let on_return = self.discover(ArenaNode::Computation(on_return));
-                let signature = signature
-                    .try_relocate(|ty| {
-                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                    })
-                    .unwrap_or_else(|never| match never {});
-                let clauses = clauses
-                    .iter()
-                    .map(|clause| gandr_core_term::control::EffectClause {
-                        operation: clause.operation.clone(),
-                        body: self.discover(ArenaNode::Computation(clause.body)),
-                    })
-                    .collect();
-                if matches!(*computation, Computation::Scope { .. }) {
-                    ContentNode::Scope {
-                        signature,
-                        subject,
-                        on_return,
-                        clauses,
-                    }
-                }
-                else {
-                    ContentNode::Handle {
-                        signature,
-                        subject,
-                        on_return,
-                        clauses,
-                    }
-                }
-            },
-            Computation::Exercise {
-                capability,
-                ref signature,
-                ref operation,
-                payload,
-            } => {
-                let capability = self.discover(ArenaNode::Value(capability));
-                let payload = self.discover(ArenaNode::Value(payload));
-                let signature = signature
-                    .try_relocate(|ty| {
-                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                    })
-                    .unwrap_or_else(|never| match never {});
-                ContentNode::Exercise {
-                    capability,
-                    signature,
-                    operation: operation.clone(),
-                    payload,
-                }
-            },
-            Computation::Resume(stack, body) => ContentNode::Resume(
-                self.discover(ArenaNode::Value(stack)),
-                self.discover(ArenaNode::Computation(body)),
-            ),
-            Computation::Abandon(stack) => {
-                ContentNode::Abandon(self.discover(ArenaNode::Value(stack)))
-            },
-            Computation::Split {
-                scrutinee,
-                arity,
-                motive: gandr_core_term::SplitMotive::Ambient,
-                body,
-            } => ContentNode::Split(
-                self.discover(ArenaNode::Value(scrutinee)),
-                arity,
-                self.discover(ArenaNode::Computation(body)),
-            ),
-            Computation::Split {
-                scrutinee,
-                arity,
-                motive: gandr_core_term::SplitMotive::Scrutinee(motive),
-                body,
-            } => {
-                let scrutinee = self.discover(ArenaNode::Value(scrutinee));
-                let motive = self.discover(ArenaNode::CompType(motive));
-                ContentNode::DependentSplit {
-                    scrutinee,
-                    arity,
-                    motive,
-                    body: self.discover(ArenaNode::Computation(body)),
-                }
-            },
-            Computation::Reset(body) => {
-                ContentNode::Reset(self.discover(ArenaNode::Computation(body)))
-            },
-            Computation::Shift(body) => {
-                ContentNode::Shift(self.discover(ArenaNode::Computation(body)))
-            },
-            Computation::With(ref components) => ContentNode::With(
-                components
-                    .iter()
-                    .map(|&component| self.discover(ArenaNode::Computation(component)))
-                    .collect(),
-            ),
-            Computation::Ascribe { body, ty } => {
-                let body = self.discover(ArenaNode::Computation(body));
-                ContentNode::Ascribe {
-                    body,
-                    ty: self.discover(ArenaNode::CompType(ty)),
-                }
-            },
-            Computation::Project(component, body) => {
-                ContentNode::Project(component, self.discover(ArenaNode::Computation(body)))
-            },
-
-            Computation::ListFold {
-                element,
-                result,
-                list,
-                on_nil,
-                on_cons,
-            } => ContentNode::ListFold {
-                element: self.discover(ArenaNode::ValueType(element)),
-                result: self.discover(ArenaNode::ValueType(result)),
-                list: self.discover(ArenaNode::Value(list)),
-                on_nil: self.discover(ArenaNode::Computation(on_nil)),
-                on_cons: self.discover(ArenaNode::Computation(on_cons)),
-            },
-            Computation::ListCase {
-                list,
-                on_nil,
-                on_cons,
-            } => ContentNode::ListCase {
-                list: self.discover(ArenaNode::Value(list)),
-                on_nil: self.discover(ArenaNode::Computation(on_nil)),
-                on_cons: self.discover(ArenaNode::Computation(on_cons)),
-            },
-            Computation::Primitive {
-                primitive,
-                arguments,
-            } => {
-                use gandr_core_term::primitive::Arguments;
-                let arguments = match arguments {
-                    Arguments::Unary(argument) => {
-                        Arguments::Unary(self.discover(ArenaNode::Value(argument)))
-                    },
-                    Arguments::Binary([first, second]) => {
-                        let first = self.discover(ArenaNode::Value(first));
-                        Arguments::Binary([first, self.discover(ArenaNode::Value(second))])
-                    },
-                };
-                ContentNode::Primitive(primitive, arguments)
-            },
-            Computation::Transport(path, value) => {
-                let path = self.discover(ArenaNode::Value(path));
-                ContentNode::Transport(path, self.discover(ArenaNode::Value(value)))
-            },
-            Computation::PathTransport {
-                motive,
-                path,
-                value,
-            } => ContentNode::ElementTransport {
-                motive: self.discover(ArenaNode::ValueType(motive)),
-                path: self.discover(ArenaNode::Value(path)),
-                value: self.discover(ArenaNode::Value(value)),
-            },
-            Computation::TelescopeTransport {
-                motive,
-                path,
-                start,
-                over,
-                value,
-            } => ContentNode::TelescopeTransport {
-                motive: self.discover(ArenaNode::CompType(motive)),
-                path: self.discover(ArenaNode::Value(path)),
-                start: self.discover(ArenaNode::Value(start)),
-                over: self.discover(ArenaNode::Value(over)),
-                value: self.discover(ArenaNode::Value(value)),
-            },
-            Computation::Lambda(body) => {
-                ContentNode::Lambda(self.discover(ArenaNode::Computation(body)))
-            },
-            Computation::Application(head, argument) => {
-                let head = self.discover(ArenaNode::Computation(head));
-                ContentNode::Application(head, self.discover(ArenaNode::Value(argument)))
-            },
-            Computation::Return(value) => {
-                ContentNode::Return(self.discover(ArenaNode::Value(value)))
-            },
-            Computation::Bind(bound, rest) => {
-                let bound = self.discover(ArenaNode::Computation(bound));
-                ContentNode::Bind(bound, self.discover(ArenaNode::Computation(rest)))
-            },
-            Computation::Force(value) => ContentNode::Force(self.discover(ArenaNode::Value(value))),
-            Computation::Decompose(dialogue) => {
-                ContentNode::Decompose(self.discover(ArenaNode::Value(dialogue)))
-            },
-            Computation::Case {
-                scrutinee,
-                ref branches,
-            } => {
-                let scrutinee = self.discover(ArenaNode::Value(scrutinee));
-                ContentNode::Case {
-                    scrutinee,
-                    branches: branches
-                        .iter()
-                        .map(|&branch| self.discover(ArenaNode::Computation(branch)))
-                        .collect(),
-                }
-            },
-            Computation::Hole(hole) => ContentNode::ComputationHole(hole),
-            Computation::Mark { mark, body } => ContentNode::ComputationMark {
-                mark,
-                body: self.discover(ArenaNode::Computation(body)),
-            },
-            Computation::Fixpoint { body, evidence } => ContentNode::Fixpoint {
-                body: self.discover(ArenaNode::Computation(body)),
-                evidence,
-            },
-        }
+            |found| computation_content(computation, found),
+        )
     }
 
     /// The content node of a value type.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the corresponding former with child ids replaced by their
-    ///   discovery indices; the predicate bounds the sort and child indices. A
-    ///   staged type, the judgement's own, is the unresolved node.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; the predicate bounds the sort and child indices. A staged
+    ///   type, the judgement's own, and a world type discover no child and are
+    ///   the unresolved node.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
-    ///   formers and sharing. The attribute does not independently reconstruct
-    ///   every payload.
+    ///   formers and sharing. [`value_type_content`] checks every child's
+    ///   place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
         && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)))
@@ -4638,164 +4195,31 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         value_type: &ValueType,
     ) -> ContentNode
     {
-        match *value_type {
-            ValueType::Session(ref session) => ContentNode::SessionType(
-                session
-                    .try_relocate(|ty| {
-                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                    })
-                    .unwrap_or_else(|never| match never {}),
-            ),
-            ValueType::Data {
-                declaration,
-                ref arguments,
-            } => ContentNode::Data {
-                declaration: self.layout.resolve(declaration),
-                arguments: arguments
-                    .iter()
-                    .map(|&argument| self.discover(ArenaNode::Value(argument)))
-                    .collect(),
-            },
-            ValueType::Record(ref fields) => ContentNode::RecordType(
-                fields
-                    .iter()
-                    .map(|(label, &field)| {
-                        (label.clone(), self.discover(ArenaNode::ValueType(field)))
-                    })
-                    .collect(),
-            ),
-            ValueType::Stack { input, output } => ContentNode::Stack {
-                input: self.discover(ArenaNode::CompType(input)),
-                output: self.discover(ArenaNode::CompType(output)),
-            },
-            ValueType::Capability {
-                ref authority,
-                grade,
-                region,
-            } => ContentNode::Capability {
-                authority: authority
-                    .try_relocate(|ty| {
-                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                    })
-                    .unwrap_or_else(|never| match never {}),
-                grade,
-                region,
-            },
-            ValueType::PathUniverse(source, target) => {
-                let source = self.discover(ArenaNode::Value(source));
-                ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
-            },
-            ValueType::Path {
-                carrier,
-                left,
-                right,
-            } => ContentNode::PathType {
-                carrier: self.discover(ArenaNode::ValueType(carrier)),
-                left: self.discover(ArenaNode::Value(left)),
-                right: self.discover(ArenaNode::Value(right)),
-            },
-            ValueType::Bridge {
-                carrier,
-                left,
-                right,
-            } => ContentNode::BridgeType {
-                carrier: self.discover(ArenaNode::ValueType(carrier)),
-                left: self.discover(ArenaNode::Value(left)),
-                right: self.discover(ArenaNode::Value(right)),
-            },
-            ValueType::Flow {
-                carrier,
-                source,
-                target,
-            } => ContentNode::FlowType {
-                carrier: self.discover(ArenaNode::ValueType(carrier)),
-                source: self.discover(ArenaNode::Value(source)),
-                target: self.discover(ArenaNode::Value(target)),
-            },
-            ValueType::Run(code) => ContentNode::RunType(self.discover(ArenaNode::Value(code))),
-            ValueType::Prefix(code) => {
-                ContentNode::PrefixType(self.discover(ArenaNode::Value(code)))
-            },
-            ValueType::Dialogue(code) => {
-                ContentNode::DialogueType(self.discover(ArenaNode::Value(code)))
-            },
-            ValueType::Web => ContentNode::WebType,
-            ValueType::Base(base) => ContentNode::Base(base),
-            ValueType::Kept { value, region } => ContentNode::KeptType {
-                value: self.discover(ArenaNode::ValueType(value)),
-                region,
-            },
-            ValueType::List(element) => {
-                ContentNode::List(self.discover(ArenaNode::ValueType(element)))
-            },
-            ValueType::Product(ref parts) => ContentNode::Product(
-                parts
-                    .iter()
-                    .map(|&part| self.discover(ArenaNode::ValueType(part)))
-                    .collect(),
-            ),
-            ValueType::Sum(ref parts) => ContentNode::Sum(
-                parts
-                    .iter()
-                    .map(|&part| self.discover(ArenaNode::ValueType(part)))
-                    .collect(),
-            ),
-            ValueType::Thunk(body) => {
-                ContentNode::ThunkType(self.discover(ArenaNode::CompType(body)))
-            },
-            ValueType::Universe { sort, ref level } => ContentNode::Universe {
-                sort,
-                level: level.clone(),
-            },
-            ValueType::Lift { inner, ref target } => ContentNode::TypeLift {
-                inner: self.discover(ArenaNode::ValueType(inner)),
-                target: target.clone(),
-            },
-            ValueType::Element { code, ref target } => ContentNode::Element {
-                code: self.discover(ArenaNode::Value(code)),
-                target: target.clone(),
-            },
-            ValueType::Abstract(position) => ContentNode::Abstract(self.layout.resolve(position)),
-            ValueType::StaticPi { domain, codomain } => {
-                let domain = self.discover(ArenaNode::ValueType(domain));
-                ContentNode::StaticPi {
-                    domain,
-                    codomain: self.discover(ArenaNode::ValueType(codomain)),
+        let layout = self.layout;
+        self.read_former(
+            Sort::ValueType,
+            |walk| {
+                if !matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)) {
+                    gandr_core_term::children::of_value_type(value_type, walk);
                 }
             },
-            ValueType::Sigma { first, second } => {
-                let first = self.discover(ArenaNode::ValueType(first));
-                ContentNode::Sigma {
-                    first,
-                    second: self.discover(ArenaNode::ValueType(second)),
-                }
-            },
-            ValueType::Unknown => ContentNode::UnknownType,
-            ValueType::Buffer => ContentNode::BufferType,
-            ValueType::Row => ContentNode::RowKind,
-            ValueType::RowTail(code) => ContentNode::RowTail(self.discover(ArenaNode::Value(code))),
-            // A stage is minted by one judgement and names nothing past it,
-            // and a handle or a capability names a world, whose crossing
-            // decisions read what no footprint records: content naming
-            // either has no identity to key on, and stays opaque.
-            ValueType::Staged { .. } | ValueType::World(_) => {
-                ContentNode::Unresolved(Sort::ValueType)
-            },
-        }
+            |found| value_type_content(layout, value_type, found),
+        )
     }
 
     /// The content node of a computation type.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the corresponding former with child ids replaced by their
-    ///   discovery indices; the predicate bounds the sort and child indices.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; a codata application discovers no child and is the
+    ///   unresolved node. The predicate bounds the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
-    ///   formers and sharing. The attribute does not independently reconstruct
-    ///   every payload.
+    ///   formers and sharing. [`comp_type_content`] checks every child's place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::CompType
         && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*comp_type, CompType::Codata { .. }))
@@ -4805,48 +4229,886 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         comp_type: &CompType,
     ) -> ContentNode
     {
-        match *comp_type {
-            CompType::With(ref components) => ContentNode::WithType(
-                components
-                    .iter()
-                    .map(|&component| self.discover(ArenaNode::CompType(component)))
-                    .collect(),
-            ),
-            CompType::Returner {
-                result,
-                ref effects,
-            } => {
-                let result = self.discover(ArenaNode::ValueType(result));
-                let effects = effects
-                    .try_relocate(|ty| {
-                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
-                    })
-                    .unwrap_or_else(|never| match never {});
-                ContentNode::Returner { result, effects }
-            },
-            CompType::Arrow { domain, codomain } => {
-                let domain = self.discover(ArenaNode::ValueType(domain));
-                ContentNode::Arrow {
-                    domain,
-                    codomain: self.discover(ArenaNode::CompType(codomain)),
+        self.read_former(
+            Sort::CompType,
+            |walk| {
+                if !matches!(*comp_type, CompType::Codata { .. }) {
+                    gandr_core_term::children::of_comp_type(comp_type, walk);
                 }
             },
-            CompType::Pi { domain, codomain } => {
-                let domain = self.discover(ArenaNode::ValueType(domain));
-                ContentNode::Pi {
-                    domain,
-                    codomain: self.discover(ArenaNode::CompType(codomain)),
-                }
-            },
-            CompType::Element { code, ref target } => ContentNode::ComputationElement {
-                code: self.discover(ArenaNode::Value(code)),
-                target: target.clone(),
-            },
-            CompType::Unknown => ContentNode::UnknownComputationType,
-            // A codata application has no content form, and stays opaque.
-            CompType::Codata { .. } => ContentNode::Unresolved(Sort::CompType),
+            |found| comp_type_content(comp_type, found),
+        )
+    }
+}
+
+/// The numbers of one node's children, apart by family, each family's in the
+/// order [`gandr_core_term::children`] lists it.
+#[derive(Debug)]
+struct Discovered
+{
+    /// The value children's numbers.
+    values: Vec<NodeIndex>,
+    /// The computation children's numbers.
+    computations: Vec<NodeIndex>,
+    /// The value-type children's numbers.
+    value_types: Vec<NodeIndex>,
+    /// The computation-type children's numbers.
+    comp_types: Vec<NodeIndex>,
+}
+
+/// A family's children ran out before the translation filled every slot of
+/// its former.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Short;
+
+impl Discovered
+{
+    /// No children, and no list allocated.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new() -> Self
+    {
+        Self {
+            values: Vec::new(),
+            computations: Vec::new(),
+            value_types: Vec::new(),
+            comp_types: Vec::new(),
         }
     }
+
+    /// Empty every family's list, keeping what each has allocated.
+    ///
+    /// # Specification
+    /// trivial.
+    fn clear(&mut self)
+    {
+        self.values.clear();
+        self.computations.clear();
+        self.value_types.clear();
+        self.comp_types.clear();
+    }
+
+    /// Each family's children, to be read in turn from its first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn slots(&self) -> Slots<'_>
+    {
+        Slots {
+            values: self.values.iter(),
+            computations: self.computations.iter(),
+            value_types: self.value_types.iter(),
+            comp_types: self.comp_types.iter(),
+        }
+    }
+
+    /// Whether `node` places exactly these children: for each sort, the
+    /// children of that sort `node` lists, in its order, are that family's
+    /// numbers, in theirs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: placed exactly when every family's list equals the
+    ///   subsequence of `node`'s children of its sort.
+    /// - panics: none.
+    /// - executable: none — the clause is this predicate's body, which the
+    ///   translations state as their postcondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the enforcing lane states it after every translation,
+    ///   so a slot filled from another family or out of turn fails the encoding
+    ///   of any item holding that former.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    fn placed(
+        &self,
+        node: &ContentNode,
+    ) -> Placed
+    {
+        let children = node.children();
+        Placed(
+            [
+                (Sort::Value, &self.values),
+                (Sort::Computation, &self.computations),
+                (Sort::ValueType, &self.value_types),
+                (Sort::CompType, &self.comp_types),
+            ]
+            .into_iter()
+            .all(|(sort, family)| {
+                children
+                    .iter()
+                    .filter(|&(_, at)| at == sort)
+                    .map(|(child, _)| child)
+                    .eq(family.iter().copied())
+            }),
+        )
+    }
+}
+
+/// Whether a node places exactly the children a read discovered.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Placed(bool);
+
+/// The children a translation has yet to place, each family's from its next.
+struct Slots<'found>
+{
+    /// The value children left.
+    values: core::slice::Iter<'found, NodeIndex>,
+    /// The computation children left.
+    computations: core::slice::Iter<'found, NodeIndex>,
+    /// The value-type children left.
+    value_types: core::slice::Iter<'found, NodeIndex>,
+    /// The computation-type children left.
+    comp_types: core::slice::Iter<'found, NodeIndex>,
+}
+
+impl Slots<'_>
+{
+    /// The next value child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first value child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no value child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a translation reads every value slot through it, and
+    ///   the enforcing lane checks each placed former; a reader that skipped a
+    ///   child or repeated one misplaces the next slot.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(
+        captures: [before = self.values.len()],
+        ensures: |ret| ret.is_ok() == (before > 0) && self.values.len() == before.saturating_sub(1),
+    )]
+    fn value(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.values.next().copied().ok_or(Short)
+    }
+
+    /// The next computation child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first computation child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no computation child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value`], over the computation slots.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(
+        captures: [before = self.computations.len()],
+        ensures: |ret| ret.is_ok() == (before > 0)
+            && self.computations.len() == before.saturating_sub(1),
+    )]
+    fn computation(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.computations.next().copied().ok_or(Short)
+    }
+
+    /// The next value-type child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first value-type child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no value-type child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value`], over the value-type slots; a
+    ///   signature's operation types are read through it in order.
+    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    #[spec(
+        captures: [before = self.value_types.len()],
+        ensures: |ret| ret.is_ok() == (before > 0)
+            && self.value_types.len() == before.saturating_sub(1),
+    )]
+    fn value_type(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.value_types.next().copied().ok_or(Short)
+    }
+
+    /// The next computation-type child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first computation-type child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no computation-type child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value`], over the computation-type slots.
+    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    #[spec(
+        captures: [before = self.comp_types.len()],
+        ensures: |ret| ret.is_ok() == (before > 0)
+            && self.comp_types.len() == before.saturating_sub(1),
+    )]
+    fn comp_type(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.comp_types.next().copied().ok_or(Short)
+    }
+
+    /// The children of the family of `sort` for each of the former's `slots`,
+    /// in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first children left of the family, one per slot, which
+    ///   are then placed.
+    /// - fails: [`Short`] when the family holds fewer children than slots.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when the family runs out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple's components, a case's branches and a
+    ///   `with`'s components are read through it; a run one short or one long
+    ///   misplaces the slots after it, which the enforcing lane refuses.
+    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |taken| taken.len() == slots.len()))]
+    fn take<Slot>(
+        &mut self,
+        sort: Sort,
+        slots: &[Slot],
+    ) -> Result<Vec<NodeIndex>, Short>
+    {
+        let family = match sort {
+            Sort::Value => &mut self.values,
+            Sort::Computation => &mut self.computations,
+            Sort::ValueType => &mut self.value_types,
+            Sort::CompType => &mut self.comp_types,
+        };
+        let (taken, left) = family
+            .as_slice()
+            .split_at_checked(slots.len())
+            .ok_or(Short)?;
+        *family = left.iter();
+        Ok(taken.to_vec())
+    }
+}
+
+/// The encoder discovering each child the enumeration hands it, its number
+/// listed in its family.
+struct Discovering<'walk, 'arena, 'layout>
+{
+    /// The encoder whose numbering the children join.
+    encoder: &'walk mut Encoder<'arena, 'layout>,
+    /// The numbers discovered so far.
+    found: Discovered,
+}
+
+impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
+{
+    /// Discover a value child; its binders do not change its number.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value(
+        &mut self,
+        child: ValueId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::Value(child));
+        self.found.values.push(number);
+    }
+
+    /// Discover a computation child; its binders do not change its number.
+    ///
+    /// # Specification
+    /// trivial.
+    fn computation(
+        &mut self,
+        child: ComputationId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::Computation(child));
+        self.found.computations.push(number);
+    }
+
+    /// Discover a value-type child; its binders do not change its number.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value_type(
+        &mut self,
+        child: ValueTypeId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::ValueType(child));
+        self.found.value_types.push(number);
+    }
+
+    /// Discover a computation-type child; its binders do not change its
+    /// number.
+    ///
+    /// # Specification
+    /// trivial.
+    fn comp_type(
+        &mut self,
+        child: CompTypeId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::CompType(child));
+        self.found.comp_types.push(number);
+    }
+}
+
+/// The content former of `value` over the numbers `found` holds, each slot
+/// filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value former whose children of each sort are exactly that
+///   family's numbers, in order; a constant is the reference `layout` resolves
+///   its position to.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded value against the
+///   enumeration; a slot filled from the wrong family or out of order fails the
+///   postcondition.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Value && found.placed(node).0),
+)]
+fn value_content(
+    layout: &Layout,
+    value: &Value,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *value {
+        Value::Constructor {
+            tag, ref fields, ..
+        } => ContentNode::Constructor {
+            datatype: found.value_type()?,
+            tag,
+            fields: found.take(Sort::Value, fields)?,
+        },
+        Value::Record(ref fields) => ContentNode::Record(
+            fields
+                .keys()
+                .map(|label| found.value().map(|field| (label.clone(), field)))
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Reify(ref frames) => ContentNode::Reify(
+            frames
+                .iter()
+                .map(|frame| match *frame {
+                    gandr_core_term::control::StackFrame::Apply(_) => found
+                        .value()
+                        .map(gandr_core_term::control::StackFrame::Apply),
+                    gandr_core_term::control::StackFrame::Bind(_) => found
+                        .computation()
+                        .map(gandr_core_term::control::StackFrame::Bind),
+                    gandr_core_term::control::StackFrame::Project(side) => {
+                        Ok(gandr_core_term::control::StackFrame::Project(side))
+                    },
+                })
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
+        Value::PathRefl(_) => ContentNode::PathRefl(found.value()?),
+        Value::Here(_) => ContentNode::Here(found.value()?),
+        Value::SessionRelated { relation, .. } => ContentNode::SessionRelated {
+            relation,
+            source: found.value()?,
+            target: found.value()?,
+            payloads: found.value()?,
+        },
+        Value::Stay(_) => ContentNode::Stay(found.value()?),
+        Value::Then(..) => ContentNode::Then(found.value()?, found.value()?),
+        Value::FlowProduct(..) => ContentNode::FlowProduct(found.value()?, found.value()?),
+        Value::Forward(_) => ContentNode::Forward(found.value()?),
+        Value::FunctionFlow(..) => ContentNode::FunctionFlow(found.value()?, found.value()?),
+        Value::Row(ref row) => ContentNode::RowValue(row.try_relocate(|_| found.value_type())?),
+        Value::Recorded(ref moves) => ContentNode::Recorded(
+            moves
+                .iter()
+                .map(|step| step.try_map(|_| found.value()))
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Dialogue(ref turns) => ContentNode::Dialogue(
+            turns
+                .iter()
+                .map(|turn| {
+                    turn.movement.try_map(|_| found.value()).map(|movement| {
+                        gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement,
+                        }
+                    })
+                })
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Web(ref pieces) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
+        Value::Returned(_) => ContentNode::Returned(found.computation()?),
+        Value::Nested(_) => ContentNode::Nested(found.computation()?),
+        Value::Run(_) => ContentNode::Run(found.computation()?),
+        Value::RecordUpdate { .. } => ContentNode::RecordUpdate(found.value()?, found.value()?),
+        Value::PathProduct(..) => ContentNode::PathProduct(found.value()?, found.value()?),
+        Value::Funext(..) => ContentNode::Funext(found.value()?, found.value()?),
+        Value::Equiv(..) => ContentNode::Equiv(found.value()?, found.value()?),
+        Value::Univalence(..) => ContentNode::Univalence(found.value()?, found.value()?),
+        Value::Ua {
+            stratum, ref sides, ..
+        } => ContentNode::Ua {
+            stratum,
+            sides: alloc::sync::Arc::clone(sides),
+            forward: found.value()?,
+            backward: found.value()?,
+        },
+        Value::PathEquiv { ref evidence, .. } => ContentNode::PathEquiv {
+            path_type: found.value_type()?,
+            forward: found.value()?,
+            backward: found.value()?,
+            evidence: alloc::sync::Arc::clone(evidence),
+        },
+        Value::Variable { zone, index } => ContentNode::Variable { zone, index },
+        Value::Constant(position) => ContentNode::Constant(layout.resolve(position)),
+        Value::ListNil => ContentNode::ListNil,
+        Value::ListCons(..) => ContentNode::ListCons(found.value()?, found.value()?),
+        Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
+        Value::Tuple(ref components) => ContentNode::Tuple(found.take(Sort::Value, components)?),
+        Value::Injection(summand, _) => ContentNode::Injection(summand, found.value()?),
+        Value::Ascribe { .. } => ContentNode::ValueAscribe {
+            value: found.value()?,
+            ty: found.value_type()?,
+        },
+        Value::Thunk(_) => ContentNode::Thunk(found.computation()?),
+        Value::Lift { ref target, .. } => ContentNode::ValueLift {
+            target: target.clone(),
+            body: found.value()?,
+        },
+        Value::Quote(_) => ContentNode::Quote(found.value_type()?),
+        Value::QuoteComputation(_) => ContentNode::QuoteComputation(found.comp_type()?),
+        Value::StaticLambda(_) => ContentNode::StaticLambda(found.value()?),
+        Value::StaticApplication(..) => {
+            ContentNode::StaticApplication(found.value()?, found.value()?)
+        },
+        Value::Hole(hole) => ContentNode::Hole(hole),
+        Value::Mark { mark, .. } => ContentNode::ValueMark {
+            mark,
+            body: found.value()?,
+        },
+    })
+}
+
+/// The content former of `computation` over the numbers `found` holds, each
+/// slot filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a computation former whose children of each sort are exactly that
+///   family's numbers, in order; a world form is the unresolved node.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded computation
+///   against the enumeration; a slot filled from the wrong family or out of
+///   order fails the postcondition.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Computation && found.placed(node).0),
+)]
+fn computation_content(
+    computation: &Computation,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *computation {
+        Computation::DataCase {
+            ref branches,
+            ref arities,
+            equations,
+            ..
+        } => ContentNode::DataCase {
+            scrutinee: found.value()?,
+            motive: found.comp_type()?,
+            branches: found.take(Sort::Computation, branches)?,
+            arities: arities.clone(),
+            equations,
+        },
+        Computation::RecordProjection(_, ref label) => {
+            ContentNode::RecordProjection(found.value()?, label.clone())
+        },
+        Computation::TupleProjection(_, component) => {
+            ContentNode::TupleProjection(found.value()?, component)
+        },
+        Computation::Ride { .. } => ContentNode::Ride {
+            motive: found.value_type()?,
+            flow: found.value()?,
+            value: found.value()?,
+        },
+        Computation::Session(ref action) => ContentNode::Session(action.try_map(
+            gandr_core_term::session::ChildOrder::Forward,
+            found,
+            |found, _| found.value(),
+            |found, _| found.computation(),
+            |found, _| found.value_type(),
+        )?),
+        // A located judgement reads the world register and each constant's
+        // home, which no footprint records: content holding a world form
+        // has no identity to key on, and stays opaque.
+        Computation::World(_) => ContentNode::Unresolved(Sort::Computation),
+        Computation::Memory(ref form) => ContentNode::Memory(form.try_map(
+            gandr_core_term::session::ChildOrder::Forward,
+            found,
+            |found, _| found.value(),
+            |found, _| found.computation(),
+        )?),
+        Computation::Perform {
+            ref signature,
+            ref operation,
+            ..
+        } => ContentNode::Perform {
+            signature: signature.try_relocate(|_| found.value_type())?,
+            operation: operation.clone(),
+            payload: found.value()?,
+        },
+        Computation::Handle {
+            ref signature,
+            ref clauses,
+            ..
+        }
+        | Computation::Scope {
+            ref signature,
+            ref clauses,
+            ..
+        } => {
+            let signature = signature.try_relocate(|_| found.value_type())?;
+            let subject = found.computation()?;
+            let on_return = found.computation()?;
+            let clauses = clauses
+                .iter()
+                .map(|clause| {
+                    found
+                        .computation()
+                        .map(|body| gandr_core_term::control::EffectClause {
+                            operation: clause.operation.clone(),
+                            body,
+                        })
+                })
+                .collect::<Result<_, Short>>()?;
+            if matches!(*computation, Computation::Scope { .. }) {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+        },
+        Computation::Exercise {
+            ref signature,
+            ref operation,
+            ..
+        } => ContentNode::Exercise {
+            signature: signature.try_relocate(|_| found.value_type())?,
+            capability: found.value()?,
+            operation: operation.clone(),
+            payload: found.value()?,
+        },
+        Computation::Resume(..) => ContentNode::Resume(found.value()?, found.computation()?),
+        Computation::Abandon(_) => ContentNode::Abandon(found.value()?),
+        Computation::Split {
+            arity,
+            motive: gandr_core_term::SplitMotive::Ambient,
+            ..
+        } => ContentNode::Split(found.value()?, arity, found.computation()?),
+        Computation::Split {
+            arity,
+            motive: gandr_core_term::SplitMotive::Scrutinee(_),
+            ..
+        } => ContentNode::DependentSplit {
+            scrutinee: found.value()?,
+            arity,
+            motive: found.comp_type()?,
+            body: found.computation()?,
+        },
+        Computation::Reset(_) => ContentNode::Reset(found.computation()?),
+        Computation::Shift(_) => ContentNode::Shift(found.computation()?),
+        Computation::With(ref components) => {
+            ContentNode::With(found.take(Sort::Computation, components)?)
+        },
+        Computation::Ascribe { .. } => ContentNode::Ascribe {
+            body: found.computation()?,
+            ty: found.comp_type()?,
+        },
+        Computation::Project(component, _) => ContentNode::Project(component, found.computation()?),
+        Computation::ListFold { .. } => ContentNode::ListFold {
+            element: found.value_type()?,
+            result: found.value_type()?,
+            list: found.value()?,
+            on_nil: found.computation()?,
+            on_cons: found.computation()?,
+        },
+        Computation::ListCase { .. } => ContentNode::ListCase {
+            list: found.value()?,
+            on_nil: found.computation()?,
+            on_cons: found.computation()?,
+        },
+        Computation::Primitive {
+            primitive,
+            arguments,
+        } => {
+            use gandr_core_term::primitive::Arguments;
+            let arguments = match arguments {
+                Arguments::Unary(_) => Arguments::Unary(found.value()?),
+                Arguments::Binary(_) => Arguments::Binary([found.value()?, found.value()?]),
+            };
+            ContentNode::Primitive(primitive, arguments)
+        },
+        Computation::Transport(..) => ContentNode::Transport(found.value()?, found.value()?),
+        Computation::PathTransport { .. } => ContentNode::ElementTransport {
+            motive: found.value_type()?,
+            path: found.value()?,
+            value: found.value()?,
+        },
+        Computation::TelescopeTransport { .. } => ContentNode::TelescopeTransport {
+            motive: found.comp_type()?,
+            path: found.value()?,
+            start: found.value()?,
+            over: found.value()?,
+            value: found.value()?,
+        },
+        Computation::Lambda(_) => ContentNode::Lambda(found.computation()?),
+        Computation::Application(..) => {
+            ContentNode::Application(found.computation()?, found.value()?)
+        },
+        Computation::Return(_) => ContentNode::Return(found.value()?),
+        Computation::Bind(..) => ContentNode::Bind(found.computation()?, found.computation()?),
+        Computation::Force(_) => ContentNode::Force(found.value()?),
+        Computation::Decompose(_) => ContentNode::Decompose(found.value()?),
+        Computation::Case { ref branches, .. } => ContentNode::Case {
+            scrutinee: found.value()?,
+            branches: found.take(Sort::Computation, branches)?,
+        },
+        Computation::Hole(hole) => ContentNode::ComputationHole(hole),
+        Computation::Mark { mark, .. } => ContentNode::ComputationMark {
+            mark,
+            body: found.computation()?,
+        },
+        Computation::Fixpoint { evidence, .. } => ContentNode::Fixpoint {
+            body: found.computation()?,
+            evidence,
+        },
+    })
+}
+
+/// The content former of `value_type` over the numbers `found` holds, each
+/// slot filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value-type former whose children of each sort are exactly that
+///   family's numbers, in order; a data type and an abstract type name the
+///   reference `layout` resolves their position to; a staged type and a world
+///   type are the unresolved node.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded value type
+///   against the enumeration; a slot filled from the wrong family or out of
+///   order fails the postcondition.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::ValueType && found.placed(node).0),
+)]
+fn value_type_content(
+    layout: &Layout,
+    value_type: &ValueType,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *value_type {
+        ValueType::Session(ref session) => {
+            ContentNode::SessionType(session.try_relocate(|_| found.value_type())?)
+        },
+        ValueType::Data {
+            declaration,
+            ref arguments,
+        } => ContentNode::Data {
+            declaration: layout.resolve(declaration),
+            arguments: found.take(Sort::Value, arguments)?,
+        },
+        ValueType::Record(ref fields) => ContentNode::RecordType(
+            fields
+                .keys()
+                .map(|label| found.value_type().map(|field| (label.clone(), field)))
+                .collect::<Result<_, Short>>()?,
+        ),
+        ValueType::Stack { .. } => ContentNode::Stack {
+            input: found.comp_type()?,
+            output: found.comp_type()?,
+        },
+        ValueType::Capability {
+            ref authority,
+            grade,
+            region,
+        } => ContentNode::Capability {
+            authority: authority.try_relocate(|_| found.value_type())?,
+            grade,
+            region,
+        },
+        ValueType::PathUniverse(..) => ContentNode::PathUniverse(found.value()?, found.value()?),
+        ValueType::Path { .. } => ContentNode::PathType {
+            carrier: found.value_type()?,
+            left: found.value()?,
+            right: found.value()?,
+        },
+        ValueType::Bridge { .. } => ContentNode::BridgeType {
+            carrier: found.value_type()?,
+            left: found.value()?,
+            right: found.value()?,
+        },
+        ValueType::Flow { .. } => ContentNode::FlowType {
+            carrier: found.value_type()?,
+            source: found.value()?,
+            target: found.value()?,
+        },
+        ValueType::Run(_) => ContentNode::RunType(found.value()?),
+        ValueType::Prefix(_) => ContentNode::PrefixType(found.value()?),
+        ValueType::Dialogue(_) => ContentNode::DialogueType(found.value()?),
+        ValueType::Web => ContentNode::WebType,
+        ValueType::Base(base) => ContentNode::Base(base),
+        ValueType::Kept { region, .. } => ContentNode::KeptType {
+            value: found.value_type()?,
+            region,
+        },
+        ValueType::List(_) => ContentNode::List(found.value_type()?),
+        ValueType::Product(ref parts) => ContentNode::Product(found.take(Sort::ValueType, parts)?),
+        ValueType::Sum(ref parts) => ContentNode::Sum(found.take(Sort::ValueType, parts)?),
+        ValueType::Thunk(_) => ContentNode::ThunkType(found.comp_type()?),
+        ValueType::Universe { sort, ref level } => ContentNode::Universe {
+            sort,
+            level: level.clone(),
+        },
+        ValueType::Lift { ref target, .. } => ContentNode::TypeLift {
+            inner: found.value_type()?,
+            target: target.clone(),
+        },
+        ValueType::Element { ref target, .. } => ContentNode::Element {
+            code: found.value()?,
+            target: target.clone(),
+        },
+        ValueType::Abstract(position) => ContentNode::Abstract(layout.resolve(position)),
+        ValueType::StaticPi { .. } => ContentNode::StaticPi {
+            domain: found.value_type()?,
+            codomain: found.value_type()?,
+        },
+        ValueType::Sigma { .. } => ContentNode::Sigma {
+            first: found.value_type()?,
+            second: found.value_type()?,
+        },
+        ValueType::Unknown => ContentNode::UnknownType,
+        ValueType::Buffer => ContentNode::BufferType,
+        ValueType::Row => ContentNode::RowKind,
+        ValueType::RowTail(_) => ContentNode::RowTail(found.value()?),
+        // A stage is minted by one judgement and names nothing past it,
+        // and a handle or a capability names a world, whose crossing
+        // decisions read what no footprint records: content naming
+        // either has no identity to key on, and stays opaque.
+        ValueType::Staged { .. } | ValueType::World(_) => ContentNode::Unresolved(Sort::ValueType),
+    })
+}
+
+/// The content former of `comp_type` over the numbers `found` holds, each
+/// slot filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a computation-type former whose children of each sort are exactly
+///   that family's numbers, in order; a codata application is the unresolved
+///   node.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded computation type
+///   against the enumeration; a slot filled from the wrong family or out of
+///   order fails the postcondition.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::CompType && found.placed(node).0),
+)]
+fn comp_type_content(
+    comp_type: &CompType,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *comp_type {
+        CompType::With(ref components) => {
+            ContentNode::WithType(found.take(Sort::CompType, components)?)
+        },
+        CompType::Returner { ref effects, .. } => ContentNode::Returner {
+            result: found.value_type()?,
+            effects: effects.try_relocate(|_| found.value_type())?,
+        },
+        CompType::Arrow { .. } => ContentNode::Arrow {
+            domain: found.value_type()?,
+            codomain: found.comp_type()?,
+        },
+        CompType::Pi { .. } => ContentNode::Pi {
+            domain: found.value_type()?,
+            codomain: found.comp_type()?,
+        },
+        CompType::Element { ref target, .. } => ContentNode::ComputationElement {
+            code: found.value()?,
+            target: target.clone(),
+        },
+        CompType::Unknown => ContentNode::UnknownComputationType,
+        // A codata application has no content form, and stays opaque.
+        CompType::Codata { .. } => ContentNode::Unresolved(Sort::CompType),
+    })
 }
 
 /// `node` with every child index replaced by its image under `image`, applied
