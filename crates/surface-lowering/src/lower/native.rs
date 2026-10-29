@@ -2739,10 +2739,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   the call's arguments in [`Lowerer::parameter_typed`], read by a
     ///   constructor written there as [`Classifier::Parameter`]; an argument
     ///   written as a thunk or a bare lambda is answered by that type as a
-    ///   signed definition's is ([`Self::signed_answer`]); nothing changes for
-    ///   any other head, a binder's name, a local recursion's descent or a
-    ///   refused declaration's among them: a refused declaration's parameter
-    ///   types never lower.
+    ///   signed definition's is ([`Self::signed_answer`]), in
+    ///   [`Lowerer::dependent_answers`] apart when the type names a parameter
+    ///   before it (#3921); nothing changes for any other head, a binder's
+    ///   name, a local recursion's descent or a refused declaration's among
+    ///   them: a refused declaration's parameter types never lower.
     /// - fails: as [`Self::unwrapped`]; a name the head's own reading refuses
     ///   is refused there.
     /// - panics: none.
@@ -2763,6 +2764,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
     /// - witness: `lower::native::tests::a_refused_callee_classifies_no_argument_2126`
     /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     #[spec(
         captures: before = (self.parameter_typed.len(), self.thunked.len()),
         ensures: |ret| ret.is_err() || (self.parameter_typed.len() >= before.0 && self.thunked.len() >= before.1),
@@ -2791,14 +2793,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
-        let typed: Vec<(NodeIndex, Placed)> = (applied.start .. applied.end)
+        let typed: Vec<(NodeIndex, Placed, bool)> = (applied.start .. applied.end)
             .zip(parameters)
             .filter_map(|(position, parameter)| match parameter.declared {
-                Maybe::Present(declared) => Some((*self.operands.get(position)?, declared)),
+                Maybe::Present(declared) => {
+                    Some((*self.operands.get(position)?, declared, parameter.dependent))
+                },
                 Maybe::Absent(_) => None,
             })
             .collect();
-        for (argument, declared) in typed {
+        for (argument, declared, dependent) in typed {
             let _first = self.parameter_typed.insert(argument, CalledAt {
                 typed: declared,
                 slot,
@@ -2821,7 +2825,15 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             if let Some(answer) = self.signed_answer(&written)? {
-                let _first = self.thunked.insert(argument, answer);
+                // A type naming the callee's parameters answers nothing where
+                // the call stands; the lambda's binder alone reads it (#3921).
+                let answers = if dependent {
+                    &mut self.dependent_answers
+                }
+                else {
+                    &mut self.thunked
+                };
+                let _first = answers.insert(argument, answer);
             }
         }
         Ok(())
@@ -8460,9 +8472,68 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
+        let (written, environment) =
+            match self.called_environment(declared, declared.typed.node, sink) {
+                Maybe::Present(read) => read,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        if environment.is_empty() {
+            return Maybe::Present(written);
+        }
+        let mark = sink.arena.watermark();
+        let code = sink.arena.value_quote(written);
+        let mut carried = Vec::new();
+        let substituted = gandr_core_term::substitute_environment_traced(
+            sink.arena,
+            TermId::Value(code),
+            &environment,
+            &mut carried,
+        );
+        exits::record_copies(sink, mark, &carried, origin);
+        let TermId::Value(substituted) = substituted
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+
+        Maybe::Present(ty)
+    }
+
+    /// The type written at `written`, read under the parameters before the
+    /// one `declared` names, beside the arguments the call writes for the
+    /// parameters it names: what [`Self::called_parameter_type`] substitutes.
+    ///
+    /// # Specification
+    /// - requires: `written` is read under the frame `declared`'s type is read
+    ///   under; the type and the call's arguments are minted or absent.
+    /// - ensures: the written type, and an environment, innermost first, that
+    ///   holds the argument the call writes for each parameter the type names,
+    ///   and any one of them for a binder between them it does not name; empty
+    ///   when the type names none.
+    /// - fails: the type's own absence; the unminted absence when it names a
+    ///   binder no argument stands for — a linear one, or one the declaration's
+    ///   parentheses do not bind; an argument's own absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::called_parameter_type`], and a lambda's
+    ///   binder at a parameter's domain.
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((id, _)) if sink.arena.value_type(id).is_some()))]
+    pub(super) fn called_environment(
+        &self,
+        declared: CalledAt,
+        written: NodeIndex,
+        sink: &Sink<'_>,
+    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>
+    {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let written = match self.value_type_at(declared.typed.node) {
-            Maybe::Present(written) => written,
+        let written = match self.value_type_at(written) {
+            Maybe::Present(read) => read,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let Some(support) = sink.arena.value_type_support(written)
@@ -8527,32 +8598,14 @@ impl<'source> Lowerer<'_, 'source>
         // any value: no index reaches it.
         let Some(&filler) = environment.iter().flatten().next()
         else {
-            return Maybe::Present(written);
+            return Maybe::Present((written, Vec::new()));
         };
         let environment: Vec<ValueId> = environment
             .into_iter()
             .map(|entry| entry.unwrap_or(filler))
             .collect();
-        let mark = sink.arena.watermark();
-        let code = sink.arena.value_quote(written);
-        let mut carried = Vec::new();
-        let substituted = gandr_core_term::substitute_environment_traced(
-            sink.arena,
-            TermId::Value(code),
-            &environment,
-            &mut carried,
-        );
-        exits::record_copies(sink, mark, &carried, origin);
-        let TermId::Value(substituted) = substituted
-        else {
-            return unminted;
-        };
-        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
-        else {
-            return unminted;
-        };
 
-        Maybe::Present(ty)
+        Maybe::Present((written, environment))
     }
 
     /// `ty`, a value type read under `frame` in `telescope`, carried into the

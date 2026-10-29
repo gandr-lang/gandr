@@ -2783,3 +2783,42 @@ fn an_endpoint_reads_each_nested_call_along_its_spine_as_returned()
         "a returned call with nothing nested under it is kept as written"
     );
 }
+
+/// #3921: a lambda passed at a parameter of function type gave its binder no
+/// path type the lowering read, so `then` and `back` in its body were refused
+/// unannotated. A callee's capitalised parameters went unread, and a type
+/// naming the parameters before it answered the lambda's body under the
+/// callee's binders. The binder takes the parameter's domain, each parameter
+/// it names replaced by the argument the call writes, so every declaration
+/// lowers and checks, the binder written untyped, stated, or at a callee
+/// whose parameters are lowercase.
+#[test]
+fn a_call_s_lambda_argument_reads_its_parameter_s_domain_3921()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def applyPath(A : Type, x : A, y : A, z : A, F : Path(A, x, y) => Path(A, x, z), p : \
+             Path(A, x, y)) -> Path(A, x, z) {\n  F(p)\n}\n\ndef dependentThen(A : Type, x : A, \
+             y : A, z : A, g : Path(A, y, z), p : Path(A, x, y)) -> Path(A, x, z) {\n  \
+             applyPath(A, x, y, z, fn (q) { q then g }, p)\n}\n\ndef statedThen(A : Type, x : \
+             A, y : A, z : A, g : Path(A, y, z), p : Path(A, x, y)) -> Path(A, x, z) {\n  \
+             applyPath(A, x, y, z, fn (q : Path(A, x, y)) { q then g }, p)\n}\n\ndef \
+             applyBack(b : Type, u : b, v : b, f : Path(b, u, v) => Path(b, v, u), p : Path(b, \
+             u, v)) -> Path(b, v, u) {\n  f(p)\n}\n\ndef reversed(A : Type, x : A, y : A, p : \
+             Path(A, x, y)) -> Path(A, y, x) {\n  applyBack(A, x, y, fn (q) { back(q) }, p)\n}\n",
+        ),
+        &mut arena,
+    );
+    for name in ["dependentThen", "statedThen", "reversed"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}

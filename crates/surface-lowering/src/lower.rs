@@ -3187,6 +3187,11 @@ struct Lowerer<'run, 'source>
     /// Each thunk a definition is, with the answer its signature states for
     /// its body: `C` for `+U C`, `-F B` for `() => B`.
     thunked: BTreeMap<NodeIndex, native::Answer>,
+    /// Each thunk or bare lambda passed for a parameter whose type names a
+    /// parameter written before it, with the answer that type gives, read
+    /// under the callee's binders: the lambda's binder takes the answer's
+    /// domain, and nothing answers its body where the call stands (#3921).
+    dependent_answers: BTreeMap<NodeIndex, native::Answer>,
     /// Each node a type classifies without annotating it: a definition whose
     /// signature writes a type no thunk is, and a field of a constructor with
     /// a classifier, with the classifier it takes.
@@ -3254,6 +3259,11 @@ struct Lowerer<'run, 'source>
     /// The binder of each static motive [`Self::over_points`] records, with
     /// that carrier: an operation over the binder reads its path type off it.
     binders_over_points: BTreeMap<ScopeId, NodeIndex>,
+    /// The binder of each lambda passed for a parameter that writes no type
+    /// of its own, with the parameter, the domain node its binder is typed
+    /// by and the frame the call stands in: an operation over the binder
+    /// reads its path type off the domain at the call's arguments (#3921).
+    argued_binders: BTreeMap<ScopeId, (native::CalledAt, NodeIndex, Frame)>,
     /// What every node's paths do with the body it stands in, surveyed before
     /// the classification reads it.
     leaves: NodeTable<exits::Leaves>,
@@ -5197,6 +5207,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             parameter_typed: BTreeMap::new(),
             awaiting: BTreeSet::new(),
             thunked: BTreeMap::new(),
+            dependent_answers: BTreeMap::new(),
             inherited: BTreeMap::new(),
             grouped: BTreeMap::new(),
             labels: Vec::new(),
@@ -5215,6 +5226,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             at_endpoint: BTreeSet::new(),
             over_points: BTreeMap::new(),
             binders_over_points: BTreeMap::new(),
+            argued_binders: BTreeMap::new(),
             leaves,
             exits: BTreeSet::new(),
             exitable: BTreeSet::new(),
@@ -9575,7 +9587,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   block beneath one more binder, unnamed: the bind the mint ascribes the
     ///   argument at, recorded with `A` (#3735). A lambda `cong` maps a path
     ///   by, untyped and unanswered, types its binder with the carrier its
-    ///   path's written type states (#3773).
+    ///   path's written type states (#3773). A bare lambda passed for a
+    ///   parameter, its binder written untyped, records its binder in
+    ///   [`Self::argued_binders`] with the parameter and the arrow's domain
+    ///   (#3921).
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
     ///   computation; the unadmitted refusal for a type abstraction; the arity
@@ -9595,6 +9610,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::tests::a_typed_parameter_binds_its_argument_ascribed_1310`
     /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -9625,19 +9641,39 @@ impl<'run, 'source> Lowerer<'run, 'source>
             // its own type.
             self.read(declared.node, Reading::ValueType(frame));
         }
+        // A lambda passed for a parameter whose type names the callee's own
+        // parameters takes its binder's type from the parameter's domain, which
+        // an operation over the binder reads at the call's arguments; nothing
+        // answers its body (#3921).
+        let argued = match (
+            declared,
+            arrow,
+            self.dependent_answers.get(&site.at.node).copied(),
+            self.parameter_typed.get(&site.at.node).copied(),
+        ) {
+            (None, None, Some(answer), Some(called)) => {
+                self.arrow_of(answer)?.map(|(domain, _)| (called, domain))
+            },
+            _ => None,
+        };
         // A lambda `cong` maps by takes the carrier its path's type states
         // (#3773).
         let typed = declared
             .map(|declared| declared.node)
             .or_else(|| arrow.map(|(domain, _)| domain))
+            .or_else(|| argued.map(|(_, domain)| domain))
             .or_else(|| self.over_points.get(&site.at.node).copied());
-        let extended = Frame::Inner(match typed {
+        let bound = match typed {
             Some(declared) => {
                 self.scope
                     .extend_typed(frame, name, declared, Maybe::Present(binder.span))
             },
             None => self.scope.extend(frame, name, Maybe::Present(binder.span)),
-        });
+        };
+        let extended = Frame::Inner(bound);
+        if let Some((called, domain)) = argued {
+            let _first = self.argued_binders.insert(bound, (called, domain, frame));
+        }
         // A typed parameter's body stands beneath the bind that holds the
         // argument to its type, whose own binder no name reads (#3735).
         let under = match declared {
@@ -9714,6 +9750,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(None);
         };
+        self.arrow_of(answer)
+    }
+
+    /// The domain and the answered codomain of the arrow `answer` answers, as
+    /// [`Self::answered_arrow`] reads them.
+    ///
+    /// # Specification
+    /// - requires: `answer` answers a lambda in term position.
+    /// - ensures: as [`Self::answered_arrow`] for a position `answer` answers.
+    /// - fails: as [`Self::unwrapped`] and [`Self::alias_domains`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::answered_arrow`], and a lambda passed for
+    ///   a parameter whose type names the parameters before it.
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
+    fn arrow_of(
+        &mut self,
+        answer: native::Answer,
+    ) -> Result<Option<(NodeIndex, native::Answer)>, LoweringRefusal<'source>>
+    {
         let taken = match answer.over {
             native::Over::Written => None,
             native::Over::Valued { taken } => Some(taken),
@@ -14887,6 +14949,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .filter(|&(subject, ..)| owns(&subject))
                 .flat_map(|(_, stated, declared)| [stated, declared]),
         );
+        // A lambda passed for a parameter whose type names the parameters
+        // before it reads the arguments written for them, which the sweep
+        // below reaches after the lambda's body (#3921).
+        let argued: Vec<NodeIndex> = self
+            .argued_binders
+            .values()
+            .flat_map(|&(called, ..)| stretch(&self.operands, called.applied).iter().copied())
+            .filter(|argument| owns(argument) && !self.dependent_answers.contains_key(argument))
+            .collect();
+        manifests.extend(argued);
         manifests.reverse();
         let mut subtree: Vec<NodeIndex> = Vec::new();
         let mut work: Vec<NodeIndex> = Vec::new();
