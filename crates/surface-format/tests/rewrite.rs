@@ -858,6 +858,67 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
     .assert_eq(formatted.text().as_ref());
 }
 
+/// #3772: reading the type of a call mints the callee's composites at the
+/// call's composite, so several transports stand at its span. The explicit
+/// form takes the composite's own motive, the one minted last, and nothing is
+/// withdrawn.
+#[test]
+fn a_composite_beside_a_call_takes_its_own_motive_3772()
+{
+    let grammar = grammar();
+    let source = format!(
+        "{CIRCLE}def twice(q: Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), q then q, q then q) {{
+  here(q then q)
+}}
+
+def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), q then q, q then q)) -> -F Path(Path(Circle, Base, Base), q then q, q then q) {{
+  r then twice(q)
+}}
+"
+    );
+    let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    expect![[r#"
+        pub data Circle : Type {
+          Base : Circle;
+          loop : Base <-> Base;
+        }
+
+        def twice(q : Path(Circle, Base, Base)) -> -F Path(
+          Path(Circle, Base, Base),
+          transport(\a. Path(Circle, Base, a), q, q),
+          transport(\a. Path(Circle, Base, a), q, q)
+        ) {
+          here(transport(\a. Path(Circle, Base, a), q, q))
+        }
+
+        def beside(
+          q : Path(Circle, Base, Base),
+          r : Path(
+            Path(Circle, Base, Base),
+            transport(\a. Path(Circle, Base, a), q, q),
+            transport(\a. Path(Circle, Base, a), q, q)
+          )
+        ) -> -F Path(
+          Path(Circle, Base, Base),
+          transport(\a. Path(Circle, Base, a), q, q),
+          transport(\a. Path(Circle, Base, a), q, q)
+        ) {
+          transport(
+            \a. Path(Path(Circle, Base, Base), transport(\b. Path(Circle, Base, b), q, q), a),
+            twice(q),
+            r
+          )
+        }
+    "#]]
+    .assert_eq(formatted.text().as_ref());
+}
+
 /// #2166: a functor's instantiation copies its members, so a copy's composite
 /// stands at the functor body's span; its motive, spelled under the argument,
 /// is never the functor's own, and the explicit form keeps `back` where the

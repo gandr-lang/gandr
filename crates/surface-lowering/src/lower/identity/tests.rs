@@ -831,6 +831,37 @@ fn back_then_and_cong_unfold_to_transports()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #3772: `cong` and `then` inside a type were refused `Unannotated`,
+/// though each operand's type is known. Each synthesises its type from its
+/// operands, so every declaration of the fixture lowers and checks.
+#[test]
+fn then_and_cong_in_a_type_take_their_types_from_their_operands_3772()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "../../../../../corpus/model/identity/then-and-cong-in-a-type.gandr"
+        )),
+        &mut arena,
+    );
+    for name in [
+        "congInAType",
+        "thenCongInAType",
+        "inductiveAssociator",
+        "hereThenAssocInAType",
+    ] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// The transport `cong` unfolds to reads its map only lifted under the
 /// motive's binder; a parameter map's lift is the written map's copy, so it
 /// answers at the map's bytes (#443).

@@ -2405,8 +2405,10 @@ impl<'source> Lowerer<'_, 'source>
             return Err(unannotated);
         };
         let named = Placed::of(function, node);
+        // A capitalised name is read as a constructor; `derive` refuses one
+        // that names a constructor, so here it names a function (#3772).
         let Shape::Form {
-            former: Former::Name,
+            former: Former::Name | Former::Constructor,
             ..
         } = shape_of(self.pbg, node)?
         else {
@@ -3151,8 +3153,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   the synthesised operations whose own type is read.
     /// - ensures: through parentheses, the node itself when it is a loop, a
     ///   word of a loop's words, an answered derived operation, one in `read`,
-    ///   or a parameter, a call or a named declaration [`Self::typed`] reads in
-    ///   a declaration that lowers.
+    ///   a reflexivity `here(x)` whose point `x` is read so, or a parameter, a
+    ///   call or a named declaration [`Self::typed`] reads in a declaration
+    ///   that lowers.
     /// - fails: [`synthesised::Absent::Unread`] for any other path;
     ///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -3178,6 +3181,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<NodeIndex, synthesised::Absent>, LoweringRefusal<'source>>
     {
         let mut at = path;
+        // The reflexivity read through, when `path` is one (#3772).
+        let mut reflexivity: Option<NodeIndex> = None;
         loop {
             self.fuel.spend()?;
             let worded = match self.plans.get(at) {
@@ -3194,6 +3199,13 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
                 },
+                // `here(x)` stands at a path between paths when `x` is a path
+                // whose own type is read: one reflexivity is read through.
+                Some(&Plan::Here(point)) if reflexivity.is_none() => {
+                    reflexivity = Some(at);
+                    at = point;
+                    continue;
+                },
                 Some(&Plan::Derived(Derived {
                     stance: Stance::Answered(_),
                     ..
@@ -3205,7 +3217,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             };
             return Ok(if worded {
-                Maybe::Present(at)
+                Maybe::Present(reflexivity.unwrap_or(at))
             }
             else {
                 Maybe::Absent(synthesised::Absent::Unread)
@@ -3837,8 +3849,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   function's written result at its arguments, each carried to where the
     ///   operation stands; otherwise a loop, or a word of a loop's words,
     ///   stands at `Path(F, x, x)`, `F` its family and `x` the point the words
-    ///   spell, minted as [`Self::words_point`] mints them, and a derived
-    ///   operation's returned transport at the path type recorded against it.
+    ///   spell, minted as [`Self::words_point`] mints them, a reflexivity
+    ///   `here(p)` at `Path(Path(A, a, b), p, p)` when its point `p` stands at
+    ///   `Path(A, a, b)`, and a derived operation's returned transport at the
+    ///   path type recorded against it.
     /// - fails: [`synthesised::Absent::Unread`] for any other value, and for a
     ///   path or a type that did not lower.
     /// - panics: none.
@@ -3853,6 +3867,64 @@ impl<'source> Lowerer<'_, 'source>
         | Maybe::Absent(_) => true,
     })]
     fn identity_of(
+        &self,
+        path: NodeIndex,
+        typed: Option<Typed>,
+        frame: Frame,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Identity, synthesised::Absent>
+    {
+        let mut at = path;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        let Some(&Plan::Here(point)) = self.plans.get(at)
+        else {
+            return self.operand_identity(path, typed, frame, sink);
+        };
+        let typed = match self.typed(point) {
+            Maybe::Present(typed) => Some(typed),
+            Maybe::Absent(_) => None,
+        };
+        let (Maybe::Present(inner), Maybe::Present(value)) = (
+            self.operand_identity(point, typed, frame, sink),
+            self.value_at(point),
+        )
+        else {
+            return Maybe::Absent(synthesised::Absent::Unread);
+        };
+        let carrier = sink
+            .arena
+            .value_type_path(inner.carrier, inner.left, inner.right);
+        Maybe::Present(Identity {
+            carrier,
+            left: value,
+            right: value,
+        })
+    }
+
+    /// The path type the derived operation's operand `path`, no reflexivity,
+    /// stands at, read off `typed` when the classification recorded one, the
+    /// operation standing under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `path` and the type `typed` names are already minted or
+    ///   absent.
+    /// - ensures: as [`Self::identity_of`] for every operand but a reflexivity.
+    /// - fails: [`synthesised::Absent::Unread`] for a reflexivity, for any
+    ///   value [`Self::identity_of`] reads none of, and for a path or a type
+    ///   that did not lower.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::identity_of`].
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(read) => sink.arena.value_type(read.carrier).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn operand_identity(
         &self,
         path: NodeIndex,
         typed: Option<Typed>,

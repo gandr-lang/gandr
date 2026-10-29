@@ -642,6 +642,7 @@ corpus/model/identity/structure-identity.gandr Tense bc8de3fa88b5ae11
 corpus/model/identity/structure-operations.gandr Passive 517693c1fe1a3663
 corpus/model/identity/structure-operations.gandr Tense 517693c1fe1a3663
 corpus/model/identity/structure-operations.gandr Tense aa3e8ff6b165d1c9
+corpus/model/identity/then-and-cong-in-a-type.gandr Tense fb21110ec209675c
 corpus/model/identity/transport-list.gandr Tense 5468a38b20b26f35
 corpus/model/identity/transport-list.gandr Tense 7b831d95680d675f
 corpus/model/identity/transport-list.gandr Tense c4a02e88c7b2d00a

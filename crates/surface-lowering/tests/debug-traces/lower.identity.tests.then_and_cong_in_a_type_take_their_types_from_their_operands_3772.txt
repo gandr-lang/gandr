@@ -1,0 +1,72 @@
+test: lower::identity::tests::then_and_cong_in_a_type_take_their_types_from_their_operands_3772
+package: gandr-surface-lowering
+command: mise run debug:refusal Unannotated gandr-surface-lowering lower::identity::tests::then_and_cong_in_a_type_take_their_types_from_their_operands_3772
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64).
+(lldb) settings set -- target.run-args  "lower::identity::tests::then_and_cong_in_a_type_take_their_types_from_their_operands_3772" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2002
+Breakpoint 1: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::stated_motive::{closure#0} + 180 at identity.rs:2002:20, address = 0x0000000100f7b10c
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2009
+Breakpoint 2: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::stated_motive::{closure#0} + 364 at identity.rs:2009:84, address = 0x0000000100f7b1c4
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2323
+Breakpoint 3: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::derive::{closure#0} + 1540 at identity.rs:2323:36, address = 0x0000000100f7f7c0
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2405
+Breakpoint 4: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::mapped::{closure#0} + 228 at identity.rs:2405:20, address = 0x0000000100f7fbbc
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2413
+Breakpoint 5: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::mapped::{closure#0} + 404 at identity.rs:2413:20, address = 0x0000000100f7fc6c
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2426
+Breakpoint 6: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::mapped::{closure#0} + 1076 at identity.rs:2426:32, address = 0x0000000100f7ff0c
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2430
+Breakpoint 7: 2 locations.
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2440
+Breakpoint 8: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::mapped::{closure#0} + 892 at identity.rs:2440:41, address = 0x0000000100f7fe54
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 2443
+Breakpoint 9: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::mapped::{closure#0} + 740 at identity.rs:2443:33, address = 0x0000000100f7fdbc
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 3259
+Breakpoint 10: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::answers_path::{closure#1} + 348 at identity.rs:3259:24, address = 0x0000000100f75ac4
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 3263
+Breakpoint 11: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::answers_path::{closure#1} + 568 at identity.rs:3263:24, address = 0x0000000100f75ba0
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 3345
+Breakpoint 12: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::answers_path::{closure#1} + 592 at identity.rs:3345:47, address = 0x0000000100f75bb8
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 3376
+Breakpoint 13: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::answers_path::{closure#1} + 1952 at identity.rs:3376:21, address = 0x0000000100f76108
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 3386
+Breakpoint 14: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::answers_path::{closure#1} + 1904 at identity.rs:3386:21, address = 0x0000000100f760d8
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/identity.rs --line 3395
+Breakpoint 15: where = gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::answers_path::{closure#1} + 1768 at identity.rs:3395:29, address = 0x0000000100f76050
+(lldb) breakpoint set --name rust_panic
+Breakpoint 16: where = gandr_surface_lowering-52666a784a556435`__rustc::rust_panic + 12 at panicking.rs:875:25, address = 0x0000000101daceb8
+(lldb) run
+
+running 1 test
+test lower::identity::tests::then_and_cong_in_a_type_take_their_types_from_their_operands_3772 ... warning: This version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited.
+Process 38590 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64)
+Process 38590 stopped
+* thread #2, name = 'lower::identity::tests::then_and_cong_in_a_type_take_their_type', stop reason = breakpoint 5.1
+       frame #0: 0x0000000100f7fc6c gandr_surface_lowering-52666a784a556435`<gandr_surface_lowering::lower::Lowerer>::mapped::{closure#0} at identity.rs:2413:20
+   2410	            ..
+   2411	        } = shape_of(self.pbg, node)?
+   2412	        else {
+-> 2413	            return Err(unannotated);
+    	                   ^
+   2414	        };
+   2415	        let name = self.name_at(named);
+   2416	        match self.resolve_name(Site { at: named, ..site }, frame, name)? {
+Target 0: (gandr_surface_lowering-52666a784a556435) stopped.
+(lldb) bt 24
+Traceback (most recent call last):
+  File "~/.rustup/toolchains/nightly-2026-06-25-aarch64-apple-darwin/lib/rustlib/etc/lldb_providers.py", line 1429, in get_child_at_index
+    return self.value_builder.from_uint("weak", self.weak_count)
+  File "~/.rustup/toolchains/nightly-2026-06-25-aarch64-apple-darwin/lib/rustlib/etc/lldb_providers.py", line 112, in from_uint
+    data = SBData.CreateDataFromUInt64Array(
+  File "/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Resources/Python/lldb/__init__.py", line 5046, in CreateDataFromUInt64Array
+    return _lldb.SBData_CreateDataFromUInt64Array(endian, addr_byte_size, array)
+OverflowError: can't convert negative int to unsigned

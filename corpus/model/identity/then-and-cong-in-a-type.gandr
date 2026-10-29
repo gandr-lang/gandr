@@ -1,0 +1,76 @@
+// `then` and `cong` in a type take their types from their operands.
+//
+// A path between paths states its endpoints with these forms, as a paper
+// writes them. A wrapper definition that only restates an operand's type
+// hides that statement.
+//
+// Each declaration states a composite or an action in its own type.
+//
+// - see: #3772 — `then` and `cong` in a type, refused before
+
+/// The action of a function on a path of paths, stated in its own type.
+def congInAType(
+  A : Type,
+  x : A,
+  y : A,
+  w : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  F : Path(A, x, y) => Path(A, x, w)
+) -> Path(Path(Path(A, x, w), F(f1), F(f2)), cong(F, a), cong(F, a)) {
+  here(cong(F, a))
+}
+
+/// A composite whose second operand is that action.
+def thenCongInAType(
+  A : Type,
+  x : A,
+  y : A,
+  w : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  F : Path(A, x, y) => Path(A, x, w),
+  b : Path(Path(A, x, w), F(f1), F(f1))
+) -> Path(Path(Path(A, x, w), F(f1), F(f2)), b then cong(F, a), b then cong(F, a)) {
+  here(b then cong(F, a))
+}
+
+/// The associator by based path induction on `h`.
+def inductiveAssociator(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  transport(
+    (v : A, k : Path(A, z, v)) => Path(Path(A, x, v), (f then g) then k, f then (g then k)),
+    h,
+    here(z),
+    here(h),
+    here(f then g)
+  )
+}
+
+/// Reflexivity before the associator, composed in the type itself.
+def hereThenAssocInAType(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (f then g) then h, f then (g then h)),
+  here((f then g) then h) then inductiveAssociator(A, x, y, z, w, f, g, h),
+  inductiveAssociator(A, x, y, z, w, f, g, h)
+) {
+  here(inductiveAssociator(A, x, y, z, w, f, g, h))
+}

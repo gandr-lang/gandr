@@ -36,3 +36,8 @@ sites = [
 sites = [
   { file = "crates/core-checker/src/bridge.rs", pattern = '(return Err\(|= |\|former\| |^\s*)Refusal::OutOfFragment \{' },
 ]
+
+[refusal.Unannotated]
+sites = [
+  { file = "crates/surface-lowering/src/lower/identity.rs", pattern = '(Err\(unannotated\)|site\.out\(FragmentBoundary::Unannotated\)\))' },
+]
