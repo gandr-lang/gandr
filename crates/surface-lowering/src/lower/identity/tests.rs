@@ -926,6 +926,70 @@ fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
     );
 }
 
+/// #3829: `cong` over a lambda was refused `Unannotated` wherever its
+/// position answered no path type. It reads its codomain off the path type
+/// the lambda's body synthesises under the binder, so it stands under `then`
+/// in a body and as an endpoint of a stated path type.
+#[test]
+fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
+{
+    let telescope = "(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
+                     Path(Path(A, x, y), f1, f2), g : Path(A, y, z))";
+    let whisker = "cong(fn (q) { q then g }, a)";
+    let source = format!(
+        "def underThen{telescope} -> Path(Path(A, x, z), f1 then g, f2 then g) {{\n  {whisker} \
+         then here(f2 then g)\n}}\n\
+         def asEndpoint{telescope} -> Path(Path(Path(A, x, z), f1 then g, f2 then g), {whisker}, \
+         {whisker}) {{\n  here({whisker})\n}}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["underThen", "asEndpoint"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    let Some(&Computation::PathTransport { value, .. }) =
+        arena.computation(tail_of(&module, &arena, "underThen".into()))
+    else {
+        panic!("`then` unfolds to a transport");
+    };
+    assert!(
+        matches!(
+            arena.value(value),
+            Some(&Value::Returned(inner))
+                if matches!(arena.computation(inner), Some(&Computation::PathTransport { .. }))
+        ),
+        "`then` transports the value `cong`'s transport returns: {:?}",
+        arena.value(value)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+    let unwritten = lowered(
+        SourceText::from(
+            "def unwritten(A : Type, x : A, y : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
+             Path(Path(A, x, y), f1, f2), g : Path(A, y, y)) -> Path(Path(A, x, y), f1 then g, f2 \
+             then g) {\n  cong(fn (q) { q then g }, back(back(a))) then here(f2 then g)\n}\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            outcome_of(&unwritten, "unwritten".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            })
+        ),
+        "a lambda over a path whose type the source does not write is unannotated: {:?}",
+        outcome_of(&unwritten, "unwritten".into())
+    );
+}
+
 /// The transport `cong` unfolds to reads its map only lifted under the
 /// motive's binder; a parameter map's lift is the written map's copy, so it
 /// answers at the map's bytes (#443).

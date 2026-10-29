@@ -4,9 +4,11 @@
 // function that does it is short, and a stated type for it only repeats
 // the path's type.
 //
-// The binder takes the type of the path's points.
+// The binder takes the type of the path's points. Where no path type is
+// stated, `cong` reads its own off the path type the body has.
 //
 // - see: #3773 — a lambda as `cong`'s function, refused before
+// - see: #3829 — a lambda where no path type is stated, refused before
 
 /// Whiskering a path of paths on the right.
 def whiskerRight(
@@ -20,4 +22,37 @@ def whiskerRight(
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), f1 then g, f2 then g) {
   cong(fn (q) { q then g }, a)
+}
+
+/// The whisker composed with a reflexivity: `cong` stands under `then`,
+/// where no path type is stated.
+def whiskerThenHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  cong(fn (q) { q then g }, a) then here(f2 then g)
+}
+
+/// The whisker as an endpoint of a stated path type: its reflexivity.
+def whiskerHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(
+  Path(Path(A, x, z), f1 then g, f2 then g),
+  cong(fn (q) { q then g }, a),
+  cong(fn (q) { q then g }, a)
+) {
+  here(cong(fn (q) { q then g }, a))
 }
