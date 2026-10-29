@@ -6172,8 +6172,11 @@ fn step_transport(
 ///   appending on it; a function motive along `ua(e)`, `equiv(f, g)` or a held
 ///   transport returns the thunk [`CompBody::TransportFunction`] holds,
 ///   wherever [`function_parts`] reads its motives; any other configuration
-///   over a stuck path stacks the transport on the path's spine, and over a
-///   canonical path and a stuck operand on the operand's.
+///   over a held operand — a returned computation, read by [`held_endpoint`] —
+///   stacks the transport on the operand's spine, as the kernel runs a returned
+///   operand before it reads the path; over a stuck path it stacks the
+///   transport on the path's spine, and over a canonical path and a stuck
+///   operand on the operand's.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, and
 ///   along a word — and its stuck form.
@@ -6191,11 +6194,14 @@ fn step_transport(
 /// - hypothesis: L3 — reflexivity, a constant motive, a stuck path in a product
 ///   motive over a tuple and in a record motive over a record, a stuck path in
 ///   a sum motive over an injection, a stuck path in the singleton over
-///   reflexivity, a stuck path in a motive reading its binder, and a canonical
-///   path over a stuck operand each reach their own arm; dropping the
-///   reflexivity or the constant rule, reordering components or labels, losing
-///   the summand, computing a family whose left endpoint moves or losing the
-///   transport a stuck operand waits on changes the read-back term.
+///   reflexivity, a stuck path in a motive reading its binder, a stuck path
+///   over a held operand, and a canonical path over a stuck operand each reach
+///   their own arm; dropping the reflexivity or the constant rule, reordering
+///   components or labels, losing the summand, computing a family whose left
+///   endpoint moves or losing the transport a stuck operand waits on changes
+///   the read-back term, and holding the transport over a held operand on the
+///   path compares the transports before the call the kernel unfolds first,
+///   which the kernel's replay refuses.
 /// - witness: `identity::tests::transport_along_here_is_the_identity`
 /// - witness: `identity::tests::transport_in_a_constant_motive_returns_the_operand`
 /// - witness: `identity::tests::transport_through_a_product_is_componentwise`
@@ -6213,6 +6219,7 @@ fn step_transport(
 /// - witness: `identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 /// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
 /// - witness: `identity::tests::a_suspension_moves_its_result_along_an_equivalence`
+/// - witness: `machine::tests::a_transport_of_a_call_s_result_unfolds_the_call_first_3806`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -6480,9 +6487,21 @@ fn step_path_transport(
     if words::appended(core, domain, machine, motive, (path, value))? == words::Moved::Stepped {
         return Ok(());
     }
-    // A stuck path holds the transport on its spine; a canonical path waits
-    // on a stuck operand, which holds it on its own.
-    let grown = if let DomainValue::Neutral { neutral, .. } = carried {
+    // The kernel runs a returned operand before it reads the path, so a held
+    // operand holds the transport on its own spine and a conversion meets its
+    // call first. Otherwise a stuck path holds the transport on its spine, and
+    // a canonical path waits on a stuck operand, which holds it on its own.
+    let operand = match held_endpoint(domain, value)? {
+        Some(_) => domain.value(value).copied(),
+        None => None,
+    };
+    let grown = if let Some(DomainValue::Neutral { neutral, .. }) = operand {
+        extend_spine(domain, neutral, Elimination::OperandTransport {
+            motive,
+            path,
+        })?
+    }
+    else if let DomainValue::Neutral { neutral, .. } = carried {
         extend_spine(domain, neutral, Elimination::PathTransport {
             motive,
             value,
@@ -8878,8 +8897,9 @@ pub fn run_held(
 /// - requires: nothing; a dangling id is refused.
 /// - ensures: `Some(computation)` exactly when `value` is such a neutral over
 ///   `computation`; `None` for any other value.
-/// - provides: the test [`run_held`] and a held operand's run
-///   ([`words::appended`]) share.
+/// - provides: the test [`run_held`], a held operand's run
+///   ([`words::appended`]) and a transport held on its operand
+///   ([`step_path_transport`]) share.
 /// - fails: [`EvalFault::Domain`] for a value or neutral the arena does not
 ///   hold.
 /// - panics: none.

@@ -1,0 +1,58 @@
+/// Two transports in a variable family compare by their family, their path
+/// and their value.
+///
+/// Each transport lowers its own motive, so the two motives are distinct terms
+/// that read one family. Each second value is a call, which the kernel runs
+/// before it reads the path.
+///
+/// The rows transport along a variable path, along a variable function's path,
+/// and under a variable function's call.
+///
+/// - see: #3802 — two motives calling one variable family read apart
+/// - see: #3806 — the checker compared the transports first, and the kernel refused its dialogue
+
+/// A definition that returns its argument, so a call to it unfolds.
+def passed(B : Type, b : B) -> B {
+  b
+}
+
+/// Two transports along a variable path, their values one unfolding apart.
+def stuckOnVariable(B : Type, Q : B => Type, x : B, y : B, p : Path(B, x, y), v : Q(x)) -> Path(
+  Q(y),
+  transport(\z. Q(z), p, v),
+  transport(\z. Q(z), p, passed(Q(x), v))
+) {
+  here(transport(\z. Q(z), p, v))
+}
+
+/// Two transports move along a variable function's path, and their values are
+/// one unfolding apart.
+def heldInFamily(
+  A : Type,
+  B : Type,
+  Q : B => Type,
+  x : B,
+  y : B,
+  f : A => Path(B, x, y),
+  a : A,
+  v : Q(x)
+) -> Path(Q(y), transport(\z. Q(z), f(a), v), transport(\z. Q(z), f(a), passed(Q(x), v))) {
+  here(transport(\z. Q(z), f(a), v))
+}
+
+/// A variable function takes two transports along a variable function's path,
+/// and their values are one unfolding apart.
+def heldUnderCall(
+  A : Type,
+  B : Type,
+  C : Type,
+  Q : B => Type,
+  x : B,
+  y : B,
+  f : A => Path(B, x, y),
+  a : A,
+  h : Q(y) => C,
+  v : Q(x)
+) -> Path(C, h(transport(\z. Q(z), f(a), v)), h(transport(\z. Q(z), f(a), passed(Q(x), v)))) {
+  here(h(transport(\z. Q(z), f(a), v)))
+}

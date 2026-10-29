@@ -4464,6 +4464,46 @@ fn two_held_transports_convert_by_their_computations()
 }
 
 #[test]
+fn a_transport_of_a_call_s_result_unfolds_the_call_first_3806()
+{
+    // `⟨tr(y. Path(Unit, y, y), R, R)⟩` against `⟨tr(y. Path(Unit, y, y), R,
+    // ⟨ident(R)⟩)⟩` for the rigid path `R`. The kernel runs a returned operand
+    // before it reads the path, so it reads the right side as `ident(R) to x.
+    // tr(…, R, x)` and unfolds `ident` before it meets the transport. Held on
+    // its operand, the transport waits on `ident` in the machine as well, so
+    // the machine unfolds it first and the kernel replays the trace. Held on
+    // the path, the machine compared the transports first, and the kernel
+    // refused the trace.
+    let mut core = CoreArena::new();
+    let function = identity(&mut core);
+    let unit_type = core.value_type_unit();
+    let moving = innermost(&mut core);
+    let motive = core.value_type_path(unit_type, moving, moving);
+    let rigid = core.value_constant(Name::Rigid.constant());
+    let ident = core.value_constant(Name::Zero.constant());
+    let moved = core.computation_path_transport(motive, rigid, rigid);
+    let left = core.value_returned(moved);
+    let operand = call(&mut core, ident, &[rigid]);
+    let operand = core.value_returned(operand);
+    let waiting = core.computation_path_transport(motive, rigid, operand);
+    let right = core.value_returned(waiting);
+    let held = World::new(core, &[(Name::Zero, function)]).holding();
+
+    let sides = Sides::Values(left, right);
+    let (verdict, decisions) = held.traced(sides);
+    assert_eq!(
+        MachineVerdict::Convertible,
+        verdict,
+        "a transport of what a call returns is the transport of its result: {decisions:?}"
+    );
+    assert_eq!(
+        KernelVerdict::Convertible,
+        held.replayed(sides, verdict, &decisions),
+        "and the kernel replays the unfolding before the transports: {decisions:?}"
+    );
+}
+
+#[test]
 fn a_continuation_stuck_at_its_own_bind_reads_through_both()
 {
     // `⟨force R to n. force R to m. return (n, m)⟩` for the rigid

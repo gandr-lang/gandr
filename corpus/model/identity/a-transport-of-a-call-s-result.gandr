@@ -1,0 +1,35 @@
+/// Two transports of one value compare when one value is a call's result.
+///
+/// The lowering binds a call's result before the transport runs. The kernel
+/// runs that call before it reads the path, so a comparison meets the call
+/// first.
+///
+/// Each row transports a value along a variable path, and a call that returns
+/// the value along the same path. The families are a loop and a path to a
+/// fixed point.
+///
+/// - see: #3806 — the checker compared the transports first, and the kernel refused its dialogue
+
+/// A definition that returns its argument, so a call to it unfolds.
+def handedBack(B : Type, b : B) -> B {
+  b
+}
+
+/// Two transports in a family of loops, their values one unfolding apart.
+def transportInALoopFamily(B : Type, x : B, y : B, p : Path(B, x, y), v : Path(B, x, x)) -> Path(
+  Path(B, y, y),
+  transport(\z. Path(B, z, z), p, v),
+  transport(\z. Path(B, z, z), p, handedBack(Path(B, x, x), v))
+) {
+  here(transport(\z. Path(B, z, z), p, v))
+}
+
+/// Two transports in a family of paths to a fixed point, their values one
+/// unfolding apart.
+def transportInAFreeFamily(B : Type, x : B, y : B, p : Path(B, x, y), v : Path(B, x, x)) -> Path(
+  Path(B, y, x),
+  transport(\z. Path(B, z, x), p, v),
+  transport(\z. Path(B, z, x), p, handedBack(Path(B, x, x), v))
+) {
+  here(transport(\z. Path(B, z, x), p, v))
+}
