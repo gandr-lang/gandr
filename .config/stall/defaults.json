@@ -7,6 +7,7 @@
   "conflicting": 10,
   "base_blocked": 10,
   "unfiled": 10,
+  "idle": 20,
   "escalate": 10,
   "repage": 10,
   "interval": 300

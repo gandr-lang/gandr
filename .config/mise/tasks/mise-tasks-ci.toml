@@ -3917,15 +3917,18 @@ exit 2
 # is paged by its name, never a block id: the page script resolves it at
 # page time (#2977). Each reading also asks the `check` command whether each
 # seat has a live block, and pages the coordinator once when one has had
-# none for two readings in a row. The thresholds, the page script, the check
-# and each target's arguments (the triage seat's, the coordinator's, and each
-# lane's seat's under `seats`, a lane without one paging the triage seat) are
-# configuration,
-# never the tree's (`.config/stall/stall.bash`).
+# none for two readings in a row. A lane whose seat holds no open pull
+# request and no claimed issue for `idle` minutes is paged once to its seat
+# and the coordinator, its line naming the claim to run (`seat-idle`,
+# #3822). The thresholds, the page script, the check and each target's
+# arguments (the triage seat's, the coordinator's, and each lane's seat's
+# under `seats`, a lane without one paging the triage seat) are
+# configuration, never the tree's (`.config/stall/stall.bash`).
 ["stall:check"]
 description = "Read the open pull requests once for stalls; exit 1 on a finding"
 quiet = true
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -3942,6 +3945,7 @@ jq -r '.findings[].line' <<< "$reading"
 description = "Read the open pull requests for stalls every interval, paging each finding once"
 quiet = true
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -4037,7 +4041,7 @@ while :; do
   stalled=$(jq -c .stalled <<< "$reading")
   while IFS= read -r finding; do
     line=$(jq -r .line <<< "$finding")
-    key=$(jq -r '"\(.number):\(.kind)"' <<< "$finding")
+    key=$(jq -r '"\(.number // .lane):\(.kind)"' <<< "$finding")
     echo "$line"
     sent=true
     page_seat "$(jq -r .lane <<< "$finding")" "$line" || sent=false
@@ -4058,7 +4062,7 @@ while :; do
     line=$(jq -r .line <<< "$finding")
     echo "$line (paged again)"
     if ! "${command[@]}" "${coordinator[@]}" "$line"; then
-      paged=$(jq -c --arg key "$(jq -r '"\(.number):\(.kind)"' <<< "$finding")" '.[$key].last = 0' <<< "$paged")
+      paged=$(jq -c --arg key "$(jq -r '"\(.number // .lane):\(.kind)"' <<< "$finding")" '.[$key].last = 0' <<< "$paged")
     fi
   done < <(jq -c '.repages[]' <<< "$reading")
   while IFS= read -r stall; do

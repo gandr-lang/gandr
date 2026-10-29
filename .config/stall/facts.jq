@@ -1,10 +1,12 @@
 # The open pull requests as the stall detector reads them (#2785), from one
-# answer to `query.graphql`, and the latest merged ones' refactoring verdicts
-# beside the refactor issues filed for them (#2885).
+# answer to `query.graphql`, the latest merged ones' refactoring verdicts
+# beside the refactor issues filed for them (#2885), and the claimed issues'
+# areas (#3822).
 #
-# Input: the answer's `repository`; `merged` and `refactors` absent read as
-# none.
-# Output: `{prs, merged, filed}`; `prs` one entry per open pull request:
+# Input: the answer's `repository`; `merged`, `refactors` and `claimed`
+# absent read as none.
+# Output: `{prs, merged, filed, claimed}`; `prs` one entry per open pull
+# request:
 #   number, draft, head, base, oid  as GitHub names them;
 #   bot       an app (Dependabot) opened it: the triage lane closes it and
 #             makes its change by hand, so no stall kind reads it;
@@ -19,7 +21,9 @@
 # `merged` one entry per merged pull request read, `{number, head, merged,
 # verdict, rows}`: when it merged, in epoch seconds, its `## Refactoring`
 # verdict (`yes`, `maybe`, `no` or null) and how many rows its table names;
-# `filed` the pull requests a `kind:refactor` issue's `from:` line names.
+# `filed` the pull requests a `kind:refactor` issue's `from:` line names;
+# `claimed` one entry per open `status:claimed` issue, `{number, areas}`, its
+# `area:` labels.
 
 include "sections";
 
@@ -59,4 +63,5 @@ def verdict:
    verdict: $r.verdict,
    rows: ($r.rows // [] | length)
  }],
- filed: [(.refactors.nodes // [])[] | .body // "" | from_lines[]] | unique}
+ filed: [(.refactors.nodes // [])[] | .body // "" | from_lines[]] | unique,
+ claimed: [(.claimed.nodes // [])[] | {number, areas: [.labels.nodes[].name | select(startswith("area:"))]}]}

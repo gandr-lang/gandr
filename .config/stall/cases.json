@@ -93,7 +93,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"removals\":[],\"checks\":[]}],\"merged\":[],\"filed\":[]}"
+    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"removals\":[],\"checks\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
   },
   {
     "name": "a green mergeable root out of the queue past the threshold is root-unqueued (#2785)",
@@ -1395,7 +1395,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[],\"merged\":[{\"number\":3031,\"head\":\"triage-2884-refactoring\",\"merged\":1793093520,\"verdict\":\"yes\",\"rows\":1},{\"number\":3032,\"head\":\"surface-2990-x\",\"merged\":1793094000,\"verdict\":\"no\",\"rows\":0},{\"number\":3033,\"head\":\"core-2991-y\",\"merged\":1793094060,\"verdict\":null,\"rows\":0}],\"filed\":[3020,3031]}"
+    "output": "{\"prs\":[],\"merged\":[{\"number\":3031,\"head\":\"triage-2884-refactoring\",\"merged\":1793093520,\"verdict\":\"yes\",\"rows\":1},{\"number\":3032,\"head\":\"surface-2990-x\",\"merged\":1793094000,\"verdict\":\"no\",\"rows\":0},{\"number\":3033,\"head\":\"core-2991-y\",\"merged\":1793094060,\"verdict\":null,\"rows\":0}],\"filed\":[3020,3031],\"claimed\":[]}"
   },
   {
     "name": "a merged `yes` verdict no refactor issue names is paged `unfiled` minutes after the merge, a `no` and a rowless `maybe` never (#2885)",
@@ -1640,5 +1640,140 @@
       ]
     },
     "output": []
+  },
+  {
+    "name": "#3822: the claimed issues read with their area labels",
+    "program": "facts.jq",
+    "input": {
+      "pullRequests": { "nodes": [] },
+      "claimed": {
+        "nodes": [
+          {
+            "number": 3809,
+            "labels": {
+              "nodes": [
+                { "name": "kind:defect" },
+                { "name": "area:workflow" },
+                { "name": "status:claimed" }
+              ]
+            }
+          },
+          {
+            "number": 2954,
+            "labels": {
+              "nodes": [
+                { "name": "area:program-logic" },
+                { "name": "area:runtime" },
+                { "name": "status:claimed" }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "output": "{\"prs\":[],\"merged\":[],\"filed\":[],\"claimed\":[{\"number\":3809,\"areas\":[\"area:workflow\"]},{\"number\":2954,\"areas\":[\"area:program-logic\",\"area:runtime\"]}]}"
+  },
+  {
+    "name": "#3822: the board of 2026-10-29 08:47Z, two seated lanes idle since the handoff, pages each lane once 20 minutes on, keyed by its lane; a lane with an open pull request is busy",
+    "program": "detect.jq",
+    "input": {
+      "now": 1793264820,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [
+        {
+          "number": 3725,
+          "draft": false,
+          "bot": false,
+          "head": "core-3725-content-children",
+          "base": "main",
+          "oid": "o3725",
+          "created": 1793260000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": []
+        }
+      ],
+      "claimed": [{ "number": 3725, "areas": ["area:core"] }],
+      "seats": ["core", "program-logic", "triage"],
+      "areas": {
+        "core": ["core", "kernel"],
+        "program-logic": ["program-logic", "runtime"],
+        "triage": ["workflow", "ci"]
+      },
+      "seen": { "program-logic:seat-idle": 1793263620, "triage:seat-idle": 1793263620 }
+    },
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next triage`\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next triage`\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+  },
+  {
+    "name": "#3822: a seated lane with a claimed issue in one of its areas is busy, one idle inside the threshold is remembered and not paged, and a seat's lane no row names is read by no kind",
+    "program": "detect.jq",
+    "input": {
+      "now": 1793264820,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [{ "number": 3812, "areas": ["area:ux"] }],
+      "seats": ["domhringr", "surface", "triage"],
+      "areas": { "surface": ["surface", "ux"], "triage": ["workflow", "ci"] },
+      "seen": { "triage:seat-idle": 1793264220 }
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793264220},\"paged\":{},\"stalled\":{}}"
+  },
+  {
+    "name": "#3822: a seat-idle finding paged long ago is never paged again and stalls nothing",
+    "program": "detect.jq",
+    "input": {
+      "now": 1793270000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [],
+      "seats": ["triage"],
+      "areas": { "triage": ["workflow", "ci"] },
+      "seen": { "triage:seat-idle": 1793263620 },
+      "paged": { "triage:seat-idle": { "first": 1793264820, "last": 1793264820 } }
+    },
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":106,\"line\":\"STALL seat-idle triage 106m: no open pull request and no claimed issue in its areas; run `mise run claim:next triage`\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   }
 ]
