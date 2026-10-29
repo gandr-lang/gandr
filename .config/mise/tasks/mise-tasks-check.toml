@@ -1791,13 +1791,15 @@ echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their r
 # (#3823). Each case in `.config/debug/depths.json` holds a nested value, a
 # depth limit, and the summary `depths.py` prints with each aggregate below
 # the limit elided (#3809). Each case in `.config/debug/strings.json` holds a
-# string's bytes and the one line `strings.py` quotes them on (#3783). On a
-# stub macOS, `.config/debug/lldb.bash` refuses with the install line when
-# Homebrew's `lldb` is absent, and runs its `lldb` on the arguments when
-# present, bounded to 8 GiB by a scope's `MemoryMax` or by `ulimit -v`
-# (#3823).
+# string's bytes and the one line `strings.py` quotes them on (#3783). Each
+# case in `.config/debug/launch.json` holds a system, whether an lldb is
+# installed, and how `.config/debug/lldb.bash` launches it under
+# `launch.py`'s stubs: on macOS it refuses with the install line when
+# Homebrew's `lldb` is absent and runs it unbounded when present (#3863); on
+# Linux it runs its `lldb` bounded to 8 GiB by a scope's `MemoryMax` or by
+# `ulimit -v` (#3823).
 ["check:debug"]
-description = "The lldb formatters pick each recorded enum's variant or raw tag, read each recorded extent only inside memory, cut each recorded summary at its depth and quote each recorded string on one line, and lldb.bash refuses Xcode's lldb on macOS and bounds the one it runs"
+description = "The lldb formatters pick each recorded enum's variant or raw tag, read each recorded extent only inside memory, cut each recorded summary at its depth and quote each recorded string on one line, and lldb.bash launches each recorded system's lldb as recorded"
 tools.jq = "1.8.1"
 tools.python = "3.14.9"
 run = '''
@@ -1807,33 +1809,8 @@ python .config/debug/variants.py .config/debug/variants.json
 python .config/debug/extents.py .config/debug/extents.json
 python .config/debug/depths.py .config/debug/depths.json
 python .config/debug/strings.py .config/debug/strings.json
-scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/bin" "$scratch/keg/bin"
-printf '%s\n' '#!/usr/bin/env bash' 'echo Darwin' > "$scratch/bin/uname"
-printf '%s\n' '#!/usr/bin/env bash' 'echo "$STUB_PREFIX"' > "$scratch/bin/brew"
-chmod +x "$scratch/bin/uname" "$scratch/bin/brew"
-failed=0
-got=0
-PATH="$scratch/bin:$PATH" STUB_PREFIX="$scratch/keg" .config/debug/lldb.bash lldb > /dev/null 2> "$scratch/err" || got=$?
-if [[ $got != 2 ]] || ! grep -q 'brew install lldb' "$scratch/err"; then
-  printf 'debug case FAILED: macOS without LLVM lldb\n  exit %s, wanted 2 and the install line:\n%s\n' "$got" "$(cat "$scratch/err")" >&2
-  failed=1
-fi
-cat > "$scratch/keg/bin/lldb" << 'STUB'
-#!/usr/bin/env bash
-printf '%s\n' "$*"
-ulimit -v
-cat "/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup 2> /dev/null)/memory.max" 2> /dev/null || true
-STUB
-chmod +x "$scratch/keg/bin/lldb"
-ran=$(PATH="$scratch/bin:$PATH" STUB_PREFIX="$scratch/keg" .config/debug/lldb.bash lldb --batch -- program)
-if [[ ${ran%%$'\n'*} != '--batch -- program' ]] || ! grep -qx -e 8388608 -e 8589934592 <<< "$ran"; then
-  printf 'debug case FAILED: macOS with LLVM lldb\n  ran with %s, wanted its arguments and a bound of 8 GiB\n' "$ran" >&2
-  failed=1
-fi
-(( failed == 0 )) || exit 1
-echo "debug check OK: $(jq length .config/debug/variants.json) enums their variant, $(jq length .config/debug/extents.json) extents their reading, $(jq length .config/debug/depths.json) summaries their depth, $(jq length .config/debug/strings.json) strings their line, and lldb.bash its two macOS cases"
+python .config/debug/launch.py .config/debug/launch.json
+echo "debug check OK: $(jq length .config/debug/variants.json) enums their variant, $(jq length .config/debug/extents.json) extents their reading, $(jq length .config/debug/depths.json) summaries their depth, $(jq length .config/debug/strings.json) strings their line, and $(jq length .config/debug/launch.json) launches their bound"
 '''
 
 # Every `Where` of a body's `## Refactoring` names something the workspace

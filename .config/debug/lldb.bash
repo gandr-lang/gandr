@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The debugger a `debug:` task runs: `lldb` or `lldb-dap`, run on the
-# arguments under a memory bound.
+# arguments, under a memory bound off macOS.
 #
 # Xcode's lldb names each variant of a Rust enum by the low 32 bits of its
 # discriminant value, so over a wider tag the formatters cannot tell the
@@ -9,15 +9,18 @@
 # it refuses with the install line. Elsewhere it is the one on PATH.
 #
 # A debugger that reads a wrong length can allocate without end, and a session
-# that takes the host's memory takes every process beside it (#3823). So the
-# debugger runs bounded to 8 GiB. Where a user systemd manager runs, the bound
-# is a scope of its own with that `MemoryMax` and no swap: it holds lldb, its
-# server and the program debugged together, and the kernel kills inside it
-# alone. Elsewhere the bound is `ulimit -v`, or a tighter one already set.
-# Where neither takes, it refuses.
+# that takes the host's memory takes every process beside it (#3823). The
+# formatters bound every read to the process's mapped memory everywhere. Off
+# macOS the debugger also runs bounded to 8 GiB. Where a user systemd manager
+# runs, the bound is a scope of its own with that `MemoryMax` and no swap: it
+# holds lldb, its server and the program debugged together, and the kernel
+# kills inside it alone. Elsewhere the bound is `ulimit -v`, or a tighter one
+# already set, and where neither takes, it refuses. macOS has no systemd, and
+# its kernel refuses to lower `ulimit -v`, so there the formatters' read bound
+# is the only one (#3863).
 #
 # Usage: lldb.bash lldb|lldb-dap [args]... Exits 2 when the debugger is absent
-# or no bound takes.
+# or, off macOS, no bound takes.
 set -euo pipefail
 tool=${1:?lldb.bash lldb|lldb-dap [args]...}
 shift
@@ -28,8 +31,9 @@ if [[ $(uname -s) == Darwin ]]; then
     echo "debug: Xcode's $tool misnames Rust enum variants (#3778); install LLVM's: brew install lldb" >&2
     exit 2
   fi
-  debugger=$prefix/bin/$tool
-elif ! debugger=$(command -v "$tool"); then
+  exec "$prefix/bin/$tool" "$@"
+fi
+if ! debugger=$(command -v "$tool"); then
   echo "debug: no $tool on PATH; install LLVM's lldb" >&2
   exit 2
 fi
