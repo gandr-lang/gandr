@@ -34,6 +34,7 @@
 
 use alloc::collections::BTreeMap;
 
+use gandr_core_sequent::Accumulation;
 use gandr_core_sequent::ClosedCommand;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::ConstructorTag;
@@ -44,11 +45,16 @@ use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::StoreFault;
+use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
+use gandr_runtime_stencils::ACCUMULATED_APPLIED;
+use gandr_runtime_stencils::ACCUMULATED_FORCED;
+use gandr_runtime_stencils::ACCUMULATOR_FREE;
 use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
@@ -151,6 +157,9 @@ pub struct Sites<'lowered>
     /// Each fold cell closure's owned capture positions, by its entry's code
     /// word.
     cells: BTreeMap<Word, &'lowered [Slot]>,
+    /// The code word of the accumulate entry an open root's function holds:
+    /// every accumulator's code.
+    accumulate: Option<Word>,
 }
 
 /// What a frame of a run's stack owns, by its code word: what a replay
@@ -227,7 +236,20 @@ impl<'lowered> Sites<'lowered>
                 .iter()
                 .map(|cell| (codes.label(cell.label), cell.captures.as_slice()))
                 .collect(),
+            accumulate: lowered.accumulate.map(|label| codes.label(label)),
         }
+    }
+
+    /// The code word every accumulator holds: the accumulate entry of an open
+    /// root's function, none for any other function.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn accumulate(&self) -> Option<Word>
+    {
+        self.accumulate
     }
 
     /// What the frame resuming at `code` owns; none for a frame that owns
@@ -307,7 +329,9 @@ impl<'lowered> Sites<'lowered>
                 | HeapValue::Constructed { .. }
                 | HeapValue::Opaque(_)
                 | HeapValue::Code(_)
-                | HeapValue::Capability => false,
+                | HeapValue::Capability
+                | HeapValue::Free { .. }
+                | HeapValue::Accumulated { .. } => false,
             };
             if !found {
                 return None;
@@ -474,6 +498,11 @@ fn children(
             .collect()),
         Kind::Closure => {
             let code = field(object, Field(1));
+            if sites.accumulate == Some(code) {
+                return Ok((2 .. arity.saturating_add(2))
+                    .map(|offset| field(object, Field(offset)))
+                    .collect());
+            }
             let site = sites
                 .by_code
                 .get(&code)
@@ -516,6 +545,11 @@ pub fn owned(
         Ok(Kind::Cell) | Err(_) => Vec::new(),
         Ok(Kind::Closure) => {
             let code = field(object, Field(1));
+            if sites.accumulate == Some(code) {
+                return (2 .. usize::from(header.arity()).saturating_add(2))
+                    .map(|offset| field(object, Field(offset)))
+                    .collect();
+            }
             let captures = sites
                 .by_code
                 .get(&code)
@@ -737,6 +771,36 @@ fn allocate(
         })?,
         Kind::Closure => {
             let code = field(object, Field(1));
+            if sites.accumulate == Some(code) {
+                let at = |offset: usize| lookup(field(object, Field(offset)));
+                return Ok(store.allocate(match entry? {
+                    ACCUMULATED_FORCED => HeapValue::Accumulated {
+                        of: at(2)?,
+                        by: Accumulation::Forced,
+                    },
+                    ACCUMULATED_APPLIED => HeapValue::Accumulated {
+                        of: at(2)?,
+                        by: Accumulation::Applied(at(3)?),
+                    },
+                    position => {
+                        let held = position
+                            .checked_sub(ACCUMULATOR_FREE)
+                            .ok_or(TransferRefusal::Entry(object))?;
+                        HeapValue::Free {
+                            zone: if held & 1 == 1 {
+                                Zone::Linear
+                            }
+                            else {
+                                Zone::Intuitionistic
+                            },
+                            index: DeBruijnIndex::from(
+                                u32::try_from(held.wrapping_shr(1))
+                                    .map_err(|_overflow| TransferRefusal::Entry(object))?,
+                            ),
+                        }
+                    },
+                })?);
+            }
             let site = sites
                 .by_code
                 .get(&code)

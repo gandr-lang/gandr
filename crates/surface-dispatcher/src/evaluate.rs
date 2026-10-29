@@ -2114,7 +2114,9 @@ impl<'source> Program<'source>
                 | HeapValue::Stack { .. }
                 | HeapValue::Closure { .. }
                 | HeapValue::Opaque(_)
-                | HeapValue::Capability),
+                | HeapValue::Capability
+                | HeapValue::Free { .. }
+                | HeapValue::Accumulated { .. }),
             )
             | None => Ok(terminal),
         })
@@ -2494,7 +2496,9 @@ impl<'source> Program<'source>
                         | HeapValue::Thunk { .. }
                         | HeapValue::Fixpoint { .. }
                         | HeapValue::Closure { .. }
-                        | HeapValue::Capability),
+                        | HeapValue::Capability
+                        | HeapValue::Free { .. }
+                        | HeapValue::Accumulated { .. }),
                     )
                     | None => Err(Evaluation::Stuck(stuck)),
                 }
@@ -2521,7 +2525,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| match store.value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
-        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Code(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability)) | None =>
+        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Code(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability | HeapValue::Free { .. } | HeapValue::Accumulated { .. })) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
@@ -2543,7 +2547,9 @@ impl<'source> Program<'source>
                     | HeapValue::Thunk { .. }
                     | HeapValue::Fixpoint { .. }
                     | HeapValue::Closure { .. }
-                    | HeapValue::Capability),
+                    | HeapValue::Capability
+                    | HeapValue::Free { .. }
+                    | HeapValue::Accumulated { .. }),
                 )
                 | None => {},
             }

@@ -1,5 +1,5 @@
 use gandr_core_checker::CodeDefinitions;
-use gandr_core_checker::tier::ClosedTier as _;
+use gandr_core_checker::tier::EndpointTier as _;
 use gandr_core_checker::tier::Meeting;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
@@ -52,6 +52,60 @@ fn the_emitter_meets_a_pair_computing_one_value_2282()
         tier.meet(&core, &definitions, (spun, truth)),
         Meeting::Unmet,
         "`spin true` runs past the tier's fuel"
+    );
+}
+
+/// An open pair meets when its sides spell one spine over the context's `g`
+/// and `y`: `(force twice) g y`, for
+/// `def twice = thunk { \f. \z. x <- (force f) z; (force f) x }`, against
+/// `x <- (force g) y; (force g) x`; against `(force g) y`, whose spine is one
+/// application shorter, it does not.
+#[test]
+fn an_open_pair_meets_when_its_spines_are_one_3557()
+{
+    let mut core = CoreArena::new();
+    let variable =
+        |core: &mut CoreArena, index: u32| core.value_variable(Zone::Intuitionistic, index.into());
+    // Under `x`: `(force f) x` with `f` two binders out.
+    let twice_again = {
+        let f = variable(&mut core, 2);
+        let x = variable(&mut core, 0);
+        let forced = core.computation_force(f);
+        core.computation_application(forced, x)
+    };
+    let twice_first = {
+        let f = variable(&mut core, 1);
+        let z = variable(&mut core, 0);
+        let forced = core.computation_force(f);
+        core.computation_application(forced, z)
+    };
+    let body = core.computation_bind(twice_first, twice_again);
+    let inner = core.computation_lambda(body);
+    let outer = core.computation_lambda(inner);
+    let twice = core.value_thunk(outer);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(ConstantIndex::from(0_usize), twice);
+    // Over `g` one binder out and `y` innermost, the same shapes `twice`'s
+    // body has over `f` and `z`.
+    let head = core.value_constant(ConstantIndex::from(0_usize));
+    let forced = core.computation_force(head);
+    let g = variable(&mut core, 1);
+    let y = variable(&mut core, 0);
+    let applied = core.computation_application(forced, g);
+    let applied = core.computation_application(applied, y);
+    let called = core.value_returned(applied);
+    let inlined = core.value_returned(body);
+    let once = core.value_returned(twice_first);
+    let mut tier = Emitted::default();
+    assert_eq!(
+        tier.meet(&core, &definitions, (called, inlined)),
+        Meeting::Met,
+        "`twice g y` applies `g` twice to `y`"
+    );
+    assert_eq!(
+        tier.meet(&core, &definitions, (called, once)),
+        Meeting::Unmet,
+        "`twice g y` applies `g` twice, not once"
     );
 }
 

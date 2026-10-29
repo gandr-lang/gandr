@@ -1115,7 +1115,7 @@ fn an_opaque_footprint_is_never_adopted()
 /// trivial.
 struct Agreeing;
 
-impl gandr_core_checker::tier::ClosedTier for Agreeing
+impl gandr_core_checker::tier::EndpointTier for Agreeing
 {
     /// Every pair meets.
     ///
@@ -1136,7 +1136,7 @@ impl gandr_core_checker::tier::ClosedTier for Agreeing
 ///
 /// # Specification
 /// trivial.
-fn agreeing() -> alloc::boxed::Box<dyn gandr_core_checker::tier::ClosedTier>
+fn agreeing() -> alloc::boxed::Box<dyn gandr_core_checker::tier::EndpointTier>
 {
     alloc::boxed::Box::new(Agreeing)
 }
@@ -1175,7 +1175,7 @@ fn a_pass_hands_its_context_the_program_s_tier_2282()
     let program = |arena: CoreArena, items: Vec<Item>, tiered: bool| {
         let mut program = Program::new(arena, items).expect("positions ascend");
         if tiered {
-            program.decide_closed_on(agreeing);
+            program.decide_endpoints_on(agreeing);
         }
         program
     };

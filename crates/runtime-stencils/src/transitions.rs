@@ -13,6 +13,7 @@
 //! | a variable read | `var` |
 //! | a closure introduced and entered | `closure`, `enter_apply`, `enter_force`, `enter_fix` |
 //! | an observation | `invoke_apply`, `invoke_force`, `invoke_force_value`, `apply_frame`, `argument_frame` |
+//! | an accumulator observed | `accumulate` |
 //! | an observation's continuation loaded | `pushf`, `push_apply`, `push_force`, `push_fields`, `shrink`, `shrink_top`, `mark` |
 //! | a loop | `jump` |
 //! | an exit | `heap_exhausted`, `frames_exhausted`, `fuel_exhausted`, `stuck` |
@@ -25,6 +26,12 @@
 //! documentation says which it reads and as what. A window slot, a field
 //! position and a count are immediates; a code word, a constant and a shared
 //! stub are addresses.
+//!
+//! # References
+//!
+//! - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: chapter 10's
+//!   `ACCU` (Figure 10.2): a force or an application of an accumulator answers
+//!   the longer accumulator, which `stencil_accumulate` allocates.
 
 use crate::Runtime;
 use crate::Word;
@@ -1291,6 +1298,99 @@ pub extern "rust-preserve-none" fn stencil_unobserved(
         frames,
         environment,
         Word::from_pointer(environment),
+    )
+}
+
+/// Answer an observation of the accumulator in the environment register with
+/// the accumulator it grows, delivered to the frame on top: a force's holds
+/// the accumulator forced, an application's holds it and the argument in
+/// hand. Any other observation takes the stuck exit, the accumulator in hand.
+///
+/// # Specification
+/// - requires: the environment register addresses an accumulator, entered by an
+///   observation that left its continuation on top of the frame region.
+/// - ensures: control resumes at the frame on top with a fresh accumulator in
+///   hand, which holds one more owner of each object it names, one unit of fuel
+///   spent; or the heap, fuel or stuck exit is taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an accumulator a later accumulator and a pair both hold
+///   reads back whole on both tiers, so each capture holds an owner; a
+///   projection of a free variable sticks naming the projection.
+/// - witness: `tests::accumulate::an_accumulator_holds_what_it_grew_from_3557`
+/// - witness: `tests::accumulate::a_projection_of_a_free_variable_sticks_3557`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_accumulate(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let accumulator = Word::from_pointer(environment);
+    // SAFETY: the runtime record outlives the run.
+    let observed = unsafe { (*runtime).observed };
+    let applied = observed == layout::OBSERVED_APPLY;
+    if !applied && observed != layout::OBSERVED_FORCE {
+        become hole_stuck(runtime, heap, frames, environment, accumulator)
+    }
+    let (header, captures) = if applied {
+        (layout::APPLIED_ACCUMULATOR, 2_usize)
+    }
+    else {
+        (layout::FORCED_ACCUMULATOR, 1_usize)
+    };
+    let (object, next) = allocate!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        value,
+        captures.wrapping_add(2)
+    );
+    // SAFETY: an accumulator is a closure, whose second word is its code.
+    let code = unsafe { *environment.wrapping_add(1) };
+    // SAFETY: the object's block is the run's.
+    unsafe {
+        *object = Word::from(header);
+    }
+    // SAFETY: as above.
+    unsafe {
+        *object.wrapping_add(1) = code;
+    }
+    let mut index = 0_usize;
+    while index < captures {
+        let held = if index == 0 { accumulator } else { value };
+        // SAFETY: as above.
+        unsafe {
+            *object.wrapping_add(index.wrapping_add(2)) = held;
+        }
+        let count = held.to_pointer::<Word>().wrapping_sub(1);
+        // SAFETY: each capture is an object, preceded by its count word.
+        let owners = unsafe { *count };
+        if owners != layout::COUNT_IMMORTAL {
+            // SAFETY: as above; a heap object's count word is the run's.
+            unsafe {
+                *count = Word(owners.0.wrapping_add(1));
+            }
+        }
+        index = index.wrapping_add(1);
+    }
+    let frame = frames.wrapping_sub(2);
+    // SAFETY: an observation leaves its continuation's frame on top.
+    let resumed = unsafe { *frame };
+    // SAFETY: as above.
+    let window = unsafe { *frame.wrapping_add(1) }.to_pointer::<Word>();
+    resume!(
+        resumed,
+        runtime,
+        next,
+        frame,
+        window,
+        Word::from_pointer(object)
     )
 }
 

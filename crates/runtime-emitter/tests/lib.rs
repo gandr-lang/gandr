@@ -10,6 +10,8 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod accumulate;
+#[cfg(test)]
 mod agreement;
 #[cfg(test)]
 mod closed;

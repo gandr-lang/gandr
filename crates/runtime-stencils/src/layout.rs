@@ -139,6 +139,31 @@ pub const OBJECT_CLOSURE: usize = KIND_CLOSURE | 4_usize.wrapping_shl(TAG_SHIFT)
 /// The kind and tag of a suspended capture, which no observation enters: only
 /// a cut delivering it runs its body against the consumer it meets.
 pub const CAPTURE_CLOSURE: usize = KIND_CLOSURE | 5_usize.wrapping_shl(TAG_SHIFT);
+/// The family position of an accumulator a force grew.
+///
+/// Its one capture is the accumulator forced. An accumulator is a copattern
+/// object whose code is its function's accumulate entry, and its family names
+/// what it is, stored plus one as [`Family`] stores every position.
+pub const ACCUMULATED_FORCED: usize = 0;
+/// The family position of an accumulator an application grew, whose two
+/// captures are the accumulator applied and the argument.
+pub const ACCUMULATED_APPLIED: usize = 1;
+/// The least family position of a free variable's accumulator, which has no
+/// captures: the variable's index, doubled, plus one for the linear zone, is
+/// added to it.
+pub const ACCUMULATOR_FREE: usize = 2;
+/// The header of an accumulator a force grew.
+pub const FORCED_ACCUMULATOR: usize = OBJECT_CLOSURE
+    | 1_usize.wrapping_shl(ARITY_SHIFT)
+    | ACCUMULATED_FORCED
+        .wrapping_add(1)
+        .wrapping_shl(FAMILY_SHIFT);
+/// The header of an accumulator an application grew.
+pub const APPLIED_ACCUMULATOR: usize = OBJECT_CLOSURE
+    | 2_usize.wrapping_shl(ARITY_SHIFT)
+    | ACCUMULATED_APPLIED
+        .wrapping_add(1)
+        .wrapping_shl(FAMILY_SHIFT);
 /// The bits a case arm compares against operand A: kind, tag and arity.
 pub const MATCHED_MASK: usize = 0xFFFF_FFFF;
 /// The bits a nominal match compares: kind and tag.

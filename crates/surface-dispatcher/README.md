@@ -121,7 +121,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run is a local artifact.
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: a source its flow refuses answers at no site.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a failed translation refuses its importer.
-- `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check the tier meets a closed pair by.
+- `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check the tier meets a pair by.
 
 ## License
 

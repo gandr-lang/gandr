@@ -317,6 +317,85 @@ fn an_environment_that_is_not_the_support_is_refused()
     assert_eq!(Some(&Value::Constant(7_usize.into())), core.value(answer));
 }
 
+/// A free function forced, then applied, reads back as the neutral its spine
+/// spells: `return ((force f) z)`. An application whose head no force
+/// answered, `f z`, has no core reading.
+#[test]
+fn a_spine_reads_back_as_the_neutral_it_spells_3557()
+{
+    let arena = CommandArena::new();
+    let mut store = Store::new();
+    let mut free = |index: u32| {
+        store
+            .allocate(HeapValue::Free {
+                zone: gandr_core_term::Zone::Intuitionistic,
+                index: index.into(),
+            })
+            .expect("room")
+    };
+    let f = free(1);
+    let z = free(0);
+    let mut grown = |of, by| {
+        store
+            .allocate(HeapValue::Accumulated { of, by })
+            .expect("room")
+    };
+    let forced = grown(f, Accumulation::Forced);
+    let applied = grown(forced, Accumulation::Applied(z));
+    let headless = grown(f, Accumulation::Applied(z));
+    let mut core = CoreArena::new();
+    let read = read_back_value(&arena, &store, applied, &mut core).expect("a spine reads back");
+    let f_read = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let z_read = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let force = core.computation_force(f_read);
+    let application = core.computation_application(force, z_read);
+    let expected = core.value_returned(application);
+    assert_eq!(
+        gandr_core_term::CertificateEquality::Equal,
+        gandr_core_term::equal_certificate_syntax(&core, read, expected)
+    );
+    assert_eq!(
+        Err(ReadbackRefusal::Unreadable(headless)),
+        read_back_value(&arena, &store, headless, &mut core)
+    );
+}
+
+/// A thunk closed over a free variable has no core reading: its closing
+/// would place the variable under the thunk's binders unshifted.
+#[test]
+fn a_suspension_over_a_free_variable_is_unreadable_3557()
+{
+    let mut arena = CommandArena::new();
+    let named = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: gandr_core_term::Zone::Intuitionistic,
+            index: 0_u32.into(),
+        })
+        .expect("leaf");
+    let returned = arena
+        .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
+        .expect("leaf");
+    let body = arena
+        .mint_cut(Polarity::Positive, named, returned)
+        .expect("references resolve");
+    let mut store = Store::new();
+    let free = store
+        .allocate(HeapValue::Free {
+            zone: gandr_core_term::Zone::Intuitionistic,
+            index: 3_u32.into(),
+        })
+        .expect("room");
+    let environment = store.bind_value(Environment::EMPTY, free).expect("room");
+    let thunk = store
+        .allocate(HeapValue::Thunk { body, environment })
+        .expect("room");
+    let mut core = CoreArena::new();
+    assert_eq!(
+        Err(ReadbackRefusal::Unreadable(thunk)),
+        read_back_value(&arena, &store, thunk, &mut core)
+    );
+}
+
 /// A record reads back only from as many fields as its labels, under labels
 /// in strictly ascending order.
 #[test]

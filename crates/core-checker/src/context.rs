@@ -490,10 +490,10 @@ pub struct CheckingContext<'arena>
     /// to the models of one it includes: the value bridge crosses by one where
     /// a model of the first stands at a model of the second.
     reducts: Vec<gandr_kernel_term::ConstantIndex>,
-    /// The tier a closed endpoint pair is offered before the machine, when
-    /// the run handed one. A checkpoint does not keep it: a resumed context
-    /// takes its own.
-    tier: Option<alloc::boxed::Box<dyn crate::tier::ClosedTier>>,
+    /// The tier an endpoint pair is offered before the machine, when the run
+    /// handed one. A checkpoint does not keep it: a resumed context takes its
+    /// own.
+    tier: Option<alloc::boxed::Box<dyn crate::tier::EndpointTier>>,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -553,8 +553,8 @@ enum First
 /// - requires: taken between two judgements, no supported judgement logging and
 ///   no term-producing run recording ([`CheckingContext::checkpoint`]).
 /// - ensures: [`CheckingContext::resume`] over such an arena, handed the tier
-///   the context held ([`CheckingContext::decide_closed_on`]), judges what the
-///   context it was taken from would have judged next.
+///   the context held ([`CheckingContext::decide_endpoints_on`]), judges what
+///   the context it was taken from would have judged next.
 /// - executable: none — a data type; the witness judges a module in two runs
 ///   with a checkpoint between and compares the report with one run's.
 ///
@@ -1077,13 +1077,13 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
-    /// Decide each closed endpoint pair the `here` rule meets on `tier`
-    /// before the machine.
+    /// Decide each endpoint pair the `here` rule meets on `tier` before the
+    /// machine.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every later endpoint pair whose two sides mention no variable
-    ///   is offered to `tier` first; a context holds one tier, the last handed.
+    /// - ensures: every later endpoint pair is offered to `tier` first; a
+    ///   context holds one tier, the last handed.
     /// - provides: the driver's hand-in of its tier, as a staging check is
     ///   handed its [`gandr_core_fork::Fork`].
     /// - panics: none.
@@ -1091,34 +1091,32 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a context handed a tier that meets every pair records
-    ///   `Evaluate` for a closed pair and the machine's dialogue for an open
-    ///   one; a context handed none records the machine's for both.
-    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_carries_its_evaluation_2282`
+    ///   `Evaluate` for a closed pair and for an open one; a context handed
+    ///   none records the machine's dialogue for both.
+    /// - witness: `judgement::tests::a_pair_the_tier_meets_carries_its_evaluation_3557`
     #[inline]
-    pub fn decide_closed_on(
+    pub fn decide_endpoints_on(
         &mut self,
-        tier: alloc::boxed::Box<dyn crate::tier::ClosedTier>,
+        tier: alloc::boxed::Box<dyn crate::tier::EndpointTier>,
     )
     {
         self.tier = Some(tier);
     }
 
-    /// Offer `point` and `endpoint` to the context's tier when both mention no
-    /// variable.
+    /// Offer `point` and `endpoint` to the context's tier.
     ///
     /// # Specification
     /// - requires: both values live in the context's arena.
     /// - ensures: [`crate::tier::Meeting::Met`] exactly when the context holds
-    ///   a tier, neither value's support selects a variable of either zone, and
-    ///   the tier meets the pair over the definitions admitted so far;
-    ///   [`crate::tier::Meeting::Unmet`] otherwise.
+    ///   a tier and the tier meets the pair over the definitions admitted so
+    ///   far; [`crate::tier::Meeting::Unmet`] otherwise.
     /// - panics: none.
     /// - executable: none — the tier's answer is its implementation's.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::decide_closed_on`].
-    /// - witness: `judgement::tests::a_closed_pair_the_tier_meets_carries_its_evaluation_2282`
-    pub(crate) fn meet_closed(
+    /// - hypothesis: L3 — as [`Self::decide_endpoints_on`].
+    /// - witness: `judgement::tests::a_pair_the_tier_meets_carries_its_evaluation_3557`
+    pub(crate) fn meet_endpoints(
         &mut self,
         point: ValueId,
         endpoint: ValueId,
@@ -1129,16 +1127,6 @@ impl<'arena> CheckingContext<'arena>
             return crate::tier::Meeting::Unmet;
         };
         let arena: &CoreArena = self.arena;
-        let closed = |value: ValueId| {
-            arena.value_support(value).is_some_and(|support| {
-                [Zone::Intuitionistic, Zone::Linear]
-                    .into_iter()
-                    .all(|zone| support.indices(zone).len() == 0)
-            })
-        };
-        if !(closed(point) && closed(endpoint)) {
-            return crate::tier::Meeting::Unmet;
-        }
         tier.meet(arena, &self.definitions, (point, endpoint))
     }
 

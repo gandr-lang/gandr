@@ -2570,7 +2570,7 @@ where
         Start::After(leading) => CheckingContext::resume(arena, leading.context.clone()),
     };
     if let Some(make) = tier {
-        context.decide_closed_on(make());
+        context.decide_endpoints_on(make());
     }
     let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or

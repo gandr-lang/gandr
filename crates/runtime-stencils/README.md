@@ -28,6 +28,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 - David Binder, Marco Tzschentke, Marius Müller and Klaus Ostermann. "Grokking the Sequent Calculus (Functional Pearl)." _Proceedings of the ACM on Programming Languages_ 8 (ICFP), 2024. [doi:10.1145/3674639](https://doi.org/10.1145/3674639). The λμμ̃ command language as a compiler's intermediate language: the polarized System L machine whose transitions these are, each cut's polarity resolving μ against μ̃.
 - Jean Caspar and Guillaume Munch-Maccagnoni. "S4 Modal Sequent Calculus as Intermediate Logic and Intermediate Language (Short Paper)." PEPM 2026. [arXiv:2601.08071](https://arxiv.org/abs/2601.08071). The operational machine that separates a heap from a stack, the two-region store read as residency.
 - Paul Downen and Zena M. Ariola. "A Tutorial on Computational Classical Logic and the Sequent Calculus." _Journal of Functional Programming_ 28 (2018), e3. [doi:10.1017/S0956796818000023](https://doi.org/10.1017/S0956796818000023). Data and codata as constructor applications and copattern objects, pattern matches and destructor frames, and the polarized cut.
+- `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` (ch. 10) — a force or an application of an accumulator grows its spine.
 
 ## Provided features
 

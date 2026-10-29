@@ -182,10 +182,17 @@ fn spelled(
                 }
                 (head, reached)
             },
+            HeapValue::Accumulated { of, by } => match by {
+                Accumulation::Forced => (String::from("forced"), Vec::from([of])),
+                Accumulation::Applied(argument) => {
+                    (String::from("applied"), Vec::from([of, argument]))
+                },
+            },
             HeapValue::Literal(_)
             | HeapValue::Opaque(_)
             | HeapValue::Code(_)
-            | HeapValue::Capability => (format!("{value:?}"), Vec::new()),
+            | HeapValue::Capability
+            | HeapValue::Free { .. } => (format!("{value:?}"), Vec::new()),
         };
         spelled.push_str(&head);
         spelled.push('(');

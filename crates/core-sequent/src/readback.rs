@@ -56,6 +56,7 @@ use crate::il::CommandArena;
 use crate::il::ConstructorTag;
 use crate::il::ProducerNode;
 use crate::il::Suspension;
+use crate::store::Accumulation;
 use crate::store::Environment;
 use crate::store::HeapValue;
 use crate::store::HeapValueId;
@@ -266,6 +267,7 @@ fn terminal(
         };
         let mut reading = Reading::new(arena, store, core);
         let values = reading.closing(environment)?;
+        closed(core, value, &values)?;
         let selected = captured(arena, value, Suspension::Producer(producer))?;
         let closing = Closing::new(&selected, &values).ok_or(ReadbackRefusal::Capture(value))?;
         return match decode(arena, Root::Copattern(producer), core, closing)? {
@@ -316,7 +318,7 @@ impl<'run> Reading<'run>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one closed core value per binding, innermost first.
+    /// - ensures: one core value per binding, innermost first.
     /// - provides: the closing substitution of a suspended command.
     /// - fails: as [`Self::read`].
     /// - panics: none.
@@ -354,13 +356,15 @@ impl<'run> Reading<'run>
     ///
     /// # Specification
     /// - requires: recorded heap addresses and core readings still resolve.
-    /// - ensures: every value reachable from `roots` through fields and
-    ///   captured environments has its reading recorded.
+    /// - ensures: every value reachable from `roots` through fields, captured
+    ///   environments and an accumulator's head and argument has its reading
+    ///   recorded.
     /// - provides: the loop every readback drives.
-    /// - fails: [`ReadbackRefusal::Unreadable`] for a closure reached,
-    ///   [`ReadbackRefusal::Dangling`] for an address the store does not hold
-    ///   or one read before the value naming it, and a suspended command's
-    ///   decoding refusal.
+    /// - fails: [`ReadbackRefusal::Unreadable`] for a closure reached, an
+    ///   application on an accumulator no force answered, or a suspension
+    ///   closed over a free value; [`ReadbackRefusal::Dangling`] for an address
+    ///   the store does not hold or one read before the value naming it; and a
+    ///   suspended command's decoding refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -370,11 +374,14 @@ impl<'run> Reading<'run>
     /// - hypothesis: L3 — shared, distinct fields and all first-order heads are
     ///   observed in the resulting core graph; a forward dependency is refused
     ///   at its exact address and malformed arity is refused after reading
-    ///   dependencies. L2 — suspended bodies, datatype constructors and
-    ///   recursive thunks compare with normal forms.
+    ///   dependencies; an accumulator reads through its head and argument, and
+    ///   a suspension over a free value is refused. L2 — suspended bodies,
+    ///   datatype constructors and recursive thunks compare with normal forms.
     /// - witness: `readback::tests::shared_fields_preserve_their_order`
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
+    /// - witness: `readback::tests::a_spine_reads_back_as_the_neutral_it_spells_3557`
+    /// - witness: `readback::tests::a_suspension_over_a_free_variable_is_unreadable_3557`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
     /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
     #[cfg_attr(
@@ -413,7 +420,16 @@ impl<'run> Reading<'run>
                         }
                     }
                 },
-                HeapValue::Literal(_) | HeapValue::Opaque(_) | HeapValue::Code(_) => {},
+                HeapValue::Literal(_)
+                | HeapValue::Opaque(_)
+                | HeapValue::Code(_)
+                | HeapValue::Free { .. } => {},
+                HeapValue::Accumulated { of, by } => {
+                    pending.push(of);
+                    if let Accumulation::Applied(argument) = by {
+                        pending.push(argument);
+                    }
+                },
                 HeapValue::Constructed { ref fields, .. } => {
                     pending.extend(fields.iter().copied());
                 },
@@ -451,8 +467,10 @@ impl<'run> Reading<'run>
     /// - hypothesis: L3 — exact literal, opaque, tuple, record, injection and
     ///   lift nodes distinguish changed payloads, head tags, labels and field
     ///   order; invalid arity and a dependency read too early have exact
-    ///   refusals. L2 — thunk, recursive-thunk and datatype-constructor
-    ///   readings compare with the independent normaliser.
+    ///   refusals; a forced and applied accumulator reads as the neutral it
+    ///   spells, and a thunk closed over a free variable is refused. L2 —
+    ///   thunk, recursive-thunk and datatype-constructor readings compare with
+    ///   the independent normaliser.
     /// - witness: `readback::tests::shared_fields_preserve_their_order`
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
@@ -462,6 +480,8 @@ impl<'run> Reading<'run>
     /// - witness: `tests::run::a_selection_reads_the_width_of_the_value_it_meets`
     /// - witness: `readback::tests::a_record_reads_back_only_from_one_field_per_ascending_label`
     /// - witness: `readback::tests::a_recorded_run_reads_back_only_from_one_field_per_payload`
+    /// - witness: `readback::tests::a_spine_reads_back_as_the_neutral_it_spells_3557`
+    /// - witness: `readback::tests::a_suspension_over_a_free_variable_is_unreadable_3557`
     #[spec(
         ensures: |ret| match ret {
             | Err(error) => self.store.value(id).is_some() || error == ReadbackRefusal::Dangling(id),
@@ -505,6 +525,9 @@ impl<'run> Reading<'run>
                 | HeapValue::Thunk { .. } => matches!(*node, gandr_core_term::Value::Thunk(_)),
                 | HeapValue::Fixpoint { evidence, .. } => matches!(*node, gandr_core_term::Value::Thunk(body)
                     if matches!(self.core.computation(body), Some(&gandr_core_term::Computation::Fixpoint { evidence: claimed, .. }) if claimed == evidence)),
+                | HeapValue::Free { zone, index } => matches!(*node, gandr_core_term::Value::Variable { zone: read_zone, index: read_index }
+                    if read_zone == zone && read_index == index),
+                | HeapValue::Accumulated { .. } => matches!(*node, gandr_core_term::Value::Returned(_)),
                 | HeapValue::Closure { .. } | HeapValue::Capability => false,
             }),
         },
@@ -662,6 +685,7 @@ impl<'run> Reading<'run>
                     .bound_values(environment)
                     .map(|bound| self.lookup(bound))
                     .collect::<Result<Vec<_>, _>>()?;
+                closed(self.core, id, &values)?;
                 let selected = captured(self.arena, id, Suspension::Thunk(body))?;
                 let closing =
                     Closing::new(&selected, &values).ok_or(ReadbackRefusal::Capture(id))?;
@@ -680,6 +704,7 @@ impl<'run> Reading<'run>
                     .bound_values(environment)
                     .map(|bound| self.lookup(bound))
                     .collect::<Result<Vec<_>, _>>()?;
+                closed(self.core, id, &values)?;
                 let selected = captured(self.arena, id, Suspension::Fixpoint(body))?;
                 let closing =
                     Closing::new(&selected, &values).ok_or(ReadbackRefusal::Capture(id))?;
@@ -692,6 +717,23 @@ impl<'run> Reading<'run>
                     Decoded::Value(thunk) => Ok(thunk),
                     Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
                 }
+            },
+            HeapValue::Free { zone, index } => Ok(self.core.value_variable(zone, index)),
+            HeapValue::Accumulated { of, by } => {
+                let observed = self.lookup(of)?;
+                let computation = match by {
+                    Accumulation::Forced => self.core.computation_force(observed),
+                    Accumulation::Applied(argument) => {
+                        let argument = self.lookup(argument)?;
+                        let Some(&gandr_core_term::Value::Returned(head)) =
+                            self.core.value(observed)
+                        else {
+                            return Err(ReadbackRefusal::Unreadable(id));
+                        };
+                        self.core.computation_application(head, argument)
+                    },
+                };
+                Ok(self.core.value_returned(computation))
             },
             HeapValue::Closure { .. } | HeapValue::Capability => {
                 Err(ReadbackRefusal::Unreadable(id))
@@ -727,6 +769,38 @@ impl<'run> Reading<'run>
             .copied()
             .ok_or(ReadbackRefusal::Dangling(id))
     }
+}
+
+/// Refuse `id` when one of `values` mentions a variable: a closing places its
+/// values under the suspended command's binders unshifted, so only a closed
+/// value reads as itself there.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`ReadbackRefusal::Unreadable`] naming `id` for a value among `values`
+/// whose support selects a variable, or which `core` does not hold.
+fn closed(
+    core: &CoreArena,
+    id: HeapValueId,
+    values: &[ValueId],
+) -> Result<(), ReadbackRefusal>
+{
+    let open = values.iter().any(|&value| {
+        core.value_support(value).is_none_or(|support| {
+            [
+                gandr_core_term::Zone::Intuitionistic,
+                gandr_core_term::Zone::Linear,
+            ]
+            .into_iter()
+            .any(|zone| support.indices(zone).len() != 0)
+        })
+    });
+    if open {
+        return Err(ReadbackRefusal::Unreadable(id));
+    }
+    Ok(())
 }
 
 /// The indices the suspension a value holds captured, innermost first.
