@@ -29,9 +29,11 @@
 //! A call, a projection, an instantiation and every atom go after it bare.
 //! A block reads `run` where a statement or its tail begins as the bind
 //! statement `run x <- c ;`, so a nested computation that begins one, as
-//! `f(x)` does in `{ f(x) + 1 }`, is written `(run f(x))`. The alternative
-//! was a parser that reads `run` at a statement's start inline unless a
-//! binder and `<-` follow, which moves the statement grammar for one
+//! `f(x)` does in `{ f(x) + 1 }`, is written `(run f(x))`. A call written at
+//! an application's head is grouped the same way, `(run f(n))(1)`, since
+//! `run f(n)(1)` reads as the run of the whole application (#3935). The
+//! alternative was a parser that reads `run` at a statement's start inline
+//! unless a binder and `<-` follow, which moves the statement grammar for one
 //! spelling. Reversal: that parser.
 //!
 //! # Which `run` statements only sequence a call
@@ -282,8 +284,8 @@ impl Lowerer<'_, '_>
     ///   a value past `resumed`'s mark when it is given, asked the widest ask
     ///   an `explicit_runs` attribute reaching its declaration makes, or none,
     ///   spelled parenthesised exactly when its first byte begins a statement
-    ///   or tail of a block, and its operand grouped unless its form binds
-    ///   tighter than `run`.
+    ///   or tail of a block or it stands at an application's head, and its
+    ///   operand grouped unless its form binds tighter than `run`.
     /// - provides: the lowering's half of the join
     ///   [`LoweredModule::inferred_runs`](crate::LoweredModule::inferred_runs)
     ///   makes.
@@ -292,8 +294,10 @@ impl Lowerer<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested calls under a module's attribute, a
-    ///   declaration's and none, asserted as their exact asks.
+    ///   declaration's and none, asserted as their exact asks; a head call
+    ///   bound by a statement, asserted grouped.
     /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
+    /// - witness: `lower::runs::tests::a_call_returning_a_function_runs_where_it_is_applied_3935`
     #[spec(ensures: |ret| ret.len() <= origins.values().len())]
     pub(super) fn nested_sites(
         &self,
@@ -312,7 +316,9 @@ impl Lowerer<'_, '_>
                     Maybe::Present(slot) => self.asked_runs.get(&slot).copied().unwrap_or_default(),
                     Maybe::Absent(_) => AskedRuns::Unasked,
                 };
-                let spelling = if self.leading.contains(&origin.span().start()) {
+                let spelling = if self.leading.contains(&origin.span().start())
+                    || matches!(self.reading(origin.node()), super::Reading::Head(_))
+                {
                     RunSpelling::Parenthesised
                 }
                 else {

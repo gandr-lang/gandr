@@ -1362,6 +1362,10 @@ enum Read
     /// A nested computation read where no thunk stands
     /// ([`Machine::unsuspended`]): the run keeps the value's typing.
     Unsuspended,
+    /// A nested call forced at an application's head: a returner runs and a
+    /// call of any other type is suspended, each keeping the value's typing
+    /// (#3935).
+    Head,
 }
 
 /// How a computation written where a thunk is read is judged.
@@ -5847,18 +5851,40 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }))
     }
 
+    /// Keep `ty` as the typing of the value `at`, read without a goal of its
+    /// own, when the context records typings.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep_value_typing(
+        &mut self,
+        at: ValueId,
+        ty: ValueTypeId,
+    )
+    {
+        if self.context.recording() == crate::context::Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(at),
+                ty: TypeNode::Value(ty),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+    }
+
     /// The synthesis rules over computations.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a force awaits its value's synthesised type; a return awaits
-    ///   its value's; an application awaits its head's; a bind awaits its bound
-    ///   computation's; a transport awaits its path's, a data case or a split
-    ///   its scrutinee's and a projection its record's, each read by
-    ///   [`Self::unsuspended`], so a computation nested there waits a second
-    ///   frame, the run's; an ascription forms its stated type, checks its body
-    ///   against it and synthesises it; a hole and a mark have the unknown
-    ///   computation type, minted, and ascend.
+    /// - ensures: a force awaits its value's synthesised type, and a force of a
+    ///   nested call the call's, read under [`Read::Head`] so a second frame
+    ///   waits, the run's (#3935); a return awaits its value's; an application
+    ///   awaits its head's; a bind awaits its bound computation's; a transport
+    ///   awaits its path's, a data case or a split its scrutinee's and a
+    ///   projection its record's, each read by [`Self::unsuspended`], so a
+    ///   computation nested there waits a second frame, the run's; an
+    ///   ascription forms its stated type, checks its body against it and
+    ///   synthesises it; a hole and a mark have the unknown computation type,
+    ///   minted, and ascend.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a fixpoint;
     ///   [`CheckRefusal::OutOfFragment`] for a case.
     ///
@@ -6076,8 +6102,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            // A call written at an application's head runs when it returns a
+            // function, and is suspended otherwise, so the force reads the
+            // call in place (#3935).
             Computation::Force(value) => {
                 self.wait(Frame::Force { value });
+                if let Value::Nested(call) = *self.value(value)? {
+                    self.wait(Frame::Ran {
+                        at: value,
+                        read: Read::Head,
+                    });
+                    return Ok(Step::Descend(Goal::Computation {
+                        term: call,
+                        direction: Direction::Synthesise,
+                    }));
+                }
                 Ok(Step::Descend(Goal::Value {
                     term: value,
                     direction: Direction::Synthesise,
@@ -8677,6 +8716,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         else {
                             return Err(CheckRefusal::MachineInvariant);
                         };
+                        // A head call of any other type is suspended, and the
+                        // force reads it in place: a curried call stays one.
+                        if read == Read::Head {
+                            self.context.record_nesting(at, Nesting::Suspended);
+                            let suspended = self.context.arena_mut().value_type_thunk(synthesised);
+                            self.keep_value_typing(at, suspended);
+                            return Ok(Step::Ascend(Produced::ValueType(suspended.into())));
+                        }
                         return Err(CheckRefusal::ShapeMismatch {
                             at: TermNode::Computation(nested),
                             wanted: ExpectedShape::Returner,
@@ -8702,14 +8749,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 // A value read without a goal of its own keeps its typing here,
                 // at what it returns: the patterns of a case on it are read at
                 // that type.
-                if read == Read::Unsuspended
-                    && self.context.recording() == crate::context::Recording::On
-                {
-                    self.context.keep_typing(Typing {
-                        term: TermNode::Value(at),
-                        ty: TypeNode::Value(result),
-                        depth: self.context.depth(Zone::Intuitionistic),
-                    });
+                if matches!(read, Read::Unsuspended | Read::Head) {
+                    self.keep_value_typing(at, result);
                 }
                 Ok(Step::Ascend(Produced::ValueType(result.into())))
             },
