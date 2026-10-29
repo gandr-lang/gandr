@@ -1152,6 +1152,7 @@ dependencies = [
  "blake3",
  "foldhash 0.2.0",
  "gandr-core-checker",
+ "gandr-core-publish",
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-core",
@@ -1181,6 +1182,13 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "tracing",
+]
+
+[[package]]
+name = "gandr-core-publish"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
 ]
 
 [[package]]
@@ -1418,6 +1426,7 @@ dependencies = [
 name = "gandr-storage-store"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-publish",
  "gandr-storage-chunker",
  "gandr-storage-records",
  "gandr-storage-values",

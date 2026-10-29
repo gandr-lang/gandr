@@ -180,8 +180,12 @@
 //!
 //! Pure returners retain tag `0x30`; row-qualified returners use `0x70`. Inline
 //! interfaces store canonical operation names and ordered payload/reply type
-//! edges. The List former and its control content use the following cache tags,
-//! independent of kernel artifact tags.
+//! edges. Decoding refuses duplicate or out-of-order names and an empty row
+//! under `0x70`;
+//! `content::tests::effect_rows_round_trip_without_losing_operation_types`
+//! round-trips a row's operation types, and `codec`'s readers name the
+//! refusals' witnesses. The List former and its control content use the
+//! following cache tags, independent of kernel artifact tags.
 //!
 //! | Tag | Former |
 //! | --- | ------ |

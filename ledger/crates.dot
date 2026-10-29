@@ -40,6 +40,7 @@ digraph crates {
     "core-fork";
     "core-incremental";
     "core-nbe";
+    "core-publish";
     "core-sequent";
     "core-session";
     "core-term";
@@ -107,6 +108,7 @@ digraph crates {
   "core-checker" -> "theory-deep-inference";
   "core-checker" -> "theory-sites";
   "core-incremental" -> "core-checker";
+  "core-incremental" -> "core-publish";
   "core-incremental" -> "core-term";
   "core-incremental" -> "kernel-check-memo";
   "core-incremental" -> "kernel-core";
@@ -167,6 +169,7 @@ digraph crates {
   "storage-records" -> "storage-chunker";
   "storage-records" -> "theory-spec-combinators";
   "storage-schema" -> "storage-records";
+  "storage-store" -> "core-publish";
   "storage-store" -> "storage-chunker";
   "storage-store" -> "storage-records";
   "storage-store" -> "storage-values";

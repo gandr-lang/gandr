@@ -39,6 +39,7 @@ flowchart BT
   core -->|21| kernel
   storage -->|6| theory
   storage -->|1| kernel
+  storage -->|1| core
   runtime -->|1| theory
   runtime -->|2| kernel
   runtime -->|5| core
@@ -63,6 +64,7 @@ crates/
 ├── core-fork/                     the fork a consumer hands its independent jobs to, and its serial reference
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
+├── core-publish/                  files published whole by rename
 ├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
 ├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay, dialogue admission by logical time and certified recorded-run transport
 ├── core-term/                     core syntax with native universe paths, the one unified context and the co-de Bruijn carrier

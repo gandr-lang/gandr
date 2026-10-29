@@ -17,6 +17,7 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
+use gandr_core_publish::Unpublished;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
@@ -156,6 +157,23 @@ impl StoreError
         Self::Io {
             path: path.to_path_buf(),
             kind: error.kind(),
+        }
+    }
+}
+
+impl From<Unpublished> for StoreError
+{
+    /// A file the store could not publish: the file and what the file system
+    /// said.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(fault: Unpublished) -> Self
+    {
+        Self::Io {
+            path: fault.path,
+            kind: fault.kind,
         }
     }
 }
