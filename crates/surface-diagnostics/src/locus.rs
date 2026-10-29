@@ -790,40 +790,39 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
     let opened = |slot: &Maybe<Annotation, report_context::Absent>| {
         role(slot, Label::Forked) || role(slot, Label::Received)
     };
-    labelled && match refusal {
-        CheckRefusal::DataFieldLevel {..} | CheckRefusal::RepresentationAboveKind {..} | CheckRefusal::MissingRecordField {..}
-            | CheckRefusal::CapabilityForged {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
-        CheckRefusal::TypeMismatch(_) | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::SortMismatch { .. }
+    let second_unnamed = ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed);
+    labelled && if matches!(refusal, CheckRefusal::DataFieldLevel {..} | CheckRefusal::RepresentationAboveKind {..} | CheckRefusal::MissingRecordField {..}
+            | CheckRefusal::CapabilityForged {..}) {
+        role(&ret.context[0_usize], Label::Expected) && second_unnamed
+    } else if matches!(refusal, CheckRefusal::TypeMismatch(_) | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. }
-            | CheckRefusal::NotOver { .. } =>
-            role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
-        CheckRefusal::DependentBind { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::CompoundEndpoint { .. }
+            | CheckRefusal::NotOver { .. }) {
+        role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised)
+    } else if matches!(refusal, CheckRefusal::DependentBind { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::CompoundEndpoint { .. }
             | CheckRefusal::FunextUnsupported { .. } | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. }
-            | CheckRefusal::CapabilityEscaped { .. } => role(&ret.context[0_usize], Label::Synthesised)
-            && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
-        CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
-            && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
-        CheckRefusal::EndpointMismatch { miss, .. } => role(&ret.context[0_usize], Label::Endpoint(miss))
-            && role(&ret.context[1_usize], Label::Endpoint(miss)),
-        CheckRefusal::SessionMismatch { .. }
+            | CheckRefusal::CapabilityEscaped { .. }) {
+        role(&ret.context[0_usize], Label::Synthesised) && second_unnamed
+    } else if let CheckRefusal::ShapeMismatch { wanted, .. } = refusal {
+        role(&ret.context[0_usize], Label::Met(wanted)) && second_unnamed
+    } else if let CheckRefusal::EndpointMismatch { miss, .. } = refusal {
+        role(&ret.context[0_usize], Label::Endpoint(miss)) && role(&ret.context[1_usize], Label::Endpoint(miss))
+    } else if matches!(refusal, CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. } | LinearityDefect::Closed { .. }
-                | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. } =>
-            opened(&ret.context[0_usize]) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
-        CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. } =>
-            opened(&ret.context[0_usize]) && role(&ret.context[1_usize], Label::FirstArm),
-        CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
+                | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. }) {
+        opened(&ret.context[0_usize]) && second_unnamed
+    } else if matches!(refusal, CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }) {
+        opened(&ret.context[0_usize]) && role(&ret.context[1_usize], Label::FirstArm)
+    } else if matches!(refusal, CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
             | CheckRefusal::NotADataType(_) | CheckRefusal::NotAnAbstractType(_)
             | CheckRefusal::SealSiteRepeated(_)
             | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_)
             | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_)
             | CheckRefusal::CrossBlockReference { .. }
             | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
-            | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
-                span: declaration, label,
-            }) && ret.context == UNNAMED,
-        CheckRefusal::StagesDisagree { .. } | CheckRefusal::StageNotCarried { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
-        CheckRefusal::HandlerUnlawful { .. } | CheckRefusal::BridgeAtSealedType { .. } | CheckRefusal::OutsideFold { .. } |
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::FootprintsOverlap { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
+            | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. }) {
+        ret.primary == Maybe::Present(Annotation { span: declaration, label }) && ret.context == UNNAMED
+    } else {
+        ret.context == UNNAMED
     }
 })]
 fn checked(

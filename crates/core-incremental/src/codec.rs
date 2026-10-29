@@ -7408,15 +7408,17 @@ where
 /// Read a refusal.
 ///
 /// # Specification
-/// - ensures: a successful refusal retains its variant tag and only decoder
-///   failures are returned.
+/// - ensures: a successful refusal is exactly the consumed frame: it writes
+///   back to the bytes read, its variant tag first. Only decoder failures are
+///   returned.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — selected refusal classes and their payloads survive the
-///   finite semantic corpus. The predicate checks all tag classes without
-///   reconstructing their owned type payloads; the corpus is not an exhaustive
-///   refusal generator. Unknown outer tags, invalid non-synthesisable forms and
-///   invalid unbound zones reject at their field before the following payload.
+///   finite semantic corpus. The predicate re-encodes each refusal it reads, so
+///   a dropped, swapped or invented tag or payload field breaks it; the corpus
+///   is not an exhaustive refusal generator. Unknown outer tags, invalid
+///   non-synthesisable forms and invalid unbound zones reject at their field
+///   before the following payload.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
@@ -7426,105 +7428,9 @@ where
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref refusal) => {
-            reader.bytes.get(before)
-                == Some(&match *refusal {
-                    Refusal::NotADataType(_) => 19,
-                    Refusal::DataKindNotUniverse(_) => 20,
-                    Refusal::DataFieldLevel {..} => 21,
-                    Refusal::RuleNotPresentable {..} => 72,
-                    Refusal::RuleNotRespected {..} => 73,
-                    Refusal::NotApart {..} => 74,
-                    Refusal::LoopNotRespected {..} => 75,
-                    Refusal::LoopUndecided {..} => 78,
-                    Refusal::DataArgumentArity(_) => 22,
-                    Refusal::UnknownConstructor {..} => 23,
-                    Refusal::ConstructorArity(_) => 24,
-                    Refusal::NonExhaustiveDataCase(_) => 25,
-                    Refusal::UndecidedCoverage(_) => 80,
-                    Refusal::AbsentRecordField(_) => 26,
-                    Refusal::MissingRecordField {..} => 27,
-                    | Refusal::TypeMismatch { .. } => 0,
-                    | Refusal::ShapeMismatch { .. } => 1,
-                    | Refusal::NotSynthesisable { .. } => 2,
-                    | Refusal::UnknownConstant { .. } => 3,
-                    | Refusal::OutOfFragment { .. } => 4,
-                    | Refusal::UnboundIndex { .. } => 5,
-                    | Refusal::BudgetExceeded { .. } => 6,
-                    | Refusal::DanglingNode { .. } => 7,
-                    | Refusal::AdmissionOrder => 8,
-                    | Refusal::MachineInvariant => 9,
-                    | Refusal::SortMismatch { .. } => 10,
-                    | Refusal::LevelMismatch { .. } => 11,
-                    | Refusal::DependentBind { .. } => 12,
-                    | Refusal::Undecided { .. } => 13,
-                    | Refusal::FamilyArity { .. } => 14,
-                    | Refusal::FamilyArgumentClassifier { .. } => 15,
-                    | Refusal::StaticLambdaArgument { .. } => 16,
-                    | Refusal::StaticClassifierExpected { .. } => 17,
-                    | Refusal::PathCode(_) => 18,
-                    | Refusal::NegativeOccurrence(_) => 28,
-                    | Refusal::NestedOccurrence(_) => 29,
-                    | Refusal::IndexOccurrence(_) => 30,
-                    | Refusal::NonUniformOccurrence(_) => 31,
-                    | Refusal::CrossBlockReference { .. } => 32,
-                    | Refusal::StageNotBelow { .. } => 77,
-                    | Refusal::StagesDisagree { .. } => 83,
-                    | Refusal::StageNotCarried { .. } => 98,
-                    | Refusal::EffectSignatureConflict { .. } => 34,
-                    | Refusal::UnknownOperation { .. } => 35,
-                    | Refusal::HandlerCoverage { .. } => 36,
-                    | Refusal::HandlerUnlawful { .. } => 91,
-                    | Refusal::ShiftWithoutReset { .. } => 37,
-                    | Refusal::DependentStack { .. } => 38,
-                    | Refusal::AbsentTupleComponent(_) => 39,
-                    | Refusal::EndpointMismatch { miss: EndpointMiss::Unshown, .. } => 40,
-                    | Refusal::EndpointMismatch { miss: EndpointMiss::Budget, .. } => 95,
-                    | Refusal::CompoundEndpoint { .. } => 42,
-                    | Refusal::FunextUnsupported { .. } => 43,
-                    | Refusal::PointwiseDistinct(_) => 44,
-                    | Refusal::EquivUnsupported { .. } => 45,
-                    | Refusal::UncertifiedStratum { .. } => 46,
-                    | Refusal::OutsideFold { .. } => 97,
-                    | Refusal::RoundTripDistinct(_) => 47,
-                    | Refusal::AbstractKindNotUniverse(_) => 48,
-                    | Refusal::RepresentationAboveKind { .. } => 49,
-                    | Refusal::NotAnAbstractType(_) => 50,
-                    | Refusal::AtomTransport { .. } => 85,
-                    | Refusal::BridgeAtSealedType { .. } => 96,
-                    | Refusal::SealSiteRepeated(_) => 51,
-                    | Refusal::NotOver { .. } => 52,
-                    | Refusal::UaUncertified { .. } => 53,
-                    | Refusal::UaInequivalent { .. } => 54,
-                    | Refusal::UnenclosedRun { .. } => 55,
-                    | Refusal::ImplicitUnsolved { .. } => 86,
-                    | Refusal::ModelUnanswered { .. } => 89,
-                    | Refusal::ModelAmbiguous { .. } => 90,
-                    | Refusal::TacticRefused { .. } => 93,
-                    | Refusal::SessionMismatch { .. } => 56,
-                    | Refusal::Linearity { .. } => 57,
-                    | Refusal::CapabilityForged { .. } => 58,
-                    | Refusal::CapabilityAmplified { .. } => 59,
-                    | Refusal::CapabilityOutsideAuthority { .. } => 60,
-                    | Refusal::CapabilityEscaped { .. } => 61,
-                    | Refusal::CapabilityConsumable(_) => 62,
-                    | Refusal::CapabilityUngranted(_) => 63,
-                    | Refusal::FootprintsOverlap { .. } => 94,
-                    | Refusal::SessionNotEquivalent(_) => 64,
-                    | Refusal::SessionNotSubtype(_) => 65,
-                    | Refusal::SessionCodeExpected(_) => 66,
-                    | Refusal::OpenSessionPayload(_) => 84,
-                    | Refusal::UnassertedLaw(_) => 92,
-                    | Refusal::NonCovariantMotive(_) => 67,
-                    | Refusal::RideUnsupported(_) => 68,
-                    | Refusal::RunNotAdmitted { .. } => 69,
-                    | Refusal::DialogueUnmatched { .. } => 87,
-                    | Refusal::DialogueInverted { .. } => 88,
-                    | Refusal::ForwardUnsupported(_) => 70,
-                    | Refusal::Boundary(_) => 71,
-                    | Refusal::Access { .. } => 76,
-                    | Refusal::Codata { .. } => 82,
-                    | Refusal::Located { .. } => 79,
-                })
+            let mut bytes = CheckpointBytes::default();
+            write_refusal(&mut Writer { sink: &mut bytes }, refusal).is_ok()
+                && reader.bytes.get(before .. reader.cursor) == Some(bytes.as_ref())
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
             u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET

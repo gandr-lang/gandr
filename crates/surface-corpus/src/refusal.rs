@@ -2546,9 +2546,10 @@ impl Refusal<'_>
     /// # Specification
     /// - requires: nothing; the function is total over every producer's
     ///   vocabulary.
-    /// - ensures: the name spelled as the refusal's own variant, read from the
-    ///   variant alone; the lowering's and the checker's `OutOfFragment` and
-    ///   `BudgetExceeded` share a name each.
+    /// - ensures: the name its producer's naming function gives,
+    ///   `lowering_name` for a lowering refusal and `checking_name` for a
+    ///   checker refusal; a corpus refusal names its own variant, and an
+    ///   unrealised boundary is qualified by its clause's tag.
     /// - provides: the produced side of a `refuses` comparison.
     /// - fails: never.
     /// - panics: none.
@@ -2560,261 +2561,17 @@ impl Refusal<'_>
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
     #[spec(
         ensures: |ret| {
-    matches!(
-        (* self, ret), (Self::Lowering(LoweringRefusal::UnresolvedName { .. }),
-        RefusalName::UnresolvedName) |
-        (Self::Lowering(LoweringRefusal::UnresolvedDocLink { .. }),
-        RefusalName::UnresolvedDocLink) |
-        (Self::Lowering(LoweringRefusal::UnresolvedTypeHead { .. }),
-        RefusalName::UnresolvedTypeHead) |
-        (Self::Lowering(LoweringRefusal::DuplicateSignature { .. }),
-        RefusalName::DuplicateSignature) |
-        (Self::Lowering(LoweringRefusal::DuplicateDefinition { .. }),
-        RefusalName::DuplicateDefinition) |
-        (Self::Lowering(LoweringRefusal::DuplicateImportAlias { .. }),
-        RefusalName::DuplicateImportAlias) |
-        (Self::Lowering(LoweringRefusal::ImportUnresolved { .. }),
-        RefusalName::ImportUnresolved) |
-        (Self::Lowering(LoweringRefusal::ImportCycle { .. }), RefusalName::ImportCycle) |
-        (Self::Lowering(LoweringRefusal::UnlockedDependency { .. }),
-        RefusalName::UnlockedDependency) |
-        (Self::Lowering(LoweringRefusal::ImportShadows { .. }), RefusalName::ImportShadows) |
-        (Self::Lowering(LoweringRefusal::UnexportedName { .. }),
-        RefusalName::UnexportedName) |
-        (Self::Lowering(LoweringRefusal::ShadowedBuiltin { .. }),
-        RefusalName::ShadowedBuiltin) | (Self::Lowering(LoweringRefusal::OutOfFragment {
-        .. }) | Self::Checking(CheckRefusal::OutOfFragment { .. }),
-        RefusalName::OutOfFragment(_)) | (Self::Lowering(LoweringRefusal::BareFeedback { .. }),
-        RefusalName::BareFeedback) |
-        (Self::Lowering(LoweringRefusal::IllFormedDescription { .. }),
-        RefusalName::IllFormedDescription) | (Self::Lowering(LoweringRefusal::GradedBridge { ..
-        }), RefusalName::GradedBridge) |
-        (Self::Lowering(LoweringRefusal::MalformedLiteral { .. }),
-        RefusalName::MalformedLiteral) | (Self::Lowering(LoweringRefusal::NoUniverseAbove { .. }),
-        RefusalName::NoUniverseAbove) | (Self::Lowering(LoweringRefusal::MalformedForm {
-        .. }), RefusalName::MalformedForm) |
-        (Self::Lowering(LoweringRefusal::UnknownAttribute { .. }),
-        RefusalName::UnknownAttribute) |
-        (Self::Lowering(LoweringRefusal::DuplicateAttribute { .. }),
-        RefusalName::DuplicateAttribute) |
-        (Self::Lowering(LoweringRefusal::MissingPayload { .. }),
-        RefusalName::MissingPayload) | (Self::Lowering(LoweringRefusal::NonValuePayload {
-        .. }), RefusalName::NonValuePayload) |
-        (Self::Lowering(LoweringRefusal::IllTypedPayload { .. }),
-        RefusalName::IllTypedPayload) |
-        (Self::Lowering(LoweringRefusal::ForwardMemberReference { .. }),
-        RefusalName::ForwardMemberReference) |
-        (Self::Lowering(LoweringRefusal::PhaseDependence { .. }),
-        RefusalName::PhaseDependence) |
-        (Self::Lowering(LoweringRefusal::InertRead { .. }),
-        RefusalName::InertRead) |
-        (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
-        RefusalName::UnknownMember) |
-        (Self::Lowering(LoweringRefusal::UnprovenLaw { .. }), RefusalName::UnprovenLaw(LawProof::Missing)) |
-        (Self::Lowering(LoweringRefusal::PartialField { .. }),
-        RefusalName::PartialField) | (Self::Lowering(LoweringRefusal::NotAFunctor { .. }),
-        RefusalName::NotAFunctor) |
-        (Self::Lowering(LoweringRefusal::NotATranslation { .. }),
-        RefusalName::NotATranslation) |
-        (Self::Lowering(LoweringRefusal::ProjectionFromApplication { .. }),
-        RefusalName::ProjectionFromApplication) |
-        (Self::Lowering(LoweringRefusal::UnreadAscription {
-        .. }), RefusalName::UnreadAscription) |
-        (Self::Lowering(LoweringRefusal::UnstatedComponent { .. }),
-        RefusalName::UnstatedComponent(_)) |
-        (Self::Lowering(LoweringRefusal::SignatureMismatch { .. }),
-        RefusalName::SignatureMismatch(_)) |
-        (Self::Lowering(LoweringRefusal::UndescribedMember { .. }),
-        RefusalName::UndescribedMember(_)) |
-        (Self::Lowering(LoweringRefusal::FamilyTelescope { .. }),
-        RefusalName::FamilyTelescope) |
-        (Self::Lowering(LoweringRefusal::UninterfacedMember { .. }),
-        RefusalName::UninterfacedMember) |
-        (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
-        RefusalName::LowercaseModuleName) |
-        (Self::Lowering(LoweringRefusal::UnlabelledRequirement { .. }),
-        RefusalName::UnlabelledRequirement) |
-        (Self::Lowering(LoweringRefusal::ImplicitTelescope { .. }),
-        RefusalName::ImplicitTelescope) |
-        (Self::Lowering(LoweringRefusal::TelescopeCycle { .. }),
-        RefusalName::TelescopeCycle) |
-        (Self::Lowering(LoweringRefusal::ImplicitUnsupplied { .. }),
-        RefusalName::ImplicitUnsupplied) |
-        (Self::Lowering(LoweringRefusal::ImplicitInParentheses { .. }),
-        RefusalName::ImplicitInParentheses) |
-        (Self::Lowering(LoweringRefusal::InstanceUnanswered { .. }),
-        RefusalName::InstanceUnanswered) |
-        (Self::Lowering(LoweringRefusal::InstanceAmbiguous { .. }),
-        RefusalName::InstanceAmbiguous) |
-        (Self::Lowering(LoweringRefusal::ModelImplicitValue { .. }),
-        RefusalName::ModelImplicitValue) |
-        (Self::Lowering(LoweringRefusal::RegionAsValue { .. }),
-        RefusalName::RegionAsValue) |
-        (Self::Lowering(LoweringRefusal::EntryType { .. }),
-        RefusalName::EntryType) |
-        (Self::Lowering(LoweringRefusal::StrayReceiverMode { .. }),
-        RefusalName::StrayReceiverMode) |
-        (Self::Lowering(LoweringRefusal::AmbiguousMethod { .. }),
-        RefusalName::AmbiguousMethod) |
-        (Self::Lowering(LoweringRefusal::ViewNotPlace { .. }),
-        RefusalName::ViewNotPlace) |
-        (Self::Lowering(LoweringRefusal::ViewOfNoPlace { .. }),
-        RefusalName::ViewOfNoPlace) |
-        (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
-        RefusalName::NonExhaustiveMatch) |
-        (Self::Lowering(LoweringRefusal::MismatchedPattern { .. }),
-        RefusalName::MismatchedPattern) |
-        (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
-        RefusalName::UnmarkedSelfReference) |
-        (Self::Lowering(LoweringRefusal::UnguardedCorecursion { .. }),
-        RefusalName::UnguardedCorecursion) |
-        (Self::Lowering(LoweringRefusal::DescentOnSeveralParameters { .. }),
-        RefusalName::DescentOnSeveralParameters) |
-        (Self::Lowering(LoweringRefusal::Unreachable { .. }),
-        RefusalName::Unreachable) |
-        (Self::Lowering(LoweringRefusal::OutsideLoop { .. }),
-        RefusalName::OutsideLoop) |
-        (Self::Lowering(LoweringRefusal::AcrossHandler { .. }),
-        RefusalName::AcrossHandler) |
-        (Self::Lowering(LoweringRefusal::WithoutK { .. }),
-        RefusalName::WithoutK) |
-        (Self::Lowering(LoweringRefusal::DirectedCell { .. }),
-        RefusalName::DirectedCell) |
-        (Self::Lowering(LoweringRefusal::CellNotALoop { .. }),
-        RefusalName::CellNotALoop) |
-        (Self::Lowering(LoweringRefusal::RulesUnoriented { .. }),
-        RefusalName::RulesUnoriented) |
-        (Self::Lowering(LoweringRefusal::RulesNonLinear { .. }),
-        RefusalName::RulesNonLinear) |
-        (Self::Lowering(LoweringRefusal::RulesDiverge { .. }),
-        RefusalName::RulesDiverge) |
-        (Self::Lowering(LoweringRefusal::RulesOverlapSecondOrder { .. }),
-        RefusalName::RulesOverlapSecondOrder) |
-        (Self::Lowering(LoweringRefusal::RulesOverlapCondition { .. }),
-        RefusalName::RulesOverlapCondition) |
-        (Self::Lowering(LoweringRefusal::RulesUncompleted { .. }),
-        RefusalName::RulesUncompleted) |
-        (Self::Lowering(LoweringRefusal::RulesNeverComplete { .. }),
-        RefusalName::RulesNeverComplete) |
-        (Self::Lowering(LoweringRefusal::RulesUndecided { .. }),
-        RefusalName::RulesUndecided) |
-        (Self::Lowering(LoweringRefusal::UnderivedRule { .. }),
-        RefusalName::UnderivedRule) |
-        (Self::Lowering(LoweringRefusal::GenericMisplaced { .. }),
-        RefusalName::GenericMisplaced) |
-        (Self::Lowering(LoweringRefusal::UnknownTactic { .. }),
-        RefusalName::UnknownTactic) |
-        (Self::Lowering(LoweringRefusal::GenericUncovered { .. }),
-        RefusalName::GenericUncovered(_)) |
-        (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
-        Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
-        | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
-        RefusalName::GrammarMismatch) | (Self::Lowering(LoweringRefusal::UnknownMold { ..
-        }), RefusalName::UnknownMold) | (Self::Lowering(LoweringRefusal::HostConflict { .. }), RefusalName::HostConflict) | (Self::Lowering(LoweringRefusal::Unminted { .. }), RefusalName::Unminted) | (Self::Checking(CheckRefusal::PathCode(_)), RefusalName::PathCode) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
-        RefusalName::TypeMismatch) | (Self::Checking(CheckRefusal::ShapeMismatch { .. }),
-        RefusalName::ShapeMismatch) | (Self::Checking(CheckRefusal::NotSynthesisable { ..
-        }), RefusalName::NotSynthesisable) |
-        (Self::Checking(CheckRefusal::UnknownConstant { .. }),
-        RefusalName::UnknownConstant) | (Self::Checking(CheckRefusal::UnboundIndex { ..
-        }), RefusalName::UnboundIndex) | (Self::Checking(CheckRefusal::DanglingNode { ..
-        }), RefusalName::DanglingNode) | (Self::Checking(CheckRefusal::AdmissionOrder {
-        .. }), RefusalName::AdmissionOrder) |
-        (Self::Checking(CheckRefusal::MachineInvariant), RefusalName::MachineInvariant) |
-        (Self::Checking(CheckRefusal::SortMismatch { .. }), RefusalName::SortMismatch) |
-        (Self::Checking(CheckRefusal::LevelMismatch { .. }), RefusalName::LevelMismatch)
-        | (Self::Checking(CheckRefusal::DependentBind { .. }),
-        RefusalName::DependentBind) | (Self::Checking(CheckRefusal::Undecided { .. }),
-        RefusalName::Undecided) | (Self::Checking(CheckRefusal::FamilyArity { .. }),
-        RefusalName::FamilyArity) |
-        (Self::Checking(CheckRefusal::FamilyArgumentClassifier { .. }),
-        RefusalName::FamilyArgumentClassifier) |
-        (Self::Checking(CheckRefusal::StaticLambdaArgument { .. }),
-        RefusalName::StaticLambdaArgument) |
-        (Self::Checking(CheckRefusal::StaticClassifierExpected { .. }),
-        RefusalName::StaticClassifierExpected) |
-        (Self::Checking(CheckRefusal::NotADataType(_)), RefusalName::NotADataType)
-        | (Self::Checking(CheckRefusal::DataKindNotUniverse(_)), RefusalName::DataKindNotUniverse)
-        | (Self::Checking(CheckRefusal::DataFieldLevel { .. }), RefusalName::DataFieldLevel)
-        | (Self::Checking(CheckRefusal::RuleNotPresentable { .. }), RefusalName::RuleNotPresentable)
-        | (Self::Checking(CheckRefusal::RuleNotRespected { .. }), RefusalName::RuleNotRespected)
-        | (Self::Checking(CheckRefusal::NotApart { .. }), RefusalName::NotApart)
-        | (Self::Checking(CheckRefusal::LoopNotRespected { .. }), RefusalName::LoopNotRespected)
-        | (Self::Checking(CheckRefusal::LoopUndecided { .. }), RefusalName::LoopUndecided)
-        | (Self::Checking(CheckRefusal::AbstractKindNotUniverse(_)), RefusalName::AbstractKindNotUniverse)
-        | (Self::Checking(CheckRefusal::RepresentationAboveKind { .. }), RefusalName::RepresentationAboveKind)
-        | (Self::Checking(CheckRefusal::NotAnAbstractType(_)), RefusalName::NotAnAbstractType)
-        | (Self::Checking(CheckRefusal::AtomTransport { .. }), RefusalName::AtomTransport)
-        | (Self::Checking(CheckRefusal::BridgeAtSealedType { .. }), RefusalName::BridgeAtSealedType)
-        | (Self::Checking(CheckRefusal::SealSiteRepeated(_)), RefusalName::SealSiteRepeated)
-        | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
-        | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
-        | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
-        | (Self::Checking(CheckRefusal::NonExhaustiveDataCase(_)), RefusalName::NonExhaustiveDataCase)
-        | (Self::Checking(CheckRefusal::UndecidedCoverage(_)), RefusalName::UndecidedCoverage)
-        | (Self::Checking(CheckRefusal::AbsentRecordField(_)), RefusalName::AbsentRecordField)
-        | (Self::Checking(CheckRefusal::AbsentTupleComponent(_)), RefusalName::AbsentTupleComponent)
-        | (Self::Checking(CheckRefusal::MissingRecordField { .. }), RefusalName::MissingRecordField)
-        | (Self::Checking(CheckRefusal::NegativeOccurrence(_)), RefusalName::NegativeOccurrence)
-        | (Self::Checking(CheckRefusal::NestedOccurrence(_)), RefusalName::NestedOccurrence)
-        | (Self::Checking(CheckRefusal::IndexOccurrence(_)), RefusalName::IndexOccurrence)
-        | (Self::Checking(CheckRefusal::NonUniformOccurrence(_)), RefusalName::NonUniformOccurrence)
-        | (Self::Checking(CheckRefusal::CrossBlockReference { .. }), RefusalName::CrossBlockReference)
-        | (Self::Checking(CheckRefusal::StageNotBelow { .. }), RefusalName::StageNotBelow)
-        | (Self::Checking(CheckRefusal::StagesDisagree { .. }), RefusalName::StagesDisagree)
-        | (Self::Checking(CheckRefusal::StageNotCarried { .. }), RefusalName::StageNotCarried) |
-        (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
-        RefusalName::ExpectationOutsideFixtureRoot)
-        | (Self::Checking(CheckRefusal::EffectSignatureConflict { .. }), RefusalName::EffectSignatureConflict)
-        | (Self::Checking(CheckRefusal::UnknownOperation { .. }), RefusalName::UnknownOperation)
-        | (Self::Checking(CheckRefusal::HandlerCoverage { .. }), RefusalName::HandlerCoverage)
-        | (Self::Checking(CheckRefusal::HandlerUnlawful { .. }), RefusalName::HandlerUnlawful)
-        | (Self::Checking(CheckRefusal::ShiftWithoutReset { .. }), RefusalName::ShiftWithoutReset)
-        | (Self::Checking(CheckRefusal::DependentStack { .. }), RefusalName::DependentStack)
-        | (Self::Checking(CheckRefusal::EndpointMismatch { .. }), RefusalName::EndpointMismatch)
-        | (Self::Checking(CheckRefusal::CompoundEndpoint { .. }), RefusalName::CompoundEndpoint)
-        | (Self::Checking(CheckRefusal::FunextUnsupported { .. }), RefusalName::FunextUnsupported)
-        | (Self::Checking(CheckRefusal::PointwiseDistinct { .. }), RefusalName::PointwiseDistinct)
-        | (Self::Checking(CheckRefusal::EquivUnsupported { .. }), RefusalName::EquivUnsupported)
-        | (Self::Checking(CheckRefusal::UncertifiedStratum { .. }), RefusalName::UncertifiedStratum)
-        | (Self::Checking(CheckRefusal::OutsideFold { .. }), RefusalName::OutsideFold)
-        | (Self::Checking(CheckRefusal::RoundTripDistinct { .. }), RefusalName::RoundTripDistinct)
-        | (Self::Checking(CheckRefusal::NotOver { .. }), RefusalName::NotOver)
-        | (Self::Checking(CheckRefusal::UaUncertified { .. }), RefusalName::UncertifiedDegree | RefusalName::UncertifiedCondition | RefusalName::UncertifiedAllowance)
-        | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
-        | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
-        | (Self::Checking(CheckRefusal::ImplicitUnsolved { .. }), RefusalName::ImplicitUnsolved)
-        | (Self::Checking(CheckRefusal::ModelUnanswered { .. }), RefusalName::ModelUnanswered)
-        | (Self::Checking(CheckRefusal::ModelAmbiguous { .. }), RefusalName::ModelAmbiguous)
-        | (Self::Checking(CheckRefusal::TacticRefused { .. }), RefusalName::TacticRefused)
-        | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
-        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
-        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
-        | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
-        | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile(_) | RefusalName::NotOpen(_) | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
-        | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
-        | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
-        | (Self::Checking(CheckRefusal::CapabilityOutsideAuthority { .. }), RefusalName::CapabilityOutsideAuthority)
-        | (Self::Checking(CheckRefusal::CapabilityEscaped { .. }), RefusalName::CapabilityEscaped)
-        | (Self::Checking(CheckRefusal::CapabilityConsumable(_)), RefusalName::CapabilityConsumable)
-        | (Self::Checking(CheckRefusal::CapabilityUngranted { .. }), RefusalName::CapabilityUngranted)
-        | (Self::Checking(CheckRefusal::FootprintsOverlap { .. }), RefusalName::FootprintsOverlap)
-        | (Self::Checking(CheckRefusal::SessionNotEquivalent { .. }), RefusalName::SessionNotEquivalent)
-        | (Self::Checking(CheckRefusal::SessionNotSubtype { .. }), RefusalName::SessionNotSubtype)
-        | (Self::Checking(CheckRefusal::SessionCodeExpected { .. }), RefusalName::SessionCodeExpected)
-        | (Self::Checking(CheckRefusal::OpenSessionPayload { .. }), RefusalName::OpenSessionPayload)
-        | (Self::Checking(CheckRefusal::UnassertedLaw { .. }), RefusalName::UnprovenLaw(LawProof::Admitted))
-        | (Self::Checking(CheckRefusal::NonCovariantMotive { .. }), RefusalName::NonCovariantMotive)
-        | (Self::Checking(CheckRefusal::RideUnsupported { .. }), RefusalName::RideUnsupported)
-        | (Self::Checking(CheckRefusal::RunNotAdmitted { .. }), RefusalName::RunNotAdmitted)
-        | (Self::Checking(CheckRefusal::DialogueUnmatched { .. }), RefusalName::DialogueUnmatched)
-        | (Self::Checking(CheckRefusal::DialogueInverted { .. }), RefusalName::DialogueInverted)
-        | (Self::Checking(CheckRefusal::ForwardUnsupported { .. }), RefusalName::ForwardUnsupported)
-        | (Self::Checking(CheckRefusal::Boundary { .. }), RefusalName::Boundary)
-    ) || matches!(
-        (*self, ret),
-        (Self::Corpus(CorpusRefusal::BoundaryUnrealised { clause, .. }), RefusalName::BoundaryUnrealised(tag))
-            if tag == clause.tag()
-    )
+    let expected = match *self {
+        Self::Lowering(refusal) => lowering_name(refusal),
+        Self::Checking(refusal) => checking_name(refusal),
+        Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }) => {
+            RefusalName::ExpectationOutsideFixtureRoot
+        },
+        Self::Corpus(CorpusRefusal::BoundaryUnrealised { clause, .. }) => {
+            RefusalName::BoundaryUnrealised(clause.tag())
+        },
+    };
+    expected == ret
 },
     )]
     #[inline]

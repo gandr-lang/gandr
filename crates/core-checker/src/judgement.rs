@@ -9649,109 +9649,23 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     domain,
                     &mut self.conversions,
                 )
-                .map_err(|refusal| match refusal {
-                    CheckRefusal::TypeMismatch(_)
-                    | CheckRefusal::SortMismatch { .. }
-                    | CheckRefusal::LevelMismatch { .. } => {
+                .map_err(|refusal| {
+                    if matches!(
+                        refusal,
+                        CheckRefusal::TypeMismatch(_)
+                            | CheckRefusal::SortMismatch { .. }
+                            | CheckRefusal::LevelMismatch { .. }
+                    ) {
                         CheckRefusal::FamilyArgumentClassifier {
                             at: argument,
                             position,
                             synthesised,
                             expected: domain,
                         }
-                    },
-                    other @ (CheckRefusal::NotADataType(_)
-                    | CheckRefusal::DataKindNotUniverse(_)
-                    | CheckRefusal::DataFieldLevel { .. }
-                    | CheckRefusal::RuleNotPresentable { .. }
-                    | CheckRefusal::RuleNotRespected { .. }
-                    | CheckRefusal::NotApart { .. }
-                    | CheckRefusal::LoopNotRespected { .. }
-                    | CheckRefusal::LoopUndecided { .. }
-                    | CheckRefusal::AbstractKindNotUniverse(_)
-                    | CheckRefusal::RepresentationAboveKind { .. }
-                    | CheckRefusal::NotAnAbstractType(_)
-                    | CheckRefusal::AtomTransport { .. }
-                    | CheckRefusal::BridgeAtSealedType { .. }
-                    | CheckRefusal::OutsideFold { .. }
-                    | CheckRefusal::SealSiteRepeated(_)
-                    | CheckRefusal::DataArgumentArity(_)
-                    | CheckRefusal::UnknownConstructor { .. }
-                    | CheckRefusal::ConstructorArity(_)
-                    | CheckRefusal::NonExhaustiveDataCase(_)
-                    | CheckRefusal::UndecidedCoverage(_)
-                    | CheckRefusal::AbsentRecordField(_)
-                    | CheckRefusal::AbsentTupleComponent(_)
-                    | CheckRefusal::MissingRecordField { .. }
-                    | CheckRefusal::UnknownOperation { .. }
-                    | CheckRefusal::HandlerCoverage { .. }
-                    | CheckRefusal::HandlerUnlawful { .. }
-                    | CheckRefusal::ShiftWithoutReset { .. }
-                    | CheckRefusal::DependentStack { .. }
-                    | CheckRefusal::PathCode(_)
-                    | CheckRefusal::EndpointMismatch { .. }
-                    | CheckRefusal::CompoundEndpoint { .. }
-                    | CheckRefusal::FunextUnsupported { .. }
-                    | CheckRefusal::PointwiseDistinct { .. }
-                    | CheckRefusal::EquivUnsupported { .. }
-                    | CheckRefusal::UncertifiedStratum { .. }
-                    | CheckRefusal::RoundTripDistinct { .. }
-                    | CheckRefusal::NotOver { .. }
-                    | CheckRefusal::UaUncertified { .. }
-                    | CheckRefusal::UaInequivalent { .. }
-                    | CheckRefusal::EffectSignatureConflict { .. }
-                    | CheckRefusal::ShapeMismatch { .. }
-                    | CheckRefusal::NotSynthesisable { .. }
-                    | CheckRefusal::UnknownConstant { .. }
-                    | CheckRefusal::OutOfFragment { .. }
-                    | CheckRefusal::UnboundIndex { .. }
-                    | CheckRefusal::BudgetExceeded { .. }
-                    | CheckRefusal::DanglingNode { .. }
-                    | CheckRefusal::AdmissionOrder { .. }
-                    | CheckRefusal::MachineInvariant
-                    | CheckRefusal::DependentBind { .. }
-                    | CheckRefusal::Undecided { .. }
-                    | CheckRefusal::FamilyArity { .. }
-                    | CheckRefusal::FamilyArgumentClassifier { .. }
-                    | CheckRefusal::StaticLambdaArgument { .. }
-                    | CheckRefusal::StaticClassifierExpected { .. }
-                    | CheckRefusal::NegativeOccurrence(_)
-                    | CheckRefusal::NestedOccurrence(_)
-                    | CheckRefusal::IndexOccurrence(_)
-                    | CheckRefusal::NonUniformOccurrence(_)
-                    | CheckRefusal::CrossBlockReference { .. }
-                    | CheckRefusal::StageNotBelow { .. }
-                    | CheckRefusal::StagesDisagree { .. }
-                    | CheckRefusal::StageNotCarried { .. }
-                    | CheckRefusal::SessionMismatch { .. }
-                    | CheckRefusal::Linearity { .. }
-                    | CheckRefusal::UnenclosedRun { .. }
-                    | CheckRefusal::ImplicitUnsolved { .. }
-                    | CheckRefusal::ModelUnanswered { .. }
-                    | CheckRefusal::ModelAmbiguous { .. }
-                    | CheckRefusal::TacticRefused { .. }
-                    | CheckRefusal::CapabilityForged { .. }
-                    | CheckRefusal::CapabilityAmplified(_)
-                    | CheckRefusal::CapabilityOutsideAuthority { .. }
-                    | CheckRefusal::CapabilityEscaped { .. }
-                    | CheckRefusal::CapabilityConsumable(_)
-                    | CheckRefusal::CapabilityUngranted { .. }
-                    | CheckRefusal::FootprintsOverlap { .. }
-                    | CheckRefusal::SessionNotEquivalent { .. }
-                    | CheckRefusal::SessionNotSubtype { .. }
-                    | CheckRefusal::SessionCodeExpected { .. }
-                    | CheckRefusal::OpenSessionPayload { .. }
-                    | CheckRefusal::UnassertedLaw { .. }
-                    | CheckRefusal::NonCovariantMotive { .. }
-                    | CheckRefusal::RideUnsupported { .. }
-                    | CheckRefusal::RunNotAdmitted { .. }
-                    | CheckRefusal::DialogueUnmatched { .. }
-                    | CheckRefusal::DialogueInverted { .. }
-                    | CheckRefusal::ForwardUnsupported { .. }
-                    | CheckRefusal::Boundary { .. }
-                    | CheckRefusal::Access { .. }
-                    | CheckRefusal::Codata { .. }
-                    | CheckRefusal::Located { .. }) => other,
+                    }
+                    else {
+                        refusal
+                    }
                 })?;
                 Ok(Step::Ascend(Produced::ValueType(codomain.into())))
             },
