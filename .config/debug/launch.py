@@ -10,9 +10,12 @@ Run as a script, the module checks the cases of a JSON file
 (`.config/debug/launch.json`): `python3 launch.py <cases>`. Each case names
 the system `uname` reports, whether an lldb is installed, and what the launch
 gives: its exit status, a line its error holds, or the bound the debugger
-runs under, `8 GiB` or `none`. The debugger is a stub that prints its
-arguments, its `ulimit -v` and its cgroup's `memory.max`. On a stub macOS,
-`systemd-run` is a stub that records its call and fails.
+runs under, `8 GiB` or `none`. Every case stubs `uname` to answer its system,
+so a case runs alike on every host (#3867); a case naming a `host` puts a
+`uname` answering that host behind the stubs, as a host's own stands on
+`PATH`. The debugger is a stub that prints its arguments, its `ulimit -v` and
+its cgroup's `memory.max`. On a stub macOS, `systemd-run` is a stub that
+records its call and fails.
 """
 
 import json
@@ -50,18 +53,20 @@ def bound(lines: list[str], caller: str, scoped: bool) -> str:
 def launched(case: dict, scratch: pathlib.Path) -> str | None:
     """Why `case` launches otherwise than it records, or nothing."""
     bin_dir = scratch / "bin"
+    host_dir = scratch / "host"
     keg = scratch / "keg"
     marker = scratch / "scoped"
+    stub(bin_dir / "uname", f"#!/usr/bin/env bash\necho {case['system']}\n")
+    if "host" in case:
+        stub(host_dir / "uname", f"#!/usr/bin/env bash\necho {case['host']}\n")
     if case["system"] == "Darwin":
-        stub(bin_dir / "uname", "#!/usr/bin/env bash\necho Darwin\n")
         stub(bin_dir / "brew", f"#!/usr/bin/env bash\necho {keg}\n")
         stub(bin_dir / "systemd-run", f"#!/usr/bin/env bash\ntouch {marker}\nexit 1\n")
         if case["lldb"]:
             stub(keg / "bin" / "lldb", STUB_LLDB)
     elif case["lldb"]:
         stub(bin_dir / "lldb", STUB_LLDB)
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+    environment = dict(os.environ, PATH=f"{bin_dir}:{host_dir}:{os.environ['PATH']}")
     caller = subprocess.run(["bash", "-c", "ulimit -v"], capture_output=True, text=True, check=True).stdout.strip()
     run = subprocess.run(
         [str(LLDB_BASH), "lldb", "--batch", "--", "program"],

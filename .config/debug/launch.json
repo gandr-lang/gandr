@@ -19,5 +19,13 @@
     "lldb": true,
     "exit": 0,
     "bound": "8 GiB"
+  },
+  {
+    "name": "#3867: Linux runs its lldb bounded to 8 GiB on a host whose uname answers Darwin",
+    "system": "Linux",
+    "host": "Darwin",
+    "lldb": true,
+    "exit": 0,
+    "bound": "8 GiB"
   }
 ]
