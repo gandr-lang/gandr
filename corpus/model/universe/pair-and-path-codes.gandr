@@ -1,4 +1,4 @@
-// A Tarski universe closed under pairs and dependent pairs.
+// A Tarski universe closed under pairs, dependent pairs and paths.
 //
 // Martin-Löf's universe is closed under dependent functions, dependent pairs
 // and identity types. Each such code decodes to a family at the decodes of
@@ -8,10 +8,11 @@
 // Each code is its own block. The pair code decodes to the pairs of its two
 // decodes. The dependent pair code decodes to the pairs over its first
 // decode. Its second field is a family of codes over that decode. The
-// decoder's binder takes the same decode, so the two convert.
+// decoder's binder takes the same decode, so the two convert. The path code
+// decodes to the paths between two values of its carrier's decode.
 //
 // - see: `pathological/universe/pair-and-path-codes.gandr` — a run for the
-//   first decode, and the path code, refused
+//   first decode, refused
 // - see: `model/universe/inductive-recursive.gandr` — the dependent
 //   functions, admitted
 // - see: Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984
@@ -63,6 +64,29 @@ rec {
     case u {
       NatS => return Nat,
       SigS(a, b) => return (Sig(elSig[<](a), thunk { fn (x) { elSig[<](b(x)) } }))
+    }
+  }
+}
+
+/// The path code and its decoder, in one block.
+rec {
+  /// The codes: the naturals, and the paths between two values of a coded
+  /// type.
+  @[ checks ]
+  data UPath : Type {
+    /// The naturals.
+    NatP : UPath;
+    /// The paths between two values of a coded type's decode.
+    PathP : (a : UPath, x : elPath(a), y : elPath(a)) --> UPath;
+  }
+
+  /// The decoder: a path code decodes to the path type over its carrier.
+  /// The carrier is the decoder's own marked call, read as a type.
+  @[ checks ]
+  def rec elPath(u : UPath) -> -F Type {
+    case u {
+      NatP => return Nat,
+      PathP(a, x, y) => return (Path(elPath[<](a), x, y))
     }
   }
 }

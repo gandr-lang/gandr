@@ -1532,7 +1532,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/universe/decoded
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/inductive-recursive.txt Procedure 404994b85ddfbce5
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/ir-codes.txt Procedure 002e102e42c10ee4
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/ir-codes.txt Procedure e3dd92798abbf048
-crates/surface-render-terminal/tests/golden/corpus/pathological/universe/pair-and-path-codes.txt Procedure d74c68649cd2e341
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/v-infinity.txt Procedure 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure a755b43b32ffea91
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure ce9e9d602eb9772e
