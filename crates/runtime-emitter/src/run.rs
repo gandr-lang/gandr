@@ -5,13 +5,16 @@
 //! A run lowers its command every time — the lowered function is the cache
 //! key, compared by value — and either serves the function's emitted code
 //! from the process's cache, emitting it on a miss, or builds the executor's
-//! program. Both run over a set of the calling thread's heap and frame
-//! regions, each allocated at its bound and committed page by page as runs
-//! touch it; a run that would pass a bound declines exhausted. The
-//! alternative was a small region doubled and the run repeated from its
-//! start, which offers a host handler its requests a second time; the bound
-//! costs address space only. The choice reverses if a workload needs more
-//! than a bound holds, when the bound becomes the caller's to set.
+//! program. The lowering keeps the code the cache served it, so a later run
+//! of the same lowering — a scheduled run's writer, run once for each spawn —
+//! takes neither the cache's lock nor its key's hash. Both tiers run over a
+//! set of the calling thread's heap and frame regions, each allocated at its
+//! bound and committed page by page as runs touch it; a run that would pass a
+//! bound declines exhausted. The alternative was a small region doubled and
+//! the run repeated from its start, which offers a host handler its requests
+//! a second time; the bound costs address space only. The choice reverses if
+//! a workload needs more than a bound holds, when the bound becomes the
+//! caller's to set.
 //!
 //! A run takes its set from the thread's idle sets, and gives it back when it
 //! ends. So a run that a host starts inside another run's reply, on the same
@@ -409,6 +412,44 @@ struct Cache
 #[cfg(gandr_patcher)]
 static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Cache::default()));
+
+/// The emitted code a lowering keeps from its first native run.
+///
+/// A later run of the same lowering takes neither the process's cache's lock
+/// nor its key's hash. The cache never unmaps a region, so the code stays
+/// valid for the process. Two kept codes compare equal: a lowering's code
+/// follows from its function, which the lowering's equality compares.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+#[repr(transparent)]
+pub struct Kept
+{
+    /// The code, once a run found it.
+    #[cfg(gandr_patcher)]
+    code: std::sync::OnceLock<Arc<Emitted>>,
+}
+
+impl PartialEq for Kept
+{
+    /// Equal, always: the kept code follows from the lowering's function.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        _other: &Self,
+    ) -> bool
+    {
+        true
+    }
+}
+
+impl Eq for Kept
+{
+}
 
 /// The policy, read once per process.
 static POLICY: std::sync::LazyLock<Policy> = std::sync::LazyLock::new(Policy::from_environment);
@@ -1178,7 +1219,8 @@ fn run_executor(
     )
 }
 
-/// Run emitted code, emitting on a miss.
+/// Run emitted code, emitting on a miss. A lowering run again serves the code
+/// it kept and takes no lookup.
 ///
 /// # Specification
 /// trivial.
@@ -1188,9 +1230,10 @@ fn run_executor(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`on_tier`], emitting each function on its first
-///   native run.
+///   native run, and a lowering run again answers as its first run did.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_lowering_run_again_answers_as_its_first_run_3924`
 #[cfg(gandr_patcher)]
 fn run_native(
     lowered: &Lowered,
@@ -1199,6 +1242,9 @@ fn run_native(
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
+    if let Some(kept) = lowered.kept.code.get() {
+        return run_emitted(kept, lowered, source, fuel, inputs);
+    }
     let emitted = {
         let mut cache = CACHE
             .lock()
@@ -1219,7 +1265,8 @@ fn run_native(
             emitted
         }
     };
-    run_emitted(&emitted, lowered, source, fuel, inputs)
+    let kept = lowered.kept.code.get_or_init(|| emitted);
+    run_emitted(kept, lowered, source, fuel, inputs)
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -1241,7 +1288,8 @@ fn run_native(
     Err(Declined::NoPatcher)
 }
 
-/// Serve cached code, or take the executor on a miss.
+/// Serve cached code, or take the executor on a miss. A lowering run again
+/// serves the code it kept and takes no lookup.
 ///
 /// # Specification
 /// trivial.
@@ -1262,6 +1310,9 @@ fn run_cached(
 {
     #[cfg(gandr_patcher)]
     {
+        if let Some(kept) = lowered.kept.code.get() {
+            return run_emitted(kept, lowered, source, fuel, inputs);
+        }
         let held = CACHE
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1269,7 +1320,8 @@ fn run_cached(
             .get(&lowered.function)
             .map(Arc::clone);
         if let Some(emitted) = held {
-            return run_emitted(&emitted, lowered, source, fuel, inputs);
+            let kept = lowered.kept.code.get_or_init(|| emitted);
+            return run_emitted(kept, lowered, source, fuel, inputs);
         }
     }
     run_executor(lowered, source, fuel, inputs)
@@ -1958,6 +2010,113 @@ mod tests
         let program = core.computation_application(applied, nine);
         let expected = core.value_tuple(&[seven, nine]);
         assert_closed(&mut core, program, expected);
+    }
+
+    /// One lowering run three times, over another capture each time and the
+    /// last on another thread, answers each run's own capture: `(λf. a ←
+    /// (force f) 7; b ← (force f) 9; return (a, b)) (thunk { λx. return thunk
+    /// { return x } })` answers two thunks of one body, closed over 7 and 9.
+    /// A run that took a lowering's kept code with an earlier run's captures
+    /// would answer 7 where 9 is due.
+    #[test]
+    fn a_lowering_run_again_answers_as_its_first_run_3924()
+    {
+        let mut core = CoreArena::new();
+        let seven = integer(&mut core, Digits("7"));
+        let nine = integer(&mut core, Digits("9"));
+        let x = variable(&mut core, Outward(0));
+        let body = core.computation_return(x);
+        let thunk = core.value_thunk(body);
+        let returned = core.computation_return(thunk);
+        let function = core.computation_lambda(returned);
+        let held = core.value_thunk(function);
+        let f = variable(&mut core, Outward(0));
+        let forced = core.computation_force(f);
+        let first = core.computation_application(forced, seven);
+        let f = variable(&mut core, Outward(1));
+        let forced = core.computation_force(f);
+        let second = core.computation_application(forced, nine);
+        let a = variable(&mut core, Outward(1));
+        let b = variable(&mut core, Outward(0));
+        let pair = core.value_tuple(&[a, b]);
+        let both = core.computation_return(pair);
+        let inner = core.computation_bind(second, both);
+        let outer = core.computation_bind(first, inner);
+        let using = core.computation_lambda(outer);
+        let program = core.computation_application(using, held);
+        let (arena, root) = focused(&core, program);
+        let definitions = Definitions::new();
+        for &tier in tiers() {
+            let mut store = Store::new();
+            let outcome = evaluate_on(
+                tier,
+                &arena,
+                &definitions,
+                root,
+                budget(),
+                RunInputs::new(&mut store),
+            );
+            let Ok(Outcome::Halted(pair)) = outcome
+            else {
+                panic!("the program answers on {tier:?}: {outcome:?}");
+            };
+            let Some(&HeapValue::Constructed { ref fields, .. }) = store.value(pair)
+            else {
+                panic!("the program answers a pair on {tier:?}");
+            };
+            let [first, second] = fields[..]
+            else {
+                panic!("the pair holds two components on {tier:?}");
+            };
+            let thunk = |field: HeapValueId| {
+                let Some(&HeapValue::Thunk { body, environment }) = store.value(field)
+                else {
+                    panic!("each component is a thunk on {tier:?}");
+                };
+                (body, environment)
+            };
+            let ((body, sevens), (again, nines)) = (thunk(first), thunk(second));
+            assert_eq!(body, again, "both thunks suspend one body");
+            let lowered = lower_suspended(&arena, &definitions, body).expect("the body lowers");
+            let run = |environment: Environment, store: &mut Store| match closed_on_with_host(
+                super::Choice::Tier(tier),
+                &lowered,
+                (&arena, &definitions),
+                environment,
+                (budget(), RunInputs::new(store)),
+                &mut Declining,
+            ) {
+                Ok(HostOutcome::Completed(outcome)) => Ok(outcome),
+                Ok(HostOutcome::Aborted(never)) => match never {},
+                Err(declined) => Err(declined),
+            };
+            let outcome = run(sevens, &mut store);
+            let actual = answer((&arena, &store), &outcome, &mut core);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, actual, seven),
+                "the first run answers seven on {tier:?}"
+            );
+            let outcome = run(nines, &mut store);
+            let actual = answer((&arena, &store), &outcome, &mut core);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, actual, nine),
+                "the run again answers nine on {tier:?}"
+            );
+            let outcome = std::thread::scope(|scope| {
+                scope
+                    .spawn(|| run(sevens, &mut store))
+                    .join()
+                    .expect("the run's thread joins")
+            });
+            let actual = answer((&arena, &store), &outcome, &mut core);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, actual, seven),
+                "the run on another thread answers seven on {tier:?}"
+            );
+        }
     }
 
     /// Two captures bound to one store value are one object counted twice:

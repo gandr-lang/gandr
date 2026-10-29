@@ -213,6 +213,7 @@ pub use crate::lower::lower_unfused;
 pub use crate::native::EmitRefusal;
 pub use crate::run::Choice;
 pub use crate::run::Declined;
+pub use crate::run::Kept;
 pub use crate::run::POLICY_VARIABLE;
 pub use crate::run::Policy;
 pub use crate::run::RunInputs;
