@@ -3423,6 +3423,67 @@ data NatUnits : Type {{
         );
     }
 
+    /// #3706: an expectation written before a signed function whose signature
+    /// another form states settles the refusal the function meets. The
+    /// witness checking the function's written signature against the stated
+    /// one keeps the default when it checks: a model's law component and a
+    /// function signed twice alike.
+    #[test]
+    fn a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706()
+    {
+        let rows = [
+            (
+                r#"def g : +U (Bool -> -F Integer) ; @[ refuses("TypeMismatch") ] def g(x : Bool) -> Integer { "s" }"#,
+                RefusalName::TypeMismatch,
+            ),
+            (
+                r#"theory Idem {
+                  sort T : Type;
+                  oper f : (x : T) --> T;
+                  rule idem : f(f(x)) <=> f(x);
+                }
+                module Bad : Model(Idem) {
+                  type T = Bool;
+                  def f(x : Bool) -> Bool { case x { true => false, false => true } }
+                  @[ refuses("EndpointMismatch") ]
+                  def idem(x : Bool) -> Path(Bool, f(f(x)), f(x)) { here(f(x)) }
+                }"#,
+                RefusalName::EndpointMismatch,
+            ),
+        ];
+        for (source, name) in rows {
+            let report = settled(CorpusRoot::Fixture, SourceText::from(source));
+            let fixtures: Vec<_> = report
+                .declarations()
+                .iter()
+                .filter(|declaration| declaration.membership() == Membership::Fixture)
+                .collect();
+            let [fixture] = *fixtures
+            else {
+                panic!(
+                    "the refused function alone states the expectation, got {:?}",
+                    report.declarations()
+                );
+            };
+            assert!(
+                matches!(fixture.produced().refusal(), Maybe::Present(refusal) if refusal.name() == name),
+                "the fixture is the function refused {name}, got {fixture:?}"
+            );
+            let unsettled: Vec<_> = report
+                .declarations()
+                .iter()
+                .filter(|declaration| declaration.settlement() != Settlement::Settled)
+                .map(DeclarationReport::name)
+                .collect();
+            assert!(
+                unsettled.is_empty(),
+                "the refused function settles under its expectation and the witness that checks \
+                 under the default, got {unsettled:?} unsettled in {:?}",
+                report.declarations()
+            );
+        }
+    }
+
     /// #776: a module settled after its leading declarations' report — a
     /// lowering refusal among them, which consumes no verdict — settles to the
     /// report settling it whole gives, every split alike, running only the
