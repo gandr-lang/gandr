@@ -143,8 +143,11 @@
 //! writes what that typing admits, reading the staged parameter off the body:
 //! it is the parameter the innermost match above a claim scrutinises, written
 //! as a bare name, and the last parameter where no match on a parameter stands
-//! above the claim. Nested matches on that parameter's fields keep it. So
-//! `def rec f(p₁, …, pₖ, y, q₁, …, qₘ) -> C { b }` staging `y` lowers to
+//! above the claim. Nested matches on that parameter's fields keep it. The
+//! reading passes over a match on a parameter whose type decodes a code,
+//! `v : elL(c)`, when a match on another parameter encloses it: a decode
+//! carries no stage, so the claim descends on the code (`Lowerer::decodes`).
+//! So `def rec f(p₁, …, pₖ, y, q₁, …, qₘ) -> C { b }` staging `y` lowers to
 //! `thunk (λp₁ … λpₖ. fix f. λy. λq₁ … λqₘ. b)`, and a call `f[<](p₁, …, pₖ,
 //! a, c₁, …, cₘ)` to `(force f) a c₁ … cₘ`. The staged parameter is always the
 //! fixpoint's first binder, its evidence `StructuralDescent`, and whether `a`
@@ -315,6 +318,13 @@
 //! per arm alternative, and the syntax nodes of the scrutinee and of each
 //! pattern and body, keyed by the tree's root. A live match and a hole report
 //! read that one seam rather than parsing the tree back.
+//!
+//! # References
+//!
+//! - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: the loops and
+//!   termination design (§ the decoder) — the fixpoint stages the code, and a
+//!   decode carries no stage, so a match on a decoded value under another match
+//!   leaves the staged parameter to the outer one (`Lowerer::decodes`).
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -719,6 +729,12 @@ struct Spelled(bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Claimed(pub bool);
+
+/// Whether a parameter's written type is a decode, a declaration defined by a
+/// body: such a parameter carries no stage.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Decoded(pub bool);
 
 /// Whether a type application writes a recursive function's descent where a
 /// type is read, `own[<](…)`.
@@ -12280,6 +12296,87 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// Whether the parameter type written at `ty`, read under `frame` before
+    /// the parameters bind, is a decode: a declaration's application, or the
+    /// declaration bare, whose definition is a body rather than a family. A
+    /// decode carries no stage: one code decodes values of every size,
+    /// so a recursion stages the code, never the value it decodes.
+    ///
+    /// # Specification
+    /// - requires: `site` is the function's declaration form.
+    /// - ensures: `Decoded(true)` exactly when `ty` is a type application or a
+    ///   bare type name whose head resolves ([`Self::resolve_name`]) to a
+    ///   declaration defined as `= e` or as a function tail; `Decoded(false)`
+    ///   for a family, a binder, an unresolved head and every other form.
+    /// - fails: as [`Self::resolve_name`].
+    /// - panics: none.
+    /// - executable: none — the answer is a resolution, which a clause repeats
+    ///   only by spending the lowering's fuel again.
+    ///
+    /// # Errors
+    /// The resolution's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::staged_by_body`].
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680`
+    pub(super) fn decodes(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        ty: NodeIndex,
+    ) -> Result<Decoded, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(ty)
+        else {
+            return Ok(Decoded(false));
+        };
+        if !matches!(shape_of(self.pbg, node)?, Shape::Form {
+            former: Former::TypeApplication | Former::TypeHead,
+            ..
+        }) {
+            return Ok(Decoded(false));
+        }
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, ty, &mut scratch);
+        let head = scratch.pieces.iter().find_map(|piece| match *piece {
+            Piece::Tile { label, at }
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                Some(at)
+            },
+            Piece::Tile { .. } | Piece::Operand(_) => None,
+        });
+        self.scratch = scratch;
+        read?;
+        let Some(head) = head
+        else {
+            return Ok(Decoded(false));
+        };
+        let name = self.name_at(head);
+        // The head is resolved as the type's own node, which the function
+        // declaring the parameter owns.
+        let placed = Placed::of(ty, node);
+        let resolved = self.resolve_name(Site { at: placed, ..site }, frame, name)?;
+        let Maybe::Present(super::Resolved::Declaration { constant, .. }) = resolved
+        else {
+            return Ok(Decoded(false));
+        };
+        Ok(Decoded(
+            self.collected
+                .slots
+                .get(usize::from(constant))
+                .is_some_and(|slot| {
+                    matches!(
+                        slot.definition,
+                        Maybe::Present(Half {
+                            operand: Operand::Written(_) | Operand::Function,
+                            ..
+                        })
+                    )
+                }),
+        ))
+    }
+
     /// The position a recursive function named `own` stages, read off its
     /// body before the body is classified: the parameter the innermost match
     /// above the body's first claim scrutinises, written bare; the first
@@ -12298,6 +12395,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `parameters` are the function's parameter names in order,
+    ///   `decoded` marks each whose type is a decode ([`Self::decodes`]),
     ///   `roots` the syntax the function writes after its parameter list, in
     ///   source order, and `joint` the joint the function is read in.
     /// - ensures: `staged` is the position, in `0 .. parameters.len()`, of the
@@ -12306,8 +12404,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   `own[<](…)` written where a type is read — scrutinises, a scrutinee
     ///   written as a bare name equal to that parameter's, passing over each
     ///   match whose parameter that call writes back bare in its own place — it
-    ///   consumes that one alongside the one it descends on — unless every such
-    ///   match is passed over; the first position when that instantiation
+    ///   consumes that one alongside the one it descends on — and each match
+    ///   inside another whose parameter `decoded` marks — a decode carries no
+    ///   stage, so the claim descends on the code outside it — unless every
+    ///   such match is passed over; the first position when that instantiation
     ///   claims productivity (`>`), so every call may vary every parameter; the
     ///   last position otherwise. `kept` is the longest run of parameters
     ///   before `staged`, from the first, that every call of `own` under
@@ -12336,7 +12436,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   parameter each stage their own position; an accumulator before the
     ///   staged parameter that the calls change is not kept; a productive call
     ///   stages the first parameter; a joint member whose one claim is through
-    ///   a sibling stages the parameter that claim's match takes apart.
+    ///   a sibling stages the parameter that claim's match takes apart; a claim
+    ///   under a match on a parameter typed by a decode, inside a match on the
+    ///   code, stages the code.
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_definition_without_a_case_on_a_parameter_stages_its_last`
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
@@ -12344,17 +12446,19 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
     /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_a_decode_stages_the_code_3680`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged && staging.staged.0 < parameters.len().max(1)))]
     pub(super) fn staged_by_body(
         &mut self,
         own: SurfaceName<'source>,
         joint: &Joint,
         parameters: &[SurfaceName<'source>],
+        decoded: &[Decoded],
         roots: &[NodeIndex],
     ) -> Result<Staging, LoweringRefusal<'source>>
     {
         let mut scratch = core::mem::take(&mut self.scratch);
-        let found = self.first_claim(own, joint, parameters, roots, &mut scratch);
+        let found = self.first_claim(own, joint, (parameters, decoded), roots, &mut scratch);
         let staged = match found {
             Ok(found) => found.unwrap_or_else(|| ParameterAt(parameters.len().saturating_sub(1))),
             Err(refusal) => {
@@ -12505,10 +12609,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
     ///   pieces.
     /// - ensures: `Some` of the scrutinised parameter's position — the
-    ///   innermost match's whose parameter the call does not write back bare,
-    ///   the innermost's when it writes back every one — of the first position
-    ///   when the instantiation's claim is `>`, or of the last position where
-    ///   no match on a parameter stands above the first claim; `None` when no
+    ///   innermost match's whose parameter the call does not write back bare
+    ///   and `decoded` does not mark with a match outside it, the innermost's
+    ///   when it passes over every one — of the first position when the
+    ///   instantiation's claim is `>`, or of the last position where no match
+    ///   on a parameter stands above the first claim; `None` when no
     ///   instantiation of `own` or of a member of `joint`, and no descent of
     ///   `own` written where a type is read, stands under `roots`.
     /// - fails: as [`Self::staged_by_body`].
@@ -12532,7 +12637,7 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         own: SurfaceName<'source>,
         joint: &Joint,
-        parameters: &[SurfaceName<'source>],
+        (parameters, decoded): (&[SurfaceName<'source>], &[Decoded]),
         roots: &[NodeIndex],
         scratch: &mut Pieces,
     ) -> Result<Option<ParameterAt>, LoweringRefusal<'source>>
@@ -12557,7 +12662,8 @@ impl<'source> Lowerer<'_, 'source>
         };
         // The match a claim with `arguments` descends on, from the innermost
         // `link` outward: past each match whose parameter the claim writes
-        // back bare in its own place, none when it writes back every one.
+        // back bare in its own place, and each whose parameter is typed by a
+        // decode with a match outside it, none when it passes over every one.
         let descended = |mut link: Option<usize>,
                          arguments: &[Placed],
                          links: &[(ParameterAt, Option<usize>)]|
@@ -12567,7 +12673,8 @@ impl<'source> Lowerer<'_, 'source>
                     Some(&argument) => named(argument)? == Some(position),
                     None => false,
                 };
-                if !unchanged {
+                let decode = outer.is_some() && decoded.get(position.0).is_some_and(|mark| mark.0);
+                if !unchanged && !decode {
                     break;
                 }
                 link = outer;
