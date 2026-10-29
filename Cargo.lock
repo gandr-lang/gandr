@@ -1303,6 +1303,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "gandr-core-incremental",
+ "gandr-core-publish",
  "gandr-kernel-core",
  "gandr-runtime-net",
  "gandr-storage-store",
@@ -1499,6 +1500,7 @@ dependencies = [
  "gandr-core-fork",
  "gandr-core-incremental",
  "gandr-core-nbe",
+ "gandr-core-publish",
  "gandr-core-sequent",
  "gandr-core-term",
  "gandr-kernel-core",

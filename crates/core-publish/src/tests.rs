@@ -9,10 +9,13 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
+use super::Access;
 use super::Contents;
+use super::Placement;
 use super::Step;
 use super::Unpublished;
 use super::publish;
+use super::publish_as;
 
 /// The file every witness publishes.
 const FILE: &str = "record";
@@ -223,4 +226,73 @@ fn concurrent_publications_leave_one_whole_file()
         contents.contains(&published),
         "and it holds one publication's contents whole"
     );
+}
+
+#[test]
+fn a_kept_file_refuses_a_second_publication()
+{
+    let scratch = Scratch::new(Label("kept"));
+    let file = scratch.path().join(FILE);
+    assert_eq!(
+        publish_as(&file, Contents(b"first"), Placement::Keep, &Access::Default),
+        Ok(()),
+        "a free name takes the kept file"
+    );
+    assert_eq!(scratch.entries(), [FILE], "and its private name goes");
+    assert_eq!(
+        publish_as(
+            &file,
+            Contents(b"second"),
+            Placement::Keep,
+            &Access::Default
+        ),
+        Err(Unpublished {
+            path: file.clone(),
+            step: Step::Link,
+            kind: io::ErrorKind::AlreadyExists,
+        }),
+        "a held name refuses the link"
+    );
+    assert_eq!(
+        std::fs::read(&file).expect("the file reads"),
+        b"first",
+        "the first publication stays"
+    );
+    assert_eq!(scratch.entries(), [FILE], "and the second leaves nothing");
+}
+
+#[cfg(unix)]
+#[test]
+fn each_access_reaches_the_published_file()
+{
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let scratch = Scratch::new(Label("access"));
+    let file = scratch.path().join(FILE);
+    let mode = |path: &Path| {
+        std::fs::metadata(path)
+            .expect("the file is there")
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    assert_eq!(
+        publish_as(&file, Contents(b"key"), Placement::Keep, &Access::Owner),
+        Ok(()),
+        "an owner's file publishes"
+    );
+    assert_eq!(mode(&file), 0o600, "and its owner alone reads it");
+    let given = std::fs::Permissions::from_mode(0o640);
+    assert_eq!(
+        publish_as(
+            &file,
+            Contents(b"source"),
+            Placement::Replace,
+            &Access::Exactly(given)
+        ),
+        Ok(()),
+        "a file given its permissions publishes over it"
+    );
+    assert_eq!(mode(&file), 0o640, "and carries those permissions");
+    assert_eq!(scratch.entries(), [FILE], "with no temporary left");
 }

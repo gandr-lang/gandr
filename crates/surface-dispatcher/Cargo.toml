@@ -28,7 +28,8 @@ path = "tests/lib.rs"
 # normaliser's staging observer programs and checks them through the
 # checker's program entry, on the driver's `rayon` pool. The pool implements
 # the fork crate's trait, so every consumer forks on it through that trait.
-# The reader maps a source above its crossover through memmap2. The `ledger`
+# The reader maps a source above its crossover through memmap2, and rewrites
+# a mapped source through the one writer. The `ledger`
 # verb writes the syntax ledger's machine form through serde_json. A
 # package's manifest
 # carries the BLAKE3 digest of its body, through blake3, so the checker
@@ -52,6 +53,7 @@ gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-incremental.workspace = true
 gandr-core-nbe.workspace = true
+gandr-core-publish.workspace = true
 gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-core.workspace = true
