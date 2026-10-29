@@ -1,6 +1,6 @@
 /// `cost-effect`: decalf's cost effect.
-/// Implemented: the standard library declares `Cost`, decalf's cost effect with its two laws, and its model `Counting`, which counts in binary naturals and proves both laws by conversion. A scope that names a model takes the theory's value operations from it. A closed bound is a path. Conversion decides it, and the kernel replays it.
-/// Not implemented: a recursive definition that charges, one handler over every thunk that charges, fixtures that state the refusal of a bound below a run's count and of a model that breaks a law, and the certificate's cost delta; #3699, #1106, #3715, #3706 and #3702 owe them.
+/// Implemented: the standard library declares `Cost`, decalf's cost effect with its two laws, and its model `Counting`, which counts in binary naturals and proves both laws by conversion. A scope that names a model takes the theory's value operations from it. A closed bound is a path. Conversion decides it, and the kernel replays it. A bound below a run's count is refused `EndpointMismatch`, and `corpus/pathological/effects/cost-bound-too-small.gandr` states it (#3715).
+/// Not implemented: a recursive definition that charges, one handler over every thunk that charges, a fixture that states the refusal of a model that breaks a law, and the certificate's cost delta; #3699, #1106, #3853 and #3702 owe them.
 // Three steps charged one and two, counted under `Counting` and bounded at
 // three, and the same steps under a model that erases every charge, which
 // answer as the program does with no charge.

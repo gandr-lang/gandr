@@ -649,6 +649,9 @@ impl Band
     ) -> Self
     {
         match (rule.0, position) {
+            // A manifest sort's carrier binds no looser than a sum wherever
+            // the sort is fixed, as the printer writes it (#2246, #3715).
+            (_, Position::Carrier) | ("lazy_product_type", _) => Self::Sum,
             (
                 "u_type"
                 | "f_type"
@@ -663,7 +666,6 @@ impl Band
             | ("send_session_type" | "receive_session_type", Position::First) => Self::Atom,
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
-            ("lazy_product_type" | "manifest_sort", _) => Self::Sum,
             ("function_type" | "value_function_type", Position::First) => Self::Lazy,
             _ => Self::Loose,
         }
@@ -969,6 +971,9 @@ enum Position
     First,
     /// After the first.
     Later,
+    /// After a manifest sort's `sort x =`: the carrier a model type, a
+    /// capability scope or a labelled row fixes a sort to (#3715).
+    Carrier,
 }
 
 /// Whether a traversal is entering or leaving a node.
@@ -1556,6 +1561,9 @@ impl<'source> Respelling<'_, 'source>
             owner: Owner::Form(self.form),
         };
         let mut index = Position::First;
+        // The last three of the form's own tiles since its last operand:
+        // `sort x =` before an operand makes it a manifest sort's carrier.
+        let mut tiles: [&str; 3] = [""; 3];
         let mut starts = Vec::with_capacity(parts.len());
         let reducts = self.reducts;
         let writing = |rewrite: RewriteName| {
@@ -1585,6 +1593,10 @@ impl<'source> Respelling<'_, 'source>
                         Applied::Forget(_) => forgotten,
                     }),
                 Role::Operand(_) | Role::Own(_) | Role::Comment => None,
+            };
+            let place = match (part.role, tiles) {
+                (Role::Operand(_), ["sort", _, "="]) => Position::Carrier,
+                (Role::Operand(_) | Role::Own(_) | Role::Comment, _) => index,
             };
             match crossed {
                 Some(Applied::Reduct(name)) => {
@@ -1639,14 +1651,14 @@ impl<'source> Respelling<'_, 'source>
                         Band::Loose
                     }
                     else {
-                        Band::admitted(rule, index)
+                        Band::admitted(rule, place)
                     };
                     out.place(&operand, fits);
                 },
                 Role::Own(_) | Role::Operand(_) | Role::Comment => {
                     let refitted = match part.role {
                         Role::Operand(child) if crossed.is_none() => {
-                            self.refitted(child, Band::admitted(rule, index))
+                            self.refitted(child, Band::admitted(rule, place))
                         },
                         Role::Operand(_) | Role::Own(_) | Role::Comment => None,
                     };
@@ -1682,8 +1694,13 @@ impl<'source> Respelling<'_, 'source>
                 },
                 None => {},
             }
-            if matches!(part.role, Role::Operand(_)) {
-                index = Position::Later;
+            match part.role {
+                Role::Operand(_) => {
+                    index = Position::Later;
+                    tiles = [""; 3];
+                },
+                Role::Own(text) => tiles = [tiles[1], tiles[2], <&str>::from(text)],
+                Role::Comment => {},
             }
         }
         let mut shape = shape;
