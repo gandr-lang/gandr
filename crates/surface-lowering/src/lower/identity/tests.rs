@@ -712,6 +712,142 @@ fn a_lambda_endpoint_is_its_thunk_3767()
     }
 }
 
+/// #3801: an annotation inside a type reads its names in the type's
+/// telescope, as the term it annotates does. A parameter no type names,
+/// `u`, binds nothing there, so the thunk's ascription, its typed
+/// parameter and its typed bind each count `A` past only the binders the
+/// type has, never past `u`.
+#[test]
+fn an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801()
+{
+    let source = "def t(A : Type, x : A, y : A, f : Path(A, x, y), u : A, it : Path(Path(A, x, y), \
+                  f, (thunk { fn (q : Path(A, x, y)) { run c : Path(A, x, y) <- pure q ; c } } : \
+                  Path(A, x, y) => Path(A, x, y))(f))) -> -F Unit { return unit }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "t".into())
+    else {
+        panic!("`t` lowers");
+    };
+    let Some(&ValueType::Thunk(mut at)) = arena.value_type(declared_type)
+    else {
+        panic!("the signature lowers to a thunked function type");
+    };
+    // The last parameter's type, the one whose codomain is the result.
+    let it = loop {
+        let Some(
+            &(gandr_core_term::CompType::Pi { domain, codomain }
+            | gandr_core_term::CompType::Arrow { domain, codomain }),
+        ) = arena.comp_type(at)
+        else {
+            panic!("a parameter: {:?}", arena.comp_type(at));
+        };
+        if matches!(
+            arena.comp_type(codomain),
+            Some(&gandr_core_term::CompType::Returner { .. })
+        ) {
+            break domain;
+        }
+        at = codomain;
+    };
+    // The index of the binder a path type's carrier decodes.
+    let carrier = |ty: gandr_core_term::ValueTypeId| {
+        let &ValueType::Path { carrier, .. } = arena.value_type(ty)?
+        else {
+            return None;
+        };
+        let &ValueType::Element { code, .. } = arena.value_type(carrier)?
+        else {
+            return None;
+        };
+        let &Value::Variable { index, .. } = arena.value(code)?
+        else {
+            return None;
+        };
+        Some(u32::from(index))
+    };
+    let returned = |ty: gandr_core_term::CompTypeId| {
+        let &gandr_core_term::CompType::Returner { result, .. } = arena.comp_type(ty)?
+        else {
+            return None;
+        };
+        Some(result)
+    };
+    let Some(&ValueType::Path { right, .. }) = arena.value_type(it)
+    else {
+        panic!("the parameter's type is the path type written");
+    };
+    let Some(&Value::Returned(applied)) = arena.value(right)
+    else {
+        panic!("the endpoint is the value its application returns");
+    };
+    let Some(&Computation::Application(forced, _)) = arena.computation(applied)
+    else {
+        panic!("the endpoint applies the thunk");
+    };
+    let Some(&Computation::Force(ascribed)) = arena.computation(forced)
+    else {
+        panic!("the application forces the thunk");
+    };
+    let Some(&Value::Ascribe { value, ty }) = arena.value(ascribed)
+    else {
+        panic!("the thunk is ascribed its written type");
+    };
+    let Some(&ValueType::Thunk(arrow)) = arena.value_type(ty)
+    else {
+        panic!("the ascription is a thunked arrow");
+    };
+    let Some(&gandr_core_term::CompType::Arrow { domain, codomain }) = arena.comp_type(arrow)
+    else {
+        panic!("the ascription's arrow binds nothing");
+    };
+    // `A` past `x`, `y` and `f`; `u` binds nothing in the type.
+    assert_eq!(
+        carrier(domain),
+        Some(3),
+        "the ascription's domain reads `A` past `f`"
+    );
+    assert_eq!(
+        returned(codomain).and_then(carrier),
+        Some(3),
+        "the ascription's codomain reads `A` past `f`"
+    );
+    let Some(&Value::Thunk(suspended)) = arena.value(value)
+    else {
+        panic!("the ascribed value is the thunk");
+    };
+    let Some(&Computation::Lambda(under)) = arena.computation(suspended)
+    else {
+        panic!("the thunk suspends the lambda");
+    };
+    let Some(&Computation::Bind(parameter, rest)) = arena.computation(under)
+    else {
+        panic!("the typed parameter is bound over the body");
+    };
+    let Some(&Computation::Ascribe { ty: declared, .. }) = arena.computation(parameter)
+    else {
+        panic!("the argument is ascribed the parameter's written type");
+    };
+    assert_eq!(
+        returned(declared).and_then(carrier),
+        Some(4),
+        "the typed parameter reads `A` past the lambda's own binder"
+    );
+    let Some(&Computation::Bind(bound, _)) = arena.computation(rest)
+    else {
+        panic!("the typed bind is bound over the block's end");
+    };
+    let Some(&Computation::Ascribe { ty: annotated, .. }) = arena.computation(bound)
+    else {
+        panic!("the bound computation is ascribed the annotation");
+    };
+    assert_eq!(
+        returned(annotated).and_then(carrier),
+        Some(5),
+        "the typed bind reads `A` past the lambda's binder and the parameter's bind"
+    );
+}
+
 #[test]
 fn a_type_endpoint_is_quoted()
 {

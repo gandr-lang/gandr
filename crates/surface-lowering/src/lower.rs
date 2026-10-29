@@ -15294,7 +15294,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Some(&classifier),
             ) => {
                 let inserted = origin.inserted(Insertion::Return);
-                self.ascribed_return(returned, classifier, sink, inserted)
+                self.ascribed_return(returned, position, classifier, sink, inserted)
                     .map(|ascribed| sink.computation(ascribed, inserted))
             },
             (_, bridged, _) => bridged,
@@ -16809,19 +16809,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Maybe::Present(sink.computation(id, origin));
                 };
                 sink.origins.record_computation(id, origin);
-                self.ascribed_return(id, classifier, sink, origin)
+                self.ascribed_return(id, value, classifier, sink, origin)
                     .map(|ascribed| sink.computation(ascribed, origin))
             }),
             Plan::Ascribed(value, classifier) => self.value_at(value).and_then(|ascribed| {
                 self.value_type_at(classifier).map(|written| {
                     let frame = self.reading(classifier).frame();
-                    let ty = self.relocate_value_type(
-                        written,
-                        frame,
-                        Telescope::Signature,
-                        sink,
-                        origin,
-                    );
+                    let ty = self.annotation_in_context(value, written, frame, frame, sink, origin);
                     let id = sink.arena.value_ascribe(ascribed, ty);
                     sink.value(id, origin)
                 })
@@ -16978,16 +16972,61 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// `returned`, the return of an annotation's value, ascribed the returner
-    /// of the annotation's type `classifier`.
+    /// `written`, an annotation's type read under `from`, carried under `to`
+    /// into the context the annotated term at `term` reads its names in.
+    ///
+    /// A name inside a type counts in the type's telescope, so an annotation
+    /// whose term lies in a type stays in that telescope. A term in a body
+    /// reads its names in the body's context, which binds every binder, and
+    /// the annotation is carried there (#662).
+    ///
+    /// # Specification
+    /// - requires: `written` is minted under `from`, counting only the frames
+    ///   that bind in the signature's telescope, or in a body quote's when
+    ///   `term` lies in one; `from` is `to` or a frame of `to`'s chain.
+    /// - ensures: when `term` lies in a type, `written` lifted past the frames
+    ///   between `from` and `to` that bind in the type's telescope
+    ///   ([`Self::lift_value_type`]), so `written` itself when `from` is `to`;
+    ///   otherwise `written` carried into the term context of `to`, as
+    ///   [`Self::carry_value_type`] carries it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ascription, a typed bind and a typed parameter
+    ///   inside a type, under a parameter the type does not name, each keep
+    ///   their annotation's indices; one in a body is carried past that
+    ///   parameter.
+    /// - witness: `lower::identity::tests::an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801`
+    /// - witness: `lower::native::tests::an_annotated_return_is_ascribed_its_returner_1107`
+    #[spec(ensures: |ret| !self.in_type.contains(&term) || from != to || ret == written)]
+    fn annotation_in_context(
+        &self,
+        term: NodeIndex,
+        written: ValueTypeId,
+        from: Frame,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        if self.in_type.contains(&term) {
+            let telescope = self.telescope_at(term);
+            return self.lift_value_type(written, from, telescope, to, sink, origin);
+        }
+        self.carry_value_type(written, from, Telescope::Signature, to, sink, origin)
+    }
+
+    /// `returned`, the return of the annotated value at `term`, ascribed the
+    /// returner of the annotation's type `classifier`.
     ///
     /// # Specification
     /// - requires: `classifier` was read as a value type under the frame the
     ///   return stands in, and is minted.
-    /// - ensures: `(returned : -F T)`, `T` carried from the signature's
-    ///   telescope into the term context of that frame, as a typed bind's
-    ///   annotation is, and its returner minted at `origin`; the ascription
-    ///   itself is left for the caller to record.
+    /// - ensures: `(returned : -F T)`, `T` carried into the context `term`
+    ///   reads its names in, as a typed bind's annotation is
+    ///   ([`Self::annotation_in_context`]), and its returner minted at
+    ///   `origin`; the ascription itself is left for the caller to record.
     /// - fails: the type's absence where it was not minted.
     /// - panics: none.
     ///
@@ -17003,6 +17042,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn ascribed_return(
         &self,
         returned: ComputationId,
+        term: NodeIndex,
         classifier: NodeIndex,
         sink: &mut Sink<'_>,
         origin: Origin,
@@ -17010,8 +17050,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         self.value_type_at(classifier).map(|written| {
             let frame = self.reading(classifier).frame();
-            let result =
-                self.relocate_value_type(written, frame, Telescope::Signature, sink, origin);
+            let result = self.annotation_in_context(term, written, frame, frame, sink, origin);
             let returner = sink.arena.comp_type_returner(result);
             sink.origins.record_comp_type(returner, origin);
             sink.arena.computation_ascribe(returned, returner)
@@ -17060,14 +17099,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         self.value_type_at(declared).map(|written| {
             let inserted = origin.inserted(Insertion::Parameter);
-            let declared = self.carry_value_type(
-                written,
-                read,
-                Telescope::Signature,
-                parameter,
-                sink,
-                inserted,
-            );
+            let declared =
+                self.annotation_in_context(binder, written, read, parameter, sink, inserted);
             let returner = sink.arena.comp_type_returner(declared);
             sink.origins.record_comp_type(returner, inserted);
             let passed = sink
@@ -17311,12 +17344,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     };
                     // The annotation was read as a type, in the signature's
                     // telescope; the computation it ascribes stands in the
-                    // body, whose context binds every binder (#662).
+                    // body, whose context binds every binder (#662), or in a
+                    // type, whose telescope it shares.
                     let frame = self.reading(annotation).frame();
-                    let result = self.relocate_value_type(
+                    let result = self.annotation_in_context(
+                        statement.bound,
                         written,
                         frame,
-                        Telescope::Signature,
+                        frame,
                         sink,
                         origin,
                     );
