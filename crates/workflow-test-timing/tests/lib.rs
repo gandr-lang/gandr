@@ -3,3 +3,5 @@
 
 #[cfg(test)]
 mod cli;
+#[cfg(test)]
+mod profiles;
