@@ -1,0 +1,104 @@
+/// A transport along a held call.
+///
+/// A composite whose second path is a stuck call is one composite. The call
+/// may stand alone or behind an identity, and the kernel agrees.
+///
+/// The append runs a held operand and writes a bind over its call. A
+/// transport along the held path is a bind over the same call. So the two
+/// compare by the call, then by the transports under one variable.
+///
+/// - see: #3800 — the checker declined two composites that differ only by a call of an identity
+
+/// The identity on paths from `x` to `y`.
+def idq(B : Type, x : B, y : B, p : Path(B, x, y)) -> Path(B, x, y) {
+  p
+}
+
+/// A variable function's path, by name.
+def call(A : Type, B : Type, x : B, y : B, f : A => Path(B, x, y), a : A) -> Path(B, x, y) {
+  f(a)
+}
+
+/// `p`, then the path a variable function returns.
+def thenCall(
+  A : Type,
+  B : Type,
+  w : B,
+  x : B,
+  y : B,
+  p : Path(B, w, x),
+  f : A => Path(B, x, y),
+  a : A
+) -> Path(B, w, y) {
+  p then f(a)
+}
+
+/// `p`, then the same path through `idq`.
+def thenCallIdq(
+  A : Type,
+  B : Type,
+  w : B,
+  x : B,
+  y : B,
+  p : Path(B, w, x),
+  f : A => Path(B, x, y),
+  a : A
+) -> Path(B, w, y) {
+  p then idq(B, x, y, f(a))
+}
+
+/// Two composites along a variable function's path.
+def thenAlongACall(
+  A : Type,
+  B : Type,
+  w : B,
+  x : B,
+  y : B,
+  p : Path(B, w, x),
+  f : A => Path(B, x, y),
+  a : A
+) -> Path(Path(B, w, y), thenCall(A, B, w, x, y, p, f, a), thenCallIdq(A, B, w, x, y, p, f, a)) {
+  here(thenCall(A, B, w, x, y, p, f, a))
+}
+
+/// `p`, then the variable function's path by name.
+def thenNamed(
+  A : Type,
+  B : Type,
+  w : B,
+  x : B,
+  y : B,
+  p : Path(B, w, x),
+  f : A => Path(B, x, y),
+  a : A
+) -> Path(B, w, y) {
+  p then call(A, B, x, y, f, a)
+}
+
+/// `p`, then the same path by name through `idq`.
+def thenNamedIdq(
+  A : Type,
+  B : Type,
+  w : B,
+  x : B,
+  y : B,
+  p : Path(B, w, x),
+  f : A => Path(B, x, y),
+  a : A
+) -> Path(B, w, y) {
+  p then idq(B, x, y, call(A, B, x, y, f, a))
+}
+
+/// Two composites along a named call.
+def thenAlongANamedCall(
+  A : Type,
+  B : Type,
+  w : B,
+  x : B,
+  y : B,
+  p : Path(B, w, x),
+  f : A => Path(B, x, y),
+  a : A
+) -> Path(Path(B, w, y), thenNamed(A, B, w, x, y, p, f, a), thenNamedIdq(A, B, w, x, y, p, f, a)) {
+  here(thenNamed(A, B, w, x, y, p, f, a))
+}
