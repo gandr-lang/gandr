@@ -1195,16 +1195,16 @@ impl fmt::Display for Logged
 /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
 /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
 #[derive(Debug)]
-pub struct Admissions<'pool>
+pub struct Admissions
 {
     /// The running judgements, one generation per document.
-    judgements: Generations<'pool, DocumentUri, Submission, Rechecked>,
+    judgements: Generations<DocumentUri, Submission, Rechecked>,
     /// The version each running judgement judges.
     judging: BTreeMap<DocumentUri, DocumentVersion>,
     /// Progress ends to write once no judgement they wait for runs.
     ending: Vec<(BTreeSet<DocumentUri>, Vec<Outgoing>)>,
     /// The running admissions, one generation per document.
-    generations: Generations<'pool, DocumentUri, Submission, Finished>,
+    generations: Generations<DocumentUri, Submission, Finished>,
     /// The line of each document's synchronisation whose admission runs.
     waiting: BTreeMap<DocumentUri, Logged>,
     /// How many judgements and admissions were submitted; the next is
@@ -1219,7 +1219,7 @@ pub struct Admissions<'pool>
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Submission(u64);
 
-impl<'pool> Admissions<'pool>
+impl Admissions
 {
     /// No judgement and no admission, on `pool`, each that ended waking its
     /// connection's loop through `waking`.
@@ -1229,13 +1229,13 @@ impl<'pool> Admissions<'pool>
     #[inline]
     #[must_use]
     pub fn new(
-        pool: &'pool Pool,
+        pool: Arc<Pool>,
         waking: Changes,
     ) -> Self
     {
         let judged = waking.clone();
         Self {
-            judgements: Generations::waking(pool, Arc::new(move || judged.admitted())),
+            judgements: Generations::waking(Arc::clone(&pool), Arc::new(move || judged.admitted())),
             judging: BTreeMap::new(),
             ending: Vec::new(),
             generations: Generations::waking(pool, Arc::new(move || waking.admitted())),
@@ -1621,7 +1621,9 @@ impl Workspace
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn pool(&self) -> &Arc<Pool>
+    #[inline]
+    #[must_use]
+    pub fn pool(&self) -> &Arc<Pool>
     {
         &self.pool
     }
@@ -3440,7 +3442,7 @@ impl Server
     fn sweep_next(
         &mut self,
         workspace: &Workspace,
-        admissions: &mut Admissions<'_>,
+        admissions: &mut Admissions,
     )
     {
         if self.sweep.waiting().is_empty()
@@ -3641,7 +3643,7 @@ impl Server
     pub fn admit(
         &mut self,
         workspace: &mut Workspace,
-        admissions: &mut Admissions<'_>,
+        admissions: &mut Admissions,
     ) -> Vec<Logged>
     {
         let due: Vec<DocumentUri> = workspace
@@ -3780,7 +3782,7 @@ impl Server
     pub fn admitted(
         &mut self,
         workspace: &mut Workspace,
-        admissions: &mut Admissions<'_>,
+        admissions: &mut Admissions,
         awaiting: Awaiting,
     ) -> Settled
     {
@@ -9001,9 +9003,8 @@ where
     Output: Write,
     Log: Write,
 {
-    let pool = Arc::clone(workspace.pool());
     let inbox = Inbox::default();
-    let mut drive = Drive::new(workspace, &pool, inbox.changes(), SessionTrace::asked());
+    let mut drive = Drive::new(workspace, inbox.changes(), SessionTrace::asked());
     paced(input, inbox, |met, deadlines| {
         drive.met(met, deadlines, (&mut *output, &mut *log))
     })
@@ -9021,37 +9022,37 @@ where
 /// - hypothesis: L2 — every served session and every replay drives one.
 /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `tests::replay::a_recorded_scene_replays_against_a_fresh_server`
-pub struct Drive<'pool>
+pub struct Drive
 {
     /// The connection.
     server: Server,
     /// The workspace it serves.
     workspace: Workspace,
     /// The judgements and admissions it started.
-    admissions: Admissions<'pool>,
+    admissions: Admissions,
     /// The trace its client asked for.
     trace: SessionTrace,
 }
 
-impl<'pool> Drive<'pool>
+impl Drive
 {
     /// A connection waiting for `initialize` over `workspace`, whose
-    /// judgements and admissions run on `pool`, each that ends waking its loop
-    /// through `waking`, and which writes `trace`.
+    /// judgements and admissions run on the workspace's pool, each that ends
+    /// waking its loop through `waking`, and which writes `trace`.
     ///
     /// # Specification
     /// trivial.
     pub fn new(
         workspace: Workspace,
-        pool: &'pool Pool,
         waking: Changes,
         trace: SessionTrace,
     ) -> Self
     {
+        let admissions = Admissions::new(Arc::clone(workspace.pool()), waking);
         Self {
             server: Server::default(),
             workspace,
-            admissions: Admissions::new(pool, waking),
+            admissions,
             trace,
         }
     }
@@ -9259,6 +9260,7 @@ where
 #[cfg(test)]
 mod tests
 {
+    use alloc::sync::Arc;
     use std::path::Path;
     use std::sync::mpsc::channel;
 
@@ -9304,10 +9306,6 @@ mod tests
     use crate::server::Logged;
     use crate::transport::Body;
 
-    /// The pool the tests' connections admit on: one thread, so each admission
-    /// runs where it is submitted.
-    static SERIAL: Pool = Pool::new(Width::SERIAL);
-
     /// One connection over a workspace of its own, as [`super::serve`] runs
     /// one.
     struct Connected
@@ -9316,8 +9314,9 @@ mod tests
         server: Server,
         /// Its workspace.
         workspace: Workspace,
-        /// Its admissions, on [`SERIAL`].
-        admissions: Admissions<'static>,
+        /// Its admissions, on its workspace's pool: one thread, so each
+        /// admission runs where it is submitted.
+        admissions: Admissions,
     }
 
     impl Default for Connected
@@ -9328,10 +9327,13 @@ mod tests
         /// trivial.
         fn default() -> Self
         {
+            let workspace = Workspace::default();
+            let admissions =
+                Admissions::new(Arc::clone(workspace.pool()), Inbox::default().changes());
             Self {
                 server: Server::default(),
-                workspace: Workspace::default(),
-                admissions: Admissions::new(&SERIAL, Inbox::default().changes()),
+                workspace,
+                admissions,
             }
         }
     }
@@ -15829,13 +15831,13 @@ mod tests
     /// # Specification
     /// trivial.
     fn gated(
-        pool: &Pool
+        pool: &Arc<Pool>
     ) -> (
-        Generations<'_, Gated, Gated, ()>,
+        Generations<Gated, Gated, ()>,
         Vec<std::sync::mpsc::Sender<()>>,
     )
     {
-        let mut blocking: Generations<'_, Gated, Gated, ()> = Generations::new(pool);
+        let mut blocking: Generations<Gated, Gated, ()> = Generations::new(Arc::clone(pool));
         let (started, began) = std::sync::mpsc::channel();
         let mut gates = Vec::new();
         for thread in 0_u8 .. 2_u8 {
@@ -15853,7 +15855,7 @@ mod tests
     /// # Specification
     /// trivial.
     fn blocked(
-        blocking: &mut Generations<'_, Gated, Gated, ()>,
+        blocking: &mut Generations<Gated, Gated, ()>,
         slot: Gated,
         started: &std::sync::mpsc::Sender<()>,
     ) -> std::sync::mpsc::Sender<()>
@@ -15875,16 +15877,16 @@ mod tests
     #[test]
     fn a_change_during_an_admission_retires_it_1547()
     {
-        let pool = Pool::new(Width::Threads(Threads::from(
+        let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
             core::num::NonZeroUsize::MIN.saturating_add(1),
-        )));
+        ))));
         let (mut blocking, mut gates) = gated(&pool);
         let Connected {
             mut server,
             mut workspace,
             ..
         } = initialized();
-        let mut admissions = Admissions::new(&pool, Inbox::default().changes());
+        let mut admissions = Admissions::new(Arc::clone(&pool), Inbox::default().changes());
         let _opened = server.handle(
             &mut workspace,
             &Body::from(
@@ -15984,16 +15986,16 @@ mod tests
                 .into_bytes(),
             )
         };
-        let pool = Pool::new(Width::Threads(Threads::from(
+        let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
             core::num::NonZeroUsize::MIN.saturating_add(1),
-        )));
+        ))));
         let (mut blocking, gates) = gated(&pool);
         let Connected {
             mut server,
             mut workspace,
             ..
         } = initialized();
-        let mut admissions = Admissions::new(&pool, Inbox::default().changes());
+        let mut admissions = Admissions::new(Arc::clone(&pool), Inbox::default().changes());
         let _opened = server.handle(&mut workspace, &Body::from(opened.as_bytes().to_vec()));
         let _judging = server.admit(&mut workspace, &mut admissions);
         assert_eq!(
@@ -16386,7 +16388,7 @@ mod tests
     {
         /// What the connection makes of `body` over `workspace`: the message's
         /// own messages, then those of settling the judgements and admissions
-        /// it started, each run to its end on [`SERIAL`].
+        /// it started, each run to its end on the workspace's serial pool.
         ///
         /// # Specification
         /// trivial.
@@ -16397,7 +16399,8 @@ mod tests
         ) -> Outcome
         {
             let mut outcome = self.server.handle(workspace, body);
-            let mut admissions = Admissions::new(&SERIAL, Inbox::default().changes());
+            let mut admissions =
+                Admissions::new(Arc::clone(workspace.pool()), Inbox::default().changes());
             let _logged = self.server.admit(workspace, &mut admissions);
             outcome.messages.extend(
                 self.server
@@ -16606,7 +16609,8 @@ mod tests
         let (mut workspace, [mut first, mut second]) = two_connections();
         let judged = |connection: &mut Connection, workspace: &mut Workspace, body: &Body| {
             let _said = connection.server.handle(workspace, body);
-            let mut admissions = Admissions::new(&SERIAL, Inbox::default().changes());
+            let mut admissions =
+                Admissions::new(Arc::clone(workspace.pool()), Inbox::default().changes());
             let mut log = connection.server.admit(workspace, &mut admissions);
             log.extend(
                 connection

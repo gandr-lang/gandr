@@ -6,20 +6,14 @@ use std::path::PathBuf;
 
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::Parted;
-use gandr_surface_lsp::Pool;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Spelling;
-use gandr_surface_lsp::Width;
 use gandr_surface_lsp::Workspace;
 use gandr_surface_lsp::replay;
 use gandr_surface_lsp::serve;
 use gandr_surface_lsp::write_frame;
 use serde_json::Value;
 use serde_json::json;
-
-/// The pool a replay runs on: one thread, so each judgement and admission
-/// runs where it is submitted.
-static SERIAL: Pool = Pool::new(Width::SERIAL);
 
 /// The scene `fixing_a_mismatch_clears_its_diagnostic` types, recorded through
 /// `gandr lsp --standalone` with a trace asked for: a document opened, a
@@ -62,8 +56,7 @@ impl Drop for Scratch
 #[test]
 fn a_recorded_scene_replays_against_a_fresh_server()
 {
-    let replayed =
-        replay(SCENE.as_bytes(), &SERIAL).unwrap_or_else(|divergence| panic!("{divergence}"));
+    let replayed = replay(SCENE.as_bytes()).unwrap_or_else(|divergence| panic!("{divergence}"));
     assert_eq!(
         usize::from(replayed),
         SCENE.lines().count(),
@@ -91,7 +84,7 @@ fn a_replay_parting_from_its_trace_names_the_line()
         })
         .flat_map(|line| [line, String::from("\n")])
         .collect();
-    let divergence = replay(altered.as_bytes(), &SERIAL).expect_err("the altered answer parts");
+    let divergence = replay(altered.as_bytes()).expect_err("the altered answer parts");
     assert_eq!(
         usize::from(divergence.line),
         hover + 1,
@@ -123,7 +116,7 @@ fn a_replay_parting_from_its_trace_names_the_line()
         .flat_map(|line| [line, "\n"])
         .collect();
     let divergence =
-        replay(truncated.as_bytes(), &SERIAL).expect_err("an answer missing from the trace parts");
+        replay(truncated.as_bytes()).expect_err("an answer missing from the trace parts");
     assert!(
         matches!(divergence.parted, Parted::Unrecorded(_)),
         "the replay wrote what the trace lacks: {divergence}"
@@ -182,8 +175,7 @@ fn a_session_asking_for_a_trace_writes_one_its_replay_holds()
         Some(&json!("initialize")),
         "the trace starts at the initialize asking for it"
     );
-    let replayed =
-        replay(trace.as_bytes(), &SERIAL).unwrap_or_else(|divergence| panic!("{divergence}"));
+    let replayed = replay(trace.as_bytes()).unwrap_or_else(|divergence| panic!("{divergence}"));
     assert_eq!(
         usize::from(replayed),
         trace.lines().count(),

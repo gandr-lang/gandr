@@ -281,10 +281,10 @@ struct Current<Key>
 /// - witness: `generation::tests::a_retired_result_is_dropped_though_its_job_finished`
 /// - witness: `generation::tests::a_serial_pool_runs_each_job_on_the_caller`
 #[derive(Debug)]
-pub struct Generations<'pool, Slot, Key, Output>
+pub struct Generations<Slot, Key, Output>
 {
     /// The threads the jobs run on.
-    pool: &'pool Pool,
+    pool: Arc<Pool>,
     /// Each slot's current generation.
     current: BTreeMap<Slot, Current<Key>>,
     /// The next submission's generation.
@@ -320,7 +320,7 @@ impl fmt::Debug for Wake
     }
 }
 
-impl<'pool, Slot, Key, Output> Generations<'pool, Slot, Key, Output>
+impl<Slot, Key, Output> Generations<Slot, Key, Output>
 where
     Slot: Ord + Clone + Send + 'static,
     Key: Eq + Clone,
@@ -332,7 +332,7 @@ where
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn new(pool: &'pool Pool) -> Self
+    pub fn new(pool: Arc<Pool>) -> Self
     {
         let (sender, receiver) = mpsc::channel();
         Self {
@@ -364,7 +364,7 @@ where
     #[must_use]
     #[spec(ensures: |ret| ret.current.is_empty() && ret.running == 0 && ret.wake.0.is_some())]
     pub fn waking(
-        pool: &'pool Pool,
+        pool: Arc<Pool>,
         wake: Arc<dyn Fn() + Send + Sync>,
     ) -> Self
     {
@@ -610,11 +610,11 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn four() -> Pool
+    fn four() -> Arc<Pool>
     {
-        Pool::new(Width::Threads(Threads::from(
+        Arc::new(Pool::new(Width::Threads(Threads::from(
             NonZeroUsize::new(4_usize).unwrap(),
-        )))
+        ))))
     }
 
     /// The delivery `answer` holds, if any.
@@ -633,7 +633,7 @@ mod tests
     fn a_conflicting_submission_retires_the_older_generation()
     {
         let pool = four();
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         let (started, began) = mpsc::channel();
         let (stopped, ended) = mpsc::channel();
         let first = generations.submit("a", 1, move |watch| {
@@ -675,7 +675,7 @@ mod tests
     fn a_retired_result_is_dropped_though_its_job_finished()
     {
         let pool = four();
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         let (open, gate) = mpsc::channel::<()>();
         generations.submit("a", 1, move |_| {
             gate.recv().unwrap();
@@ -705,7 +705,7 @@ mod tests
     fn a_submission_under_the_current_key_is_held()
     {
         let pool = four();
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         let runs = Arc::new(AtomicUsize::new(0));
         let job = |runs: &Arc<AtomicUsize>| {
             let runs = Arc::clone(runs);
@@ -734,8 +734,8 @@ mod tests
     #[test]
     fn a_serial_pool_runs_each_job_on_the_caller()
     {
-        let pool = Pool::new(Width::SERIAL);
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let pool = Arc::new(Pool::new(Width::SERIAL));
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         let caller = std::thread::current().id();
         generations.submit("a", 1, move |_| {
             assert_eq!(std::thread::current().id(), caller);
@@ -765,7 +765,7 @@ mod tests
     fn a_panicking_job_resumes_at_its_delivery()
     {
         let pool = four();
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         generations.submit("a", 1, |_| panic!("the job's own panic"));
         let answer = generations.wait();
         panic!("delivery answered {answer:?} past the job's panic");
@@ -778,8 +778,8 @@ mod tests
     {
         let pool = four();
         let (woke, woken) = mpsc::channel();
-        let mut generations: Generations<'_, u32, u32, u32> = Generations::waking(
-            &pool,
+        let mut generations: Generations<u32, u32, u32> = Generations::waking(
+            pool,
             Arc::new(move || {
                 let _sent = woke.send(());
             }),
@@ -805,7 +805,7 @@ mod tests
     fn a_retired_slot_delivers_nothing()
     {
         let pool = four();
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         let (started, began) = mpsc::channel();
         let _first = generations.submit("a", 1, move |watch| {
             started.send(()).unwrap();
@@ -834,7 +834,7 @@ mod tests
     fn a_watch_reads_its_generation_s_retirement()
     {
         let pool = four();
-        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let mut generations: Generations<&'static str, u32, u32> = Generations::new(pool);
         let (open, gate) = mpsc::channel::<()>();
         let (polled, polls) = mpsc::channel();
         generations.submit("a", 1, move |watch| {

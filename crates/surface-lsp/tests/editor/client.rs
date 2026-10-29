@@ -22,12 +22,10 @@ use gandr_surface_lsp::Awaiting;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::Peer;
-use gandr_surface_lsp::Pool;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Server;
 use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::TransportFault;
-use gandr_surface_lsp::Width;
 use gandr_surface_lsp::Workspace;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::serve;
@@ -138,18 +136,14 @@ struct Outbox
 /// everything the message before it owed.
 const SYNC: &str = "sync";
 
-/// The pool joined connections admit on: one thread, so each admission runs
-/// where it is submitted.
-static SERIAL: Pool = Pool::new(Width::SERIAL);
-
 /// A connection driven in process over a workspace other connections may
 /// join, as the hub's are.
 struct Joined
 {
     /// The connection.
     server: Server,
-    /// Its admissions, on [`SERIAL`].
-    admissions: Admissions<'static>,
+    /// Its admissions, on the shared workspace's pool.
+    admissions: Admissions,
     /// Its workspace, shared with every connection beside it.
     shared: Rc<RefCell<Shared>>,
     /// Whether the exchange is kept.
@@ -264,15 +258,18 @@ impl Client
         quiet: Quiet,
     ) -> Self
     {
-        let peer = {
+        let (peer, pool) = {
             let mut joined = shared.borrow_mut();
             joined.joined = joined.joined.saturating_add(1);
-            Peer::from(joined.joined)
+            (
+                Peer::from(joined.joined),
+                Arc::clone(joined.workspace.pool()),
+            )
         };
         Self {
             connection: Connection::Joined(Box::new(Joined {
                 server: Server::new(peer),
-                admissions: Admissions::new(&SERIAL, gandr_surface_lsp::Inbox::default().changes()),
+                admissions: Admissions::new(pool, gandr_surface_lsp::Inbox::default().changes()),
                 shared,
                 record,
                 sent: Vec::new(),

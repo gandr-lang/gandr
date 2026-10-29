@@ -563,6 +563,7 @@ fn failure(
 mod tests
 {
     use alloc::string::String;
+    use alloc::sync::Arc;
     use alloc::vec::Vec;
 
     use gandr_surface_lsp::Admissions;
@@ -570,9 +571,7 @@ mod tests
     use gandr_surface_lsp::Body;
     use gandr_surface_lsp::Inbox;
     use gandr_surface_lsp::Peer;
-    use gandr_surface_lsp::Pool;
     use gandr_surface_lsp::Server;
-    use gandr_surface_lsp::Width;
     use gandr_surface_lsp::Workspace;
     use serde_json::Value;
     use serde_json::json;
@@ -611,8 +610,8 @@ mod tests
     {
         let body = Body::from(message.to_string().into_bytes());
         drop(server.handle(workspace, &body));
-        let pool = Pool::new(Width::SERIAL);
-        let mut admissions = Admissions::new(&pool, Inbox::default().changes());
+        let mut admissions =
+            Admissions::new(Arc::clone(workspace.pool()), Inbox::default().changes());
         drop(server.admit(workspace, &mut admissions));
         drop(server.admitted(workspace, &mut admissions, Awaiting::All));
     }
