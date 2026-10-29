@@ -532,7 +532,7 @@ impl<'run, 'host> Calls<'run, 'host>
     ///   what forcing each in place answers, and a record a migration answers
     ///   comes back; a word missing or zero leaves a capture slot or the answer
     ///   addressing nothing.
-    /// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+    /// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
     /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
     #[inline]
     pub fn laid_out(
@@ -1976,7 +1976,7 @@ impl Laying<'_>
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
     /// - witness: `tests::seam::a_host_reply_sharing_a_field_counts_each_holder_3170`
-    /// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
+    /// - witness: `run::tests::a_shared_capture_is_laid_out_once_and_counted_twice`
     /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
     /// - witness: `tests::world::a_thunk_a_migration_returns_runs_at_the_caller_3265`
     /// - witness: `tests::cut::a_recursive_writer_capturing_its_own_fixpoint_answers_2954`

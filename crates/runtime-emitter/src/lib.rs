@@ -208,7 +208,6 @@ pub use crate::lower::OwnerRun;
 pub use crate::lower::Window;
 pub use crate::lower::lower;
 pub use crate::lower::lower_open;
-pub use crate::lower::lower_suspended;
 pub use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
 pub use crate::native::EmitRefusal;
@@ -218,7 +217,6 @@ pub use crate::run::Policy;
 pub use crate::run::RunInputs;
 pub use crate::run::Tier;
 pub use crate::run::evaluate;
-pub use crate::run::evaluate_closed_on;
 pub use crate::run::evaluate_on;
 pub use crate::run::evaluate_on_with_host;
 pub use crate::run::evaluate_open;

@@ -3485,8 +3485,8 @@ impl Lowering<'_>
     ///   store and answer what forcing each in place answers. L3 — an
     ///   environment binding one value too few or too many declines; a capture
     ///   slot left out shifts which environment the run takes.
-    /// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
-    /// - witness: `tests::closed::an_environment_other_than_the_captures_declines`
+    /// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
+    /// - witness: `run::tests::an_environment_other_than_the_captures_declines`
     fn suspended(
         &mut self,
         body: CommandId,
@@ -4807,8 +4807,8 @@ pub fn lower(
 ///   one shared by two fields, run from the store on both tiers and answer what
 ///   forcing each in place answers; a capture slot swapped, dropped or left
 ///   uncounted changes an answer or frees a value still read.
-/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
-/// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
+/// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_shared_capture_is_laid_out_once_and_counted_twice`
 #[inline]
 pub fn lower_suspended(
     arena: &CommandArena,

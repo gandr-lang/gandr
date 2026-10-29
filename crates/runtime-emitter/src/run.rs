@@ -125,7 +125,6 @@ use crate::lower::Form;
 use crate::lower::Lowered;
 use crate::lower::lower;
 use crate::lower::lower_open;
-use crate::lower::lower_suspended;
 use crate::lower::lower_unfused;
 #[cfg(gandr_patcher)]
 use crate::native::EmitRefusal;
@@ -495,8 +494,8 @@ impl Ran
 /// The store its outcome moves into, the store's values it is closed over,
 /// the host its unclaimed operations are offered to, and whether it records
 /// its channels. A caller builds one over its store with [`RunInputs::new`],
-/// recording with [`RunInputs::traced`]. [`evaluate_closed_on`] closes it
-/// over its environment's values, and [`evaluate_with_host`] and
+/// recording with [`RunInputs::traced`]. A cut's writer's run closes it over
+/// its environment's values, and [`evaluate_with_host`] and
 /// [`evaluate_on_with_host`] hand it their host.
 ///
 /// # Specification
@@ -742,65 +741,42 @@ pub fn evaluate_unfused_on(
     on_tier(tier, &lowered, (arena, definitions), fuel, inputs)?.hostless()
 }
 
-/// Run `body`, a command binding one covariable, on `tier` over the values
-/// `environment` binds in `inputs`' store, and move its outcome into that
-/// store.
+/// Run `lowered` on `tier` over the values `environment` binds in `inputs`'
+/// store, and move its outcome into that store. An operation no handler of
+/// the run claims is offered to `host`.
 ///
-/// A cut's writer runs so, closed over a store's values apart from its
-/// reader's heap.
+/// `lowered` is the function [`lower_suspended`] or a schedule lowers from a
+/// command binding one covariable. A cut's writer runs so, closed over a
+/// store's values apart from its reader's heap, with a host that answers its
+/// own spawns and reads.
 ///
 /// # Specification
-/// - requires: `environment` binds the producer bindings `body`'s support
-///   selects, innermost first, as a transfer binds a thunk suspending `body`;
-///   every constant `body` reaches is defined in `definitions`.
-/// - ensures: as [`evaluate_on`] for `body` with its covariable delivering to
-///   `★`, each bound value first laid out on the run's heap as a host's reply
-///   is.
-/// - executable: none — as [`evaluate_on`].
+/// - requires: `environment` binds the producer bindings the body's support
+///   selects, innermost first, as a transfer binds a thunk suspending the body;
+///   every constant the body reaches is defined in `source`'s definitions.
+/// - ensures: as [`evaluate_on_with_host`] for the body with its covariable
+///   delivering to `★`, each bound value first laid out on the run's heap as a
+///   host's reply is.
+/// - executable: none — as [`evaluate_on_with_host`].
 ///
 /// # Errors
-/// As [`evaluate_on`]; [`Declined::Environment`] for an environment binding
-/// other than `body`'s captures, and [`Declined::Capture`] naming a bound
-/// value the run cannot hold.
+/// As [`evaluate_on_with_host`]; [`Declined::Environment`] for an environment
+/// binding other than `lowered`'s captures, and [`Declined::Capture`] naming a
+/// bound value the run cannot hold.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — thunks a run answered with, over no capture, one, two and
 ///   one shared by two fields, run from the store on both tiers and answer what
 ///   forcing each in place answers; a capture slot swapped, dropped or left
-///   uncounted changes an answer. L3 — an environment binding one value too few
+///   uncounted changes an answer. A cut's writer, run apart, answers what its
+///   sequential schedule answers. L3 — an environment binding one value too few
 ///   or too many declines, and a captured function declines naming it.
-/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
-/// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
-/// - witness: `tests::closed::an_environment_other_than_the_captures_declines`
-#[inline]
-pub fn evaluate_closed_on(
-    tier: Tier,
-    (arena, definitions): (&CommandArena, &Definitions),
-    (body, environment): (CommandId, Environment),
-    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
-) -> Result<Outcome, Declined>
-{
-    let (lowered, captured) = closed(arena, definitions, (body, environment), inputs.store)?;
-    on_tier(
-        tier,
-        &lowered,
-        (arena, definitions),
-        fuel,
-        inputs.closed_over(&captured),
-    )?
-    .hostless()
-}
-
-/// As [`evaluate_closed_on`], over `lowered`, the function [`lower_suspended`]
-/// or a schedule lowered from its body, an operation no handler of the run
-/// claims offered to `host`: a writer's run, which answers its own spawns and
-/// reads.
+/// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_shared_capture_is_laid_out_once_and_counted_twice`
+/// - witness: `run::tests::an_environment_other_than_the_captures_declines`
+/// - witness: `tests::cut::a_read_answers_what_its_writer_halts_with`
 ///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// As [`evaluate_closed_on`] and [`evaluate_on_with_host`].
+/// [`lower_suspended`]: crate::lower::lower_suspended
 pub fn closed_on_with_host<Host>(
     tier: Tier,
     lowered: &Lowered,
@@ -823,30 +799,6 @@ where
         (fuel, inputs.closed_over(&captured)),
         host,
     )
-}
-
-/// `body` lowered as a thunk's body, beside the values `environment` binds in
-/// `store`, one per capture.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// The lowering's refusal, and [`Declined::Environment`] for an environment
-/// binding other than `body`'s captures.
-fn closed(
-    arena: &CommandArena,
-    definitions: &Definitions,
-    (body, environment): (CommandId, Environment),
-    store: &Store,
-) -> Result<(Lowered, Vec<HeapValueId>), Declined>
-{
-    let lowered = lower_suspended(arena, definitions, body)?;
-    let captured: Vec<HeapValueId> = store.bound_values(environment).collect();
-    if captured.len() != lowered.captures.len() {
-        return Err(Declined::Environment);
-    }
-    Ok((lowered, captured))
 }
 
 /// Run `root`, a command delivering to `★`, open under the process's policy.
@@ -1131,7 +1083,7 @@ pub fn by_policy(
 /// - hypothesis: L2 — every named program answers alike on both tiers, and a
 ///   command over captures answers on each as forcing it in place does.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
 pub fn on_tier(
     tier: Tier,
     lowered: &Lowered,
@@ -1157,7 +1109,7 @@ pub fn on_tier(
 /// # Adequacy
 /// - hypothesis: L2 — as [`on_tier`], on the executor.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
 fn run_executor(
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
@@ -1194,7 +1146,7 @@ fn run_executor(
 /// - hypothesis: L2 — as [`on_tier`], emitting each function on its first
 ///   native run.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
 #[cfg(gandr_patcher)]
 fn run_native(
     lowered: &Lowered,
@@ -1371,7 +1323,7 @@ fn run(
 ///   a body entered at the heap's start allocates over its captures.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::count::a_returned_body_gives_its_window_back`
-/// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
+/// - witness: `run::tests::a_thunk_runs_from_the_store_as_it_runs_in_place`
 fn run_over(
     buffers: &mut Buffers,
     code: Code<'_>,
@@ -1541,19 +1493,51 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
 
+    use gandr_core_sequent::CommandArena;
     use gandr_core_sequent::CommandId;
+    use gandr_core_sequent::Definitions;
+    use gandr_core_sequent::Environment;
+    use gandr_core_sequent::FreeSet;
+    use gandr_core_sequent::HeapValue;
     use gandr_core_sequent::HeapValueId;
     use gandr_core_sequent::NodeAddress;
+    use gandr_core_sequent::Outcome;
+    use gandr_core_sequent::Provenance;
+    use gandr_core_sequent::Store;
+    use gandr_core_sequent::Writers;
+    use gandr_core_sequent::check_command;
+    use gandr_core_sequent::focus_computation;
+    use gandr_core_sequent::read_back_value;
+    use gandr_core_term::CertificateEquality;
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::ComputationId;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::ValueId;
+    use gandr_core_term::Zone;
+    use gandr_core_term::equal_certificate_syntax;
     use gandr_core_term::world::Unmigrated;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::IntegerLiteral;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Sign;
+    use gandr_runtime_stencils::Fuel;
     use gandr_runtime_stencils::Status;
     use gandr_runtime_stencils::Word;
 
     use super::Declined;
     use super::Policy;
+    use super::RunInputs;
+    use super::Tier;
+    use super::closed_on_with_host;
+    use super::evaluate_on;
     use super::hold_table;
+    use crate::PATCHER;
+    use crate::cut::Declining;
     use crate::function::Function;
     use crate::lower::Form;
+    use crate::lower::lower_suspended;
+    use crate::seam::HostOutcome;
     use crate::transfer::TransferRefusal;
 
     /// A constant table fills its heap region up to the region's capacity,
@@ -1669,6 +1653,349 @@ mod tests
             assert_eq!(
                 Declined::Exhausted(status).to_string(),
                 reasons[8].to_string()
+            );
+        }
+    }
+
+    /// The decimal digits of a test literal.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct Digits(&'static str);
+
+    /// How many producer binders out a variable reaches: zero names the
+    /// innermost.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct Outward(u32);
+
+    /// The jumps a run may take: no test program comes near.
+    ///
+    /// # Specification
+    /// trivial.
+    fn budget() -> Fuel
+    {
+        Fuel::from(1_usize << 20)
+    }
+
+    /// The tiers this host runs: native where a patcher exists, the executor
+    /// everywhere.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tiers() -> &'static [Tier]
+    {
+        if PATCHER {
+            &[Tier::Native, Tier::Executor]
+        }
+        else {
+            &[Tier::Executor]
+        }
+    }
+
+    /// The non-negative integer literal `digits` in `core`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer(
+        core: &mut CoreArena,
+        digits: Digits,
+    ) -> ValueId
+    {
+        let magnitude = Magnitude::from_decimal_text(digits.0.into()).expect("decimal digits");
+        core.value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            magnitude,
+        )))
+    }
+
+    /// The producer variable `outward` binders out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variable(
+        core: &mut CoreArena,
+        outward: Outward,
+    ) -> ValueId
+    {
+        core.value_variable(Zone::Intuitionistic, outward.0.into())
+    }
+
+    /// `program` focused into an arena of its own, closed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn focused(
+        core: &CoreArena,
+        program: ComputationId,
+    ) -> (CommandArena, CommandId)
+    {
+        let mut arena = CommandArena::new();
+        let root = focus_computation(
+            core,
+            program,
+            &mut arena,
+            &mut Provenance::new(),
+            &Writers::NONE,
+        )
+        .expect("the program focuses");
+        assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
+        (arena, root)
+    }
+
+    /// The thunk `root` answers on `tier`, as its body and its environment in
+    /// `store`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn suspended(
+        tier: Tier,
+        (arena, root): (&CommandArena, CommandId),
+        store: &mut Store,
+    ) -> (CommandId, Environment)
+    {
+        let outcome = evaluate_on(
+            tier,
+            arena,
+            &Definitions::new(),
+            root,
+            budget(),
+            RunInputs::new(store),
+        );
+        let Ok(Outcome::Halted(thunk)) = outcome
+        else {
+            panic!("the program answers on {tier:?}: {outcome:?}");
+        };
+        let Some(&HeapValue::Thunk { body, environment }) = store.value(thunk)
+        else {
+            panic!("the program answers a thunk on {tier:?}");
+        };
+        (body, environment)
+    }
+
+    /// `body` lowered as a thunk's body and run on `tier` over the values
+    /// `environment` binds in `store`, with a host that declines every
+    /// operation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn closed(
+        tier: Tier,
+        (arena, definitions): (&CommandArena, &Definitions),
+        (body, environment): (CommandId, Environment),
+        store: &mut Store,
+    ) -> Result<Outcome, Declined>
+    {
+        let lowered = lower_suspended(arena, definitions, body)?;
+        match closed_on_with_host(
+            tier,
+            &lowered,
+            (arena, definitions),
+            environment,
+            (budget(), RunInputs::new(store)),
+            &mut Declining,
+        )? {
+            HostOutcome::Completed(outcome) => Ok(outcome),
+            HostOutcome::Aborted(never) => match never {},
+        }
+    }
+
+    /// The value `outcome` halts with, read back into `core`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answer(
+        (arena, store): (&CommandArena, &Store),
+        outcome: &Result<Outcome, Declined>,
+        core: &mut CoreArena,
+    ) -> ValueId
+    {
+        let &Ok(Outcome::Halted(value)) = outcome
+        else {
+            panic!("the run halts: {outcome:?}");
+        };
+        read_back_value(arena, store, value, core).expect("the answer reads back")
+    }
+
+    /// `program` answers a thunk; on each tier the thunk run from the store, on
+    /// this thread and on another, and the thunk forced in place each answer
+    /// `expected`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn assert_closed(
+        core: &mut CoreArena,
+        program: ComputationId,
+        expected: ValueId,
+    )
+    {
+        let thunk = variable(core, Outward(0));
+        let forced = core.computation_force(thunk);
+        let in_place = core.computation_bind(program, forced);
+        let (arena, root) = focused(core, program);
+        let (forcing, forced) = focused(core, in_place);
+        let definitions = Definitions::new();
+        for &tier in tiers() {
+            let mut here = Store::new();
+            let outcome = evaluate_on(
+                tier,
+                &forcing,
+                &definitions,
+                forced,
+                budget(),
+                RunInputs::new(&mut here),
+            );
+            let actual = answer((&forcing, &here), &outcome, core);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(core, actual, expected),
+                "forced in place on {tier:?}"
+            );
+            let mut store = Store::new();
+            let thunk = suspended(tier, (&arena, root), &mut store);
+            let outcome = closed(tier, (&arena, &definitions), thunk, &mut store);
+            let actual = answer((&arena, &store), &outcome, core);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(core, actual, expected),
+                "run from the store on {tier:?}"
+            );
+            // The writer's own store, filled on this thread and moved to
+            // another.
+            let mut apart = Store::new();
+            let thunk = suspended(tier, (&arena, root), &mut apart);
+            let outcome = std::thread::scope(|scope| {
+                scope
+                    .spawn(|| closed(tier, (&arena, &definitions), thunk, &mut apart))
+                    .join()
+                    .expect("the writer's thread joins")
+            });
+            let actual = answer((&arena, &apart), &outcome, core);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(core, actual, expected),
+                "run from the store on another thread on {tier:?}"
+            );
+        }
+    }
+
+    /// A thunk over no capture, one and two runs from the store as forcing it
+    /// in place runs it: `return thunk { return 7 }`,
+    /// `(λx. return thunk { return x }) 7` and
+    /// `(λx. λy. return thunk { return (x, y) }) 7 9`, whose answer `(7, 9)` a
+    /// swapped capture slot would turn.
+    #[test]
+    fn a_thunk_runs_from_the_store_as_it_runs_in_place()
+    {
+        let mut core = CoreArena::new();
+        let seven = integer(&mut core, Digits("7"));
+        let nine = integer(&mut core, Digits("9"));
+        let body = core.computation_return(seven);
+        let thunk = core.value_thunk(body);
+        let program = core.computation_return(thunk);
+        assert_closed(&mut core, program, seven);
+
+        let x = variable(&mut core, Outward(0));
+        let body = core.computation_return(x);
+        let thunk = core.value_thunk(body);
+        let returned = core.computation_return(thunk);
+        let function = core.computation_lambda(returned);
+        let program = core.computation_application(function, seven);
+        assert_closed(&mut core, program, seven);
+
+        let x = variable(&mut core, Outward(1));
+        let y = variable(&mut core, Outward(0));
+        let pair = core.value_tuple(&[x, y]);
+        let body = core.computation_return(pair);
+        let thunk = core.value_thunk(body);
+        let returned = core.computation_return(thunk);
+        let inner = core.computation_lambda(returned);
+        let function = core.computation_lambda(inner);
+        let applied = core.computation_application(function, seven);
+        let program = core.computation_application(applied, nine);
+        let expected = core.value_tuple(&[seven, nine]);
+        assert_closed(&mut core, program, expected);
+    }
+
+    /// Two captures bound to one store value are one object counted twice:
+    /// `(λx. (λy. return thunk { split x as (a, b) in return (y, (3, 4)) }) x)
+    /// (1, 2)` answers `((1, 2), (3, 4))`. The split drops `x`'s holder while
+    /// `y`'s still holds the pair, so a pair counted once is freed and `(3, 4)`
+    /// takes its block.
+    #[test]
+    fn a_shared_capture_is_laid_out_once_and_counted_twice()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Digits("1"));
+        let two = integer(&mut core, Digits("2"));
+        let three = integer(&mut core, Digits("3"));
+        let four = integer(&mut core, Digits("4"));
+        let shared = core.value_tuple(&[one, two]);
+        let fresh = core.value_tuple(&[three, four]);
+        let y = variable(&mut core, Outward(2));
+        let answered = core.value_tuple(&[y, fresh]);
+        let returned = core.computation_return(answered);
+        let x = variable(&mut core, Outward(1));
+        let split = core.computation_split(x, ComponentCount::from(2_usize), returned);
+        let thunk = core.value_thunk(split);
+        let suspended = core.computation_return(thunk);
+        let inner = core.computation_lambda(suspended);
+        let x = variable(&mut core, Outward(0));
+        let rebound = core.computation_application(inner, x);
+        let function = core.computation_lambda(rebound);
+        let program = core.computation_application(function, shared);
+        let expected = core.value_tuple(&[shared, fresh]);
+        assert_closed(&mut core, program, expected);
+    }
+
+    /// An environment binding one value fewer or one more than the body's
+    /// captures declines, and a captured function, which only its own run can
+    /// hold, declines naming it: `(λx. return thunk { return x }) 7` and
+    /// `(λf. return thunk { (force f) 7 }) (thunk { λx. return x })`.
+    #[test]
+    fn an_environment_other_than_the_captures_declines()
+    {
+        let mut core = CoreArena::new();
+        let seven = integer(&mut core, Digits("7"));
+        let x = variable(&mut core, Outward(0));
+        let body = core.computation_return(x);
+        let thunk = core.value_thunk(body);
+        let returned = core.computation_return(thunk);
+        let function = core.computation_lambda(returned);
+        let program = core.computation_application(function, seven);
+        let (arena, root) = focused(&core, program);
+
+        let x = variable(&mut core, Outward(0));
+        let identity = core.computation_return(x);
+        let identity = core.computation_lambda(identity);
+        let identity = core.value_thunk(identity);
+        let f = variable(&mut core, Outward(0));
+        let forced = core.computation_force(f);
+        let applied = core.computation_application(forced, seven);
+        let thunk = core.value_thunk(applied);
+        let returned = core.computation_return(thunk);
+        let function = core.computation_lambda(returned);
+        let program = core.computation_application(function, identity);
+        let (functional, captures) = focused(&core, program);
+
+        let definitions = Definitions::new();
+        for &tier in tiers() {
+            let mut store = Store::new();
+            let (body, environment) = suspended(tier, (&arena, root), &mut store);
+            let bound = store.bound_values(environment).next().expect("one capture");
+            let over = store.bind_value(environment, bound).expect("room");
+            for wrong in [Environment::EMPTY, over] {
+                assert_eq!(
+                    Err(Declined::Environment),
+                    closed(tier, (&arena, &definitions), (body, wrong), &mut store),
+                    "on {tier:?}"
+                );
+            }
+            let thunk = suspended(tier, (&functional, captures), &mut store);
+            let captured = store.bound_values(thunk.1).next().expect("one capture");
+            assert_eq!(
+                Err(Declined::Capture(captured)),
+                closed(tier, (&functional, &definitions), thunk, &mut store),
+                "on {tier:?}"
             );
         }
     }
