@@ -2631,6 +2631,111 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
 }
 
 #[test]
+fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
+{
+    /// What the held call's run meets past its first δ-step.
+    #[derive(Clone, Copy, Debug)]
+    enum Case
+    {
+        /// `⟨force zero2⟩ then p`: `zero2` calls `zero`, which returns the
+        /// empty word.
+        TwoDefinitions,
+        /// `⟨force outer⟩ then p`: `outer` moves the empty word along the held
+        /// call `⟨force inner⟩`, which returns reflexivity.
+        HeldTransport,
+    }
+    let mut environment = one_loop();
+    let mut define = |body: &dyn Fn(&mut TermArena, ValueTypeId) -> ValueId| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let point = build(arena, Built::Point);
+        let at_point = arena.value_type_path(carrier, point, point);
+        let body = body(arena, at_point);
+        let returner = arena.comp_type_returner(at_point);
+        let declared = arena.value_type_thunk(returner);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment
+            .add_decl(staged)
+            .map(gandr_kernel_core::CheckedId::position)
+            .expect("the definition checks")
+    };
+    // `zero = thunk (return ε)` and `zero2 = thunk (force zero)`.
+    let zero = define(&|arena, _at_point| {
+        let empty = build(arena, Built::Empty);
+        let returned = arena.computation_return(empty);
+        arena.value_thunk(returned)
+    });
+    let zero2 = define(&|arena, _at_point| {
+        let function = arena.value_constant(zero);
+        let forced = arena.computation_force(function);
+        arena.value_thunk(forced)
+    });
+    // `inner = thunk (return here(Base))` and `outer = thunk (tr(v. Path(S, v,
+    // v), ⟨force inner⟩, ε))`: both ends of the motive move, so no append row
+    // reads the transport, and it reduces only once the run goes on through
+    // `inner`.
+    let inner = define(&|arena, _at_point| {
+        let point = build(arena, Built::Point);
+        let reflexive = arena.value_here(point);
+        let returned = arena.computation_return(reflexive);
+        arena.value_thunk(returned)
+    });
+    let outer = define(&|arena, _at_point| {
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let motive = arena.value_type_path(carrier, moving, moving);
+        let function = arena.value_constant(inner);
+        let forced = arena.computation_force(function);
+        let along = arena.value_returned(forced);
+        let empty = build(arena, Built::Empty);
+        let transported = arena.computation_path_transport(motive, along, empty);
+        arena.value_thunk(transported)
+    });
+    // `(p : Path(S, Base, Base)) → F Path(Path(S, Base, Base), ⟨⟨force c⟩
+    // then p⟩, p)` at reflexivity on `p`.
+    let mut states = |case: Case| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let point = build(arena, Built::Point);
+        let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let held = match case {
+            Case::TwoDefinitions => zero2,
+            Case::HeldTransport => outer,
+        };
+        let function = arena.value_constant(held);
+        let forced = arena.computation_force(function);
+        let first = arena.value_returned(forced);
+        let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let joined = arena.value_type_path(carrier, point, moving);
+        let composite = arena.computation_path_transport(joined, parameter, first);
+        let composite = arena.value_returned(composite);
+        let at_point = arena.value_type_path(carrier, point, point);
+        let stated = arena.value_type_path(at_point, composite, parameter);
+        let returner = arena.comp_type_returner(stated);
+        let pi = arena.comp_type_pi(at_point, returner);
+        let declared = arena.value_type_thunk(pi);
+        let reflexive = arena.value_here(parameter);
+        let returned = arena.computation_return(reflexive);
+        let lambda = arena.computation_lambda(returned);
+        let body = arena.value_thunk(lambda);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(staged).map(|_admitted| ())
+    };
+    assert_eq!(
+        states(Case::TwoDefinitions),
+        Ok(()),
+        "a call running through two definitions to the empty word, then a path, is the path"
+    );
+    assert_eq!(
+        states(Case::HeldTransport),
+        Ok(()),
+        "a call moving the empty word along a held reflexivity, then a path, is the path"
+    );
+}
+
+#[test]
 fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
 {
     /// `N`, with `Z` and `Sc(N)`, at constant 3.

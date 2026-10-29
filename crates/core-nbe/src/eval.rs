@@ -3404,9 +3404,10 @@ fn run(
                 && machine.values.len() == entry_values.saturating_sub(1_usize)
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
                     Some(DomainValue::Univalence { forward, .. }) if Some(*forward) == entry_value),
-            Task::Returned | Task::Running => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
+            Task::Returned | Task::Running => (entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                 && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
-                    || machine.tasks.len() > entry_tasks),
+                    || machine.tasks.len() > entry_tasks))
+                || (machine.comps.len() == entry_comps && machine.tasks.len() > entry_tasks),
             Task::ReadThrough { .. } | Task::ReadContinued { .. } => (machine.comps.len() == entry_comps && machine.tasks.len() >= entry_tasks)
                 || (entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                     && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
@@ -8181,28 +8182,32 @@ fn push_eliminations(
 ///   queues the head's body, the neutral's spine over it and this delivery
 ///   again — [`Task::Returned`] at the run's own stance, [`Task::Running`]
 ///   otherwise — so the endpoint runs on until it returns or sticks on a rigid
-///   head; any other computation, under either stance, is delivered as
+///   head. A neutral headed by a held call that [`runs_on`] reads queues the
+///   call's run in the body's place, so a call held inside the endpoint runs
+///   too. Any other computation, under either stance, is delivered as
 ///   [`read_from`] delivers it from its spine's first position.
 /// - provides: the reading of a compound endpoint as what its computation
 ///   returns: `dbl(x)` and `x + x` are one endpoint once `dbl` unfolds. The run
 ///   is strict where a value position is lazy, because an endpoint is compared
 ///   by its returned value, and the driver's fuel bounds it. A held endpoint
 ///   leaves that unfolding to the conversion, which records it.
-/// - fails: as [`read_from`].
+/// - fails: as [`read_from`] and [`runs_on`].
 /// - panics: none.
 ///
 /// # Errors
-/// An `EvalFault`, as [`read_from`] raises.
+/// An `EvalFault`, as [`read_from`] and [`runs_on`] raise.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint applying a definition to a variable runs to
 ///   the variable, and an endpoint stuck on native addition over a variable
 ///   stays the compound endpoint; skipping the unfolding or the spine changes
 ///   the read-back term. Under the holding stance the same definition stays the
-///   endpoint's head.
+///   endpoint's head. A force stuck on a held call runs on through the call's
+///   definition, and stays held where the definition is rigid.
 /// - witness: `identity::tests::a_compound_endpoint_runs_through_a_definition`
 /// - witness: `identity::tests::a_compound_endpoint_stands_for_what_it_returns`
 /// - witness: `eval::tests::a_held_endpoint_stays_at_its_definition`
+/// - witness: `eval::tests::a_run_goes_on_through_a_held_call_a_stuck_elimination_stands_on_3774`
 #[spec(
     captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len()],
     ensures: |ret| ret.is_err()
@@ -8223,20 +8228,13 @@ fn resume_returned(
         let held = domain
             .neutral(neutral)
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-        let head = match held.unfolding() {
-            Unfolding::Forced(Glued::Value(body)) => Some(Task::Supply(body)),
-            Unfolding::Unforced(entry) => {
-                machine
-                    .definitions
-                    .bodies()
-                    .get(&entry)
-                    .map(|&term| Task::Value {
-                        term,
-                        env: Machine::root_env(),
-                    })
-            },
-            Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
-        };
+        let mut head = body_task(machine, held.unfolding());
+        if head.is_none()
+            && let Some(call) = runs_on(domain, machine, held)?
+        {
+            machine.comps.push(call);
+            head = Some(Task::Running);
+        }
         if let Some(head) = head {
             machine
                 .tasks
@@ -8258,6 +8256,102 @@ fn resume_returned(
         SpinePosition::INNERMOST,
         Delivery::Value,
     )
+}
+
+/// The task that supplies the body behind `unfolding`, when its head has one
+/// here: forced already, or lowered in this run's chain.
+///
+/// # Specification
+/// - ensures: [`Task::Supply`] of a forced value body, [`Task::Value`] of an
+///   unforced entry this run's chain lowers, at the root environment; `None`
+///   for a rigid head, a computation body or an entry the chain lacks.
+/// - provides: the head step [`resume_returned`] queues, and the test
+///   [`runs_on`] makes of each held call it walks.
+/// - panics: none.
+/// - executable: none — the clause is the match the body states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`resume_returned`].
+/// - witness: `identity::tests::a_compound_endpoint_runs_through_a_definition`
+/// - witness: `eval::tests::a_held_endpoint_stays_at_its_definition`
+fn body_task(
+    machine: &Machine<'_>,
+    unfolding: Unfolding,
+) -> Option<Task>
+{
+    match unfolding {
+        Unfolding::Forced(Glued::Value(body)) => Some(Task::Supply(body)),
+        Unfolding::Unforced(entry) => {
+            machine
+                .definitions
+                .bodies()
+                .get(&entry)
+                .map(|&term| Task::Value {
+                    term,
+                    env: Machine::root_env(),
+                })
+        },
+        Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
+    }
+}
+
+/// The held call a stuck computation stands on, when a run goes on through it:
+/// `held`'s head, a returned computation, when the call it waits on has a body
+/// here.
+///
+/// A cong over a held whiskering, `cong(f, ⟨whisker(…)⟩)`, sticks on the held
+/// call and not on a definition. Its head has no body, yet the call it holds
+/// has one, so the run goes on through the call and then re-applies the cong.
+/// The conversion unfolds the same call by [`crate::rules::held_call`]; the
+/// run reads it by the same walk.
+///
+/// # Specification
+/// - requires: nothing; a dangling id is refused.
+/// - ensures: `Some(call)` exactly when `held`'s head is
+///   [`NeutralHead::Returned`] over `call`, `held`'s spine leaves a
+///   computation, and [`crate::rules::held_call`] finds for `call` a neutral
+///   whose head [`body_task`] reads; `None` otherwise.
+/// - fails: [`EvalFault::Domain`] for a computation or neutral the arena does
+///   not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a force stuck on a held call to a manifest definition
+///   runs on through it, and stays held when the definition is rigid.
+/// - witness: `eval::tests::a_run_goes_on_through_a_held_call_a_stuck_elimination_stands_on_3774`
+#[spec(ensures: |ret| match ret {
+    Ok(Some(call)) => held.head() == NeutralHead::Returned(call),
+    Ok(None) | Err(_) => true,
+})]
+fn runs_on(
+    domain: &DomainArena,
+    machine: &Machine<'_>,
+    held: &crate::domain::Neutral,
+) -> Result<Option<DomainCompId>, EvalFault>
+{
+    let NeutralHead::Returned(call) = held.head()
+    else {
+        return Ok(None);
+    };
+    if held
+        .spine()
+        .iter()
+        .all(|elimination| matches!(*elimination, Elimination::StaticApply(_)))
+    {
+        return Ok(None);
+    }
+    let Some(waits) = crate::rules::held_call(domain, call)
+        .map_err(|_fault| EvalFault::Domain(DomainFault::Dangling))?
+    else {
+        return Ok(None);
+    };
+    let waits = domain
+        .neutral(waits)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    Ok(body_task(machine, waits.unfolding()).map(|_body| call))
 }
 
 /// Deliver `computation` as an endpoint, read through the first bind at or

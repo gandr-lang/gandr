@@ -1,0 +1,36 @@
+/// A held run through two definitions.
+///
+/// The kernel reads the composite as its second path, as the checker does.
+///
+/// The composite runs a held call before it reads its word. The run goes on
+/// through `zero2` and then `zero`, and it returns a reflexivity.
+///
+/// - see: #3789 — the kernel took one step of the run and left it at `zero`
+
+/// The composite of two paths, whose type states its endpoints.
+def joinedPaths(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(
+  A,
+  x,
+  z
+) {
+  p then q
+}
+
+/// Reflexivity, by name.
+def zero(A : Type, x : A) -> Path(A, x, x) {
+  here(x)
+}
+
+/// Reflexivity, through `zero`.
+def zero2(A : Type, x : A) -> Path(A, x, x) {
+  zero(A, x)
+}
+
+/// A call that runs to reflexivity in two steps, then `p`, is `p`.
+def twoStepsThen(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
+  Path(A, x, y),
+  joinedPaths(A, x, x, y, zero2(A, x), p),
+  p
+) {
+  here(p)
+}
