@@ -4134,8 +4134,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   b⟩)` with `B` the returner's result the codomain mints: closed for a
     ///   declared function, carried as [`Self::carried`] carries it for a bound
     ///   map, and for a lambda the path type its body stands at, read out from
-    ///   under the lambda's binder ([`Self::lambda_codomain`]). Each path's
-    ///   type is read as [`Self::identity_of`] reads it under `frame`.
+    ///   under the lambda's binder and a stated binder's bind
+    ///   ([`Self::lambda_codomain`]). Each path's type is read as
+    ///   [`Self::identity_of`] reads it under `frame`.
     /// - fails: the unminted absence when the motive's path's type is not read;
     ///   the codomain's absence, or the other-sort absence when it mints no
     ///   returner; the unminted absence for a lambda whose body's path type
@@ -4308,22 +4309,26 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The type a `cong` by the lambda at `lambda` maps its path's points
     /// into: the path type the lambda's body stands at, read out from under
-    /// the lambda's binder.
+    /// the binders the body stands under.
     ///
     /// # Specification
     /// - requires: [`Self::refuse_unsynthesised`] admitted the `cong`, so the
     ///   lambda's body, a synthesised operation, is minted before it.
     /// - ensures: `Path(A, a, b)` where the body stands at `Path(A, a, b)`
-    ///   under the lambda's binder and none of `A`, `a` and `b` names it,
-    ///   lowered out from under it.
+    ///   under the lambda's binder, and under the bind a typed parameter adds
+    ///   ([`Self::typed_parameter`]), and none of `A`, `a` and `b` names
+    ///   either, lowered out from under both (#3919).
     /// - fails: the unminted absence when the body's path type is not recorded
-    ///   or names the binder; the body's own absence.
+    ///   or names a binder it is lowered out from under; the body's own
+    ///   absence.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda whose body composes its binder with a
-    ///   parameter maps into the composite's path type.
+    ///   parameter maps into the composite's path type, its binder's type
+    ///   written or not.
     /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
+    /// - witness: `lower::identity::tests::a_lambda_stating_its_binders_type_maps_as_the_unstated_one_3919`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(codomain) => matches!(sink.arena.value_type(codomain), Some(&ValueType::Path { .. })),
         | Maybe::Absent(_) => true,
@@ -4334,7 +4339,7 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
-        let Some(&Plan::Lambda(Block { last, .. }, _)) = self.plans.get(lambda)
+        let Some(&Plan::Lambda(Block { last, .. }, binder)) = self.plans.get(lambda)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
@@ -4350,8 +4355,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
+        // A written parameter type binds the argument again, ascribed, so
+        // the body stands one binder past the lambda's own.
+        let binders = if self.typed_parameters.contains_key(&binder) {
+            Binders::from(2_u32)
+        }
+        else {
+            Binders::ONE
+        };
         let under = sink.arena.value_type_path(carrier, left, right);
-        match gandr_core_term::strengthen_value_type(sink.arena, under, Binders::ONE) {
+        match gandr_core_term::strengthen_value_type(sink.arena, under, binders) {
             Maybe::Present(outside) => Maybe::Present(outside.settle(sink.arena)),
             Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
