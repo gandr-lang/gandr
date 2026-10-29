@@ -13,12 +13,19 @@
 //!   children it holds, with [`SequentWatermark`] and
 //!   [`CommandArena::truncate_to`] the rollback a refused build takes.
 //!   Covariables are de Bruijn indices ([`CovariableIndex`]); nothing mints a
-//!   continuation name.
+//!   continuation name. A binder `μ̃x.c` carries an [`Independence`] mark that
+//!   [`CommandArena::mark_independent`] sets, refusing with [`MarkRefusal`]: a
+//!   run may start the writer of a marked binder before `c`, because the writer
+//!   performs no operation. A truncation drops the marks of the binders it
+//!   drops.
 //! - [`focus_computation`], [`focus_value`], [`focus_top_value`] and
 //!   [`focus_definition`] translate core terms into the IL, recording each
-//!   created command's [`FocusOrigin`] in a [`Provenance`] table;
-//!   [`unfocus_command`] and [`unfocus_value`] read the IL back, their left
-//!   inverse.
+//!   created command's [`FocusOrigin`] in a [`Provenance`] table, and each
+//!   bind's binder beside the core computation it binds
+//!   ([`Provenance::binds`]), which a schedule reads the writer's type by. A
+//!   bind inside an identity combinator's build records nothing, because its
+//!   writer names a node of the combinator's own arena. [`unfocus_command`] and
+//!   [`unfocus_value`] read the IL back, their left inverse.
 //! - [`check_command`] is the typed-IL check: reference integrity, arity,
 //!   focus, polarity and second-class closures, answering a command's
 //!   [`FreeSet`].
@@ -106,6 +113,10 @@
 //! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the
 //!   LAM the [`Store`] is, a regioned append-only store addressed by
 //!   location.
+//! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design
+//!   (§ futures-in-gandr item 1): a cut whose writer performs no operation is
+//!   independent, so focus records each bind's writer and the arena marks the
+//!   bind's binder.
 
 // Module documentation that predates the shape lint: 17 headings outside the
 // vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with
@@ -175,7 +186,9 @@ pub use crate::il::ConsumerNode;
 pub use crate::il::CopatternArm;
 pub use crate::il::CovariableIndex;
 pub use crate::il::DestructorTag;
+pub use crate::il::Independence;
 pub use crate::il::Introduces;
+pub use crate::il::MarkRefusal;
 pub use crate::il::MintRefusal;
 pub use crate::il::NodeAddress;
 pub use crate::il::NodeFamily;

@@ -279,9 +279,11 @@ pub enum FocusOrigin
     Session,
 }
 
-/// The provenance table: the [`FocusOrigin`] of every command focusing
-/// created, in creation order, and the core action each session command was
-/// focused from.
+/// The provenance table of a focusing.
+///
+/// It holds the [`FocusOrigin`] of every command focusing created, in creation
+/// order, the core action each session command was focused from, and the core
+/// computation each bind's binder binds.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Provenance
 {
@@ -290,6 +292,9 @@ pub struct Provenance
     /// Each session command with the core action it was focused from, in
     /// increasing command address.
     sessions: Vec<(CommandId, ComputationId)>,
+    /// Each bind's binder `μ̃x.c` with the core computation it binds, in
+    /// minting order, each beside the number of commands recorded before it.
+    binds: Vec<(NodeCount, ConsumerId, ComputationId)>,
 }
 
 impl Provenance
@@ -362,6 +367,36 @@ impl Provenance
         self.sessions.iter().copied()
     }
 
+    /// Every bind's binder `μ̃x.c` with the core computation it binds, its
+    /// writer, in minting order: a schedule reads the writer's type by it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry for each bind `x ← M; N` of the caller's core arena
+    ///   that a kept translation focused: the binder it minted beside `M`. A
+    ///   bind of an identity combinator has no entry, because its `M` names a
+    ///   node of the combinator's own arena. A refused translation leaves no
+    ///   entry.
+    /// - provides: the crossing a writer's type takes from the core term to its
+    ///   binder.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause is about every translation recorded into
+    ///   the table before the call, which the call does not see; the witness
+    ///   focuses each case and reads the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested binds separate the two binders and their
+    ///   writers, a program that prepares an identity combinator separates the
+    ///   caller's binds from the combinator's, and a refusal after a kept bind
+    ///   separates a stale entry from a kept one.
+    /// - witness: `focus::tests::each_bind_records_its_binder_beside_its_writer`
+    #[inline]
+    pub fn binds(&self) -> impl Iterator<Item = (ConsumerId, ComputationId)>
+    {
+        self.binds.iter().map(|&(_, binder, head)| (binder, head))
+    }
+
     /// The number of recorded commands.
     ///
     /// # Specification
@@ -414,8 +449,26 @@ impl Provenance
         self.sessions.push((command, source));
     }
 
-    /// Truncate the table to an earlier length, the session commands past it
-    /// with it.
+    /// Record the binder `μ̃x.c` a bind minted beside the core computation
+    /// `head` it binds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn record_bind(
+        &mut self,
+        binder: ConsumerId,
+        head: ComputationId,
+    )
+    {
+        self.binds
+            .push((NodeCount::from(self.origins.len()), binder, head));
+    }
+
+    /// Truncate the table to an earlier length, the session commands and the
+    /// binds past it with it.
+    ///
+    /// A bind follows the record of its body's command, so a bind recorded
+    /// after the length has more commands recorded before it than the length.
     ///
     /// # Specification
     /// trivial.
@@ -430,6 +483,10 @@ impl Provenance
                 .partition_point(|&(command, _)| command < first);
             self.sessions.truncate(kept);
         }
+        let kept = self
+            .binds
+            .partition_point(|&(before, ..)| usize::from(before) <= usize::from(length));
+        self.binds.truncate(kept);
         self.origins.truncate(usize::from(length));
     }
 }
@@ -868,6 +925,7 @@ where
         let root = crate::identity::build(core, combinator, (&mut scratch, &mut cases))?;
         let mut closed = Focusing::new(&scratch, arena, provenance);
         closed.run_cases = cases;
+        closed.heads = Heads::Scratch;
         closed.tasks.push(Task::Value(root));
         closed.drive()?;
         if !closed.wanted.is_empty() {
@@ -1079,6 +1137,17 @@ enum Visit
     Leave,
 }
 
+/// The arena a run's binds name their writers in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Heads
+{
+    /// The caller's arena: each bind records its writer.
+    Caller,
+    /// An identity combinator's scratch arena, whose nodes the caller does
+    /// not hold: no bind records its writer.
+    Scratch,
+}
+
 /// The state of one translation.
 struct Focusing<'run>
 {
@@ -1103,6 +1172,8 @@ struct Focusing<'run>
     run_cases: crate::identity::RunCases,
     /// Whether each former met holds a returned value, decided once.
     returning: BTreeMap<ValueId, Holding>,
+    /// The arena the run's binds name their writers in.
+    heads: Heads,
 }
 
 impl<'run> Focusing<'run>
@@ -1128,6 +1199,7 @@ impl<'run> Focusing<'run>
             wanted: BTreeSet::new(),
             run_cases: crate::identity::RunCases::new(),
             returning: BTreeMap::new(),
+            heads: Heads::Caller,
         }
     }
 
@@ -1435,6 +1507,9 @@ impl<'run> Focusing<'run>
             Task::Bind { head } => {
                 let body = self.pop_command()?;
                 let binder = self.arena.mint_consumer(ConsumerNode::MuTilde { body })?;
+                if self.heads == Heads::Caller {
+                    self.provenance.record_bind(binder, head);
+                }
                 self.tasks.push(Task::Computation {
                     computation: head,
                     continuation: binder,
