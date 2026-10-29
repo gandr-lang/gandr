@@ -6419,7 +6419,7 @@ fn check_sealing_provenance(
                 DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
             })))]
 #[inline]
-pub fn check_declaration(
+pub(crate) fn check_declaration(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
     declaration: &Declaration,
