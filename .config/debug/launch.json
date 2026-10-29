@@ -1,0 +1,23 @@
+[
+  {
+    "name": "#3778: macOS without LLVM's lldb refuses with the install line",
+    "system": "Darwin",
+    "lldb": false,
+    "exit": 2,
+    "error": "brew install lldb"
+  },
+  {
+    "name": "#3863: macOS runs LLVM's lldb on its arguments with neither a scope nor a lowered `ulimit -v`",
+    "system": "Darwin",
+    "lldb": true,
+    "exit": 0,
+    "bound": "none"
+  },
+  {
+    "name": "#3823: Linux runs its lldb on its arguments bounded to 8 GiB",
+    "system": "Linux",
+    "lldb": true,
+    "exit": 0,
+    "bound": "8 GiB"
+  }
+]
