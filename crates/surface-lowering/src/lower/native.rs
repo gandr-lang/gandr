@@ -12305,6 +12305,30 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// The name `operand` writes, when it is a bare name form; `None` for an
+    /// operand the tree lacks or another form.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The form fault.
+    fn bare_name(
+        &self,
+        operand: Placed,
+    ) -> Result<Option<SurfaceName<'source>>, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(operand.node)
+        else {
+            return Ok(None);
+        };
+        Ok(matches!(shape_of(self.pbg, node)?, Shape::Form {
+            former: Former::Name,
+            ..
+        })
+        .then(|| self.name_at(operand)))
+    }
+
     /// How many parameters, from the first and before `staged`, every call of
     /// `own` under `roots` writes back bare in its own place.
     ///
@@ -12341,25 +12365,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<ParameterAt, LoweringRefusal<'source>>
     {
         let mut kept = staged.0;
-        let named = |operand: Placed,
-                     expected: SurfaceName<'source>|
-         -> Result<bool, LoweringRefusal<'source>> {
-            let Some(node) = self.tree.node(operand.node)
-            else {
-                return Ok(false);
-            };
-            Ok(matches!(shape_of(self.pbg, node)?, Shape::Form {
-                former: Former::Name,
-                ..
-            }) && self.name_at(operand) == expected)
-        };
         // How many of `arguments`, from the first and at most `kept`, name
         // their own parameter bare.
         let passed =
             |arguments: &[Placed], kept: usize| -> Result<usize, LoweringRefusal<'source>> {
                 let mut passed = 0_usize;
                 for (&argument, &parameter) in arguments.iter().zip(parameters).take(kept) {
-                    if !named(argument, parameter)? {
+                    if self.bare_name(argument)? != Some(parameter) {
                         break;
                     }
                     passed = passed.saturating_add(1);
@@ -12409,7 +12421,7 @@ impl<'source> Lowerer<'_, 'source>
                     Piece::Tile { .. } => None,
                 });
                 if let Some(instantiated) = instantiated
-                    && named(instantiated, own)?
+                    && self.bare_name(instantiated)? == Some(own)
                 {
                     kept = kept.min(passed(arguments, kept)?);
                 }
@@ -12463,38 +12475,20 @@ impl<'source> Lowerer<'_, 'source>
         let last = ParameterAt(parameters.len().saturating_sub(1));
         // A parameter's position, when `operand` names it bare.
         let named = |operand: Placed| -> Result<Option<ParameterAt>, LoweringRefusal<'source>> {
-            let Some(node) = self.tree.node(operand.node)
-            else {
-                return Ok(None);
-            };
-            if !matches!(shape_of(self.pbg, node)?, Shape::Form {
-                former: Former::Name,
-                ..
-            }) {
-                return Ok(None);
-            }
-            let written = self.name_at(operand);
-            Ok(parameters
-                .iter()
-                .position(|&parameter| parameter == written)
-                .map(ParameterAt))
+            Ok(self.bare_name(operand)?.and_then(|written| {
+                parameters
+                    .iter()
+                    .position(|&parameter| parameter == written)
+                    .map(ParameterAt)
+            }))
         };
         // Whether `operand` names, bare, `own` or a member of the joint, each
         // a head the one fixpoint answers.
         let named_claimed = |operand: Placed| -> Result<bool, LoweringRefusal<'source>> {
-            let Some(node) = self.tree.node(operand.node)
-            else {
-                return Ok(false);
-            };
-            if !matches!(shape_of(self.pbg, node)?, Shape::Form {
-                former: Former::Name,
-                ..
-            }) {
-                return Ok(false);
-            }
-            let written = self.name_at(operand);
-            Ok(written == own
-                || matches!(joint.member(&self.collected, written), Maybe::Present(_)))
+            Ok(self.bare_name(operand)?.is_some_and(|written| {
+                written == own
+                    || matches!(joint.member(&self.collected, written), Maybe::Present(_))
+            }))
         };
         // The match a claim with `arguments` descends on, from the innermost
         // `link` outward: past each match whose parameter the claim writes
@@ -12738,18 +12732,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        let Some(node) = self.tree.node(named.node)
+        let Some(name) = self.bare_name(named)?
         else {
             return Ok(None);
         };
-        let Shape::Form {
-            former: Former::Name,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Ok(None);
-        };
-        let name = self.name_at(named);
         Ok(match self.scope.resolve(frame, name, &mut self.fuel)? {
             Maybe::Present(bound) if self.recursions.contains_key(&bound.binder) => {
                 Some(bound.binder)
@@ -12862,18 +12848,10 @@ impl<'source> Lowerer<'_, 'source>
         if self.staged_parameters.is_empty() {
             return Ok(());
         }
-        let Some(node) = self.tree.node(scrutinee.node)
+        let Some(written) = self.bare_name(scrutinee)?
         else {
             return Ok(());
         };
-        let Shape::Form {
-            former: Former::Name,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Ok(());
-        };
-        let written = self.name_at(scrutinee);
         let Maybe::Present(found) = self.scope.resolve(frame, written, &mut self.fuel)?
         else {
             return Ok(());
