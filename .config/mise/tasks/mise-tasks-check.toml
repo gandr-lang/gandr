@@ -526,23 +526,9 @@ if [[ -n $text ]]; then
   for set in "${labels[@]}"; do
     if [[ ,$set, == *,kind:defect,* ]]; then defect=true; fi
   done
-  transcripts=$(git diff --name-only --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-traces/*.txt' \
-    | while IFS= read -r path; do jq -Rs --arg path "$path" '{path: $path, text: .}' "$path"; done | jq -s .)
-  # A change touching no Rust is witnessed by a `.config` case it adds
-  # (#3784): every name a JSON file under `.config` holds at HEAD and did not
-  # hold at the base.
-  paths=$(git diff --name-only "$base" HEAD | jq -R . | jq -s .)
-  cases=$(git diff --name-only --diff-filter=AM "$base" HEAD -- ':(glob).config/**/*.json' \
-    | while IFS= read -r path; do
-        before=$(git show "$base:$path" 2> /dev/null | jq -c '[.. | objects | .name? | strings]' 2> /dev/null || true)
-        [[ -n $before ]] || before='[]'
-        jq -c --arg path "$path" --argjson before "$before" \
-          '[.. | objects | .name? | strings] - $before | map({path: $path, name: .})' "$path"
-      done | jq -s 'add // []')
-  block=$(jq -n -r --argjson defect "$defect" --rawfile body "$text" --argjson transcripts "$transcripts" \
-    --argjson paths "$paths" --argjson cases "$cases" \
-    '{defect: $defect, body: $body, transcripts: $transcripts, paths: $paths, cases: $cases}' \
-    | jq -r -f .config/claims/observed.jq)
+  # The block is `observed.bash`'s, whose inputs reach jq through files, so a
+  # transcript of any size passes (#3871).
+  block=$(.config/claims/observed.bash "$base" "$text" "$defect")
   if [[ -n ${usage_body:-} ]]; then
     block="$block" awk -f .config/claims/observed.awk "$usage_body" > "$usage_body.observed"
     mv -- "$usage_body.observed" "$usage_body"
@@ -1665,7 +1651,9 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # transcripts the change adds, and the `### Observed` block
 # `evidence:obligations` writes for them (`observed.jq`, #3758); each in
 # `.config/claims/splice.json` a body, a block of several lines, and the body
-# the splice writes with it (`observed.awk`, #3784). The
+# the splice writes with it (`observed.awk`, #3784); each in
+# `.config/claims/hand-off.json` a transcript's size, and the block
+# `observed.bash` prints for a change adding it (#3871). The
 # term map itself, `.config/references/terms.toml`, is read whole: every row
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
@@ -1766,6 +1754,32 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/board.json)
 (( failed == 0 )) || exit 1
+# `observed.bash` hands a transcript of any size to jq (#3871): for each case
+# in `.config/claims/hand-off.json` a scratch repository adds a transcript of
+# the case's size, stopped in a test the body names, and the script prints the
+# case's block.
+root=$PWD
+printf 'Closes #7.\n\nThe test `t` witnesses.\n' > "$scratch/hand-off.md"
+while IFS= read -r case; do
+  bytes=$(jq .bytes <<< "$case")
+  repo="$scratch/hand-off-$bytes"
+  git init --quiet --initial-branch=main "$repo"
+  git -C "$repo" config commit.gpgsign false
+  git -C "$repo" commit --quiet --no-verify --allow-empty -m base
+  mkdir -p "$repo/crates/p/tests/debug-traces"
+  {
+    printf 'test: t\ncommand: mise run debug:test p t\n* thread #1, stop reason = breakpoint 1.1\n  * frame #0: 0x0 p`f at a.rs:1:1\n'
+    jq -rn --argjson bytes "$bytes" '"x" * $bytes'
+  } > "$repo/crates/p/tests/debug-traces/t.txt"
+  git -C "$repo" add crates && git -C "$repo" commit --quiet --no-verify -m head
+  got=$(cd "$repo" && "$root/.config/claims/observed.bash" HEAD~1 "$scratch/hand-off.md" true 2> "$scratch/err") || true
+  wanted=$(jq -j .output <<< "$case")
+  if [[ $got != "${wanted%$'\n'}" ]]; then
+    printf 'hand-off case FAILED: %s\n  got:\n%s\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$(cat "$scratch/err")" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/hand-off.json)
+(( failed == 0 )) || exit 1
 terms=$(yq -o json '.term' .config/references/terms.toml)
 map=$(jq -r '.[] | (.name // "?") as $name
   | if (.name | type) != "string" or (.match | type) != "string" or (.owns | type) != "array" or (.owns | length) == 0 or (.reason | type) != "string"
@@ -1779,7 +1793,7 @@ if [[ -n ${map//[[:space:]]/} ]]; then
   printf 'claims check FAILED: the term map is malformed:\n%s\n' "$map" >&2
   exit 1
 fi
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/swept.json) nights their recovery rows, and the term map's $(jq length <<< "$terms") rows read whole"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/swept.json) nights their recovery rows, $(jq length .config/claims/hand-off.json) transcripts their observed block, and the term map's $(jq length <<< "$terms") rows read whole"
 '''
 
 # The debugger tasks read an enum's variant and pick their lldb as recorded
