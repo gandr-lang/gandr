@@ -1580,6 +1580,9 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # this checkout's features table, under a body naming none, and holds its
 # exit and the count of lines it prints: a table past the argument limit is
 # read, not refused by the shell (#2671). Each case in
+# `.config/claims/board.json` runs `refactor:file` itself the same way, a stub
+# `gh` answering with a board past the argument limit, and holds the decision
+# its dry run prints (#3771). Each case in
 # `.config/claims/shown.json` holds an issue body, the vault's pages and the
 # tree's filenames, and the lines `unit:check` reads for the vault pages the
 # body names (`shown.jq`, #2793); each in `.config/claims/annotated.json` a
@@ -1674,6 +1677,29 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
+(( failed == 0 )) || exit 1
+# `refactor:file` reads a board past the argument limit (#3771): for each case
+# in `.config/claims/board.json` a stub `gh` answers with a merged pull
+# request whose verdict is `no` and the case's count of refactor issues, 250
+# bytes of body each, and the dry run prints the case's decision. The pinned
+# `gh` is disabled for the run, so the stub answers.
+mkdir -p "$scratch/gh"
+printf '%s\n' '#!/usr/bin/env bash' 'case $1 in' \
+  'repo) echo gandr-lang/gandr ;;' 'api) cat "$STUB_GH/pr.json" ;;' 'issue) cat "$STUB_GH/issues.json" ;;' \
+  '*) echo "stub gh: $*" >&2; exit 1 ;;' 'esac' > "$scratch/gh/gh"
+chmod +x "$scratch/gh/gh"
+jq -n '{state: "MERGED", body: "## Refactoring\n\nno\n", headRefName: "triage-7-board",
+  closingIssuesReferences: {nodes: [{number: 7, parent: null, labels: {nodes: [{name: "area:workflow"}]}}]}}' > "$scratch/gh/pr.json"
+while IFS= read -r case; do
+  jq -n --argjson count "$(jq .issues <<< "$case")" \
+    '[range($count) | {number: (. + 1), state: "CLOSED", body: ("a refactor body of the argument-limit case, " * 6)}]' > "$scratch/gh/issues.json"
+  decision=$(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/gh" MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+    mise run --quiet refactor:file 7 --dry-run 2> "$scratch/err") || true
+  if [[ $(jq -r '.act // empty' <<< "$decision" 2> /dev/null) != $(jq -r .act <<< "$case") ]]; then
+    printf 'board case FAILED: %s\n  gave: %s\n%s\n' "$(jq -r .name <<< "$case")" "$decision" "$(cat "$scratch/err")" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/board.json)
 (( failed == 0 )) || exit 1
 terms=$(yq -o json '.term' .config/references/terms.toml)
 map=$(jq -r '.[] | (.name // "?") as $name

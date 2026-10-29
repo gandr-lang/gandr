@@ -2136,15 +2136,19 @@ lane=${head%%-*}
 if [[ $area == null ]] && gh label list -R "$repo" --search "area:$lane" --json name --jq '.[].name' | grep -Fxq "area:$lane"; then
   area=$(jq -cn --arg lane "$lane" '$lane')
 fi
-issues=$(gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body)
-decision=$(jq -n --argjson number "$number" --argjson pr "$pr" --argjson area "$area" --argjson issues "$issues" \
-  '{pr: {number: $number, body: $pr.body, area: $area}, issues: $issues}' | jq -c -L "$claims" -f "$claims/filing.jq")
+# The board and the pull request reach jq through files, never as arguments:
+# the refactor issues' bodies are past the argument limit (#3771, as #2671).
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body > "$scratch/issues.json"
+printf '%s' "$pr" > "$scratch/pr.json"
+decision=$(jq -n --argjson number "$number" --slurpfile pr "$scratch/pr.json" --argjson area "$area" --slurpfile issues "$scratch/issues.json" \
+  '{pr: {number: $number, body: $pr[0].body, area: $area}, issues: $issues[0]}' | jq -c -L "$claims" -f "$claims/filing.jq")
 if [[ ${usage_dry_run:-false} == true ]]; then
   jq --arg epic "$epic" '. + {epic: (if $epic == "" then null else ($epic | tonumber) end)}' <<< "$decision"
   exit 0
 fi
-body=$(mktemp)
-trap 'rm -f "$body"' EXIT
+body=$scratch/body.md
 case $(jq -r .act <<< "$decision") in
   none)
     echo "refactor:file: #$number's verdict files nothing"
