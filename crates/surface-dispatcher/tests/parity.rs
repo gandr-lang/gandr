@@ -1647,6 +1647,40 @@ fn bodies(
     found
 }
 
+/// #3715: a fixture whose capability scope and labelled row fix a sort to an
+/// arrow type is spelled alike by the formatter and the printer, from either
+/// form into either.
+#[test]
+fn a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715()
+{
+    let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+    let source = gandr_workflow_sweep::corpus::sources()
+        .expect("the corpus reads")
+        .into_iter()
+        .find(|source| {
+            source
+                .path
+                .ends_with("pathological/effects/cost-bound-too-small.gandr")
+        })
+        .expect("the fixture stands in the corpus");
+    let text = std::fs::read_to_string(&source.path).expect("the fixture is readable");
+    let found = bodies(
+        &grammar,
+        Written {
+            path: &source.path,
+            text: SourceText::from(text.as_str()),
+        },
+        &source.name,
+    );
+    assert!(
+        found.compared > 0 && found.misses.is_empty(),
+        "{} of {} declarations differ:\n{}",
+        found.misses.len(),
+        found.compared,
+        found.misses.join("\n")
+    );
+}
+
 /// The parity sweeps: a sample on every pull request, every source under the
 /// `sweeps` profile.
 mod sweeps
