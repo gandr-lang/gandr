@@ -1,0 +1,57 @@
+// The family a code defines, and its decoder, with each refusal.
+//
+// The family holds the arguments its code asks for. Those arguments range
+// over the family itself. The decoder decodes the arguments. It reads the
+// family's elements through itself. The codes exist for these two things.
+//
+// A call computes the type of the arguments. The family thus occurs inside a
+// call in its own field. The occurrence walk refuses it. The decoder calls
+// itself through `decodeArgs`. That call stands at no stage below the code.
+// The marked call in `decodeArgs` stages the code. The code's case then leaves
+// the arguments' type unrefined. The checker refuses the case on them.
+//
+// - see: #3575 — not implemented: the family a code defines, with its decoder
+// - see: #3680 — a staged fixpoint's case on its code leaves a later binder
+//   unrefined
+// - see: `model/universe/ir-codes.gandr` — the codes and their arguments,
+//   admitted
+
+// The naturals.
+import "../../model/data/data-base.gandr";
+
+// The codes and their arguments.
+import "../../model/universe/ir-codes.gandr";
+
+/// The decode of the arguments a code asks for. Its case on the arguments
+/// meets their type unrefined by the staged code's case.
+@[ refuses("ShapeMismatch"), form(explicit) ]
+def rec decodeArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), v : args(d, c, x, t)) -> d {
+  case c {
+    Iota(e) => e,
+    SigmaC(a, f) => case v {
+      MkSig(y, r) => decodeArgs[<](d, f(y), x, t, r)
+    },
+    DeltaC(a, f) => case v {
+      MkSig(h, r) => decodeArgs[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
+    }
+  }
+}
+
+/// The family a code defines, and its decoder, in one block.
+rec {
+  /// The family a code defines. Its one constructor holds the arguments over
+  /// the family itself.
+  @[ refuses("IndexOccurrence") ]
+  data Mu(d : Type, c : IR(d)) : Type {
+    /// The arguments, over the family the decoder decodes.
+    In : (v : args(d, c, Mu(d, c), thunk { fn (m) { decodeMu(d, c, m) } })) --> Mu(d, c);
+  }
+
+  /// The decoder: the decode of the arguments its constructor holds.
+  @[ refuses("StageNotBelow") ]
+  def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d {
+    case m {
+      In(v) => decodeArgs(d, c, Mu(d, c), thunk { fn (n) { decodeMu[<](d, c, n) } }, v)
+    }
+  }
+}

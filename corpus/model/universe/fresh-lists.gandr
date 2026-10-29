@@ -1,0 +1,81 @@
+// The lists of pairwise distinct naturals are an inductive-recursive family.
+// The family is no universe.
+//
+// A cons holds evidence of its head's freshness for its tail. A function
+// computes the type of that evidence from the tail. The lists and their
+// freshness thus form one block.
+//
+// Freshness recurses on the list. Each arm binds its two types by a run. The
+// arm then returns their pair. The pair is data. The arm returns it as a
+// term.
+//
+// - see: #3572 — not implemented: the pair's types written as calls in place
+// - see: `pathological/universe/fresh-lists.gandr` — the pair's types written
+//   in place, refused
+// - see: the Agda standard library, `Data.List.Fresh`
+
+// The naturals.
+import "../data/data-base.gandr";
+
+// The type with no element.
+import "../data/empty.gandr";
+
+/// The pairs of two types, as data.
+@[ checks, form(explicit) ]
+pub data Both(a : Type, b : Type) : Type {
+  /// A value of each type.
+  MkBoth : (x : a, y : b) --> Both(a, b);
+}
+
+/// The apartness of two naturals. It is the unit type for distinct naturals
+/// and the empty type for equal ones.
+@[ checks ]
+pub def rec apart(x : Nat, y : Nat) -> -F Type {
+  case x {
+    Zero => case y {
+      Zero => return Empty,
+      Succ(n) => return Unit
+    },
+    Succ(m) => case y {
+      Zero => return Unit,
+      Succ(n) => apart[<](m, n)
+    }
+  }
+}
+
+/// The fresh lists and their freshness, in one block.
+rec {
+  /// The lists of pairwise distinct naturals.
+  @[ checks ]
+  pub data Fresh : Type {
+    /// The empty list.
+    FNil : Fresh;
+    /// A head, a tail, and the head's freshness for the tail.
+    FCons : (x : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh;
+  }
+
+  /// The freshness of a natural for a fresh list. It pairs the natural's
+  /// apartness from each element.
+  @[ checks ]
+  pub def rec fresh(x : Nat, xs : Fresh) -> -F Type {
+    case xs {
+      FNil => return Unit,
+      FCons(y, ys, q) => {
+        run p <- apart(x, y);
+        run r <- fresh[<](x, ys);
+        return (Both(p, r))
+      }
+    }
+  }
+}
+
+/// The fresh list of one. Each natural is fresh for the empty list.
+@[ checks ]
+pub def freshOne : Fresh;
+def freshOne = FCons(Succ(Zero), FNil, unit);
+
+/// The fresh list of zero, then one. Its evidence is a pair at the type the
+/// freshness computes for the tail.
+@[ checks ]
+def freshZeroOne : Fresh;
+def freshZeroOne = FCons(Zero, freshOne, MkBoth(unit, unit));

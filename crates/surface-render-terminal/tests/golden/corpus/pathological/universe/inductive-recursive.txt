@@ -165,3 +165,32 @@ error[CompoundEndpoint]: a path endpoint must compute a value without effects
    │                            the type it synthesises
    │
    ╰ note: `curried` is refused with CompoundEndpoint, as its expectation states
+
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 2 of constructor 2 where no stage reaches it
+    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:100:3
+    │
+100 │ ┏   data ULevel : Nat -> Type {
+101 │ ┃     /// The naturals, at every level.
+102 │ ┃     NatV : (n : Nat) --> ULevel(n);
+103 │ ┃     /// The universe a level down, a code one level up.
+    ‡ ┃
+106 │ ┃     PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n);
+107 │ ┃   }
+    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
+    │
+    ├ note: `ULevel` is refused with NegativeOccurrence, as its expectation states
+    ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
+
+error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 2 of constructor 2 where no stage reaches it
+    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:112:3
+    │
+112 │ ┏   def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type {
+113 │ ┃     case u {
+114 │ ┃       NatV(m) => return Nat,
+115 │ ┃       TypeV(m) => return (ULevel(m)),
+    ‡ ┃
+118 │ ┃   }
+    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
+    │
+    ├ note: `elLevel` is refused with NegativeOccurrence, as its expectation states
+    ╰ help: apply the datatype there only to its own parameters, one stage below its constructor

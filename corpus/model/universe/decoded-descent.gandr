@@ -62,6 +62,17 @@ def rec total(c : UL) -> +U (elL(c) -> -F Nat) {
   }
 }
 
+/// A value counted beside its code. The natural code's arm finds the value at
+/// `Nat`.
+@[ checks ]
+def rec countBeside(c : UL, v : elL(c)) -> Nat {
+  case c {
+    NatL => v,
+    ListL(a) => Zero,
+    PiL(a, b) => Zero
+  }
+}
+
 /// The lists of naturals [1] and [2].
 def lists : List(List(Nat));
 def lists = Cons(Cons(Succ(Zero), Nil), Cons(Cons(two, Nil), Nil));

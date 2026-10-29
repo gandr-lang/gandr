@@ -1,0 +1,118 @@
+// A Tarski universe closed under pairs and paths, with its decoder arms in
+// their intended form.
+//
+// Martin-Löf's universe is closed under dependent functions, dependent pairs
+// and identity types. Each such code decodes to a family at the decodes of
+// its fields. A decode thus stands as a family's argument.
+//
+// Each code is its own block. One refusal thus leaves the others standing.
+// The front end refuses a pair of decodes as calls. The checker refuses a
+// dependent pair's second family at the first decode. The fragment check
+// refuses a path's carrier as a marked call by its sort. A run binds a
+// decode as a type of its own. A field at the code's decode then stands
+// apart from it.
+//
+// - see: #3572 — not implemented: a call as a family's argument
+// - see: #3571 — not implemented: the second family at the first one's quoted
+//   decode
+// - see: #3681 — a marked call as a path's carrier, refused by its sort
+// - see: `model/universe/inductive-recursive.gandr` — the dependent
+//   functions, admitted
+// - see: Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984
+
+// The naturals.
+import "../../model/data/data-base.gandr";
+
+// The dependent pairs.
+import "../../model/universe/ir-codes.gandr";
+
+// The pairs of two types.
+import "../../model/universe/fresh-lists.gandr";
+
+/// The codes: the naturals and the pairs of two coded types.
+@[ checks, form(explicit) ]
+data UProd : Type {
+  /// The naturals.
+  NatX : UProd;
+  /// The pairs of two coded types.
+  ProdX : (a : UProd, b : UProd) --> UProd;
+}
+
+/// The decoder, with a pair code's two decodes as calls.
+@[ refuses("UnenclosedRun") ]
+def rec elProd(u : UProd) -> -F Type {
+  case u {
+    NatX => return Nat,
+    ProdX(a, b) => return (Both(elProd[<](a), elProd[<](b)))
+  }
+}
+
+/// The dependent pair code and its decoder, in one block.
+rec {
+  /// The codes: the naturals, and the dependent pairs over a coded type.
+  @[ refuses("TypeMismatch") ]
+  data USig : Type {
+    /// The naturals.
+    NatS : USig;
+    /// The dependent pairs from a coded type to a family of codes over its
+    /// decode.
+    SigS : (a : USig, b : +U (elSig(a) -> -F USig)) --> USig;
+  }
+
+  /// The decoder: a pair code decodes to the pairs over its first decode.
+  @[ refuses("TypeMismatch") ]
+  def rec elSig(u : USig) -> -F Type {
+    case u {
+      NatS => return Nat,
+      SigS(a, b) => return (Sig(elSig[<](a), thunk { fn (x) { elSig[<](b(x)) } }))
+    }
+  }
+}
+
+/// The dependent pair code with a run for its first decode, in one block.
+rec {
+  /// The codes. They share their decoder's refusal.
+  @[ refuses("TypeMismatch") ]
+  data USigRun : Type {
+    /// The naturals.
+    NatR : USigRun;
+    /// The dependent pairs from a coded type to a family of codes over its
+    /// decode.
+    SigR : (a : USigRun, b : +U (elSigRun(a) -> -F USigRun)) --> USigRun;
+  }
+
+  /// The decoder. Its second family's binder stands at the bound type, not
+  /// at the field's decode.
+  @[ refuses("TypeMismatch") ]
+  def rec elSigRun(u : USigRun) -> -F Type {
+    case u {
+      NatR => return Nat,
+      SigR(a, b) => {
+        run t <- elSigRun[<](a);
+        return (Sig(t, thunk { fn (x) { elSigRun[<](b(x)) } }))
+      }
+    }
+  }
+}
+
+/// The path code and its decoder, in one block.
+rec {
+  /// The codes: the naturals, and the paths between two values of a coded
+  /// type.
+  @[ refuses("CrossBlockReference") ]
+  data UPath : Type {
+    /// The naturals.
+    NatP : UPath;
+    /// The paths between two values of a coded type's decode.
+    PathP : (a : UPath, x : elPath(a), y : elPath(a)) --> UPath;
+  }
+
+  /// The decoder: a path code decodes to the path type over its carrier.
+  @[ refuses("OutOfFragment.WrongSort") ]
+  def rec elPath(u : UPath) -> -F Type {
+    case u {
+      NatP => return Nat,
+      PathP(a, x, y) => return (Path(elPath[<](a), x, y))
+    }
+  }
+}
