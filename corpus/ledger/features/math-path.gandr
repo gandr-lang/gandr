@@ -1,0 +1,47 @@
+/// `math-path`: `math.path` states composition and a function's action with endpoints, and proves composition's groupoid laws.
+///
+/// Implemented: the module holds composition `join`, the actions `ap` and `apd`, the associator `assoc` and the unitors `leftUnit` and `rightUnit`. Each law holds by based path induction or by conversion, and the kernel replays each.
+///
+/// Each law computes at a reflexivity, so each declaration states a law there and proves it by reflexivity.
+///
+/// - see: library/math/src/path.gandr
+/// - see: #3786 — a family that `transport` takes by name, which `apd` writes as a lambda until then
+
+// `join`, `ap`, `apd`, `assoc`, `leftUnit`, `rightUnit`.
+import "../../../library/math/src/path.gandr";
+
+/// The left unitor at a reflexivity is the reflexivity of that reflexivity.
+def leftUnitAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), join(A, x, x, x, here(x), here(x)), here(x)),
+  leftUnit(A, x, x, here(x)),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
+
+/// The associator with a reflexivity last is the reflexivity of the first two paths composed.
+def assocAtHere(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), (f then g) then here(z), f then (g then here(z))),
+  assoc(A, x, y, z, z, f, g, here(z)),
+  here(f then g)
+) {
+  here(here(f then g))
+}
+
+/// A dependent function's action on a reflexivity is the reflexivity at its value.
+def apdAtHere(A : Type, P : A => Type, F : (a : A) => P(a), x : A) -> Path(
+  Path(P(x), transport(\a. P(a), here(x), F(x)), F(x)),
+  apd(A, P, F, x, x, here(x)),
+  here(F(x))
+) {
+  here(here(F(x)))
+}
+
+/// A function's action on a reflexivity is the reflexivity at its value.
+def apAtHere(A : Type, B : Type, F : A => B, x : A) -> Path(
+  Path(B, F(x), F(x)),
+  ap(A, B, F, x, x, here(x)),
+  here(F(x))
+) {
+  here(here(F(x)))
+}

@@ -32,7 +32,7 @@ mise run 'check:*'
 '''
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
-# process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, and the standard library under `library/std`, beside
+# process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, and the libraries `library/std` and `library/math`, beside
 # rustfmt. The formatter keeps each token as written, so the explicit-form
 # sources keep their spelling.
 ["check:fmt"]
@@ -45,7 +45,7 @@ run = ".config/mise/scope cargo fmt --all --check"
 # which would build the driver from nothing on every run.
 ["check:corpus-format"]
 description = "Every corpus source in the gandr formatter's layout"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std library/math"
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
@@ -1012,17 +1012,18 @@ run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ en
 
 # The corpus's two roots, run through the driver as an author runs them: the
 # strict root under `check`, every declaration checking and owing nothing, the
-# standard library among it (#628: it is built and tested by the corpus's
-# gates); the fixture root under `test`, every fixture settled and every
-# pending source still pending; and both roots in the sugared form, every
-# source but those declaring `form(explicit)` written as the formatter's
-# sugared form writes it. A red root exits nonzero and fails the gate.
+# libraries among it, each at its package root (#628: they are built and
+# tested by the corpus's gates); the fixture root under `test`, every fixture
+# settled and every pending source still pending; and both roots in the
+# sugared form, every source but those declaring `form(explicit)` written as
+# the formatter's sugared form writes it. A red root exits nonzero and fails
+# the gate.
 ["check:corpus"]
 description = "The strict root under `gandr check --recheck`, so the kernel checks every declaration whatever verdicts the host keeps, the fixture root under `gandr test`, and both in the sugared form"
 run = [
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check --recheck crates/surface-corpus/strict library/std",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check --recheck crates/surface-corpus/strict library/std library/math",
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface",
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std library/math",
 ]
 
 # Merge residue never lands: a conflict marker, or what a merge driver writes

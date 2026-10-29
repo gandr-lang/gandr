@@ -82,22 +82,25 @@ fn fixture_root() -> PathBuf
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus")
 }
 
-/// The standard library, which the gate checks beside the strict root and the
-/// corpus's fixtures import (#2767).
+/// The libraries, each at its package root, which the gate checks beside the
+/// strict root and the corpus's fixtures import (#2767, #3711).
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the absolute path of the standard library's package.
-/// - fails: never; this only constructs the path, without reading it.
+/// - ensures: the absolute paths of the standard library's and the mathematical
+///   library's packages, each under `library`.
+/// - fails: never; this only constructs the paths, without reading them.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the library is the one the gate runs.
+/// - hypothesis: L3 — the libraries are the ones the gate runs.
 /// - witness: `tests::corpus::a_run_lowers_each_source_once`
-#[spec(ensures: |ref ret| ret.is_absolute() && ret.ends_with("std"))]
-fn library_root() -> PathBuf
+#[spec(ensures: |ref ret| ret.iter().all(|root| root.is_absolute()
+        && root.parent().is_some_and(|library| library.ends_with("library"))))]
+fn library_roots() -> [PathBuf; 2]
 {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/std")
+    let library = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library");
+    [library.join("std"), library.join("math")]
 }
 
 /// The report of a visit over `path`, every step a source.
@@ -180,7 +183,8 @@ fn the_strict_root_checks_owing_nothing()
 #[test]
 fn the_fixture_root_settles_every_fixture()
 {
-    let report = run(vec![fixture_root(), library_root()]);
+    let [std_root, math_root] = library_roots();
+    let report = run(vec![fixture_root(), std_root, math_root]);
     assert_eq!(
         report.verdict(Verb::Test),
         RunVerdict::Settled,
@@ -214,14 +218,16 @@ fn the_fixture_root_settles_every_fixture()
 fn the_two_roots_exercise_every_row()
 {
     let mut exercised = run(vec![strict_root()]).exercised();
-    exercised.absorb(&run(vec![fixture_root(), library_root()]).exercised());
+    let [std_root, math_root] = library_roots();
+    exercised.absorb(&run(vec![fixture_root(), std_root, math_root]).exercised());
     assert_eq!(exercised.missing(), Vec::new(), "every row is carried");
 }
 
 #[test]
 fn a_run_lowers_each_source_once()
 {
-    let report = run(vec![strict_root(), fixture_root(), library_root()]);
+    let [std_root, math_root] = library_roots();
+    let report = run(vec![strict_root(), fixture_root(), std_root, math_root]);
     assert_eq!(
         usize::from(report.lowerings()),
         usize::from(report.sources().read()),

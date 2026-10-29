@@ -1,0 +1,18 @@
+# Written by `gandr check` from the package's `Package` model: edit the model, not this file.
+# blake3: 1eff3b2fead8ae9edc34fbd3bae8593262d6018d27d3b3eebbf91b9ccbbd9c9f
+
+[package]
+name = "math"
+version = "0.1.0"
+authors = "The gandr authors"
+licence = "MIT OR Apache-2.0"
+documentation = "https://github.com/gandr-lang/gandr/tree/main/library/math"
+endpoint = "https://github.com/gandr-lang/gandr"
+modules = [
+  "path",
+]
+
+[toolchain]
+gandr = ">= 0.0"
+features = []
+systems = []
