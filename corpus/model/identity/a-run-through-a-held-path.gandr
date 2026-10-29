@@ -1,0 +1,138 @@
+/// A run that reaches a definition behind a held path.
+///
+/// Whiskering a reflexivity twice gives a reflexivity, so it is a unit of the
+/// composite beside any path.
+///
+/// The inner whiskering is a held call inside the outer one's action on paths.
+/// The composite runs the outer call, and the run goes on through the inner one.
+///
+/// - see: #3774 — the run stopped at the held call and left the endpoint unrun
+
+/// The composite of two paths, whose type states its endpoints.
+def composedPaths(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(
+  A,
+  x,
+  z
+) {
+  p then q
+}
+
+/// A function's action on a path, whose type states its endpoints.
+def actedOn(B : Type, C : Type, F : B => C, b1 : B, b2 : B, p : Path(B, b1, b2)) -> Path(
+  C,
+  F(b1),
+  F(b2)
+) {
+  cong(F, p)
+}
+
+/// The associator by based path induction on `h`.
+def associatedPaths(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  transport(
+    (v : A, k : Path(A, z, v)) => Path(Path(A, x, v), (f then g) then k, f then (g then k)),
+    h,
+    here(z),
+    here(h),
+    here(f then g)
+  )
+}
+
+/// The whiskering of a path of paths on the right.
+def whiskeredRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  actedOn(
+    Path(A, x, y),
+    Path(A, x, z),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    f1,
+    f2,
+    a
+  )
+}
+
+/// A reflexivity whiskered twice, then `k`, is `k`.
+def twiceWhiskeredThen(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w),
+  r : Path(A, x, w),
+  k : Path(Path(A, x, w), (fm then g) then h, r)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, r),
+  composedPaths(
+    Path(A, x, w),
+    (fm then g) then h,
+    (fm then g) then h,
+    r,
+    whiskeredRight(
+      A,
+      x,
+      z,
+      w,
+      fm then g,
+      fm then g,
+      whiskeredRight(A, x, y, z, fm, fm, here(fm), g),
+      h
+    ),
+    k
+  ),
+  k
+) {
+  here(k)
+}
+
+/// A reflexivity whiskered twice, then the associator, is the associator.
+def twiceWhiskeredThenAssoc(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, fm then (g then h)),
+  composedPaths(
+    Path(A, x, w),
+    (fm then g) then h,
+    (fm then g) then h,
+    fm then (g then h),
+    whiskeredRight(
+      A,
+      x,
+      z,
+      w,
+      fm then g,
+      fm then g,
+      whiskeredRight(A, x, y, z, fm, fm, here(fm), g),
+      h
+    ),
+    associatedPaths(A, x, y, z, w, fm, g, h)
+  ),
+  associatedPaths(A, x, y, z, w, fm, g, h)
+) {
+  here(associatedPaths(A, x, y, z, w, fm, g, h))
+}

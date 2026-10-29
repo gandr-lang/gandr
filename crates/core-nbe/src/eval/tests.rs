@@ -35,6 +35,7 @@ use super::eval_comp_within;
 use super::eval_computation;
 use super::eval_value;
 use super::face_of;
+use super::run_held;
 use crate::arena::DomainArena;
 use crate::closure::Environment;
 use crate::conv::Settlement;
@@ -1248,6 +1249,73 @@ fn a_held_endpoint_stays_at_its_definition()
         domain.value(manifest).map(DomainValue::face),
         "the manifest reading of a held run runs the endpoint again"
     );
+}
+
+#[test]
+fn a_run_goes_on_through_a_held_call_a_stuck_elimination_stands_on_3774()
+{
+    // `⟨force(⟨ident(t)⟩)⟩`, `ident` the manifest identity and `t` the thunk
+    // of `return unit`. Held, `ident(t)` waits on `ident`, and the force sticks
+    // on that held call.
+    let mut core = CoreArena::new();
+    let constant = ConstantIndex::from(0_usize);
+    let reference = core.value_constant(constant);
+    let variable = core.value_variable(Zone::Intuitionistic, innermost());
+    let returned = core.computation_return(variable);
+    let lambda = core.computation_lambda(returned);
+    let identity = core.value_thunk(lambda);
+    let unit = core.value_unit();
+    let unit_returned = core.computation_return(unit);
+    let suspended = core.value_thunk(unit_returned);
+    let forced = core.computation_force(reference);
+    let applied = core.computation_application(forced, suspended);
+    let call = core.value_returned(applied);
+    let stuck = core.computation_force(call);
+    let endpoint = core.value_returned(stuck);
+
+    let mut chain = DefinitionChain::new();
+    let defined = chain.define(
+        constant,
+        GlobalIndex::from(9_u32),
+        Transparency::Manifest,
+        &[],
+    );
+    assert!(defined.is_ok());
+    let chain = lowered_to(chain, identity);
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+
+    let mut domain = DomainArena::new();
+    let held = eval_value(
+        &core,
+        &mut domain,
+        definitions.reading_endpoints(Endpoints::Hold),
+        ample(),
+        endpoint,
+    )
+    .expect("the held endpoint evaluates");
+    let (read, _left) =
+        run_held(&core, &mut domain, definitions, ample(), held).expect("the held endpoint runs");
+    assert_eq!(
+        Some(TermFace::Source(unit)),
+        read.and_then(|read| domain.value(read))
+            .map(DomainValue::face),
+        "the run goes on through the held `ident(t)` and returns what forcing `t` returns"
+    );
+
+    let empty = LoweredChain::new();
+    let rigid = Definitions::new(&empty, &environment, environment.root());
+    let held = eval_value(
+        &core,
+        &mut domain,
+        rigid.reading_endpoints(Endpoints::Hold),
+        ample(),
+        endpoint,
+    )
+    .expect("the held endpoint evaluates");
+    let (read, _left) =
+        run_held(&core, &mut domain, rigid, ample(), held).expect("the held endpoint runs");
+    assert_eq!(read, None, "with `ident` rigid the endpoint stays held");
 }
 
 #[test]
