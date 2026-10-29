@@ -2455,6 +2455,145 @@ fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
     );
 }
 
+/// Admit `here(point)` at `Path(Bool, point, ⟨not true⟩)`, its right side
+/// carrying the admitted result `Admitted`.
+///
+/// # Specification
+/// trivial.
+fn admit_admitted(
+    environment: &mut Environment,
+    (boolean, truth, not): (ValueTypeId, ValueId, ConstantIndex),
+    point: ValueId,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let endpoint = applied(arena, not, &[truth]);
+    let path = arena.value_type_path(boolean, point, endpoint);
+    let here = arena.value_here_relating(
+        point,
+        Arc::new(EndpointDialogues {
+            left: Vec::new(),
+            right: Vec::from([ConversionDecision::Admitted]),
+        }),
+    );
+    let declaration = staging.def(LevelSignature::monomorphic(), path, here);
+    environment.add_decl(declaration)
+}
+
+/// `Admitted` is taken without deriving only under the native conversion
+/// policy, and only for a closed pair: `here(false)` against `not true`
+/// admits under either policy, `here(true)` against it, a tampered admitted
+/// result, is refused without the policy and taken under it, and under `λx`,
+/// `here(x)` against `not x` is derived and refused under both.
+#[test]
+fn an_admitted_result_is_taken_only_under_the_policy_3558()
+{
+    let run = |policy: crate::admitted::AdmissionPolicy| {
+        let mut environment = Environment::new().admitting(policy);
+        let mut staging = environment.stage();
+        let boolean = boolean(staging.arena());
+        let declaration = staging.def(LevelSignature::monomorphic(), boolean.function, boolean.not);
+        let not = environment.add_decl(declaration).expect("not").position();
+        let pair = (boolean.ty, boolean.truth, not);
+        let agreeing = admit_admitted(&mut environment, pair, boolean.falsity);
+        let tampered = admit_admitted(&mut environment, pair, boolean.truth);
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let endpoint = applied(arena, not, &[bound]);
+        let path = arena.value_type_path(boolean.ty, bound, endpoint);
+        let returns = arena.comp_type_returner(path);
+        let family = arena.comp_type_pi(boolean.ty, returns);
+        let declared = arena.value_type_thunk(family);
+        let here = arena.value_here_relating(
+            bound,
+            Arc::new(EndpointDialogues {
+                left: Vec::new(),
+                right: Vec::from([ConversionDecision::Admitted]),
+            }),
+        );
+        let body = arena.computation_return(here);
+        let body = arena.computation_lambda(body);
+        let body = arena.value_thunk(body);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        let open = environment.add_decl(declaration);
+        (
+            agreeing.is_ok(),
+            endpoint_refusal(&tampered),
+            endpoint_refusal(&open),
+            u32::from(environment.admitted()),
+        )
+    };
+    let refused = |outcome: Option<(EndpointSide, KernelVerdict)>| {
+        matches!(
+            outcome,
+            Some((EndpointSide::Right, KernelVerdict::Declined(_)))
+        )
+    };
+    let (agreeing, tampered, open, taken) = run(crate::admitted::AdmissionPolicy::Derive);
+    assert!(agreeing, "the kernel derives `not true` to `false`");
+    assert!(
+        refused(tampered),
+        "without the policy the kernel derives the tampered result and refuses it"
+    );
+    assert!(refused(open), "an open pair is derived");
+    assert_eq!(taken, 0, "nothing is taken without the policy");
+    let (agreeing, tampered, open, taken) = run(crate::admitted::AdmissionPolicy::NativeConversion);
+    assert!(agreeing, "the policy takes the closed pair's answer");
+    assert_eq!(
+        tampered, None,
+        "under the policy the tier is trusted, so the tampered result is taken"
+    );
+    assert!(
+        refused(open),
+        "an open pair is derived under the policy too"
+    );
+    assert_eq!(taken, 2, "each closed admitted result taken is counted");
+}
+
+/// A declaration whose check took an admitted result keeps no verdict: under
+/// the policy the receipt attests `not` alone, and without it `not` and the
+/// reflexivity both.
+#[test]
+fn a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558()
+{
+    let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+    let recorded = |policy: crate::admitted::AdmissionPolicy| {
+        let mut environment = Environment::recalling(
+            crate::verdict::TrustPolicy::Trusted(alloc::collections::BTreeSet::from([
+                signer.identity()
+            ])),
+            Arc::new(crate::verdict::NoVerdicts),
+        )
+        .admitting(policy);
+        let mut staging = environment.stage();
+        let boolean = boolean(staging.arena());
+        let declaration = staging.def(LevelSignature::monomorphic(), boolean.function, boolean.not);
+        let not = environment.add_decl(declaration).expect("not").position();
+        admit_admitted(
+            &mut environment,
+            (boolean.ty, boolean.truth, not),
+            boolean.falsity,
+        )
+        .expect("`not true` is `false`");
+        match environment.receipt(&signer) {
+            quenchant_shape::shape::Maybe::Present(receipt) => receipt.records().len(),
+            quenchant_shape::shape::Maybe::Absent(_) => 0,
+        }
+    };
+    assert_eq!(
+        recorded(crate::admitted::AdmissionPolicy::Derive),
+        2,
+        "the kernel checked both itself"
+    );
+    assert_eq!(
+        recorded(crate::admitted::AdmissionPolicy::NativeConversion),
+        1,
+        "the reflexivity took the tier's answer, so it keeps no verdict"
+    );
+}
+
 /// Stage `law : Path(U(Bool → F Bool), k, k) = given` over the definitions of
 /// [`delayed_law`] and `axiom given : Path(U(Bool → F Bool), ⟨force delay⟩,
 /// k)`, every earlier declaration admitted and recorded. The ascription

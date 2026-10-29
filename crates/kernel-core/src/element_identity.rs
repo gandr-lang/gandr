@@ -848,9 +848,10 @@ pub(crate) fn law_type(
 }
 
 /// Relate a reflexivity's point to both endpoints of the identity it is
-/// checked at: by the forced conversion, by the kernel's own evaluation when
-/// the side's dialogue is the one decision `Evaluate`, or else by replaying
-/// the dialogue the reflexivity carries for that endpoint.
+/// checked at: by the forced conversion, by taking an admitted result where
+/// `taking` takes it, by the kernel's own evaluation when the side's dialogue
+/// is the one decision `Evaluate` or `Admitted`, or else by replaying the
+/// dialogue the reflexivity carries for that endpoint.
 ///
 /// # Specification
 /// - requires: `point`, both endpoints and every body in `unfoldings` live in
@@ -859,15 +860,18 @@ pub(crate) fn law_type(
 ///   [`crate::conv::convert_values`] relates the point to it, or that side's
 ///   dialogue in `dialogues` derives their convertibility under `unfoldings`
 ///   and within [`ReplayBudget::DEFAULT`]. A dialogue of the one decision
-///   `Evaluate` derives it when [`crate::replay::convert_unfolding`] converts
-///   the point and the endpoint, closed or open over the point's context. Any
-///   other dialogue derives it when it replays. `arena` holds what it held on
-///   entry.
+///   `Admitted` relates them when `taking` takes the pair
+///   ([`crate::admitted::Taking::take`]), and is otherwise read as `Evaluate`.
+///   A dialogue of the one decision `Evaluate` derives it when
+///   [`crate::replay::convert_unfolding`] converts the point and the endpoint,
+///   closed or open over the point's context. Any other dialogue derives it
+///   when it replays. `arena` holds what it held on entry.
 /// - provides: the `here` rule's endpoint check. In a replayed dialogue a
 ///   constant unfolds only where the dialogue names it, at the head and side it
 ///   names, so a δ-step under a binder is a recorded step and never the
 ///   kernel's own search. An evaluated pair is the kernel's own search, bound
 ///   by the replay's budget, each variable of the context standing for itself.
+///   A taken pair is the tier's answer, which the admission policy trusts.
 /// - fails: [`IdentityError::EndpointsDiffer`] at the first endpoint neither
 ///   relates, naming that side and its verdict.
 /// - panics: none.
@@ -881,11 +885,14 @@ pub(crate) fn law_type(
 ///   dialogue that names the unfolding, and refused by name when the dialogue
 ///   names the wrong constant, the wrong side, or fewer unfoldings than the
 ///   endpoint needs. A pair evaluating to one value is admitted by `Evaluate`,
-///   closed or under a binder it reads, and refused when it evaluates apart.
+///   closed or under a binder it reads, and refused when it evaluates apart. An
+///   admitted closed pair evaluating apart is taken under the policy and
+///   refused without it.
 /// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
 /// - witness: `element_identity::tests::an_endpoint_unfolding_under_a_thunk_replays_its_dialogue`
 /// - witness: `element_identity::tests::a_dialogue_naming_the_wrong_unfolding_is_refused_by_name`
 /// - witness: `element_identity::tests::a_pair_is_converted_by_the_kernel_s_own_evaluation_3557`
+/// - witness: `element_identity::tests::an_admitted_result_is_taken_only_under_the_policy_3558`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before && ret.as_ref().err().is_none_or(|error| matches!(
@@ -897,6 +904,7 @@ pub(crate) fn law_type(
 pub(crate) fn reflexive_endpoints(
     arena: &mut TermArena,
     unfoldings: &Unfoldings,
+    taking: crate::admitted::Taking<'_>,
     point: ValueId,
     (left, right): (ValueId, ValueId),
     dialogues: &EndpointDialogues,
@@ -911,23 +919,28 @@ pub(crate) fn reflexive_endpoints(
         {
             continue;
         }
-        let verdict = if let &[ConversionDecision::Evaluate] = dialogue.as_slice() {
-            crate::replay::convert_unfolding(
-                arena,
-                unfoldings,
-                ReplaySides::Values(point, endpoint),
-                ReplayBudget::DEFAULT,
-            )
-        }
-        else {
-            crate::replay::replay(
+        let verdict = match *dialogue.as_slice() {
+            [ConversionDecision::Admitted]
+                if taking.take(arena, point, endpoint) == crate::admitted::Took::Taken =>
+            {
+                KernelVerdict::Convertible
+            },
+            [ConversionDecision::Evaluate | ConversionDecision::Admitted] => {
+                crate::replay::convert_unfolding(
+                    arena,
+                    unfoldings,
+                    ReplaySides::Values(point, endpoint),
+                    ReplayBudget::DEFAULT,
+                )
+            },
+            _ => crate::replay::replay(
                 arena,
                 unfoldings,
                 ReplaySides::Values(point, endpoint),
                 EngineClaim::Convertible,
                 dialogue.iter().copied().map(anchor),
                 ReplayBudget::DEFAULT,
-            )
+            ),
         };
         if verdict != KernelVerdict::Convertible {
             return Err(KernelError::Identity(IdentityError::EndpointsDiffer {

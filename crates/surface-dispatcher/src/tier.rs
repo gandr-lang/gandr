@@ -9,12 +9,23 @@
 //! The focused definitions persist across the pairs one context offers, each
 //! later admission focused once when a pair first needs it.
 //!
+//! A driver may install an admission policy before its walk
+//! ([`install_admission_policy`]). Under
+//! [`AdmissionPolicy::NativeConversion`] a closed pair the tier meets crosses
+//! as an admitted result the kernel takes, and the tier joins the trusted base
+//! for the run. The language server, the sweeps and every test install none,
+//! so there each pair crosses as an evaluation the kernel derives.
+//!
 //! # References
 //!
 //! - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check
 //!   that [`EndpointTier::meet`] decides a pair's readings by.
 
 use alloc::boxed::Box;
+use core::fmt;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::Ordering;
+use std::sync::OnceLock;
 
 use gandr_core_checker::CodeDefinitions;
 use gandr_core_checker::tier::EndpointTier;
@@ -37,10 +48,23 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::equal_shared_certificate_syntax;
+use gandr_kernel_core::AdmissionPolicy;
+use gandr_kernel_core::AdmittedCount;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::evaluate_open;
+use quenchant_shape::shape::Maybe;
+
+use crate::verdicts::AlreadyInstalled;
+
+/// The admission policy this process installed.
+// economy: one policy per process, read where every context takes its tier
+// and every readmission funnels, as the verdict cache is.
+static ADMITTING: OnceLock<AdmissionPolicy> = OnceLock::new();
+
+/// How many admitted results this process's whole readmissions took.
+static TAKEN: AtomicU32 = AtomicU32::new(0);
 
 /// The jumps each side's run may take before the tier leaves the pair to the
 /// machine. The machine has a step budget a run past it declines on, and the
@@ -228,6 +252,142 @@ impl EndpointTier for Emitted
             },
             _ => Meeting::Unmet,
         }
+    }
+}
+
+/// Install `policy` for every check this process makes after, unless a policy
+/// is installed already, which stays.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`AlreadyInstalled`].
+#[inline]
+pub fn install_admission_policy(policy: AdmissionPolicy) -> Result<(), AlreadyInstalled>
+{
+    ADMITTING.set(policy).map_err(|_refused| AlreadyInstalled)
+}
+
+/// The policy a context's closed pairs cross under: the one installed, or
+/// [`AdmissionPolicy::Derive`] when none is.
+///
+/// # Specification
+/// trivial.
+pub fn admitting() -> AdmissionPolicy
+{
+    ADMITTING.get().copied().unwrap_or_default()
+}
+
+/// Add what a whole readmission's kernel took to the process's tally.
+///
+/// # Specification
+/// trivial.
+pub fn took(taken: AdmittedCount)
+{
+    let _before = TAKEN.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |held| {
+        Some(held.saturating_add(u32::from(taken)))
+    });
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a process has no admitted tally.
+    pub mod untaken {
+        /// The reason there is none.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The process derives every admitted result: it installed no
+            /// policy that takes one.
+            Derived,
+        }
+    }
+}
+
+/// What a process under an admission policy took so far, and the policy.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdmittedTally
+{
+    /// The admitted results the kernel took.
+    taken: u32,
+    /// The policy it took them under.
+    policy: AdmissionPolicy,
+}
+
+impl AdmittedTally
+{
+    /// The clause a verdict names the policy and the tier by.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn admitting(&self) -> Admitting
+    {
+        Admitting(self.policy)
+    }
+}
+
+impl fmt::Display for AdmittedTally
+{
+    /// `<n> taken from the emitter tier`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{} taken from the emitter tier", self.taken)
+    }
+}
+
+/// The policy and the tier a verdict that took admitted results names.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Admitting(AdmissionPolicy);
+
+impl fmt::Display for Admitting
+{
+    /// `admitting <policy> from the emitter tier`, the policy spelled as the
+    /// invocation spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let policy = match self.0 {
+            AdmissionPolicy::Derive => "derive",
+            AdmissionPolicy::NativeConversion => "native-conversion",
+        };
+        write!(f, "admitting {policy} from the emitter tier")
+    }
+}
+
+/// The installed policy's tally, when it takes admitted results.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn admitted_tally() -> Maybe<AdmittedTally, untaken::Absent>
+{
+    match admitting() {
+        AdmissionPolicy::Derive => Maybe::Absent(untaken::Absent::Derived),
+        policy @ AdmissionPolicy::NativeConversion => Maybe::Present(AdmittedTally {
+            taken: TAKEN.load(Ordering::Relaxed),
+            policy,
+        }),
     }
 }
 

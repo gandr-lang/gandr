@@ -503,6 +503,12 @@ enum Command
         /// `kernel.policy`.
         #[arg(long)]
         recheck: bool,
+        /// Take a closed conversion pair's answer from the emitter tier
+        /// without the kernel deriving it: the emitter joins the trusted base
+        /// for the run. The report counts the results taken, and the verdict
+        /// names the policy and the tier. Without it, the kernel derives each.
+        #[arg(long, value_enum, value_name = "POLICY")]
+        admit: Option<AdmitPolicy>,
         /// Print, for each declaration a settled source writes, the bytes its
         /// segment takes in the kernel's artifact, the subterm-table entries
         /// the segment adds and its roots' expanded work.
@@ -1139,6 +1145,16 @@ enum LintName
     EffectfulRuns,
 }
 
+/// An admission policy `check --admit` states, spelled as the verdict names
+/// it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum AdmitPolicy
+{
+    /// `native-conversion`: the kernel takes a closed conversion pair's
+    /// answer from the emitter tier.
+    NativeConversion,
+}
+
 /// A spelling `fmt --form` asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 enum FormName
@@ -1534,19 +1550,22 @@ enum Screen
 ///   open the store as [`opened`] states, exiting `2` when no directory names
 ///   it; `check` without `--recheck` keeps the kernel's verdicts as
 ///   [`verdicts::install`] states, and runs without them after one `gandr:`
-///   line on standard error when the cache cannot be installed; `lock` rewrites
-///   each package's lock as [`lock`] states; `run` runs its script as
-///   [`script`] states, its `Net` operations served on the network its
-///   `--net-bind`, `--net-secret` and `--net-lookup` flags bind and its
-///   migrations sent where its `--world` flags bind them, `host` hosts the
-///   worlds of its script on that network as [`script`] states, and `fmt` lays
-///   out its paths as [`fmt`] states. `lsp` serves and `lsp --capabilities`
-///   prints as [`lsp`] and [`capabilities`] state, `repl` runs as [`repl`]
-///   states, and `tui` as [`tui`] states. Every face writes its types and
-///   values in the spelling [`spelling`] resolves; a configuration file that
-///   cannot be read is `gandr: <path>: <fault>` on standard error and exits `2`
-///   before any verb runs. Output the driver cannot write is noted on standard
-///   error, when that is writable, and exits `2`.
+///   line on standard error when the cache cannot be installed; `check --admit
+///   native-conversion` installs the admission policy before its walk, and its
+///   report then counts the results the kernel took from the emitter tier and
+///   its verdict names the policy and the tier; `lock` rewrites each package's
+///   lock as [`lock`] states; `run` runs its script as [`script`] states, its
+///   `Net` operations served on the network its `--net-bind`, `--net-secret`
+///   and `--net-lookup` flags bind and its migrations sent where its `--world`
+///   flags bind them, `host` hosts the worlds of its script on that network as
+///   [`script`] states, and `fmt` lays out its paths as [`fmt`] states. `lsp`
+///   serves and `lsp --capabilities` prints as [`lsp`] and [`capabilities`]
+///   state, `repl` runs as [`repl`] states, and `tui` as [`tui`] states. Every
+///   face writes its types and values in the spelling [`spelling`] resolves; a
+///   configuration file that cannot be read is `gandr: <path>: <fault>` on
+///   standard error and exits `2` before any verb runs. Output the driver
+///   cannot write is noted on standard error, when that is writable, and exits
+///   `2`.
 /// - provides: the exit code as the run's verdict. With `tracing`, a
 ///   thread-local subscriber reports dispatch spans to standard error after
 ///   argument parsing.
@@ -1579,6 +1598,7 @@ enum Screen
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
 /// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
+/// - witness: `tests::cli::check_admit_takes_the_tier_s_answer_and_says_so_3558`
 /// - witness: `tests::net::two_processes_exchange_a_ping_3186`
 fn main() -> ExitCode
 {
@@ -1627,6 +1647,7 @@ fn main() -> ExitCode
             grant,
             entry,
             recheck,
+            admit,
             measure,
             verbosity,
             jobs,
@@ -1677,6 +1698,19 @@ fn main() -> ExitCode
                     // why, or, unwritable, is passed over as the warning it is.
                     drop(writeln!(std::io::stderr(), "gandr: {uninstalled}"));
                 }
+            }
+            if admit == Some(AdmitPolicy::NativeConversion)
+                && gandr_surface_dispatcher::install_admission_policy(
+                    gandr_kernel_core::AdmissionPolicy::NativeConversion,
+                )
+                .is_err()
+            {
+                return match writeln!(
+                    std::io::stderr(),
+                    "gandr: an admission policy is installed already"
+                ) {
+                    Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                };
             }
             (
                 Invocation::Check {
@@ -3244,12 +3278,20 @@ fn run(
             }
         }
     }
+    let admitted = gandr_surface_dispatcher::admitted_tally();
     if verbosity == Verbosity::Json {
-        let summary = serde_json::json!({
+        let mut summary = serde_json::json!({
             "level": "summary",
             "report": report.to_string(),
             "verdict": verdict.to_string(),
         });
+        if let Maybe::Present(tally) = admitted
+            && let Some(fields) = summary.as_object_mut()
+        {
+            let _absent = fields.insert("admitted".to_owned(), tally.to_string().into());
+            let _absent =
+                fields.insert("admitting".to_owned(), tally.admitting().to_string().into());
+        }
         writeln!(stdout, "{summary}")?;
     }
     else {
@@ -3259,7 +3301,13 @@ fn run(
         {
             writeln!(stdout, "kernel: {tally}")?;
         }
-        writeln!(stdout, "verdict: {verdict}")?;
+        match admitted {
+            Maybe::Present(tally) => {
+                writeln!(stdout, "admitted: {tally}")?;
+                writeln!(stdout, "verdict: {verdict}, {}", tally.admitting())?;
+            },
+            Maybe::Absent(_) => writeln!(stdout, "verdict: {verdict}")?,
+        }
     }
     Ok(match verdict {
         RunVerdict::Settled => ExitCode::SUCCESS,

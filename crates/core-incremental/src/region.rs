@@ -373,8 +373,12 @@ pub struct Program
     /// The items and their references.
     layout: Layout,
     /// What makes the tier each pass's context decides endpoint pairs on,
-    /// when the front end supplies one.
-    tier: Option<gandr_core_checker::tier::MakeTier>,
+    /// with the policy a closed pair it meets crosses under, when the front
+    /// end supplies one.
+    tier: Option<(
+        gandr_core_checker::tier::MakeTier,
+        gandr_kernel_core::AdmissionPolicy,
+    )>,
 }
 
 impl Program
@@ -514,14 +518,15 @@ impl Program
         &self.layout
     }
 
-    /// Decide each closed endpoint pair every later pass meets on a tier
-    /// `make` makes, one per pass.
+    /// Decide each endpoint pair every later pass meets on a tier `make`
+    /// makes, one per pass, a closed pair it meets crossing as `policy`
+    /// states.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every later pass's context is handed a tier `make` made
-    ///   ([`gandr_core_checker::CheckingContext::decide_endpoints_on`]); the
-    ///   last maker handed is the one kept.
+    /// - ensures: every later pass's context is handed a tier `make` made and
+    ///   `policy` ([`gandr_core_checker::CheckingContext::decide_endpoints_on`]);
+    ///   the last maker and policy handed are the ones kept.
     /// - provides: the front end's hand-in of its tier to the incremental
     ///   checker, whose passes make their own contexts.
     /// - panics: none.
@@ -536,16 +541,23 @@ impl Program
     pub fn decide_endpoints_on(
         &mut self,
         make: gandr_core_checker::tier::MakeTier,
+        policy: gandr_kernel_core::AdmissionPolicy,
     )
     {
-        self.tier = Some(make);
+        self.tier = Some((make, policy));
     }
 
-    /// What makes each pass's tier, when one was handed.
+    /// What makes each pass's tier, and the policy beside it, when one was
+    /// handed.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn tier(&self) -> Option<gandr_core_checker::tier::MakeTier>
+    pub(crate) const fn tier(
+        &self
+    ) -> Option<(
+        gandr_core_checker::tier::MakeTier,
+        gandr_kernel_core::AdmissionPolicy,
+    )>
     {
         self.tier
     }

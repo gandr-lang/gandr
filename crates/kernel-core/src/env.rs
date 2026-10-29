@@ -1269,6 +1269,10 @@ pub struct Environment
     /// The session every admission's check is lent, whose names outlive the
     /// admission.
     names: Names,
+    /// Whether a check takes a closed pair's admitted result or derives it.
+    admitting: crate::admitted::AdmissionPolicy,
+    /// How many admitted results this environment's checks took.
+    admitted: crate::admitted::AdmittedCount,
 }
 
 impl Environment
@@ -1299,6 +1303,24 @@ impl Environment
         Self {
             verdicts: crate::verdict::Verdicts::under(policy, source),
             ..Self::default()
+        }
+    }
+
+    /// The same environment, its checks standing on admitted results as
+    /// `policy` states.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn admitting(
+        self,
+        policy: crate::admitted::AdmissionPolicy,
+    ) -> Self
+    {
+        Self {
+            admitting: policy,
+            ..self
         }
     }
 
@@ -1336,6 +1358,8 @@ impl Environment
             manifest: self.manifest.clone(),
             verdicts: self.verdicts.handed_on(),
             names: Names::default(),
+            admitting: crate::admitted::AdmissionPolicy::Derive,
+            admitted: crate::admitted::AdmittedCount::NONE,
         }
     }
 
@@ -1593,7 +1617,9 @@ impl Environment
     ///   trusted signer attests admits the declaration as
     ///   [`Admission::Recalled`] with the recorded reading and without the
     ///   check; any other key is checked and, on success, recorded for
-    ///   [`Self::receipt`]. A rejection ends the chain.
+    ///   [`Self::receipt`] unless its check took an admitted result
+    ///   ([`crate::admitted`]), since a receipt attests only what the kernel
+    ///   checked itself. A rejection ends the chain.
     /// - provides: the one checked entry into the kernel. It takes **no memo**,
     ///   which is the structural form of the memo's one-call lifetime: nothing
     ///   an earlier check recorded can reach a later one through this entry. A
@@ -1630,6 +1656,7 @@ impl Environment
     /// - witness: `tests::verdicts::an_unlisted_signer_recalls_nothing`
     /// - witness: `tests::verdicts::a_tampered_record_recalls_nothing`
     /// - witness: `tests::verdicts::a_rechecking_environment_recalls_nothing`
+    /// - witness: `element_identity::tests::a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558`
     // The predicate covers the two structural halves of the success
     // postcondition: exactly one entry is appended, and the admission floor
     // ends at the arena's own watermark — that is, the checker's intermediates
@@ -1686,6 +1713,7 @@ impl Environment
             Maybe::Present(key) => self.verdicts.recall(key),
             Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
         };
+        let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
         let (outcome, admission) = match recalled {
             Maybe::Present(accessibility) => (Ok(accessibility), Admission::Recalled),
             Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => {
@@ -1694,12 +1722,15 @@ impl Environment
                     ref entries,
                     ref manifest,
                     ref mut names,
+                    admitting,
                     ..
                 } = *self;
                 (
                     check::check_declaration(
                         arena,
-                        check::Judgement::new(entries, &levels).unsealing(manifest),
+                        check::Judgement::new(entries, &levels)
+                            .unsealing(manifest)
+                            .taking(crate::admitted::Taking::under(admitting, &taken)),
                         &declaration,
                         &mut names.session,
                     ),
@@ -1709,9 +1740,16 @@ impl Environment
         };
         match outcome {
             Ok(accessibility) => {
-                if let (Admission::Checked, Maybe::Present(key)) = (admission, key) {
+                let took = taken.get();
+                if let (
+                    Admission::Checked,
+                    Maybe::Present(key),
+                    crate::admitted::AdmittedCount::NONE,
+                ) = (admission, key, took)
+                {
                     self.verdicts.checked(key, accessibility.clone());
                 }
+                self.admitted = self.admitted.and(took);
                 // Keep this declaration's content; drop the intermediates that
                 // allocated past it.
                 self.arena.truncate_to(content_end);
@@ -1781,6 +1819,17 @@ impl Environment
     pub fn recalls(&self) -> crate::verdict::RecallCount
     {
         self.verdicts.recalls()
+    }
+
+    /// How many admitted results this environment's checks took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn admitted(&self) -> crate::admitted::AdmittedCount
+    {
+        self.admitted
     }
 
     /// Admit a declaration through the **single warned bypass**, unchecked.
@@ -1993,6 +2042,8 @@ impl Environment
         let past_families = ConstantIndex::from(base.saturating_add(families));
         let end = ConstantIndex::from(base.saturating_add(members.len()));
         let mut admitted = Vec::with_capacity(members.len());
+        // A block records no verdict, so what its checks take is only counted.
+        let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
         // The definitions' declared types form with the families in scope and
         // no definition: a declared type names the block's families, never
         // its definitions.
@@ -2006,12 +2057,14 @@ impl Environment
                 ref entries,
                 ref manifest,
                 ref mut names,
+                admitting,
                 ..
             } = *self;
             check::form_declared(
                 arena,
                 check::Judgement::new(entries, &levels)
                     .unsealing(manifest)
+                    .taking(crate::admitted::Taking::under(admitting, &taken))
                     .within_mutual(
                         check::occurrence::Block::new(first, past_families, past_families),
                         members,
@@ -2037,10 +2090,12 @@ impl Environment
                     ref entries,
                     ref manifest,
                     ref mut names,
+                    admitting,
                     ..
                 } = *self;
                 let judgement = check::Judgement::new(entries, &levels)
                     .unsealing(manifest)
+                    .taking(crate::admitted::Taking::under(admitting, &taken))
                     .within_mutual(
                         check::occurrence::Block::new(
                             first,
@@ -2087,6 +2142,7 @@ impl Environment
                 entry.rested_on.clone_from(&rested);
             }
         }
+        self.admitted = self.admitted.and(taken.get());
         Ok(admitted)
     }
 

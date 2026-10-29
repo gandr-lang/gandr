@@ -2394,6 +2394,48 @@ fn the_witness_project_s_manifest_is_its_model_s_2687()
     );
 }
 
+/// #3558: `--admit native-conversion` takes the emitter tier's answer for
+/// `fibonacci`'s closed pair without the kernel deriving it, and says so: the
+/// report counts the one result taken, and the verdict names the policy and
+/// the tier. Without the flag nothing is taken, and the report is as before.
+#[test]
+fn check_admit_takes_the_tier_s_answer_and_says_so_3558()
+{
+    let row =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/conversion/fibonacci.gandr");
+    let checked = |admit: &[&str]| {
+        let mut arguments = vec![
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("--recheck"),
+        ];
+        arguments.extend(admit.iter().map(std::ffi::OsString::from));
+        arguments.push(row.clone().into_os_string());
+        let output = ran(gandr(&arguments));
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        stdout(&output)
+    };
+    let admitted = checked(&["--admit", "native-conversion"]);
+    assert!(
+        admitted
+            .lines()
+            .any(|line| line == "admitted: 1 taken from the emitter tier"),
+        "{admitted}"
+    );
+    assert!(
+        admitted
+            .lines()
+            .any(|line| line
+                == "verdict: settled, admitting native-conversion from the emitter tier"),
+        "{admitted}"
+    );
+    let derived = checked(&[]);
+    assert!(!derived.contains("admitted: "), "{derived}");
+    assert!(
+        derived.lines().any(|line| line == "verdict: settled"),
+        "{derived}"
+    );
+}
+
 #[test]
 fn a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation()
 {

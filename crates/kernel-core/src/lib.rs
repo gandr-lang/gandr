@@ -652,6 +652,7 @@
 extern crate alloc;
 
 pub mod admission;
+pub mod admitted;
 pub mod census;
 pub mod check;
 pub mod conv;
@@ -681,6 +682,8 @@ pub mod verdict;
 mod witness;
 mod words;
 
+pub use crate::admitted::AdmissionPolicy;
+pub use crate::admitted::AdmittedCount;
 pub use crate::census::ExpansionCensus;
 pub use crate::census::ExpansionCount;
 pub use crate::census::ExpansionKind;

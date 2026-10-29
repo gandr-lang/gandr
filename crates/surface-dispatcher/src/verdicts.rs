@@ -172,7 +172,8 @@ impl VerdictCache
     }
 }
 
-/// A cache was installed already.
+/// A process-wide install was made already: the verdict cache's or the
+/// admission policy's.
 ///
 /// # Specification
 /// trivial.
@@ -260,7 +261,8 @@ pub fn verdict_tally() -> Maybe<VerdictTally, tallied::Absent>
 
 /// [`bridge::readmit_retiring`] under the installed cache's recall, settling
 /// a whole readmission into the cache; under [`bridge::Recall::recheck`] when
-/// none is installed.
+/// none is installed. A whole readmission adds the admitted results its kernel
+/// took to the process's tally.
 ///
 /// # Specification
 /// trivial.
@@ -276,10 +278,14 @@ pub fn readmit<Poll>(
 where
     Poll: Retirement,
 {
-    match INSTALLED.get() {
+    let polled = match INSTALLED.get() {
         Some(cache) => cache.readmit(arena, report, leading, retirement),
         None => bridge::readmit_retiring(arena, report, leading, &RECHECK, retirement),
+    };
+    if let Polled::Whole((ref readmission, _)) = polled {
+        crate::tier::took(readmission.environment().admitted());
     }
+    polled
 }
 
 #[cfg(test)]

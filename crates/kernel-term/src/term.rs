@@ -981,7 +981,7 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
     /// - witness: `term::tests::evidence_words_reject_unknown_and_oversized_premises`
     #[inline]
     #[spec(ensures: |ret| {
-        ret.is_ok() == (word.0 <= 0x0B_u64 || (0x0D_u64 ..= 0x15_u64).contains(&word.0) ||
+        ret.is_ok() == (word.0 <= 0x0B_u64 || (0x0D_u64 ..= 0x16_u64).contains(&word.0) ||
             (word.0 & 0xFF_u64 == 0x0C_u64 && u32::try_from(word.0 >> 8_u32).is_ok()))
     })]
     fn try_from(word: EvidenceWord) -> Result<Self, Self::Error>
@@ -1047,6 +1047,7 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
             0x15 => Self::Hold {
                 side: ConversionSide::Right,
             },
+            0x16 => Self::Admitted,
             _ => return Err(invalid),
         })
     }
@@ -1162,6 +1163,7 @@ pub fn decision_word(
         ConversionDecision::Hold {
             side: ConversionSide::Right,
         } => 0x15,
+        ConversionDecision::Admitted => 0x16,
     })
 }
 
@@ -1220,13 +1222,15 @@ mod tests
                 );
             }
         }
-        assert_eq!(
-            Ok(ConversionDecision::Evaluate),
-            ConversionDecision::try_from(super::decision_word(ConversionDecision::Evaluate)),
-            "an evaluation crosses the wire as itself"
-        );
+        for decision in [ConversionDecision::Evaluate, ConversionDecision::Admitted] {
+            assert_eq!(
+                Ok(decision),
+                ConversionDecision::try_from(super::decision_word(decision)),
+                "an evaluation and an admitted result cross the wire as themselves"
+            );
+        }
         for word in [
-            0x16_u64,
+            0x17_u64,
             0xFF_u64,
             0x100_u64,
             0x0100_0000_000C_u64,

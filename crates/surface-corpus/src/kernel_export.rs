@@ -1409,7 +1409,8 @@ mod kernel_ride_readmission
                 | ConversionDecision::ComparedShared { .. }
                 | ConversionDecision::Decompose
                 | ConversionDecision::NegativeSubgoal { .. }
-                | ConversionDecision::Evaluate => ConversionDecision::ReduceLeft { redex: () },
+                | ConversionDecision::Evaluate
+                | ConversionDecision::Admitted => ConversionDecision::ReduceLeft { redex: () },
             };
         }
         let forged = arena.value_here_relating(point, Arc::new(tampered));
