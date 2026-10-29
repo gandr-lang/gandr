@@ -1,9 +1,12 @@
 #:tombi toml-version = "v1.0.0"
 
-# Every test finishes within 30 s under every profile a gate runs — `default`
-# locally, `ci` and `ci-enforcing` on each pull request and merge-queue entry —
-# plain and with specifications enforced. A test over the bound is split,
-# sampled or made cheaper; no profile a gate runs raises the limit for one.
+# Every test finishes within 30 s, plain and with specifications enforced. A
+# test over the budget is split, sampled or made cheaper; no profile a gate
+# runs raises the budget for one. Locally (`default`) the budget kills the
+# test. In CI (`ci` and `ci-enforcing`, on each pull request and merge-queue
+# entry) a test past the budget is marked slow and runs on, so it never
+# dequeues a pull request: `mise run ci:slow-file` files it for triage
+# (#3752). Only a test past 5 minutes, a hang, is killed and fails the run.
 # `status-level = "pass"` keeps every test's elapsed time on the local run, and
 # the CI profile's JUnit report carries per-test durations, so timing outliers
 # stay visible without a separate instrumentation pass.
@@ -26,7 +29,7 @@ status-level = "slow"
 final-status-level = "slow"
 failure-output = "immediate-final"
 fail-fast = false
-slow-timeout = { period = "30s", terminate-after = 1 }
+slow-timeout = { period = "30s", terminate-after = 10 }
 
 [profile.ci.junit]
 path = "junit.xml"

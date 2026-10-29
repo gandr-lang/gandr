@@ -57,6 +57,11 @@ struct Cli
     /// Report on the runs already stored without invoking `gh`.
     #[arg(long)]
     offline: bool,
+    /// Print each test's time instead of the proposal: one tab-separated
+    /// `lane binary test seconds` line per test, its lower median in the lane
+    /// it held longest.
+    #[arg(long)]
+    times: bool,
 }
 
 /// Parses the invocation, prints the report and chooses the exit code.
@@ -97,14 +102,17 @@ fn main() -> ExitCode
     }
 }
 
-/// Fetches the runs `cli` names, reads them and prints the proposal.
+/// Fetches the runs `cli` names, reads them and prints the proposal, or with
+/// `--times` each test's time.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: unless `--offline`, every run `gh` lists is in the store; the
-///   newest `--runs` stored runs are read; standard output receives the run
-///   identifiers, the table and the generated overrides.
-/// - provides: the whole report.
+///   newest `--runs` stored runs are read; with `--times` standard output
+///   receives one tab-separated `lane binary test seconds` line per test, in
+///   test order, and the configuration is not read; otherwise it receives the
+///   run identifiers, the table and the generated overrides.
+/// - provides: the whole report, and the times `ci:slow-file` files from.
 /// - fails: every refusal of [`recent_runs`], [`download`], [`stored_runs`],
 ///   [`read_run`] and [`Overrides::parse`]; [`TimingError::NoRuns`] when the
 ///   store holds no run; [`TimingError::Io`] when the configuration cannot be
@@ -119,10 +127,12 @@ fn main() -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — the offline report over three stored runs reads only the
 ///   newest two when asked for two; a fetch through a fake `gh` stores and
-///   reads the runs it lists; an empty store is refused.
+///   reads the runs it lists; an empty store is refused; `--times` over one run
+///   prints each test by its slowest lane, with no configuration present.
 /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
 /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 /// - witness: `tests::cli::an_empty_store_is_refused`
+/// - witness: `tests::cli::times_print_each_test_by_its_slowest_lane`
 fn report(cli: Cli) -> Result<(), TimingError>
 {
     let repository = Repository::from(cli.repo);
@@ -141,6 +151,23 @@ fn report(cli: Cli) -> Result<(), TimingError>
     let mut history = History::default();
     for &run in &runs {
         read_run(&cli.store, run, &mut history)?;
+    }
+    let output = |error: std::io::Error| TimingError::Output {
+        message: error.to_string(),
+    };
+    if cli.times {
+        let mut stdout = std::io::stdout().lock();
+        for (test, timing) in history.timings() {
+            writeln!(
+                stdout,
+                "{}\t{}\t{test}\t{:.3}",
+                timing.lane,
+                timing.binary,
+                timing.median.as_secs_f64()
+            )
+            .map_err(output)?;
+        }
+        return stdout.flush().map_err(output);
     }
     let text = std::fs::read_to_string(&cli.config).map_err(|error| TimingError::Io {
         path: cli.config.clone(),
@@ -163,7 +190,5 @@ fn report(cli: Cli) -> Result<(), TimingError>
         Generated(&rows),
     )
     .and_then(|()| stdout.flush())
-    .map_err(|error| TimingError::Output {
-        message: error.to_string(),
-    })
+    .map_err(output)
 }

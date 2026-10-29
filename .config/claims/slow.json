@@ -1,0 +1,168 @@
+[
+  {
+    "name": "#3752: a run whose test took 41 s opens one collector for it with one open row",
+    "input": {
+      "budget": 30,
+      "run": {
+        "id": 40817848668,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40817848668"
+      },
+      "times": [
+        {
+          "lane": "junit-cargo-test-enforcing-shard-2",
+          "binary": "gandr-lang::kernel_export",
+          "test": "kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0",
+          "seconds": 41.25
+        },
+        {
+          "lane": "junit-cargo-test-plain-only",
+          "binary": "gandr-a",
+          "test": "fast::t",
+          "seconds": 0.4
+        }
+      ],
+      "issues": []
+    },
+    "output": [
+      {
+        "number": null,
+        "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+        "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n",
+        "close": false,
+        "line": "- `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export`: 41.25 s in `cargo-test-enforcing-shard-2`, past its 30 s budget"
+      }
+    ]
+  },
+  {
+    "name": "#3752: the same run read again files nothing: no second collector and no second row",
+    "input": {
+      "budget": 30,
+      "run": {
+        "id": 40817848668,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40817848668"
+      },
+      "times": [
+        {
+          "lane": "junit-cargo-test-enforcing-shard-2",
+          "binary": "gandr-lang::kernel_export",
+          "test": "kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0",
+          "seconds": 41.25
+        },
+        {
+          "lane": "junit-cargo-test-plain-only",
+          "binary": "gandr-a",
+          "test": "fast::t",
+          "seconds": 0.4
+        }
+      ],
+      "issues": [
+        {
+          "number": 3760,
+          "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+          "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n"
+        }
+      ]
+    },
+    "output": []
+  },
+  {
+    "name": "#3752: a later run under the budget adds a ticked row, and one ticked row leaves the collector open",
+    "input": {
+      "budget": 30,
+      "run": {
+        "id": 40900000001,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40900000001"
+      },
+      "times": [
+        {
+          "lane": "junit-cargo-test-enforcing-shard-1",
+          "binary": "gandr-lang::kernel_export",
+          "test": "kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0",
+          "seconds": 12.5
+        },
+        {
+          "lane": "junit-cargo-test-plain-only",
+          "binary": "gandr-a",
+          "test": "fast::t",
+          "seconds": 0.4
+        }
+      ],
+      "issues": [
+        {
+          "number": 3760,
+          "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+          "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n"
+        }
+      ]
+    },
+    "output": [
+      {
+        "number": 3760,
+        "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+        "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n- [x] [run 40900000001](https://github.com/gandr-lang/gandr/actions/runs/40900000001) — `cargo-test-enforcing-shard-1`: 12.5 s, under budget\n",
+        "close": false,
+        "line": "- `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export`: 12.5 s in `cargo-test-enforcing-shard-1`, under budget"
+      }
+    ]
+  },
+  {
+    "name": "#3752: the third ticked row in a row closes the collector",
+    "input": {
+      "budget": 30,
+      "run": {
+        "id": 40900000003,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40900000003"
+      },
+      "times": [
+        {
+          "lane": "junit-cargo-test-enforcing-shard-1",
+          "binary": "gandr-lang::kernel_export",
+          "test": "kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0",
+          "seconds": 12.5
+        }
+      ],
+      "issues": [
+        {
+          "number": 3760,
+          "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+          "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n- [x] [run 40900000001](https://github.com/gandr-lang/gandr/actions/runs/40900000001) — `cargo-test-enforcing-shard-1`: 12.5 s, under budget\n- [x] [run 40900000002](https://github.com/gandr-lang/gandr/actions/runs/40900000002) — `cargo-test-enforcing-shard-1`: 12.5 s, under budget\n"
+        }
+      ]
+    },
+    "output": [
+      {
+        "number": 3760,
+        "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+        "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n- [x] [run 40900000001](https://github.com/gandr-lang/gandr/actions/runs/40900000001) — `cargo-test-enforcing-shard-1`: 12.5 s, under budget\n- [x] [run 40900000002](https://github.com/gandr-lang/gandr/actions/runs/40900000002) — `cargo-test-enforcing-shard-1`: 12.5 s, under budget\n- [x] [run 40900000003](https://github.com/gandr-lang/gandr/actions/runs/40900000003) — `cargo-test-enforcing-shard-1`: 12.5 s, under budget\n",
+        "close": true,
+        "line": "- `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export`: 12.5 s in `cargo-test-enforcing-shard-1`, under budget"
+      }
+    ]
+  },
+  {
+    "name": "#3752: a run that does not time the test leaves its collector as it is",
+    "input": {
+      "budget": 30,
+      "run": {
+        "id": 40900000004,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40900000004"
+      },
+      "times": [
+        {
+          "lane": "junit-cargo-test-plain-only",
+          "binary": "gandr-a",
+          "test": "fast::t",
+          "seconds": 0.4
+        }
+      ],
+      "issues": [
+        {
+          "number": 3760,
+          "title": "test: gandr-lang::kernel_export kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0 ran 41.25 s in the cargo-test-enforcing-shard-2 lane, past its 30 s budget",
+          "body": "`kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0` in `gandr-lang::kernel_export` ran past its 30 s budget in CI. nextest marks such a test slow and runs it on, so it never dequeues a pull request. Only a test past 5 minutes fails the run (#3752).\n\nEach run that times the test adds a row. A run under the budget ticks its row, and three ticked rows in a row close this collector.\n\n## Runs\n\n- [ ] [run 40817848668](https://github.com/gandr-lang/gandr/actions/runs/40817848668) — `cargo-test-enforcing-shard-2`: 41.25 s\n"
+        }
+      ]
+    },
+    "output": []
+  }
+]

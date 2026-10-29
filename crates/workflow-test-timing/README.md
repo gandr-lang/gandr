@@ -24,6 +24,7 @@ nextest priority levels proposed from the per-test durations of recent merge-que
 
 - `test-timing` prints the run identifiers, a table of every test that has or would have a priority, and the proposed overrides.
 - `--runs N` reads the newest N stored runs, 5 by default. `--offline` reads the store without invoking `gh`.
+- `--times` prints one tab-separated `lane binary test seconds` line per test instead of the proposal: its lower median in the lane it held longest. `mise run ci:slow-file` reads one run this way and files each test past its 30 s budget (#3752).
 - `Overrides::parse` reads the priority overrides whose filters are unions of `test(=NAME)` and `test(TEXT)` terms, and refuses any other filter by name.
 - `TimingError` names the file, command or configuration term behind every refusal.
 

@@ -1954,6 +1954,58 @@ jobs:
           path: target/spec-cost-ratio.md
           if-no-files-found: error
 
+  # A slow test is a report, never a dequeue (#3752): the `ci` profile marks a
+  # test past 30 s slow and fails only a test past 5 minutes. This job reads
+  # the run's JUnit reports once its test lanes end, passed or failed, and
+  # files each slow test on its own collector for triage (`mise run
+  # ci:slow-file`), naming it in the summary. It runs on each merge group,
+  # and on a push only when no merge group built its head (`unbuilt`). Nothing
+  # needs this job, and a failed filing is a warning, never a red run.
+  slow-tests:
+    name: file the slow tests
+    needs:
+      - prepare
+      - ci-image
+      - cargo-test-plain-only
+      - cargo-test-recovery
+      - cargo-test-doctests
+      - cargo-test-enforcing-shard
+    if: ${{ !cancelled() && github.event.repository.fork == false && (github.event_name == 'merge_group' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      SLOW_RUN_ID: ${{ github.run_id }}
+      SLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SLOW_FILE: "true"
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the run's test reports
+        uses: *download-artifact
+        with:
+          pattern: junit-*
+          path: target/test-timing/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: file
+        name: file the slow tests
+        continue-on-error: true
+        run: mise run ci:slow-file
+      - name: warn of a failed filing
+        if: ${{ steps.file.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning::the slow tests of this run were not filed; read the step's log"
+          printf '## Slow tests\n\nThe filing failed; the step log names why.\n' >> "$GITHUB_STEP_SUMMARY"
+
   # Formatting and workflow security lint share the treefmt pass. It runs
   # over a failed image build and fails pulling the missing image (`ci-image`),
   # skips GitHub's rebase of an unchanged change (`rebased`, #2070), and runs
