@@ -1214,16 +1214,13 @@ fn file_load_distinguishes_not_found_from_other_read_errors()
     );
     for (kind, expected) in [
         (std::io::ErrorKind::NotFound, super::Failure::NotFound),
-        (
-            std::io::ErrorKind::AlreadyExists,
-            super::Failure::AlreadyExists,
-        ),
+        (std::io::ErrorKind::AlreadyExists, super::Failure::Other),
         (std::io::ErrorKind::PermissionDenied, super::Failure::Other),
     ] {
         assert_eq!(
             super::failure_of(&std::io::Error::from(kind)),
             expected,
-            "{kind:?} is classified as itself"
+            "{kind:?} is classified as {expected:?}"
         );
     }
 }

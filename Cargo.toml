@@ -5,6 +5,7 @@ members = [
   "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
+  "crates/core-publish",
   "crates/core-sequent",
   "crates/core-session",
   "crates/core-term",
@@ -123,6 +124,7 @@ default-features = false
 # - core-checker
 # - core-incremental
 # - core-nbe
+# - core-publish
 # - core-sequent
 # - core-session
 # - core-term
@@ -346,6 +348,14 @@ path = "crates/core-incremental"
 # - surface-session
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
+
+# The one writer that publishes a file whole: a private temporary created
+# exclusively, then renamed onto its name.
+# consumers:
+# - core-incremental
+# - storage-store
+[workspace.dependencies.gandr-core-publish]
+path = "crates/core-publish"
 
 # The sequent intermediate language: focusing a core term into commands,
 # the store a run answers into, and reading a run's terminal back.

@@ -20,6 +20,8 @@ use alloc::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 
+use gandr_core_publish::Contents;
+use gandr_core_publish::publish;
 use gandr_storage_records::BlockStore as _;
 use gandr_storage_records::DecodeWork;
 use gandr_storage_records::DecodedNode;
@@ -35,10 +37,8 @@ use gandr_storage_values::TokenOffset;
 use quenchant_shape::shape::Maybe;
 
 use crate::plane::FileName;
-use crate::plane::Image;
 use crate::plane::NodeDirectory;
 use crate::plane::hexadecimal;
-use crate::plane::published;
 use crate::store::RootsFault;
 use crate::store::StoreError;
 
@@ -257,11 +257,12 @@ impl Roots
         let tree = RecordTree::build(&refs, TreeParams::current()).map_err(StoreError::Record)?;
         tree.write_to(nodes).map_err(StoreError::Record)?;
         nodes.write()?;
-        published(
+        publish(
             directory,
             ROOTS,
-            Image(format!("{}\n", tree.root_node_hash()).as_bytes()),
+            Contents(format!("{}\n", tree.root_node_hash()).as_bytes()),
         )
+        .map_err(StoreError::from)
     }
 }
 

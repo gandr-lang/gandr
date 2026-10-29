@@ -19,11 +19,13 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attributes; the
+# publisher writes each file through a temporary renamed onto its name; the
 # chunker supplies the committed cut parameters; the value plane and the
 # record plane are the two stores the facade holds; the shape library
 # supplies the typed absence a read names.
 [dependencies]
 anodized.workspace = true
+gandr-core-publish.workspace = true
 gandr-storage-chunker.workspace = true
 gandr-storage-records.workspace = true
 gandr-storage-values.workspace = true

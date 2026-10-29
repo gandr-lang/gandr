@@ -5,26 +5,33 @@
 //! time it is loaded and kept for the store's life, so a load borrows from the
 //! store as both plane traits ask. An insertion is taken in memory and written
 //! only when the facade's operation that made it ends: neither plane trait can
-//! name a file system's failure, and the facade can. A write goes to a
-//! temporary file in the plane's directory and is renamed onto its name, so a
-//! reader never meets half an object, and two writers of one object write the
-//! same bytes. Every load verifies what it read, so bytes changed on disk are
-//! refused by the plane's own fault.
+//! name a file system's failure, and the facade can. A write publishes each
+//! object through `gandr_core_publish`: a temporary file in the plane's
+//! directory, renamed onto its name, so a reader never meets half an object,
+//! and two writers of one object write the same bytes. Every load verifies
+//! what it read, so bytes changed on disk are refused by the plane's own
+//! fault.
 //!
 //! # Boundaries
 //!
 //! An object another process writes after this store opened is not listed and
 //! loads as unknown; the roots are listed again before each change, under the
 //! roots lock.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: § The real leak
+//!   was in the filesystem — an object's temporary has one owner, the guard of
+//!   the writer it publishes through.
 
 use alloc::collections::BTreeMap;
 use core::cell::OnceCell;
 use std::io;
-use std::io::Write as _;
-use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_publish::Contents;
+use gandr_core_publish::publish;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::EncodedNode;
 use gandr_storage_records::NodeHash;
@@ -41,9 +48,6 @@ use gandr_storage_values::verify_chunk_image;
 use quenchant_shape::shape::Maybe;
 
 use crate::store::StoreError;
-
-/// How many temporary names a write tries before it gives up.
-const MAX_TEMPORARY_ATTEMPTS: u8 = 8_u8;
 
 /// The identity a plane names its objects by: 32 bytes, spelled as 64
 /// lowercase hexadecimal digits.
@@ -277,9 +281,9 @@ where
             if let Some(object) = self.objects.get_mut(name)
                 && let Object::Pending(ref mut bytes) = *object
             {
-                if let Err(fault) = published(&self.path, name, Image(bytes)) {
+                if let Err(fault) = publish(&self.path, name, Contents(bytes)) {
                     self.pending = pending.get(at ..).map_or_else(Vec::new, <[Name]>::to_vec);
-                    return Err(fault);
+                    return Err(StoreError::from(fault));
                 }
                 let written = core::mem::take(bytes);
                 *object = Object::Filed(OnceCell::from(Ok(written)));
@@ -333,64 +337,6 @@ where
     spelled().map_or(Maybe::Absent(unheld::Absent::Unspelled), |bytes| {
         Maybe::Present(Name::from(bytes))
     })
-}
-
-/// Write `bytes` to the file `name` of `directory` through a temporary file
-/// renamed onto it.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: on success the file `name` holds `bytes` and no temporary file of
-///   this write remains; on failure no temporary file of this write remains and
-///   the file `name` is as it was.
-/// - provides: the one way the store writes a file.
-/// - fails: [`StoreError::Io`] when no temporary file can be made, written or
-///   renamed.
-/// - panics: none.
-/// - executable: none — the outcome is the file system's.
-///
-/// # Errors
-/// [`StoreError::Io`], as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a committed value and a root each read back after
-///   reopening.
-/// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
-/// - witness: `tests::store::a_root_set_reads_back_after_reopening`
-pub fn published<Spelled>(
-    directory: &Path,
-    name: Spelled,
-    bytes: Image<'_>,
-) -> Result<(), StoreError>
-where
-    Spelled: core::fmt::Display,
-{
-    let target = directory.join(name.to_string());
-    let process = std::process::id();
-    for _ in 0 .. MAX_TEMPORARY_ATTEMPTS {
-        let nonce = core::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), process);
-        let temporary = directory.join(format!("{name}.tmp-{process}-{nonce:016x}"));
-        let mut file = match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-        {
-            Ok(file) => file,
-            Err(ref error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(ref error) => return Err(StoreError::io(&temporary, error)),
-        };
-        let written = file.write_all(bytes.0).and_then(|()| file.flush());
-        drop(file);
-        let renamed = written.and_then(|()| std::fs::rename(&temporary, &target));
-        return renamed.map_err(|error| {
-            let _removed = std::fs::remove_file(&temporary);
-            StoreError::io(&target, &error)
-        });
-    }
-    Err(StoreError::io(
-        &target,
-        &io::Error::from(io::ErrorKind::AlreadyExists),
-    ))
 }
 
 /// The value plane on disk: each chunk image a file named by its digest.

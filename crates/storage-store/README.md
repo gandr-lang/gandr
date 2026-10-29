@@ -18,13 +18,14 @@
 
 **Why.** The package lock, the build layer and the kernel's verdict cache each need a store on disk, and each opening the storage crates on its own would split one key space into three. The planes keep a persistent backend out of themselves, so the backend lives here, beside them.
 
-**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. An insertion is held in memory and written by the operation that made it, through a temporary file renamed into place; a load reads the file once and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots` and changed under `roots.lock`.
+**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. An insertion is held in memory and written by the operation that made it, published through `gandr-core-publish` as a temporary file renamed into place; a load reads the file once and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots` and changed under `roots.lock`.
 
 ## References
 
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — the CAM the value plane is, which this store keeps on disk.
 - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: the build layer's design (§ build-owner-store) — the storage tier is the build layer's store, and its persistence is a backend beside the planes, not in them.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: the integrity design (§ the two layers) — integrity never stands for validity, the wall this store keeps.
+- `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the planes and the roots publish through `core-publish`, whose guard owns each temporary.
 
 ## Provided features
 
@@ -53,7 +54,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Topic | Module |
 | ----- | ------ |
 | The facade's layer, its wall, references | [`src/lib.rs`](src/lib.rs) |
-| The two planes on disk, pending writes, publication by rename | [`plane`](src/plane.rs) |
+| The two planes on disk and their pending writes | [`plane`](src/plane.rs) |
 | Named roots as a record tree | [`roots`](src/roots.rs) |
 | The facade, its profile and its faults | [`store`](src/store.rs) |
 

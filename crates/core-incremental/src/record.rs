@@ -11,31 +11,33 @@
 //!
 //! # Publication
 //!
-//! A record is written to a private temporary that the write created
-//! exclusively, then published under its name by one rename. On every other
-//! exit a guard attempts to remove the temporary. A record's name is a digest
-//! in lowercase hexadecimal.
+//! A record is published through `gandr_core_publish`: written to a private
+//! temporary that the write created exclusively, then renamed onto its name.
+//! On every other exit the writer's guard attempts to remove the temporary.
+//! A record's name is a digest in lowercase hexadecimal.
 //!
 //! # Decisions
 //!
 //! | Decision | Alternatives | Reversal |
 //! | -------- | ------------ | -------- |
-//! | The frame lives here, below both stores | the store facade in `storage-store`, which a `core` crate cannot depend on under the layering; a crate of its own below both tiers | one writer serves the facade and these stores, from a crate both tiers may depend on |
+//! | The frame lives here, below both stores | the store facade in `storage-store`, which a `core` crate cannot depend on under the layering; the writer's crate below both tiers | the facade frames its files, and the frame joins the writer |
 //! | The checkpoint record's header is the frame under a 64-byte key | a second header beside the frame, which would write the format twice | none: the checkpoint files keep their bytes |
-//! | Exclusive temporary, then rename | write in place; a fixed temporary name, which a squatter or a concurrent store could hijack | a consumer needs durability, which adds a sync before and after the rename |
 //!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: §
 //!   kernel-verdict-reuse — a hash proves only that a key names its bytes.
+//! - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: § The real leak
+//!   was in the filesystem — a record's temporary has one owner, the guard of
+//!   the writer it publishes through.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_publish::Contents;
 use quenchant_shape::shape::Maybe;
 
 use crate::codec::Bytes;
@@ -45,13 +47,6 @@ const OPENING_LEN: usize = 12;
 
 /// The byte length of a frame's payload length and digest.
 const CLOSING_LEN: usize = 40;
-
-/// How many private names a write tries before giving up.
-///
-/// Each candidate draws a fresh 64-bit nonce, so a collision is already
-/// improbable; the bound turns a pathological run of them into an error
-/// rather than a loop or a silent overwrite.
-const MAX_TEMPORARY_ATTEMPTS: u8 = 8;
 
 quenchant_shape::reason_enum! {
     /// Why bytes hold no record of a format.
@@ -86,8 +81,6 @@ pub enum Failure
 {
     /// The path names nothing.
     NotFound,
-    /// The path already names something.
-    AlreadyExists,
     /// Any other failure.
     Other,
 }
@@ -95,34 +88,24 @@ pub enum Failure
 /// What `error` means to a record store.
 ///
 /// # Specification
-/// - ensures: missing and existing paths retain their distinct classes; every
-///   other error kind is classified as `Other`.
+/// - ensures: a missing path is `NotFound`; every other error kind is
+///   classified as `Other`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — actual missing-record and directory-read errors separate
-///   `NotFound` from `Other`, and each kind is classified directly. Random
-///   staging-name collisions are not forced, so the retry that reads
-///   `AlreadyExists` has no collision witness.
+///   `NotFound` from `Other`, and each kind is classified directly.
 /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
 #[expect(
     clippy::std_instead_of_core,
     reason = "`core::io::ErrorKind` is not stable yet"
 )]
 #[spec(
-    ensures: |ret| match error.kind() {
-        | std::io::ErrorKind::NotFound => ret == Failure::NotFound,
-        | std::io::ErrorKind::AlreadyExists => ret == Failure::AlreadyExists,
-        | _ => ret == Failure::Other,
-    },
+    ensures: |ret| (ret == Failure::NotFound) == (error.kind() == std::io::ErrorKind::NotFound),
 )]
 pub fn failure_of(error: &std::io::Error) -> Failure
 {
-    let kind = error.kind();
-    if kind == std::io::ErrorKind::NotFound {
+    if error.kind() == std::io::ErrorKind::NotFound {
         Failure::NotFound
-    }
-    else if kind == std::io::ErrorKind::AlreadyExists {
-        Failure::AlreadyExists
     }
     else {
         Failure::Other
@@ -458,19 +441,6 @@ impl RecordName
             Spelling::Other
         }
     }
-
-    /// The path of the record so named in `root`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    pub fn within(
-        &self,
-        root: &Path,
-    ) -> PathBuf
-    {
-        root.join(&self.0)
-    }
 }
 
 /// A record's bytes, as [`Format::frame`] wrote them.
@@ -520,8 +490,8 @@ impl AsRef<[u8]> for ArtifactBytes
 /// # Specification
 /// - requires: `root` is an existing directory.
 /// - ensures: on success `root` holds `artifact` under `name`, and no temporary
-///   of this write remains; on failure the guard attempts to remove the
-///   temporary, and the record under `name` is as it was.
+///   of this write remains; on failure the writer's guard attempts to remove
+///   the temporary, and the record under `name` is as it was.
 /// - fails: [`RecordFault::Io`] when no temporary can be created or written, or
 ///   the rename fails.
 /// - panics: none.
@@ -531,8 +501,9 @@ impl AsRef<[u8]> for ArtifactBytes
 /// [`RecordFault::Io`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`TemporaryRecord::write`] and
-///   [`TemporaryRecord::commit`].
+/// - hypothesis: L3 — a checkpoint and a receipt read back after reopening, and
+///   a directory at a checkpoint's name refuses the store with `Io` and leaves
+///   no temporary. The writer's own clauses carry its crate's witnesses.
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
 /// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
@@ -542,177 +513,6 @@ pub fn publish(
     artifact: &ArtifactBytes,
 ) -> Result<(), RecordFault>
 {
-    TemporaryRecord::write(root, name, artifact)?.commit(&name.within(root))
-}
-
-/// An exclusively created private path guarded until publication.
-/// Drop attempts cleanup unless a successful rename disarms the guard.
-///
-/// # Specification
-/// - executable: none — publication and cleanup concern external filesystem
-///   state; the guard retains only a path and publication flag.
-///
-/// # Adequacy
-/// - hypothesis: L3 — failed rename removes a private record in a writable
-///   directory; successful and concurrent publication leave only the named
-///   record. Cleanup refusal and forced nonce collisions are not witnessed.
-/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-/// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
-struct TemporaryRecord
-{
-    /// The private path the record was written to.
-    path: PathBuf,
-    /// Whether the rename published the record, which disarms the removal.
-    published: Publication,
-}
-
-/// Whether a temporary record reached its published name.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Publication
-{
-    /// Still private: the guard attempts to remove it.
-    Private,
-    /// Renamed into place: nothing to remove.
-    Published,
-}
-
-impl TemporaryRecord
-{
-    /// Write `artifact` into a file created exclusively in `root`, under a
-    /// private name leading with `name`.
-    ///
-    /// # Specification
-    /// - requires: `root` is an existing directory.
-    /// - ensures: on success the whole artifact is in a file this call created,
-    ///   under a name no other live temporary holds; the guard attempts removal
-    ///   unless [`Self::commit`] publishes it. A candidate name that exists is
-    ///   never opened: exclusive creation turns a collision into a retry under
-    ///   a fresh nonce.
-    /// - fails: [`RecordFault::Io`] when a candidate cannot be created for any
-    ///   reason but existing, when the write fails — the handle is then closed
-    ///   before cleanup of the partial file is attempted — or when
-    ///   [`MAX_TEMPORARY_ATTEMPTS`] candidates in a row exist.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — real publication, failed rename, a predictable-name
-    ///   squatter and four concurrent publishers exercise private creation. The
-    ///   predicate checks lexical directory/name placement and an armed guard;
-    ///   it does not reread the artifact or force the random collision retry
-    ///   path.
-    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-    /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
-    /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
-    #[spec(
-        ensures: |ret| match ret {
-            | Ok(ref record) => {
-                record.published == Publication::Private
-                    && record.path.parent() == Some(root)
-                    && record.path.file_name().is_some_and(|file| {
-                        name.0.len() == 64
-                            && file.as_encoded_bytes().strip_prefix(name.0.as_bytes())
-                                .is_some_and(|rest| rest.starts_with(b".tmp-"))
-                    })
-            },
-            | Err(fault) => fault == RecordFault::Io,
-        },
-    )]
-    fn write(
-        root: &Path,
-        name: &RecordName,
-        artifact: &ArtifactBytes,
-    ) -> Result<Self, RecordFault>
-    {
-        let process = std::process::id();
-        for _ in 0 .. MAX_TEMPORARY_ATTEMPTS {
-            // A fresh nonce per attempt, so a retry resolves the collision it
-            // met instead of meeting it again.
-            let nonce = core::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), process);
-            let candidate = root.join(alloc::format!("{}.tmp-{process}-{nonce:016x}", name.0));
-            let created = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&candidate);
-            let mut file = match created {
-                Ok(file) => file,
-                Err(ref error) if failure_of(error) == Failure::AlreadyExists => continue,
-                Err(_error) => return Err(RecordFault::Io),
-            };
-            // Armed before the first byte, so cleanup also covers partial writes.
-            let record = Self {
-                path: candidate,
-                published: Publication::Private,
-            };
-            let written = std::io::Write::write_all(&mut file, &artifact.0)
-                .and_then(|()| std::io::Write::flush(&mut file));
-            // The handle closes here, before either exit: left to scope end,
-            // locals drop in reverse order and the guard would remove a file
-            // still open, which some platforms refuse.
-            drop(file);
-            written.map_err(|_error| RecordFault::Io)?;
-            return Ok(record);
-        }
-        Err(RecordFault::Io)
-    }
-
-    /// Rename the record onto `destination`, publishing it.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Ok` exactly when the rename succeeded; the guard is then
-    ///   disarmed. On failure the guard attempts to remove the temporary.
-    /// - fails: [`RecordFault::Io`] when the rename fails.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — publication succeeds in a writable directory and
-    ///   fails against an occupied directory path. The predicate checks the
-    ///   guard state; the filesystem witnesses observe the record and cleanup,
-    ///   without claiming that a refused removal could not leave a temporary.
-    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-    #[spec(
-        captures: [before = self.published],
-        ensures: |ret| match ret {
-            | Ok(()) => self.published == Publication::Published,
-            | Err(fault) => fault == RecordFault::Io && self.published == before,
-        },
-    )]
-    fn commit(
-        mut self,
-        destination: &Path,
-    ) -> Result<(), RecordFault>
-    {
-        std::fs::rename(&self.path, destination).map_err(|_error| RecordFault::Io)?;
-        self.published = Publication::Published;
-        Ok(())
-    }
-}
-
-impl Drop for TemporaryRecord
-{
-    /// Attempt to remove the temporary unless the rename published it.
-    ///
-    /// # Specification
-    /// - ensures: an unpublished path receives one best-effort removal attempt;
-    ///   a published path is not removed.
-    /// - executable: none — removal is external I/O whose failure is discarded;
-    ///   probing the path afterward would neither prove the attempt nor be
-    ///   race-free.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — failed publication leaves no private record in the
-    ///   writable test directory, while successful publication remains
-    ///   readable. A cleanup failure or concurrent deletion is not injected.
-    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-    #[inline]
-    fn drop(&mut self)
-    {
-        if self.published == Publication::Private {
-            drop(std::fs::remove_file(&self.path));
-        }
-    }
+    gandr_core_publish::publish(root, &name.0, Contents(&artifact.0))
+        .map_err(|_unpublished| RecordFault::Io)
 }
