@@ -150,6 +150,62 @@ pub struct ValueTypeId(u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CompTypeId(u32);
 
+impl ValueId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+impl ComputationId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+impl ValueTypeId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+impl CompTypeId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
 /// The stored index of one node within its arena family.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

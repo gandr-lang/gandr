@@ -72,10 +72,10 @@ fn support_identity_and_digest_survive_forcing_without_conflating_inputs()
         level,
     )
     .expect("both values live");
-    assert_eq!(
+    assert_ne!(
         forward.digest(),
         reverse.digest(),
-        "equal rigid contents share a bucket"
+        "equal rigid contents under distinct ids fall in distinct buckets"
     );
     assert_eq!(
         ContentAgreement::Differ,
@@ -136,7 +136,7 @@ fn support_identity_and_digest_survive_forcing_without_conflating_inputs()
 }
 
 #[test]
-fn supports_of_different_content_are_remembered_in_different_buckets()
+fn supports_that_do_not_agree_are_remembered_in_different_buckets()
 {
     use gandr_kernel_check_memo::CheckMemo as _;
     use gandr_kernel_check_memo::HashedMemo;
@@ -147,19 +147,30 @@ fn supports_of_different_content_are_remembered_in_different_buckets()
     let body = core.computation_return(value);
     let mut domain = DomainArena::new();
     let unit = domain.value_unit(crate::TermFace::Reduced);
+    let copies = [
+        domain.value_unit(crate::TermFace::Reduced),
+        domain.value_unit(crate::TermFace::Reduced),
+        domain.value_unit(crate::TermFace::Reduced),
+    ];
     let closure = domain.comp_closure_node(body, Environment::new());
     let level = BinderLevel::FLOOR;
     let mut memo = HashedMemo::<GoalSupport, ()>::new();
+    let paired = copies
+        .map(|copy| SupportSides::Heads(crate::Glued::Value(unit), crate::Glued::Value(copy)));
     for sides in [
         SupportSides::Heads(crate::Glued::Value(unit), crate::Glued::Value(unit)),
         SupportSides::Opened(closure, closure),
-    ] {
+    ]
+    .into_iter()
+    .chain(paired)
+    {
         let support = GoalSupport::new(&domain, sides, level).expect("both sides live");
         let _recorded = memo.remember(support, ()).expect("the memo has room");
     }
     assert_eq!(
-        MemoBucketCount::from(2_usize),
+        MemoBucketCount::from(5_usize),
         memo.bucket_count(),
-        "the digest spreads distinct content, so a recall scans only its own"
+        "each support has a bucket of its own, a copy of equal content under another id \
+         included, so a recall scans only its own"
     );
 }
