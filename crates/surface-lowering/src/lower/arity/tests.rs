@@ -584,12 +584,13 @@ fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
     );
 }
 
-/// Each dependent pair keeps where both its labels are written: its binder's,
-/// and its second component's where that is the last entry or another pair;
-/// a pair over a product of the entries after it keeps its binder's alone
-/// (#1613).
+/// Each link of a dependent record keeps where the label of the field it
+/// holds first is written, a dependent pair's and a product's alike; the
+/// innermost link keeps the last field's label as its second component's,
+/// and every other link none, its second component being the next link
+/// (#1613, #3934).
 #[test]
-fn each_dependent_pair_keeps_both_labels_1613()
+fn each_record_link_keeps_its_labels_3934()
 {
     let mut arena = CoreArena::new();
     let source = "def two : #{n : Integer, v : Path(Integer, n, n)} ; def three : #{a : Integer, \
@@ -620,12 +621,12 @@ fn each_dependent_pair_keeps_both_labels_1613()
         labels,
         [
             ("a", None),
+            ("b", Some("c")),
             ("n", Some("v")),
-            ("x", Some("y")),
+            ("x", None),
             ("y", Some("z")),
         ],
-        "each pair's binder label, and its second label where the second is the last entry \
-         or a pair"
+        "each link's first label, and the last field's label at the innermost link"
     );
 }
 
