@@ -31,8 +31,10 @@
 //!
 //! # The kernel is the only judge
 //!
-//! A drafted schema and every member's row go through `Schema::check`,
-//! `Schema::bind` and `Substitution::admit` as a produced one does. Under the
+//! A drafted schema and every member's row replay through the kernel's descent
+//! skeleton as a produced one does: `descent::replay` over `admission::Family`
+//! glues the schema by `Schema::check`, binds it once by `Schema::bind` and
+//! admits each member under its row by `Substitution::admit`. Under the
 //! memoized price, an admitted draft still falls back when one of the kernel's
 //! inheritance replays spent more than `c = s`, the allowance the producer
 //! would have enforced (`Schema::largest_replay`). A draft the kernel refuses,
@@ -76,6 +78,15 @@
 //!   that predicts both times.
 //! - *Hold the memo in the incremental session.* No session drives staging.
 //!   Reversal: when one does, it holds the memo as it holds the cache.
+//!
+//! # References
+//!
+//! - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as
+//!   descent (§ sharing-rule-descent) — a family's schema is the gluing of its
+//!   one class, and each member under its row is a position.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel
+//!   re-assessment's design (§ kernel-reassessment-design item 7) — the judge
+//!   replays through the kernel's one skeleton.
 
 use alloc::borrow::Cow;
 use core::time::Duration;
@@ -942,27 +953,12 @@ fn judge(
         | Refusal::ClassifierMismatch
         | Refusal::SidesMismatch) => Ok(Judged::Refused(refusal)),
     };
-    let schema = match Schema::check(proposal, budget) {
-        Ok(schema) => schema,
-        Err(refusal) => return refused(refusal),
-    };
-    {
-        let consumer = match schema.bind(arena.clone(), budget) {
-            Ok(consumer) => consumer,
-            Err(refusal) => return refused(refusal),
-        };
-        for (step, choices) in members.iter().zip(rows) {
-            let substitution = schema.substitute(schema.classifiers(), choices, row);
-            let mut substitution = match substitution {
-                Ok(substitution) => substitution,
-                Err(refusal) => return refused(refusal),
-            };
-            if let Err(refusal) = substitution.admit(&consumer, *step, budget) {
-                return refused(refusal);
-            }
-        }
+    let positions = members.iter().copied().zip(rows.iter().copied());
+    let family = &mut gandr_kernel_core::admission::Family::new(arena, row, budget);
+    match gandr_kernel_core::descent::replay(family, proposal, positions) {
+        Ok(schema) => Ok(Judged::Admitted(schema)),
+        Err(refusal) => refused(refusal),
     }
-    Ok(Judged::Admitted(schema))
 }
 
 /// Split flat choices into one row per member.

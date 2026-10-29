@@ -260,6 +260,54 @@ fn schema_and_instance_refusals()
     ));
 }
 
+#[test]
+fn a_family_replays_through_the_descent_skeleton()
+{
+    let mut arena = Arena::default();
+    let two = cancelled(&mut arena, Natural(2));
+    let three = cancelled(&mut arena, Natural(3));
+    let replayed = |proposal: Proposal, members: &[(Step, [Choice; 1])]| {
+        let mut row = Row::default();
+        let mut budget = Budget(10_000);
+        let positions = members
+            .iter()
+            .map(|&(step, ref choices)| (step, &choices[..]));
+        crate::descent::replay(
+            &mut Family::new(&arena, &mut row, &mut budget),
+            proposal,
+            positions,
+        )
+    };
+    let schema = replayed(cancellation(), &[
+        (two, only(Guard(0))),
+        (three, only(Guard(1))),
+    ])
+    .unwrap();
+    assert_eq!(schema.work().0, Work(2));
+    assert_eq!(
+        replayed(cancellation(), &[
+            (two, only(Guard(2))),
+            (three, only(Guard(0)))
+        ])
+        .err(),
+        Some(Refusal::UnknownArm(Point(0)))
+    );
+    assert_eq!(
+        replayed(cancellation(), &[
+            (three, only(Guard(0))),
+            (two, only(Guard(2)))
+        ])
+        .err(),
+        Some(Refusal::SidesMismatch)
+    );
+    let mut corrupt = cancellation();
+    corrupt.equation.target = TermId(0);
+    assert_eq!(
+        replayed(corrupt, &[(two, only(Guard(2)))]).err(),
+        Some(Refusal::CorruptStep)
+    );
+}
+
 /// Successor schema whose count point controls both sides.
 ///
 /// # Specification

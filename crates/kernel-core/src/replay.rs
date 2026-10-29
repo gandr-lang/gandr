@@ -22,6 +22,12 @@
 //! computed is read, so a wrong engine produces a trace that fails to replay
 //! rather than a wrong verdict.
 //!
+//! A replay's caller translates its sides and the bodies it allows unfolding
+//! into the replay's arena, maps each trace identifier to the constant it
+//! names or [`ReplayNode::Other`], and maps its engine's verdict to an
+//! [`EngineClaim`]. A body is a closed value, an operator's body is closed
+//! beyond its parameters, and a constant given neither is opaque.
+//!
 //! # Search-free, by expectation
 //!
 //! Every goal carries the verdict its derivation owes. A convertibility
@@ -357,6 +363,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 use core::fmt;
 use core::iter::Peekable;
 
@@ -389,6 +396,7 @@ use crate::conv::convert_values;
 use crate::conv::equal_values;
 use crate::conv::equal_weakened;
 use crate::conv::pending_endpoints;
+use crate::descent::Descent;
 use crate::element_identity::BinderUse;
 use crate::encoding::ContentTable;
 use crate::rewrite::BinderDepth;
@@ -1067,6 +1075,9 @@ pub enum KernelVerdict
 /// alpha-equal pair whole. There is no transitive composite: traces for
 /// `a = b` and `b = c` do not supply a trace for `a = c`.
 ///
+/// The replay runs through [`crate::descent::replay`] as the trivial cover:
+/// one class, the claimed goal, and no positions.
+///
 /// # Specification
 /// - requires: the two sides and every body in `unfoldings` live in `arena`.
 /// - ensures: [`KernelVerdict::Convertible`] or
@@ -1148,29 +1159,140 @@ pub fn replay<I>(
 where
     I: IntoIterator<Item = ConversionDecision<ReplayNode>>,
 {
-    let expect = match claim {
-        EngineClaim::Convertible => Expect::Convertible,
-        EngineClaim::NotConvertible => Expect::NotConvertible,
-        EngineClaim::Declined => return KernelVerdict::Declined(ReplayDecline::EngineDeclined),
-    };
-    let (left, right) = terms(sides);
-    let watermark = arena.watermark();
-    let mut run = Replay {
+    let mut conversion = Conversion {
         arena,
         unfoldings,
-        evaluator: unfoldings,
-        trace: trace.into_iter().peekable(),
-        reading: Reading::Recorded,
-        position: 0,
-        spent: 0,
-        budget: u64::from(budget),
-        table: ContentTable::new(),
-        memo: NullMemo,
-        owed: Vec::new(),
+        budget,
     };
-    let outcome = run.drive(Goal::premise(Premise { left, right }, expect));
-    run.arena.truncate_to(watermark);
-    concluded(outcome, expect)
+    let claimed = Claimed {
+        sides,
+        claim,
+        trace,
+    };
+    let Ok(verdict) = crate::descent::replay(&mut conversion, claimed, []);
+    verdict
+}
+
+/// A conversion trace's replay as the trivial descent datum: one class, the
+/// claimed goal, glued by the replay, and no positions.
+///
+/// The engine emits a shared derivation once under each parent, so a trace
+/// holds no overlap, and the cover puts no position beside its one class.
+struct Conversion<'run>
+{
+    /// The arena the sides and bodies live in, restored on every return.
+    arena: &'run mut TermArena,
+    /// The bodies the replay may unfold.
+    unfoldings: &'run Unfoldings,
+    /// The steps the replay may take.
+    budget: ReplayBudget,
+}
+
+/// The class a conversion trace covers: two sides, the engine's claim about
+/// them and the trace that derives it.
+struct Claimed<Trace>
+{
+    /// The two terms compared.
+    sides: ReplaySides,
+    /// The engine's verdict.
+    claim: EngineClaim,
+    /// The engine's decisions, in the order it made them.
+    trace: Trace,
+}
+
+impl<Trace> Descent<Claimed<Trace>> for Conversion<'_>
+where
+    Trace: IntoIterator<Item = ConversionDecision<ReplayNode>>,
+{
+    type Bound<'glued>
+        = ()
+    where
+        Self: 'glued;
+    type Gluing = KernelVerdict;
+    type Position = Infallible;
+    type Refusal = Infallible;
+
+    /// Replay the trace against the claim for the two sides.
+    ///
+    /// # Specification
+    /// - requires: the two sides and every body in the unfoldings live in the
+    ///   arena.
+    /// - ensures: the verdict [`replay()`] states, and the arena holds what it
+    ///   held on entry.
+    /// - fails: never — a refusal is a verdict.
+    /// - panics: none.
+    /// - executable: none — [`replay()`]'s attribute checks the verdict against
+    ///   the claim and the restored arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every witness of [`replay()`] replays through this
+    ///   gluing, so a gluing that departs from the rule table refuses there.
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    #[inline]
+    fn glue(
+        &mut self,
+        class: Claimed<Trace>,
+    ) -> Result<KernelVerdict, Infallible>
+    {
+        let Claimed {
+            sides,
+            claim,
+            trace,
+        } = class;
+        let expect = match claim {
+            EngineClaim::Convertible => Expect::Convertible,
+            EngineClaim::NotConvertible => Expect::NotConvertible,
+            EngineClaim::Declined => {
+                return Ok(KernelVerdict::Declined(ReplayDecline::EngineDeclined));
+            },
+        };
+        let (left, right) = terms(sides);
+        let watermark = self.arena.watermark();
+        let mut run = Replay {
+            arena: self.arena,
+            unfoldings: self.unfoldings,
+            evaluator: self.unfoldings,
+            trace: trace.into_iter().peekable(),
+            reading: Reading::Recorded,
+            position: 0,
+            spent: 0,
+            budget: u64::from(self.budget),
+            table: ContentTable::new(),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let outcome = run.drive(Goal::premise(Premise { left, right }, expect));
+        run.arena.truncate_to(watermark);
+        Ok(concluded(outcome, expect))
+    }
+
+    /// Bind nothing: a verdict needs no reading.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn bind(
+        &mut self,
+        _gluing: &KernelVerdict,
+    ) -> Result<(), Infallible>
+    {
+        Ok(())
+    }
+
+    /// Agree no position: the trivial cover has none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn agree(
+        &mut self,
+        _bound: &(),
+        position: Infallible,
+    ) -> Result<(), Infallible>
+    {
+        match position {}
+    }
 }
 
 /// The kernel's own conversion of two terms: the replay with no trace, every

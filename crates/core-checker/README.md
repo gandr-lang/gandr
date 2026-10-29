@@ -58,7 +58,6 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - **One arena per report.** `bridge::readmit` takes, mutably, the arena the report was judged over: it reads every id there, refusing one that does not resolve as a dangling node, and mints there the reduct of each static step it takes.
 - **One writer per arena.** `CheckingContext::new` holds the arena mutably for the context's life, and the judgement mints into it; a caller reads it through `CheckingContext::arena` while the context lives.
 - **Ascending admission positions.** Declarations are offered in admission order; a position not above every one admitted before it is refused.
-- **Closed bodies.** A body is closed over the context's binders, which are empty between judgements; a producer that resolves every binder, as a lowering does, never trips the unbound-index refusal.
 - **`alloc`.** The crate is `no_std` with `alloc`.
 
 ## Examples
@@ -145,6 +144,8 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule reads its type at its weak head.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: one transport per solved equation.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a resumed readmission signs only its own checks.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: a family is one descent datum.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: one skeleton replays every certificate.
 
 ## License
 
