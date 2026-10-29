@@ -5,13 +5,9 @@
 // computes the type of that evidence from the tail. The lists and their
 // freshness thus form one block.
 //
-// Freshness recurses on the list. Each arm binds its two types by a run. The
-// arm then returns their pair. The pair is data. The arm returns it as a
-// term.
+// Freshness recurses on the list. Each arm returns the pair of two types,
+// each a call in place. The pair is data. The arm returns it as a term.
 //
-// - see: #3572 — not implemented: the pair's types written as calls in place
-// - see: `pathological/universe/fresh-lists.gandr` — the pair's types written
-//   in place, refused
 // - see: the Agda standard library, `Data.List.Fresh`
 
 // The naturals.
@@ -60,11 +56,7 @@ rec {
   pub def rec fresh(x : Nat, xs : Fresh) -> -F Type {
     case xs {
       FNil => return Unit,
-      FCons(y, ys, q) => {
-        run p <- apart(x, y);
-        run r <- fresh[<](x, ys);
-        return (Both(p, r))
-      }
+      FCons(y, ys, q) => return (Both(apart(x, y), fresh[<](x, ys)))
     }
   }
 }
