@@ -1357,7 +1357,10 @@ done < "$scratch/actions"
 # landed branch's worktree goes by `wt remove --foreground`, which deletes the
 # branch as merged and refuses a dirty or otherwise unsafe tree; the sweep
 # makes no safety check of its own, prints a refusal and keeps that tree. The
-# primary worktree, the caller's own and `wip/` branches stay. A
+# primary worktree, the caller's own and `wip/` branches stay, and so does a
+# worktree whose git directory holds the mark of a live `pr:watch`
+# (`gandr-watch-<pid>`, #3798): the watch runs its merge steps there once
+# the branch lands, and removes the tree itself after them. A
 # scratch worktree (`restack`'s and the mutation lanes', named
 # `gandr-scratch-<pid>.`) goes once its process is gone, and an unnamed
 # detached one under a temporary directory once unchanged for 4 hours. Then
@@ -1409,26 +1412,35 @@ facts=()
 kept=()
 pruned=()
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false gitdir key
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null gitdir key mark
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
   key=$(realpath "$path")
   if [[ -n "$branch" && -n "${integrated[$key]:-}" && -z "${first_parent[${judged[$key]:-none}]:-}" ]]; then merged=true; fi
   if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
+  gitdir=$(sed -n 's/^gitdir: //p' "$path/.git" 2> /dev/null) || gitdir=
+  # A live `pr:watch` marks the worktree it runs in (#3798).
+  if [[ -n "$gitdir" ]]; then
+    for mark in "$gitdir"/gandr-watch-*; do
+      if [[ ${mark##*/gandr-watch-} =~ ^[0-9]+$ ]] && kill -0 "${mark##*/gandr-watch-}" 2> /dev/null; then
+        watched=${mark##*/gandr-watch-}
+        break
+      fi
+    done
+  fi
   if [[ "$path" =~ /gandr-scratch-([0-9]+)\. ]] || { [[ -z "$branch" ]] && under_tmp "$path"; }; then
     if [[ "$path" =~ /gandr-scratch-([0-9]+)\. ]]; then
       holder=${BASH_REMATCH[1]}
       if kill -0 "$holder" 2> /dev/null; then alive=true; fi
     fi
-    gitdir=$(sed -n 's/^gitdir: //p' "$path/.git" 2> /dev/null) || gitdir=
     if [[ -n "$gitdir" && -n $(find "$gitdir" -maxdepth 1 -name index -mmin -240 2> /dev/null) ]]; then young=true; fi
     scratch=$(jq -nc --argjson holder "$holder" --argjson alive "$alive" --argjson young "$young" '{holder: $holder, alive: $alive, young: $young}')
   fi
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
-    --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch}')")
+    --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched}')")
 }
 path= head= branch= flag= primary=true
 while IFS= read -r line; do
@@ -3736,7 +3748,11 @@ next_claim() {
   pick=$(mise run --quiet claim:next "$lane" --dry-run 2> /dev/null | awk '/^#[0-9]/') || pick=
   echo "next-claim $lane: ${pick:-none}${pick:+ (mise run claim:next $lane)}" >&2
 }
-trap drop_scratch EXIT
+# The watch marks its worktree while it runs, so no seat's `wt:sweep` removes
+# the tree its merge steps run in (#3798); the mark goes with the watch.
+watch_mark=$(git rev-parse --path-format=absolute --git-dir)/gandr-watch-$$
+: > "$watch_mark"
+trap 'drop_scratch; rm -f "$watch_mark"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP

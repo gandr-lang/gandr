@@ -1545,6 +1545,31 @@
     "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
   },
   {
+    "name": "#3798: a landed worktree a live pr:watch marks is kept, and one whose watch is gone is removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/watched",
+        "branch": "watched",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": 4242
+      },
+      {
+        "path": "/w/unwatched",
+        "branch": "unwatched",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/unwatched\",\"branch\":\"unwatched\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
     "name": "a branch judged landed whose head moved since keeps its worktree (#2299)",
     "program": "sweep.jq",
     "input": [
