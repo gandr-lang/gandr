@@ -15,12 +15,20 @@
 //! Over those terms an overlap unifies the indices too, so the critical pairs
 //! are the well-sorted ones.
 //!
+//! Only an index at a rigid sort is carried. A sort is flexible when a rule's
+//! side applies an operation whose output stands at it, or an operation whose
+//! output stands at it takes an input at a flexible sort; every other sort is
+//! rigid, and a position whose binder ranges over a flexible sort is left off
+//! the sort term. A rigid term holds only rigid subterms, and no rule rewrites
+//! one, so two rigid terms are equal exactly when they are one term: a clash
+//! of carried indices is a clash of sorts. An index at a flexible sort, a
+//! whisker's composite `comp(f, h)`, equals another only modulo the rules, so
+//! it is left off, and the overlaps it would refuse are kept (#1510).
+//!
 //! Termination stays the written rules' own. An indexed rule strips to its
-//! written rule by dropping the indices; a step outside every index strips to
-//! a step of the written rules, and a step inside an index rewrites a term of
-//! operations with no indices of their own, under rules that are the written
-//! ones. The stripped term, then the multiset of the index terms, descends at
-//! every step in a well-founded order.
+//! written rule by dropping the indices. No step rewrites inside an index,
+//! which is a rigid term no rule's left side matches, so every step strips to
+//! a step of the written rules.
 //!
 //! A presentation the reading does not cover has none, and its rules are
 //! decided as written: no sort indexed; a port that binds or abstracts; an
@@ -29,11 +37,9 @@
 //! applications and variables; a rule whose two sides do not sort alike; a
 //! sorting that fixes a rule's variable to a term, or two of them to one; a
 //! right side naming an index its left side does not fix; or a rule one of
-//! whose indices applies an operation with indices of its own. An operation
-//! whose index terms apply such an operation leaves the reading whole until a
-//! rule's sorting meets it (#1510). The reading only narrows the critical
-//! pairs to the well-sorted ones, so declining it decides no presentation the
-//! written reading does not.
+//! whose carried indices applies an operation with indices of its own. The
+//! reading only narrows the critical pairs to the well-sorted ones, so
+//! declining it decides no presentation the written reading does not.
 //!
 //! The front end's `gandr_theory_computads::Indexing` reads a description's
 //! laws the same way; the kernel re-derives the indices from the value rather
@@ -126,13 +132,20 @@ struct Sorting<'arena>
     named: BTreeMap<&'arena StringLiteral, Named>,
 }
 
-/// The sorting of each operation of an indexed presentation, by name.
+/// The sorting of each operation of an indexed presentation, by name, and the
+/// index positions it leaves off.
 ///
 /// # Specification
 /// trivial.
-#[repr(transparent)]
 #[derive(Debug, Default)]
-pub(super) struct Signature<'arena>(BTreeMap<&'arena StringLiteral, Sorting<'arena>>);
+pub(super) struct Signature<'arena>
+{
+    /// Each operation's sorting over the indices it carries, by name.
+    operations: BTreeMap<&'arena StringLiteral, Sorting<'arena>>,
+    /// Each indexed sort's positions whose binder ranges over a flexible
+    /// sort, which no sort term carries.
+    dropped: BTreeMap<&'arena StringLiteral, BTreeSet<usize>>,
+}
 
 impl Signature<'_>
 {
@@ -146,7 +159,7 @@ impl Signature<'_>
     ) -> Verdict
     {
         Verdict::from(
-            self.0
+            self.operations
                 .get(name)
                 .is_some_and(|sorting| !sorting.implicits.is_empty()),
         )
@@ -233,18 +246,19 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// - ensures: [`Some`] when a `Sort`, `Representable`, `Atom` or
-    ///   `Computation` of `sorts` has an index port, and every `Oper`, `Obs`,
-    ///   `Const` and `Nested` of `operations` has a distinct name, only `Port`
-    ///   inputs and one `Port` output, each index term a `Var`, or an `App` or
-    ///   `Con` over its `Arg` chain; each operation's implicit indices the
-    ///   names its ports' index terms' `Var`s name that no input port does, in
-    ///   pre-order, inputs then the output, each once. [`None`] otherwise. An
-    ///   index term applying an operation with implicit indices of its own is
-    ///   read; a rule whose indices meet it is declined ([`Reader::indexed`]).
+    ///   `Computation` of `sorts` has an index port, each index port a `Port`,
+    ///   and every `Oper`, `Obs`, `Const` and `Nested` of `operations` has a
+    ///   distinct name, only `Port` inputs and one `Port` output, each index
+    ///   term a `Var`, or an `App` or `Con` over its `Arg` chain. A position is
+    ///   left off when its binder ranges over a flexible sort (see the module
+    ///   documentation), the rules read so far seeding the flexible sorts; each
+    ///   operation's implicit indices are the names its ports' carried index
+    ///   terms' `Var`s name that no input port does, in pre-order, inputs then
+    ///   the output, each once. [`None`] otherwise.
     /// - panics: none.
     /// - executable: none — the answer is the walk of the two chains.
     /// - intension: one walk of each chain, each index term read from a
-    ///   worklist.
+    ///   worklist, the flexible sorts grown to their least fixed point.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a category's composition is implicit in its three
@@ -260,17 +274,17 @@ impl<'arena> Reader<'arena>
         let tagged = |found: Option<(ConstructorTag, &'arena [ValueId])>| {
             found.map(|(tag, fields)| (usize::from(tag), fields))
         };
-        let mut indexed = Verdict::Fails;
+        let mut binders = Vec::new();
         let mut at = sorts;
         loop {
             at = match tagged(self.constructor(at))? {
                 (tag::END, &[]) => break,
                 (
                     tag::SORT | tag::REPRESENTABLE | tag::ATOM | tag::COMPUTATION,
-                    &[_, ports, rest],
+                    &[name, ports, rest],
                 ) => {
                     if !matches!(tagged(self.constructor(ports)), Some((tag::END, &[]))) {
-                        indexed = Verdict::Holds;
+                        binders.push((self.text(name)?, self.port_sorts(ports)?));
                     }
                     rest
                 },
@@ -278,11 +292,10 @@ impl<'arena> Reader<'arena>
                 _ => return None,
             };
         }
-        if indexed == Verdict::Fails {
+        if binders.is_empty() {
             return None;
         }
-        let mut signature = Signature::default();
-        let mut pending = Vec::new();
+        let mut read = Vec::new();
         let mut at = operations;
         loop {
             let (name, inputs, outputs, rest) = match tagged(self.constructor(at))? {
@@ -299,14 +312,61 @@ impl<'arena> Reader<'arena>
             else {
                 return None;
             };
+            read.push((name, inputs, output));
+            at = rest;
+        }
+        let outputs: BTreeMap<&StringLiteral, &StringLiteral> = read
+            .iter()
+            .map(|&(name, _, output)| (name, output.sort))
+            .collect();
+        let mut flexible: BTreeSet<&StringLiteral> = BTreeSet::new();
+        for rule in &self.rules {
+            for side in [rule.left(), rule.right()] {
+                if let Some(&TheoryNode::Symbol(symbol)) = side.first()
+                    && let Some(&(Class::Operation, Some(name), _)) = self.keys.get(symbol.0)
+                    && let Some(&sort) = outputs.get(name)
+                {
+                    let _first = flexible.insert(sort);
+                }
+            }
+        }
+        loop {
+            let before = flexible.len();
+            for &(_, ref inputs, output) in &read {
+                if inputs.iter().any(|&(_, port)| flexible.contains(port.sort)) {
+                    let _first = flexible.insert(output.sort);
+                }
+            }
+            if flexible.len() == before {
+                break;
+            }
+        }
+        let dropped = binders
+            .iter()
+            .filter_map(|&(name, ref ports)| {
+                let left: BTreeSet<usize> = ports
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &(_, port))| flexible.contains(port.sort))
+                    .map(|(place, _)| place)
+                    .collect();
+                (!left.is_empty()).then_some((name, left))
+            })
+            .collect();
+        let mut signature = Signature {
+            operations: BTreeMap::new(),
+            dropped,
+        };
+        let mut pending = Vec::new();
+        for (name, inputs, output) in read {
             let mut named: BTreeMap<&'arena StringLiteral, Named> = inputs
                 .iter()
                 .enumerate()
                 .map(|(place, &(input, _))| (input, Named::Input(Position(place))))
                 .collect();
             let mut implicits = Vec::new();
-            for &(_, port) in inputs.iter().chain(outputs.iter()) {
-                let _count = self.index_terms(port.indices, &mut pending)?;
+            for port in inputs.iter().map(|&(_, port)| port).chain([output]) {
+                let _count = self.carried_terms(port, &signature, &mut pending)?;
                 while let Some(term) = pending.pop() {
                     match tagged(self.constructor(term))? {
                         (tag::VAR, &[variable]) => {
@@ -329,10 +389,9 @@ impl<'arena> Reader<'arena>
                 output,
                 named,
             };
-            if signature.0.insert(name, sorting).is_some() {
+            if signature.operations.insert(name, sorting).is_some() {
                 return None;
             }
-            at = rest;
         }
         Some(signature)
     }
@@ -412,6 +471,47 @@ impl<'arena> Reader<'arena>
         let terms = pending.get_mut(start ..)?;
         terms.reverse();
         Some(FieldCount::from(terms.len()))
+    }
+
+    /// Push the index terms `port`'s sort carries under `signature` onto
+    /// `pending` as [`Self::index_terms`] does, leaving off each position
+    /// `signature` drops from the sort; their count.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::index_terms`] over the chain `port.indices`, each
+    ///   term at a position `signature` drops from `port.sort` removed, the
+    ///   rest in order.
+    /// - panics: none.
+    /// - executable: none — as [`Self::index_terms`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a 2-cell's homs are left off under a law of
+    ///   composition, and a hom's objects are kept.
+    /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
+    fn carried_terms(
+        &self,
+        port: PortSort<'arena>,
+        signature: &Signature<'arena>,
+        pending: &mut Vec<ValueId>,
+    ) -> Option<FieldCount>
+    {
+        let start = pending.len();
+        let count = usize::from(self.index_terms(port.indices, pending)?);
+        let Some(dropped) = signature.dropped.get(port.sort)
+        else {
+            return Some(FieldCount::from(count));
+        };
+        // The terms stand last first, so the one at `place` from the end is
+        // the chain's position `place`.
+        let mut write = start;
+        for (read, place) in (start .. pending.len()).zip((0 .. count).rev()) {
+            if !dropped.contains(&place) {
+                pending.swap(write, read);
+                write = write.checked_add(1)?;
+            }
+        }
+        pending.truncate(write);
+        Some(FieldCount::from(write.checked_sub(start)?))
     }
 
     /// Every rule read, written and derived, in the indexed reading under
@@ -576,7 +676,7 @@ impl<'arena> Indexer<'arena>
                     else {
                         return None;
                     };
-                    let sorting = signature.0.get(name)?;
+                    let sorting = signature.operations.get(name)?;
                     if usize::from(arity) != sorting.inputs.len() {
                         return None;
                     }
@@ -606,7 +706,7 @@ impl<'arena> Indexer<'arena>
                         to: Position(self.implicits.len()),
                     };
                     for (place, &(_, port)) in sorting.inputs.iter().enumerate() {
-                        let stated = self.instantiated(reader, sorting, port, span)?;
+                        let stated = self.instantiated(reader, signature, sorting, port, span)?;
                         let argument = self.arguments.get(place)?.sort;
                         if self
                             .graph
@@ -617,7 +717,8 @@ impl<'arena> Indexer<'arena>
                             return None;
                         }
                     }
-                    let sort = self.instantiated(reader, sorting, sorting.output, span)?;
+                    let sort =
+                        self.instantiated(reader, signature, sorting, sorting.output, span)?;
                     *at.get_mut(position)? = Some(span);
                     Sorted { term, sort }
                 },
@@ -633,11 +734,12 @@ impl<'arena> Indexer<'arena>
     /// `self.arguments`.
     ///
     /// # Specification
-    /// - ensures: [`Some`] with the node of the sort's name applied to its
-    ///   index terms, a `Var` naming one of `sorting`'s implicit indices that
-    ///   index's node, one naming an input port that port's argument, an `App`
-    ///   or `Con` the symbol its name and argument count intern to; [`None`] at
-    ///   a `Var` naming neither, or any other node.
+    /// - ensures: [`Some`] with the node of the sort's name applied to the
+    ///   index terms `signature` carries, a `Var` naming one of `sorting`'s
+    ///   implicit indices that index's node, one naming an input port that
+    ///   port's argument, an `App` or `Con` the symbol its name and argument
+    ///   count intern to; [`None`] at a `Var` naming neither, or any other
+    ///   node.
     /// - panics: none.
     /// - executable: none — the nodes built are the graph's own state.
     /// - intension: the term read in pre-order from a worklist, then built from
@@ -649,6 +751,7 @@ impl<'arena> Indexer<'arena>
     fn instantiated(
         &mut self,
         reader: &mut Reader<'arena>,
+        signature: &Signature<'arena>,
         sorting: &Sorting<'arena>,
         port: PortSort<'arena>,
         span: Span,
@@ -658,7 +761,7 @@ impl<'arena> Indexer<'arena>
         let sort = *self.sort_symbols.entry(port.sort).or_insert(fresh);
         self.items.clear();
         self.pending.clear();
-        let count = reader.index_terms(port.indices, &mut self.pending)?;
+        let count = reader.carried_terms(port, signature, &mut self.pending)?;
         self.items.push(Item::Symbol(sort, count));
         while let Some(term) = self.pending.pop() {
             let item = match reader

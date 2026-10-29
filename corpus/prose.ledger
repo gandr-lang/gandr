@@ -154,8 +154,7 @@ corpus/ledger/features/module-sealing.gandr Tense ba8b9d26aa706269
 corpus/ledger/features/module-sealing.gandr Tense e025dfa7600d87d8
 corpus/ledger/features/modules.gandr Passive 5eb9b22549488a9c
 corpus/ledger/features/modules.gandr Tense 4559f78ace0e8516
-corpus/ledger/features/nested-operation-laws.gandr Passive 08c3912528f17c4f
-corpus/ledger/features/nested-operation-laws.gandr Passive 503de25244562886
+corpus/ledger/features/nested-operation-laws.gandr Passive 52b922cdaff3ee9e
 corpus/ledger/features/nested-operation-laws.gandr Passive f8b880da44141765
 corpus/ledger/features/nested-operation-laws.gandr Tense 67b36f05c2502d99
 corpus/ledger/features/places.gandr Passive 6457d2847ea7bf2e

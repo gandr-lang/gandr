@@ -12,6 +12,16 @@
 //! the indices too, so a critical pair is well sorted, and a closed call
 //! carries the indices its arguments' sorts fix.
 //!
+//! Only an index at a rigid sort is carried: a sort no law rewrites at, and
+//! none of whose operations takes an argument at a sort one does. Two terms of
+//! a rigid sort are equal exactly when they are one term, so a clash there is a
+//! clash of sorts, and an overlap the carried indices refuse is ill sorted. An
+//! index at a flexible sort, a 1-cell indexing a 2-cell under a law of
+//! composition, is equal to another only modulo the laws, so the reading
+//! leaves it off and keeps every overlap it would refuse: a whisker's
+//! composite index `comp(f, h)` is never carried. A law's two sides are still
+//! checked to stand at one sort over every index as written.
+//!
 //! The reading carries a presentation's own laws
 //! ([`crate::elaborate_theory_desc`]), a closed call and the oriented rules it
 //! normalizes under ([`crate::PresentedRules::call`]). The kernel re-derives
@@ -45,6 +55,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::TermNode;
@@ -104,14 +115,164 @@ struct Sorting
     output: FreeTerm,
 }
 
+impl Sorting
+{
+    /// `operation`'s sorting, each port's sort the term `sort` writes it as.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of<S>(
+        operation: &OperDesc,
+        output: &SortRef,
+        sort: S,
+    ) -> Self
+    where
+        S: Fn(&SortRef) -> FreeTerm,
+    {
+        let bound: BTreeSet<&Name> = operation
+            .arity
+            .inputs
+            .iter()
+            .map(|port| &port.name)
+            .collect();
+        let inputs: Box<[(Name, FreeTerm)]> = operation
+            .arity
+            .inputs
+            .iter()
+            .map(|port| (port.name.clone(), sort(port)))
+            .collect();
+        let output = sort(output);
+        let mut implicits: Vec<Name> = Vec::new();
+        let mut seen: BTreeSet<&Name> = BTreeSet::new();
+        for stated in inputs
+            .iter()
+            .map(|&(_, ref stated)| stated)
+            .chain([&output])
+        {
+            for name in stated.to_node().vars() {
+                if !bound.contains(name) && seen.insert(name) {
+                    implicits.push(name.clone());
+                }
+            }
+        }
+        Self {
+            implicits: implicits.into(),
+            inputs,
+            output,
+        }
+    }
+}
+
 /// The operations of a description over indexed sorts, each with the indices
 /// its applications carry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct Indexing
 {
-    /// Each operation's sorting, by name.
+    /// Each operation's sorting over the indices it carries, at rigid sorts,
+    /// by name.
     operations: BTreeMap<Name, Sorting>,
+    /// Each operation's sorting over every index as written, by name: the
+    /// check that a law's two sides stand at one sort.
+    written: BTreeMap<Name, Sorting>,
+}
+
+/// Each indexed sort's index positions at a flexible sort, which the reading
+/// does not carry.
+#[repr(transparent)]
+struct Flexible<'description>
+{
+    /// The positions left off, by sort.
+    positions: BTreeMap<&'description Name, BTreeSet<usize>>,
+}
+
+impl<'description> Flexible<'description>
+{
+    /// The flexible positions of `description`'s sorts.
+    ///
+    /// # Specification
+    /// - ensures: a sort is flexible when some law's side applies an operation
+    ///   whose output stands at it, or an operation whose output stands at it
+    ///   takes an input at a flexible sort; a position is left off when its
+    ///   binder ranges over a flexible sort.
+    /// - panics: none.
+    /// - executable: none — the positions are the fixed point itself; a
+    ///   predicate would grow it a second time.
+    /// - intension: the flexible sorts grown to their least fixed point.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a category's objects are rigid, and a 2-cell's
+    ///   1-cells under a law of composition are not.
+    /// - witness: `indexing::tests::a_whiskers_composite_index_leaves_the_other_laws_indexed_1510`
+    fn of<G>(description: &'description TheoryDesc<G>) -> Self
+    {
+        let outputs: BTreeMap<&Name, &Name> = description
+            .opers
+            .iter()
+            .filter_map(|operation| Some((&operation.name, &operation.arity.outputs.first()?.sort)))
+            .collect();
+        let mut flexible: BTreeSet<&Name> = BTreeSet::new();
+        for face in &description.rules {
+            for side in [&face.lhs, &face.rhs] {
+                if let TermView::Op { name, .. } = side.view()
+                    && let Some(&sort) = outputs.get(name)
+                {
+                    let _first = flexible.insert(sort);
+                }
+            }
+        }
+        loop {
+            let before = flexible.len();
+            for operation in &description.opers {
+                if operation
+                    .arity
+                    .inputs
+                    .iter()
+                    .any(|port| flexible.contains(&port.sort))
+                    && let Some(output) = operation.arity.outputs.first()
+                {
+                    let _first = flexible.insert(&output.sort);
+                }
+            }
+            if flexible.len() == before {
+                break;
+            }
+        }
+        let positions = description
+            .sorts
+            .iter()
+            .filter_map(|sort| {
+                let left: BTreeSet<usize> = sort
+                    .indices
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, index)| flexible.contains(&index.sort))
+                    .map(|(place, _)| place)
+                    .collect();
+                (!left.is_empty()).then_some((&sort.name, left))
+            })
+            .collect();
+        Self { positions }
+    }
+
+    /// The sort `port` stands at over the indices the reading carries.
+    ///
+    /// # Specification
+    /// trivial.
+    fn carried(
+        &self,
+        port: &SortRef,
+    ) -> FreeTerm
+    {
+        let left = self.positions.get(&port.sort);
+        FreeTerm::ctor(
+            port.sort.clone(),
+            port.arguments
+                .iter()
+                .enumerate()
+                .filter(|&(place, _)| !left.is_some_and(|left| left.contains(&place)))
+                .map(|(_, argument)| argument.clone()),
+        )
+    }
 }
 
 /// The first character of an unknown the solver mints; no written variable
@@ -284,12 +445,13 @@ impl Indexing
     /// indexed and every operation's ports are ones the reading carries.
     ///
     /// # Specification
-    /// - ensures: one sorting per operation, its implicit indices the variables
-    ///   its ports' sorts name that no input port binds, in order of first
-    ///   occurrence.
+    /// - ensures: one sorting per operation over the indices it carries, at
+    ///   rigid sorts ([`Flexible`]), and one over every index as written, each
+    ///   one's implicit indices the variables its ports' sorts name that no
+    ///   input port binds, in order of first occurrence.
     /// - fails: [`indexed_reading::Absent::Unindexed`] when no sort is indexed;
     ///   [`indexed_reading::Absent::Unsupported`] when a port binds or
-    ///   abstracts, or an operation has other than one output. An index term
+    ///   abstracts, or an operation has other than one output. A carried index
     ///   applying an operation with indices of its own leaves the reading
     ///   whole: a term whose sorting meets it is refused [`Unsorted::Nested`].
     /// - panics: none.
@@ -311,47 +473,40 @@ impl Indexing
         if description.sorts.iter().all(|sort| sort.indices.is_empty()) {
             return Maybe::Absent(indexed_reading::Absent::Unindexed);
         }
-        let mut operations = BTreeMap::new();
-        let (mut bound, mut seen): (BTreeSet<&Name>, BTreeSet<&Name>) =
-            (BTreeSet::new(), BTreeSet::new());
+        let flexible = Flexible::of(description);
+        let (mut operations, mut written) = (BTreeMap::new(), BTreeMap::new());
         for operation in &description.opers {
             let ports = operation
                 .arity
                 .inputs
                 .iter()
                 .chain(operation.arity.outputs.iter());
-            if operation.arity.outputs.len() != 1
-                || ports
-                    .clone()
-                    .any(|port| !port.bindings.is_empty() || !port.abstractions.is_empty())
-            {
-                return Maybe::Absent(indexed_reading::Absent::Unsupported);
-            }
-            bound.clear();
-            bound.extend(operation.arity.inputs.iter().map(|port| &port.name));
-            seen.clear();
-            let implicits: Box<[Name]> = ports
-                .flat_map(|port| port.arguments.iter())
-                .flat_map(|argument| argument.to_node().vars())
-                .filter(|&name| !bound.contains(name) && seen.insert(name))
-                .cloned()
-                .collect();
-            let Some(output) = operation.arity.outputs.first().map(sort_term)
+            let (Some(output), 1) = (
+                operation.arity.outputs.first(),
+                operation.arity.outputs.len(),
+            )
             else {
                 return Maybe::Absent(indexed_reading::Absent::Unsupported);
             };
-            let _first = operations.insert(operation.name.clone(), Sorting {
-                implicits,
-                inputs: operation
-                    .arity
-                    .inputs
-                    .iter()
-                    .map(|port| (port.name.clone(), sort_term(port)))
-                    .collect(),
-                output,
-            });
+            if ports
+                .clone()
+                .any(|port| !port.bindings.is_empty() || !port.abstractions.is_empty())
+            {
+                return Maybe::Absent(indexed_reading::Absent::Unsupported);
+            }
+            let _first = operations.insert(
+                operation.name.clone(),
+                Sorting::of(operation, output, |port| flexible.carried(port)),
+            );
+            let _first = written.insert(
+                operation.name.clone(),
+                Sorting::of(operation, output, sort_term),
+            );
         }
-        Maybe::Present(Self { operations })
+        Maybe::Present(Self {
+            operations,
+            written,
+        })
     }
 
     /// `face` with each operation application carrying its indices, solved
@@ -359,16 +514,17 @@ impl Indexing
     ///
     /// # Specification
     /// - ensures: both sides with every application `f(t…)` written `f(i…,
-    ///   t…)`, its implicit indices first, the two sides at one sort, each
+    ///   t…)`, its carried implicit indices first, the two sides at one sort
+    ///   over every index as written and over the carried ones, each
     ///   [`Self::strip`]ped back to the side as written; an index no sort fixes
     ///   is a fresh variable of the left side.
     /// - fails: [`Unsorted::Unread`] for a side applying anything but a
     ///   declared operation at its port count, or naming a variable no other
     ///   way; [`Unsorted::Clash`] when two sorts asked of one subterm do not
     ///   unify; [`Unsorted::Unfixed`] when the right side names an index the
-    ///   left side's sorting does not fix; [`Unsorted::Nested`] when an index
-    ///   either side's sorting fixes applies an operation with indices of its
-    ///   own.
+    ///   left side's sorting does not fix; [`Unsorted::Nested`] when a carried
+    ///   index either side's sorting fixes applies an operation with indices of
+    ///   its own.
     /// - panics: none.
     /// - executable: none — the strip-back clause compares terms built from the
     ///   receiver's sorting, which a clause may not read.
@@ -386,7 +542,11 @@ impl Indexing
         face: &RuleFace,
     ) -> Result<RuleFace, Unsorted>
     {
-        let mut solving = Solving::new(self);
+        let mut written = Solving::new(&self.written, Carrying::Written);
+        let (_, left_sort) = written.infer(&face.lhs)?;
+        let (_, right_sort) = written.infer(&face.rhs)?;
+        written.unify(&left_sort, &right_sort)?;
+        let mut solving = Solving::new(&self.operations, Carrying::Indices);
         let (left, left_sort) = solving.infer(&face.lhs)?;
         let (right, right_sort) = solving.infer(&face.rhs)?;
         solving.unify(&left_sort, &right_sort)?;
@@ -412,8 +572,9 @@ impl Indexing
     /// indices its arguments' sorts fix.
     ///
     /// # Specification
-    /// - ensures: every application `f(t…)` written `f(i…, t…)`, its implicit
-    ///   indices first, [`Self::strip`]ped back to `term`.
+    /// - ensures: every application `f(t…)` written `f(i…, t…)`, its carried
+    ///   implicit indices first, [`Self::strip`]ped back to `term`, its sorts
+    ///   checked over every index as written.
     /// - fails: as [`Self::face`] does for one side; [`Unsorted::Unfixed`] when
     ///   an index no argument's sort fixes is left.
     /// - panics: none.
@@ -432,7 +593,8 @@ impl Indexing
         term: &FreeTerm,
     ) -> Result<FreeTerm, Unsorted>
     {
-        let mut solving = Solving::new(self);
+        let _sorted = Solving::new(&self.written, Carrying::Written).infer(term)?;
+        let mut solving = Solving::new(&self.operations, Carrying::Indices);
         let (indexed, _sort) = solving.infer(term)?;
         let indexed = solving.resolved(&indexed);
         self.unnested(&indexed)?;
@@ -531,12 +693,25 @@ impl Indexing
     }
 }
 
+/// What an application read by a sorting problem is built with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Carrying
+{
+    /// Its implicit indices first, then its arguments.
+    Indices,
+    /// Its arguments only: the problem checks sorts and builds the term as
+    /// written.
+    Written,
+}
+
 /// One sorting problem: the unknowns solved so far and the sort each written
 /// variable stands at.
 struct Solving<'indexing>
 {
-    /// The description's operations.
-    indexing: &'indexing Indexing,
+    /// The sorting the problem reads applications under.
+    sorting: &'indexing BTreeMap<Name, Sorting>,
+    /// What an application is built with.
+    carrying: Carrying,
     /// Each solved unknown's term.
     solved: BTreeMap<Name, FreeTerm>,
     /// Each written variable's sort.
@@ -547,14 +722,18 @@ struct Solving<'indexing>
 
 impl<'indexing> Solving<'indexing>
 {
-    /// A problem over `indexing`'s operations, nothing solved.
+    /// A problem over `sorting`, nothing solved.
     ///
     /// # Specification
     /// trivial.
-    const fn new(indexing: &'indexing Indexing) -> Self
+    const fn new(
+        sorting: &'indexing BTreeMap<Name, Sorting>,
+        carrying: Carrying,
+    ) -> Self
     {
         Self {
-            indexing,
+            sorting,
+            carrying,
             solved: BTreeMap::new(),
             sorts: BTreeMap::new(),
             minted: 0,
@@ -679,7 +858,7 @@ impl<'indexing> Solving<'indexing>
     ///   first occurrence; each application's arguments read first to last,
     ///   each at the sort its port asks, the port's name standing for the
     ///   argument in the sorts after it, and its implicit indices fresh
-    ///   unknowns.
+    ///   unknowns, built into the application under [`Carrying::Indices`].
     /// - fails: [`Unsorted::Unread`] for anything but a variable or a declared
     ///   operation at its port count; [`Unsorted::Clash`] as [`Self::unify`].
     /// - panics: none.
@@ -699,7 +878,7 @@ impl<'indexing> Solving<'indexing>
         term: &FreeTerm,
     ) -> Result<(FreeTerm, FreeTerm), Unsorted>
     {
-        let indexing = self.indexing;
+        let sorting = self.sorting;
         let mut steps = Vec::from([Step::Read(term.clone())]);
         let mut done: Vec<(FreeTerm, FreeTerm)> = Vec::new();
         let mut renaming: BTreeMap<Name, FreeTerm> = BTreeMap::new();
@@ -718,7 +897,7 @@ impl<'indexing> Solving<'indexing>
                         done.push((next.clone(), sort));
                     },
                     TermView::Op { name, args } => {
-                        let Some(sorting) = indexing.operations.get(name)
+                        let Some(sorting) = sorting.get(name)
                         else {
                             return Err(Unsorted::Unread);
                         };
@@ -736,7 +915,7 @@ impl<'indexing> Solving<'indexing>
                     | TermView::Bound(_) => return Err(Unsorted::Unread),
                 },
                 Step::Op(name, count) => {
-                    let Some(sorting) = indexing.operations.get(&name)
+                    let Some(sorting) = sorting.get(&name)
                     else {
                         return Err(Unsorted::Unread);
                     };
@@ -766,9 +945,14 @@ impl<'indexing> Solving<'indexing>
                         Substitution::Once,
                         Dropping::Nothing,
                     );
+                    let carried = match self.carrying {
+                        Carrying::Indices => sorting.implicits.len(),
+                        Carrying::Written => 0,
+                    };
                     let indices = sorting
                         .implicits
                         .iter()
+                        .take(carried)
                         .filter_map(|implicit| renaming.get(implicit).cloned());
                     let applied = FreeTerm::op(
                         name,
@@ -1086,14 +1270,16 @@ mod tests
         description
     }
 
-    /// A whisker whose output's indices apply composition leaves the reading
-    /// whole: vertical associativity reads with its 1-cells and strips back,
-    /// and only a law whose sorting meets the composite index is refused
-    /// (#1510).
+    /// A whisker's composite index is carried only while no law rewrites the
+    /// homs it composes. With none, the homs are rigid, vertical associativity
+    /// reads with its 1-cells, and a law meeting the composite is refused.
+    /// Under associativity the homs are flexible: a 2-cell carries no 1-cell,
+    /// interchange reads with the objects its whiskering hom fixes, and a law
+    /// whose sides stand at two 2-cell sorts is still refused (#1510).
     #[test]
     fn a_whiskers_composite_index_leaves_the_other_laws_indexed_1510()
     {
-        let Maybe::Present(indexing) = Indexing::of(&two_cells())
+        let Maybe::Present(rigid) = Indexing::of(&two_cells())
         else {
             panic!("a whisker's composite index leaves the reading whole");
         };
@@ -1101,19 +1287,63 @@ mod tests
             op("vcomp", [op("vcomp", [var("s"), var("t")]), var("u")]),
             op("vcomp", [var("s"), op("vcomp", [var("t"), var("u")])]),
         );
-        let indexed = indexing
+        let indexed = rigid
             .face(&associativity)
             .expect("vertical associativity is well sorted");
         assert_eq!(
-            (indexing.strip(&indexed.lhs), indexing.strip(&indexed.rhs)),
+            (rigid.strip(&indexed.lhs), rigid.strip(&indexed.rhs)),
             (associativity.lhs, associativity.rhs),
             "it strips back to the law as written"
         );
         let whiskered = op("vcomp", [op("whiskerR", [var("s"), var("h")]), var("t")]);
         assert_eq!(
-            indexing.face(&face(whiskered.clone(), whiskered)),
+            rigid.face(&face(whiskered.clone(), whiskered)),
             Err(Unsorted::Nested),
             "a whiskered composite's index applies composition, which the reading does not carry"
+        );
+        let mut composed = two_cells();
+        composed.rules = Vec::from([face(
+            op("comp", [op("comp", [var("f"), var("g")]), var("h")]),
+            op("comp", [var("f"), op("comp", [var("g"), var("h")])]),
+        )])
+        .into();
+        let Maybe::Present(flexible) = Indexing::of(&composed)
+        else {
+            panic!("the objects stay indexed");
+        };
+        let unit = || op("id", [var("a")]);
+        let whiskered = |cell: FreeTerm| op("whiskerR", [cell, unit()]);
+        let interchange = face(
+            op("vcomp", [whiskered(var("s")), whiskered(var("t"))]),
+            whiskered(op("vcomp", [var("s"), var("t")])),
+        );
+        let carried = |cell: FreeTerm| op("whiskerR", [var("a"), var("a"), cell, unit()]);
+        assert_eq!(
+            flexible.face(&interchange),
+            Ok(face(
+                op("vcomp", [carried(var("s")), carried(var("t"))]),
+                carried(op("vcomp", [var("s"), var("t")])),
+            )),
+            "interchange carries the objects its identity fixes, and no 1-cell"
+        );
+        let distributed = face(
+            op("whiskerR", [op("vcomp", [var("s"), var("t")]), var("h")]),
+            op("vcomp", [
+                op("whiskerR", [var("s"), var("h")]),
+                op("whiskerR", [var("t"), var("h")]),
+            ]),
+        );
+        assert_eq!(
+            flexible
+                .face(&distributed)
+                .map(|indexed| (flexible.strip(&indexed.lhs), flexible.strip(&indexed.rhs))),
+            Ok((distributed.lhs.clone(), distributed.rhs.clone())),
+            "a whisker distributes over vertical composition"
+        );
+        assert_eq!(
+            flexible.face(&face(whiskered(var("s")), var("s"))),
+            Err(Unsorted::Clash),
+            "a whiskered 2-cell stands between composites, so it is no 2-cell between its own ends"
         );
     }
 }

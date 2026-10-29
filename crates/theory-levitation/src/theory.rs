@@ -307,7 +307,6 @@
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
-use alloc::string::ToString as _;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -2641,13 +2640,13 @@ impl TheoryValue
     /// # Specification
     /// - ensures: the shape parameter the value codes, when it codes one; one
     ///   data sort per sort the value codes, its index telescope each index
-    ///   port's name over its sort's spelling, representable when the value
-    ///   codes it so; one operation per operation, its arity the ports in
-    ///   order, each under the name [`presented_names`] gives it and each under
-    ///   its binders, a binder's domain its sort's name over its index terms;
-    ///   one face per rule, its variables derived from its left side and its
-    ///   provenance the span of `faces` at its place; no parameter, constructor
-    ///   or circuit.
+    ///   port's name over its sort's name applied to its index terms,
+    ///   representable when the value codes it so; one operation per operation,
+    ///   its arity the ports in order, each under the name [`presented_names`]
+    ///   gives it and each under its binders, a binder's domain its sort's name
+    ///   over its index terms; one face per rule, its variables derived from
+    ///   its left side and its provenance the span of `faces` at its place; no
+    ///   parameter, constructor or circuit.
     /// - fails: [`UndescribedTheory::Value`] for a value that codes no
     ///   presentation; [`UndescribedTheory::Unplaced`] when the value codes
     ///   more rules than `faces` places.
@@ -2687,7 +2686,10 @@ impl TheoryValue
                     DeclPolarity::Data,
                     sort.indices
                         .iter()
-                        .map(|index| SortIndex::new(index.name.clone(), spelled(index)))
+                        .map(|index| {
+                            SortIndex::new(index.name.clone(), index.sort.clone())
+                                .applied(index.indices.clone())
+                        })
                         .collect::<Vec<_>>(),
                 );
                 SortDesc {
@@ -2840,16 +2842,6 @@ fn port_ref(
         .applied(port.indices.clone())
         .pi_plus(binders(&port.bindings))
         .abstracting(binders(&port.abstractions))
-}
-
-/// A sort index's sort as the description spells it: its name, applied to
-/// its index terms when it has any.
-///
-/// # Specification
-/// trivial.
-fn spelled(port: &TheoryPort) -> Name
-{
-    Name::from(FreeTerm::op(port.sort.clone(), port.indices.iter().cloned()).to_string())
 }
 
 #[cfg(test)]

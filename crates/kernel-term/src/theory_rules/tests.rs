@@ -1629,10 +1629,11 @@ fn chain(
 /// #1510: a category's laws over `Hom(dom, cod)` read with the objects each
 /// application's sorting fixes, so the unit laws' overlap is one well-sorted
 /// term and joins; written as they are, without the indices, the same laws
-/// part at `comp(id(a), id(b))`. A whisker beside them, whose output's
-/// indices compose homs, leaves their reading indexed: no law's sorting
-/// meets its composite index. A law whiskering a whisker meets it, and the
-/// presentation is decided as written.
+/// part at `comp(id(a), id(b))`. A whisker beside them stands at composite
+/// homs, which the laws rewrite, so a 2-cell carries no hom and only the
+/// objects its whiskering hom fixes: the category's laws keep their reading,
+/// and a whisker distributing over vertical composition reads over objects
+/// and decides.
 #[test]
 fn a_categorys_laws_join_over_their_objects_1510()
 {
@@ -1746,18 +1747,43 @@ fn a_categorys_laws_join_over_their_objects_1510()
         Ok(()),
         "and their overlaps join as the category's do"
     );
-    let [cell, other] = ["s", "k"].map(|name| code.var(literal(name)));
-    let inner = code.app(literal("whiskerR"), &[cell, third]);
-    let twice = code.app(literal("whiskerR"), &[inner, other]);
-    let twice_name = code.text(literal("twice"));
-    let mut nesting = members.clone();
-    nesting.push((rule_tag, vec![twice_name, twice, twice]));
-    let nested = code.presenting(whiskered_sorts, whiskered_operations, nesting);
-    let read = TheoryRules::read(&code.arena, nested).expect("the nested law reads");
-    assert_eq!(
+    // `vcomp : (s : Two(f, g), t : Two(g, k)) --> Two(f, k)`, and a whisker
+    // distributing over it: `whiskerR(vcomp(s, t), h) ==> vcomp(whiskerR(s,
+    // h), whiskerR(t, h))`.
+    let [cell, next, other] = ["s", "t", "k"].map(|name| code.var(literal(name)));
+    let [vertical, t_name, distribute] =
+        ["vcomp", "t", "whiskerDist"].map(|name| code.text(literal(name)));
+    let [later, outer] = [[second, other], [first, other]].map(|terms| chain(&mut code, &terms));
+    let vertical_output = code.node(port, vec![unnamed, two, outer, end]);
+    let t_port = code.node(port, vec![t_name, two, later, end]);
+    let first_port = code.node(port, vec![s_name, two, cells, t_port]);
+    let distributing_operations = code.node(oper, vec![
+        vertical,
+        first_port,
+        vertical_output,
+        whiskered_operations,
+    ]);
+    let composed_cells = code.app(literal("vcomp"), &[cell, next]);
+    let whiskered_composite = code.app(literal("whiskerR"), &[composed_cells, third]);
+    let [left_whisker, right_whisker] =
+        [cell, next].map(|each| code.app(literal("whiskerR"), &[each, third]));
+    let distributed = code.app(literal("vcomp"), &[left_whisker, right_whisker]);
+    let mut distributing = members.clone();
+    distributing.push((rule_tag, vec![distribute, whiskered_composite, distributed]));
+    // The whisker ranks above vertical composition, so the law is oriented.
+    let one = code.text(literal("1"));
+    distributing.push((ConstructorTag::from(super::tag::RANK), vec![whisker, one]));
+    let nested = code.presenting(whiskered_sorts, distributing_operations, distributing);
+    let read = TheoryRules::read(&code.arena, nested).expect("the whisker law reads");
+    assert_ne!(
         read.decided(),
         read.rules(),
-        "a whisker's index applies composition, so its laws are decided as written"
+        "a law over whiskered composites reads with the objects its homs fix"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        Ok(()),
+        "and its overlaps with the category's laws join"
     );
     let (sorts, operations) = signature(&mut code, false);
     let written = code.presenting(sorts, operations, members);
