@@ -981,7 +981,6 @@ INSERT INTO purpose VALUES('kernel-core','census::ExpansionCount','struct','How 
 INSERT INTO purpose VALUES('kernel-core','census::ExpansionKind','enum','Whether a goal was expanded or served from the memo.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::DefaultMemo','type_alias','The memo an unsupplied check builds for itself: the default path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::Judgement','struct','The read-only inputs every judgement of one declaration stands on.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core','check::check_declaration','function','Check a declaration through the default path: a fresh live memo, built here and dropped here.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::check_declaration_with_memo','function','Check a declaration against a caller-supplied memo — the opt-in entry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::occurrence::Accessibility','struct','What a declaration''s recursion was read to be.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::occurrence::Stratification','enum','Whether a family''s own occurrences all stand strictly positively.',NULL,'fits','sound',NULL);

@@ -686,7 +686,6 @@ pub use crate::census::ExpansionCount;
 pub use crate::census::ExpansionKind;
 pub use crate::check::DefaultMemo;
 pub use crate::check::Judgement;
-pub use crate::check::check_declaration;
 pub use crate::check::check_declaration_with_memo;
 pub use crate::conv::Convertibility;
 pub use crate::conv::convert_comp_type;
