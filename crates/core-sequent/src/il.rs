@@ -764,13 +764,17 @@ pub const REACHED: &str = "reached";
 /// its host.
 pub const CELL: &str = "?cell";
 
-/// The operation of [`CELL`] that starts a cut's writer: its payload is the
-/// writer suspended as a thunk, and its reply is a handle on the writer's
-/// cell.
+/// The operation of [`CELL`] that starts a cut's writer.
+///
+/// Its payload is the writer suspended as a thunk. Its reply is `inl` of a
+/// handle on the writer's cell when the host started the writer, and `inr` of
+/// the thunk when the writer stays in place, forced where its answer is
+/// needed.
 pub const SPAWN: &str = "spawn";
 
 /// The operation of [`CELL`] that reads a cut's cell: its payload is the
-/// handle [`SPAWN`] replied with, and its reply is the writer's answer.
+/// handle [`SPAWN`] replied with inside its `inl`, and its reply is the
+/// writer's answer.
 pub const READ: &str = "read";
 
 /// A command node.

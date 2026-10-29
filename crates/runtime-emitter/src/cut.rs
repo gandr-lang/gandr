@@ -1,28 +1,37 @@
-//! A run whose independent cuts run at once: each writer the run spawns runs
-//! as a job of the caller's fork, over a store of its own, and each read of
-//! the writer's handle waits for the writer's answer.
+//! A run whose independent cuts run at once: a writer the run starts runs as
+//! a job of the caller's fork, over a store of its own, and the read of the
+//! writer's handle waits for the writer's answer. A writer the run keeps runs
+//! in place, in the reader's machine.
 //!
 //! The caller schedules the run's IL first
 //! ([`gandr_core_sequent::spawn_independent`]). Each cut whose binder focus
 //! marked independent is then a perform of [`SPAWN`] of [`CELL`], whose
-//! payload is the writer suspended as a thunk. Its binder reads the writer's
-//! answer by a perform of [`READ`] of the handle the spawn replied with. No
-//! source can claim either operation, so the run offers both to its host.
-//! [`evaluate_scheduled_on`] lowers the root and every writer once, then
-//! answers both operations inside a scope of the caller's fork:
+//! payload is the writer suspended as a thunk. Its binder awaits the spawn's
+//! answer: a case that reads an `inl` handle by a perform of [`READ`], and
+//! forces an `inr` thunk. No source can claim either operation, so the run
+//! offers both to its host. [`evaluate_scheduled_on`] lowers the root and
+//! every writer once, then answers both operations inside a scope of the
+//! caller's fork:
 //!
-//! - A spawn copies the thunk into a store of its own, in the process
+//! - Before a spawn is offered, the run asks whether its heartbeat is due: the
+//!   run ran [`HEARTBEAT`] spawns' measured cost since it started, or since it
+//!   last started a writer. Until then the spawn answers `inr` of the thunk,
+//!   unoffered, and the reader forces it as the sequential bind runs it.
+//! - A due spawn copies the thunk into a store of its own, in the process
 //!   ([`Store::copy`]), and starts its writer as a job of the scope. The job
 //!   runs the thunk's body closed over that store with a host of its own, so a
-//!   writer spawns and reads the writers inside it. The reply is the writer's
-//!   handle: an integer that names the writer's place in the host's table.
+//!   writer spawns and awaits the writers inside it. The reply is `inl` of the
+//!   writer's handle: an integer that names the writer's place in the host's
+//!   table.
 //! - A read waits for the job behind its handle. A job that no worker took runs
 //!   on the waiting thread. While another worker runs it, the waiting worker
 //!   runs the pool's other jobs. Then the read copies the writer's answer into
 //!   the reader's store, and resumes with it.
 //!
-//! Every other operation, and every migration, goes to the host the caller
-//! supplies.
+//! A spawn's cost is measured on the reader's side: the payload's transfer and
+//! copy and the job's start, and the read's copy of the answer. Each is a
+//! running mean over the schedule's runs. Every other operation, and every
+//! migration, goes to the host the caller supplies.
 //!
 //! # Boundaries
 //!
@@ -39,8 +48,14 @@
 //! - **A read without an answer is declined.** A writer that ends with no
 //!   answer, or that panics on another worker, leaves the reader stuck at its
 //!   read.
-//! - **A writer's own host declines every other operation.** A marked writer
+//! - **A started writer's own host declines every other operation.** A writer
+//!   kept in place offers them to its reader's host instead. A marked writer
 //!   performs nothing: the mark is the claim of focus's caller.
+//! - **The clock picks the writers that start.** The heartbeat reads elapsed
+//!   time, so two runs of one program may start different writers. A marked
+//!   writer performs nothing, so the answers agree.
+//! - **The measure leaves out the started writer's own run.** Its setup and its
+//!   exit run on the worker, and the reader's side does not see them.
 //! - **A handle read twice answers twice.** A continuation resumed twice reads
 //!   its handle again, and the host copies the answer it kept.
 //! - **Waits stack native frames.** A wait that runs a job on its own thread
@@ -58,10 +73,15 @@
 //!   (§ futures-in-gandr item 1): the concurrent schedule of a cut, its writer
 //!   spawned and its cell written once.
 
+use alloc::boxed::Box;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 use core::mem;
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::Ordering;
+use core::time::Duration;
+use std::time::Instant;
 
 use gandr_core_fork::Fork;
 use gandr_core_fork::Scoped;
@@ -69,6 +89,7 @@ use gandr_core_fork::Spawn;
 use gandr_core_sequent::CELL;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
+use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::Environment;
 use gandr_core_sequent::HeapValue;
@@ -81,6 +102,7 @@ use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::Summand;
 use gandr_runtime_stencils::Fuel;
 
 use crate::lower::Schedule;
@@ -97,29 +119,36 @@ use crate::seam::HostRequest;
 use crate::seam::HostValues;
 use crate::seam::Migrated;
 use crate::seam::MigrationRequest;
+use crate::seam::Spawning;
 
 /// Run `root`, its independent cuts scheduled, on the tier `choice` names
-/// inside a scope of `fork`: each spawn starts its writer as a job of the
-/// scope, and each read waits for the writer's answer.
+/// inside a scope of `fork`.
+///
+/// A spawn due by the run's heartbeat starts its writer as a job of the
+/// scope, and its read waits for the writer's answer. Every other writer runs
+/// in place.
 ///
 /// # Specification
 /// - requires: `root` and every definition it reaches belong to `arena`, as
 ///   [`evaluate_on_with_host`] requires, scheduled by
 ///   [`gandr_core_sequent::spawn_independent`] or written so: every perform of
-///   [`READ`] of [`CELL`] reads a handle a perform of [`SPAWN`] of [`CELL`]
-///   replied with, in the same run.
+///   [`READ`] of [`CELL`] reads a handle that a perform of [`SPAWN`] of
+///   [`CELL`] replied with inside its `inl`, in the same run.
 /// - ensures: the root and each writer's body are lowered once, before the
 ///   scope starts ([`crate::lower::lower_scheduled`]). The reader runs on the
 ///   tier `choice` names as [`evaluate_on_with_host`] runs it, with a host that
-///   answers each spawn with a handle and each read with a fresh copy of the
-///   writer's answer in `store`. A read declines when the writer ended with no
-///   answer, and a spawn declines when its thunk does not copy. Each writer
-///   runs over the function the schedule lowered for its body and a store of
-///   its own, each value its environment binds first laid out on the run's heap
-///   as a host's reply is. Its host answers its own spawns and reads and
-///   declines every other operation. Every other operation and every migration
-///   of the reader goes to `host`. So a run whose writers halt answers as the
-///   sequential schedule does.
+///   answers a due spawn with `inl` of a handle and each read with a fresh copy
+///   of the writer's answer in `store`. A spawn not yet due answers `inr` of
+///   its thunk, unoffered. A spawn is due when the run ran [`HEARTBEAT`]
+///   spawns' measured cost since it started or last started a writer. A read
+///   declines when the writer ended with no answer, and a spawn declines when
+///   its thunk does not copy. Each started writer runs over the function the
+///   schedule lowered for its body and a store of its own, each value its
+///   environment binds first laid out on the run's heap as a host's reply is.
+///   Its host answers its own spawns and reads and declines every other
+///   operation. Every other operation and every migration of the reader goes to
+///   `host`. So a run whose writers halt answers as the sequential schedule
+///   does.
 /// - panics: a panic of a writer that ran on this thread, or of the reader; a
 ///   writer's panic on another worker where the scope ends.
 /// - executable: none — the answer is observed by running the schedule.
@@ -133,11 +162,12 @@ use crate::seam::MigrationRequest;
 ///   caller's host, nested writers read before their reader's own spawn, a
 ///   writer over an opaque constant, a writer whose capture is a function, and
 ///   a recursive writer whose captures hold its own fixpoint answer on each
-///   tier what their sequential schedule answers, on the serial fork. A reply
-///   copied from the wrong store, a handle naming another writer, or another
-///   operation not passed on changes an answer. L3 — a writer stuck at an
-///   operation leaves the reader stuck at its read. The driver's pool, at one
-///   thread and at four, is `gandr-surface-dispatcher`'s witness.
+///   tier what their sequential schedule answers, on the serial fork. Each also
+///   answers so with every writer kept in place. A reply copied from the wrong
+///   store, a handle naming another writer, an `inl` and an `inr` swapped, or
+///   another operation not passed on changes an answer. L3 — a writer stuck at
+///   an operation leaves the reader stuck at its read. The driver's pool, at
+///   one thread and at four, is `gandr-surface-dispatcher`'s witness.
 /// - witness: `tests::cut::a_read_answers_what_its_writer_halts_with`
 /// - witness: `tests::cut::nested_writers_answer_as_their_sequential_schedule`
 /// - witness: `tests::cut::a_writer_with_no_answer_leaves_its_read_stuck`
@@ -160,6 +190,7 @@ where
     Host::Abort: Send,
 {
     let schedule = lower_scheduled(arena, definitions, root)?;
+    let cost = SpawnCost::default();
     fork.scope(Reading {
         program: Program {
             choice,
@@ -167,6 +198,7 @@ where
             definitions,
             schedule: &schedule,
             fuel,
+            cost: &cost,
         },
         store,
         host,
@@ -174,7 +206,7 @@ where
 }
 
 /// What every run of a schedule reads besides its store: the tier asked for,
-/// the program, its code, and the fuel.
+/// the program, its code, the fuel and the measured cost of a spawn.
 #[derive(Clone, Copy, Debug)]
 struct Program<'scope>
 {
@@ -188,6 +220,79 @@ struct Program<'scope>
     schedule: &'scope Schedule,
     /// The jumps each run may take.
     fuel: Fuel,
+    /// What starting a writer has cost the runs of this schedule.
+    cost: &'scope SpawnCost,
+}
+
+/// How many spawns' cost a run spends running between two writers it
+/// starts: a run spends at most one part in this many starting writers.
+const HEARTBEAT: u32 = 20;
+
+/// The measured cost of starting a writer, shared by every run of a
+/// schedule: the reader's side of a spawn and of a read.
+#[derive(Debug, Default)]
+struct SpawnCost
+{
+    /// A spawn: the payload's transfer and copy and the job's start.
+    spawn: Mean,
+    /// A read's copy of the writer's answer.
+    read: Mean,
+}
+
+impl SpawnCost
+{
+    /// The time a run runs between two writers it starts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn heartbeat(&self) -> Duration
+    {
+        self.spawn
+            .duration()
+            .saturating_add(self.read.duration())
+            .saturating_mul(HEARTBEAT)
+    }
+}
+
+/// A running mean of durations, in nanoseconds: each sample weighs an
+/// eighth, and the first sample is the mean.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+struct Mean(AtomicU64);
+
+impl Mean
+{
+    /// Fold `took` into the mean.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fold(
+        &self,
+        took: Duration,
+    )
+    {
+        let sample = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
+        let old = self.0.load(Ordering::Relaxed);
+        let new = if old == 0 {
+            sample
+        }
+        else {
+            old.saturating_mul(7)
+                .saturating_add(sample)
+                .checked_div(8)
+                .unwrap_or(sample)
+        };
+        self.0.store(new, Ordering::Relaxed);
+    }
+
+    /// The mean, zero before the first sample.
+    ///
+    /// # Specification
+    /// trivial.
+    fn duration(&self) -> Duration
+    {
+        Duration::from_nanos(self.0.load(Ordering::Relaxed))
+    }
 }
 
 /// The reader: the scheduled root, run over the caller's store with the
@@ -229,6 +334,7 @@ where
             program,
             spawner,
             cells: Vec::new(),
+            last: Instant::now(),
             host,
         };
         lowered_on_with_host(
@@ -313,6 +419,7 @@ where
         program,
         spawner,
         cells: Vec::new(),
+        last: Instant::now(),
         host: &mut declining,
     };
     match closed_on_with_host(
@@ -419,6 +526,8 @@ where
     cells: Vec<Cell<'scope, Spawner>>,
     /// The host of every other operation.
     host: &'run mut Host,
+    /// When this run started, or last started a writer.
+    last: Instant,
 }
 
 impl<'scope, Spawner, Host> Scheduling<'scope, '_, Spawner, Host>
@@ -426,8 +535,8 @@ where
     Spawner: Spawn<'scope>,
     Host: HostHandler,
 {
-    /// Start the writer `payload` suspends, and resume with its handle; a
-    /// thunk that does not copy declines.
+    /// Start the writer `payload` suspends, and resume with `inl` of its
+    /// handle; a thunk that does not copy declines.
     ///
     /// # Specification
     /// trivial.
@@ -454,13 +563,21 @@ where
         else {
             return HostReply::Decline;
         };
+        let Ok(started) = values.allocate(HeapValue::Constructed {
+            tag: ConstructorTag::Injection(Summand::from(0_usize)),
+            fields: Box::new([handle]),
+        })
+        else {
+            return HostReply::Decline;
+        };
         self.cells.push(Cell::Started(self.spawner.spawn(Writing {
             program: self.program,
             body,
             environment,
             store,
         })));
-        HostReply::Resume(handle)
+        self.program.cost.spawn.fold(self.last.elapsed());
+        HostReply::Resume(started)
     }
 
     /// Wait for the writer `payload` names, and resume with its answer
@@ -491,9 +608,11 @@ where
         else {
             return HostReply::Decline;
         };
+        let copying = Instant::now();
         let answer = written
             .answer
             .and_then(|answer| values.store().copy(&written.store, answer).ok());
+        self.program.cost.read.fold(copying.elapsed());
         *cell = Cell::Ended(written);
         answer.map_or(HostReply::Decline, HostReply::Resume)
     }
@@ -538,5 +657,21 @@ where
     ) -> Migrated
     {
         self.host.migrate(request, values)
+    }
+
+    /// Start the writer when this run's heartbeat is due: when the run ran
+    /// for [`HEARTBEAT`] spawns' cost since it started, or since it last
+    /// started a writer. Otherwise keep the writer in place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spawning(&mut self) -> Spawning
+    {
+        let now = Instant::now();
+        if now.duration_since(self.last) < self.program.cost.heartbeat() {
+            return Spawning::InPlace;
+        }
+        self.last = now;
+        Spawning::Apart
     }
 }

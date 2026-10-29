@@ -65,6 +65,7 @@ use alloc::collections::BTreeSet;
 use alloc::collections::btree_map::Entry;
 
 use gandr_core_sequent::Accumulation;
+use gandr_core_sequent::CELL;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
@@ -72,6 +73,7 @@ use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::SPAWN;
 use gandr_core_sequent::Store;
 use gandr_core_session::DialogueWeb;
 use gandr_core_session::Facing;
@@ -137,6 +139,7 @@ use crate::seam::Migrated;
 use crate::seam::MigrationRequest;
 use crate::seam::Offer;
 use crate::seam::Offered;
+use crate::seam::Spawning;
 use crate::trace::Trace;
 use crate::transfer::Moved;
 use crate::transfer::Owners;
@@ -1106,7 +1109,9 @@ impl<'run, 'host> Calls<'run, 'host>
     }
 
     /// Offer the operation the command `at` performs with `payload` to the
-    /// host, and answer its reply.
+    /// host, and answer its reply. A spawn of the cell the host keeps in place
+    /// is never offered: it answers `inr` of its payload, the writer itself,
+    /// which never leaves the run.
     ///
     /// # Specification
     /// trivial.
@@ -1120,9 +1125,10 @@ impl<'run, 'host> Calls<'run, 'host>
     /// - hypothesis: L3 — scripted hosts that resume, abort and decline an
     ///   operation no handler of the run claims, on each tier; an offer never
     ///   made, or a reply that addresses nothing, changes the answer or the
-    ///   ending.
+    ///   ending. A writer kept in place answers as a started one.
     /// - witness: `tests::seam::a_host_resumes_a_single_unhandled_perform`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
+    /// - witness: `tests::cut::nested_writers_answer_as_their_sequential_schedule`
     fn offered(
         &mut self,
         runtime: &mut Runtime,
@@ -1142,6 +1148,19 @@ impl<'run, 'host> Calls<'run, 'host>
         else {
             return Err(Refusal::Operands);
         };
+        if signature.name().as_ref() == CELL
+            && operation.as_ref() == SPAWN
+            && offer.spawning() == Spawning::InPlace
+        {
+            let width = |_overflow| Refusal::Operands;
+            let kept = Header::new(
+                Kind::Injection,
+                Tag::try_from(1_usize).map_err(width)?,
+                Arity::try_from(1_usize).map_err(width)?,
+                Family::UNNAMED,
+            );
+            return allocate(runtime, &[kept.word(), payload]);
+        }
         let tables = Tables {
             heads: &self.heads,
             literals: &self.literals,

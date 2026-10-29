@@ -232,6 +232,7 @@ pub use crate::seam::HostRequest;
 pub use crate::seam::HostValues;
 pub use crate::seam::Migrated;
 pub use crate::seam::MigrationRequest;
+pub use crate::seam::Spawning;
 pub use crate::trace::Carried;
 pub use crate::trace::ChannelNumber;
 pub use crate::trace::Play;

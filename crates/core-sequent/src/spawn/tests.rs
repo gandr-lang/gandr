@@ -31,16 +31,20 @@ fn spawning(
     core.computation_perform(cell(), OperationName::from(SPAWN), payload)
 }
 
-/// A read of the cell, sending `handle`.
+/// The await of `spawned`, a spawn's answer, as a source would spell it:
+/// `case spawned of inl h ⇒ read h | inr w ⇒ force w`.
 ///
 /// # Specification
 /// trivial.
-fn reading(
+fn awaiting(
     core: &mut CoreArena,
-    handle: ValueId,
+    spawned: ValueId,
 ) -> ComputationId
 {
-    core.computation_perform(cell(), OperationName::from(READ), handle)
+    let inner = variable(core, Outward(0));
+    let read = core.computation_perform(cell(), OperationName::from(READ), inner);
+    let forced = core.computation_force(inner);
+    core.computation_case(spawned, &[read, forced])
 }
 
 /// A de Bruijn index: the number of binders out a variable names.
@@ -92,7 +96,7 @@ fn scheduled(
     render_command(&arena, root)
 }
 
-/// `program`, its spawns and reads written by hand, focused with no writer
+/// `program`, its spawns and awaits written by hand, focused with no writer
 /// named, rendered.
 ///
 /// # Specification
@@ -108,9 +112,9 @@ fn written(
 }
 
 /// `x ← return (); y ← return ((), ()); return (y, x)`, its first writer
-/// named, spawns that writer and reads it past the second bind, before the
-/// return that names `x`: as `h ← spawn {return ()}; y ← return ((), ());
-/// x ← read h; return (y, x)` focuses.
+/// named, spawns that writer and awaits it past the second bind, before the
+/// return that names `x`: as `c ← spawn {return ()}; y ← return ((), ());
+/// x ← await c; return (y, x)` focuses, where `await` is [`awaiting`].
 #[test]
 fn a_marked_cut_spawns_its_writer_and_reads_it_where_first_named()
 {
@@ -131,7 +135,7 @@ fn a_marked_cut_spawns_its_writer_and_reads_it_where_first_named()
     let suspended = core.value_thunk(first);
     let spawn = spawning(&mut core, suspended);
     let handle = variable(&mut core, Outward(1));
-    let read = reading(&mut core, handle);
+    let read = awaiting(&mut core, handle);
     let fields = [
         variable(&mut core, Outward(1)),
         variable(&mut core, Outward(0)),
@@ -150,8 +154,8 @@ fn a_marked_cut_spawns_its_writer_and_reads_it_where_first_named()
 }
 
 /// `x ← return (); y ← return (x, ()); return (y, x)`, both writers named,
-/// reads `x` before it spawns the writer that names it: as `h ← spawn
-/// {return ()}; x ← read h; k ← spawn {return (x, ())}; y ← read k;
+/// awaits `x` before it spawns the writer that names it: as `c ← spawn
+/// {return ()}; x ← await c; k ← spawn {return (x, ())}; y ← await k;
 /// return (y, x)` focuses.
 #[test]
 fn an_inner_writer_reads_the_outer_binder_before_its_spawn()
@@ -174,11 +178,11 @@ fn an_inner_writer_reads_the_outer_binder_before_its_spawn()
     let outer_thunk = core.value_thunk(first);
     let outer_spawn = spawning(&mut core, outer_thunk);
     let outer_handle = variable(&mut core, Outward(0));
-    let outer_read = reading(&mut core, outer_handle);
+    let outer_read = awaiting(&mut core, outer_handle);
     let inner_thunk = core.value_thunk(second);
     let inner_spawn = spawning(&mut core, inner_thunk);
     let inner_handle = variable(&mut core, Outward(0));
-    let inner_read = reading(&mut core, inner_handle);
+    let inner_read = awaiting(&mut core, inner_handle);
     let fields = [
         variable(&mut core, Outward(0)),
         variable(&mut core, Outward(2)),
@@ -197,8 +201,8 @@ fn an_inner_writer_reads_the_outer_binder_before_its_spawn()
     );
 }
 
-/// `x ← return (); return ((), ())`, its writer named, reads `x` before its
-/// return though nothing names it: as `h ← spawn {return ()}; x ← read h;
+/// `x ← return (); return ((), ())`, its writer named, awaits `x` before its
+/// return though nothing names it: as `c ← spawn {return ()}; x ← await c;
 /// return ((), ())` focuses.
 #[test]
 fn a_binder_never_named_is_read_before_the_end()
@@ -213,7 +217,7 @@ fn a_binder_never_named_is_read_before_the_end()
     let suspended = core.value_thunk(first);
     let spawn = spawning(&mut core, suspended);
     let handle = variable(&mut core, Outward(0));
-    let read = reading(&mut core, handle);
+    let read = awaiting(&mut core, handle);
     let read_then = core.computation_bind(read, returned);
     let by_hand = core.computation_bind(spawn, read_then);
 
@@ -239,7 +243,7 @@ fn a_marked_cut_in_a_definition_spawns_there()
     let suspended = core.value_thunk(first);
     let spawn = spawning(&mut core, suspended);
     let handle = variable(&mut core, Outward(0));
-    let read = reading(&mut core, handle);
+    let read = awaiting(&mut core, handle);
     let read_then = core.computation_bind(read, returned);
     let by_hand = core.computation_bind(spawn, read_then);
 

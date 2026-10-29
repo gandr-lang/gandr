@@ -203,6 +203,43 @@ pub trait HostHandler
         let _ = (request, values);
         Migrated::Here
     }
+
+    /// Decide where a cut's writer runs, before its spawn is offered.
+    ///
+    /// # Specification
+    /// - ensures: [`Spawning::Apart`] offers the spawn of the cell to
+    ///   [`Self::handle`], whose reply is `inl` of a handle on the writer.
+    ///   [`Spawning::InPlace`] answers the spawn, unoffered, with `inr` of the
+    ///   writer itself, which the reader forces where it awaits the writer's
+    ///   answer. A host that starts no writer keeps this default and runs every
+    ///   writer in place, as the sequential schedule does.
+    /// - executable: none — the trait states the host's obligation; each body
+    ///   is an implementor's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run that keeps every writer in place and one that
+    ///   starts every writer each answer as the sequential schedule does, on
+    ///   both tiers.
+    /// - witness: `tests::cut::nested_writers_answer_as_their_sequential_schedule`
+    #[inline]
+    fn spawning(&mut self) -> Spawning
+    {
+        Spawning::InPlace
+    }
+}
+
+/// Where a cut's writer runs: apart from its reader, or in place, forced
+/// where its reader awaits its answer.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Spawning
+{
+    /// The spawn is offered to the host, which starts the writer.
+    Apart,
+    /// The writer stays in its reader's run.
+    InPlace,
 }
 
 /// The host's value capability over the caller's store: inspect, allocate,
@@ -386,6 +423,12 @@ pub trait Offer
         request: MigrationRequest<'_>,
         values: &mut HostValues<'_>,
     ) -> Migrated;
+
+    /// Decide where a cut's writer runs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spawning(&mut self) -> Spawning;
 }
 
 /// A host and the abort result it stopped the run with, if it did.
@@ -435,5 +478,14 @@ where
     ) -> Migrated
     {
         self.host.migrate(request, values)
+    }
+
+    /// Ask the host.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spawning(&mut self) -> Spawning
+    {
+        self.host.spawning()
     }
 }
