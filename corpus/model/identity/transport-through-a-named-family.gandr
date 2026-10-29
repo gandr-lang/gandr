@@ -1,0 +1,42 @@
+/// `transport` takes its family from a parameter, by name or as a lambda.
+///
+/// A library function over any family receives the family as a parameter.
+/// Its body and its type each carry a value through that family.
+///
+/// Each declaration carries a value through a family that a parameter names.
+///
+/// - see: #3786 — a family that a parameter names is a motive
+
+/// A body carries a value through a family that it names.
+def movedNamed(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x)) -> P(y) {
+  transport(P, p, v)
+}
+
+/// A body carries a value through a lambda over the family.
+def movedLambda(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x)) -> P(y) {
+  transport(\a. P(a), p, v)
+}
+
+/// A type carries a value through a family that it names.
+def statedNamed(A : Type, P : A => Type, x : A, v : P(x)) -> Path(
+  P(x),
+  transport(P, here(x), v),
+  v
+) {
+  here(v)
+}
+
+/// A type carries a value through a lambda over the family.
+def statedLambda(A : Type, P : A => Type, x : A, v : P(x)) -> Path(
+  P(x),
+  transport(\a. P(a), here(x), v),
+  v
+) {
+  here(v)
+}
+
+/// A body carries a value through a lambda over the family. The path stands
+/// between the family and the value, and no type names it.
+def movedPastThePath(A : Type, x : A, y : A, p : Path(A, x, y), P : A => Type, v : P(x)) -> P(y) {
+  transport(\a. P(a), p, v)
+}
